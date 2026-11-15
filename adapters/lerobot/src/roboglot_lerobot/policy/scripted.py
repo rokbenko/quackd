@@ -1,16 +1,15 @@
 """Runners that need no torch: a Python function answers every request.
 
-`ScriptedRunner` is what the tests drive the policy loop with, what the simulator rehearses a
-segment with before a checkpoint is anywhere near the arm, and what a `PolicyLike` becomes when
-it is handed to the backend: `ScriptedRunner.wrapping(policy)` asks it for one action per tick,
-as `pick` always did. Everything here is deterministic. The same script, asked at the same ticks
-with the same readings, answers the same chunks, which is what lets a test say that the
-simulator's lockstep and a run on the wall's clock played the same trajectory.
+`ScriptedRunner` is what the tests drive the policy loop with, and what a `PolicyLike` becomes
+when it is handed to the backend: `ScriptedRunner.wrapping(policy)` asks it for one action per
+tick, as `pick` always did. Everything here is deterministic. The same script, asked at the same
+ticks with the same readings, answers the same chunks, which is what lets a test say that a
+lockstep clock and a run on the wall's clock played the same trajectory.
 
 A few scripts have names (`SCRIPTS`), and `named` builds a runner from one. They are what
 `roboglot policy serve --policy scripted:NAME` serves, so the policy server, its client and the
-loop behind them can be run end to end, on the simulator or on the arm, with no checkpoint and
-no torch anywhere: `hold` holds the arm where it reads, and `sweep` swings the wrist to and fro.
+loop behind them can be run end to end, on the arm or in the tests, with no checkpoint and no
+torch anywhere: `hold` holds the arm where it reads, and `sweep` swings the wrist to and fro.
 """
 
 from __future__ import annotations
@@ -32,8 +31,8 @@ class ScriptedRunner:
 
     `rate_hz` and `rate_source` are its declared rate and where that came from, as a runner
     loaded from a checkpoint declares them. `latency_ticks` is how many ticks it declares it
-    takes to answer, which on the simulator holds every chunk back that many ticks before it is
-    played, and which it never actually spends: a script answers as fast as Python does.
+    takes to answer, which on a lockstep clock holds every chunk back that many ticks before it
+    is played, and which it never actually spends: a script answers as fast as Python does.
     `per_tick` makes it a runner asked every tick (tick mode). `chunk` is how many actions its
     script answers with, where it says, which a policy server reports. `instruction` and
     `resets` are what the last `reset` was told and how many there have been, for a test to

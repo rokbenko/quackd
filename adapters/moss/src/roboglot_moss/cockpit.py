@@ -622,7 +622,6 @@ class MossCockpit:
         """How long the bridge repeats a twist with no new one, read from its hello."""
         self._twist_at: float | None = None
         """When the bridge took this session's last twist that was not a zero."""
-        self.post_sleep: Callable[[], None] | None = None
         self._mjpeg: MjpegReader | None = None
         self._frames_task: asyncio.Task[None] | None = None
         self._frames_on = False
@@ -1539,8 +1538,6 @@ class MossCockpit:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
 
 __all__ = [

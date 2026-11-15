@@ -44,13 +44,12 @@ def test_every_kind_of_option_comes_back_through_roboglots_own_parser() -> None:
     chosen: dict[str, Any] = {
         "glotfile": "hello-world",
         "image": ["front.png", "side.png"],
-        "seed": 7,
+        "max_steps": 7,
         "dry_run": True,
         "play": False,
         "async_chunks": False,
-        "gif_size": 512,
         "effort": "high",
-        "robot": "microduck:sim2d",
+        "robot": "microduck:mock",
         "decision_frames": True,
     }
     argv = argv_for("run", chosen)
@@ -60,7 +59,7 @@ def test_every_kind_of_option_comes_back_through_roboglots_own_parser() -> None:
     back = {name: list(v) if isinstance(v, tuple) else v for name, v in got.items()}
     assert {name: back[name] for name in chosen} == chosen
     kinds = {o.name: o.kind for o in options("run")}
-    assert (kinds["seed"], kinds["gif_size"], kinds["fov_deg"]) == ("integer", "integer", "number")
+    assert (kinds["max_steps"], kinds["fov_deg"]) == ("integer", "number")
 
 
 def test_a_secret_never_reaches_the_command_line() -> None:
@@ -73,14 +72,20 @@ def test_a_secret_never_reaches_the_command_line() -> None:
 
 def test_one_set_of_choices_makes_both_commands() -> None:
     """A setup made once serves both modes: what drive does not take is simply not on its line."""
-    chosen = {"robot": "microduck:sim2d", "llm": "fake", "play": True, "gif": False, "seed": 3}
+    chosen = {
+        "robot": "microduck:mock",
+        "llm": "fake",
+        "play": True,
+        "goal": "wave",
+        "max_steps": 3,
+    }
     run = argv_for("run", chosen)
     drive = argv_for("drive", chosen)
-    assert "--play" in run and "--no-gif" in run
+    assert "--play" in run and "--goal" in run
     assert drive == [
         "drive",
-        *("--robot", "microduck:sim2d", "--seed", "3", "--llm", "fake", "--play", "--memory"),
-    ], "drive takes --play and a memory for its goals, and no GIF"
+        *("--robot", "microduck:mock", "--llm", "fake", "--max-steps", "3", "--play", "--memory"),
+    ], "drive takes --play and a memory for its goals, and no --goal"
     parsed(drive)
 
 
@@ -102,7 +107,7 @@ def test_a_vla_pilot_takes_no_llm_and_no_decision_llm_however_it_was_chosen() ->
     """`roboglot run` refuses an LLM's flag, a picture and --play beside --controller vla, and
     the Policies screen chooses a VLA without passing through Setup's pilot section."""
     values = {
-        "robot": "lerobot:mujoco",
+        "robot": "lerobot:real",
         "controller": "vla",
         "policy_url": "http://127.0.0.1:9875",
         "llm": "fake",

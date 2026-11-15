@@ -42,7 +42,7 @@ def test_a_body_is_offered_only_the_verbs_it_declares_in_the_familys_order() -> 
     assert list(verbs_for(HUEBOT)) == [verb for verb in family if verb in HUEBOT.verbs]
     assert set(verbs_for(MICRODUCK)) == MICRODUCK.verbs
     assert set(verbs_for(HUEBOT)) == HUEBOT.verbs
-    assert not {"grab", "gaze", "watch", "explore", "find"} & HUEBOT.verbs
+    assert not {"grab", "gaze", "watch"} & HUEBOT.verbs
 
 
 def test_a_microduck_is_described_alike_whatever_its_robot_lists_as_skills() -> None:
@@ -62,14 +62,14 @@ def test_an_adapter_refuses_a_transport_built_for_another_body() -> None:
 
 
 def test_a_transport_whose_body_is_no_body_record_is_any_bodys() -> None:
-    """The physics transport's `body` names the physics model it loads, `puppet` or the duck's,
-    which says nothing of which robot of the family it carries."""
+    """Only a `Body` says which robot of the family a transport carries. A `body` that is
+    anything else, a word naming some model, says nothing of it, and is any body's."""
 
-    class Physics:
-        name = "mujoco"
-        body = "puppet"
+    class Elsewhere:
+        name = "elsewhere"
+        body = "a-model"
 
-    assert roboglot_microduck.MicroduckAdapter(Physics()).body is MICRODUCK  # type: ignore[arg-type]
+    assert roboglot_microduck.MicroduckAdapter(Elsewhere()).body is MICRODUCK  # type: ignore[arg-type]
 
 
 def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
@@ -97,7 +97,7 @@ def test_a_verb_of_the_family_a_body_does_not_have_says_why() -> None:
     assert set(manifest.not_offered()) == family - HUEBOT.verbs
     assert all(why for why in manifest.not_offered().values())
     assert not MICRODUCK.withheld
-    assert "not_offered" not in roboglot_microduck.microduck_manifest("sim2d", places=False).extras
+    assert "not_offered" not in roboglot_microduck.microduck_manifest("mock", places=False).extras
 
 
 async def test_a_mock_is_not_kinder_than_its_robot() -> None:
@@ -111,8 +111,6 @@ async def test_a_mock_is_not_kinder_than_its_robot() -> None:
         "go_to_place",
         "gaze",
         "watch",
-        "explore",
-        "find",
         "grab",
     } & set(manifest.verb_names())
     duck = await roboglot_microduck.make("mock").connect()

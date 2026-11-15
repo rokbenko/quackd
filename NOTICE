@@ -14,35 +14,11 @@ This project builds on, interoperates with, and is grateful to:
     contract (duck-ipc-proto). Apache-2.0.
     https://github.com/pollen-robotics/microduck
 
-  * microduck_rl (pollen-robotics/microduck_rl) — the training stack that
-    produces the ONNX policies the robot runs, and the MuJoCo model the
-    physics backend walks. Code Apache-2.0, and so is that model,
-    robot_walk.xml, by the repository's LICENSE-MODELS.md. Its 3D model
-    files, the 38 STL meshes the model names, are CC BY-NC-SA 4.0. Neither
-    is included in this project: --robot microduck:mujoco and the browser
-    demo fetch them from upstream at a pinned commit at run time, into
-    ~/.roboglot/cache or the visitor's browser. Those non-commercial and
-    share-alike terms apply to your use of the meshes, not to Roboglot's code.
+  * microduck_rl (pollen-robotics/microduck_rl): where Pollen Robotics
+    trains the Microduck's walking policy. Code Apache-2.0. Roboglot cites
+    the velocity ranges its walking task trains with, as facts, and neither
+    imports nor vendors any of it.
     https://github.com/pollen-robotics/microduck_rl
-
-  * microduck-policies (pollen-robotics/microduck-policies, on the Hugging
-    Face Hub) — the ONNX policies a Microduck ships with. Apache-2.0.
-    alpha_walking.onnx and alpha_stand.onnx are fetched at a pinned revision,
-    hash checked and run. Roboglot runs them, did not train them, and
-    redistributes neither.
-    https://huggingface.co/pollen-robotics/microduck-policies
-
-  * MuJoCo (google-deepmind/mujoco) — the physics behind
-    --robot microduck:mujoco and --robot lerobot:mujoco, and as its official
-    WebAssembly build the physics in the browser demo. Apache-2.0. Optional
-    extras roboglot[mujoco] and roboglot[lerobot-sim], imported only inside
-    connect(). Nothing vendored.
-    https://github.com/google-deepmind/mujoco
-
-  * ONNX Runtime (microsoft/onnxruntime) — what runs alpha_walking.onnx and
-    alpha_stand.onnx on the CPU, and onnxruntime-web in the browser demo. MIT.
-    Optional extra roboglot[mujoco]. Nothing vendored.
-    https://github.com/microsoft/onnxruntime
 
   * Model Context Protocol Python SDK (modelcontextprotocol/python-sdk). MIT.
     https://github.com/modelcontextprotocol/python-sdk
@@ -72,14 +48,10 @@ This project builds on, interoperates with, and is grateful to:
     https://huggingface.co/lerobot
     https://huggingface.co/black-forest-labs/flux-3-action-so101
 
-  * SO-ARM100 (TheRobotStudio/SO-ARM100) - the repository of the SO-101
-    arm's designers, and the source of the MuJoCo model the lerobot
-    adapter's arm simulator (lerobot:mujoco, optional extra
-    roboglot[lerobot-sim]) runs on. Apache-2.0. The model
-    (so101_new_calib_camera.xml) and its 15 STL meshes are NOT included in
-    this project: roboglot-lerobot's fetcher downloads them from upstream at a
-    pinned commit into ~/.roboglot/cache and checks each against a recorded
-    sha256.
+  * SO-ARM100 (TheRobotStudio/SO-ARM100): the repository of the SO-101
+    arm's designers, whose URDFs the lerobot adapter reads some of its arms'
+    datasheet figures from, cited as facts. Apache-2.0. Nothing vendored and
+    nothing fetched.
     https://github.com/TheRobotStudio/SO-ARM100
 
   * roslibpy (gramaziokohler/roslibpy, MIT) and rosbridge_suite

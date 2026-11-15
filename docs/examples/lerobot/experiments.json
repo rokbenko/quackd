@@ -197,7 +197,6 @@
   {"id": "E196", "title": "Stop from the chat, mid-move", "category": "Red team"},
   {"id": "E197", "title": "A policy that holds still", "category": "Hardware"},
   {"id": "E198", "title": "A policy that sweeps", "category": "Hardware"},
-  {"id": "E199", "title": "The arm against its twin", "category": "Hardware"},
   {"id": "E200", "title": "Smooth or staircase", "category": "Hardware"},
   {"id": "E201", "title": "The worst frame", "category": "Hardware"},
   {"id": "E202", "title": "How hard it thinks", "category": "Speed"},

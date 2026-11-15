@@ -773,7 +773,17 @@ async def test_a_composite_is_logged_as_nested_pairs_with_the_parents_tally(
     regression there is silent — the parent would keep reporting a number, just a smaller
     one, and a reader would believe it."""
     from roboglot.perception.color_blob import ColorBlobDetector
-    from roboglot.transport.sim2d import Sim2DTransport
+    from roboglot.transport.base import Ack, Intent
+    from roboglot_microduck.body import KICK_SKILLS
+
+    class Kicker(OpenDuckMock):
+        """The Open Duck's mock, which walks and sees its ball, taking a Microduck's kick as
+        well, so a composite can walk up to the ball and kick it."""
+
+        async def send_intent(self, intent: Intent) -> Ack:
+            if intent.kind == "do" and intent.params.get("skill") in KICK_SKILLS.values():
+                return await MockTransport.send_intent(self, intent)
+            return await super().send_intent(intent)
 
     kick_duck.frontmatter.verbs.allow = [*kick_duck.frontmatter.verbs.allow, "approach_and"]
     seen: list[Any] = []
@@ -790,7 +800,7 @@ async def test_a_composite_is_logged_as_nested_pairs_with_the_parents_tally(
                     ToolCall(name="declare_success", arguments={"reason": "kicked"}),
                 ]
             ),
-            transport=Sim2DTransport(seed=6),
+            transport=Kicker(),
             detector=ColorBlobDetector(),
             runs_dir=tmp_path,
             view=seen.append,
@@ -889,9 +899,9 @@ async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
     """
     from roboglot.transport.base import DuckState
 
-    stand_ins = [
-        "kick is a scripted impulse, not the robot's own kick policy",
-        "a fall is recovered by standing the model up; upstream ships no get-up policy",
+    stand_ins = [  # two that AlohaMini's adapter declares
+        "holding is what Roboglot commanded, never what the robot felt",
+        "no odometry exists, so go_to closes the loop on the camera alone",
     ]
     transport = MockTransport(
         states=[DuckState(policy="mock", posture="standing", extras={"assumptions": stand_ins})]
@@ -1487,7 +1497,7 @@ async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
 ) -> None:
     """A pilot may not move its body on a need its own sheet does not meet.
 
-    `missing_needs` already held another robot's bid to its datasheet at the coordinator,
+    `missing_needs` already held every other robot's datasheet to a need, to say which could,
     and nothing held a pilot's verdict about its own body to its own sheet, so a `needs`
     naming a figure nobody published passed straight through. The Microduck's endurance is
     not published, and a run that says the task needs 45 minutes of it is saying, in its own
@@ -1749,9 +1759,7 @@ x
 """
     )
     rule = next(
-        line
-        for line in build_system_prompt(duck, verbs, "mock").splitlines()
-        if "Until then" in line
+        line for line in build_system_prompt(duck, verbs).splitlines() if "Until then" in line
     )
     assert "Until then only `locate` and `stop` run." in rule
     assert "`reach`" not in rule.split("Until then")[1]
@@ -2221,12 +2229,12 @@ def test_a_body_with_one_camera_is_never_told_its_view_has_a_name() -> None:
 
     duck, one = _arm_glot(), lerobot_manifest("mock", camera_names=("forward",))
     one.extras["cameras"] = ["forward"]  # an adapter that publishes it for its only camera
-    said = build_system_prompt(duck, [], "mock", manifest=one)
+    said = build_system_prompt(duck, [], manifest=one)
     assert "1 cameras" not in said, said[said.find("camera") - 80 :][:240]
     assert "labelled with the name of the camera" not in said
 
     two = lerobot_manifest("mock", camera_names=("top", "side"))
-    both = build_system_prompt(duck, [], "mock", manifest=two)
+    both = build_system_prompt(duck, [], manifest=two)
     assert "This body has 2 cameras: top, side" in both
     assert "top is the primary" in both
 
@@ -6109,10 +6117,10 @@ async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
     including on a laptop that synced its clock or slept through part of a run.
 
     Nothing here compares `wall_s` with `elapsed_s`, and nothing should. `elapsed_s` is the
-    budget's clock, which reads the transport's own time, and on a simulator that is the
-    simulator's: a real sim2d run recorded `elapsed_s` 7.8 against a `wall_s` of 0.172. They
-    are two different questions rather than two readings of one, and an assertion ordering
-    them would fail on the first simulator run to reach it."""
+    budget's clock, which reads the transport's own time, and on a mock that is the mock's,
+    which moves on only as fast as a verb sleeps on it, so a mock's run can spend many times its
+    `wall_s`. They are two different questions rather than two readings of one, and an assertion
+    ordering them would fail on the first mock run to reach it."""
     result = await run_glot(
         RunConfig(
             duck=hello_glot,

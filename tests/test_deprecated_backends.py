@@ -100,9 +100,9 @@ def _announced(stderr: str) -> list[str]:
 
 
 def _run_fake(*argv: str, runs: Path) -> Any:
-    """`roboglot run` on the scripted pilot, with nothing remembered and nothing drawn."""
+    """`roboglot run` on the scripted pilot, with nothing remembered."""
     return CliRunner().invoke(
-        app, ["run", *argv, "--llm", "fake", "--no-gif", "--no-memory", "--runs-dir", str(runs)]
+        app, ["run", *argv, "--llm", "fake", "--no-memory", "--runs-dir", str(runs)]
     )
 
 
@@ -182,7 +182,7 @@ def test_a_declaration_is_a_mapping_of_a_backend_to_its_line(
 def test_a_declaration_roboglot_cannot_read_is_refused_naming_the_module(
     declared: Any, retiring: ModuleType
 ) -> None:
-    """`SIMULATOR_BACKENDS` is a tuple, so a tuple is the shape an adapter's author is likeliest
+    """`REST_POSE_BACKENDS` is a tuple, so a tuple is the shape an adapter's author is likeliest
     to write here too, and read as nothing it would leave the backend they meant to retire
     connected through with no word said. So it is refused, as is a line that is not a string,
     with the module's name and the shape that is read."""
@@ -229,7 +229,7 @@ def test_run_says_nothing_for_a_robot_it_never_connects(tmp_path: Path) -> None:
     for the robot it drives, and only once nothing is left that can refuse the run. A task with
     no team drives the first of its `--robots` and never the second, here the retiring backend,
     and a task the validator refuses connects nothing at all."""
-    solo = _run_fake("hello-world", "--robots", "a=microduck:sim2d,b=retiring:old", runs=tmp_path)
+    solo = _run_fake("hello-world", "--robots", "a=microduck:mock,b=retiring:old", runs=tmp_path)
     assert solo.exit_code == 0, solo.output
     assert _announced(solo.stderr) == []
     refused = _run_fake("arm-grip-check", "--robot", "retiring:old", runs=tmp_path)
@@ -249,7 +249,7 @@ def test_a_pilot_team_says_the_line_for_a_member_on_the_backend_wherever_it_come
     )
     stored = tmp_path / "registry"
     registry = Registry(stored)
-    for name, spec in (("a", "microduck:mock"), ("b", "microduck:sim2d"), ("c", "retiring:old")):
+    for name, spec in (("a", "microduck:mock"), ("b", "open_duck:mock"), ("c", "retiring:old")):
         registry.add_robot(RobotEntry(name=name, spec=spec))
     registry.add_team(StoredTeam(name="trio", members=["a", "b", "c"]))
     trio = ("--team", "trio", "--registry-dir", str(stored))
@@ -319,7 +319,7 @@ def test_doctor_says_the_line_when_it_connects(
     [
         ("a=retiring:old,b=retiring:old,c=retiring:new", "new"),
         ("a=microduck:mock,b=retiring:old", "old"),
-        ("a=microduck:mock,b=microduck:sim2d,c=retiring:old", "old"),
+        ("a=microduck:mock,b=open_duck:mock,c=retiring:old", "old"),
     ],
     ids=["both", "second", "third"],
 )
@@ -378,16 +378,19 @@ def test_robot_list_probe_says_the_line_for_the_robots_it_connects(
 ) -> None:
     """`--probe` connects every robot it can, those on the retiring backend among them, so the
     line is said once on stderr however many robots are on it and wherever they come, and stdout
-    stays one JSON line a robot. A robot the probe does not connect says nothing: the Microduck's
-    physics backend, which the probe skips rather than load a model, is retired here for this
+    stays one JSON line a robot. A robot the probe does not connect says nothing: a described
+    body, which Roboglot drives no part of and the probe does not reach, is retired here for this
     test alone, and comes first."""
-    retired = "microduck:mujoco is deprecated in this test alone"
+    from roboglot.adapters import described
+
+    retired = "described:unitree-go2-edu is deprecated in this test alone"
     monkeypatch.setattr(
-        roboglot_microduck, "DEPRECATED_BACKENDS", {"mujoco": retired}, raising=False
+        described, "DEPRECATED_BACKENDS", {"unitree-go2-edu": retired}, raising=False
     )
+    assert factory.deprecated_backend("described:unitree-go2-edu") == retired
     registry = Registry(tmp_path)
     for name, spec in (
-        ("a", "microduck:mujoco"),
+        ("a", "described:unitree-go2-edu"),
         ("b", "microduck:mock"),
         ("c", "retiring:old"),
         ("d", "retiring:old"),

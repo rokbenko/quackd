@@ -16,14 +16,13 @@ that plan, the ones that decide, the ones that move the arm, and how to name eac
 
 ## How one run uses all three
 
-On the SO-101 arm's simulator, a twin registered as `arm-01-sim`, with a policy server running
-beside it:
+On the SO-101 arm, registered as `arm-01`, with a policy server running beside it:
 
 ```bash
-roboglot run task.glot --robot arm-01-sim --llm openai --decision-llm openai --decision-mode shadow --policy-url http://127.0.0.1:9875
+roboglot run task.glot --robot arm-01 --llm openai --decision-llm openai --decision-mode shadow --policy-url http://127.0.0.1:9875
 ```
 
-OpenAI's `gpt-6-sol` is the pilot: it reads the arm's manifest, plans and calls the arm's verbs.
+OpenAI's `gpt-6.1-sol` is the pilot: it reads the arm's manifest, plans and calls the arm's verbs.
 OpenAI's Decisions API is asked every turn in shadow and changes nothing, so the run's record
 shows what it would have answered. When the pilot calls `manipulate`, the policy the server
 serves drives the arm for one segment, at the arm's own rate, with every goal held to the arm's

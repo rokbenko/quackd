@@ -19,10 +19,9 @@ from roboglot_huebot import upstream_api as huebot_api
 from roboglot_lerobot import upstream_api as lerobot_api
 from roboglot_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
 from roboglot_lerobot.policy import upstream_api as lerobot_policy_api
-from roboglot_lerobot.sim import upstream_api as so_arm100_api
 from roboglot_microduck import mapd_upstream_api as mapd_api
+from roboglot_microduck import rl_upstream_api as microduck_rl_api
 from roboglot_microduck import upstream_api
-from roboglot_microduck.sim3d import upstream_api as microduck_rl_api
 from roboglot_moss import upstream_api as moss_api
 from roboglot_open_duck import upstream_api as open_duck_api
 from roboglot_rosarm import upstream_api as rosarm_api
@@ -51,14 +50,8 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             # the arms' records, whose heat limit moved here from real.py and is the number
             # the assumed Celsius of Present_Temperature is read against
             "adapters/lerobot/arms.py",
-            # the arm simulator's model, world and follower, which reproduce what these
-            # assumptions say of a real arm: the gripper's open end, and a goal kept through
-            # torque off
-            "adapters/lerobot/sim/model.py",
-            "adapters/lerobot/sim/world.py",
-            "adapters/lerobot/sim/follower.py",
             # and the mock's follower, which takes the best case of the goal kept through
-            # torque off where the simulator takes the worst
+            # torque off
             "adapters/lerobot/fake_follower.py",
         },
         # rustypot is the library under LeRobot 0.7.0's bus, and its tables are its own
@@ -202,44 +195,17 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
     ),
     (
         microduck_rl_api,
-        {
-            "adapters/microduck/sim3d/upstream_api.py",
-            "adapters/microduck/sim3d/assets.py",
-            "adapters/microduck/sim3d/microduck.py",
-            # the measured gait envelope `GAIT_THRESHOLD` documents; it moved out of
-            # `microduck.py` so it could be tested without the extra, and cites its source
-            "adapters/microduck/sim3d/gait.py",
-        },
-        (
-            "https://github.com/pollen-robotics/microduck_rl",
-            "https://huggingface.co/pollen-robotics/microduck-policies",
-        ),
+        {"adapters/microduck/rl_upstream_api.py"},
+        ("https://github.com/pollen-robotics/microduck_rl",),
     ),
     (
         mapd_api,
         {
             "adapters/microduck/mapd_upstream_api.py",
-            # the client that speaks to it, which also hands the simulated map its numbers
+            # the client that speaks to it
             "adapters/microduck/transports/mapd.py",
         },
         ("https://github.com/pollen-robotics/microduck",),
-    ),
-    (
-        so_arm100_api,
-        {
-            "adapters/lerobot/sim/upstream_api.py",
-            "adapters/lerobot/sim/assets.py",
-            # the arm simulator's model and world, which map LeRobot's degrees and gripper
-            # onto the model through the assumptions this module names, and its transport,
-            # which lists them among the state's assumptions
-            "adapters/lerobot/sim/model.py",
-            "adapters/lerobot/sim/world.py",
-            "adapters/lerobot/sim/transport.py",
-        },
-        (
-            "https://github.com/TheRobotStudio/SO-ARM100",
-            "https://raw.githubusercontent.com/TheRobotStudio/SO-ARM100",
-        ),
     ),
 ]
 IDS = [
@@ -257,7 +223,6 @@ IDS = [
     "moss",
     "microduck_rl",
     "mapd",
-    "so_arm100",
 ]
 
 
@@ -289,8 +254,8 @@ def test_unverified_refs_only_used_in_experimental_backends(
     # THREAD_SAFETY, so an adapter row scans its package and the core, never a sibling
     # `canonical_rel` gives one name per file whichever layout it is in, so `allowed` reads
     # the same whether an adapter is still in the core wheel or already its own package.
-    # The package is the whole adapter even when the module sits in a subpackage, so a
-    # simulator's assumptions are scanned for in the real backend beside it too.
+    # The package is the whole adapter even when the module sits in a subpackage, so the
+    # assumptions of a subpackage's record (the policies') are scanned for in the backend too.
     owner = canonical_rel(Path(str(module.__file__)))
     own_pkg = "/".join(owner.split("/")[:2]) if owner.startswith("adapters/") else None
     offenders = []
@@ -382,7 +347,7 @@ def test_the_mapd_refs_are_assumptions_read_at_one_branch_commit() -> None:
         (upstream_api.TOF_FOV, f"is {upstream_api.TOF_FOV_DEG:g} by {upstream_api.TOF_FOV_DEG:g}"),
     ],
 )
-def test_each_number_the_simulated_map_keeps_to_is_the_one_its_ref_quotes(
+def test_each_number_the_map_client_keeps_to_is_the_one_its_ref_quotes(
     ref: object, quoted: str
 ) -> None:
     """The numbers are typed once, beside the refs, for the code that keeps to them, and each has
@@ -638,55 +603,24 @@ def test_the_names_introspection_asks_a_bridge_for_are_the_ones_upstream_registe
     assert rosbridge_api.PIN_RSP in rosbridge_api.DESCRIPTION_TOPIC.source
 
 
-def test_the_arm_models_joints_are_lerobots_motors_and_every_ref_is_pinned() -> None:
-    """The simulator maps a `'<motor>.pos'` key to a joint and an actuator by name, with no
-    table in between, which is only sound while the model's names are LeRobot's, in its order.
-    """
-    assert lerobot_api.SO_MOTORS.name in so_arm100_api.JOINT_NAMES.name
-    assert len(so_arm100_api.PIN) == 40 and so_arm100_api.PIN.isalnum()
-    for ref in so_arm100_api.all_refs():
-        assert so_arm100_api.PIN in ref.source, ref
-    assert so_arm100_api.MODEL.name == so_arm100_api.MODEL_FILE
-    assert so_arm100_api.MESHES.name.startswith(f"{len(so_arm100_api.FILES) - 1} STL meshes")
-    unverified = {r.name for r in so_arm100_api.refs_by_status("UNVERIFIED")}
-    assert unverified == {
-        "SERVO_DYNAMICS",
-        "JOINT_ZERO",
-        "JOINT_SIGN",
-        "GRIPPER_MAP",
-        "WRIST_CAMERA_POSE",
-    }
-
-
-def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
-    """The arm simulator takes a few numbers and names from LeRobot as data rather than prose:
-    the bus table's ids, the gripper's torque limit and its full scale, the calibration search.
-    Each sits beside the VERIFIED ref that read it, and has to say what that ref says."""
+def test_the_arms_lerobot_facts_are_the_ones_its_refs_read() -> None:
+    """The arm's backends take a few numbers and names from LeRobot as data rather than prose:
+    the bus table's ids, the step cap, the words a bus fails in. Each sits beside the VERIFIED
+    ref that read it, and has to say what that ref says."""
     assert list(lerobot_api.SO_MOTOR_IDS) == lerobot_api.SO_MOTORS.name.split(", ")
     assert len(set(lerobot_api.SO_MOTOR_IDS.values())) == len(lerobot_api.SO_MOTOR_IDS)
-    assert f"Max_Torque_Limit {lerobot_api.GRIPPER_MAX_TORQUE_LIMIT} " in (
-        lerobot_api.SO_GRIPPER_TORQUE_LIMIT.name + " "
-    )
-    assert lerobot_api.GRIPPER_MAX_TORQUE_LIMIT / lerobot_api.MAX_TORQUE_LIMIT_FULL == 0.5
     assert "50%" in lerobot_api.SO_GRIPPER_TORQUE_LIMIT.note
-    chain = lerobot_api.CALIBRATION_DIR
-    assert chain.name.startswith(lerobot_api.CALIBRATION_ENV)
-    assert f"/{lerobot_api.ROBOTS_SUBDIR}/{lerobot_api.SO_FOLLOWER_NAME}/" in chain.name
-    for name in (lerobot_api.LEROBOT_HOME_ENV, lerobot_api.HF_HOME_ENV, lerobot_api.XDG_CACHE_ENV):
-        assert name in chain.note, name
-    assert lerobot_api.SO_FOLLOWER_NAME in lerobot_api.SO_NAME.name
     step_cap = lerobot_api.ENSURE_SAFE_GOAL_POSITION
     assert step_cap.status == "VERIFIED" and lerobot_api.PIN in step_cap.source
     for word in ("ValueError", "TypeError", "present", "NaN"):
         assert word in step_cap.note, word
-    # the words the simulated bus fails in, and the model number its handshake prints
-    assert lerobot_api.STS3215_MODEL_NUMBER.name.endswith(f" {lerobot_api.STS3215_MODEL}")
+    # the words a bus fails in
     from roboglot_lerobot import follower
 
     sync = lerobot_api.BUS_SYNC_READ_ERROR
     assert sync.name.startswith("Failed to sync read '") and "sync write" in sync.note
     # serialport-rs's words for a reply that never came, and rustypot's for a packet that never
-    # went out, which the simulated bus fails in
+    # went out
     assert (follower.NO_STATUS, follower.NOT_SENT) == ("Operation timed out", "Timeout error")
     for result in (follower.NO_STATUS, follower.NOT_SENT):
         assert f"`{result}`" in sync.note, result
@@ -696,10 +630,6 @@ def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
     assert f"SOFollower.bus is a {follower.BUS_CLASS}" == lerobot_api.SO_BUS.name
     assert "is not connected. Run `.connect()` first." in lerobot_api.NOT_CONNECTED.note
     assert "is already connected." in lerobot_api.NOT_CONNECTED.note
-    # the finger meshes the simulator cuts pads from are files the pin fetches
-    for mesh in (so_arm100_api.FIXED_FINGER_MESH, so_arm100_api.MOVING_JAW_MESH):
-        assert mesh in so_arm100_api.FINGER_MESHES.name
-        assert f"assets/{mesh}.stl" in so_arm100_api.FILES
 
 
 def test_the_policy_refs_are_read_at_the_release_a_policy_server_installs() -> None:
@@ -911,20 +841,6 @@ def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_i
         "GPU_IN_CONTAINER",
     }
     assert "never created an Inference Endpoint" in (api.__doc__ or "")
-
-
-def test_the_arm_models_zero_and_sign_cite_lerobot_at_its_pin_and_leave_out_the_gripper() -> None:
-    """JOINT_ZERO and JOINT_SIGN follow LeRobot's kinematics helper. That is an upstream fact,
-    so it is a VERIFIED ref at LeRobot's pin (ADR-0022) and not a path in prose. Both are about
-    the five arm joints only: the model's gripper hinge is not zeroed at its middle, LeRobot's
-    gripper is 0..100, and GRIPPER_MAP is what places it."""
-    kinematics = lerobot_api.KINEMATICS_DEG2RAD
-    assert kinematics.status == "VERIFIED" and lerobot_api.PIN in kinematics.source
-    for ref in (so_arm100_api.JOINT_ZERO, so_arm100_api.JOINT_SIGN):
-        assert "KINEMATICS_DEG2RAD" in ref.note, ref
-        assert "five arm joints" in ref.note and "GRIPPER_MAP" in ref.note, ref
-        assert "every joint" not in ref.note, ref
-    assert "GRIPPER_MAP" in so_arm100_api.NEW_CALIB_ZERO.note
 
 
 def test_huebot_reads_robotds_protocol_at_the_microducks_pin_and_its_own_side_at_the_maker() -> (

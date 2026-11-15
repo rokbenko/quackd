@@ -30,7 +30,7 @@ from typing import Any
 
 PREFIX = "/api/v1"
 
-#: What OpenRouter's preflight answered on 2026-10-06, for the browser test.
+#: What OpenRouter's CORS preflight answered on 2026-10-06.
 CORS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET,OPTIONS,PATCH,DELETE,POST,PUT",

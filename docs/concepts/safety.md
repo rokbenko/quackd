@@ -7,7 +7,7 @@ A biped falls in 0.3 s; an LLM answers in 3 s. Everything here follows from that
 | Layer | Owner | What it guarantees |
 |---|---|---|
 | Body | the robot's own controller | **Whatever that particular body actually offers, which is not the same everywhere.** The Microduck's `robotd` gives a clamp that holds every joint target inside its actuator's travel, fall detection and a **deadman**: velocity goes to zero when `robot.move` notifications stop. An Open Duck Mini v2 gives *none of those*: its deadman is Roboglot's own daemon on the Pi and the human watching is its only fall detector (details under "On hardware"). The body is still the sole safety authority: clients send intents, never motor writes. What each body offers is declared in its manifest's `safety_authority`, and `roboglot doctor` prints what the robot itself reported (see "On other bodies"). |
-| Judgement | the pilot, held to it by Roboglot `Executor` | Nothing that moves the body runs until the LLM has said, against the robot's datasheet, whether the task fits the body at all. It is the LLM's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A **coordinator** team's member is a state machine with no pilot to ask, so it is never asked: a role's `needs` against a datasheet is what that kind of team has instead. A **pilot** team's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/team.md](../guides/team.md)). In `roboglot drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
+| Judgement | the pilot, held to it by Roboglot `Executor` | Nothing that moves the body runs until the LLM has said, against the robot's datasheet, whether the task fits the body at all. It is the LLM's own judgement; what the executor guarantees is that it was made, recorded, and made *before* the first leg moved. A team's member is a whole pilot and is asked exactly as a solo run is, about its own part of the task rather than all of it ([guides/team.md](../guides/team.md)). In `roboglot drive` a person's own command is that judgement, made for the one call it names ([ADR-0066](../adr/0066-a-persons-command-is-the-verdict-for-its-own-call.md)). |
 | Conversation | Roboglot `Executor` | The LLM and MCP clients can only do what the `.glot` allows, as often as the budget allows, with a human in the loop where the contract says so. |
 | Session | Roboglot `Heartbeat` + `KillSwitch` | A dead transport or a worried human ends in a `stop` intent. In a team one kill switch reaches every member's executor, so Ctrl-C stops every body rather than the one in front. In `roboglot drive` an empty Enter or Ctrl-C is the brake, and ends every verb moving the body. |
 
@@ -121,7 +121,7 @@ screen. The record keeps a yes or a no; the file keeps what was typed.
 ## Heartbeat
 
 A task pings `transport.heartbeat()` every 500 ms (`robot.health` on a Microduck, each
-backend's own health call elsewhere, a liveness check in sim). One failure → `stop` intent → abort flag → the loop ends with
+backend's own health call elsewhere, a scripted one on a mock). One failure → `stop` intent → abort flag → the loop ends with
 `outcome: aborted`. Upstream's own rationale: "LLMs stall mid-inference".
 
 ## A detector on another machine
@@ -210,9 +210,8 @@ included, a second press quits at once, on the terms of the paragraph above.
 
 Once a run has closed, a press changes nothing to the end of the process, so the verdict prints
 however many come. It is still somebody saying stop, so a success comes out as exit 130, and
-`roboglot run a && roboglot run b` does not go on to move an arm. What it can still end is a `run.gif`
-being made, which can take minutes on a long run and is left out, and a process still there 5 s
-after its close, which is stuck on something: that press ends it, and says so.
+`roboglot run a && roboglot run b` does not go on to move an arm. What it can still end is a process
+still there 5 s after its close, which is stuck on something: that press ends it, and says so.
 
 **SIGTERM is not one of them.** Roboglot installs a handler for SIGINT and for nothing else, so a
 bare `kill` and a systemd unit's default stop both end a run without the `finally` above ever
@@ -317,8 +316,8 @@ steps 3 · LLM calls 5 (+1 asked again) · tokens 5015+100 · time 5.1 s (LLM 0.
 A fifth failure after the fourth wait ends the run `error`, saying in how many tries, with the
 same counters under its line, and so do an API that asks to be left longer than 120 seconds and
 a wait that would run past what the task's `max_minutes` has left. That is the budget's clock, the wall's on a real robot, and a
-simulator's or a mock's own clock does not move while the loop waits, so there only the schedule
-bounds the waits. The note is said once a run, and each try after it is the log's own line. The
+mock's own clock does not move while the loop waits, so there only the schedule bounds the
+waits. The note is said once a run, and each try after it is the log's own line. The
 decision LLM is left as it was, since a turn it could not decide already goes to the pilot. None
 of this has met a real 429 or 529: it has run against stand-ins of the SDKs' exceptions, and
 against the real openai SDK talking to the stand-in server above.
@@ -329,8 +328,8 @@ whole budget for as long as the vendor's own clock allowed, ten minutes on both 
 is raced against the task's minutes now, as it is against the stop: once they are spent it is
 cancelled, its `llm` record says it failed on the budget, it is not asked again, and the run ends
 on its budget, with the robot put down as at any end. A stop pressed in the same moment wins.
-It is the budget's clock again, so on a simulator or a mock, whose clock stands still while an
-LLM thinks, a call is never cut off this way. No single call has a ceiling of its own, which
+It is the budget's clock again, so on a mock, whose clock stands still while an LLM thinks, a
+call is never cut off this way. No single call has a ceiling of its own, which
 would cut long thinking short and bill the retry twice.
 
 ## When the pilot is unsure
@@ -364,13 +363,12 @@ On the 2026-09-23 bench a pilot a person had just cleared assessed the same doub
 `infeasible`, and the run ended on a question somebody had already answered. Over MCP nobody
 sets that answer: the LLM asks you in the chat and records its own verdict again.
 
-**`--yes` answers that question with go**, the same way it answers a confirm gate, and
-`roboglot record` always passes it. So a `--yes` in a script no longer only skips
-confirmations: it also clears the pilot's own doubt about whether the task suits the body.
-Its pilot, like one cleared by a team's standing answer or a pipe, is not told a person read
-the doubt, because nobody did: it hears that the run was started to go ahead without asking
-anybody, and, as after a person's go, that the verbs that move the body now run and it should
-not assess the same doubt again.
+**`--yes` answers that question with go**, the same way it answers a confirm gate. So a
+`--yes` in a script no longer only skips confirmations: it also clears the pilot's own doubt
+about whether the task suits the body. Its pilot, like one cleared by a team's standing answer
+or a pipe, is not told a person read the doubt, because nobody did: it hears that the run was
+started to go ahead without asking anybody, and, as after a person's go, that the verbs that
+move the body now run and it should not assess the same doubt again.
 Over MCP there is no terminal and nothing clears it, so the verdict stays pending and the
 LLM is told to ask the person it is chatting with ([guides/mcp.md](../guides/mcp.md)).
 
@@ -407,7 +405,7 @@ minute patrol and wrote `endurance_min: 45` in the same record, on a body whose 
 nobody has ever published, and the duck walked until its step budget ran out.
 
 So a `feasible` is now held to the body's own datasheet before it is recorded, by the same
-function that holds another robot's bid at the coordinator. A need the sheet does not meet, or
+function that says which other body could do a task. A need the sheet does not meet, or
 does not publish, is refused and named, and the pilot is told the three ways on: `infeasible`
 if that need decides the task, `uncertain` if a person could know the figure, or a corrected
 need if it asked for more than the task turns on. An `uncertain` and an `infeasible` are left
@@ -431,7 +429,7 @@ A body with no datasheet at all gets neither floor: its prompt tells it to treat
 physical limit as not published. And one reading is kinder to a pilot's own sheet than to a
 stranger's: a `work_height_m` against a sheet with no working height band is not held against
 the pilot's own verdict, because the prompt never lists a working height as missing, while the
-coordinator, a team role and the list of bodies that could still refuse it.
+list of bodies that could do the task still refuses it.
 
 Up to 0.13.0 there were two, the zero stopped short of `work_height_m`, and the only
 floor was the one for a body that moves. On the 2026-09-23 bench the pilot of an SO-101, filling
@@ -478,25 +476,6 @@ LeRobot arm with a pose recorded that is a change of behaviour worth knowing bef
 Ctrl-C and walk away: the arm ends the dry run holding itself up, with a line saying so,
 instead of going limp.
 
-## Rehearsing on the arm's simulator
-
-`lerobot:mujoco` runs the arm's real backend over a physics model, and it never touches
-hardware. It imports no LeRobot and opens no port: its follower and its cameras are simulated,
-its address is a calibration file read as a regular file, and an address shaped like a serial
-port, `COM5` or `/dev/ttyACM0`, is refused on its shape before anything looks at it, because on
-Windows a port answers to its name in any directory. `roboglot preflight`, which drives a robot
-through task file after task file and seed after seed with nobody watching, refuses any robot
-that is not a simulator before building it, so a typo cannot send a rehearsal to the arm
-([adapters/lerobot/README.md](../adapters/lerobot/README.md#rehearsing-a-task-file-roboglot-preflight)).
-`roboglot doctor` and `roboglot robot release` say it is the simulator rather than asking you to
-support or hold an arm that is not there.
-
-A rehearsal that passes is not a safety claim about the arm. The simulated servos do what the
-arm's do with a goal, a step cap and a clamp, but the dynamics are the model's and the joint
-signs, zeros and camera positions are assumed, so a task that holds on the simulator can still
-drop, stall or collide on the desk. Rehearse at home, then `--dry-run` at the bench, then run it
-with a hand near the switch.
-
 ## On hardware
 
 One of the ten bodies has run on hardware, on two afternoons. On 2026-09-15 a LeRobot SO-101
@@ -512,13 +491,12 @@ what the first day did not measure, and most of what this page would want to kno
 whether the holding band is right, what a joint reads after ten minutes of work, and whether a stall
 is caught on purpose rather than by luck. The other nine bodies have not been on hardware at all.
 
-If the body is a Microduck, run the contract in the physics simulator first
-(`--robot microduck:mujoco`): it is the only place Roboglot can show you a body that undershoots,
-refuses and falls over, and nothing there can be hurt. If it is the LeRobot arm, rehearse it on
-the arm's simulator first (`roboglot robot twin`, then `roboglot preflight`), which runs the code
-that will drive the arm and says nothing about how the arm will move. When you do reach the
-robot, start with `--dry-run` every time, then a `.glot` whose `allow` list is the smallest thing that could work,
-then widen it. **You are responsible for your robot.**
+Run the contract on the body's mock first, `--robot microduck:mock` or `--robot lerobot:mock`:
+it shows the allowlist, the gates and the budgets working, and nothing about how the robot will
+move. The arm's mock is its real backend over an arm in memory, so the connect, the travel read
+off a calibration, the refusals past it and the rest move are the code that will drive the arm.
+When you do reach the robot, start with `--dry-run` every time, then a `.glot` whose `allow` list
+is the smallest thing that could work, then widen it. **You are responsible for your robot.**
 
 **There are two places where Roboglot takes torque off a robot, and only a person can ask for
 either.** The first is `roboglot run --by-hand`, which releases a LeRobot arm at the start of a
@@ -554,8 +532,8 @@ Only the arm. Only when a person asks: `--yes` skips the question before the con
 else, so the questions about a missed fold are still put wherever a terminal can ask them, each
 needing its own Enter. With no terminal a fold that misses keeps torque on and nothing more is
 tried, an arm with no rest pose is refused, `--yes` or not, and without `--yes` the command
-refuses before it connects. The questions are never put on a dry run, over MCP, in a team, on
-the simulator or over an arm that stopped answering. And never a verb or a tool. None of this
+refuses before it connects. The questions are never put on a dry run, over MCP, in a team or
+over an arm that stopped answering. And never a verb or a tool. None of this
 has run on an arm yet. On 2026-09-23 the power switch was the only other way to put down an arm
 a run had left energised, and every run that got to its end that afternoon finished there
 ([adapters/lerobot/README.md](../adapters/lerobot/README.md#the-torque-rule)).
@@ -708,8 +686,7 @@ and a read that got the bus just before a write says nothing about what that wri
   asked:** a segment the pilot calls goes ahead on the pilot's word and a yes nobody said, and
   the record says the gate was allowed without naming anybody
   ([above](#who-the-record-says-was-asked)). Over MCP both verbs need `serve-mcp --yes`, so
-  Roboglot asks nobody before any segment there, and `roboglot preflight` clears every segment of a
-  rehearsal the same way, on the simulator alone. `--controller vla` refuses `--yes`, and a run
+  Roboglot asks nobody before any segment there. `--controller vla` refuses `--yes`, and a run
   with no terminal to ask on, since its verdict is a person's. Watch every segment, and keep
   `stop` within reach: a stop from anywhere, the heartbeat's included, ends a segment before it
   holds the arm.
@@ -735,9 +712,9 @@ and a read that got the bus just before a write says nothing about what that wri
   ([guides/policies.md](../guides/policies.md),
   [SECURITY.md](../../SECURITY.md)). A server that stops answering ends the segment with the arm
   held, starved on the arm once what was queued has played out, after 1 s, or 5 s between
-  chunks with `--no-async-chunks`, and on the client's own deadline on the simulator, or on the
-  arm where a queue outlasts that deadline. What no bench has measured yet is how fast its loop
-  runs on the real bus while the same laptop infers.
+  chunks with `--no-async-chunks`, or on the client's own deadline where a queue outlasts that
+  deadline. What no bench has measured yet is how fast its loop runs on the real bus while the
+  same laptop infers.
 - **`--accept-other-frame` changes what drives the arm, never where it may go.** Given beside
   `--policy-url`, it lets a policy connect whose learned readings lie outside this arm's
   calibrated travel, one trained on an arm calibrated another way, which the connect otherwise
@@ -910,8 +887,8 @@ you ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
 
 ## What Roboglot does not protect against
 
-An LLM that is *allowed* to `walk` can walk into a wall; the sim has walls, your living
-room has stairs. The allowlist is your tool: a `.glot` for a new space should start small.
+An LLM that is *allowed* to `walk` can walk into a wall, or down your stairs. The allowlist is
+your tool: a `.glot` for a new space should start small.
 
 The feasibility verdict is the LLM's own guess about the world, weighed against numbers
 that carry confidence labels of their own, and neither is a measurement. A wrong `feasible`
@@ -926,8 +903,7 @@ play. What a part changes is what the pilot chooses to do with them, so a played
 a plain one might have stopped, and its rules about people, mimes and the record are prose that
 no gate reads. A played run's ending and any note it keeps go into the robot's memory like any
 other run's, so `--no-memory` on `roboglot run` keeps a session of parts out of what the robot
-remembers. `roboglot record` has no such flag and always keeps them, in the Microduck simulator's
-memory unless `ROBOGLOT_MEMORY_DIR` points it elsewhere.
+remembers.
 
 There is one more thing to know about. A robot's memory
 ([guides/memory.md](../guides/memory.md)) is text an LLM wrote, kept on disk, and handed to the
@@ -939,17 +915,5 @@ under") will keep telling itself so until somebody deletes the line. That is the
 of the feature and also its whole risk, which is why the file is plain text you can read,
 `roboglot memory show` prints exactly what the pilot was told, `roboglot memory clear` forgets
 it, and `--no-memory` runs as if it were never there.
-
-There is a second thing that is not about the body. `--robot microduck:mujoco` downloads an
-MJCF, 38 meshes and two ONNX policies from GitHub and the Hugging Face Hub the first time it
-runs, into `~/.roboglot/cache`, and then runs those policies in Roboglot's own process. What guards
-that: the commit and the revision are pinned in `adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py`, every file is
-checked against a sha256 recorded when it was read and a mismatch is a refusal, and the tarball
-is unpacked by name against a fixed list rather than by whatever it contains. What does not:
-`ROBOGLOT_MICRODUCK_ASSETS` points Roboglot at a checkout of your own, and there a file that differs
-from the pin is a warning and the run continues, which is deliberate, because a newer export is
-what somebody with a checkout usually wants. The state says which you got
-(`extras.model_pinned`), so the transcript records it. Nothing in this path reaches a robot: the
-physics backend has no address and drives nothing outside the process.
 
 Report anything that lets an LLM bypass the executor — see [`SECURITY.md`](../../SECURITY.md).

@@ -29,9 +29,6 @@ roboglot doctor --robot huebot:jsonrpc --address tcp://127.0.0.1:9870
 | `huebot:mock` | the core's scripted body, with Huebot's manifest and verbs | ✅ every verb runs offline in the test suite |
 | `huebot:jsonrpc` | the robot, over the shim its maker is writing for it | 🧪 robotd's method names, VERIFIED at the Microduck's pin, exercised against a fake shim over loopback, **never run against Huebot's shim** |
 
-There is no simulator: the Microduck's `sim2d` and `mujoco` backends model the Microduck's
-body and gait, which are not Huebot's.
-
 Huebot is a body of the Microduck's family
 ([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)): its package is one
 record, [`body.py`](../../../adapters/huebot/src/roboglot_huebot/body.py), over the verbs and the

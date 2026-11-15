@@ -55,7 +55,6 @@ User={user}
 {groups}WorkingDirectory={where}
 Environment=PYTHONUNBUFFERED=1
 Environment=ROBOGLOT_ONBOARD_DIR={where}
-Environment=ROBOGLOT_CACHE_DIR={where}/cache
 Environment=ROBOGLOT_MEMORY_DIR={where}/memory
 # the brain's key and nothing else, in a file only {user} can read
 EnvironmentFile=-{where}/robot.env

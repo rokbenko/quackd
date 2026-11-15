@@ -5,8 +5,7 @@ asking, and never says `hello`, which it does not answer (`mapd.MAPD_NO_HELLO`).
 where the robot is by that map: mapd's newest pose, carried on to now by the odometry robotd has
 sent since the robot state mapd computed it from, so it moves at robot.state's rate and not at
 mapd's, in a frame recognised again from one session to the next by its first stops
-(`fingerprint`), since nothing on the wire names a map. The simulators' stand-in keeps to the same
-numbers (`sim_map_params`).
+(`fingerprint`), since nothing on the wire names a map.
 
 Every name it speaks was read from a branch and from no release (`mapd_upstream_api`), so all of it
 is UNVERIFIED until a release carries mapd and a robot has answered it.
@@ -28,7 +27,6 @@ from typing import TYPE_CHECKING, Any
 
 from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
 from roboglot.space.pose import Fix, FrameRef, Pose2D, wrap_angle
-from roboglot.space.simmap import SimMapParams
 from roboglot.space.source import SpatialError, SpatialSourceBase
 from roboglot.transport.base import TransportError
 from roboglot_microduck import mapd_upstream_api as mapd
@@ -207,8 +205,7 @@ class _Link:
         self._next_id = 1
 
     async def open(self) -> None:
-        # robotd's own parse, so an address means the same on both links; imported here, since
-        # the simulators import this module for `sim_map_params` alone
+        # robotd's own parse, so an address means the same on both links
         from roboglot_microduck.transports.jsonrpc_unix import READER_LIMIT, parse_address
 
         kind, host, port = parse_address(self.address)
@@ -856,23 +853,4 @@ def _drifted(a: Pose2D, b: Pose2D) -> bool:
     return (
         math.hypot(b.x - a.x, b.y - a.y) > mapd.STILL_SPEED_MPS * mapd.SETTLE_S
         or abs(wrap_angle(b.yaw - a.yaw)) > mapd.STILL_TURN_RPS * mapd.SETTLE_S
-    )
-
-
-def sim_map_params(footprint_m: float) -> SimMapParams:
-    """The real mapper's numbers for a simulated one, and `footprint_m`, the simulator's own
-    body radius, which the real mapper does not publish."""
-    return SimMapParams(
-        still_s=mapd.SETTLE_S,
-        still_speed_mps=mapd.STILL_SPEED_MPS,
-        still_turn_rps=mapd.STILL_TURN_RPS,
-        period_s=mapd.STREAM_PERIOD_S,
-        reloc_stops=mapd.AGREE_STOPS,
-        gate_m=mapd.CORRECTION_M,
-        gate_rad=math.radians(mapd.CORRECTION_DEG),
-        res_m=mapd.GRID_RES_M,
-        tof_fov_rad=math.radians(up.TOF_FOV_DEG),
-        tof_min_m=mapd.TOF_MIN_M,
-        tof_range_m=mapd.TOF_MAX_M,
-        footprint_m=footprint_m,
     )

@@ -1,6 +1,12 @@
 # ADR-0038: The README hero is a recording of a real run
 
-**Status:** accepted · **Date:** 2026-09-17 · Supersedes [ADR-0013](0013-hero-gif.md)
+**Status:** accepted, amended · **Date:** 2026-09-17 · Supersedes [ADR-0013](0013-hero-gif.md)
+
+**Amended 2026-11-15:** `roboglot-on-off.gif` is deleted, with `hero.gif` and every other
+recording made on a simulator, so the decision below that kept it in the README has nothing left
+to apply to, and neither has the open item of a real LLM recording in a simulator. `lerobot.gif`
+is still the hero and still the one file over the general cap. See the CHANGELOG's Unreleased
+entry.
 
 ## Context
 

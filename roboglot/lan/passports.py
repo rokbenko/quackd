@@ -1,7 +1,7 @@
 """Robot Passport beacons on a LAN: `_robot-passport._tcp.local.`, beside `_roboglot._tcp`.
 
-The roboglot record tells other Roboglot instances which manifest a host fronts; this one tells
-anything at all that a robot with a passport is here, and on which port it serves it
+The `_roboglot._tcp` record tells other Roboglot instances which manifest a host fronts; this
+one tells anything at all that a robot with a passport is here, and on which port it serves it
 (docs/passport/discovery.md). Both registrations go through the same plumbing as
 `announce.py` and `discover.py`, so the same fakes stand in for zeroconf in the tests, and the
 TXT record itself is `roboglot.passport.beacon`'s, which has no network library in it.

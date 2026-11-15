@@ -342,11 +342,9 @@ def said_past(value: float, shown_lo: float, shown_hi: float) -> str:
 
 # ── cameras ─────────────────────────────────────────────────────────────────────────────
 
-MULTI_CAMERA_SPECS = ("lerobot:real", "lerobot:mujoco")
+MULTI_CAMERA_SPECS = ("lerobot:real",)
 """The bodies that read more than one `--camera-url`. Every other `make()` refuses a
-second one rather than opening the first and silently dropping the rest. The arm's simulator
-is here because it renders one view per named url, so a task that runs on the arm's cameras
-rehearses on the same flags."""
+second one rather than opening the first and silently dropping the rest."""
 
 
 def who_takes_several() -> str:
@@ -388,7 +386,7 @@ Face Inference Endpoint, by the name Hugging Face gives an endpoint, lower-case 
 and hyphens up to 32 of them. The name is all the flag carries: where the endpoint is and its
 token are in the record this machine's `up` wrote, and nothing else says either."""
 
-POLICY_SPECS = ("lerobot:real", "lerobot:mujoco")
+POLICY_SPECS = ("lerobot:real",)
 """The bodies that hand a segment to a policy served by `roboglot policy serve`. Named here for
 the refusal every other body gives `--policy-url` (`roboglot.adapters.factory`), as
 `MULTI_CAMERA_SPECS` is for a second camera: an adapter whose `make()` takes no `policy` is
@@ -397,11 +395,6 @@ refused rather than handed one it would drop."""
 MAP_SPECS = ("microduck:jsonrpc",)
 """The bodies that read a map the robot keeps of its own (`--map-address`): the Microduck's
 `mapd`, beside its robotd. Named here for the refusal every other body gives the flag
-(`roboglot.adapters.factory`), as `ROOM_SPECS` is for `--room`."""
-
-ROOM_SPECS = ("microduck:sim2d", "microduck:mujoco")
-"""The bodies that lay out a room (`--room`) and keep a simulated map of it
-(`roboglot.space.simmap`). Named here for the refusal every other body gives the flag
 (`roboglot.adapters.factory`), as `POLICY_SPECS` is for `--policy-url`."""
 
 
@@ -539,7 +532,7 @@ class RobotAdapter(Protocol):
     name: str
     """Adapter name: microduck, lerobot, ..."""
     backend: str
-    """Backend name: sim2d, mock, jsonrpc, real, ..."""
+    """Backend name: mock, jsonrpc, real, ..."""
     manifest: RobotManifest | None
     """None until connect()."""
 
@@ -599,11 +592,10 @@ class RobotAdapter(Protocol):
 
 
 def backend_name(transport: Any) -> str:
-    """The backend name: `sim2d` for a bare `Sim2DTransport` and for an adapter over one.
+    """The backend name: `mock` for a bare `MockTransport` and for an adapter over one.
 
-    The prompt's simulator note, the CLI's detector and recorder gating and the pinned
-    `transport` keys in transcripts all key on this string. The note and the recorder ask more
-    than the name, because the Microduck and the LeRobot arm both have a `mujoco`."""
+    The pinned `transport` keys in transcripts, and every check of whether a body is a mock,
+    key on this string."""
     backend = getattr(transport, "backend", None)
     return str(backend) if backend else str(getattr(transport, "name", "unknown"))
 

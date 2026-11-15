@@ -9,11 +9,6 @@ runs/
 # lerobot-find-cameras saves a frame per camera here, pictures of whatever room it is in
 outputs/
 
-# MuJoCo writes this into the working directory, with no way to redirect it, the first time
-# the physics goes non-finite. `test_a_world_that_mujoco_has_reset_under_us_refuses_to_carry_on`
-# makes that happen on purpose, so every test run produces one.
-MUJOCO_LOG.TXT
-
 # python
 __pycache__/
 *.py[cod]
@@ -36,15 +31,12 @@ Thumbs.db
 # the crash dump Git Bash leaves on Windows
 *.stackdump
 
-# upstream assets, never vendored (docs/reference/licenses.md). A real microduck:mujoco run leaves
-# upstream's CC BY-NC-SA 4.0 meshes in ~/.roboglot/cache, and a debugging copy next to the checkout
-# is one `git add -A` from being permanent in a public history. The SO-101's model from
-# SO-ARM100 is Apache-2.0, and it stays upstream all the same.
+# upstream assets, never vendored (docs/reference/licenses.md): a copy of a model, a mesh or a
+# policy's weights next to the checkout is one `git add -A` from being permanent in a public
+# history.
 *.onnx
 *.pt
 *.stl
-robot_walk.xml
-so101_*.xml
 # A learned policy's weights are the user's download under their own licence
 # (docs/guides/policies.md), and `roboglot policy serve` fetches them into the Hugging Face cache,
 # never into the checkout.

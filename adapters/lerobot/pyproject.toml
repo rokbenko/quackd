@@ -28,9 +28,6 @@ sdk = [
   "lerobot[feetech]>=0.7,<0.7.1; python_version >= '3.12'",
   "rustypot>=1.13.1,<1.14; python_version >= '3.12'",
 ]
-# The arm's simulator, `lerobot:mujoco`: MuJoCo on the CPU and nothing of LeRobot's, so it
-# installs on 3.11 as well. The SO-101's model is fetched at run time and never shipped.
-sim = ["mujoco>=3.12,<4"]
 # The policy server's, `roboglot policy serve --policy REPO@REVISION`, in a process of its own and
 # never the arm's: LeRobot with torch, and the extras of every type the server serves that has
 # one, `[smolvla]`, `[pi]` for pi05 and pi0 and `[xvla]`, which bring the transformers their

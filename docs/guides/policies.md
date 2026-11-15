@@ -12,15 +12,14 @@ comes from. What the verbs do and what refuses them is on
 is shaped this way is [ADR-0048](../adr/0048-policies-are-the-arms-executor.md).
 
 > [!WARNING]
-> **Nothing on this page has driven the arm.** Every segment so far has run against the test
-> suite's fake arm and on the arm's simulator. On 2026-09-28 a trained ACT from the Hub,
-> `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, drove a
-> twin of the lab's arm on the simulator through `roboglot policy serve` and `roboglot serve-mcp`,
-> and on 2026-09-29 it drove the twin again under OpenAI's `gpt-6-sol` in a `roboglot run --goal`.
-> SmolVLA loaded on the same laptop and never answered a step in time on its CPU
-> ([below](#smolvla-and-act)), pi05, pi0, GR00T N1.7 and a trained X-VLA have not run, and
-> FLUX 3 Action is not served at all. Rehearse on the simulator first, keep a hand on the arm's
-> power switch the first time a policy drives it, and send back what happened
+> **Nothing on this page has driven the arm.** The test suite runs every segment against a fake
+> arm. On 2026-09-28 a trained ACT from the Hub, `natsuki0000/act-so101-bluecap` at commit
+> `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, served by `roboglot policy serve` on a laptop's CPU,
+> answered Roboglot's own client under `roboglot serve-mcp`, and on 2026-09-29 under OpenAI's
+> `gpt-6-sol` in a `roboglot run --goal`. SmolVLA loaded on the same laptop and never answered a
+> step in time on its CPU ([below](#smolvla-and-act)), pi05, pi0, GR00T N1.7 and a trained X-VLA
+> have not run, and FLUX 3 Action is not served at all. Keep a hand on the arm's power switch the
+> first time a policy drives it, and send back what happened
 > ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md#14-what-to-report)).
 
 ## Two processes, two terminals
@@ -30,24 +29,22 @@ checkpoint is code ([below](#a-checkpoint-is-code)). So there are two:
 
 | | The arm's process | The policy server |
 |---|---|---|
-| Command | `roboglot run`, `roboglot preflight` or `roboglot serve-mcp`, with `--policy-url` | `roboglot policy serve --policy OWNER/NAME@REVISION` |
-| Install | `roboglot[lerobot]` for the arm, `roboglot[lerobot-sim]` for its simulator | `roboglot[lerobot-vla]`: LeRobot, torch and transformers |
-| Python | 3.12 for the arm, 3.11 or newer for the simulator | 3.12 |
+| Command | `roboglot run`, `roboglot drive` or `roboglot serve-mcp`, with `--policy-url` | `roboglot policy serve --policy OWNER/NAME@REVISION` |
+| Install | `roboglot[lerobot]` | `roboglot[lerobot-vla]`: LeRobot, torch and transformers |
+| Python | 3.12 | 3.12 |
 | Owns | the serial bus, the pacing, the step cap, every guard and every stop | the checkpoint, its processors and the inference |
 | Reaches the other | an HTTP client with no torch in it | nothing: it answers on port 9875 |
 
 The arm's process asks the server what it serves before anything connects, checks that the
 policy fits this arm before any motor is energised, and asks for a chunk of goals as each
-segment runs. It never sends a goal it has not checked. On the arm a server that stops
-answering starves the segment, which ends with the arm held. On the simulator, whose clock
-stands still while the loop waits for a chunk, the client's own deadline ends it instead, and
-the segment says the policy raised `PolicyServerError`.
+segment runs. It never sends a goal it has not checked. A server that stops answering starves
+the segment, which ends with the arm held.
 
 ## On the laptop alone
 
-Everything on one machine, the laptop the arm is plugged into, with the policy on its CPU.
-Start on [the arm's simulator](../adapters/lerobot/README.md#the-simulator-lerobotmujoco) rather
-than the arm, since a twin of your arm reaches a server exactly as the arm does.
+Everything on one machine, the laptop the arm is plugged into, with the policy on its CPU. Only
+the arm reaches a server: `lerobot:mock` runs a scripted policy of its own and refuses
+`--policy-url`.
 
 **1. A Python 3.12 environment with the server's extra.** The arm's own 3.12 environment can
 hold it too:
@@ -61,8 +58,7 @@ the Hugging Face Hub's cache, `~/.cache/huggingface/hub` unless you say otherwis
 another disk, set `HF_HUB_CACHE`, which moves that cache and nothing else. Not `HF_HOME`: LeRobot
 looks for an arm's calibration under `$HF_HOME/lerobot/calibration` unless
 `HF_LEROBOT_CALIBRATION` or `HF_LEROBOT_HOME` says otherwise, so an `HF_HOME` set where the arm's
-process runs moves where its calibration is looked for as well, and `roboglot robot twin` could not
-find the lab arm's file under one
+process runs moves where its calibration is looked for as well
 ([the calibration id](../adapters/lerobot/README.md#the-name-you-give-the-arm-is-its-calibration-id)).
 
 **2. Check the checkpoint before you serve it, and bench it twice.** `roboglot policy check
@@ -94,9 +90,12 @@ skipped     17 ticks: the policy declares no --latency-s, so a chunk asked for w
 round trip  median 453.4 ms, p99 515.8 ms, max 515.8 ms over 6 requests
 inference   median 428.9 ms on the server
 latency     515.8 ms or less for 95% of the 7 steps timed, from the request to its chunk back:
-            serve with --latency-s 0.52, so the simulator holds each chunk back as long, and bench
-            again with it
+            serve with --latency-s 0.52, so the arm asks for each chunk in time, and bench again
+            with it
 ```
+
+The last line's advice is worded as Roboglot words it now. The bench printed an older wording
+of the same advice.
 
 A first bench is served with no `--latency-s`, and a segment waits for the first chunk of such a
 policy in the tick that asked for it, as it waits for any chunk asked for with nothing left to
@@ -104,9 +103,8 @@ play. Every tick that passes while it waits is skipped, which on the arm is a ti
 nothing while the arm holds still, and here those are the 17 ticks the first chunk took to come
 back. Every chunk after it was asked for with half the last one still queued, and landed while
 the arm played that half. Skipped ticks are not counted as starved: a starved tick is one with a
-chunk on its way and nothing left to play. The latency the bench suggests is what the simulator
-holds each chunk back by, so that a rehearsal there plays what the arm would. **Bench it
-again**, served with that latency and with the `--fps` the first bench needed:
+chunk on its way and nothing left to play. **Bench it again**, served with the latency it
+suggests and with the `--fps` the first bench needed:
 
 ```bash
 roboglot policy check --policy natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd --fps 30 --bench --latency-s 0.52
@@ -183,16 +181,14 @@ A checkpoint that took `--fps` to be checked takes it to be served, and without 
 refuses as the check did. It prints where it serves, `http://127.0.0.1:9875`, the token file it
 wrote or read, and the rate and where that came from, and serves until Ctrl+C. The first time,
 it writes a token to `~/.roboglot/policy.token`, readable by you alone where the OS allows, and
-every client on the same machine reads it from there. `--latency-s` matters on the simulator,
-whose clock stands still while the policy thinks, and which holds each chunk back that long so
-it lands where it would have on the arm. The time `manipulate` is given there is sized from that
-latency, so a policy that answers more slowly than it declares can run the verb out of time,
-and the timeout then says so, with how long a request took and the latency declared.
+every client on the same machine reads it from there. `--latency-s` decides how early a segment
+asks for the next chunk: once what is left of the last is down to half of it or to twice the
+ticks that latency comes to, whichever is more.
 
 **4. Point a run at it**, in the first terminal:
 
 ```bash
-roboglot run task.glot --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
+roboglot run task.glot --robot arm-01 --policy-url http://127.0.0.1:9875 --llm openai
 ```
 
 `127.0.0.1` and not `localhost`: the client refuses `localhost`, whose lookup costs about two
@@ -218,28 +214,14 @@ there, and the tunnel up?
 its calibrated travel than the slack a reading is forgiven refuses the segment before the policy
 is asked for anything, and the refusal ends `Move shoulder_lift inside its travel first`, naming
 the joint: a joint out there is left out of every goal a policy sends, so the policy could never
-move it. A twin of the lab's arm starts that way. Its rest pose was recorded folded, past what
-its calibration lets `shoulder_lift` be driven to
-([ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)) and past the model's stop as
-well, so the twin starts with that joint settled just off the stop, clear of its table
-([the arm's page](../adapters/lerobot/README.md#running-it)), and its first `manipulate` is refused.
-Over MCP on 2026-09-28, with `scripted:sweep` served:
-
-```
-do refused: shoulder_lift reads -99.4, outside its calibrated travel of -84.2..84.2, so the policy was not started. A joint outside its travel is left out of every goal a policy sends, because the one goal its servo takes there is the end of its travel, and the policy could never move it. Move shoulder_lift inside its travel first
-```
-
-A pilot that can call `move_joints`, an LLM under `--controller llm` or an MCP client, moves the
-joint inside first, as that run did, to `shoulder_lift` -40, `elbow_flex` 40 and `wrist_flex` 0,
-and its two segments then ran. The same run made in-process ended with the rest move parking the
-joint at the edge of its travel, in the pose the twin settled to there, and the close letting it
-go. A move that takes the arm further from its fold can still end with the rest move setting the
-gripper down on the table short of that pose, and the close then keeps torque on
-([the arm's page](../adapters/lerobot/README.md#running-it)). `--controller vla` only ever calls
-`manipulate`, so it cannot move the joint in, and its run ends in failure, in the verb's own
-words. The lasting fix is to calibrate the arm again folded, so the fold lies inside
-its travel, which is the bench item in [PLAN.md](../../PLAN.md) that reads the calibrated value at
-each of the arm's stops.
+move it. The lab's arm rests that way: on 2026-09-23 its rest pose had `shoulder_lift` folded
+about 20 degrees past the floor of its calibrated travel
+([ADR-0045](../adr/0045-a-rest-pose-the-calibration-cannot-reach.md)), so a `manipulate` from
+that fold is refused. A pilot that can call `move_joints`, an LLM under `--controller llm` or an
+MCP client, can move the joint inside first. `--controller vla` only ever calls `manipulate`, so
+it cannot move the joint in, and its run ends in failure, in the verb's own words. The lasting
+fix is to calibrate the arm again folded, so the fold lies inside its travel, which is the bench
+item in [PLAN.md](../../PLAN.md) that reads the calibrated value at each of the arm's stops.
 
 A task file that means to use the policy allows `manipulate`, and a `glot: 3` file can list the
 subtasks it may be told, how long each segment runs and how long they run in all
@@ -253,10 +235,9 @@ page, and under `--controller vla` each line you type is its one instruction
 ([guides/drive.md](drive.md#a-vla-pilot-a-line-at-a-time)).
 
 **What only the arm can tell you** is how fast the policy loop runs on the real bus while the
-same laptop's CPU is inferring. Nothing timed on the simulator is a rate, because its clock is
-lockstep. `check --bench` measures the server and the wire, and after a run on the arm the
-`policy` block of its `summary.json` says what the loop achieved: its ticks, the late ones, the
-ones with nothing to send, the ticks a second and the round trip.
+same laptop's CPU is inferring. `check --bench` measures the server and the wire, and after a run
+on the arm the `policy` block of its `summary.json` says what the loop achieved: its ticks, the
+late ones, the ones with nothing to send, the ticks a second and the round trip.
 
 ## On a rented GPU
 
@@ -297,7 +278,7 @@ which measures the round trip a segment will see, and run as on the laptop:
 
 ```bash
 roboglot policy check --policy-url http://127.0.0.1:9875 --bench
-roboglot run task.glot --robot arm-01-sim --policy-url http://127.0.0.1:9875 --llm openai
+roboglot run task.glot --robot arm-01 --policy-url http://127.0.0.1:9875 --llm openai
 ```
 
 A tunnel that drops mid-segment ends the segment with the arm held, and `manipulate` fails,
@@ -374,7 +355,7 @@ are quoted, every token taken out of them.
 
 ```bash
 roboglot policy check --policy-url hf:arm-smolvla --bench
-roboglot run task.glot --robot arm-01-sim --policy-url hf:arm-smolvla --llm openai
+roboglot run task.glot --robot arm-01 --policy-url hf:arm-smolvla --llm openai
 ```
 
 Each reads the endpoint from Hugging Face's API first, one request with your token, and sends
@@ -461,12 +442,10 @@ trained with temporal ensembling is asked every tick instead, and the server ref
 a GPU, because it has to answer inside a tick. On 2026-09-28 an ACT trained on an SO-101 and
 published on the Hub, `natsuki0000/act-so101-bluecap` at commit
 `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, answered a step in about two thirds of a second on
-this project's laptop, an Intel Core i5-10210U with no GPU, and drove a twin of the lab's arm
-through two 10 s segments over `roboglot serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that
-twin with `roboglot run --goal` and `--policy-url`, handed the same ACT two more and declared
-failure on seeing no blue cap, since the simulator's table holds a red cube and a pen. Those runs
-prove the plumbing, and nothing about whether it would do its task on an arm. On 2026-10-25 the
-same ACT answered a step there in about half a second (the benches above).
+this project's laptop, an Intel Core i5-10210U with no GPU, served by `roboglot policy serve` to
+Roboglot's own client. On 2026-10-25 the same ACT answered a step there in about half a second
+(the benches above). That proves the plumbing, and nothing about whether it would do its task on
+an arm.
 
 **SmolVLA wants a GPU.** It is a small vision-language-action model, about 450M parameters by its
 authors' count, and `lerobot/smolvla_base` is the base you fine-tune on your own episodes. It is
@@ -654,7 +633,7 @@ Black Forest Labs' action model has an official SO-101 checkpoint,
 anywhere.** Roboglot's server refuses its policy type, and what would change that is a spike on a
 rented Linux GPU that has not happened: that `roboglot policy check --bench` holds the checkpoint's
 rate through the tunnel, that its actions stay anchored when Roboglot clips a goal, and that the
-official checkpoint drives the simulator end to end. PLAN.md carries it as an open item. What
+official checkpoint drives an arm end to end. PLAN.md carries it as an open item. What
 running it takes, from Black Forest Labs'
 [SO-101 guide](https://docs.bfl.ai/flux_3/flux3_action_so101) and
 [inference page](https://docs.bfl.ai/flux_3/flux3_action_inference), and from
@@ -764,15 +743,15 @@ issue in the server itself.
 ## What a segment says
 
 A segment's result says why it ended, how long it ran, the chunks, the goals clipped to the
-travel and the ticks a second, and never that the subtask was done. This one is `scripted:sweep`
-driving a twin of the arm, over MCP (`roboglot serve-mcp --robot arm-01-sim --policy-url
-http://127.0.0.1:9875 --yes --no-memory --no-log`), the `summary` `robot_run_verb` returned:
+travel and the ticks a second, and never that the subtask was done. This one is the mock arm's
+own scripted policy, over MCP (`roboglot serve-mcp --robot lerobot:mock --yes --no-memory
+--no-log`), the `summary` `robot_run_verb` returned:
 
 ```
-manipulate 'swing the wrist' ran 10 s and ended because its 10 s ran out (20 chunks, 0 goals clipped to the travel, 10 ticks a second). Nothing on the arm says whether it did the task: look at it before the next step
+manipulate 'swing the wrist' ran 10 s and ended because its 10 s ran out (100 chunks, 0 goals clipped to the travel, 10 ticks a second). Nothing on the arm says whether it did the task: look at it before the next step
 ```
 
-The ticks a second there are on the simulator's clock, which runs as fast as it steps, so they
-say the loop paced the ticks it was asked for and nothing about the arm. Whether the subtask was
-done is the pilot's to judge, from a fresh look at the arm, and with `--controller vla` it is
-yours.
+The seconds and the ticks a second there are on the mock's clock, which moves only when
+something sleeps on it, so they say the loop paced the ticks it was asked for and nothing about
+an arm. Whether the subtask was done is the pilot's to judge, from a fresh look at the arm, and
+with `--controller vla` it is yours.

@@ -28,7 +28,6 @@ from roboglot.glotfile.parser import GlotParseError, glot_from_goal, load_glot, 
 from roboglot.glotfile.schema import Budgets, GlotFile, GlotFrontmatter
 from roboglot.log import play_row
 from roboglot.mcp_server import build_server
-from roboglot.preflight import Rehearsal
 from roboglot.team.pilots import trim_contract
 from roboglot.transport.mock import MockTransport
 from roboglot.verdict import MOVES_THE_BODY
@@ -75,14 +74,10 @@ WORDS = (
 """A count as the examples README spells it in a sentence."""
 
 
-def _played_team(method: str) -> str:
-    """team-hello, at `glot: 4`, playing, with the allocation method given."""
+def _played_team() -> str:
+    """team-hello, at `glot: 4`, playing."""
     text = (TASKS / "team-hello.glot").read_text(encoding="utf-8")
-    return (
-        text.replace("glot: 1", "glot: 4", 1)
-        .replace("method: pilots", f"method: {method}", 1)
-        .replace("persona:", "play: true\npersona:", 1)
-    )
+    return text.replace("glot: 1", "glot: 4", 1).replace("persona:", "play: true\npersona:", 1)
 
 
 def _played(duck: GlotFile) -> GlotFile:
@@ -101,13 +96,7 @@ def _render(spec: RobotSpec, duck: GlotFile, **kw: Any) -> str:
     registry = registry_for(spec, manifest)
     allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
     return build_system_prompt(
-        duck,
-        [registry.view(n) for n in allow],
-        spec.backend,
-        manifest=manifest,
-        adapter=spec.adapter,
-        sees=True,
-        **kw,
+        duck, [registry.view(n) for n in allow], manifest=manifest, sees=True, **kw
     )
 
 
@@ -150,19 +139,11 @@ def test_play_false_parses_at_every_version(version: int) -> None:
     assert parse_glot_text(text, path="t.glot").frontmatter.play is False
 
 
-def test_an_auction_team_cannot_play_and_a_pilot_team_can() -> None:
-    """An auction team's members follow a plan and none of them is a pilot a part could
-    reach, so a task file cannot ask for one there."""
-    with pytest.raises(GlotParseError, match="an auction team has none"):
-        parse_glot_text(_played_team("auction"), path="team-hello.glot")
-    assert parse_glot_text(_played_team("pilots"), path="team-hello.glot").frontmatter.play
-
-
 def test_a_trimmed_pilot_team_contract_keeps_its_play() -> None:
     arm = describe(RobotSpec("lerobot", "mock"))
     plain = load_glot(str(TASKS / "team-hello.glot")).frontmatter
     assert trim_contract(plain, arm).play is False, "a dumped play: false at glot: 1 still passes"
-    played = parse_glot_text(_played_team("pilots"), path="team-hello.glot").frontmatter
+    played = parse_glot_text(_played_team(), path="team-hello.glot").frontmatter
     assert trim_contract(played, arm).play is True
 
 
@@ -179,9 +160,7 @@ def test_play_false_adds_nothing_to_the_prompt(spec: RobotSpec) -> None:
     manifest = describe(spec)
     registry = registry_for(spec, manifest)
     verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow if n in registry]
-    without = build_system_prompt(
-        duck, verbs, spec.backend, manifest=manifest, adapter=spec.adapter, sees=True
-    )
+    without = build_system_prompt(duck, verbs, manifest=manifest, sees=True)
     assert _render(spec, duck, play=False) == without
     assert PLAY_HEADING not in without
 
@@ -191,7 +170,7 @@ def test_a_played_prompt_is_the_plain_one_with_one_section_before_the_task(
     spec: RobotSpec,
 ) -> None:
     """The lasting form of the promise: whatever the prompt says, playing adds one section and
-    changes nothing else, last before the task file and after every simulator note."""
+    changes nothing else, last before the task file."""
     duck = _goal(spec)
     plain, played = _render(spec, duck), _render(spec, duck, play=True)
     assert played.count(f"\n{PLAY_HEADING}\n") == 1
@@ -236,7 +215,7 @@ def test_a_played_hello_world_reads_what_its_run_keeps_and_says() -> None:
     the plain one plus the section. hello-world allows `quack` and no `say`, so its part gives
     its lines with `quack`, which maps them to a tone as the Microduck's `say` does: the section
     follows the task's verbs, not the body's."""
-    spec = RobotSpec("microduck", "sim2d")
+    spec = RobotSpec("microduck", "mock")
     duck = load_glot(str(TASKS / "hello-world.glot"))
     played = _render(spec, duck, play=True)
     assert PLAY_HEADING in played and "remember" not in played.lower()
@@ -261,7 +240,7 @@ def test_a_body_that_cannot_travel_is_told_how_to_play_going_somewhere() -> None
         _render(RobotSpec("lerobot", "mock"), _goal(RobotSpec("lerobot", "mock")), play=True)
     )
     duck = _section(
-        _render(RobotSpec("microduck", "sim2d"), _goal(RobotSpec("microduck", "sim2d")), play=True)
+        _render(RobotSpec("microduck", "mock"), _goal(RobotSpec("microduck", "mock")), play=True)
     )
     assert "This body cannot travel" in arm and "mobility none" in arm
     assert "This body cannot travel" not in duck, "a body that walks plays going somewhere itself"
@@ -273,7 +252,7 @@ def test_a_body_that_cannot_travel_is_told_how_to_play_going_somewhere() -> None
         (RobotSpec("lerobot", "mock"), True, True, True),
         # the same arm on a task that leaves `move_joints` out sets no pose joint by joint
         (RobotSpec("lerobot", "mock"), False, True, False),
-        (RobotSpec("microduck", "sim2d"), True, False, False),
+        (RobotSpec("microduck", "mock"), True, False, False),
         # an arm on a wheeled base sets its poses joint by joint too, and goes where it likes
         (RobotSpec("xlerobot", "mock"), True, False, True),
         # unless the task leaves its `move_joints` out
@@ -309,7 +288,7 @@ def test_the_lines_sentence_follows_the_verbs_the_task_allows() -> None:
     """Every safe verb of each body is offered here, so the Microduck's goal offers `say`, which
     the section names over `quack`, and the arm, which has neither, cannot speak at all."""
     duck = _section(
-        _render(RobotSpec("microduck", "sim2d"), _goal(RobotSpec("microduck", "sim2d")), play=True)
+        _render(RobotSpec("microduck", "mock"), _goal(RobotSpec("microduck", "mock")), play=True)
     )
     arm = _section(
         _render(RobotSpec("lerobot", "mock"), _goal(RobotSpec("lerobot", "mock")), play=True)
@@ -431,48 +410,6 @@ async def test_the_tools_are_the_same_played_or_not(hello_glot: GlotFile, tmp_pa
     played, _ = await _run(hello_glot, tmp_path / "a", play=True)
     plain, _ = await _run(hello_glot, tmp_path / "b")
     assert played.tools[0] == plain.tools[0]
-
-
-@pytest.mark.parametrize(
-    ("file_play", "flag", "said"),
-    [
-        (False, True, {"on": True, "from": "--play"}),
-        (True, False, {"on": False, "from": "--no-play"}),
-        (True, None, {"on": True, "from": "task file"}),
-    ],
-    ids=["play", "no-play", "file"],
-)
-async def test_a_rehearsal_plays_as_a_run_of_the_same_file_would(
-    tmp_path: Path, file_play: bool, flag: bool | None, said: dict[str, Any]
-) -> None:
-    """`preflight` builds its runs itself, so its flag has to reach each one's `RunConfig` the
-    way `run`'s does. On the arm's mock rather than its simulator, which a machine without
-    MuJoCo cannot build: what is checked is the record, not the physics."""
-    lookout = (TASKS / "lerobot-lookout.glot").read_text(encoding="utf-8")
-    if file_play:
-        lookout = re.sub(r"^glot: \d+$", "glot: 4\nplay: true", lookout, count=1, flags=re.M)
-    path = tmp_path / "lerobot-lookout.glot"
-    path.write_text(lookout, encoding="utf-8")
-    spec = RobotSpec("lerobot", "mujoco")
-    rehearsal = Rehearsal(
-        spec=spec,
-        manifest=describe(spec),
-        pilot=lambda _duck: Script(),
-        seeds=1,
-        connect_cycles=0,
-        runs_dir=tmp_path / "runs",
-        play=flag,
-    )
-    rehearsal._build = lambda *_a: LeRobotAdapter(  # type: ignore[method-assign]
-        LeRobotMock(rest_pose=dict(REST))
-    )
-    report = await rehearsal.file(str(path))
-    assert not report.problems and len(report.runs) == 1, report.public()
-    (transcript,) = (tmp_path / "runs").rglob("transcript.jsonl")
-    start = _start(transcript)
-    assert start["play"] == said
-    assert (PLAY_HEADING in start["system_prompt"]) is said["on"]
-    assert start["contract"]["play"] is file_play, "the file's own word, whatever the flag"
 
 
 ARM_TASK = """---
@@ -611,17 +548,12 @@ async def test_an_mcp_part_reads_its_poses_off_the_verbs_the_task_allows(tmp_pat
 # ── the command line ────────────────────────────────────────────────────────────────────
 
 
-def test_play_is_a_flag_of_run_record_and_preflight_and_not_serve_mcp() -> None:
+def test_play_is_a_flag_of_run_and_not_serve_mcp() -> None:
     """Over MCP the client's own prompt frames the pilot and a played file says so itself; a
     session-wide flag would make every file loaded in it play."""
-    for name in ("run", "record", "preflight"):
-        said = help_text([name, "--help"])
-        assert "--play" in said and "--no-play" in said, name
+    said = help_text(["run", "--help"])
+    assert "--play" in said and "--no-play" in said
     assert "--play" not in help_text(["serve-mcp", "--help"])
-    # preflight has no --goal and rehearses many files, so its help says what it does instead
-    rehearsed = help_text(["preflight", "--help"])
-    assert "--play rehearses every file with a part for its pilot to play" in rehearsed
-    assert "a --goal run plays" not in rehearsed and "off for this run" not in rehearsed
 
 
 def test_a_played_goal_run_says_so_and_records_it(tmp_path: Path) -> None:
@@ -651,21 +583,14 @@ def test_a_played_goal_run_says_so_and_records_it(tmp_path: Path) -> None:
     assert PLAY_HEADING in start["system_prompt"]
 
 
-@pytest.mark.parametrize(
-    "argv",
-    [
-        ["record", "hello-world", "--gif-size", "64"],
-        ["run", "team-hello", "--no-gif", "--no-memory"],
-    ],
-    ids=["record", "pilot-team"],
-)
-def test_play_reaches_every_pilot_a_command_builds(argv: list[str], tmp_path: Path) -> None:
-    """`record` and a pilot team are call sites of their own, so a `--play` that reached only a
-    solo `run` would do nothing on them and say nothing. Every pilot they build reads the
-    section and records `--play`, a team's `team_start` says what its members say, and the
-    header says so before anything moves. Whether the team's scripted members hear each other
-    in time is another test's business, so its outcome is not asserted."""
+def test_play_reaches_every_pilot_a_team_builds(tmp_path: Path) -> None:
+    """A pilot team is a call site of its own, so a `--play` that reached only a solo `run`
+    would do nothing on it and say nothing. Every pilot it builds reads the section and
+    records `--play`, the team's `team_start` says what its members say, and the header says
+    so before anything moves. Whether the team's scripted members hear each other in time is
+    another test's business, so its outcome is not asserted."""
     runs = tmp_path / "runs"
+    argv = ["run", "team-hello", "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--llm", "fake", "--play", "--runs-dir", str(runs)])
     assert result.exit_code in (0, 1), result.output
     assert "play on, from --play" in _flat(result.output), "the header row"
@@ -685,58 +610,12 @@ def test_a_run_that_does_not_play_has_no_play_row(tmp_path: Path) -> None:
     The run has to have started, or a header that was never printed would pass."""
     runs = tmp_path / "runs"
     # its own five steps, which the scripted pilot finishes in: a run that started and succeeded
-    argv = ["run", "hello-world", "--llm", "fake", "--no-memory", "--no-gif"]
+    argv = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
     out = _flat(result.output)
     assert result.exit_code == 0, result.output
     assert "provider fake" in out, "the header was printed"
     assert " play " not in f" {out} ", result.output
-
-
-def test_a_coordinator_team_refuses_play_before_it_warns_of_a_decision_llm(
-    tmp_path: Path,
-) -> None:
-    """The warning that a decision LLM does not apply to a team would otherwise speak of a run
-    the play refusal then stops before it starts."""
-    runs = tmp_path / "runs"
-    argv = ["run", "find-and-kick", "--team", "2", "--llm", "fake", "--play", "--no-memory"]
-    result = runner.invoke(cli.app, [*argv, "--decision-llm", "jev", "--runs-dir", str(runs)])
-    out = _flat(result.output)
-    assert result.exit_code == 1, result.output
-    assert "a coordinator team has no pilot for --play or --no-play to reach" in out
-    assert "does not apply to a team" not in out
-    assert not runs.exists() or not any(runs.iterdir())
-
-
-@pytest.mark.parametrize("flag", ["--play", "--no-play"])
-def test_a_coordinator_team_refuses_either_flag(flag: str, tmp_path: Path) -> None:
-    """A coordinator team has no pilot a part could reach, so either way of asking about one
-    is refused rather than dropped without a word."""
-    runs = tmp_path / "runs"
-    argv = ["run", "find-and-kick", "--team", "2", "--llm", "fake", flag, "--no-memory"]
-    result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
-    assert result.exit_code == 1
-    said = "a coordinator team has no pilot for --play or --no-play to reach"
-    assert said in _flat(result.output)
-    assert not runs.exists() or not any(runs.iterdir())
-
-
-@pytest.mark.parametrize("flags", [[], ["--play"], ["--no-play"]], ids=["file", "play", "no-play"])
-def test_a_coordinator_team_refuses_a_file_that_plays(flags: list[str], tmp_path: Path) -> None:
-    """`--team N` with a task file that plays: the file asked for a pilot nobody would be, and
-    with no pilot there is none for `--no-play` to turn the part off for either, so the file's
-    refusal comes first and no flag lifts it."""
-    runs = tmp_path / "runs"
-    path = tmp_path / "hello.glot"
-    hello = (TASKS / "hello-world.glot").read_text(encoding="utf-8")
-    played = re.sub(r"^glot: \d+$", "glot: 4", hello, count=1, flags=re.M)
-    path.write_text(played.replace("persona:", "play: true\npersona:", 1), encoding="utf-8")
-    argv = ["run", str(path), "--team", "2", "--llm", "fake", *flags, "--no-memory"]
-    result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
-    assert result.exit_code == 1
-    out = _flat(result.output)
-    assert "gives its pilot a part to play, and a coordinator team has no pilot to play it" in out
-    assert not runs.exists() or not any(runs.iterdir())
 
 
 # ── what the header says ────────────────────────────────────────────────────────────────
@@ -908,8 +787,8 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
 
 
 def _live_or_skip() -> None:
-    """Opt-in twice over, as `tests/test_llm_in_the_simulator.py` is: the `live_llm` marker and
-    `ROBOGLOT_LIVE_LLM=1`, then a key, which the CLI would find in `.env`."""
+    """Opt-in twice over: the `live_llm` marker and `ROBOGLOT_LIVE_LLM=1`, then a key, which
+    the CLI would find in `.env`."""
     if os.environ.get("ROBOGLOT_LIVE_LLM") != "1":
         pytest.skip("live LLM tests are opt-in: set ROBOGLOT_LIVE_LLM=1")
     try:

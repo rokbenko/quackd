@@ -10,7 +10,7 @@ and appends to at the end. Two kinds of entry live in it:
 | Kind | Who writes it | Example |
 |---|---|---|
 | **note** | the LLM, with the `remember` tool (or you, with `roboglot memory add`) | `the ball is usually near the left wall` |
-| **episode** | Roboglot itself, at the end of every non-dry run | `find-and-kick: success — ball displaced 0.49 m (4 steps) · search_scan: ball found at bearing 18° left; kick: ball moved 0.49 m` |
+| **episode** | Roboglot itself, at the end of every non-dry run | `open-duck-scout: success — walked up and reported (2 steps) · go_to: reached the ball: ~0.28 m away, bearing +0°; say: said 'ball at 0 degrees left, about 0.3 m' as [chirp]` |
 
 A run that ended `infeasible`, where the pilot judged the task beyond this body and
 nothing moved, is remembered the same way and with the same reason, hint included: the next
@@ -23,18 +23,17 @@ gates are exactly what they were.
 
 ## Where it lives
 
-One JSONL file per robot, keyed by `adapter:backend`, so a simulated duck and a real one
-never share notes (a note about the cartoon arena is wrong for your living room):
+One JSONL file per robot, keyed by `adapter:backend`, so the Microduck's mock and a real
+Microduck never share notes (a note from a run on the mock is wrong for your living room):
 
 ```
-~/.roboglot/memory/microduck-sim2d.jsonl
-~/.roboglot/memory/microduck-mujoco.jsonl
+~/.roboglot/memory/microduck-mock.jsonl
 ~/.roboglot/memory/microduck-jsonrpc.jsonl
 ~/.roboglot/memory/lerobot-mock.jsonl
 ```
 
 The key is the body, not the name you gave it, so two members of one team that are the
-same `adapter:backend` share a file. That is the same rule that keeps `microduck:sim2d` and
+same `adapter:backend` share a file. That is the same rule that keeps `microduck:mock` and
 `microduck:jsonrpc` apart, read the other way round.
 
 **Unless you have registered it.** `roboglot robot add duck-a microduck:jsonrpc` gives that one
@@ -50,12 +49,6 @@ A registered name may not collide with an adapter name or with one of the `adapt
 slugs above, so the two schemes never meet in one file
 ([guides/registry.md](registry.md), [ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)
 amending [ADR-0025](../adr/0025-memory-between-runs.md)).
-
-`microduck:sim2d` and `microduck:mujoco` are the pair that catches people out. They share an
-arena (bar the cartoon's person, who is not in the physics one), a seed and a `.glot` file by
-design, and they still keep separate files, because what a
-pilot learns about how far to walk before kicking comes from the body, and only one of the two
-has a gait.
 
 Override the directory with `--memory-dir` or `ROBOGLOT_MEMORY_DIR`. Turn it off for one run
 with `--no-memory`. The file is plain text, one JSON object per line, meant to be read and
@@ -84,36 +77,30 @@ shows every fact it saved.
 
 Telling the LLM about `remember` in the prompt is not enough for a small local LLM: in
 the runs this feature's contributor did, Qwen 2.5 Coder 14B read the memory block and never
-wrote to it (both cases are in [`assets/transcripts/`](../assets/transcripts/)). What works is
+wrote to it ([design/memory.md](../design/memory.md) records those runs). What works is
 putting the call **inside the numbered strategy** of the `.glot` body, right before the
 declaration (`5. When the ball has moved ≥ 0.3 m, \`remember\` where you found the ball,
 \`quack\` once and declare success.`), plus a short *Memory* section saying what is worth
 keeping. The solo starters do that, except the bring-up lookouts (`xlerobot-lookout`,
 `alohamini-lookout`, `toddlerbot-lookout`, `lerobot-lookout`); `--goal` runs get the same line
-while memory is on, and none under `--no-memory`, which offers no `remember`. `team-kick`
-does not, because a coordinator team's member is a state machine: it never runs the
-deliberation loop and is never offered `remember`. `team-hello` is a team of pilots, whose
-members are whole agent loops with a memory file each, so a note there would work; it does not
-ask for one because it is a radio check. `hello-world` is left alone: it is a smoke test that says "do not do anything
-else". Write your own task files the same way.
-
-A second LLM on a second server says the same thing from the other end. Qwen3-32B-AWQ on
-vLLM, with `remember` sitting in strategy step 5, called it and saved where the ball was. The
-very next run did not call it, which is also right: that fact was already in its prompt, and
-the *Memory* section tells it to skip one the prompt already remembers. Those two runs are the
-only place in this repository where a note written by one run reaches the next one's prompt,
-and both ends are published ([guides/local-llms.md](local-llms.md)).
+while memory is on, and none under `--no-memory`, which offers no `remember`. `team-hello` is a
+team of pilots, whose members are whole agent loops with a memory file each, so a note there would
+work. It does not ask for one because it is a radio check. `hello-world` is left alone: it is a
+smoke test that says "do not do anything else". Write your own task files the same way.
 
 ## The CLI
 
 ```bash
-roboglot memory show                              # the Microduck simulator's memory
+roboglot memory show                              # with one adapter installed, its mock's memory
 roboglot memory show --robot microduck:jsonrpc    # the real duck's
 roboglot memory show --raw                        # the JSONL as is
 roboglot memory add "the charger is under the desk" --tag place
-roboglot memory clear --robot microduck:sim2d     # asks first; --yes to skip
+roboglot memory clear --robot microduck:mock      # asks first; --yes to skip
 roboglot run find-and-kick --no-memory            # one fresh run, file untouched
 ```
+
+A line with no `--robot` takes the one adapter installed here, on its `mock`. Where several are
+installed it is refused, and the refusal lists them.
 
 `roboglot run` names it in the header panel it opens with (`memory  3 notes, 5 earlier runs`
 and the file it came from) so you always know what the pilot was told.
@@ -146,11 +133,11 @@ is read by the next `roboglot run` on the same `adapter:backend`, and the other 
   registered, and what one needs another to know *during* a run it says with `tell` rather
   than through memory, which the other pilot would not read until its next run anyway.
 - **Not written by the scripted pilot.** `--llm fake` has no `remember` in its script,
-  so it accumulates episodes and never a note. Notes have been exercised by two local LLMs
-  on two machines, and by one cloud LLM on a real robot: `gpt-6-astra` called
-  `remember` in seven of its twelve runs on the SO-101 arm on 2026-09-15, and five
-  distinct notes came out of those seven, because the same sentence twice refreshes the
-  first rather than saving a second. The last run of that afternoon read all five back out
-  of its own prompt.
+  so it accumulates episodes and never a note. Notes have been exercised by a local LLM, in
+  the runs [design/memory.md](../design/memory.md) records, and by one cloud LLM on a real
+  robot: `gpt-6-astra` called `remember` in seven of its twelve runs on the SO-101 arm on
+  2026-09-15, and five distinct notes came out of those seven, because the same sentence
+  twice refreshes the first rather than saving a second. The last run of that afternoon read
+  all five back out of its own prompt.
 - **Not trusted.** A note is text the LLM wrote; the executor never reads it. Safety
   lives in the contract, as before ([concepts/safety.md](../concepts/safety.md)).

@@ -166,9 +166,9 @@ the board reports changes the verdict.
 the daemon does not answer. The camera joins whatever body the run drives. It is the primary
 view for a body with no camera of its own, and otherwise an extra view named `host`, which the
 LLM is shown and the detector does not read. The detector is this daemon's YOLO, `yolo@host`,
-on a real body when `/hello` says `detect`, and never on a simulator by itself.
+on a real body when `/hello` says `detect`, and never on a mock by itself.
 `--detector color` keeps the colour detector on the laptop, and `--detector yolo` runs YOLO on
-the laptop instead. `--detector host` asks for this one by name, even on a simulator, and is
+the laptop instead. `--detector host` asks for this one by name, even on a mock, and is
 refused before anything connects when the daemon cannot detect. A call to `/detect` that fails
 gives that frame no detections and a note in the run's log, `go_to` and `search_scan` stop the
 body on it and fail with the reason, and the run never switches detector. The header names both:
@@ -176,16 +176,16 @@ body on it and fail with the reason, and the run never switches detector. The he
 ```
 ┌─ 🦆 find-and-kick ──────────────────────────────────────────────────────────────────────┐
 │ provider  fake (scripted:find-and-kick)                                                 │
-│ robot     microduck:sim2d                                                               │
+│ robot     microduck:mock                                                                │
 │ detector  color_blob on this machine                                                    │
 │ host      127.0.0.1:19874  daemon 0.1.0  camera as an extra view, tegra                 │
-└─ Ctrl-C or q stops the duck. Press it twice to quit at once. ───────────────────────────┘
+└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
 ```
 
-That was the cartoon duck against this daemon started with `--camera fake` on Windows, with a
-board made of files and no ultralytics. A simulator keeps the colour detector, and the duck has
-a camera of its own, so the board's is an extra view. `roboglot serve-mcp` takes `--host`,
-`--host-token` and `--detector` the same way, for one robot.
+That was the Microduck's mock, with `--no-memory`, against this daemon started with
+`--camera fake` on Windows, with a board made of files and no ultralytics. A mock keeps the
+colour detector, and the duck has a camera of its own, so the board's is an extra view.
+`roboglot serve-mcp` takes `--host`, `--host-token` and `--detector` the same way, for one robot.
 
 ## Try it on a laptop first
 

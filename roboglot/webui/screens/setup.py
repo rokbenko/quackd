@@ -113,7 +113,7 @@ def _robot() -> None:
         widgets.write("robot", f"{adapter}:{backend}")
         if adapter not in here:
             st.warning(f"This adapter is not installed: {catalog.install_line(row)}")
-    if catalog.drives(adapter) and not catalog.is_simulated(backend):
+    if catalog.drives(adapter) and not catalog.is_mock(backend):
         _connect(adapter, backend, source == "registered")
 
 

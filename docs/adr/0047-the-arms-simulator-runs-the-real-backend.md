@@ -1,6 +1,14 @@
 # ADR-0047: The arm's simulator runs the real backend
 
-**Status:** accepted · **Date:** 2026-09-27 · Amends [ADR-0030](0030-mujoco-physics-backend.md) (whose MuJoCo backend was the Microduck's alone) and [ADR-0016](0016-team-lockstep-clock.md) (the lockstep clock, now with a participant per sleep, and the waiter fix found on the way) · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (what the simulator reproduces of the arm's servos, and what it only assumes) · Implemented in `adapters/lerobot/src/roboglot_lerobot/sim/`, `roboglot/preflight.py`, `roboglot robot twin` in `roboglot/cli.py`, and `.github/workflows/lerobot-sim-assets.yml` ([page](../adapters/lerobot/README.md#the-simulator-lerobotmujoco), [first run](../adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator))
+**Status:** superseded · **Date:** 2026-09-27 · Amends [ADR-0030](0030-mujoco-physics-backend.md) (whose MuJoCo backend was the Microduck's alone) and [ADR-0016](0016-team-lockstep-clock.md) (the lockstep clock, now with a participant per sleep, and the waiter fix found on the way) · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (what the simulator reproduces of the arm's servos, and what it only assumes) · Implemented in `adapters/lerobot/src/roboglot_lerobot/sim/`, `roboglot/preflight.py`, `roboglot robot twin` in `roboglot/cli.py`, and `.github/workflows/lerobot-sim-assets.yml` ([page](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/lerobot/README.md#the-simulator-lerobotmujoco), [first run](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator))
+
+**Superseded 2026-11-15:** `lerobot:mujoco` was removed from Roboglot with every other
+simulator, and so were `roboglot robot twin`, `roboglot preflight` with its `.sim.yaml`
+sidecars, `roboglot[lerobot-sim]` and the nightly `lerobot-sim-assets` job. Everything below is
+left as the record of what 0.15 to 0.34 shipped, and none of it applies to the current tree but
+the follower's surface the arm's mock builds on, which moved to `roboglot_lerobot/follower.py`.
+What this ADR assumed of the arm is the bench's to settle, as it always was. See the CHANGELOG's
+Unreleased entry for the removal.
 
 ## Context
 

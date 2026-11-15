@@ -178,33 +178,11 @@ def _onboard_in_tmp(
 
 
 @pytest.fixture(autouse=True)
-def _asset_cache_in_tmp(
-    request: pytest.FixtureRequest,
-    tmp_path_factory: pytest.TempPathFactory,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """The physics backend's downloaded model lives in `~/.roboglot/cache`, and a developer who
-    has one was running a different suite from CI: `ensure_microduck(offline=True)` found it
-    and the tests that skip everywhere else ran here. Everything gets a throwaway cache and no
-    checkout override, the Microduck's or the arm simulator's, so a skip is a skip on both
-    machines.
-
-    Except the `real_duck` tests and the arm simulator's `so101_model` tests, whose whole
-    purpose is the developer's real cache or checkout. They still never fetch — an empty one
-    skips them — so this decides which machine they run on, not whether they download."""
-    if any(request.node.get_closest_marker(m) for m in ("real_duck", "so101_model")):
-        return
-    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(_scratch_dir(tmp_path_factory, "roboglot-cache")))
-    monkeypatch.delenv("ROBOGLOT_MICRODUCK_ASSETS", raising=False)
-    monkeypatch.delenv("ROBOGLOT_LEROBOT_SIM_ASSETS", raising=False)
-
-
-@pytest.fixture(autouse=True)
 def _lerobot_calibration_in_tmp(
     tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LeRobot keeps an arm's calibration under the Hugging Face cache, and the arm simulator
-    walks the same search for it. A developer who has calibrated an arm on this machine has
+    """LeRobot keeps an arm's calibration under the Hugging Face cache. A developer who has
+    calibrated an arm on this machine has
     that arm's file there, so a test that went looking would read the lab arm's travel and
     pass or fail on what one arm happened to record. Every step of the search points into a
     throwaway directory instead, and a test that means to walk it sets its own."""
@@ -269,13 +247,8 @@ def _no_request_reaches_hugging_face(
     through `socket.getaddrinfo`, which every connection this suite makes looks a host up with,
     `http.client`'s and the SDKs' alike, and is stopped there and written down. The list fails
     the test at teardown, since the code that met the stop may have said it was offline and gone
-    on. Except the `real_duck` and `so101_model` tests, whose whole purpose is a developer's real
-    cache and which a nightly job runs: they never fetch, and a guard in their way would decide
-    what that job proves. The fixture's value is the list, for the test that proves the guard."""
+    on. The fixture's value is the list, for the test that proves the guard."""
     reached: list[str] = []
-    if any(request.node.get_closest_marker(m) for m in ("real_duck", "so101_model")):
-        yield reached
-        return
     real = socket.getaddrinfo
 
     def guarded(host: Any, *args: Any, **kwargs: Any) -> Any:

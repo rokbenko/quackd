@@ -1,17 +1,16 @@
 """`lerobot:mock`: the real backend, driving an arm in memory.
 
-`LeRobotMock` is `LeRobotReal` with three things changed underneath it, as `lerobot:mujoco` is
-(`sim/transport.py`). Its follower and its camera are built in memory (`fake_follower.py`), its
-clock moves only when something sleeps on it, and its policy is a script. Nearly every line
-between those is the real backend's own: the connect, the travel read off a calibration and the
-refusals past it, the rest move, the hold, the release and the take-hold, the policy loop a
-segment runs in, and the close and what it says. Two things above it are the mock's, both on
-purpose. Its close lets go of an arm with no rest pose recorded, as the simulator's does, where
-the arm's keeps its torque and says so (`KEEPS_TORQUE_WITHOUT_A_POSE`). And a rest move told to
-fail (`rest_fails`) stalls with no hold sent, where the arm's holds where it stalled. A fix to
-anything else is a fix on the mock too, and a rehearsal on it says what the arm would say. It was
-a hand-written imitation of that code, its hand-off kept in step with the arm's by hand, and every
-fix had to be made twice.
+`LeRobotMock` is `LeRobotReal` with three things changed underneath it. Its follower and its
+camera are built in memory (`fake_follower.py`), its clock moves only when something sleeps on
+it, and its policy is a script. Nearly every line between those is the real backend's own: the
+connect, the travel read off a calibration and the refusals past it, the rest move, the hold,
+the release and the take-hold, the policy loop a segment runs in, and the close and what it
+says. Two things above it are the mock's, both on purpose. Its close lets go of an arm with no
+rest pose recorded, where the arm's keeps its torque and says so (`KEEPS_TORQUE_WITHOUT_A_POSE`).
+And a rest move told to fail (`rest_fails`) stalls with no hold sent, where the arm's holds where
+it stalled. A fix to anything else is a fix on the mock too, and a rehearsal on it says what the
+arm would say. It was a hand-written imitation of that code, its hand-off kept in step with the
+arm's by hand, and every fix had to be made twice.
 
 What it adds is what a test needs and an arm does not have:
 
@@ -130,8 +129,8 @@ class MockClock:
     moves it on by what it asked for, and `sleeps` keeps them in order.
 
     `lockstep`: time stands still while nobody sleeps on it, so a policy segment waits for its
-    script's answer in its own turn, as it does on the simulator's clock, and a busy machine
-    cannot starve a segment whose script answers at once."""
+    script's answer in its own turn, and a busy machine cannot starve a segment whose script
+    answers at once."""
 
     lockstep = True
 
@@ -247,8 +246,8 @@ class LeRobotMock(LeRobotReal):
 
     KEEPS_TORQUE_WITHOUT_A_POSE = False
     """The mock's arm drops on nothing, and a run of it needs no rest pose (it is not among
-    `REST_POSE_BACKENDS`), so its close lets go of an arm with no pose recorded, as the
-    simulator's does and as the mock's always has, where the arm's keeps its torque and says so
+    `REST_POSE_BACKENDS`), so its close lets go of an arm with no pose recorded, as the mock's
+    always has, where the arm's keeps its torque and says so
     (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`)."""
 
     def __init__(

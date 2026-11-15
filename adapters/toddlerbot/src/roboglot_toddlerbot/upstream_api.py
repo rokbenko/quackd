@@ -41,8 +41,6 @@ _ROBOT = "toddlerbot/sim/robot.py"
 _POL = "toddlerbot/policies/__init__.py"
 _RESET = "toddlerbot/policies/reset_pd.py"
 _MJX = "toddlerbot/policies/mjx_policy.py"
-_MUJOCO = "toddlerbot/sim/mujoco_sim.py"
-_MJUTILS = "toddlerbot/sim/mujoco_utils.py"
 _MOTOR = "toddlerbot/sim/motor_control.py"
 _MCH = "toddlerbot/actuation/src/dynamixel_mch.cpp"
 _CLIENT = "toddlerbot/actuation/src/dynamixel_control/dynamixel_client.cpp"
@@ -545,47 +543,6 @@ WALK_POLICY_IS_STATEFUL = UpstreamRef(
     "behaves like one driven continuously has not been tested on a robot.",
 )
 
-
-# ── the simulated body, which is what CI can actually drive ─────────────────────────────
-
-MUJOCO_SIM = UpstreamRef(
-    "MuJoCoSim",
-    "VERIFIED",
-    src(_MUJOCO, 18),
-    "def __init__(self, robot, n_frames=20, dt=0.001, fixed_base=False, xml_path='', "
-    "vis_type='', controller_type='torque'). It takes the Robot object rather than a name, "
-    "and n_frames * dt is 0.02, so its control rate is the same fifty hertz the daemon runs. "
-    "It fills joint_pos, lin_vel and pos, which the real robot always leaves None, and leaves "
-    "motor_cur None, which the real robot fills.",
-)
-MUJOCO_IS_HEADLESS_BY_DEFAULT = UpstreamRef(
-    "vis_type",
-    "VERIFIED",
-    src(_MUJOCO, 121),
-    "only 'render' builds a renderer and only 'view' builds a viewer, so the default builds "
-    "neither and no GL context is ever created. Upstream reads MUJOCO_GL nowhere, so setting "
-    "it changes nothing on this path. What the contract job does need is that `import "
-    "mujoco.viewer` succeeds, because mujoco_sim imports it at module scope before it looks "
-    "at vis_type, and that import loads glfw's shared library.",
-)
-MUJOCO_POSITION_CONTROLLER_IS_BROKEN = UpstreamRef(
-    "controller_type",
-    "VERIFIED",
-    src(_MOTOR, 114),
-    "the sim calls the controller's step with four arguments and PositionController.step "
-    "takes three, so anything but the default torque raises on the first tick. Roboglot never "
-    "passes it.",
-)
-MUJOCO_PATHS_ARE_RELATIVE = UpstreamRef(
-    "scene.xml",
-    "VERIFIED",
-    src(_MUJOCO, 64),
-    "the model path is built as toddlerbot/descriptions/<robot>/scene.xml relative to the "
-    "working directory, and Robot reads its own configs the same way with no override, so "
-    "the daemon changes directory to the checkout root before constructing either. Robot "
-    "also parses <robot>_fixed.xml unconditionally, for the motor ordering, even when the "
-    "body is free.",
-)
 
 ROBOT_DEFAULT_POSE = UpstreamRef(
     "default_motor_angles",

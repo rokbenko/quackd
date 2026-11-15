@@ -2,7 +2,7 @@
 
 `OpenDuckMock` records intents like `MockTransport` and additionally integrates the twist it
 was last given, so the verbs that close a loop (`search_scan` turning in place, `go_to`
-steering on a bearing) can be exercised offline with no simulator and no world. The frame it
+steering on a bearing) can be exercised offline, with no robot. The frame it
 serves puts an orange ball at a fixed world position, seen from wherever the duck has walked
 to, so the colour detector has something real to find.
 """

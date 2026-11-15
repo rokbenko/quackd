@@ -34,23 +34,18 @@ You are a T-rex. Show me.
 ```
 
 On the command line, `--play` turns it on for one run of any task file, a `--goal` included, and
-`--no-play` turns a file's `play: true` off for one run. Both work on `roboglot run`, `roboglot
-record` and `roboglot preflight`, and the flag wins over the file. No environment variable and no
-field in `robots.json` sets it, so a robot never starts playing every task it is given.
+`--no-play` turns a file's `play: true` off for one run. Both work on `roboglot run`, and the flag
+wins over the file. No environment variable and no field in `robots.json` sets it, so a robot
+never starts playing every task it is given.
 
 ```bash
 roboglot run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake --play --no-memory
 ```
 
-Each member of a pilot team plays, whether the task file or `--play` asked. These are refused,
-each with one line that says why:
-
-- a coordinator team, `--team N` or a task file with `team.allocation.method: auction`, with
-  either flag, and a task file that plays whatever the flags, since its members follow the
-  team's plan and none of them is a pilot;
-- `--controller vla` with `--play`, and with a file that plays, since its policy reads no prompt.
-  `--no-play` turns that file's part off, and the policy then flies its `policy.instructions` as
-  it would any file's.
+Each member of a pilot team plays, whether the task file or `--play` asked. `--controller vla` is
+refused with `--play`, and with a file that plays, in one line that says why, since its policy
+reads no prompt. `--no-play` turns that file's part off, and the policy then flies its
+`policy.instructions` as it would any file's.
 
 ## What the pilot reads
 
@@ -164,8 +159,6 @@ startup with `serve-mcp --glotfile` hands over neither its body nor its part.
   ([guides/decision-llms/README.md](decision-llms/README.md)).
 - **Stay out of memory.** A played run's notes and its ending are kept like any other run's, so
   `--no-memory` on `roboglot run` keeps a session of parts out of what the robot remembers.
-  `roboglot record` has no such flag and keeps them in the Microduck simulator's memory unless
-  `ROBOGLOT_MEMORY_DIR` points it elsewhere, and `roboglot preflight` keeps none.
 
 > [!NOTE]
 > Played runs have not run on the arm. What they do there is measured on a bench session and

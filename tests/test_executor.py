@@ -1310,13 +1310,13 @@ async def test_verb_end_carries_the_robots_clock_beside_the_wall_clock(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
     """The mock's clock advances only on `sleep`, so a one second walk is one robot second
-    and almost no wall time: exactly the shape a free-running simulator has."""
+    and almost no wall time."""
     ex, seen = logged(registry, mock_transport, allow="walk")
     await ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0})
     end = ends(seen)[0]
     assert end["transport_s"] == pytest.approx(1.0)
     assert end["elapsed_s"] < 0.5
-    assert "clock" not in end, "the mock is not a simulator, so there is no label to give"
+    assert "clock" not in end, "the record carries both clocks and labels neither"
 
 
 async def test_a_verb_that_logs_is_a_note_in_the_log_and_still_reaches_log(
@@ -1510,15 +1510,15 @@ async def test_without_a_event_log_the_executor_is_silent_and_hands_over_the_rea
 async def test_a_safety_stop_from_another_layer_ends_the_verb_with_its_own_word(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """A team's role change preempts an in-flight verb by raising a `SafetyStop` subclass.
-    Before this the log called that `error`, which the docs define as a bug, and every
-    handover in a three-robot run printed a red line about nothing being wrong."""
+    """A newer command preempts an in-flight verb by raising a `SafetyStop` subclass, as drive
+    does. Before this the log called that `error`, which the docs define as a bug, and every
+    handover printed a red line about nothing being wrong."""
 
     class Preempted(SafetyStop):
         outcome = "preempted"
 
     async def handover(_ctx: VerbContext, _p: NoParams) -> VerbResult:
-        raise Preempted("role change to kicker")
+        raise Preempted("stopped for a new goal")
 
     registry.register(Verb("handover", "gives way", handover, timeout_s=5))
     event_log = EventLog()
@@ -1532,7 +1532,7 @@ async def test_a_safety_stop_from_another_layer_ends_the_verb_with_its_own_word(
 
     (end,) = [e for e in seen if e.kind == "verb_end"]
     assert end.data["outcome"] == "preempted"
-    assert end.data["summary"] == "role change to kicker"
+    assert end.data["summary"] == "stopped for a new goal"
 
 
 # ── what a verb saw, when the body has more than one lens ───────────────────────────────

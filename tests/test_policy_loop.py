@@ -7,7 +7,7 @@ loop's own constants. Time is a clock that moves only when it is slept, so a seg
 seconds costs none of the wall's, and every tick lands where the pacer put it.
 
 Two clocks stand in for the two kinds the loop tells apart. `LockstepClock` says it is lockstep,
-as the simulator's does, so inference is awaited in the loop's turn and each chunk is held back
+as the mock's does, so inference is awaited in the loop's turn and each chunk is held back
 by the runner's declared latency. `GateClock` is the wall's kind, where an answer comes back
 whenever the runner's thread has it: here it opens a gated runner's answer exactly `k` ticks
 after it was asked, which is a runner that takes `k` ticks, on a clock a test can repeat.
@@ -77,7 +77,7 @@ STEP = MAX_STEP_DEG / 2
 
 
 class LockstepClock(SteppedClock):
-    """A stepped clock that says it is lockstep, as the simulator's does."""
+    """A stepped clock that says it is lockstep, as the mock's does."""
 
     lockstep = True
 
@@ -486,7 +486,7 @@ async def test_a_tick_that_overruns_skips_to_the_next_whole_period_and_counts_wh
 
 class RoundingClock(SteppedClock):
     """A clock that wakes only on whole steps of its own, the nearest number of them to what was
-    asked and at least one, as the simulator's team clock does (`roboglot.sim2d.clock`)."""
+    asked and at least one, as a body that counts its time in fixed steps would."""
 
     def __init__(self, step: float) -> None:
         super().__init__()
@@ -1280,7 +1280,7 @@ async def test_a_runner_that_answers_at_once_but_does_not_starves_its_tick_and_i
 
 class ShortClock(LockstepClock):
     """A lockstep clock that wakes a hair short of what each sleep asked for, inside what the
-    pacer takes as due (`EXACT`), as the difference of two of the simulator's times can read."""
+    pacer takes as due (`EXACT`), as the difference of two floating-point times can read."""
 
     async def sleep(self, seconds: float) -> None:
         await super().sleep(seconds - EXACT / 2)
@@ -1653,7 +1653,7 @@ async def test_a_runner_asked_every_tick_that_needs_more_than_a_tick_is_refused(
     lockstep: bool,
 ) -> None:
     """It is asked again only once it has answered, so it could never answer every tick on the
-    arm, and the simulator does not rehearse a delay line the arm could not play."""
+    arm, and the mock does not rehearse a delay line the arm could not play."""
     k = 2
     runner = ScriptedRunner(_tagged(1), rate_hz=RATE, latency_ticks=k, per_tick=True)
     clock = LockstepClock() if lockstep else SteppedClock()

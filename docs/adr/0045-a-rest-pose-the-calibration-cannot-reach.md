@@ -2,6 +2,10 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-23 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (the range refusal, and `stop` as a hold of the five body joints) and [ADR-0039](0039-an-arm-placed-by-hand.md) (the one place Roboglot lets go, on the condition `close()` trusts) · Implemented in `adapters/lerobot/` (`verbs.py`, `real.py`, `mock.py`), `roboglot/adapters/base.py`, `roboglot/agent/loop.py` and `roboglot/doctor.py` ([page](../adapters/lerobot/README.md#a-pose-past-the-travel), [first run](../adapters/lerobot/first-run.md#07-record-the-rest-pose))
 
+**Amended 2026-11-15:** the arm's simulator is gone, and with it what the amendment of
+2026-09-27 below says it reproduced. What a goal past the travel does is the arm's to show, at
+the bench, and the decision is unchanged. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-23, by `roboglot robot release`:** the reachable rest pose is no longer the only
 place Roboglot releases an arm. A person at the arm can ask for its torque by name, wherever it
 stands: `roboglot robot release NAME`, or Enter at the offer a run makes at its terminal when its

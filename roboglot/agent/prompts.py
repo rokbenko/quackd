@@ -492,8 +492,7 @@ def play_paragraphs(
             "small, slow steps."
         )
     third += [
-        # the arm has no guard against its own links meeting: only the joints' travel, and a
-        # simulator's collision model where there is one
+        # the arm has no guard against its own links meeting: only the joints' travel
         "A touch of one part of this body on another, whatever the task asks, stops well "
         "short, because nothing stops one part of it striking another, and a grip closing on "
         "nothing is no such touch.",
@@ -825,7 +824,6 @@ def body_summary(manifest: RobotManifest) -> str:
 def build_system_prompt(
     duck: GlotFile,
     verbs: list[Verb],
-    transport_name: str,
     manifest: RobotManifest | None = None,
     memory_text: str | None = None,
     *,
@@ -833,7 +831,6 @@ def build_system_prompt(
     team_text: str | None = None,
     task_images: Sequence[str] | None = None,
     by_hand: bool = False,
-    adapter: str | None = None,
     sees: bool = False,
     play: bool = False,
     calls_word: str = "LLM calls",
@@ -854,11 +851,7 @@ def build_system_prompt(
 
     `assumptions` is what the robot says Roboglot is standing in for on this backend, read from
     `state.extras` when the run connects. It belongs in the prompt rather than in every
-    observation because the list is sentences and an observation line is a line.
-
-    `adapter` is whose backend `transport_name` is (`base.adapter_name`), because two bodies
-    now have a backend called `mujoco` and their simulators are nothing alike. None is a bare
-    transport, which in Roboglot is only ever the Microduck's, as the blurb's fallback assumes."""
+    observation because the list is sentences and an observation line is a line."""
     fm = duck.frontmatter
     blurb = manifest.blurb if manifest is not None and manifest.blurb else DUCK_BLURB
     names = {v.name for v in verbs}
@@ -964,56 +957,6 @@ above.
 """
     # built by `roboglot.team.talk`, which knows the roster; this only decides where it goes
     team = f"\n{team_text.strip()}\n" if team_text else ""
-    sim_note = ""
-    if transport_name == "sim2d":
-        sim_note = (
-            "\nYou are in the built-in 2D simulator: a cartoon top-down world. Distances are "
-            "metres, the arena is about 2 m across, and the ball is orange.\n"
-        )
-    elif transport_name == "mujoco" and adapter in (None, "microduck"):
-        # Deliberately only the arena. What the body is, and what its legs can do, differs
-        # between the real duck and the kinematic stand-in behind this one backend name, and
-        # both describe themselves in the stand-ins block below. Saying it here as well
-        # contradicted one of them: this told the LLM it was driving "a real biped on its
-        # own learned gait" even when it was driving the puppet.
-        # Nobody is in this arena, and the LLM has to be told so outright. `search_scan`
-        # still offers `person` as a target, because one shared verb registry serves the
-        # cartoon (which has a person), a real camera through YOLO, and this; and the head
-        # camera's colour detector still carries the person hue band for the same reason. So
-        # an LLM left to infer it would reasonably scan for somebody and never stop.
-        sim_note = (
-            "\nYou are in the physics simulator (MuJoCo): a 2 m arena with low walls and an "
-            "orange ball that rolls when kicked. Nobody is in the arena with you: there is no "
-            "person here to find, follow or walk up to, so do not scan for one, and treat any "
-            "`person` detection as scenery misread rather than somebody standing there. "
-            "Distances are metres.\n"
-        )
-    elif transport_name == "mujoco" and adapter == "lerobot":
-        # The arm's simulator has no arena and no ball, and until this was keyed on the adapter
-        # it was told about both, because the duck's note keyed on the backend name alone.
-        # What it has to be told is that nothing it sees or does here was measured on an arm:
-        # the servo dynamics are the model's, which the simulator lists among its assumptions,
-        # so a grasp that holds here is a rehearsal and not a result. What lies on the table
-        # is left to the cameras, because the scene is the simulator's and not the task file's,
-        # and a run given no camera is told it has none: the scene has things on the table
-        # either way, and a sentence about what the cameras show would have it think not.
-        if manifest is not None and "camera" in manifest.sensors:
-            seen = (
-                "What is on the table is what the cameras show, and every camera is a rendered "
-                "view of the model, not a webcam's picture. "
-            )
-        else:
-            seen = (
-                "This run has no camera, so whatever is on the table goes unseen: the arm "
-                "reports only its own joints. "
-            )
-        sim_note = (
-            "\nYou are in the arm's physics simulator (MuJoCo): a model of this arm on a "
-            f"table, with the table in front of it. {seen}"
-            "How the joints move and how an object grips, slides or falls is the model's "
-            "physics, not anything measured on a real SO-101, so a grasp that works here "
-            "rehearses the task rather than showing that the arm can do it.\n"
-        )
     # Last before the task, where it can answer the lines above it that say what this body is
     # not ("Whatever the task says, this body cannot:"), and next to the part the task gives.
     played = (
@@ -1026,8 +969,8 @@ above.
         if play
         else ""
     )
-    # the task's own, and every allowed verb whose class asks a human whatever the task says, as
-    # `explore` and `find` do: the executor gates both (`Executor.needs_confirm`)
+    # the task's own, and every allowed verb whose class asks a human whatever the task says:
+    # the executor gates each (`Executor.needs_confirm`)
     asks = [*fm.verbs.confirm]
     asks += [
         v.name for v in verbs if v.safety_class in ("confirm", "dangerous") and v.name not in asks
@@ -1051,7 +994,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 
 ## Verbs
 {verb_lines}
-{body}{executor}{places}{placed}{pictures}{stand_ins}{persona}{memory}{team}{sim_note}{played}
+{body}{executor}{places}{placed}{pictures}{stand_ins}{persona}{memory}{team}{played}
 ## Task file: {fm.name} — {fm.description}
 
 {duck.body}

@@ -5,6 +5,10 @@ default ids in its table are what the first release shipped and three were never
 vendor is now an id from a list rather than free text; the provider matrix gains seven
 OpenAI-compatible vendors; MCP mode selects no LLM at all)
 
+**Amended 2026-11-15:** the browser demo is gone from this repository with the simulators, and
+with it `web/src/catalogue.js`, which was generated from the catalogue below, and the test that
+held it to the Python. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-22 by [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md):** `--provider` and `--model` are one flag now, `--llm
 VENDOR[:LLM]`, and `ROBOGLOT_MODEL` is `ROBOGLOT_LLM` holding a whole spec. Where this page says
 `--model X` read `--llm VENDOR:X`, and where it says `--provider X` read `--llm X`; a bare

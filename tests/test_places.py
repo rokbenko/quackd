@@ -41,14 +41,14 @@ def at(x: float, y: float, yaw: float = 0.0, *, frame: FrameRef = ODOM, walked: 
 
 
 def test_places_live_beside_memory_and_never_in_its_file(tmp_path: Path) -> None:
-    store = PlaceStore("microduck:sim2d", tmp_path)
-    memory = RobotMemory("microduck:sim2d", tmp_path)
-    assert store.path == tmp_path / "microduck-sim2d.places.jsonl"
+    store = PlaceStore("microduck:mock", tmp_path)
+    memory = RobotMemory("microduck:mock", tmp_path)
+    assert store.path == tmp_path / "microduck-mock.places.jsonl"
     assert store.path != memory.path
     book = PlaceBook(store, Source(at(1.0, 2.0)))
     book.mark("kitchen")
     memory.remember("the ball rolls under the sofa")
-    again = PlaceStore("microduck:sim2d", tmp_path)
+    again = PlaceStore("microduck:mock", tmp_path)
     assert [p.name for p in again.places()] == ["kitchen"]
     assert len(memory.notes()) == 1
 
@@ -96,14 +96,6 @@ def test_a_name_has_to_be_one_a_map_can_print(name: str) -> None:
 def test_the_spaces_in_a_name_are_made_one_as_a_note_s_are() -> None:
     assert clean_name("  sofa\n  bed ") == "sofa bed"
     assert clean_name("Rok's chair") == "Rok's chair"
-
-
-def test_start_is_roboglots_own_to_mark(tmp_path: Path) -> None:
-    book = PlaceBook(PlaceStore("r", tmp_path), Source(at(0.0, 0.0)))
-    with pytest.raises(ValueError, match="where an explore or a find began"):
-        book.mark("Start")
-    place, _ = book.mark("start", reserved_ok=True)
-    assert place.name == "start"
 
 
 def test_a_robot_keeps_a_hundred_places_and_says_so_at_the_next(tmp_path: Path) -> None:

@@ -29,7 +29,7 @@ from __future__ import annotations
 import asyncio
 import math
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
@@ -385,7 +385,6 @@ class MossMock:
         self.close_note: str | None = None
         self.heartbeats = 0
         self.intents: list[Intent] = []
-        self.post_sleep: Callable[[], None] | None = None
         self._frame: Image.Image | None = None
         self._frame_at: float | None = None
 
@@ -417,8 +416,6 @@ class MossMock:
             self._step(dt)
             remaining -= dt
         await asyncio.sleep(0)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
     # ── the rover ───────────────────────────────────────────────────────────────────
 

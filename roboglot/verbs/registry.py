@@ -341,7 +341,7 @@ def default_registry() -> VerbRegistry:
         return core_registry()
 
     return registry_from_manifest(
-        microduck_manifest("sim2d"),
+        microduck_manifest("mock", places=False),
         implementations=MICRODUCK_VERBS,
         conditions=microduck_conditions(),
     )

@@ -2,6 +2,10 @@
 
 **Status:** accepted, amended · **Date:** 2026-08-28
 
+**Amended 2026-11-15:** the `sim2d` tier below is gone with every simulator, and there is no
+default transport: a Microduck's backends are `mock` and `jsonrpc`. See the CHANGELOG's
+Unreleased entry.
+
 **Amended 2026-10-08 by [ADR-0051](0051-a-microduck-newer-than-the-read-is-served.md):** a
 VERIFIED ref is what Roboglot read at one pin, and the Microduck's handshake no longer refuses a
 robot on any other `duck-ipc-proto` version. It refuses one older than the oldest version read

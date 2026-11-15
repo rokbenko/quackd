@@ -37,7 +37,6 @@ from roboglot.adapters.factory import (
     adapter_names,
     describe,
     is_installed,
-    is_simulator,
     list_adapters,
     parse_robot_spec,
 )
@@ -81,13 +80,10 @@ EXTRAS = {
     "decision (System One client)": ("typesafe_sdk", "roboglot[decision]"),
     "laya (in-process decision LLM)": ("laya", "roboglot[laya]"),
     "yolo": ("ultralytics", "roboglot[yolo]"),
-    "live": ("pygame", "roboglot[live]"),
-    "mujoco": ("mujoco", "roboglot[mujoco]"),
     "lan (zeroconf)": ("zeroconf", "roboglot[lan]"),
     "lan (mqtt)": ("paho.mqtt.client", "roboglot[lan]"),
     "lerobot": ("lerobot", "roboglot[lerobot]"),
     "lerobot (feetech bus)": ("rustypot", "roboglot[lerobot]"),
-    "lerobot-sim (mujoco)": ("mujoco", "roboglot[lerobot-sim]"),
     "lerobot-vla (transformers)": ("transformers", "roboglot[lerobot-vla]"),
     "rosbridge": ("roslibpy", "roboglot[rosbridge]"),
     "rosarm (roslibpy)": ("roslibpy", "roboglot[rosarm]"),
@@ -130,7 +126,7 @@ Progress = Any
 _ADAPTER_HINT = "roboglot list-adapters shows the ten that ship and their backends"
 
 TEAM_NOTE = (
-    "team mode (--team, team.roles): sim2d only, in-process bus by default. The MQTT bus "
+    "team mode (--team): one LLM pilot per robot, in-process bus by default. The MQTT bus "
     "(roboglot[lan]) is library-only (docs/guides/lan.md)."
 )
 
@@ -818,8 +814,7 @@ def probe(
     calibration file under that id, and every line it writes names it. Without it, a probe of a
     registered arm read the calibration of the default id, whatever the arm was registered as.
     `before_connect` is handed the built body just before it connects, which is the caller's
-    one chance to say something to a person holding it (`cli._doctor_warning`). `address` is
-    empty only for a registered simulator, which is built without one as a run builds it.
+    one chance to say something to a person holding it (`cli._doctor_warning`).
 
     `park` folds the body to its rest pose in place of `go_to_rest_if_any`, which is how the
     CLI puts a countdown before the fold for the hands to come away, and a press of the kill
@@ -1604,13 +1599,8 @@ def collect(
                     for v in manifest.verbs
                 ],
             )
-            # A registered simulator is connected with or without an address. Its connect reads
-            # the calibration a run under that name would read, and renders once, which is the
-            # only check that this machine can draw its scene, and nothing real moves. Skipping
-            # it reported a machine healthy on which the run would be refused at connect. A
-            # real body with no address is still never guessed at.
-            simulated = robot_name is not None and is_simulator(parsed)
-            if address or simulated:
+            # a real body with no address is never guessed at
+            if address:
                 shown = f"{robot_name} ({robot})" if robot_name else robot
                 say(f"connecting to {shown}" + (f" at {address}" if address else ""))
                 # the board's camera joins the body as it would a run's, but only a board that
@@ -1638,11 +1628,10 @@ def collect(
                     after_close=after_close,
                 )
 
-    # An adapter that has backends worth probing on this machine says so itself. The LeRobot
-    # arm's simulator is the one today: whether MuJoCo is installed, and whether the SO-101's
-    # model is in the cache at its pin. That knowledge belongs to the adapter rather than to a
-    # table here that would have to be edited whenever somebody publishes an adapter, and each
-    # row names its own `adapter:backend`, since the table is no longer one robot's.
+    # An adapter that has backends worth probing on this machine says so itself (`doctor_rows`),
+    # which none Roboglot publishes does today. That knowledge belongs to the adapter rather than
+    # to a table here that would have to be edited whenever somebody publishes an adapter, and
+    # each row names its own `adapter:backend`, since the table is no longer one robot's.
     for name in adapter_names():
         if not is_installed(name):
             continue
@@ -2061,7 +2050,7 @@ def _verbs_table(robot: RobotReport) -> Any:
 
 
 def _probe_table(probe_report: ProbeReport) -> Any:
-    # a registered simulator is probed with no address, and its table has no place to name
+    # a probe of a body that keeps no address has no place to name
     where = f"at {probe_report.address}: " if probe_report.address else ""
     table = ui.table(f"{where}what the robot itself reported")
     table.add_column("what", style=ui.STYLES["key"], no_wrap=True)
@@ -2155,18 +2144,16 @@ def verdict(report: DoctorReport) -> Any:
     """The line this command exists to produce and never printed: the exit code was the only
     summary it had, and nobody reads an exit code off a screen."""
     if report.ok:
-        # "the simulator" only where there is one. Since every adapter became its own package
-        # a green machine can have no robot at all, and this line is what `README.md` sends a
-        # new reader to read: saying the simulator runs on a machine where `roboglot run`
-        # refuses for want of one is the opposite of what this command is for.
+        # Since every adapter became its own package a green machine can have no robot at all,
+        # and this line is what `README.md` sends a new reader to read: saying a robot runs on a
+        # machine where `roboglot run` refuses for want of one is the opposite of what this
+        # command is for.
         installed = [row["name"] for row in report.adapters if row.get("adapter_installed")]
         if not installed:
             reason = (
                 "Roboglot itself runs here, and no robot adapter is installed: "
-                'uv pip install "roboglot[microduck]" for the simulator'
+                'uv pip install "roboglot[microduck]" for one'
             )
-        elif "microduck" in installed:
-            reason = "the simulator and the scripted pilot run here"
         else:
             reason = f"the scripted pilot runs here, on {', '.join(installed)}"
     elif report.missing_core:

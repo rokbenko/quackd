@@ -157,7 +157,6 @@ class ToddlerBotBridge:
         self.motors = 30
         self.daemon_version: str | None = None
         self.upstream_commit: str | None = None
-        self.post_sleep: Any = None
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -492,8 +491,6 @@ class ToddlerBotBridge:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
 
 def _ack(result: Any) -> Ack:

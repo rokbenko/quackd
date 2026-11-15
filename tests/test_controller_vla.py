@@ -3,9 +3,10 @@ leaves the task to the person who watched it.
 
 The loop's half runs on the LeRobot mock, whose `manipulate` is a scripted segment on a clock of
 its own, so every segment runs exactly the seconds it was told and a budget ends a list where the
-arithmetic says. The command's half is `roboglot run --controller vla` on `lerobot:mujoco` over the
-simulator's stand-in model, against the real policy server serving `scripted:hold`, with the
-terminal's answers scripted through `_ask`.
+arithmetic says. The command's half is `roboglot run --controller vla` on `lerobot:real`, the one
+body that takes `--policy-url`, registered with a rest pose and built over the suite's fake arm,
+against the real policy server serving `scripted:hold`, with the terminal's answers scripted
+through `_ask`.
 
 The person is always an asker marked `asks_a_person`, as the CLI marks its own, and every
 refusal is checked to stop before a run directory exists.
@@ -43,12 +44,13 @@ from roboglot.agent.transcript import Transcript
 from roboglot.glotfile.parser import parse_glot_text
 from roboglot.glotfile.schema import INSTRUCTION_MAX_CHARS, POLICY_VERB, Budgets
 from roboglot.log import LineLog, LogEvent, a_person_was_asked, render_lines
+from roboglot.registry import Registry, RobotEntry
 from roboglot.safety import Budget, BudgetExceeded, allow_all
 from roboglot_lerobot import LeRobotAdapter
-from roboglot_lerobot.mock import LeRobotMock
+from roboglot_lerobot.mock import REST, LeRobotMock
 from roboglot_lerobot.policy import server as S
-from tests.gl import REQUIRE_ENV
 from tests.test_glot_policy import INSTRUCTIONS, SEGMENT_S, _v3
+from tests.test_lerobot_adapter import _segment_arm, built_arm
 from tests.test_policy_contract import TOKEN, Serving, _serving
 
 runner = CliRunner()
@@ -521,9 +523,9 @@ async def test_the_loop_holds_any_judged_pilot_to_a_persons_yes(tmp_path: Path) 
 
 
 def test_the_pilot_reads_the_last_result_and_the_answer_and_nothing_else() -> None:
-    """Whatever else an observation carries, the arm's state, a detection, the simulator's
-    own words about the table, the pilot's calls are the same: it is told what its segment
-    returned and what the person said, and it decides on those alone."""
+    """Whatever else an observation carries, the arm's state or a detection, the pilot's calls
+    are the same: it is told what its segment returned and what the person said, and it decides
+    on those alone."""
     pilot = VlaProvider(INSTRUCTIONS)
     tools = [{"name": V.ASSESS}]
     seen = Observation(
@@ -531,7 +533,6 @@ def test_the_pilot_reads_the_last_result_and_the_answer_and_nothing_else() -> No
         features={
             "state": {"extras": {"joints": {"shoulder_pan": 1.0}, "block_on_table": True}},
             "detections": [{"label": "block", "bearing_deg": 0.0}],
-            "sim_truth": {"lifted": True},
             "last_result": {"verb": POLICY_VERB, "ok": True, "summary": "ran"},
         },
     )
@@ -582,8 +583,28 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
     )
 
 
+ARM_NAME = "arm"
+"""`lerobot:real`, the one body that takes `--policy-url`, registered with a rest pose."""
+
+
+@pytest.fixture(autouse=True)
+def _arm_with_a_rest_pose(_registry_in_tmp: None) -> None:
+    """A real arm with no rest pose is refused a run before anything connects (ADR-0058), so the
+    arm every command here names is registered with the mock's own, at a port nothing here
+    opens: each command stops at a refusal or at the policy server, or runs on the fake arm a
+    test builds it over."""
+    Registry(os.environ["ROBOGLOT_REGISTRY_DIR"]).add_robot(
+        RobotEntry(
+            name=ARM_NAME,
+            spec="lerobot:real",
+            address="COM5",
+            rest_pose={joint: angle for joint, angle in REST.items() if joint != "gripper"},
+        )
+    )
+
+
 GOAL = ("--goal", "hold still")
-ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKEN)
+ARM = ("--robot", ARM_NAME, "--policy-url", DEAD, "--policy-token", TOKEN)
 
 
 @pytest.mark.parametrize(
@@ -604,7 +625,7 @@ ARM = ("--robot", "lerobot:mujoco", "--policy-url", DEAD, "--policy-token", TOKE
             "so --llm would do nothing",
             id="an-llm-and-no-play",
         ),
-        pytest.param((*GOAL, "--robot", "lerobot:mujoco"), "names no policy server", id="policy"),
+        pytest.param((*GOAL, "--robot", ARM_NAME), "names no policy server", id="policy"),
         pytest.param(
             ("--goal", "x" * (INSTRUCTION_MAX_CHARS + 1), *ARM), "characters", id="long-goal"
         ),
@@ -769,9 +790,7 @@ def test_a_blank_controller_is_the_default_as_a_blank_detector_is(
 def test_serve_mcp_refuses_a_controller_in_words() -> None:
     """Over MCP the client is the pilot: there is nothing to choose, and nobody at a terminal
     for a vla run to ask."""
-    result = runner.invoke(
-        cli.app, ["serve-mcp", "--robot", "lerobot:mujoco", "--controller", "vla"]
-    )
+    result = runner.invoke(cli.app, ["serve-mcp", "--robot", ARM_NAME, "--controller", "vla"])
     out = _flat(result.output)
     assert result.exit_code == 1 and "over MCP the client flies" in out, result.output
     assert "roboglot run --controller vla" in out
@@ -800,17 +819,14 @@ def held() -> Iterator[Serving]:
 
 
 @pytest.mark.parametrize("said", [True, False], ids=["yes", "no"])
-def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
+def test_a_vla_run_on_the_arm_ends_on_what_the_person_said(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving, said: bool
 ) -> None:
-    """`roboglot run --goal ... --controller vla` on the simulator's stand-in, against the real
-    server: the person clears the pilot's doubt and the segment's confirm, the goal is the one
-    instruction, and then they are asked whether the arm did it. Their answer is the exit code,
-    and all three questions are in the record in the words they were asked in."""
-    pytest.importorskip("mujoco")
-    from roboglot_lerobot.sim import standin
-
-    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
+    """`roboglot run --goal ... --controller vla` on the registered arm over the suite's fake one,
+    against the real server: the person clears the pilot's doubt and the segment's confirm, the
+    goal is the one instruction, and then they are asked whether the arm did it. Their answer is
+    the exit code, and all three questions are in the record in the words they were asked in."""
+    built_arm(monkeypatch, _segment_arm())
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     asked: list[str] = []
 
@@ -823,7 +839,7 @@ def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
         tmp_path,
         *GOAL,
         "--robot",
-        "lerobot:mujoco",
+        ARM_NAME,
         "--policy-url",
         held.url,
         "--policy-token",
@@ -831,8 +847,6 @@ def test_a_vla_run_on_the_simulator_ends_on_what_the_person_said(
         "--controller",
         "vla",
     )
-    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
-        pytest.skip("no OpenGL context for offscreen rendering")
     assert result.exit_code == (0 if said else 1), result.output
     assert asked == [
         "Go ahead anyway?",
@@ -860,17 +874,14 @@ def test_a_played_file_flown_with_no_play_says_its_part_was_off(
     """`--no-play` lets the policy fly a played file's instructions, and the run says the part
     was off where a played run says it was on: the header's row and `run_start.play`, with the
     contract kept as the file's own."""
-    pytest.importorskip("mujoco")
-    from roboglot_lerobot.sim import standin
-
-    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
+    built_arm(monkeypatch, _segment_arm())
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     monkeypatch.setattr(cli, "_ask", lambda _question: True)
     result = _cli(
         tmp_path,
         str(_crane(tmp_path)),
         "--robot",
-        "lerobot:mujoco",
+        ARM_NAME,
         "--policy-url",
         held.url,
         "--policy-token",
@@ -879,8 +890,6 @@ def test_a_played_file_flown_with_no_play_says_its_part_was_off(
         "vla",
         "--no-play",
     )
-    if "no OpenGL context" in result.output and os.environ.get(REQUIRE_ENV) != "1":
-        pytest.skip("no OpenGL context for offscreen rendering")
     assert result.exit_code == 0, result.output
     assert "play off, from --no-play" in _flat(result.output)
     (run_dir,) = (tmp_path / "runs").iterdir()

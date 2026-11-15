@@ -82,9 +82,9 @@ class PolicyRunner(Protocol):
       command the loop actually sent at the latest tick that sent one, after the travel clip and
       the step cap, and empty before the first: a runner that integrates its own deltas
       re-anchors on it rather than on what it asked for.
-    - `latency_s()` is how long it takes to answer, as declared and never measured here. On the
-      simulator, whose time stands still while a runner thinks, a chunk is held back that long
-      before it is played, so a rehearsal plays what the arm would.
+    - `latency_s()` is how long it takes to answer, as declared and never measured here. On a
+      lockstep clock, the mock's, whose time stands still while a runner thinks, a chunk is held
+      back that long before it is played, so a rehearsal plays what the arm would.
     - `close()` lets go of whatever it holds."""
 
     def reset(self, instruction: str) -> None: ...

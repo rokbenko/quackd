@@ -1,6 +1,12 @@
 # ADR-0068: A place belongs to the frame it was marked in, and Roboglot reads a map rather than making one
 
-**Status:** accepted · **Date:** 2026-10-26 · Builds on [ADR-0025](0025-memory-between-runs.md) (a note can say where it was saved) and keeps [ADR-0020](0020-heterogeneous-teams.md) (robots share no frame) · Implemented in `roboglot/space/` (`pose`, `source`, `grid`, `odometry`, `places`), `roboglot/verbs/places.py`, `roboglot/transport/base.py` (`spatial_of`, `DuckState.summary`), `roboglot/safety.py` (`Executor.places`, `place_book`), `roboglot/agent/loop.py`, `roboglot/mcp_server.py`, `roboglot/memory.py` and the Microduck's `jsonrpc` transport · Documented in [docs/concepts/places.md](../concepts/places.md)
+**Status:** accepted, amended · **Date:** 2026-10-26 · Builds on [ADR-0025](0025-memory-between-runs.md) (a note can say where it was saved) and keeps [ADR-0020](0020-heterogeneous-teams.md) (robots share no frame) · Implemented in `roboglot/space/` (`pose`, `source`, `grid`, `odometry`, `places`), `roboglot/verbs/places.py`, `roboglot/transport/base.py` (`spatial_of`, `DuckState.summary`), `roboglot/safety.py` (`Executor.places`, `place_book`), `roboglot/agent/loop.py`, `roboglot/mcp_server.py`, `roboglot/memory.py` and the Microduck's `jsonrpc` transport · Documented in [docs/concepts/places.md](../concepts/places.md)
+
+**Amended 2026-11-15:** the simulators are gone, and with them the rooms and the simulated map
+that gave a simulated Microduck a place. Places come from odometry, `mapd`, rosbridge's `/odom`
+and MOSS as below, and from a mock's scripted pose. Decision 5's reason, the team's one arena,
+was the coordinator team's and went with it, and a real robot's reading still goes in
+`extras["where"]`. See the CHANGELOG's Unreleased entry.
 
 ## Context
 

@@ -29,23 +29,14 @@ from roboglot.adapters.manifest import (
     without_unsaid_back_load,
 )
 from roboglot.verbs.aliases import canonical
-from roboglot.verdict import check_needs
 
 GLOT_SPEC_VERSION = 4
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _ROBOT_SPEC_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$")
 
-# The team roles 0.4 has behaviour for. A requires-only role with no behaviour would be a
-# fabricated capability, so the vocabulary is closed (ADR-0019, ADR-0020).
-KNOWN_ROLES = ("spotter", "kicker")
-
-# How big a team may be, per kind. An auction team shares one arena and the arena holds
-# four (`roboglot.sim2d.world.MAX_DUCKS`), spelled here rather than imported because this
-# module must not pull numpy in to parse a file. A pilot team has no arena: each member is
-# its own body on its own clock, so the bound is what a person can read in one terminal and
-# what N concurrent pilots cost in tokens (ADR-0034).
-AUCTION_MAX_MEMBERS = 4
+# How big a team may be. Each member is its own body on its own clock, so the bound is what a
+# person can read in one terminal and what N concurrent pilots cost in tokens (ADR-0034).
 PILOTS_MAX_MEMBERS = 8
 
 # The two `abort_when` phrasings the executor enforces itself. Anything else in the list is
@@ -338,155 +329,54 @@ class LearnedVerbRef(BaseModel):
 
 
 class TeamAllocation(BaseModel):
-    """Which kind of team this is, and how an auction team decides who kicks.
-
-    `auction` is the 0.3 coordinator: deterministic Contract Net, the LLM never runs it, and
-    every knob below is its. `pilots` (0.9) is the other kind entirely: one LLM pilot per
-    body, on wall-clock time, deciding by talking to each other rather than by bidding, so
-    the coordinator never runs and the rest of this block is ignored (ADR-0034)."""
+    """Which kind of team this is. One is left: `pilots`, one LLM pilot per body, on wall-clock
+    time, dividing the work by talking to each other (ADR-0034). The coordinator team that
+    `auction` named is gone."""
 
     model_config = ConfigDict(extra="forbid")
 
-    method: Literal["auction", "pilots"] = "auction"
-    """`auction`: Contract Net, one referee, sim2d Microducks. `pilots`: one LLM per body."""
-    bid: Literal["ball_distance"] = "ball_distance"  # lower bid wins
-    tie_break: Literal["duck_id"] = "duck_id"  # lexicographic member name
-    hysteresis_pct: float = Field(
-        default=20.0,
-        ge=0,
-        le=100,
-        description="A challenger must bid this much lower to unseat the current claimant.",
-    )
-    claim_lease_s: float = Field(
-        default=6.0,
-        gt=0,
-        le=60,
-        description="Longest a claim may be held before re-auction (sim clock). A fixed "
-        "fuse from the moment the claim is granted, not a progress timer.",
-    )
+    method: Literal["pilots"] = "pilots"
 
 
-class TeamSafety(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    min_separation_m: float = Field(default=0.4, ge=0.1, le=2.0)
-    one_claimant: bool = Field(
-        default=True,
-        description="At most one duck approaches the ball at a time. Always enforced in "
-        "v0.3; false is rejected rather than silently ignored.",
-    )
-    per_duck_heartbeat_s: float = Field(default=1.0, gt=0, le=10)
-
-    @field_validator("one_claimant")
-    @classmethod
-    def _one_claimant(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError(
-                "one_claimant: false is not supported in v0.3 "
-                "(the coordinator always enforces a single claimant)"
-            )
-        return value
-
-
-class TeamSearch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    partition: Literal["heading"] = "heading"  # each duck owns a heading sector
-    restart_s: float = Field(
-        default=8.0,
-        gt=0,
-        le=120,
-        description="Re-scan the sector when nothing was found for this long.",
-    )
-
-
-class TeamRole(BaseModel):
-    """A role in a heterogeneous team (v1): who may take it is decided by capability.
-
-    v2 adds a second half to that: a role may also state what the body has to be able to do
-    physically, in the datasheet's own words. A robot whose datasheet does not say is not
-    offered the role, because a robot that cannot say what it carries is not the one to ask
-    to carry something."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    requires: list[str] = Field(
-        default=..., min_length=1, description="Verbs a robot must provide to bid for this role."
-    )
-    needs: dict[str, float | str] = Field(
-        default_factory=dict,
-        description="v2: what the body must be, in the datasheet vocabulary (payload_kg, "
-        "carries_kg, reach_m, manipulator, mobility, ...). Numbers are minimums; a figure "
-        "nobody published counts as not met.",
-    )
-    count: Literal[1] = Field(default=1, description="Robots per role. Only 1 so far.")
-
-    @field_validator("requires")
-    @classmethod
-    def _names(cls, names: list[str]) -> list[str]:
-        return _verb_list(names)
-
-    @field_validator("needs", mode="before")
-    @classmethod
-    def _needs(cls, value: Any) -> Any:
-        return check_needs(value) if isinstance(value, Mapping) else value
+RETIRED_TEAM_KEYS = ("safety", "search", "roles", "frame_hints")
+RETIRED_ALLOCATION_KEYS = ("bid", "tie_break", "hysteresis_pct", "claim_lease_s")
+"""What only the coordinator team read, which a task file written for it may still carry."""
+COORDINATOR_GONE = (
+    "Roboglot no longer has the coordinator team it was for: a team is pilots, one LLM per "
+    "body, and reads team.members alone"
+)
+"""Why a task file's coordinator setting is refused rather than dropped without a word."""
 
 
 class TeamSection(BaseModel):
-    """Cooperating robots. `allocation.method` says which kind of team this is: `auction`
-    (the coordinator enforces this block, simulator only) or `pilots` (one LLM per body, any
-    backend, and only `members` is read)."""
+    """Cooperating robots: a team of pilots, one LLM per body, on any backend."""
 
     model_config = ConfigDict(extra="forbid")
 
     members: int | list[str] = Field(
         default=3,
-        description="Count (named duck-0..) or a list of unique slugs. 2-4 for an auction "
-        "(the arena holds four), 2-8 for pilots.",
+        description="Count (named duck-0..) or a list of unique slugs, 2 to 8.",
     )
     allocation: TeamAllocation = Field(default_factory=TeamAllocation)
-    safety: TeamSafety = Field(default_factory=TeamSafety)
-    search: TeamSearch = Field(default_factory=TeamSearch)
-    roles: dict[str, TeamRole] | None = Field(
-        default=None,
-        description="v1: named roles (spotter, kicker) with the verbs each requires.",
-    )
-    frame_hints: Literal["auto", "on", "off"] = Field(
-        default="auto",
-        description="v1: share arena-frame target hints between robots. auto = only when "
-        "every member runs in sim2d (there is no shared frame on hardware).",
-    )
 
-    @model_validator(mode="after")
-    def _size_fits_the_method(self) -> TeamSection:
-        """An auction shares one arena and the arena holds four. Pilots share nothing."""
-        if self.allocation.method == "auction" and len(self.member_names) > AUCTION_MAX_MEMBERS:
-            raise ValueError(
-                f"an auction team needs 2 to {AUCTION_MAX_MEMBERS} ducks (the arena holds "
-                f"{AUCTION_MAX_MEMBERS}); allocation.method: pilots takes up to "
-                f"{PILOTS_MAX_MEMBERS}"
-            )
-        return self
-
-    @model_validator(mode="after")
-    def _roles_are_known_and_complete(self) -> TeamSection:
-        if self.roles is None:
-            return self
-        if self.allocation.method != "auction":
-            raise ValueError(
-                "team.roles is an auction feature; allocation.method: pilots "
-                "splits the work by talking, so it names no roles"
-            )
-        unknown = sorted(set(self.roles) - set(KNOWN_ROLES))
-        if unknown:
-            raise ValueError(
-                f"unknown team role {unknown[0]!r}; 0.4 knows {', '.join(KNOWN_ROLES)}"
-            )
-        if any(role not in self.roles for role in KNOWN_ROLES):
-            raise ValueError("team.roles needs both spotter and kicker")
-        if isinstance(self.members, int):
-            raise ValueError("name the members (a list) when team.roles is given")
-        return self
+    @model_validator(mode="before")
+    @classmethod
+    def _no_coordinator(cls, value: Any) -> Any:
+        """Refuse a setting only the coordinator team read, naming it, rather than drop it or
+        let `extra="forbid"` say only that it is not permitted."""
+        if not isinstance(value, Mapping):
+            return value
+        for key in RETIRED_TEAM_KEYS:
+            if key in value:
+                raise ValueError(f"team.{key}: {COORDINATOR_GONE}")
+        allocation = value.get("allocation")
+        if isinstance(allocation, Mapping):
+            for key in RETIRED_ALLOCATION_KEYS:
+                if key in allocation:
+                    raise ValueError(f"team.allocation.{key}: {COORDINATOR_GONE}")
+            if allocation.get("method") == "auction":
+                raise ValueError(f"team.allocation.method: auction: {COORDINATOR_GONE}")
+        return value
 
     @field_validator("members")
     @classmethod
@@ -524,10 +414,9 @@ class GlotFrontmatter(BaseModel):
 
     glot: Literal[0, 1, 2, 3, 4] = Field(
         ...,
-        description="Spec version: 0 (Roboglot 0.1 to 0.3), 1 (0.4: requires, robots, "
-        "team.roles, team.frame_hints; 0.9: team.allocation.method: pilots), 2 (0.9: "
-        "datasheet, team.roles.needs), 3 (0.16: policy) or 4 (0.19: play). Older files parse "
-        "unchanged.",
+        description="Spec version: 0 (Roboglot 0.1 to 0.3), 1 (0.4: requires, robots, team; "
+        "0.9: team.allocation.method: pilots), 2 (0.9: datasheet), 3 (0.16: policy) or 4 "
+        "(0.19: play). Older files parse unchanged, but for the coordinator team's settings.",
     )
     name: str = Field(..., description="Slug: lowercase letters, digits, hyphens.")
     description: str = Field(..., min_length=1, description="One line, human-facing.")
@@ -613,12 +502,10 @@ class GlotFrontmatter(BaseModel):
     def _version_and_cross_field_rules(self) -> GlotFrontmatter:
         if self.glot < 2 and self.datasheet is not None:
             raise ValueError("datasheet needs glot: 2")
-        if self.glot < 1 and self.team is not None and self.team.allocation.method != "auction":
-            raise ValueError("team.allocation.method: pilots needs glot: 1")
-        if self.glot < 2 and self.team is not None and self.team.roles is not None:
-            for role, spec in self.team.roles.items():
-                if spec.needs:
-                    raise ValueError(f"team.roles.{role}.needs needs glot: 2")
+        if self.glot < 1 and self.team is not None:
+            raise ValueError(
+                f"team needs glot: 1, and a glot: 0 team was a coordinator team: {COORDINATOR_GONE}"
+            )
         if self.datasheet is not None and self.team is not None:
             raise ValueError("datasheet describes one body; a team task cannot carry one")
         if self.glot < 3 and self.policy is not None:
@@ -628,11 +515,6 @@ class GlotFrontmatter(BaseModel):
         # dumped `play: false` on a `glot: 1` file must keep passing there.
         if self.glot < 4 and self.play:
             raise ValueError("play needs glot: 4")
-        if self.play and self.team is not None and self.team.allocation.method == "auction":
-            raise ValueError(
-                "play is read by each pilot, and an auction team has none: set "
-                "team.allocation.method: pilots, or remove play"
-            )
         if self.policy is not None and self.team is not None:
             raise ValueError(
                 "policy hands one arm to its learned policy; a team task cannot carry one"
@@ -657,9 +539,6 @@ class GlotFrontmatter(BaseModel):
             v1_keys = {
                 "requires": bool(self.requires),
                 "robots": self.robots is not None,
-                "team.roles": self.team is not None and self.team.roles is not None,
-                "team.frame_hints": self.team is not None
-                and "frame_hints" in self.team.model_fields_set,
             }
             for key, used in v1_keys.items():
                 if used:
@@ -668,17 +547,6 @@ class GlotFrontmatter(BaseModel):
         extra = [v for v in self.requires if canonical(v) not in allowed]
         if extra:
             raise ValueError(f"requires lists verbs that are not allowed: {extra}")
-        if self.team is not None and self.team.roles is not None:
-            for role, spec in self.team.roles.items():
-                extra = [v for v in spec.requires if canonical(v) not in allowed]
-                if extra:
-                    raise ValueError(
-                        f"team.roles.{role} requires verbs that are not allowed: {extra}"
-                    )
-            if isinstance(self.robots, dict):
-                unknown = sorted(set(self.robots) - set(self.team.member_names))
-                if unknown:
-                    raise ValueError(f"robots names members the team does not have: {unknown}")
         return self
 
     @property

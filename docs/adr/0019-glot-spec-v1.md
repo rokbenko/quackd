@@ -1,6 +1,12 @@
 # ADR-0019: `.glot` spec v1
 
-**Status:** accepted · **Date:** 2026-09-02 · Implemented in Phase 1 of 0.4 ([design](../design/multi-robot.md))
+**Status:** accepted, amended · **Date:** 2026-09-02 · Implemented in Phase 1 of 0.4 ([design](../design/multi-robot.md))
+
+**Amended 2026-11-15:** `team.roles` and `team.frame_hints` are refused now, with every other
+setting only the coordinator team read, because that team is gone with the simulators it ran on
+([ADR-0020](0020-heterogeneous-teams.md), superseded). A team is pilots and reads `team.members`
+alone, and a `team:` block of any kind needs `glot: 1`. `requires` and `robots` stand as below.
+See the CHANGELOG's Unreleased entry.
 
 ## Context
 

@@ -18,10 +18,10 @@ the output and the recipe.
 **The GIF is the one file in `docs/assets` allowed over the general 2048 KB cap**, and it has a
 cap of its own here, named in `.pre-commit-config.yaml`'s exclude and checked by
 `tests/test_pypi_readme.py`. The reason is what it is a picture of. A render spends bytes on
-what moved and nothing on the rest, so the simulator hero fits in 1441 KB at 579 px. A
-photograph spends them on every pixel of every frame: the same nine seconds of bench, at a
-width worth putting at the top of a page, is megabytes however it is encoded, and squeezing it
-under 2048 KB means either 320 px or throwing away two thirds of the wave. Neither is a hero.
+what moved and nothing on the rest. A photograph spends them on every pixel of every frame:
+the same nine seconds of bench, at a width worth putting at the top of a page, is megabytes
+however it is encoded, and squeezing it under 2048 KB means either 320 px or throwing away two
+thirds of the wave. Neither is a hero.
 Every other asset here stays under the general cap.
 
 Encoding choices, all of them the cap talking rather than taste. Bayer dither rather than error

@@ -2,6 +2,12 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (the manifest gains a datasheet), [ADR-0012](0012-safety-executor.md) (a gate before motion) and [ADR-0019](0019-glot-spec-v1.md) (`glot: 2`)
 
+**Amended 2026-11-15:** the coordinator team is gone with the simulators it ran on, and with it
+the role `needs` this ADR added to `glot: 2` and the bids the coordinator judged by them:
+`glot: 2` is the `datasheet` alone now, a `team.roles` block is refused, and every team member
+is a pilot that answers the gate as any pilot does. The browser demo under Consequences is gone
+too. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** the
 consequence below that no team Roboglot can start has two different bodies in it is now true of
 the *auction* only. A pilot team takes any bodies, so the datasheet vocabulary this ADR

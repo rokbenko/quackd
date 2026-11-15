@@ -2450,7 +2450,7 @@ def test_an_unreachable_list_names_the_host_before_any_key_is_read(
 
 
 def test_the_list_is_read_once_per_process_and_per_address(or_list: Listing) -> None:
-    """Preflight builds a provider for every file and seed, and a team one per member."""
+    """A team builds a provider for every member, each of which would read the list again."""
     for _ in range(3):
         OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     OpenRouterProvider(
@@ -2924,7 +2924,7 @@ def test_a_list_that_could_not_be_read_is_asked_for_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed fetch is not kept. Kept, it would turn "the host was down" into "your LLM does
-    not exist" for every later provider in the process: a preflight sweep, a team's members."""
+    not exist" for every later provider in the process, a team's members among them."""
     from roboglot.agent.providers import openrouter
 
     asked: list[str] = []

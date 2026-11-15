@@ -92,17 +92,8 @@ def test_a_type_nobody_answers_for_is_refused_as_it_is_built_on_every_backend(
     """Described, and so listed, with its maker's figures, and never built: not even the mock,
     which would rehearse an arm nobody has said Roboglot drives."""
     assert describe_arm("real", robot_type="koch_follower").model == "lerobot-koch"
-    # the simulator refuses it as an SO-101's physics model before the owner rule: either refuses
-    with pytest.raises(AdapterError, match=r"described and not driven|physics model of an so101"):
+    with pytest.raises(AdapterError, match="described and not driven"):
         make(backend, robot_type="koch_follower")
-
-
-def test_the_simulator_rehearses_the_arm_it_is_a_model_of_and_no_other() -> None:
-    with pytest.raises(AdapterError, match="physics model of an so101_follower"):
-        describe_arm("mujoco", robot_type="so100_follower")
-    with pytest.raises(AdapterError, match="physics model of an so101_follower"):
-        make("mujoco", robot_type="so100_follower")
-    assert describe_arm("mujoco", robot_type="so101_follower").model == "lerobot-so101"
 
 
 def test_a_type_is_its_own_sheet_and_the_same_verbs() -> None:
@@ -185,15 +176,11 @@ def test_a_type_the_adapter_does_not_list_is_refused_at_the_door(tmp_path: Path)
     for kind in ("so102_follower", "koch_follower"):
         with pytest.raises(RegistryError, match="choose one of so101_follower, so100_follower"):
             registry.add_robot(RobotEntry(name="a", spec="lerobot:real", robot_type=kind))
-    with pytest.raises(RegistryError, match="physics model of an so101_follower"):
-        registry.add_robot(RobotEntry(name="a", spec="lerobot:mujoco", robot_type="so100_follower"))
     with pytest.raises(RegistryError, match="takes no --robot-type"):
-        registry.add_robot(
-            RobotEntry(name="b", spec="microduck:sim2d", robot_type="so100_follower")
-        )
+        registry.add_robot(RobotEntry(name="b", spec="microduck:mock", robot_type="so100_follower"))
     registry.add_robot(RobotEntry(name="c", spec="lerobot:mock", robot_type="so100_follower"))
     with pytest.raises(RegistryError, match="takes no --robot-type"):
-        registry.update_robot("c", {"spec": "microduck:sim2d"})
+        registry.update_robot("c", {"spec": "microduck:mock"})
     registry.update_robot("c", {"robot_type": None})
     entry = registry.get_robot("c")
     assert entry is not None and entry.robot_type is None
@@ -203,9 +190,9 @@ def test_a_spec_with_a_type_its_adapter_does_not_take_is_refused_rather_than_dro
     """A robot registered as another arm would otherwise be built as the default one."""
     takers = "takes no robot type, which only lerobot and rosarm have"
     with pytest.raises(AdapterError, match=takers):
-        describe(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
+        describe(RobotSpec("microduck", "mock", robot_type="so100_follower"))
     with pytest.raises(AdapterError, match=takers):
-        make_adapter(RobotSpec("microduck", "sim2d", robot_type="so100_follower"))
+        make_adapter(RobotSpec("microduck", "mock", robot_type="so100_follower"))
 
 
 def test_a_registered_type_reaches_the_arm_it_builds() -> None:

@@ -292,7 +292,7 @@ def test_list_adapters_carries_the_tier_of_every_backend_and_the_kind_of_every_r
     assert duck["tiers"]["jsonrpc"]["tier"] == "bound"
     assert duck["tiers"]["jsonrpc"]["owner"] == GRANDFATHERED
     assert duck["tiers"]["jsonrpc"]["date"] == RULE_ADOPTED
-    assert duck["tiers"]["sim2d"]["tier"] == "rehearsed"
+    assert duck["tiers"]["mock"]["tier"] == "rehearsed"
     arm = rows["lerobot"]["tiers"]["real"]
     assert arm["tier"] == "verified" and arm["owner"] == "rok" and arm["date"] == "2026-09-15"
     # the status cell is still there for whoever reads it, rendered from the tiers
@@ -363,7 +363,7 @@ def test_the_row_names_no_body_by_itself() -> None:
         parse_robot_spec(DESCRIBED)
     assert "--robot described:<body>" in str(e.value) and "unitree-b2" in str(e.value)
     assert parse_robot_spec("described:unitree-b2").key == "described:unitree-b2"
-    assert parse_robot_spec("microduck").key == "microduck:sim2d", "the ten keep their first"
+    assert parse_robot_spec("microduck").key == "microduck:mock", "the ten keep their first"
 
 
 def test_a_registered_described_body_carries_nothing_that_reaches_a_robot(tmp_path: Path) -> None:
@@ -487,7 +487,7 @@ def test_a_third_partys_import_is_not_asked_whether_it_drives(
 @pytest.mark.parametrize(
     "tiers",
     [
-        {"mock": {"name": "simulator"}},
+        {"mock": {"name": "experimental"}},
         {"mock": {"name": "rehearsed", "note": 3}},
         {"mock": {"name": "bound", "date": dt.date(2026, 11, 5), "owner": "ann"}},
         {"mock": {"nonsense": True}},
@@ -625,7 +625,7 @@ def test_an_adapter_names_its_family_and_its_route(info: AdapterInfo) -> None:
     if len(info.family) == 2:
         assert info.family[1] == "arm", "a second family is a body's arms"
     assert info.route and all(r in ROUTES for r in info.route), info.name
-    # every simulator and mock is rehearsed, and every backend with a connect block reaches a
+    # every mock is rehearsed, and every backend with a connect block reaches a
     # robot, which is what bound and verified mean; a backend described on an adapter is bound
     # code its make() refuses (above), and has no connect block, since nobody can connect it
     reaching = {b for b, t in info.tiers.items() if t.name in ("bound", "verified")}
@@ -702,7 +702,7 @@ def test_the_table_prints_one_tier_to_a_line() -> None:
         line.split("│")[2] for line in narrow.getvalue().splitlines() if line.count("│") >= 4
     ), narrow.getvalue()
     (first,) = [i for i, line in enumerate(lines) if "│ microduck" in line]
-    assert "rehearsed: sim2d, mujoco (physics, needs roboglot[mujoco]), mock" in lines[first]
+    assert "rehearsed: mock" in lines[first]
     assert "bound" not in lines[first] and "bound: jsonrpc" in lines[first + 1], lines[first + 1]
     (described,) = [line for line in lines if f"│ {DESCRIBED}" in line]
     assert "described" in described.split("│")[3] and "built-in" in described
@@ -734,7 +734,7 @@ def test_a_row_rebuilt_with_fewer_backends_keeps_the_tiers_of_those_it_kept() ->
 
     arm = BY_NAME["lerobot"]
     unmocked = dataclasses.replace(arm, backends=tuple(b for b in arm.backends if b != "mock"))
-    assert tuple(unmocked.tiers) == unmocked.backends == ("real", "mujoco")
+    assert tuple(unmocked.tiers) == unmocked.backends == ("real",)
     assert "mock" not in unmocked.status and unmocked.status.startswith(MARK["verified"])
     assert "mock" in arm.status, "and the row it was made from is as it was"
 

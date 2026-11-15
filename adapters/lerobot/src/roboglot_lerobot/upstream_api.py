@@ -225,20 +225,9 @@ CALIBRATION_DIR = UpstreamRef(
     "2.4.0 a `uv pip install` of lerobot 0.7.0 resolved to on the day, with nothing to hold the "
     "hub below 2). Every step is os.getenv with a default, so a variable set to nothing still "
     "counts as set. Building a robot no longer makes the directory; saving a calibration does "
-    "(robot.py line 182). The arm simulator walks the same chain without importing lerobot, to "
-    "find the file a registered arm's twin reads. Two arms sharing an id share a file, and "
-    "nothing in it names a serial number",
+    "(robot.py line 182). Two arms sharing an id share a file, and nothing in it names a "
+    "serial number",
 )
-CALIBRATION_ENV = "HF_LEROBOT_CALIBRATION"
-LEROBOT_HOME_ENV = "HF_LEROBOT_HOME"
-HF_HOME_ENV = "HF_HOME"
-XDG_CACHE_ENV = "XDG_CACHE_HOME"
-"""The four variables CALIBRATION_DIR's chain reads, in the order it reads them."""
-CALIBRATION_SUBDIR = "calibration"
-LEROBOT_SUBDIR = "lerobot"
-HF_SUBDIR = "huggingface"
-ROBOTS_SUBDIR = "robots"
-"""The directory names CALIBRATION_DIR's chain joins, each where its row says."""
 CALIBRATION_FILE = UpstreamRef(
     "a calibration file is draccus JSON of motor name -> MotorCalibration",
     "VERIFIED",
@@ -246,10 +235,9 @@ CALIBRATION_FILE = UpstreamRef(
     "_load_calibration() opens the file under draccus.config_type('json') and loads it as "
     "dict[str, MotorCalibration] (line 172), and _save_calibration() writes it back the same "
     "way (lines 183 and 184). So the file is one JSON object with a key per motor, each holding "
-    "exactly MotorCalibration's five integer fields, each decoded as CALIBRATION_INTS says. The "
-    "arm simulator reads it with the json module and refuses an entry that leaves a field out or "
-    "adds one, as draccus does. 0.7.0's release notes say calibration files are unchanged, and a "
-    "file written under 0.6.1 is the file this reads",
+    "exactly MotorCalibration's five integer fields, each decoded as CALIBRATION_INTS says. "
+    "0.7.0's release notes say calibration files are unchanged, and a file written under 0.6.1 "
+    "is the file 0.7.0 reads",
 )
 CALIBRATION_INTS = UpstreamRef(
     "draccus>=0.11.6,<0.12.0",
@@ -260,9 +248,7 @@ CALIBRATION_INTS = UpstreamRef(
     "(draccus/parsers/decoding.py line 111 at its v0.11.6 tag, github.com/dlwh/draccus): a "
     "float is refused, 100.0 included, and anything else goes through int(), so true reads as "
     "1 and a string of digits as its number. A null passes through as None before decode_int "
-    "is reached (line 256). The arm simulator decodes each field the same way, so an arm's "
-    "twin loads the file its arm loads, except that it refuses a null, because it builds the "
-    "arm's travel from every field",
+    "is reached (line 256)",
 )
 
 # ── the SO-101 follower (the arm the adapter targets by default) ────────────────────────
@@ -349,8 +335,6 @@ SO_NAME = UpstreamRef(
     "the class name, and therefore the calibration subdirectory: an SO-100 and an SO-101 "
     "share one, because at this tag they are the same class",
 )
-SO_FOLLOWER_NAME = "so_follower"
-"""SO_NAME's name: the directory under 'robots' that holds an SO-101's calibration files."""
 SO_CONFIG = UpstreamRef(
     "SO101FollowerConfig(port, disable_torque_on_disconnect=True, max_relative_target=None, "
     "cameras={}, use_degrees=True, position_p_coefficient=16, position_i_coefficient=0, "
@@ -369,7 +353,7 @@ SO_MOTORS = UpstreamRef(
     src(_SO, 72),
     "six Feetech sts3215 motors, ids 1..6 (lines 72 to 77, SO_MOTOR_IDS). A calibration file "
     "carries each motor's id too, so Roboglot reads a real arm's ids off its bus table "
-    "(BUS_MOTORS), and the arm simulator gives the generic arm it builds these",
+    "(BUS_MOTORS)",
 )
 SO_MOTOR_IDS: dict[str, int] = {
     "shoulder_pan": 1,
@@ -426,9 +410,9 @@ ENSURE_SAFE_GOAL_POSITION = UpstreamRef(
     "present reading, which send_action() reads fresh off Present_Position just before "
     "(so_follower.py line 207), and a goal moved by more than 1e-4 is logged as a warning "
     "(line 160) through the module's logger (line 167). A NaN cap caps nothing, because min "
-    "and max hand back the goal when the other side is NaN. The arm simulator's follower "
-    "reimplements it rather than importing it, because lerobot needs Python 3.12 and torch and "
-    "the simulator runs on 3.11 without either",
+    "and max hand back the goal when the other side is NaN. The mock's follower reimplements "
+    "it (follower.ensure_safe_goal_position) rather than importing it, because lerobot needs "
+    "Python 3.12 and torch and the mock runs on 3.11 without either",
 )
 SO_SEND_ACTION_RETURN = UpstreamRef(
     "send_action() returns the goal actually sent",
@@ -484,13 +468,8 @@ SO_GRIPPER_TORQUE_LIMIT = UpstreamRef(
     "configure() caps the gripper at 50 % torque, 50 % current (Protection_Current 250) and "
     "25 % torque once overloaded (Overload_Torque 25), lines 155 to 157: the native safety "
     "authority. The line's own comment calls 500 '50% of max torque', so the register's full "
-    "scale is 1000, and the arm simulator scales its model gripper's force range by that ratio "
-    "(GRIPPER_MAX_TORQUE_LIMIT over MAX_TORQUE_LIMIT_FULL)",
+    "scale is 1000",
 )
-GRIPPER_MAX_TORQUE_LIMIT = 500
-"""What configure() writes to the gripper's Max_Torque_Limit (SO_GRIPPER_TORQUE_LIMIT)."""
-MAX_TORQUE_LIMIT_FULL = 1000
-"""The register's full scale, from the comment beside that write, which calls 500 half of it."""
 SO_BODY_HAS_NO_TORQUE_CAP = UpstreamRef(
     "the five body joints get no torque or current cap",
     "VERIFIED",
@@ -542,9 +521,7 @@ KINEMATICS_DEG2RAD = UpstreamRef(
     src(_KINEMATICS, 88),
     "forward_kinematics hands each joint in its joint_names the reading in radians with no "
     "offset and no sign, and inverse_kinematics seeds its solve the same way (line 123). It is "
-    "LeRobot's own precedent for putting a calibrated reading on a model of the arm, and the "
-    "one the arm simulator follows for the five arm joints, whose zero and sign are its "
-    "assumptions in roboglot_lerobot.sim.upstream_api",
+    "LeRobot's own precedent for putting a calibrated reading on a model of the arm",
 )
 
 # ── the bus, below the Robot interface, where the registers are ─────────────────────────
@@ -649,8 +626,7 @@ BUS_MOTORS = UpstreamRef(
     "resolves them through it (_get_motors_list, line 310): None is every motor in the table's "
     "order, a name is itself, an id is the motor the table gives it, a sequence is each of those "
     "in its own order, and anything else is a TypeError. The torque calls write to those motors "
-    "and no others, in that order (lines 639 to 641). The arm simulator's bus resolves them the "
-    "same way",
+    "and no others, in that order (lines 639 to 641)",
 )
 BUS_WRITE_ERROR_NAMES_THE_ID = UpstreamRef(
     "Failed to write <value> to '<register>' of motor ID <N> after <k> tries. <error>",
@@ -724,8 +700,7 @@ BUS_SYNC_READ_ERROR = UpstreamRef(
     f"{serialport('src/posix/poll.rs', 37)}), and `Timeout error` is rustypot's for a packet "
     "that could not go out or stale input it could not flush (lines 757 to 806). Roboglot "
     "names motor M as the first that did not answer, through BUS_MOTORS, and names no joint for "
-    "a sync write. The arm simulator raises these words for the read and goal write faults it "
-    "injects",
+    "a sync write",
 )
 STS3215_MODEL_NUMBER = UpstreamRef(
     "sts3215 model number 777",
@@ -734,11 +709,8 @@ STS3215_MODEL_NUMBER = UpstreamRef(
     "what a servo of the SO-101's model answers a ping with, in rustypot's table, which LeRobot "
     "reads through `rustypot.find_model` (motors_bus.py lines 241 to 246) and the handshake "
     "expects of every motor in the bus table and prints beside each id it lists "
-    "(HANDSHAKE_NAMES_THE_ID). The arm simulator's handshake fault prints it where the arm's "
-    "would",
+    "(HANDSHAKE_NAMES_THE_ID)",
 )
-STS3215_MODEL = 777
-"""STS3215_MODEL_NUMBER's number."""
 NOT_CONNECTED = UpstreamRef(
     "check_if_not_connected refuses a call on a port that is not open",
     "VERIFIED",
@@ -750,11 +722,10 @@ NOT_CONNECTED = UpstreamRef(
     "disable_torque() and enable_torque() (motors_bus.py lines 1069, 1090, 1146, 1193, 1253, 650 "
     "and 669), and everything else that reaches the port refuses in the same words "
     "(`_connected_bus`, lines 253 to 260), so nothing reaches a motor through a port that is "
-    "shut. The bus's disconnect() does not carry it (BUS_DISCONNECT). Its twin "
+    "shut. The bus's disconnect() does not carry it (BUS_DISCONNECT). Its counterpart "
     "check_if_already_connected (line 34) says '<class> is already connected.' "
-    "(SO_CONNECT_REFUSES_WHILE_OPEN). The arm simulator's follower and bus refuse in the same "
-    "words under upstream's class names, SOFollower and SerialMotorsBus, so a rehearsal fails "
-    "where the arm would and says what the arm would",
+    "(SO_CONNECT_REFUSES_WHILE_OPEN). The mock's follower refuses in the same words "
+    "(fake_follower.py), so a rehearsal fails where the arm would and says what the arm would",
 )
 SO_CONNECT_REFUSES_WHILE_OPEN = UpstreamRef(
     "SOFollower.connect() refuses while the port is open",
@@ -864,8 +835,7 @@ CALIBRATION_EQUAL_RANGE = UpstreamRef(
     src(_BUS, 1021),
     "_normalize() raises this ValueError for a motor whose range_min equals its range_max, "
     "and _unnormalize() raises it too (line 1050), so LeRobot loads such a file and then "
-    "refuses the first reading or goal that goes through the motor. The arm simulator refuses "
-    "the file as it reads it, which is the same arm refused sooner",
+    "refuses the first reading or goal that goes through the motor",
 )
 DEGREES_FORMULA = UpstreamRef(
     "degrees = (raw - mid) * 360 / 4095",
@@ -1041,8 +1011,9 @@ BUS_IS_CALIBRATED_DYNAMIXEL = UpstreamRef(
     "is_calibrated also compares Drive_Mode on a Dynamixel",
     "VERIFIED",
     src(_BUS, 729),
-    "BUS_IS_CALIBRATED's twin. An XL430 and an XL330 both have Homing_Offset and Drive_Mode "
-    "(rustypot xl430.rs lines 39 and 35, xl330.rs lines 36 and 32), so read_calibration() makes "
+    "BUS_IS_CALIBRATED on a Dynamixel. An XL430 and an XL330 both have Homing_Offset and "
+    "Drive_Mode (rustypot xl430.rs lines 39 and 35, xl330.rs lines 36 and 32), so "
+    "read_calibration() makes "
     "four sync reads on a Koch, the two limits and then both of those (lines 753 to 756), where "
     "on an sts3215 it makes three, and _same_calibration() holds the file's drive_mode against "
     "the servo's as well as its homing_offset and limits (lines 725 to 729), where on an sts3215 "

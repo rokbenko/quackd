@@ -44,7 +44,6 @@ from roboglot.transport.base import (
     HeartbeatError,
     Intent,
     TransportError,
-    frame_head_yaw_of,
     spatial_of,
     twist_shown_since_of,
 )
@@ -395,7 +394,7 @@ def test_the_default_address_is_robotds_own_socket_whatever_duck_runtime_dir_say
     never robotd's socket, which is a literal `--socket` default (`up.RUNTIME_DIR_ENV`). Roboglot
     read it on the machine it ran on, so in a shell that set it, for upstream's tests or a daemon
     run by hand, the default named a socket no robotd creates."""
-    monkeypatch.setenv(up.RUNTIME_DIR_ENV.name, "/home/someone/.cache/duck-sim")
+    monkeypatch.setenv(up.RUNTIME_DIR_ENV.name, "/home/someone/duck-runtime")
     assert default_address() == f"unix://{up.SOCKET_ROBOTD.name}" == "unix:///run/robotd.sock"
     assert JsonRpcUnixTransport().address == default_address()
 
@@ -3289,9 +3288,9 @@ async def test_a_dry_run_holds_no_gaze(registry: VerbRegistry, robotd: FakeRobot
 async def test_the_state_says_where_the_camera_points(
     robotd: FakeRobotd, yaw_deg: float, pitch_deg: float
 ) -> None:
-    """The simulators have always said where the head points as `head_yaw_deg`, and a team
-    member adds it to a camera bearing to get one from the body. The real duck never said, so on
-    a robot the camera read as straight ahead wherever the head had turned. `frames.camera` is
+    """`head_yaw_deg` says where the head points: a head sweep (`search_scan`) starts from it, and
+    so does `watch` before it has sent a look of its own. The real duck never said, so on a robot
+    the camera read as straight ahead wherever the head had turned. `frames.camera` is
     where robotd's own FK puts the camera, and its optical axis is the answer."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
@@ -3681,7 +3680,7 @@ async def test_the_first_frame_from_mediad_is_taken_for_the_lens_its_shape_names
     robotd: FakeRobotd, path: str, size: tuple[int, int], assumed: up.UpstreamRef | None
 ) -> None:
     """The PNG carries no lens, and `serve-mcp` has no `--fov-deg` to give one, so a body with
-    none is measured through the simulator's 90 degrees. On a stock robot only an alpha's camera,
+    none is measured through the default 90 degrees. On a stock robot only an alpha's camera,
     turned upright for the PNG, gives a picture taller than wide, so a tall first frame from
     mediad's route is taken for the IMX219's 62 degrees running down the picture. Only a beta's
     GC2093, which sits upright, gives one wider than tall, 16:9 at every size mediad streams,
@@ -3821,36 +3820,25 @@ async def test_a_frame_slower_to_come_than_the_window_is_never_handed_out(
     [(up.MEDIAD_FRAME_PATH, True), ("/snapshot.png", False)],
     ids=["mediad", "other"],
 )
-async def test_only_mediads_frame_says_when_and_through_which_head_it_was_taken(
+async def test_only_mediads_frame_says_when_it_was_taken(
     robotd: FakeRobotd, path: str, says: bool
 ) -> None:
     """mediad's `/frame` takes its picture after the request reaches it, so the request's moment
-    is one the picture is no older than, and the head the newest state frame showed then is the
-    head it was taken through, which a team member adds a bearing to. Any other HTTP camera may
-    hand out a picture it took before it was asked, so its frames say neither, and nor does a
-    WebRTC frame, which comes some unknown while after the camera took it."""
-    yaw = 30.0
+    is one the picture is no older than. Any other HTTP camera may hand out a picture it took
+    before it was asked, so its frames say nothing of when, and nor does a WebRTC frame, which
+    comes some unknown while after the camera took it."""
     with SnapshotServer((200, _png(720, 1280))) as camera:
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=camera.url(path), camera_wait_s=60.0
         )
         await t.connect()
         try:
-            point = (math.cos(math.radians(yaw)), math.sin(math.radians(yaw)), 0.0)
-            assert (await t.send_intent(Intent.look(*point))).accepted
-            await _until(t, lambda s: jsonrpc_unix._head_pose(s)[0] == yaw)
-            turned = time.monotonic()
-            await _eventually(
-                lambda: t._frame_at is not None and t._frame_at > turned,
-                "a frame asked for once the state showed the head turned",
-            )
             frame = await t.get_frame()
             assert frame is not None and t._frame_at is not None
             if says:
                 assert t.frame_taken_at() == t._frame_at - t._t0
-                assert frame_head_yaw_of(frame) == yaw, frame.info
             else:
-                assert t.frame_taken_at() is None and frame_head_yaw_of(frame) is None
+                assert t.frame_taken_at() is None
             # and through the adapter, which is what a run hands the verbs
             assert MicroduckAdapter(t).frame_taken_at() == t.frame_taken_at()
         finally:
@@ -4018,8 +4006,8 @@ async def test_robotds_odometry_is_a_pose_in_extras_and_never_in_x_y_theta(
 ) -> None:
     """robotd has sent `odom` on every frame since before the pin, and Roboglot passed it through
     raw and read nothing of it. It is a pose now, which says it is odometry, and the adapter
-    passes the source on by name. `x`, `y` and `theta` stay empty, since the team reads those
-    as one arena every member shares."""
+    passes the source on by name. `x`, `y` and `theta` stay empty: the odometry is the duck's
+    own frame, said as such under `where`, and not a frame anything else shares."""
     t = await _connected(robotd)
     robotd.odom = {"position": [0.4, -0.2, 0.06], "yaw": 0.5}
     await _eventually(lambda: _x_of(t) == 0.4, "the duck's odometry reaching Roboglot")

@@ -1,10 +1,10 @@
 """The MQTT team bus on a fake broker: no sockets, no paho needed.
 
 Two `MqttBus` nodes share a synchronous fake broker that routes like a real one (it echoes
-the sender's own publications back). What is proven: every message kind round-trips, echo
-is dropped, the tap fires exactly once per message per node, QoS and retain are what the
-ADR says, unreadable payloads are dropped, duplicates change no decision, remote messages
-land on the event loop, and `drain()` loses nothing to a concurrent producer.
+the sender's own publications back). What is proven: every message round-trips, echo is
+dropped, the tap fires exactly once per message per node, QoS and retain are what the ADR
+says, unreadable payloads are dropped, remote messages land on the event loop, `drain()` loses
+nothing to a concurrent producer, and a pilot team runs over it.
 """
 
 from __future__ import annotations
@@ -19,25 +19,14 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
+from roboglot.adapters.factory import RobotSpec
 from roboglot.agent.providers.fake import FakeProvider
 from roboglot.glotfile.parser import load_glot
 from roboglot.lan import LanNotInstalled
-from roboglot.team.auction import Auction, AuctionPolicy
 from roboglot.team.bus import Subscription
-from roboglot.team.messages import (
-    BidMsg,
-    ClaimMsg,
-    HbMsg,
-    Hint,
-    HintMsg,
-    ResultMsg,
-    RoleMsg,
-    TaskMsg,
-    TeamTask,
-    VerdictMsg,
-)
-from roboglot.team.mqtt_bus import QOS_CTL, QOS_HB, MqttBus, decode, encode
-from roboglot.team.runner import run_team
+from roboglot.team.messages import TalkMsg
+from roboglot.team.mqtt_bus import QOS_CTL, MqttBus, decode, encode
+from roboglot.team.pilots import roster_from_specs, run_pilot_team
 
 
 class FakeMessage:
@@ -109,48 +98,33 @@ def node(broker: FakeBroker, *subscribers: str, tap: list[Any] | None = None) ->
     return bus
 
 
-def one_of_each(src: str = "coordinator") -> list[Any]:
-    base = {"t": 1.0, "src": src, "task_id": "abc"}
-    task = TeamTask(task_id="abc", name="kick", goal="kick the ball")
-    hint = Hint(target="ball", x_m=1.0, y_m=2.0, by=src, est_dist_m=1.5, bearing_deg=10.0)
+def talks(src: str = "duck-0") -> list[TalkMsg]:
+    """What one pilot says in a team: to everyone, to one member, and the runner's own notice."""
+    base = {"t": 1.0, "task_id": "abc"}
     return [
-        TaskMsg(**base, task=task, members=["duck-0", "duck-1"]),
-        BidMsg(**base, bearing_deg=10.0, ball_dist_m=0.5, confidence=0.9, role="kicker"),
-        ClaimMsg(**base, kicker="duck-1", lease_s=6.0, assignments={"kicker": "duck-1"}),
-        RoleMsg(**base, duck="duck-1", role="KICK", team_role="kicker", seq=1, hint=hint),
-        HbMsg(**base, role="SEARCH", x=0.1, y=0.2),
-        ResultMsg(**base, status="kick_done", ball_moved_m=0.2),
-        HintMsg(**base, hint=hint),
-        VerdictMsg(**base, target="ball", kicker="duck-1", verdict="moved", moved_m=0.5),
+        TalkMsg(**base, src=src, text="I see the ball by the door"),
+        TalkMsg(**base, src=src, to="duck-1", text="you take the left side"),
+        TalkMsg(**base, src="team", text="duck-2's loop ended: out of steps"),
     ]
 
 
-def test_every_message_kind_round_trips_and_echo_is_dropped() -> None:
+def test_every_message_round_trips_and_echo_is_dropped() -> None:
     broker = FakeBroker()
     tap_a: list[Any] = []
     tap_b: list[Any] = []
-    a = node(broker, "coordinator", "duck-0", tap=tap_a)
+    a = node(broker, "team", "duck-0", tap=tap_a)
     b = node(broker, "duck-1", tap=tap_b)
     local = a.subscribe("duck-0-observer")  # a second local subscriber on A
-    sent = one_of_each()
+    sent = talks()
     for msg in sent:
         a.publish(msg)
     got = b._subs[0].drain()
     assert got == sent  # same models, same values, in order
-    assert {m.kind for m in got} == {
-        "TASK",
-        "BID",
-        "CLAIM",
-        "ROLE",
-        "HB",
-        "RESULT",
-        "HINT",
-        "VERDICT",
-    }
+    assert {m.kind for m in got} == {"TALK"}
     # A's own subscribers got them by local fan-out, never from the broker echo
     assert local.drain() == sent
-    assert a.published == 8 and a.dropped == 8 and a.received == 0
-    assert b.received == 8 and b.published == 0 and b.dropped == 0
+    assert a.published == 3 and a.dropped == 3 and a.received == 0
+    assert b.received == 3 and b.published == 0 and b.dropped == 0
     # the tap fired exactly once per message per node: on publish at A, on receive at B
     assert tap_a == sent and tap_b == sent
     a.close()
@@ -158,18 +132,17 @@ def test_every_message_kind_round_trips_and_echo_is_dropped() -> None:
     assert broker.clients == []
 
 
-def test_hb_is_qos0_control_is_qos1_and_nothing_is_retained() -> None:
+def test_control_is_qos1_and_nothing_is_retained() -> None:
     broker = FakeBroker()
     a = node(broker, "duck-0")
     client = a._client
     assert isinstance(client, FakeClient)
-    assert client.subscriptions == {"roboglot/t1/ctl": QOS_CTL, "roboglot/t1/hb": QOS_HB}
-    for msg in one_of_each("duck-0"):
+    assert client.subscriptions == {"roboglot/t1/ctl": QOS_CTL}
+    for msg in talks("duck-0"):
         a.publish(msg)
     by_topic = {topic: (qos, retain) for topic, _p, qos, retain in client.published}
-    assert by_topic == {"roboglot/t1/ctl": (1, False), "roboglot/t1/hb": (0, False)}
-    hb = [p for topic, p, _q, _r in client.published if topic.endswith("/hb")]
-    assert len(hb) == 1 and json.loads(hb[0])["kind"] == "HB"
+    assert by_topic == {"roboglot/t1/ctl": (1, False)}
+    assert [json.loads(p)["kind"] for _t, p, _q, _r in client.published] == ["TALK"] * 3
 
 
 def test_unreadable_payloads_are_dropped_and_counted() -> None:
@@ -180,7 +153,7 @@ def test_unreadable_payloads_are_dropped_and_counted() -> None:
     b.start()
     broker.inject("roboglot/t1/ctl", b"not json")
     broker.inject(
-        "roboglot/t1/ctl", json.dumps({"kind": "TASK", "src": "x"}).encode()
+        "roboglot/t1/ctl", json.dumps({"kind": "TALK", "src": "x"}).encode()
     )  # fields missing
     broker.inject(
         "roboglot/t1/ctl", json.dumps({"kind": "NOPE", "src": "x", "t": 0, "task_id": "a"}).encode()
@@ -189,44 +162,7 @@ def test_unreadable_payloads_are_dropped_and_counted() -> None:
     assert len(logged) == 3 and "roboglot/t1/ctl" in logged[0]
     with pytest.raises(ValidationError):
         decode(b"{}")
-    assert decode(encode(one_of_each()[1])) == one_of_each()[1]
-
-
-def test_a_duplicate_bid_changes_no_decision() -> None:
-    # QoS 1 may deliver twice; the auction keeps the minimum per source, so twice is once
-    broker = FakeBroker(duplicate=True)
-    a = node(broker, "duck-1")
-    b = node(broker, "coordinator")
-    a.publish(
-        BidMsg(
-            t=1.0,
-            src="duck-1",
-            task_id="abc",
-            bearing_deg=0,
-            ball_dist_m=0.6,
-            confidence=1,
-        )
-    )
-    a.publish(
-        BidMsg(
-            t=1.1,
-            src="duck-2",
-            task_id="abc",
-            bearing_deg=0,
-            ball_dist_m=0.9,
-            confidence=1,
-        )
-    )
-    got = b._subs[0].drain()
-    assert len(got) == 4 and b.received == 4  # every control message arrived twice
-    auction = Auction(AuctionPolicy(), now=lambda: 10.0)
-    bids = [m for m in got if isinstance(m, BidMsg)]
-    auction.open(bids[0])
-    for bid in bids[1:]:
-        auction.add(bid)
-    decision = auction.decide(None, set())
-    assert decision is not None and decision.kicker == "duck-1"
-    assert decision.bids == {"duck-1": 0.6, "duck-2": 0.9} and not decision.tie
+    assert decode(encode(talks()[1])) == talks()[1]
 
 
 async def test_remote_messages_land_on_the_event_loop_not_the_network_thread() -> None:
@@ -237,7 +173,7 @@ async def test_remote_messages_land_on_the_event_loop_not_the_network_thread() -
     )
     sub = b.subscribe("duck-1")
     b.start()  # inside the running loop: captures it
-    payload = encode(one_of_each("coordinator")[0])
+    payload = encode(talks("duck-0")[0])
 
     thread = threading.Thread(target=broker.inject, args=("roboglot/t1/ctl", payload))
     thread.start()
@@ -252,11 +188,11 @@ async def test_remote_messages_land_on_the_event_loop_not_the_network_thread() -
 def test_drain_loses_nothing_to_a_concurrent_producer() -> None:
     sub = Subscription("x", lambda _s: None)
     n = 20_000
-    hb = one_of_each()[4]
+    talk = talks()[0]
 
     def produce() -> None:
         for _ in range(n):
-            sub._push(hb)
+            sub._push(talk)
 
     thread = threading.Thread(target=produce)
     thread.start()
@@ -268,7 +204,7 @@ def test_drain_loses_nothing_to_a_concurrent_producer() -> None:
     assert drained == n
 
 
-async def test_run_team_over_the_mqtt_bus(tmp_path: Path) -> None:
+async def test_a_pilot_team_runs_over_the_mqtt_bus(tmp_path: Path) -> None:
     broker = FakeBroker()
     buses: list[MqttBus] = []
 
@@ -277,11 +213,15 @@ async def test_run_team_over_the_mqtt_bus(tmp_path: Path) -> None:
         buses.append(bus)
         return bus
 
+    roster = roster_from_specs(
+        {"duck": RobotSpec("microduck", "mock", "duck"), "arm": RobotSpec("lerobot", "mock", "arm")}
+    )
     result = await asyncio.wait_for(
-        run_team(
-            load_glot("team-kick"),
-            provider=FakeProvider.for_glot("team-kick"),
-            seed=3,
+        run_pilot_team(
+            load_glot("team-hello"),
+            roster,
+            # one instance per member: a shared strategy closure would be shared state
+            providers={name: FakeProvider.for_glot("team-hello") for name in roster},
             runs_dir=tmp_path,
             bus_factory=factory,
         ),

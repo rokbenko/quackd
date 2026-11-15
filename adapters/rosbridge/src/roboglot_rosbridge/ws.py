@@ -314,7 +314,6 @@ class RosbridgeWs:
         self.last_twist = (0.0, 0.0, 0.0)
         self.published = 0
         self.roslibpy_version: str | None = None
-        self.post_sleep: Callable[[], None] | None = None
 
     @property
     def camera_available(self) -> bool:
@@ -660,8 +659,6 @@ class RosbridgeWs:
 
     async def sleep(self, seconds: float) -> None:
         await asyncio.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()
 
 
 class _OdomReading(OdometrySource):

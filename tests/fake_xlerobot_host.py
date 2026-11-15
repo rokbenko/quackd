@@ -1,4 +1,4 @@
-"""A behaviour twin of upstream's `xlerobot_host.py`, on loopback sockets, with no robot.
+"""A behaviour double of upstream's `xlerobot_host.py`, on loopback sockets, with no robot.
 
 Upstream ships no test, no CI and no simulator that runs: its ManiSkill host imports
 `xlerobot_single`, which is defined nowhere in the repository. So the only way to exercise

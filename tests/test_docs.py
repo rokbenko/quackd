@@ -54,13 +54,13 @@ def test_every_body_roboglot_ships_has_a_row_on_the_safety_pages_other_bodies() 
 
 def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
-    `microduck_rl`'s model and policies, which the physics backend fetches and runs.
+    `microduck_rl`'s walking task, whose velocity command ranges cap the duck's walk.
 
     Every other upstream in the project has a doc-completeness guard, the nine other adapter
     pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
     Without the second loop the newest table is the only one that can go stale in silence.
     """
-    from roboglot_microduck.sim3d import upstream_api as microduck_rl
+    from roboglot_microduck import rl_upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     doc = _as_rendered(doc)
@@ -103,36 +103,22 @@ def test_the_microduck_page_says_which_read_it_is() -> None:
     assert linked == {up.PIN}, f"the page links the robot's repository at {sorted(linked)}"
 
 
-def test_the_microduck_page_says_which_physics_read_it_is() -> None:
-    """The physics section names the day `sim3d/upstream_api.py` was read, and links the model
-    and the policies at the revisions the simulator fetches and at no others.
+def test_the_microduck_page_says_which_training_read_it_is() -> None:
+    """The section on the walk's training ranges names the day `rl_upstream_api.py` was read and
+    links `microduck_rl` at that commit and at no other.
 
-    The robot's read has the guard above, and nothing held this one: a re-pin that moved the
-    simulator's policies and left the page would go on sending somebody checking the licence to
-    a revision Roboglot no longer fetches. The re-read on 2026-10-09 moved the policies from
-    `088524a`, older than upstream's `v5`, to `v7`."""
-    from roboglot_microduck.sim3d import upstream_api as microduck_rl
+    The robot's read has the guard above, and nothing else holds this one: a re-pin that moved
+    the commit and left the page would go on sending somebody checking the ranges to a revision
+    Roboglot no longer reads."""
+    from roboglot_microduck import rl_upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
-    section = doc.split("\n## The duck's physics upstreams\n", 1)[1].split("\n## ", 1)[0]
+    section = doc.split("\n## The walk's training ranges\n", 1)[1].split("\n## ", 1)[0]
     section = " ".join(section.split())
     model = f"{microduck_rl.REPO}/tree/{microduck_rl.PIN}"
-    policies = f"{microduck_rl.POLICIES_REPO}/tree/{microduck_rl.POLICIES_PIN}"
     assert f"Read: {microduck_rl.READ_ON}, pinned at [`{microduck_rl.PIN[:7]}`]({model})" in section
-    assert f"policies at [`{microduck_rl.POLICIES_PIN[:7]}`]({policies})" in section
-    linked = {
-        "microduck_rl": set(
-            re.findall(r"github\.com/pollen-robotics/microduck_rl/(?:blob|tree)/(\w+)", doc)
-        ),
-        "microduck-policies": set(
-            re.findall(
-                r"huggingface\.co/pollen-robotics/microduck-policies/(?:blob|tree|resolve)/(\w+)",
-                doc,
-            )
-        ),
-    }
-    pinned = {"microduck_rl": {microduck_rl.PIN}, "microduck-policies": {microduck_rl.POLICIES_PIN}}
-    assert linked == pinned, f"the page links the simulator's upstreams at {linked}"
+    linked = set(re.findall(r"github\.com/pollen-robotics/microduck_rl/(?:blob|tree)/(\w+)", doc))
+    assert linked == {microduck_rl.PIN}, f"the page links microduck_rl at {sorted(linked)}"
 
 
 def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
@@ -415,14 +401,6 @@ _RETIRED_MICRODUCK_CLAIMS = (
     # of the checklist tests the deadman with the pad switched off
     "gamepad is the real e-stop",
     "pad in hand as the e-stop",
-    # the simulator's walk: every robotd from daemon-v0.13.0 walks on velstand.onnx, and the
-    # simulator runs alpha_walking.onnx, the policy Pollen trained before it
-    "on its own walking policy",
-    "the walking policy the robot ships with",
-    "the walking policy Pollen trained for it",
-    "the robot's own walking policy",
-    "what runs the robot's own policy",
-    "the Microduck's own model and walking policy",
     # policies: robotd has swapped a slot over its socket since API v18 (robot.loadPolicy)
     "hot-swapped over the socket (not designed yet)",
     # the clamps, found wrong in 0.18.1: robotd clamps no twist and sets no thermal limit at
@@ -441,9 +419,8 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
     said what the read before it had: an account to ssh in as that was Roboglot's guess, API v23,
     WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
     posture as an assumption, a robotd that gets a fallen duck up, a gamepad that out-ranks
-    Roboglot, where robotd walks on the newest twist from either, a simulator walking on the
-    robot's own policy, which every robotd from daemon-v0.13.0 replaced, and no way to swap a
-    policy over the socket. Each was spelled its own way, and a revert of any one reads as
+    Roboglot, where robotd walks on the newest twist from either, and no way to swap a policy
+    over the socket. Each was spelled its own way, and a revert of any one reads as
     current, so the old spellings are kept out of every living page and of everything else a
     person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
     templates and the bundled tasks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
@@ -591,38 +568,11 @@ def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
     assert api.PIN[:7] in doc and "never" in doc.lower()  # the honesty label
 
 
-def test_adapter_doc_lists_every_simulator_upstream_ref() -> None:
-    """The arm's simulator reads a second upstream, TheRobotStudio's SO-ARM100, whose refs live
-    in `roboglot_lerobot.sim.upstream_api`. The guard above reads `roboglot_lerobot.upstream_api`
-    only, so without this one the model's table could go stale in silence.
-
-    Each ref needs a row of its own in the table for its status. A name found anywhere on the
-    page is not enough: the model's file name is in the prose, and `GRIPPER_MAP` is named in a
-    VERIFIED row, so either row could go and a looser check would stay green."""
-    from roboglot_lerobot.sim import upstream_api as so_arm100
-
-    doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
-    section = doc.split("\n## The simulator's upstream: SO-ARM100\n", 1)[1].split("\n## ", 1)[0]
-    verified, unverified = section.split("\n### UNVERIFIED (", 1)
-    tables = {"VERIFIED": verified.split("\n### VERIFIED (", 1)[1], "UNVERIFIED": unverified}
-    missing = [
-        f"{ref.status} {ref.name}"
-        for ref in so_arm100.all_refs()
-        if f"\n| `{ref.name}` |" not in tables[ref.status]
-    ]
-    assert not missing, (
-        f"docs/adapters/lerobot/README.md has no row for these SO-ARM100 refs: {missing}"
-    )
-    assert so_arm100.PIN[:7] in section and so_arm100.READ_ON in section
-    assert "fetched at run time and never shipped" in section  # the honesty label
-    assert "ROBOGLOT_LEROBOT_SIM_ASSETS" in section
-
-
 def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     """LeRobot's policy names are read at another pin than the arm's, the release a policy
     server installs, in `roboglot_lerobot.policy.upstream_api`, and the arm's page carries them
-    in a section of their own. As with the simulator's, each ref needs a row of its own in the
-    table for its status, because a name found anywhere on the page is not enough: the moved
+    in a section of their own. Each ref needs a row of its own in the table for its status,
+    because a name found anywhere on the page is not enough: the moved
     rows used to sit in the arm's own tables, and a leftover there would keep a looser check
     green."""
     from roboglot_lerobot.policy import upstream_api as policies
@@ -734,7 +684,6 @@ def test_readme_promises() -> None:
         "docs/guides/local-llms.md",
         "| Local LLMs (",
         "--team",
-        "team-kick",
         "docs/guides/team.md",
         "--no-log",
         "ROBOGLOT_LOG",
@@ -961,8 +910,6 @@ def test_extra_body_is_documented_where_it_is_configured() -> None:
         ),
         ("docs/faq.md", ("--extra-body",)),
         (".env.example", ("ROBOGLOT_EXTRA_BODY", "chat_template_kwargs")),
-        # the page has no such door, and its own list of differences is where that is recorded
-        ("web/README.md", ("extra_body",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -1110,13 +1057,13 @@ def test_task_pictures_are_documented_where_they_are_configured() -> None:
 
 
 def test_the_policy_server_flags_are_documented_where_they_are_configured() -> None:
-    """`--policy-url` names the server a LeRobot arm hands its segments to, on `run`,
-    `preflight` and `serve-mcp`, and a flag nobody can find is a policy nobody points the arm at.
-    The front page names both flags, in the usage rows of all three commands and in the
-    Configuration table, the MCP page names them for `serve-mcp`, the arm's page says what a run
-    does with one, and `.env.example` names the one variable there is. That is the token's: the
-    address has none on purpose, so the file must never grow a line for it. `--accept-other-frame`
-    goes with them on all three, and every page that names it, the safety page among them, says
+    """`--policy-url` names the server a LeRobot arm hands its segments to, on `run` and
+    `serve-mcp`, and a flag nobody can find is a policy nobody points the arm at. The front page
+    names both flags, in the usage rows of both commands and in the Configuration table, the MCP
+    page names them for `serve-mcp`, the arm's page says what a run does with one, and
+    `.env.example` names the one variable there is. That is the token's: the address has none on
+    purpose, so the file must never grow a line for it. `--accept-other-frame` goes with them on
+    both, and every page that names it, the safety page among them, says
     the goals of the policy it lets in are still clipped to the arm's travel. So does
     `--no-async-chunks`, which has the arm wait for every chunk, and the policy guide says what
     it is for."""
@@ -1127,12 +1074,12 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
         for c in app.registered_commands
         if c.callback is not None
     }
-    for name in ("run", "preflight", "serve-mcp"):
+    for name in ("run", "serve-mcp"):
         params = callbacks[name].__code__.co_varnames
         assert "policy_url" in params and "policy_token" in params, name
         assert "accept_other_frame" in params and "async_chunks" in params, name
     rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
-    for name in ("run", "preflight", "serve-mcp"):
+    for name in ("run", "serve-mcp"):
         row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--policy-url" in row, f"the README's {name} row does not name --policy-url"
         assert "--accept-other-frame" in row, f"the README's {name} row does not name it"
@@ -1158,35 +1105,6 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
             assert needle in text, f"{path} does not mention {needle!r}"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     assert "ROBOGLOT_POLICY_URL" not in env_example, "the policy server's address has no variable"
-
-
-def test_the_room_is_documented_where_it_is_configured() -> None:
-    """`--room` lays out a room for the duck's simulator on `run`, `record`, `drive` and
-    `serve-mcp`, and `validate` checks a task against one, and a flag nobody can find is a room
-    nobody maps. The front page names it in all five commands' rows, and the places page names
-    every room Roboglot ships, says what a room file holds, and quotes `two-rooms` as it ships, so
-    the example is one a person can copy."""
-    from roboglot.cli import app
-    from roboglot.space.room import BUILT_IN
-
-    callbacks = {
-        (c.name or c.callback.__name__).replace("_", "-"): c.callback
-        for c in app.registered_commands
-        if c.callback is not None
-    }
-    commands = ("run", "record", "drive", "serve-mcp", "validate")
-    for name in commands:
-        assert "room" in callbacks[name].__code__.co_varnames, name
-    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
-    for name in commands:
-        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
-        assert "--room" in row, f"the README's {name} row does not name --room"
-    places = (REPO / "docs" / "concepts" / "places.md").read_text(encoding="utf-8")
-    for room in BUILT_IN:
-        assert f"`{room}`" in places, f"docs/concepts/places.md does not name the room {room}"
-    shipped = (REPO / "roboglot" / "space" / "rooms" / "two-rooms.yaml").read_text(encoding="utf-8")
-    body = "\n".join(line for line in shipped.splitlines() if not line.startswith("#"))
-    assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one Roboglot ships"
 
 
 def test_the_map_address_is_documented_where_it_is_configured() -> None:
@@ -1219,8 +1137,8 @@ def test_the_map_address_is_documented_where_it_is_configured() -> None:
 
 def test_play_is_documented_where_it_is_configured() -> None:
     """`--play` and a task file's `play: true` change what a pilot is told, so somebody turning
-    them on has to find what they add and what they leave alone: the front page's `run`,
-    `preflight` and `record` rows and its Configuration table, the spec's v4 key, the guide, the
+    them on has to find what they add and what they leave alone: the front page's `run` row and
+    its Configuration table, the spec's v4 key, the guide, the
     MCP page, the ADR and the safety page, which says a part unlocks nothing. The guide quotes
     the section as the code renders it for an arm. No variable sets play, so `.env.example` must
     never grow a line for it."""
@@ -1232,13 +1150,11 @@ def test_play_is_documented_where_it_is_configured() -> None:
         for c in app.registered_commands
         if c.callback is not None
     }
-    for name in ("run", "record", "preflight"):
-        assert "play" in callbacks[name].__code__.co_varnames, name
+    assert "play" in callbacks["run"].__code__.co_varnames
     assert "play" not in callbacks["serve-mcp"].__code__.co_varnames
     rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
-    for name in ("run", "preflight", "record"):
-        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
-        assert "--play" in row and "--no-play" in row, f"the README's {name} row names neither"
+    row = next(line for line in rows if line.startswith("| `roboglot run"))
+    assert "--play" in row and "--no-play" in row, "the README's run row names neither"
     for path, needles in (
         ("README.md", ("| Play |", "play: true", "glot: 4", "docs/guides/play.md")),
         ("docs/reference/glot-spec.md", ("`play` (v4)", "glot: 4", "--no-play", "guides/play.md")),
@@ -1784,12 +1700,7 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
     document nobody will re-read on the day it does."""
     right = _NUMBER_WORDS[len(CLOUD_NAMES)]
     shapes = ("{w} cloud providers", "{w} cloud vendors", "{w} vendors")
-    # `_living_docs` stops at `docs/`, and the browser demo keeps its own count of the same
-    # vendors in its README and in the header of the file that decides which it offers. Those
-    # were both wrong the first time this list was written, which is the argument for including
-    # them: a count is only checkable where somebody thought to look.
-    web = [REPO / "web" / "README.md", REPO / "web" / "src" / "providers.js"]
-    for path in [*_living_docs(), *web]:
+    for path in _living_docs():
         prose = _prose(path.read_text(encoding="utf-8")).lower()
         for count, word in _NUMBER_WORDS.items():
             if count == len(CLOUD_NAMES):
@@ -1799,43 +1710,6 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
                 assert claim not in prose, (
                     f"{path.name} says {claim!r}; Roboglot has {right} ({', '.join(CLOUD_NAMES)})"
                 )
-
-
-def test_the_licences_page_counts_the_policies_the_simulator_pins() -> None:
-    """`docs/reference/licenses.md` says how many policies a Microduck ships with, and the
-    number is the set `sim3d/upstream_api.py` pins, counted off its list rather than written here.
-
-    The page said nine until the re-read on 2026-10-09, though upstream's set had been ten since
-    `v5` added `velstand.onnx` on 2026-09-14: Roboglot's pin was older than `v5`, and nothing
-    compared the two. The ADRs keep the count they were written with, so only the living pages
-    are held to it. The list is also where every policy file Roboglot names has to be: the two the
-    simulator fetches, the four it stands in for, and the walk a stock robotd loads."""
-    from roboglot_microduck.sim3d import upstream_api as microduck_rl
-
-    files = microduck_rl.POLICY_FILES
-    right = _NUMBER_WORDS[len(files)]
-    licences = REPO / "docs" / "reference" / "licenses.md"
-    said = f"the {right} ONNX policies a Microduck ships with"
-    assert said in " ".join(licences.read_text(encoding="utf-8").split()), (
-        f"docs/reference/licenses.md does not say {said!r}"
-    )
-    # only the claim about the set: SECURITY.md's "two ONNX policies" are the two Roboglot fetches
-    for path in _living_docs():
-        prose = " ".join(_prose(path.read_text(encoding="utf-8")).lower().split())
-        for count, word in _NUMBER_WORDS.items():
-            claim = f"{word} onnx policies a microduck ships with"
-            assert count == len(files) or claim not in prose, (
-                f"{path.name} says {claim!r}; the simulator pins {right}"
-            )
-    named = {
-        microduck_rl.WALK_POLICY.name,
-        microduck_rl.STAND_POLICY.name,
-        *microduck_rl.KICK_STANDIN.name.split(", "),
-        up.VELSTAND.name,
-    }
-    assert named <= set(files), (
-        f"not in the policy set the simulator pins: {sorted(named - set(files))}"
-    )
 
 
 # ── OpenRouter's page, and the code it quotes ───────────────────────────────────────────
@@ -1888,14 +1762,12 @@ def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
         REPO / "README.md",
         REPO / "docs" / "faq.md",
         OPENROUTER_PAGE,
-        REPO / "web" / "README.md",
-        REPO / "web" / "src" / "providers.js",
         REPO / "docs" / "models" / "README.md",
         REPO / "docs" / "models" / "pilot-llms.md",
         REPO / "docs" / "models" / "vendors.md",
         *sorted((REPO / "docs" / "adr").glob("0050-*.md")),
     ]
-    assert len(pages) == 9, "ADR-0050 is missing"
+    assert len(pages) == 7, "ADR-0050 is missing"
     for page in pages:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
@@ -2064,6 +1936,55 @@ def test_no_document_still_promises_a_removal_that_happened() -> None:
             assert promise not in text, f"{path.name} still promises {promise!r}, which happened"
 
 
+#: What went with the simulators on 2026-11-15, outright and with no release of warning: the
+#: backends, the commands and flags only they took, their extras and their variables. A living
+#: document may not offer any of it, and neither may anything a person reads or runs: the
+#: package, the adapters, the bridges, the scripts, the task files, the issue templates and the
+#: workflows. The history files keep them, and the tests that prove each is refused name them.
+#: `--gif` alone is not here, since `scripts/example_log.py` takes one of its own, a clip made
+#: from a video of the arm; nor are `--seed` and `--live`, which `roboglot onboard` keeps.
+_SIMULATOR_SPELLINGS = (
+    r"\b(?:microduck|open_duck|toddlerbot|alohamini):sim2d\b",
+    r"\b(?:microduck|lerobot):mujoco\b",
+    r"\broboglot (?:robot twin|record|preflight)\b",
+    r"--(?:room|no-gif|gif-size|faults|seeds|connect-cycles)\b",
+    r"\broboglot\[(?:[\w-]+,)*(?:mujoco|lerobot-sim|live)(?:,[\w-]+)*\]",
+    r"\broboglot-microduck\[(?:[\w-]+,)*mujoco(?:,[\w-]+)*\]",
+    r"\broboglot-lerobot\[(?:[\w-]+,)*sim(?:,[\w-]+)*\]",
+    r"\bROBOGLOT_(?:MUJOCO_BODY|MUJOCO_SHADOWS|MICRODUCK_ASSETS|LEROBOT_SIM_ASSETS|CACHE_DIR"
+    r"|STRICT_SEEDS|REQUIRE_GL)\b",
+)
+
+
+def test_no_page_or_string_offers_what_went_with_the_simulators() -> None:
+    """Every simulator went in one release, with the commands, flags, extras and variables only
+    they had, and a page or a help string that still offers one sends a reader to a spelling
+    that fails at `--robot`, or at the parser. Code is read as it is, comments and all, since a
+    comment that names a removed command is how one comes back."""
+    sources = [
+        *_living_docs(),
+        REPO / ".env.example",
+        REPO / ".mcp.json",
+        REPO / "pyproject.toml",
+        *sorted((REPO / "adapters").glob("*/pyproject.toml")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.json")),
+        *sorted((REPO / "adapters").rglob("*.py")),
+        *sorted((REPO / "bridge").rglob("*.py")),
+        *sorted((REPO / "scripts").rglob("*.py")),
+        *sorted((REPO / "tasks").glob("*.glot")),
+        *sorted((REPO / ".github").rglob("*.yml")),
+    ]
+    found = []
+    for path in sources:
+        text = path.read_text(encoding="utf-8")
+        for spelling in _SIMULATOR_SPELLINGS:
+            for match in re.finditer(spelling, text):
+                line = text.count("\n", 0, match.start()) + 1
+                found.append(f"{path.relative_to(REPO).as_posix()}:{line}: {match.group(0)}")
+    assert not found, "these still offer what went with the simulators:\n" + "\n".join(found)
+
+
 #: The one-liners ADR-0002 and ADR-0035 minted and their successors retired. ADR-0002 said
 #: "one-liner everywhere", and everywhere is what happened: the README, the PyPI summary, the
 #: `roboglot --help` banner, the package docstring and the browser demo's title all carried a
@@ -2096,7 +2017,6 @@ def test_the_retired_tagline_is_gone_and_the_new_one_is_everywhere_it_lived() ->
         REPO / "pyproject.toml",
         *(REPO / "roboglot").rglob("*.py"),
         *(REPO / "bridge").rglob("*.py"),
-        REPO / "web/index.html",
     ]
     for path in _living_docs() + sources:
         text = path.read_text(encoding="utf-8")
@@ -2200,46 +2120,26 @@ def test_every_file_in_docs_assets_has_a_row_in_its_catalogue() -> None:
         )
 
 
-def test_the_readme_opens_with_its_name_and_only_the_browser_demo_shows_its_mark() -> None:
+def test_the_readme_opens_with_its_name() -> None:
     """Until 2026-09-29 the README opened with a duck's head over its title, and a social card
     was built around the same head. It made Roboglot look like a toy rather than a tool that
-    drives a real arm, so both went. The browser demo keeps the head as its own header mark and
-    icons in `web/assets/`, and a living document that names one of those files is pointing a
-    reader at a logo the project no longer shows anywhere else.
-
-    The names are read from that directory rather than spelled here, so an icon added beside
-    them is covered too. The history files may still name them: they record what was true."""
+    drives a real arm, so both went."""
     assert README.startswith("<h1"), (
         "README.md has something above its title. It opens with its name and carries no logo."
     )
-    icons = sorted(path.name for path in (REPO / "web" / "assets").iterdir() if path.is_file())
-    assert icons, "web/assets has no files, so this test would check nothing."
-    for path in _living_docs():
-        text = path.read_text(encoding="utf-8")
-        for icon in icons:
-            assert icon not in text, (
-                f"{path.relative_to(REPO).as_posix()} names web/assets/{icon}, the browser "
-                "demo's own mark. The README and docs/assets carry no logo: leave it to the demo."
-            )
 
 
-#: Sentences that were true until 2026-09-28, when OpenAI's `gpt-6-sol` flew the arm's
-#: simulator on film (`docs/assets/lerobot-sim.gif`). The README carried three of them, in its
-#: status table, its limitations and its help wanted, and the change that embedded the film in
-#: that same README fixed the assets catalogue's copy and none of these. The last has been
-#: false since `lerobot.gif`, an LLM on the real arm, and was missed then too.
+#: Sentences about the pictures that are false while `docs/assets/lerobot.gif`, OpenAI's
+#: `gpt-6-astra` flying the real arm on 2026-09-15, is one of them.
 _RETIRED_RECORDING_CLAIMS = (
-    "no real LLM recording has yet been made in any simulator",
     "the only recording in this repository with an LLM in the loop",
-    "every simulator recording here is the scripted pilot",
+    "the one recording in this repository with an LLM in the loop",
     "the one recording here with an LLM in it",
-    "none has yet been recorded in any simulator",
-    "every *simulator* recording here is driven by the scripted pilot",
     "not an llm, like every other asset here",
 )
 
 
-def test_no_living_document_still_says_no_llm_has_been_filmed_in_a_simulator() -> None:
+def test_no_living_document_still_says_no_llm_is_on_film() -> None:
     """A claim about the pictures, spelled once per page, and a page that keeps it says the
     opposite of a figure it may be showing a few screens up.
 
@@ -2247,20 +2147,19 @@ def test_no_living_document_still_says_no_llm_has_been_filmed_in_a_simulator() -
     re-recorded with the scripted pilot takes the LLM out of its row, and this test then
     says which claims have come true again."""
     catalogue = (REPO / "docs" / "assets" / "README.md").read_text(encoding="utf-8")
-    row = re.search(r"^\| `lerobot-sim\.gif` \| (.*?) \|", catalogue, flags=re.MULTILINE)
-    assert row is not None, "docs/assets/README.md has no row for lerobot-sim.gif"
-    assert "gpt-6-sol" in row.group(1), (
-        "the lerobot-sim.gif row no longer names the LLM that flew it. If the film is the "
-        "scripted pilot now, the claims in _RETIRED_RECORDING_CLAIMS are true again: take "
-        "them out of this test and put the sentences back where the pages need them."
+    row = re.search(r"^\| `lerobot\.gif` \| (.*?) \|", catalogue, flags=re.MULTILINE)
+    assert row is not None, "docs/assets/README.md has no row for lerobot.gif"
+    assert "gpt-6-astra" in row.group(1), (
+        "the lerobot.gif row no longer names the LLM that flew it. If the film is the scripted "
+        "pilot now, the claims in _RETIRED_RECORDING_CLAIMS may be true again: take them out of "
+        "this test and put the sentences back where the pages need them."
     )
     for path in _living_docs():
         text = _one_line(path.read_text(encoding="utf-8"))
         for retired in _RETIRED_RECORDING_CLAIMS:
             assert retired not in text, (
                 f"{path.relative_to(REPO).as_posix()} still says {retired!r}, and OpenAI's "
-                "gpt-6-sol was filmed on the arm's simulator on 2026-09-28 "
-                "(docs/assets/lerobot-sim.gif)"
+                "gpt-6-astra flew the real arm on film on 2026-09-15 (docs/assets/lerobot.gif)"
             )
 
 
@@ -2424,10 +2323,8 @@ def test_the_readme_verb_table_has_a_row_per_body_listing_its_real_verbs() -> No
 
     assert set(_VERB_TABLE_ROWS) == set(ADAPTER_NAMES), "the row map has drifted from the code"
 
-    offline = {"microduck": "sim2d", "lerobot": "mock", "rosbridge": "mock"}
     for adapter in ADAPTER_NAMES:
-        backend = offline.get(adapter, "mock")
-        manifest = asyncio.run(make_adapter(f"{adapter}:{backend}", seed=0).connect())
+        manifest = asyncio.run(make_adapter(f"{adapter}:mock").connect())
         own = sorted(set(manifest.verb_names()) - _CORE_VERBS)
         prefix = _VERB_TABLE_ROWS[adapter]
         row = next((line for line in README.splitlines() if line.startswith(prefix)), None)
@@ -3488,12 +3385,11 @@ def test_no_living_document_credits_all_four_confidence_floors_to_typesafe() -> 
             )
 
 
-#: What the pages written for the arm's simulator said, each beside what the code does. Each
-#: read well, and most were copied into a second page before anybody checked it against the
-#: code: an id Roboglot chose credited to LeRobot, a pass rule missing the case the lookout sweep
-#: passes by, LeRobot's own step cap credited to the servo's firmware, and a model's physics
-#: offered as a rehearsal of the arm's.
-_ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
+#: What the pages written for the arm said, each beside what the code does. Each read well, and
+#: most were copied into a second page before anybody checked it against the code: an id
+#: Roboglot chose credited to LeRobot, and LeRobot's own step cap credited to the servo's
+#: firmware.
+_ARM_CLAIMS_THE_CODE_NEVER_MADE = (
     (
         "lerobot's default id",
         "`arm-01` is Roboglot's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named, "
@@ -3502,31 +3398,6 @@ _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
     (
         "keeps under its default id",
         "`arm-01` is Roboglot's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named",
-    ),
-    (
-        "the only check that this machine can draw",
-        "every connect renders one frame (LeRobotSim._render_once), a run's and each preflight "
-        "cycle's included",
-    ),
-    (
-        "its close ended at the rest pose and every check",
-        "judge_close passes a robot with no rest pose, unless the sidecar asks at_rest: true",
-    ),
-    (
-        "its close ended at the rest pose, and every check",
-        "judge_close passes a robot with no rest pose, unless the sidecar asks at_rest: true",
-    ),
-    (
-        "the close ended at the rest pose or was refused where the task expects that",
-        "judge_close passes a robot with no rest pose, unless the sidecar asks at_rest: true",
-    ),
-    (
-        "ended at the rest pose, or refused where the sidecar says to expect that",
-        "judge_close passes a robot with no rest pose, unless the sidecar asks at_rest: true",
-    ),
-    (
-        "servo behaviour is the arm's",
-        "SERVO_DYNAMICS: the simulated dynamics are the model's and never the arm's",
     ),
     (
         "lerobot leaves to it",
@@ -3538,72 +3409,18 @@ _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
         "the step cap is LeRobot's own ensure_safe_goal_position, called in send_action",
     ),
     (
-        "does under it what the arm does",
-        "the step cap is LeRobot's code, and only the clamp and a limp joint's goal are the "
-        "servo's; the dynamics are the model's (SERVO_DYNAMICS)",
-    ),
-    (
-        "rehearses here before it is let go of at the bench",
-        "how a released joint settles is the model's physics (SERVO_DYNAMICS), over signs and "
-        "zeros nobody has checked (JOINT_SIGN, JOINT_ZERO)",
-    ),
-    (
-        "two of the views are Roboglot's",
-        "the connect note is one sentence naming whichever of front and top is open "
-        "(sim.transport.default_views)",
-    ),
-    (
         "seven bench steps 0.14.0 owes, above",
         "a later release heads the CHANGELOG, so 0.14.0's list of bench steps is below it",
-    ),
-    (
-        "both simulators draw the ball",
-        "there are three simulators, and the arm's draws nothing in a detector's colour",
-    ),
-    (
-        "so the cartoon and the mujoco world (`roboglot_microduck.sim3d`) share it",
-        "the arm's simulator steps on the team clock too (roboglot_lerobot.sim.clock)",
-    ),
-    (
-        "the physics backend's upstreams",
-        "microduck:mujoco and lerobot:mujoco are both physics backends, each with its own table",
-    ),
-    (
-        "colour ranges are the *simulator's*",
-        "the detector's ranges are the duck simulators', and the arm's simulator has no ball",
-    ),
-    # the arm simulator's film is the first of a cloud LLM in a simulator, not of an LLM:
-    # the four transcripts under docs/assets/transcripts are local LLMs on microduck:sim2d
-    (
-        "the first recording in this repository of an LLM in a simulator",
-        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
-        "cloud LLM filmed in a simulator, not the first LLM in one",
-    ),
-    (
-        "the first recording here of an LLM in a simulator",
-        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
-        "cloud LLM filmed in a simulator, not the first LLM in one",
-    ),
-    (
-        "the first LLM recorded in a simulator here",
-        "the transcripts in docs/assets are local LLMs on sim2d, so the film is the first "
-        "cloud LLM filmed in a simulator, not the first LLM in one",
-    ),
-    (
-        "that an so-101 is rehearsed",
-        "a task is rehearsed, through the arm's backend on the maker's model, and nothing has "
-        "compared that model against an arm (ADR-0047), so no SO-101 is",
     ),
 )
 
 
-def test_no_page_repeats_a_claim_about_the_arms_simulator_the_code_never_made() -> None:
-    """Sentences about `lerobot:mujoco` that read well and were wrong.
+def test_no_page_repeats_a_claim_about_the_arm_the_code_never_made() -> None:
+    """Sentences about the arm that read well and were wrong.
 
-    The CHANGELOG, the ADRs that carry a note about the simulator, the arm's own README and the
-    source are read along with the living documents, because each of these was in at least one
-    of them, and four were docstrings. None of them was ever true, so no record has a reason to
-    keep one."""
+    The CHANGELOG, the ADRs that carry a note about the arm, the arm's own README and the source
+    are read along with the living documents, because each of these was in at least one of
+    them. None of them was ever true, so no record has a reason to keep one."""
     adr = REPO / "docs" / "adr"
     sources = [
         REPO / "CHANGELOG.md",
@@ -3618,7 +3435,7 @@ def test_no_page_repeats_a_claim_about_the_arms_simulator_the_code_never_made() 
     ]
     for path in _living_docs() + sources:
         text = _one_line(path.read_text(encoding="utf-8"), seams=path.suffix == ".py")
-        for wrong, true in _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE:
+        for wrong, true in _ARM_CLAIMS_THE_CODE_NEVER_MADE:
             # pytest.fail rather than assert, for the reason the host claims above give
             if wrong in text:
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
@@ -3917,31 +3734,6 @@ def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step()
     )
 
 
-def test_the_simulators_bench_steps_are_one_list_in_plan_and_the_release_note() -> None:
-    """PLAN.md's item for the SO-101 against its simulator lists each bench step it owes, and
-    0.15.0's Known limitations numbers the same steps and then 0.14.0's seven. When the rest
-    move pressing the gripper into the table became a step of its own in PLAN.md, the release
-    note folded it into the joint signs, so the intro named five steps and the list under it
-    four. The first three words of each item are compared in order, so a step added to one
-    list and not the other, or merged into its neighbour, fails here."""
-    plan = (REPO / "PLAN.md").read_text(encoding="utf-8")
-    item = plan.split("**The SO-101 against its simulator.**", 1)[1].split("\n\n  Until", 1)[0]
-    planned = [" ".join(line.split()[1:4]).lower() for line in re.findall(r"^  - .*", item, re.M)]
-    changelog = (REPO / "CHANGELOG.md").read_text(encoding="utf-8")
-    release = changelog.split("\n## [0.15.0]", 1)[1].split("\n## [", 1)[0]
-    bullet = release.split("**The arm's simulator is not the arm", 1)[1].split("\n- **", 1)[0]
-    numbered = re.findall(r"^  \d+\. (.*)", bullet, re.M)
-    assert numbered and "0.14.0" in numbered[-1], (
-        "CHANGELOG.md's 0.15.0 list of the simulator's bench steps no longer ends with 0.14.0's"
-    )
-    listed = [" ".join(line.split()[:3]).lower() for line in numbered[:-1]]
-    assert planned, "PLAN.md's item for the SO-101 against its simulator lists no bench step"
-    assert listed == planned, (
-        f"PLAN.md owes the simulator {planned} and CHANGELOG.md's 0.15.0 lists {listed}: a step "
-        "in one and not the other, or merged into its neighbour"
-    )
-
-
 @pytest.mark.parametrize("name", ["PLAN.md", "RELEASING.md"])
 def test_plan_breaks_no_line_mid_sentence_far_short_of_its_wrap(name: str) -> None:
     """PLAN.md is edited by hand at every release, and a clause spliced into an item that
@@ -4077,8 +3869,9 @@ def test_the_policy_release_names_every_bench_step_the_arm_still_owes() -> None:
     that simulator, so those steps are what its one result rests on. Written again once 0.15.0
     had shipped, it still counted three of them, when 0.15.0 had made the rest move pressing
     the gripper into the table a step of its own. The note names all of them now, its opening
-    and its last Known limitations bullet alike, the opening says the simulator was never
-    compared, and PLAN still carries them."""
+    and its last Known limitations bullet alike, and the opening says the simulator was never
+    compared. PLAN carries the one that is the arm's own, the second Ctrl-C: the other four
+    compared the simulator against the arm, and went with it on 2026-11-15."""
     release = _release_note("0.16.0")
     opening = _one_line(release.split("\n### ", 1)[0])
     assert "nothing has compared the simulator against the arm" in opening, (
@@ -4096,7 +3889,9 @@ def test_the_policy_release_names_every_bench_step_the_arm_still_owes() -> None:
     ):
         assert step in opening, f"CHANGELOG.md's 0.16.0 opening no longer owes {step!r}"
         assert step in owed, f"CHANGELOG.md's 0.16.0 bullet on the bench no longer owes {step!r}"
-        assert step in plan, f"PLAN.md no longer carries the bench step {step!r}"
+    assert "a second ctrl-c during the fold back to the rest pose" in plan, (
+        "PLAN.md no longer carries the bench step of a second Ctrl-C during the fold back"
+    )
 
 
 def test_the_policy_releases_opening_claims_no_more_than_was_done() -> None:
@@ -4608,8 +4403,8 @@ MODELS_DOCS = DOCS / "models"
 
 
 def _models_docs_script() -> ModuleType:
-    """`scripts/models_docs.py`, loaded by path as `test_web.py` loads the browser's generator:
-    `scripts/` is not a package, and this keeps the script a script."""
+    """`scripts/models_docs.py`, loaded by path: `scripts/` is not a package, and this keeps the
+    script a script."""
     import importlib.util
 
     script = REPO / "scripts" / "models_docs.py"
@@ -4904,7 +4699,7 @@ def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
     priced = sum(1 for m in rows if m.price is not None)
     unpriced = _NUMBER_WORDS.get(len(rows) - priced, str(len(rows) - priced))
     counted = 0
-    for path in [*_living_docs(), REPO / "web" / "README.md"]:
+    for path in _living_docs():
         prose = " ".join(_prose(path.read_text(encoding="utf-8")).replace(">", " ").split())
         totals = re.findall(r"\b(\d+) (?:LLM )?ids\b", prose)
         totals += re.findall(r"\bcatalogue's (\d+) LLMs\b", prose)
@@ -5124,7 +4919,8 @@ def test_the_run_sheet_has_a_card_for_each_experiment_and_the_order_takes_each_o
     prose = _prose(_RUN_SHEET.read_text(encoding="utf-8"))
     order, cards = prose.split("\n## The experiments\n", 1)
     numbers = re.findall(r"^### (E\d{3}): ", cards, flags=re.M)
-    assert numbers == [f"E{n:03d}" for n in range(1, len(numbers) + 1)]
+    # in order and each once: a card that went leaves its number unused, as E199's is
+    assert numbers == sorted(set(numbers)), "the cards are out of order or take a number twice"
     examples = _RUN_SHEET.parent
     folders = [path for path in examples.iterdir() if path.is_dir()]
     assert {path.name for path in folders} == {number.lower() for number in numbers}, (
@@ -5144,9 +4940,7 @@ def test_every_task_files_first_command_is_on_the_run_sheet() -> None:
     commands = set(_run_sheet_commands())
     missing = []
     for duck in sorted(_RUN_SHEET.parent.glob("*/*.glot")):
-        first = re.search(
-            r"^#\s+(roboglot (?:run|preflight)\b.*)$", duck.read_text(encoding="utf-8"), re.M
-        )
+        first = re.search(r"^#\s+(roboglot run\b.*)$", duck.read_text(encoding="utf-8"), re.M)
         if first and first.group(1).strip() not in commands:
             missing.append(f"{duck.parent.name}/{duck.name}")
     assert not missing, f"no card has the first command of {missing}"

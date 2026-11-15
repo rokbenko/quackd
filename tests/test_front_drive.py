@@ -179,7 +179,7 @@ def test_drive_from_the_page_takes_lines_before_it_is_ready_and_ends_on_quit(
     session, a goal's records come tagged with its number, and quit is the last word."""
     runs = tmp_path / "runs"
     page = _Page(
-        ["drive", "--robot", "microduck:sim2d", "--llm", "fake", "--runs-dir", str(runs)],
+        ["drive", "--robot", "microduck:mock", "--llm", "fake", "--runs-dir", str(runs)],
         tmp_path,
     )
     page.send(op="line", text="quack")
@@ -212,7 +212,7 @@ def test_a_drive_the_page_halts_while_it_is_set_up_never_connects(
     it was being set up is a session stopped."""
     runs = tmp_path / "runs"
     page = _Page(
-        ["drive", "--robot", "microduck:sim2d", "--llm", "fake", "--runs-dir", str(runs)],
+        ["drive", "--robot", "microduck:mock", "--llm", "fake", "--runs-dir", str(runs)],
         tmp_path,
     )
     page.send(op=op)

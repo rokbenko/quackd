@@ -70,7 +70,7 @@ TEAMS_FILE = "teams.json"
 VERSION = 1
 
 MAX_MEMBERS = 8
-"""What a stored team may hold. The run decides what it may *run*: an auction takes four."""
+"""What a stored team may hold, which is what a pilot team may run (`PILOTS_MAX_MEMBERS`)."""
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 """The same slug every member name and fleet name in Roboglot already is (`factory._NAME_RE`)."""
@@ -127,8 +127,8 @@ def write_json(path: Path, payload: Mapping[str, Any], *, private: bool) -> None
 def _reserved_slugs() -> set[str]:
     """Every memory file name an ad-hoc `adapter:backend` run would open.
 
-    A robot registered as `microduck-sim2d` would key its memory to the same file a bare
-    `--robot microduck:sim2d` run does, which is exactly the confusion registering it was
+    A robot registered as `microduck-mock` would key its memory to the same file a bare
+    `--robot microduck:mock` run does, which is exactly the confusion registering it was
     meant to end. So the name is refused (ADR-0034 amends ADR-0025)."""
     # every catalogue row, the described one too: `described-unitree-b2` would open the file
     # a bare `--robot described:unitree-b2` run does
@@ -220,7 +220,7 @@ def _check_host(host: str | None, host_token: str | None) -> None:
 
 def check_name(name: str, *, kind: str = "robot") -> str:
     """A name a person types on a command line, and never anything else it could be mistaken
-    for: a number (`--team 3` means three simulated ducks), an adapter (`--robot microduck`
+    for: a number (`--team 3` reads as a count), an adapter (`--robot microduck`
     already means one), or a memory file some ad-hoc run already owns."""
     if not _NAME_RE.match(name):
         raise RegistryError(
@@ -229,8 +229,7 @@ def check_name(name: str, *, kind: str = "robot") -> str:
         )
     if name.isdigit():
         raise RegistryError(
-            f"{name!r} cannot be a {kind} name: a number after --team means that many "
-            "simulated ducks"
+            f"{name!r} cannot be a {kind} name: a number reads as a count, not a name"
         )
     if kind == "robot":
         if (row := BY_NAME.get(name)) is not None and row.kind != "adapter":
@@ -261,7 +260,7 @@ class RobotEntry(BaseModel):
 
     name: str
     spec: str
-    """`<adapter>:<backend>`, normalised: `microduck` is stored as `microduck:sim2d`."""
+    """`<adapter>:<backend>`, normalised: `microduck` is stored as `microduck:mock`."""
     address: str | None = None
     token: str | None = None
     camera_url: str | list[str] | None = None
@@ -339,7 +338,7 @@ class RobotEntry(BaseModel):
         on an adapter no longer installed here, made `roboglot robot list`, `show`, a run of any
         other robot, and the `edit` and `remove` that would mend it all refuse the whole file
         until somebody deleted the entry by hand. So a spec that parses is stored canonically
-        (`microduck` as `microduck:sim2d`) and one that does not is kept as written, stripped.
+        (`microduck` as `microduck:mock`) and one that does not is kept as written, stripped.
         `add_robot` and `update_robot` check the one being written (`_check_spec`), and
         `robot_spec` refuses a bad stored one by the robot's name on the command that uses it."""
         try:
@@ -636,12 +635,15 @@ class StoredTeam(BaseModel):
             seen.add(name)
         return value
 
-    def public(self, missing: Sequence[str] = ()) -> dict[str, Any]:
+    def public(
+        self, missing: Sequence[str] = (), unbuildable: Sequence[str] = ()
+    ) -> dict[str, Any]:
         return {
             "name": self.name,
             "members": list(self.members),
             "missing": list(missing),
-            "runnable": not missing and 2 <= len(self.members) <= MAX_MEMBERS,
+            "unbuildable": list(unbuildable),
+            "runnable": not missing and not unbuildable and 2 <= len(self.members) <= MAX_MEMBERS,
             "description": self.description,
             "created": self.created,
             "updated": self.updated,
@@ -733,8 +735,7 @@ def _check_robot_type(spec: str, robot_type: str | None) -> str | None:
 
     The adapter's list is the catalogue's, the types it builds, so a robot can be registered on
     a machine that cannot build it. Where the adapter is installed, it is asked as well, which
-    catches what only it knows: that its simulator is the physics model of one arm and rehearses
-    no other."""
+    catches what only it knows."""
     if robot_type is None:
         return None
     from roboglot.adapters.factory import describe, info, robot_type_takers
@@ -1083,6 +1084,12 @@ class Registry:
         known = self.robots()
         return [m for m in team.members if m not in known]
 
+    def unbuildable_members(self, team: StoredTeam) -> list[str]:
+        """Members registered as a body this Roboglot cannot build (`spec_problem`): a run of
+        the team refuses on them, so nothing may call the team runnable while they are in it."""
+        known = self.robots()
+        return [m for m in team.members if m in known and known[m].spec_problem is not None]
+
     def roster(self, name: str) -> dict[str, RobotEntry]:
         """A team's robots, in the order it lists them, ready to run.
 
@@ -1143,9 +1150,6 @@ def resolve_robot_ref(
 # ── probing ─────────────────────────────────────────────────────────────────────────────
 
 PROBE_TIMEOUT_S = 5.0
-_UNPROBEABLE = {"mujoco": "loads the physics model"}
-"""Backends `--probe` declines to reach. Connecting to one fetches a model from upstream,
-which is a download, not a liveness check."""
 
 
 @dataclass(frozen=True)
@@ -1173,11 +1177,8 @@ async def probe_entry(
     from roboglot.adapters.factory import make_adapter
 
     if (problem := entry.spec_problem) is not None:
-        # ahead of the backends a probe declines, which are read off the stored spec's text: a
-        # robot this Roboglot cannot build is a failed probe, and `robot list` says the fix
+        # a robot this Roboglot cannot build is a failed probe, and `robot list` says the fix
         return ProbeResult(False, problem, 0.0)
-    if (why := _UNPROBEABLE.get(entry.backend)) is not None:
-        return ProbeResult(None, f"skipped: {why}", 0.0)
     if not drives(entry.adapter):
         # neither reachable nor down: Roboglot drives no part of a described body (ADR-0077),
         # and a tick beside it would read as a robot that answered
@@ -1192,7 +1193,6 @@ async def probe_entry(
     try:
         adapter = make_adapter(
             entry.robot_spec,
-            seed=0,
             address=entry.address,
             camera_url=entry.camera_urls,
             token=entry.token,

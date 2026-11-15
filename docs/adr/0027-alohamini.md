@@ -1,6 +1,11 @@
 # ADR-0027: AlohaMini: Roboglot speaks the wire again, and ships the host that switches the arms on
 
-**Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0026 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/alohamini/README.md))
+**Status:** accepted, amended · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0026 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/alohamini/README.md))
+
+**Amended 2026-11-15:** `alohamini:sim2d` is gone with every simulator, so the AlohaMini's
+backends are `mock` and `zmq`, and so is the coordinator team the Consequences say does not know
+this robot: a team is pilots, and takes it as it takes any body. See the CHANGELOG's Unreleased
+entry.
 
 **Amended 2026-11-03, for 0.30.3:** a `stop` holds an arm on its way somewhere, on the rules
 [ADR-0026](0026-xlerobot.md) now gives, where this record says it leaves every arm goal alone. A

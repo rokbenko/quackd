@@ -2,6 +2,11 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put Roboglot on the board) · Extends [ADR-0014](0014-local-llms.md) (a local LLM is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the LLM's loop and the steering loop are Roboglot's and the fifty hertz loop is the robot's, so nothing requires Roboglot to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `roboglot/host.py`, `roboglot/adapters/host_camera.py`, `roboglot/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
 
+**Amended 2026-11-15:** the simulators are gone, so the backend below that keeps the colour
+detector is a mock: YOLO does not see the ball a mock paints, and the colour detector is tuned
+for exactly that ball and finds nothing else now. `--detector host` is honoured on a mock as it
+was on a simulator. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
 one Roboglot command runs on a robot's own Jetson now, `roboglot onboard`, Robot Passport's service,
 which drives the robot from there when the robot's file names an adapter, installed with

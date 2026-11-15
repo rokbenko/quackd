@@ -4,7 +4,7 @@
   "$defs": {
     "Datasheet": {
       "additionalProperties": false,
-      "description": "The body as numbers, with how sure Roboglot is of each, and the things it cannot do.\n\nSpeeds are not here: `RobotManifest.limits` is what Roboglot clamps to, and the prompt\nrenders those as clamps. `None` means not published, and the prompt says so in those words\nand tells the pilot to answer `uncertain` where a task turns on it, and the verdict gate\nrefuses a `feasible` that names it (refuse by default). The same datasheet describes a\nbody on every backend: sim2d, mock or real, the body is the body, which is what keeps\ndigests equal across backends.",
+      "description": "The body as numbers, with how sure Roboglot is of each, and the things it cannot do.\n\nSpeeds are not here: `RobotManifest.limits` is what Roboglot clamps to, and the prompt\nrenders those as clamps. `None` means not published, and the prompt says so in those words\nand tells the pilot to answer `uncertain` where a task turns on it, and the verdict gate\nrefuses a `feasible` that names it (refuse by default). The same datasheet describes a\nbody on every backend: mock or real, the body is the body, which is what keeps\ndigests equal across backends.",
       "properties": {
         "mass_kg": {
           "anyOf": [

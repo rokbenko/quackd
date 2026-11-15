@@ -25,7 +25,8 @@ it whole."""
 
 
 def _run_output(tmp_path: Path, *flags: str) -> str:
-    """One real run under `tmp_path`, and what it printed.
+    """One real run under `tmp_path`, and what it printed: the Open Duck's mock, which walks
+    and draws a ball, so the scripted scout finds it, walks up to it and says where it is.
 
     Says nothing about how many run directories are there afterwards: the label test below
     makes two on purpose."""
@@ -33,16 +34,13 @@ def _run_output(tmp_path: Path, *flags: str) -> str:
         app,
         [
             "run",
-            "find-and-kick",
+            "open-duck-scout",
             "--llm",
             "fake",
-            "--seed",
-            "3",
             "--robot",
-            "microduck:sim2d",
+            "open_duck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             *flags,
         ],
         env=WIDE,
@@ -91,7 +89,7 @@ def test_log_replays_a_finished_run(tmp_path: Path) -> None:
     code, out = _replay(tmp_path, run_dir.name)
     assert code == 0, out
     assert "system prompt" in out
-    assert "send move" in out and "result walk_to ok" in out
+    assert "send move" in out and "result go_to ok" in out
     assert "[scripted]" in out  # the LLM's reasoning, as the run showed it
     assert "SUCCESS" in out and "LLM calls" in out
 
@@ -202,7 +200,7 @@ def test_log_with_no_argument_picks_the_newest_run(tmp_path: Path) -> None:
 def test_log_resolves_a_timestamp_prefix_and_a_duck_name(tmp_path: Path) -> None:
     run_dir = _run(tmp_path)
     stamp = run_dir.name.split("-")[0]
-    for typed in (stamp, "find-and-kick"):
+    for typed in (stamp, "open-duck-scout"):
         code, out = _replay(tmp_path, typed)
         assert code == 0, (typed, out)
         assert "SUCCESS" in out
@@ -212,18 +210,18 @@ def test_log_accepts_the_transcript_file_itself(tmp_path: Path) -> None:
     """A transcript someone copied out of a run directory is still a run to read."""
     run_dir = _run(tmp_path)
     code, out = _replay(tmp_path, str(run_dir / "transcript.jsonl"))
-    assert code == 0 and "result walk_to ok" in out
+    assert code == 0 and "result go_to ok" in out
 
 
 def test_log_from_step_skips_earlier_turns(tmp_path: Path) -> None:
     run_dir = _run(tmp_path)
     code, out = _replay(tmp_path, run_dir.name, "--from-step", "2")
     assert code == 0
-    assert "step 2/40" in out
-    assert "step 0/40" not in out and "step 1/40" not in out
+    assert "step 2/25" in out
+    assert "step 0/25" not in out and "step 1/25" not in out
     # the panel, not the run directory that also contains the name: a replay has no other
     # header, so this is the only thing saying what is being replayed
-    assert "provider fake (scripted:find-and-kick)" in out
+    assert "provider fake (scripted:open-duck-scout)" in out
 
 
 def test_log_no_prompt_and_thinking_flags(tmp_path: Path) -> None:
@@ -232,7 +230,7 @@ def test_log_no_prompt_and_thinking_flags(tmp_path: Path) -> None:
     _, terse = _replay(tmp_path, run_dir.name, "--no-prompt", "--thinking", "0")
     assert "system prompt" in full and "[scripted]" in full
     assert "system prompt" not in terse and "[scripted]" not in terse
-    assert "result walk_to ok" in terse  # everything else survives
+    assert "result go_to ok" in terse  # everything else survives
 
 
 def test_log_frames_are_off_unless_asked(tmp_path: Path) -> None:
@@ -255,10 +253,41 @@ def test_log_frames_are_off_unless_asked(tmp_path: Path) -> None:
 def test_log_of_a_transcript_without_verb_end_still_shows_results(tmp_path: Path) -> None:
     """The bundled example predates the log: it has `verb` records and no `verb_end`, and
     a replay that showed no results at all would be a replay of nothing."""
-    code, out = _replay(tmp_path, "docs/assets/transcript-example.jsonl")
+    code, out = _replay(tmp_path, "tests/golden/transcript-before-verb-end.jsonl")
     assert code == 0, out
     assert "result search_scan" in out or "result quack" in out
     assert out.count("result quack ok") <= 1, "a live transcript has both kinds and must not double"
+
+
+def test_log_of_a_coordinator_run_recorded_before_it_went_counts_what_it_counted(
+    tmp_path: Path,
+) -> None:
+    """Roboglot no longer runs coordinator teams, and their run folders are still on disk. A
+    replay of one counts what its summary counted, the kicker, the auctions and the bids, and
+    never reads the team's own `policy` settings as an arm's policy block."""
+    run = tmp_path / "20261101-120000-team-kick"
+    for name in ("duck-0", "duck-1"):
+        member = run / "robots" / name
+        member.mkdir(parents=True)
+        record = {"t": 0.0, "kind": "verb_start", "name": "search_scan", "params": {}}
+        (member / "transcript.jsonl").write_text(json.dumps(record) + "\n", encoding="utf-8")
+    summary = {
+        "glot": "team-kick",
+        "outcome": "success",
+        "reason": "duck-1 kicked the ball 0.42 m",
+        "kicker": "duck-1",
+        "spotter": None,
+        "auctions": 2,
+        "bids": 4,
+        "policy": {"target": "ball", "kick_leg": "right", "stop_distance": 0.22},
+        "wall_elapsed_s": 4.2,
+        "log_dropped": 0,
+    }
+    (run / "summary.json").write_text(json.dumps(summary), encoding="utf-8")
+    code, out = _replay(tmp_path, run.name)
+    assert code == 0, out
+    assert "kicker duck-1" in out and "auctions 2" in out and "bids 4" in out, out
+    assert "segments" not in out, out
 
 
 def test_log_of_a_cut_transcript_says_so(tmp_path: Path) -> None:
@@ -286,17 +315,14 @@ def test_log_on_an_empty_runs_dir_says_what_to_do(tmp_path: Path) -> None:
 
 def test_log_on_a_team_run_names_every_member(tmp_path: Path) -> None:
     """A team writes no top-level transcript: the record is one file per robot, and a
-    replay that read only the first of them would quietly show a third of the run."""
+    replay that read only the first of them would quietly show half of the run."""
     result = runner.invoke(
         app,
         [
             "run",
-            "team-kick",
+            "team-hello",
             "--llm",
             "fake",
-            "--seed",
-            "3",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
             "--no-log",
@@ -305,13 +331,11 @@ def test_log_on_a_team_run_names_every_member(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.output
     code, out = _replay(tmp_path, "--no-prompt", "--thinking", "0")
     assert code == 0, out
-    for name in ("duck-0", "duck-1", "duck-2"):
+    for name, other in (("duck", "arm"), ("arm", "duck")):
         # the glyph gutter sits between the member's name and the label it prefixes
-        assert f"{name} ▶ verb" in out, (name, out[:400])
-        assert f"{name} ■ end stopped after" in out
-    # the outcome comes from summary.json, since no member wrote a run_end
-    assert "SUCCESS" in out and "kicker duck-" in out
-    assert "LLM calls" not in out, "a team counts auctions and bids, not steps and tokens"
+        assert f"{name} ▶ run team-hello" in out, (name, out[:400])
+        assert f"{name} ✓ declare success: said hello and heard back from {other}" in out
+    assert "SUCCESS" in out and "every member declared success: duck, arm" in out
 
 
 # ── the clocks, the price, and the name the run was given ───────────────────────────────
@@ -441,8 +465,8 @@ def _name_warning(old: str, new: str) -> str:
 def _narration(tmp_path: Path, *flags: str) -> tuple[str, list[str]]:
     """One run on the mock, what it narrated, and the deprecation lines it printed.
 
-    The mock sends no frames and writes no GIF, so stderr carries the live view and the
-    warnings and nothing else. The suite runs with the live view off (conftest), which is
+    The mock sends no frames, so stderr carries the live view and the warnings and nothing
+    else. The suite runs with the live view off (conftest), which is
     what makes a variable that turns it on visible here as a change."""
     result = runner.invoke(
         app,
@@ -453,7 +477,6 @@ def _narration(tmp_path: Path, *flags: str) -> tuple[str, list[str]]:
             "fake",
             "--robot",
             "microduck:mock",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
             *flags,
@@ -479,7 +502,6 @@ def _narrow_run(tmp_path: Path, *flags: str) -> list[str]:
             "fake",
             "--robot",
             "microduck:mock",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
             *flags,
@@ -604,7 +626,7 @@ def test_the_old_flags_are_refused_like_any_unknown_option(
 
     Nothing is written, which is the other half of a refusal being a refusal: the parse fails
     before a run directory exists, so there is no half-run on disk to explain."""
-    full = ["run", "hello-world", "--llm", "fake", "--robot", "microduck:mock", "--no-gif"]
+    full = ["run", "hello-world", "--llm", "fake", "--robot", "microduck:mock"]
     full += ["--runs-dir", str(tmp_path)]
     result = runner.invoke(app, (full if command == "run" else [command]) + [old], env=WIDE)
 

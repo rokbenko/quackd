@@ -1,7 +1,7 @@
 """An occupancy grid read from whoever made one, and the arithmetic a walk needs from it.
 
-Roboglot makes no map. A grid arrives from a robot's own mapper (the Microduck's `mapd`, as text) or
-from a simulator, and this module turns it into three states and plans on them. The states are
+Roboglot makes no map. A grid arrives from a robot's own mapper (the Microduck's `mapd`, as text),
+and this module turns it into three states and plans on them. The states are
 numbered so that `max` is the order a coarser view keeps: something solid in a block is shown
 even when most of it is floor, and floor seen anywhere beats a block never looked at.
 """

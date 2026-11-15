@@ -111,7 +111,6 @@ from PIL import Image
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
-    FRAME_HEAD_YAW_DEG,
     Ack,
     DuckState,
     HeartbeatError,
@@ -122,7 +121,7 @@ from roboglot.transport.base import (
 )
 from roboglot_microduck import upstream_api as up
 from roboglot_microduck.body import DEFAULT_ADDRESS, MICRODUCK, Body
-from roboglot_microduck.sim3d.gait import CMD_MAX_VX, CMD_MAX_VY
+from roboglot_microduck.rl_upstream_api import CMD_MAX_VX, CMD_MAX_VY
 from roboglot_microduck.webrtc import WebRtcCamera, is_webrtc_url
 
 STATUS = "EXPERIMENTAL — verified method names, unverified against hardware"
@@ -406,9 +405,9 @@ def _head_pose(
     positive up, and what said so: `frames.camera`, or on a robotd that reports no frames, the
     measured head_yaw joint, which gives a yaw and no pitch (`up.HEAD_YAW_SIGN`).
 
-    The simulators have always published `head_yaw_deg` this way, and the real duck never did.
-    A team member adds it to a camera bearing to get one from the body, so on a real Microduck
-    it took the camera for looking straight ahead wherever the head had turned.
+    robotd publishes no `head_yaw_deg`, so this reads it off the head. `search_scan`'s gaze
+    sweep centres on it and `watch` starts from it: without it both would take a real
+    Microduck's camera for looking straight ahead wherever the head had turned.
 
     `frames` False reads the joint alone, on a body nobody has said reports `frames` as robotd
     does."""
@@ -1585,14 +1584,12 @@ class JsonRpcUnixTransport:
         is kept, with whether `connect()` waits through it, until the next frame comes.
 
         Each frame is stamped with the moment its request went out, which mediad's picture is
-        no older than (`camera_stale_after_s`), and carries where the camera pointed from the
-        trunk then, as far as the newest state frame said (`_head_at_request`).
+        no older than (`camera_stale_after_s`).
         """
         period = 1.0 / max(0.1, self.camera_fps)
         while True:
             started = time.monotonic()
             self._fetch_started = started
-            head = self._head_at_request()
             try:
                 frame = await self._fetch_frame()
             except Exception as e:  # a camera hiccup must not end a run
@@ -1600,29 +1597,10 @@ class JsonRpcUnixTransport:
             else:
                 if self._first_frame_size is None:
                     self._first_frame_size = frame.size
-                if head is not None:
-                    frame.info[FRAME_HEAD_YAW_DEG] = head
                 self._frame, self._frame_at = frame, started
                 self._frame_error, self._frame_retryable = None, False
             self._fetch_s = time.monotonic() - started
             await asyncio.sleep(max(0.0, period - self._fetch_s))
-
-    def _head_at_request(self) -> float | None:
-        """Where the camera points from the trunk, in degrees of yaw positive left, by the newest
-        state frame when it is fresh enough to believe, or None: what a frame asked for now is
-        taken through.
-
-        A team member adds the head's yaw to a bearing the camera measured to get one from the
-        body, and it read the yaw off the state after it had looked, while a picture handed out
-        from memory can be older than a head move by a frame period and a fetch: after a `gaze`,
-        a bearing measured through the old head would be added to the new one. A frame that
-        carries the head it was taken through pairs the two at the moment of the picture, give or
-        take one state frame. Only mediad's `/frame` takes its picture after it is asked for, so
-        only its frames carry one. A coordinator team runs on the simulator alone today, whose
-        frames are drawn as they are asked for, so this keeps a member right on any other body."""
-        if not self._on_mediad:
-            return None
-        return _head_pose(self._read().state)[0]
 
     @property
     def _on_mediad(self) -> bool:
@@ -1768,7 +1746,7 @@ class JsonRpcUnixTransport:
         `MicroduckAdapter.connect` puts it in the manifest's limits as `camera_fov_deg`, which
         is where `roboglot run` takes the lens its detector measures bearings through when no
         `--fov-deg` names one, and where `serve-mcp`, which has no `--fov-deg`, always takes it.
-        Without one a real camera is measured through the simulator's 90 degrees. Over WebRTC
+        Without one a real camera is measured through the default 90 degrees. Over WebRTC
         it is `mediad`'s own intrinsics, turned with the frame (`up.MEDIA_VIDEO`), and from
         `mediad`'s `/frame` the one assumed from the first frame's shape (`_assumed_lens`)."""
         if self._webrtc is not None:
@@ -2002,8 +1980,8 @@ class JsonRpcUnixTransport:
                 self.body.health_key: self._hello_record(read),
                 # What robotd's own state last said about the twists Roboglot sent.
                 "move_echo": self.move_echo,
-                # Where the camera points from the trunk, in degrees, positive left and up, the
-                # simulators' convention, and what said so; None from a frame that does not say.
+                # Where the camera points from the trunk, in degrees, positive left and up, and
+                # what said so; None from a frame that does not say.
                 "head_yaw_deg": yaw,
                 **self._head_extras(pitch, pose_from),
                 "state_age_s": round(read.age, 3) if read.age is not None else None,
@@ -2017,8 +1995,8 @@ class JsonRpcUnixTransport:
                 # of mediad's /frame while it is assumed from the first frame's shape.
                 "assumptions": self._assumptions(),
                 # Where the duck is by its odometry (`roboglot.space.pose.where_record`), on a
-                # robotd that reports it. `x`, `y` and `theta` stay empty: they are the
-                # simulators' frame, which the team reads as one arena all its members share.
+                # robotd that reports it. `x`, `y` and `theta` stay empty: a reading says which
+                # kind it is, since an odometry pose drifts, and a bare pose says nothing of that.
                 **self._where_extras(),
             },
         )

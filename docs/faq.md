@@ -1,102 +1,24 @@
 # FAQ
 
-## Simulators and the browser demo
+## Running without a robot
 
-**Which simulator should I use?** For the duck, both come with the Microduck adapter,
-`roboglot[microduck]` for the cartoon and `roboglot[mujoco]` for the physics, and the cartoon is
-still the default. `sim2d` starts in a second, needs no network, runs anywhere, and is what the
-three other bodies that have a simulator and every CI sweep use. It tests the *agent loop* —
-search, approach, act, verify — and it will never tell you whether a gait works, because it has no joints
-([ADR-0007](adr/0007-sim2d-cartoon.md)). `--robot microduck:mujoco` is upstream's own Microduck
-model in MuJoCo, walking on `alpha_walking.onnx`, a policy Pollen trained before the
-`velstand.onnx` a robot on a current release walks on, at 50 Hz on the CPU. The ball rolls, the
-duck undershoots what you asked for, and a pilot that works there has met a robot that does not
-do what it is told. Same arena, same seeded layout for the duck and
-the ball, same verbs, so a `.glot` written for one runs on the other
-([ADR-0030](adr/0030-mujoco-physics-backend.md)). One exception, and it is the only one: the
-cartoon stands a person in its arena and the physics world does not, so `follow-me`, whose
-whole task is to follow somebody, is cartoon only.
-Neither one installed? [`web/`](../web/README.md) is the same physics and the same two policies
-in a page, and it does one thing neither Python simulator does: the sentence box and the
-keyboard drive the same duck at the same time. For the LeRobot arm there is a third, its own,
-and the next answer is about it.
+**Can I run it without a robot?** Yes, on a mock. Every adapter's first backend is `mock`, an
+in-memory test double: `--robot microduck:mock`, `--robot lerobot:mock` and the rest that
+`roboglot list-adapters` lists. A mock shows the contract, the gates and the CLI working, and
+not how a robot behaves: its clock moves only when something sleeps on it, and what its camera
+shows is drawn. `microduck:mock` sends grey frames and a scripted pose, `lerobot:mock` draws a
+table, and `open_duck:mock`, `rosbridge:mock`, `xlerobot:mock` and others draw an orange ball.
+`roboglot run hello-world --robot microduck:mock --llm fake` needs no robot and no key.
+`find-and-kick` on the same mock aborts: there is no ball in a grey frame, so `search_scan`
+fails three times in a row and the task's own `abort_when` ends the run.
 
-**Is there a simulator for the arm?** Yes, `lerobot:mujoco`, behind `roboglot[lerobot-sim]`, and
-it is a different kind of thing from the duck's two. It is the arm's real backend, the code that
-drives an SO-101 on a desk, running over a physics model of the arm in MuJoCo, so a task file
-rehearsed on it goes through the lines that will drive the arm in the lab: the connect and its
-retries, the travel read off your calibration, the rest pose, the refusals and the close.
-`roboglot robot twin SOURCE` registers one of an arm you registered, on the calibration file its
-runs read, and `roboglot preflight` rehearses task files on it seed after seed, with a
-`<task>.sim.yaml` beside a file to lay out the table and say what has to be so when a run ends.
-The first connect fetches the maker's own model, `so101_new_calib_camera.xml` and 15 meshes
-from TheRobotStudio's SO-ARM100 at a pinned commit, about 16 MB, one file at a time, each
-checked against a recorded sha256, into `~/.roboglot/cache`. `ROBOGLOT_LEROBOT_SIM_ASSETS` points
-at a checkout of your own instead. It needs no LeRobot and no torch, so it installs on Python
-3.11. What it cannot tell you is how the arm moves: the dynamics are the model's, which way each
-joint turns and where its zero sits are assumed until a bench checks them, and nothing measured
-on it is a rate.
-[adapters/lerobot/README.md](adapters/lerobot/README.md#the-simulator-lerobotmujoco) has the rest,
-and [ADR-0047](adr/0047-the-arms-simulator-runs-the-real-backend.md) the reasoning.
-
-**How do I run the physics simulator, and what does it download?**
-`uvx --from "roboglot[mujoco]" roboglot run find-and-kick --robot microduck:mujoco --llm fake`.
-The first run fetches upstream's model, `robot_walk.xml` and 38 STL meshes, from `microduck_rl`
-at a pinned commit, and `alpha_walking.onnx`, `alpha_stand.onnx` and their manifest from the
-Hugging Face Hub at a pinned revision, into `~/.roboglot/cache`. About 10 MB over the wire and 23
-on disk. Every file is checked against a sha256 recorded when it was read, a run that gets a
-different file fails rather than continues, and the licence notice is written beside them,
-because the meshes are CC BY-NC-SA 4.0 and Roboglot ships none of these files
-([reference/licenses.md](reference/licenses.md)). `ROBOGLOT_MICRODUCK_ASSETS` points at a
-`microduck_rl` checkout of your own instead, `ROBOGLOT_CACHE_DIR` moves the cache, and
-`ROBOGLOT_MUJOCO_BODY=puppet` runs a kinematic stand-in that downloads nothing and is the body the
-tests build directly.
-
-**How do I run the browser demo, and is it live anywhere?** `python web/serve.py`, then open
-<http://localhost:8000/simulator/>. Nothing to build, and no Roboglot to install: that server is
-one stdlib file, it takes an optional port, and [web/README.md](../web/README.md) says why a
-plain `http.server` will not do. The page is also live at <https://www.roboglot.org/simulator>,
-where the separate roboglot-web project fetches this directory into its own build at a pinned
-commit; `/simulator/source.json` says which one. The browser fetches
-about 45 MB the first time and caches it: MuJoCo's WebAssembly build, onnxruntime-web and
-three.js from jsDelivr, upstream's model at the same pinned commit Python uses, and
-`alpha_walking.onnx` and `alpha_stand.onnx` — the same two policies Python fetches, with the
-kick a scripted impulse in both. It is more megabytes than the answer above because the browser
-pulls `robot_walk.xml` and 38 separate meshes uncompressed, 22 MB of it, where Python pulls one
-compressed archive. Nothing fetched is hash checked, which Python does and the page admits
-([web/README.md](../web/README.md)).
-
-**Can I drive the browser demo myself?** Yes, at the same time as the LLM, which is the
-argument the page exists to make. The keyboard is never handed over because it is never taken
-away. A key that would *move* the robot takes it mid-run: the run is aborted and the request to
-the LLM is aborted with it, so nothing keeps running against your key and no answer arrives
-after you took the duck back, and the transcript records the handover with the key that did it.
-A key that only reads never interrupts. There is no key for `say`, deliberately: a key carries a
-command, and a sentence needs something to read it. The `roboglot is on` switch decides only that
-last part, whether anything reads English, and no longer decides whether you may drive. The key
-map is in [web/README.md](../web/README.md).
-
-**Why does the duck in the physics simulator not go the speed I asked for?** Because the walking
-policy has a floor and Roboglot will not hide it. Under the model's own actuators the gait does
-not start below about 0.24 m/s or 1.2 rad/s, and above that it achieves roughly 0.38 of what it
-is asked. Both were measured here on one machine and are tagged UNVERIFIED in
-`adapters/microduck/src/roboglot_microduck/sim3d/upstream_api.py`. `move` defaults to 0.15 m/s,
-so a non-zero twist below the floor is scaled up bodily, keeping the ratio between its axes
-so an arc stays an arc, and a twist
-below a third of the floor is dropped to zero rather than turned into a lurch nobody asked for.
-What was asked and what was sent are both in the state (`twist_commanded`, `twist_sent`,
-`gait_floor`) and in the prompt. Upstream trains and deploys with a different actuator model, so
-a real Microduck may track commands directly.
-
-**Do I need a GPU for the physics simulator?** No, for either body. MuJoCo steps on the CPU and
-the duck's policy runs under onnxruntime's CPU provider. Upstream needs CUDA to *train* that
-policy, never to run it. What the head camera needs is an OpenGL context to render into: a laptop has one, a bare server
-may not, and the frames are what fails first there. On a headless Linux box, install `libosmesa6`
-and set `MUJOCO_GL=osmesa`, which renders into process memory and needs no display, no GPU and no
-`/dev/dri` — it is what CI's own physics job does. Roboglot names both in the error rather than
-letting an OpenGL traceback out. The arm's simulator needs the same context for its cameras,
-and renders once as it connects, so a machine that cannot draw is told at connect rather than
-at the first frame. Rendering is the real cost of both, not physics.
+**How close is `lerobot:mock` to the arm?** It is the arm's real backend, the code that drives
+an SO-101 on a desk, over an arm in memory with a scripted policy, so a task file run on it goes
+through the connect, the travel read off a calibration and the refusals past it, the rest move,
+the hold, the release and the close as they run on the arm. Its close lets go of an arm with no
+rest pose recorded, where the real arm's keeps torque and says so. What it cannot tell you is
+how the arm moves: there are no dynamics under it, and a goal within the step cap is where the
+joint reads next. `lerobot-lookout` succeeds on it with `--llm fake`.
 
 ## LLMs and providers
 
@@ -113,10 +35,10 @@ cannot end a run or record a feasibility verdict. It is also not a provider and 
 **Does `uvx roboglot run … --llm anthropic` work with no extras?** No, and it now takes
 two of them rather than one: the default install is light on purpose, so a bare `uvx roboglot`
 has no vendor SDK and no robot either. Name the brain and the body together:
-`uvx --from "roboglot[anthropic,microduck]" roboglot run find-and-kick --llm anthropic`, or
+`uvx --from "roboglot[anthropic,microduck]" roboglot run hello-world --llm anthropic`, or
 `uv pip install "roboglot[anthropic,microduck]"`. Whichever half is missing, Roboglot prints the
 command that fixes it: the provider one names `roboglot[anthropic]`, the robot one names
-`roboglot[microduck]` and the six other adapters. `--llm fake` still needs no key and no
+`roboglot[microduck]` and the nine other adapters. `--llm fake` still needs no key and no
 extra for itself, but it does need a body to drive.
 
 **Which LLMs can I pick?** Whatever the catalogue lists for the vendor you named. It is one
@@ -198,8 +120,7 @@ Responses API and stays there. The catalogue already knows which LLMs those are,
 list-models` marks them `Responses API` and a run on one opens there without spending a call to
 find out; reading the 400 is what still covers an LLM the catalogue has not been told about.
 `ROBOGLOT_OPENAI_API=responses` starts there in every case, and `ROBOGLOT_OPENAI_REASONING_EFFORT`
-sets the effort on either API. The browser demo does the same on both counts, with nothing to
-set.
+sets the effort on either API.
 
 **Are local LLMs supported (llama.cpp, vLLM, Ollama, LM Studio)?** Yes. They all speak
 OpenAI's Chat Completions API, so `--llm ollama`, `vllm`, `llamacpp`, `lmstudio`, or
@@ -282,7 +203,7 @@ Afterwards `roboglot log example-1` finds it by that label. That pass runs ahead
 timestamp prefix and the loose substring, so a bench holding both `-example-1` and
 `-example-19` hands you the run you actually named rather than whichever is newer, and a run
 you called `2` is reachable by `2` rather than being answered by the first run of 2026 that
-comes to hand. `roboglot record` takes `--run-name` too.
+comes to hand.
 
 **Why is the thinking line empty for my LLM?** Because that LLM did not return any. Only
 some do, and each in its own way: Claude returns a summary (Roboglot asks for one, since the
@@ -299,8 +220,8 @@ still shows you the shape of the log.
 
 **Does the robot need a powerful onboard computer?** Not to be driven. Roboglot's own process,
 the part that calls the LLM and runs the detector, never has to run on the robot itself: you
-run `roboglot run` on a laptop or a server, a network hop away, and it talks to the robot (or the
-simulator) from there. The Open Duck Mini's official target, a Raspberry Pi Zero 2 W, only
+run `roboglot run` on a laptop or a server, a network hop away, and it talks to the robot from
+there. The Open Duck Mini's official target, a Raspberry Pi Zero 2 W, only
 ever runs its existing 50 Hz walk policy plus two small daemons that do run on the Pi, a
 bridge and a camera server, and neither does any perception or inference of its own: just
 enough to swap the gamepad for a socket and to serve a JPEG ([`bridge/open_duck/`](../bridge/open_duck/README.md)). The Microduck's onboard
@@ -321,10 +242,9 @@ read where the robot keeps one: `go_to_place` plans round what that map has seen
 and the Microduck's own `mapd`, which builds its map from `tofd`'s depth frames, is read where
 it answers beside robotd, though no robotd release carries it yet and Roboglot's client is
 UNVERIFIED ([concepts/places.md](concepts/places.md),
-[adapters/microduck/README.md](adapters/microduck/README.md)). The duck's simulators keep the same
-kind of map of a room given with `--room`. The manifest schema has a generic `tof` sensor slot
-for future adapters ([reference/manifest-spec.md](reference/manifest-spec.md)); the Open Duck
-Mini's official build has no depth sensor at all.
+[adapters/microduck/README.md](adapters/microduck/README.md)). The manifest schema has a generic
+`tof` sensor slot for future adapters ([reference/manifest-spec.md](reference/manifest-spec.md));
+the Open Duck Mini's official build has no depth sensor at all.
 
 **How do I tune the detector for a real orange ball?** `ColorBlobDetector` takes
 `targets=(Target("ball", HSVRange(h_lo, h_hi, s_lo, v_lo), size_m=radius, round=True), …)`
@@ -347,9 +267,10 @@ outcomes and never a note. [guides/memory.md](guides/memory.md),
 [ADR-0025](adr/0025-memory-between-runs.md)
 
 **Who decides the run succeeded?** The LLM, via `declare_success(reason)` — that is the
-honest state of the art. In the duck's two simulators the run summary also records ground truth
-(`ball_displacement_m`) and the tests check the claim against it. The arm's simulator keeps its
-truth where the pilot cannot read it, and `roboglot preflight` judges a rehearsal by it.
+honest state of the art. Nothing in Roboglot checks that claim against the world, so the frames
+and the transcript the run saved are where you check it. A `--controller vla` run is the one
+exception: it succeeds only on a person's yes
+([concepts/safety.md](concepts/safety.md#a-pilot-that-cannot-judge---controller-vla)).
 
 **What if the robot cannot do what I asked?** It says so before it moves. Every robot carries
 a datasheet of what it weighs, can carry and can reach, and the pilot has to judge the task
@@ -368,17 +289,18 @@ task file rather than from the maker ([reference/glot-spec.md](reference/glot-sp
 maps your text to the closest tone (`greet`, `inquire`, `alarm`, `wheee`, …) and logs the
 text.
 
-**What does it cost?** A `find-and-kick` run is 3–8 LLM turns, each a few thousand input
-tokens (mostly the system prompt and one image) and a short tool call. Roboglot works the
+**What does it cost?** As many LLM turns as the pilot takes, each a few thousand input tokens
+(mostly the system prompt and one image) and a short tool call. Roboglot works the
 dollars out itself rather than leaving you to multiply a token count by a rate you looked up:
 the catalogue carries a price per LLM in USD per million tokens, read off that vendor's own
 pricing page and dated with the day it was read, and 119 of the 122 ids have one. So every
 `llm` record in `transcript.jsonl` carries `cost_usd` for that call and `cost_usd_total` for
 the run so far, `summary.json` carries the run's `cost_usd` beside its `usage` and the exact
-rate it was charged at, and the counters under the verdict print the total:
+rate it was charged at, and the counters under the verdict print the total, here for
+`hello-world` on `microduck:mock` with `--llm fake --price in=3,out=15`:
 
 ```
-steps 4 · LLM calls 6 · tokens 8354+96 · time 0.4 s (LLM 0.0 s) · LLM calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 0.2 s, after 2 LLM calls · cost $0.0265
+steps 3 · LLM calls 5 · tokens 5660+80 · time 0.4 s (LLM 0.0 s) · LLM calls p50 0.0 s, p90 0.0 s, max 0.0 s · first motion at 0.4 s, after 3 LLM calls · cost $0.0182
 ```
 
 Cached input is billed at the cache rate wherever a vendor reports the cached slice, and a
@@ -395,9 +317,9 @@ Your own rate goes in with
 `--price in=3,out=15[,cache_read=0.3,cache_write=3.75]` for one run, or `ROBOGLOT_PRICE` for a
 shell full of them: a negotiated rate, a paid endpoint behind a local preset, or an id the
 catalogue has never heard of. The `fake` pilot and every local preset are priced at zero
-rather than left unpriced, so a sim run honestly reads `cost $0`.
+rather than left unpriced, so a `--llm fake` run with no `--price` honestly reads `cost $0`.
 
-**Windows?** Fully supported for sim, MCP and development. The real-robot `unix://` socket
+**Windows?** Fully supported for the mocks, MCP and development. The real-robot `unix://` socket
 is POSIX-only; forward it with `ssh -L 9870:/run/robotd.sock <robot>` and use
 `--address tcp://127.0.0.1:9870`.
 
@@ -433,13 +355,13 @@ or across the world. What matters is latency: the deadman expects `robot.move` r
 **Is Roboglot production-ready?** No — it's a research prototype built around one trusted local
 operator, not a hardened multi-user product. There's almost no authentication anywhere; `.glot`
 files with a `team:` block are refused over MCP for exactly that reason: the session is one
-LLM, a coordinator team needs a referee this process does not run, and a pilot team needs
-one LLM per robot rather than one for all of them. Nothing arbitrates two sessions driving the
-same robot at once. Every real-hardware transport but one is experimental and unverified end to
-end, and the one that has run, `lerobot:real`, ran for two afternoons on one arm, 2026-09-15 and
-2026-09-23 ([adapters/status.md](adapters/status.md)); the CLI and MCP server are both thin
-callers of the same executor and verb registry, so a real client like a phone app would mean
-adding a network-reachable server and auth on top, not rewriting the core.
+LLM, and a team needs one LLM per robot rather than one for all of them. Nothing arbitrates
+two sessions driving the same robot at once. Every real-hardware transport but one is
+experimental and unverified end to end, and the one that has run, `lerobot:real`, ran for two
+afternoons on one arm, 2026-09-15 and 2026-09-23 ([adapters/status.md](adapters/status.md)); the
+CLI and MCP server are both thin callers of the same executor and verb registry, so a real
+client like a phone app would mean adding a network-reachable server and auth on top, not
+rewriting the core.
 
 **Can I control who's allowed to pilot my robot?** Barely, and only where Roboglot ships the
 robot side. Roboglot
@@ -501,13 +423,11 @@ a cloud provider sees. `roboglot memory show` prints it, `roboglot memory clear`
 
 **What does `uv pip install roboglot` give me?** The loop, and no robot at all. Every adapter is
 its own distribution built from the same repository, so the core carries the CLI, the executor,
-the verb registry, the 2D arena every simulated body draws itself in and the MCP server, and
-you choose the bodies:
+the verb registry and the MCP server, and you choose the bodies:
 
 ```bash
-uv pip install "roboglot[microduck]"    # the duck: the cartoon, the mock and the real one
+uv pip install "roboglot[microduck]"    # the duck: the mock and the real one
 uv pip install "roboglot[lerobot]"      # an SO-101 arm, with LeRobot on Python 3.12 or newer
-uv pip install "roboglot[lerobot-sim]"  # the same arm's simulator, MuJoCo and no LeRobot
 uv pip install "roboglot[robots]"       # all ten, each with the SDK its real backend needs
 ```
 
@@ -515,10 +435,10 @@ The ten names are `microduck`, `lerobot`, `rosbridge`, `open_duck`, `xlerobot`, 
 `toddlerbot`, `huebot`, `moss` and `rosarm`. `roboglot list-adapters` prints the whole table whether or not you have any of
 them, marking each row `installed` or `not installed`, so it is a shopping list before it is an
 inventory. A command that needs a body and finds none refuses by naming what to install rather
-than failing somewhere confusing. Install exactly one adapter and that one is the default, so
-`--robot` is something you start typing when you own a second robot. Install several including
-the Microduck and `microduck:sim2d` stays the default, because that is what the starter `.glot`
-files have always meant.
+than failing somewhere confusing. Install exactly one adapter and a command that names no robot
+uses that adapter's first backend, its `mock`, so the real robot is always one you name, with
+`--robot` or a registered name. Install several and a command that names no robot, from a task
+file whose `robots:` names none either, refuses and lists what is installed.
 
 **Can two different robots share a task?** Yes, with a pilot team. Register them, group
 them, run it:
@@ -533,22 +453,17 @@ roboglot run team-hello --team pair --llm fake
 Each body gets its own LLM pilot, each pilot's prompt carries the other's datasheet, and they
 divide the task by talking. Each member keeps its own memory, and what one needs another to
 know during the run it says with `tell`. `roboglot run team-hello --llm fake` does the same
-thing with no registry at all. The honest part: this has run on `mock` and `sim2d` bodies and on
-no hardware, N simulated members are N separate worlds with nothing checking a claimed success,
-and `tell` has been exercised by the scripted pilot and by no real LLM
-([guides/team.md](guides/team.md#the-pilot-team)).
-
-The other kind of team, the deterministic coordinator, still knows only the Microduck on
-`sim2d`. `team.roles` there declares capability-differentiated roles (a spotter that observes
-and judges, a kicker that goes to and kicks), which is unit tested and has no bundled starter
-that reaches it end to end.
+thing with no registry at all. The honest part: this has run on `mock` bodies and on no
+hardware, each member's mock is a test double of its own that shares nothing with the others,
+nothing checks a claimed success, and `tell` has been exercised by the scripted pilot and by no
+real LLM ([guides/team.md](guides/team.md#the-pilot-team)).
 
 **Can roboglot drive something that is not a duck?** Since 0.4, yes: a robot is an adapter
 that returns a manifest, and the verbs come from the manifest. `roboglot list-adapters`
 shows the ten that ship (Microduck, a LeRobot arm, any base over rosbridge, an Open
 Duck Mini v2, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot
 humanoid, a Huebot biped, a MOSS rover that picks up litter, and an industrial arm on ROS 2,
-which so far only rehearses), `roboglot list-verbs --robot microduck:sim2d` shows what one of them can do,
+which so far only rehearses), `roboglot list-verbs --robot microduck:mock` shows what one of them can do,
 and `roboglot validate your.glot --robot lerobot:mock` tells you, field by field, whether
 your task fits that body. The rule never bends: a verb that is not in the manifest does
 not exist on that robot. Those ten are each their own package, and an adapter somebody else

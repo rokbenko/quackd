@@ -19,7 +19,7 @@ ANSWERERS = {"confirm", "decide", "judge", "acknowledge"}
 
 SITES = ("roboglot/agent/loop.py", "roboglot/safety.py")
 """Where they are put. Nothing else in Roboglot calls one (`git grep` for the names finds the
-decision LLM's `decide`, the auction's and typer's `confirm`, never these)."""
+decision LLM's `decide` and typer's `confirm`, never these)."""
 
 
 def _nobody(put: asyncio.Event, cancelled: list[str]) -> Callable[[str], Awaitable[bool]]:

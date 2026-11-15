@@ -170,7 +170,9 @@ def test_the_repository_holds_what_the_script_writes() -> None:
 
 def test_the_table_has_one_row_per_experiment_in_order() -> None:
     experiments = script.experiments(script.EXAMPLES)
-    assert [e["id"] for e in experiments] == [f"E{n:03d}" for n in range(1, len(experiments) + 1)]
+    # in order and each once: an experiment that went leaves its number unused, as E199's is
+    ids = [e["id"] for e in experiments]
+    assert ids == sorted(set(ids)), ids
     assert all(e["title"] and e["category"] for e in experiments)
     table = script.render_table(script.EXAMPLES)
     rows = re.findall(r"^\| (?:✅)? *\| .*$", table, flags=re.MULTILINE)
@@ -304,10 +306,10 @@ def test_the_numbers_say_llm(tmp_path: Path) -> None:
     assert "| Waiting for the LLM | 20.4 s |" in text
 
 
-def test_a_vla_run_is_logged_in_turns_and_tried_on_the_simulator(tmp_path: Path) -> None:
+def test_a_vla_run_is_logged_in_turns_and_tried_on_an_arm(tmp_path: Path) -> None:
     """Its pilot is a rule, so the numbers name no LLM, and `lerobot:mock` reaches no policy
-    server, so a line that tried it there would be refused. The trace below it keeps what the
-    run printed, whatever that said."""
+    server, so a line that tried it there would be refused: it is tried on an arm of the
+    reader's own. The trace below it keeps what the run printed, whatever that said."""
     root = _tree(tmp_path / "examples")
     _logged(root, "e001", A_VLA_RUN)
     text = script.render_log(root, _experiment(root, "E001"))
@@ -316,12 +318,13 @@ def test_a_vla_run_is_logged_in_turns_and_tried_on_the_simulator(tmp_path: Path)
     assert "LLM" not in numbers
     assert "| Task file | none, the command gave a goal |" in numbers
     tried = text.split("## Try it yourself")[1].split("## Full terminal trace")[0]
-    assert "This runs the same goal with no arm attached, on `lerobot:mujoco`" in tried
+    assert "This runs the same goal on an arm of your own, against a policy server" in tried
     assert "No LLM is asked, so it costs nothing." in tried
-    assert "--llm" not in tried and "lerobot:mock" not in tried
+    # the intro names the mock only to say why the line is not on it
+    assert "--llm" not in tried and "--robot lerobot:mock" not in tried
     assert (
         "roboglot policy serve --policy scripted:sweep\n"
-        'roboglot run --goal "hold the arm where it is" --robot lerobot:mujoco '
+        'roboglot run --goal "hold the arm where it is" --robot arm-01 '
         "--policy-url http://127.0.0.1:9875 --controller vla --no-memory"
     ) in tried
 
@@ -1120,7 +1123,8 @@ def test_a_run_on_the_mock_is_tried_as_it_ran(tmp_path: Path) -> None:
     assert "stays running in a terminal of its own while the others run" in text
     assert "needs Roboglot's `openai` extra" in text
     assert "nothing is billed" in text
-    assert "lerobot:mujoco" not in text
+    section = text.split("## Try it yourself")[1].split("## Full terminal trace")[0]
+    assert "arm-01" not in section, "a run on the mock is tried on the mock, never on an arm"
 
 
 def test_trying_a_run_the_scripted_pilot_flew_needs_no_key(tmp_path: Path) -> None:

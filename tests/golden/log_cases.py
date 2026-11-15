@@ -37,7 +37,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 glot="find-and-kick",
                 provider="anthropic",
                 llm_id="claude-opus-5",
-                transport="sim2d",
+                transport="mock",
                 adapter="microduck",
                 tools=["walk", "kick", "quack"],
                 memory={"notes": 3, "episodes": 5},
@@ -488,7 +488,7 @@ def events() -> list[tuple[str, LogEvent]]:
                 0.8,
                 name="search_scan",
                 outcome="preempted",
-                summary="role change to kicker",
+                summary="stopped for a new goal",
             ),
         ),
         (
@@ -503,36 +503,6 @@ def events() -> list[tuple[str, LogEvent]]:
                 nested=True,
                 elapsed_s=2.0,
                 intents={"move": 2},
-            ),
-        ),
-        (
-            "verb_end_two_clocks",
-            _e(
-                "verb_end",
-                0.8,
-                name="walk",
-                ok=True,
-                outcome="ok",
-                summary="walked",
-                elapsed_s=1.4,
-                transport_s=20.0,
-                clock="sim",
-                intents={"move": 200},
-            ),
-        ),
-        (
-            "verb_end_one_clock",
-            _e(
-                "verb_end",
-                0.8,
-                name="walk",
-                ok=True,
-                outcome="ok",
-                summary="walked",
-                elapsed_s=1.0,
-                transport_s=1.1,
-                clock="sim",
-                intents={},
             ),
         ),
         (
@@ -626,29 +596,7 @@ def events() -> list[tuple[str, LogEvent]]:
         ("declare_failure", _e("declare", 0.9, outcome="failure", reason="never found it")),
         ("memory", _e("memory", 0.9, summary="remembered: the ball lives by the sofa")),
         ("note", _e("note", 0.9, text=MULTILINE)),
-        # ── the coordinator's vocabulary, which the GIF caption shares ──
-        ("team_auction", _e("auction", 1.0, first_bid="duck-1", dist=0.42)),
-        ("team_claim", _e("claim", 1.0, kicker="duck-1", dist=0.62, spotter="duck-2")),
-        ("team_claim_no_spotter", _e("claim", 1.0, kicker="duck-1", dist=0.62)),
-        ("team_miss", _e("miss", 1.0, duck="duck-0", detail="the ball rolled away")),
-        ("team_miss_bare", _e("miss", 1.0, duck="duck-0")),
-        ("team_kick_done", _e("kick_done", 1.0, kicker="duck-2")),
-        ("team_verdict", _e("verdict", 1.0, verdict="moved", moved_m=0.51, spotter="duck-1")),
-        ("team_verdict_no_distance", _e("verdict", 1.0, verdict="unchanged", spotter="duck-1")),
-        ("team_separation", _e("separation", 1.0, duck="duck-0", dist=0.3)),
-        ("team_auction_void", _e("auction_void", 1.0, auctions=2)),
-        ("team_auction_waiting", _e("auction_waiting", 1.0, missing_roles=["spotter", "kicker"])),
-        ("team_member_dead", _e("member_dead", 1.0, duck="duck-2", last_hb=3.0)),
-        ("team_member_excluded", _e("member_excluded", 1.0, duck="duck-1", why="no kick verb")),
-        ("team_wedges_rotated", _e("wedges_rotated", 1.0, round=2, by_deg=45)),
-        (
-            "team_bid_rejected_why",
-            _e("bid_rejected", 1.0, src="duck-0", role="kicker", why="too far"),
-        ),
-        (
-            "team_bid_rejected_missing",
-            _e("bid_rejected", 1.0, src="duck-0", role="kicker", missing=["kick", "walk_to"]),
-        ),
+        # ── a team's own line, what one pilot said to another ──
         (
             "team_talk",
             _e("talk", 1.0, src="duck-a", to="arm", text="I have the ball, you spot", ok=True),
@@ -679,15 +627,11 @@ def events() -> list[tuple[str, LogEvent]]:
             ),
         ),
         ("tool_result", _e("tool_result", 1.3, ok=True, elapsed_s=1.1, budget="step 1/40")),
-        (
-            "tool_result_sim",
-            _e("tool_result", 1.3, ok=False, elapsed_s=0.2, transport_s=20.0, clock="sim"),
-        ),
         # ── the three that draw nothing on purpose, and one kind no view knows ──
         ("verb_renders_nothing", _e("verb", 1.4, name="kick", ok=True)),
         ("frame_renders_nothing", _e("frame", 1.4, path="frames/0001.png")),
         ("run_end_renders_nothing", _e("run_end", 1.4, outcome="success")),
-        ("unknown_renders_nothing", _e("bus", 1.4, msg={"kind": "BID"})),
+        ("unknown_renders_nothing", _e("bus", 1.4, msg={"kind": "TALK"})),
         # ── the arms a first pass at this corpus missed ──
         ("intent_no_accepted_field", _e("intent", 0.7, intent="stop", params={})),
         (
@@ -697,21 +641,6 @@ def events() -> list[tuple[str, LogEvent]]:
         (
             "verb_end_legacy_not_ok",
             _e("verb_end", 0.8, name="kick", ok=False, summary="missed"),
-        ),
-        (
-            "verb_end_clocks_a_fifth_apart",
-            _e(
-                "verb_end",
-                0.8,
-                name="walk",
-                ok=True,
-                outcome="ok",
-                summary="walked",
-                elapsed_s=10.0,
-                transport_s=11.0,
-                clock="sim",
-                intents={},
-            ),
         ),
         # ── fmt_value's own edges, carried on a line the renderer prints verbatim ──
         (
@@ -740,8 +669,7 @@ def host_detector_start() -> LogEvent:
     Its own case rather than one of `events()`, whose cases are also replayed together as
     `whole_call`: a case added there would move that one's lines, and this is the case that
     proves no older line moved. The colour detector is never named on the run line, so every
-    transcript written before there was a choice, and every run on a simulator, reads as it
-    did."""
+    transcript written before there was a choice reads as it did."""
     return _e(
         "run_start",
         0.0,
@@ -851,7 +779,7 @@ def golden() -> dict[str, Any]:
         )
     )
     out["whole_call"] = call_lines([event for _name, event in cases])
-    example = REPO / "docs" / "assets" / "transcript-example.jsonl"
+    example = REPO / "tests" / "golden" / "transcript-before-verb-end.jsonl"
     raw = example.read_text(encoding="utf-8").splitlines()
     records = [json.loads(line) for line in raw if line.strip()]
     out["transcript_example"] = call_lines(

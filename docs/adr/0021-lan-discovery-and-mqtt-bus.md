@@ -2,6 +2,12 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-02 · Implemented in Phase 4 of 0.4 ([design](../design/multi-robot.md))
 
+**Amended 2026-11-15:** the coordinator team is gone with the simulators it ran on, and with it
+the `hb` topic and every message kind but `TALK`. The bus carries one pilot's words to another
+on `ctl` at QoS 1, a `TALK` that arrives twice is heard twice where the coordinator's handlers
+were idempotent, and nothing needs a distributed clock now. Discovery is unchanged, and there is
+still no `--bus` flag. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** the bus
 carries a ninth kind, `TALK`, which is what one pilot says to another. It rides `ctl` at QoS 1
 like every other control message and needs nothing new from `MqttBus`. The reason there is

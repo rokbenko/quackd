@@ -8,9 +8,9 @@ has no `map.*`. So every ref here is UNVERIFIED: read from a branch that may cha
 ships, and never answered by a robot Roboglot has spoken to. When a release carries `mapd`, these
 are read again at that release's tag and the rows say VERIFIED.
 
-The client that speaks it, `transports/mapd.py`, and the simulated map the simulators stand in
-with, which takes these numbers as plain floats (`sim_map_params`), are the only code that reads
-this file; `tests/test_upstream_api.py` holds every other file to that.
+The client that speaks it, `transports/mapd.py`, is the only code that reads its names (the
+adapter lists the module for `roboglot doctor`), and `tests/test_upstream_api.py` holds every
+other file to that.
 """
 
 from __future__ import annotations
@@ -154,13 +154,14 @@ MAPD_TOF_RANGE = UpstreamRef(
     "UNVERIFIED",
     src(_PROJECT, 61),
     "min_range_m 0.08 and max_range_m 2.0, with ranges taken as axial (project.rs:33-40, 60-64): "
-    "what the simulated map reveals a cell to at most",
+    "the farthest a return marks a cell, which a walk to a place takes for how far the map sees "
+    "from a stop (MapdSource.view)",
 )
 
 # ── the numbers, for the code that keeps to them ────────────────────────────────────────
 #
 # Each is the figure its ref above quotes, held to it by tests/test_upstream_api.py, so the
-# simulated map (`transports/mapd.py:sim_map_params`) and the client never type one of their own.
+# client never types one of its own.
 
 SETTLE_S = 0.4
 """MAPD_SETTLE: how long the body stands still before a keyframe."""

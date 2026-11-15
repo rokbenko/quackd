@@ -942,7 +942,6 @@ def _cli(tmp_path: Path, *argv: str) -> Any:
             "fake",
             *argv,
             "--no-memory",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
         ],
@@ -1018,22 +1017,6 @@ def test_decision_llm_off_on_the_line_turns_frames_off_and_says_nothing_of_them(
     result = _cli(tmp_path, "--decision-llm", "off", "--decision-frames")
     assert result.exit_code == 0, result.output
     assert "--decision-frames" not in plain_text(result.output)
-
-
-def test_record_never_shows_a_frame_whatever_the_environment_says(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """`record` makes the recordings and pins the stepper off; frames, which the mode does not
-    decide, are pinned off with it, so a `.env` asking for both changes nothing."""
-    monkeypatch.setenv("ROBOGLOT_DECISION_LLM", "kev")
-    monkeypatch.setenv("ROBOGLOT_DECISION_FRAMES", "1")
-    result = runner.invoke(
-        app,
-        ["record", "hello-world", "--llm", "fake", "--gif-size", "64", "--runs-dir", str(tmp_path)],
-    )
-    # read, the variable would refuse this run before anything connected: kev cannot see
-    assert result.exit_code == 0, result.output
-    assert "is sent text alone" not in plain_text(result.output)
 
 
 def test_frames_on_say_once_where_they_go_and_the_run_keeps_them(
@@ -1135,7 +1118,6 @@ def test_a_team_says_it_sends_no_frame(tmp_path: Path) -> None:
             "--decision-mode",
             "off",
             "--decision-frames",
-            "--no-gif",
             "--runs-dir",
             str(tmp_path),
         ],

@@ -21,7 +21,6 @@ HEAVY = (
     "zmq",
     "zeroconf",
     "paho",
-    "mujoco",
     "onnxruntime",
     # The three clients a decision LLM can be reached through: the System One SDK for a server,
     # hosted or your own, the in-process encoder, and OpenAI's SDK for its Decisions API. All
@@ -106,7 +105,6 @@ for adapter, backends in BACKENDS.items():
 for body in DESCRIBED_BODIES:
     m = describe(RobotSpec("described", body))
     assert m.verb_names() == ["report_state", "stop"], body
-make_adapter("microduck:mujoco")
 make_adapter("lerobot:real", address="COM5")
 make_adapter("rosbridge:ws", address="ws://robot.local:9090")
 make_adapter("huebot:jsonrpc", address="tcp://127.0.0.1:9870")
@@ -123,44 +121,10 @@ else:
 # MOSS's cockpit backend builds with no address, pointed at the tunnel's near end, and opens
 # nothing until it connects
 make_adapter("moss:cockpit")
-# the arm simulator is built, cameras, faults and all, with or without a calibration file to
-# read at connect, and nothing here connects it
-make_adapter("lerobot:mujoco")
-make_adapter(
-    "lerobot:mujoco",
-    address="arm-01.json",
-    camera_url=["opencv://0?name=front", "opencv://1?name=wrist"],
-    faults="handshake=0.2",
-    seed=3,
-)
-# and with a scene of its own, as `roboglot preflight` hands it one from a task's sidecar, which
-# reads no physics either: the scene is laid out at connect
-make_adapter(
-    "lerobot:mujoco",
-    scene=[{{"name": "block", "kind": "box", "size": [0.01, 0.01, 0.01], "place": "jaws"}}],
-)
-import roboglot.preflight
-from roboglot.adapters.factory import is_simulator, needs_rest_pose
-assert is_simulator("lerobot:mujoco") and not is_simulator("lerobot:real")
+from roboglot.adapters.factory import needs_rest_pose
 # read off the adapter's own declaration, which needs no SDK: the real arm alone must have a pose
 assert needs_rest_pose("lerobot:real")
-assert not needs_rest_pose("lerobot:mock") and not needs_rest_pose("lerobot:mujoco")
-# the arm simulator's upstream and its fetcher find files and never load them, and its model,
-# stand-in, world, follower, clock, cameras and transport import the physics only when a model
-# is loaded or drawn, so none of them may pull it in just by being imported. Its follower
-# reimplements the one LeRobot function it needs rather than import LeRobot, and a fault plan
-# is parsed before anything is built.
-import roboglot_lerobot.sim.assets
-import roboglot_lerobot.sim.camera
-import roboglot_lerobot.sim.clock
-import roboglot_lerobot.sim.faults
-import roboglot_lerobot.sim.follower
-import roboglot_lerobot.sim.model
-import roboglot_lerobot.sim.standin
-import roboglot_lerobot.sim.transport
-import roboglot_lerobot.sim.upstream_api
-import roboglot_lerobot.sim.world
-roboglot_lerobot.sim.standin.mjcf()
+assert not needs_rest_pose("lerobot:mock")
 # a policy server, its client, their protocol and the endpoint a run reaches one on need no
 # torch either: a checkpoint is loaded in the server's own process when it starts, never when
 # any of them is imported, and a scripted policy is served with nothing loaded at all
@@ -197,22 +161,10 @@ else:
 from roboglot.adapters.base import PolicyChoice
 _policy = PolicyChoice("http://127.0.0.1:9875", "0123456789abcdef0123456789abcdef")
 make_adapter("lerobot:real", address="COM5", policy=_policy)
-make_adapter("lerobot:mujoco", policy=_policy)
-assert describe(RobotSpec("lerobot", "mujoco"), policy=_policy).provides("manipulate")
-# and connecting it says which extra installs the physics, before it fetches a model to load
-import asyncio
-from roboglot.adapters.base import AdapterNotInstalled
-def _fetched():
-    raise AssertionError("the arm's model was fetched with no physics to load it in")
-roboglot_lerobot.sim.transport.default_model = _fetched
-try:
-    asyncio.run(make_adapter("lerobot:mujoco").connect())
-except AdapterNotInstalled as e:
-    assert "roboglot[lerobot-sim]" in str(e), e
-else:
-    raise AssertionError("lerobot:mujoco connected with no physics installed")
-roboglot_lerobot.sim.faults.FaultPlan.parse(roboglot_lerobot.sim.faults.EXAMPLE, seed=0)
-capped = roboglot_lerobot.sim.follower.ensure_safe_goal_position({{"a": (9.0, 0.0)}}, 1.0)
+assert describe(RobotSpec("lerobot", "real"), policy=_policy).provides("manipulate")
+# the arm's follower reimplements the one LeRobot function it needs rather than import LeRobot
+import roboglot_lerobot.follower
+capped = roboglot_lerobot.follower.ensure_safe_goal_position({{"a": (9.0, 0.0)}}, 1.0)
 assert capped == {{"a": 1.0}}, capped
 # the radio: with no onboard extra, asking for Bluetooth says which extra, or which platform it
 # would take, and the module that talks to BlueZ is never imported to find that out. The sim air,
@@ -306,8 +258,8 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
 
         # `doctor` is where `README.md` sends a new reader to find out what this machine has,
         # and it still exits 0, because an uninstalled adapter is a choice rather than a
-        # fault. What it may not do is say the simulator runs here. It does not: `roboglot run`
-        # on this machine refuses for want of a robot, and a green verdict claiming otherwise
+        # fault. What it may not do is say the scripted pilot runs here. It does not: `roboglot
+        # run` on this machine refuses for want of a robot, and a green verdict claiming otherwise
         # is this command saying the opposite of the one thing it exists to say.
         import io as _io
 
@@ -321,7 +273,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         Console(file=buf, width=200).print(doctor.verdict(report))
         said = buf.getvalue()
         assert "no robot adapter is installed" in said, said
-        assert "the simulator and the scripted pilot run here" not in said, said
+        assert "the scripted pilot runs here" not in said, said
         from roboglot.adapters.factory import ADAPTER_NAMES
 
         counted = f"0/{len(ADAPTER_NAMES)} adapters installed"
@@ -331,7 +283,7 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
         from roboglot.team.pilots import member_specs
 
         with pytest.raises(NoRobotNamed, match="no robot adapter is installed"):
-            member_specs(["a", "b"], None, None, fallback=None)
+            member_specs(["a", "b"], None, None)
     finally:
         factory._installed = real
         factory._installed.cache_clear()
@@ -339,8 +291,8 @@ def test_a_machine_with_no_adapter_installed_still_works_and_says_what_to_instal
 
 def test_the_only_adapter_installed_is_the_one_a_command_means() -> None:
     """A machine with one robot has no ambiguity to resolve, so making its owner type the name
-    would be ceremony. With several installed Roboglot will not invent an answer, except that the
-    Microduck stays the default it has always been, because the `glot: 0` starters mean it."""
+    would be ceremony. With several installed Roboglot will not invent an answer, and the
+    Microduck among them is no exception: there is no default robot."""
     import roboglot.adapters.factory as factory
 
     factory._installed.cache_clear()
@@ -360,7 +312,8 @@ def test_the_only_adapter_installed_is_the_one_a_command_means() -> None:
             "microduck": "roboglot_microduck",
             "lerobot": "roboglot_lerobot",
         }
-        assert factory.resolve_robot(None).key == "microduck:sim2d"
+        with pytest.raises(factory.NoRobotNamed, match="no robot named"):
+            factory.resolve_robot(None)
     finally:
         factory._installed = real
         factory._installed.cache_clear()

@@ -85,7 +85,7 @@ under `ckpts/` that you supply, and the daemon refuses to start rather than reac
 wandb from a robot. The handshake reports what actually loaded, including which motions
 were readable, and Roboglot's manifest is built from that answer.
 
-`--fake` runs the whole daemon and protocol against a simulated body, with no robot and no
+`--fake` runs the whole daemon and protocol against a fake body, with no robot and no
 upstream installed, which is what CI does. `--once` sets up, reports what it found, and exits.
 
 **The daemon refuses to actuate without a zero calibration** (`motors.yml`, which is

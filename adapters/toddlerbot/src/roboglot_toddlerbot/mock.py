@@ -91,7 +91,7 @@ class ToddlerBotMock:
         self.stale_ms: float = 0.0
         self.loop_hz: float = 50.0
 
-    # ── physics ─────────────────────────────────────────────────────────────────────
+    # ── motion ──────────────────────────────────────────────────────────────────────
 
     @property
     def moving(self) -> bool:

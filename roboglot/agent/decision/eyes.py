@@ -21,7 +21,7 @@ Each look's frame goes the way the stepper's does (ADR-0053), with one more line
 4. only then is the request handed to the client, bounded at the look's own `timeout_s`.
 
 Requests are handed over at least `watch.MIN_PERIOD_S` apart on the wall's clock (`_pace`), as
-looks are on the robot's: a simulator's clock runs only as fast as it is stepped, and the
+looks are on the robot's: a mock's clock runs only as fast as something sleeps on it, and the
 promise that no more than two frames a second go out is the wall's.
 
 Whatever then becomes of the request, an answer, a 429, a timeout, a cancel, the look's row
@@ -235,8 +235,8 @@ class DecisionEyes:
     async def _pace(self) -> None:
         """Hold a request back until `MIN_PERIOD_S` has passed on the wall's clock since the one
         before it was handed over. `watch` spaces its looks on the robot's clock, which on a robot
-        is the wall's and makes this a wait of nothing, while a simulator's runs only as fast as
-        it is stepped, and frames sent to OpenAI are counted on the wall's."""
+        is the wall's and makes this a wait of nothing, while a mock's runs only as fast as
+        something sleeps on it, and frames sent to OpenAI are counted on the wall's."""
         if self._handed_at is not None:
             wait = self._handed_at + MIN_PERIOD_S - time.monotonic()
             if wait > 0:

@@ -61,8 +61,8 @@ FAMILIES: tuple[PolicyFamily, ...] = (
         licence_url=None,
         licence_read=None,
         ran=(
-            "a trained ACT from the Hub drove the arm's twin on the simulator from a laptop's "
-            "CPU on 2026-09-28, and CI serves a tiny random one, but none has driven the arm"
+            "a trained ACT from the Hub answered on a laptop's CPU on 2026-09-28, and CI serves "
+            "a tiny random one, but none has driven the arm"
         ),
     ),
     PolicyFamily(
@@ -177,7 +177,7 @@ NOT_SERVED: tuple[NotServed, ...] = (
         would_change=(
             "a spike on a rented Linux GPU showing that `roboglot policy check --bench` holds its "
             "rate, that its delta actions stay anchored when a goal is clipped, and that the "
-            "official SO-101 checkpoint drives the simulator end to end"
+            "official SO-101 checkpoint drives an arm end to end"
         ),
     ),
     NotServed(

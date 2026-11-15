@@ -153,8 +153,8 @@ BENCH_INSTRUCTION = "roboglot policy check --bench"
 LATENCY_QUANTILE = 0.95
 """The share of the steps a bench timed that the `--latency-s` it suggests covers. It is read
 at this quantile of every step timed from its request to its chunk back, the warm one timed on
-its own and each of the stream's, so most chunks land within the latency the simulator holds
-each back by. One step timed alone is one draw, and two benches of one checkpoint on one laptop
+its own and each of the stream's, so most chunks land within the latency the loop asks for the
+next by. One step timed alone is one draw, and two benches of one checkpoint on one laptop
 suggested latencies too far apart to serve with either."""
 
 
@@ -1537,8 +1537,8 @@ def describe_bench(result: BenchResult) -> list[tuple[str, str]]:
                 said += f", but {outran}"
         else:
             said += (
-                f": serve with --latency-s {declare:.2f}, so the simulator holds each chunk "
-                "back as long, and bench again with it"
+                f": serve with --latency-s {declare:.2f}, so the arm asks for each chunk in "
+                "time, and bench again with it"
             )
         rows.append(("latency", said))
     return rows

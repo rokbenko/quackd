@@ -1,6 +1,11 @@
 # ADR-0079: What rides on a body's back is a figure of its own, and an unset one is not on the wire
 
-**Status:** accepted on 2026-11-10 · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `roboglot/adapters/manifest.py` and `roboglot/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
+**Status:** accepted on 2026-11-10, amended · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `roboglot/adapters/manifest.py` and `roboglot/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
+
+**Amended 2026-11-15:** the coordinator team is gone with the simulators it ran on, and with it
+the role, the bid and the TASK message below that carried `carries_kg`. The verdict gate, the
+matcher and a task file's `datasheet:` block read it, as they did. See the CHANGELOG's
+Unreleased entry.
 
 ## Context
 

@@ -2,26 +2,25 @@
 
 Same two-method `Bus` protocol as `InProcessBus`, same hard rule: **nobody ever awaits the
 bus**. `publish` is a synchronous local fan-out plus a non-blocking hand-off to paho's
-network thread; consumers still `drain()` between sim sleeps. Four invariants:
+network thread; consumers still `drain()` between their turns. Four invariants:
 
 - **Tap exactly once per message per node.** Local messages are tapped on publish, remote
   ones on receive, so `team.jsonl` on the node that owns the run directory carries every
   message once.
 - **Broker echo is dropped.** A broker sends our own publications back; a message whose
-  `src` is one of this node's subscribers is discarded (`dropped` counts them).
-- **At least once is tolerated.** Control messages go at QoS 1, so a remote message can
-  arrive twice. The coordinator's handlers are idempotent (the minimum bid per source, the
-  maximum exclusion, an idempotent last heartbeat), which is why a duplicate changes no
-  decision; a test pins that.
+  `src` is one this node subscribes or publishes under is discarded (`dropped` counts them).
+  The runner's own notices go under `team`, which no member subscribes as, so a name is
+  this node's once it publishes under it: the one node a pilot team has ever run on.
+- **At least once is tolerated.** Messages go at QoS 1, so a remote message can arrive twice,
+  and a pilot hears a repeated TALK as said twice.
 - **Remote messages land on the event loop.** paho calls back on its own thread; the team
   transcript writer is not thread-safe, so a remote message is marshalled with
   `call_soon_threadsafe` before it is tapped and pushed. Without a running loop (a
   synchronous test) it is delivered inline.
 
-Library-only: both runners take `bus_factory=...`. There is still no `--bus` flag: a
-coordinator team across machines also needs a distributed clock, which is out of scope, and a
-pilot team needs no shared clock at all but has simply never been run across two machines.
-Roboglot does not ship a flag for a thing nobody has done.
+Library-only: the pilot team takes `bus_factory=...`. There is still no `--bus` flag: a pilot
+team needs no shared clock, but has simply never been run across two machines, and Roboglot
+does not ship a flag for a thing nobody has done.
 """
 
 from __future__ import annotations
@@ -39,7 +38,6 @@ from roboglot.team.messages import TeamMessage
 
 _WIRE: TypeAdapter[Any] = TypeAdapter(TeamMessage)
 QOS_CTL = 1
-QOS_HB = 0
 
 
 def encode(msg: TeamMessage) -> bytes:
@@ -94,7 +92,6 @@ class MqttBus:
     ) -> None:
         self.team_id = team_id
         self.topic_ctl = f"roboglot/{team_id}/ctl"
-        self.topic_hb = f"roboglot/{team_id}/hb"
         self._host, self._port = host, port
         self._tap = tap
         self._log = log
@@ -124,7 +121,6 @@ class MqttBus:
             self._loop = None
         self._client.connect(self._host, self._port, 60)
         self._client.subscribe(self.topic_ctl, qos=QOS_CTL)
-        self._client.subscribe(self.topic_hb, qos=QOS_HB)
         self._client.loop_start()
         self.started = True
 
@@ -138,16 +134,12 @@ class MqttBus:
 
     def publish(self, msg: TeamMessage) -> None:
         self.published += 1
+        # before it goes out, so its echo finds the name already here
+        self.local_ids.add(msg.src)
         if self._tap is not None:
             self._tap(msg)
         self._fan_out(msg)
-        hb = msg.kind == "HB"
-        self._client.publish(
-            self.topic_hb if hb else self.topic_ctl,
-            encode(msg),
-            qos=QOS_HB if hb else QOS_CTL,
-            retain=False,
-        )
+        self._client.publish(self.topic_ctl, encode(msg), qos=QOS_CTL, retain=False)
 
     def subscribe(self, subscriber_id: str) -> Subscription:
         sub = Subscription(subscriber_id, self._subs.remove)
@@ -186,4 +178,4 @@ class MqttBus:
         self._fan_out(msg)
 
 
-__all__ = ["QOS_CTL", "QOS_HB", "MqttBus", "MqttClient", "decode", "encode", "make_paho_client"]
+__all__ = ["QOS_CTL", "MqttBus", "MqttClient", "decode", "encode", "make_paho_client"]

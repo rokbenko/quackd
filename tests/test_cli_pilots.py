@@ -1,4 +1,4 @@
-"""`roboglot run --team`: a number is still the coordinator, a name is a team of pilots.
+"""`roboglot run --team NAME`: a stored team of pilots, one LLM per body.
 
 The counterpart to `tests/test_pilots.py`, which drives the runner directly. This drives the
 command a person types.
@@ -28,7 +28,6 @@ def _run_args(tmp_path: Path) -> list[str]:
     return [
         "--llm",
         "fake",
-        "--no-gif",
         "--no-log",
         "--runs-dir",
         str(tmp_path / "runs"),
@@ -55,39 +54,6 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
     return json.loads((_newest(tmp_path) / "summary.json").read_text(encoding="utf-8"))
 
 
-# ── the number is still the coordinator ─────────────────────────────────────────────────
-
-
-def test_team_n_is_still_the_lockstep_simulator(tmp_path: Path) -> None:
-    result = runner.invoke(
-        app, ["run", "team-kick", "--team", "2", "--seed", "3", *_run_args(tmp_path)]
-    )
-    assert result.exit_code == 0, result.output
-    summary = _summary(tmp_path)
-    assert summary["team"] == {"members": ["duck-0", "duck-1"], "method": "auction"}
-    assert "ball_displacement_m" in summary, "the coordinator still judges from the world"
-
-
-def test_team_one_still_says_two_to_four(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["run", "team-kick", "--team", "1", *_run_args(tmp_path)])
-    assert result.exit_code == 1
-    assert "a team needs 2 to 4 ducks" in result.output
-
-
-def test_a_stored_team_of_simulated_ducks_runs_the_coordinator(tmp_path: Path) -> None:
-    _seed(
-        tmp_path,
-        {"left": "microduck:sim2d", "right": "microduck:sim2d"},
-        {"pair": ["left", "right"]},
-    )
-    result = runner.invoke(
-        app, ["run", "team-kick", "--team", "pair", "--seed", "3", *_run_args(tmp_path)]
-    )
-    assert result.exit_code == 0, result.output
-    assert "pair: 2 ducks in sim2d" in result.output
-    assert _summary(tmp_path)["team"]["members"] == ["left", "right"]
-
-
 # ── a name is a team of pilots ─────────────────────────────────────────────────────────
 
 
@@ -99,7 +65,7 @@ def test_the_demo_duck_runs_with_no_registry_and_no_key(tmp_path: Path) -> None:
     assert "talk 2" in result.output
     summary = _summary(tmp_path)
     assert summary["team"]["method"] == "pilots"
-    assert summary["robots"] == {"duck": "microduck:sim2d", "arm": "lerobot:mock"}
+    assert summary["robots"] == {"duck": "microduck:mock", "arm": "lerobot:mock"}
     for name in ("duck", "arm"):
         assert (_newest(tmp_path) / "robots" / name / "transcript.jsonl").exists()
 
@@ -186,18 +152,18 @@ def test_no_memory_leaves_nothing_behind(tmp_path: Path) -> None:
 # ── what the summary wrote down ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("glotfile", ["team-kick", "team-hello"])
-def test_neither_kind_of_team_writes_the_key_into_its_summary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, glotfile: str
+def test_a_team_writes_no_key_into_its_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Both summaries carry the command, so both carry the thing a solo run redacts out of
+    """A team's summary carries the command, so it carries the thing a solo run redacts out of
     `run_start`. A run directory is pasted into issues, and a key that reaches one has to be
     rotated.
 
     `sys.argv` is pytest's own here, because `CliRunner` calls the command in-process while
     the record is built from the arguments the process was given.
     """
-    argv = [glotfile, "--api-key", "sk-never-in-a-run-directory", "--seed", "3"]
+    glotfile = "team-hello"
+    argv = [glotfile, "--api-key", "sk-never-in-a-run-directory"]
     monkeypatch.setattr(sys, "argv", ["roboglot", "run", *argv, *_run_args(tmp_path)])
     result = runner.invoke(app, ["run", *argv, *_run_args(tmp_path)])
     assert result.exit_code == 0, result.output
@@ -211,30 +177,14 @@ def test_neither_kind_of_team_writes_the_key_into_its_summary(
 # ── refusals ────────────────────────────────────────────────────────────────────────────
 
 
-def test_a_pilots_duck_under_team_n_is_refused(tmp_path: Path) -> None:
+def test_a_number_for_a_team_is_refused_in_one_line(tmp_path: Path) -> None:
+    """`--team 3` was the coordinator's count of ducks, and a team is a stored one now."""
     result = runner.invoke(app, ["run", "team-hello", "--team", "3", *_run_args(tmp_path)])
     assert result.exit_code == 1
-    assert "this task file runs pilots" in " ".join(result.output.split())
-
-
-def test_a_coordinator_team_of_real_bodies_points_at_pilots(tmp_path: Path) -> None:
-    _seed(
-        tmp_path,
-        {"duck": "microduck:mock", "arm": "lerobot:mock"},
-        {"pair": ["duck", "arm"]},
-    )
-    result = runner.invoke(app, ["run", "team-kick", "--team", "pair", *_run_args(tmp_path)])
-    assert result.exit_code == 1, result.output
-    assert "sim2d Microducks only" in result.output
-    assert "method: pilots" in result.output
-
-
-def test_a_coordinator_team_of_five_is_refused(tmp_path: Path) -> None:
-    robots = {f"duck-{i}": "microduck:sim2d" for i in range(5)}
-    _seed(tmp_path, robots, {"five": list(robots)})
-    result = runner.invoke(app, ["run", "team-kick", "--team", "five", *_run_args(tmp_path)])
-    assert result.exit_code == 1, result.output
-    assert "2 to 4 ducks" in result.output
+    said = " ".join(result.output.split())
+    assert "--team 3 was a coordinator team of 3 ducks, which Roboglot no longer has" in said
+    assert "roboglot team list" in said
+    assert not (tmp_path / "runs").exists(), "nothing was written"
 
 
 def test_a_pilot_team_of_one_is_refused(tmp_path: Path) -> None:
@@ -244,11 +194,11 @@ def test_a_pilot_team_of_one_is_refused(tmp_path: Path) -> None:
     assert "2 to 8 members" in result.output
 
 
-def test_an_unknown_team_names_both_things_it_could_have_been(tmp_path: Path) -> None:
+def test_an_unknown_team_says_where_to_find_the_stored_ones(tmp_path: Path) -> None:
     result = runner.invoke(app, ["run", "team-hello", "--team", "ghost", *_run_args(tmp_path)])
     assert result.exit_code == 1
     assert "no team called 'ghost'" in result.output
-    assert "a number for N simulated ducks" in result.output
+    assert "roboglot team list" in result.output
 
 
 def test_a_dangling_team_refuses_before_it_runs(tmp_path: Path) -> None:
@@ -299,35 +249,6 @@ def test_a_gated_verb_needs_yes(tmp_path: Path) -> None:
     refused = runner.invoke(app, ["run", str(duck), "--team", "pair", *_run_args(tmp_path)])
     assert refused.exit_code == 1, refused.output
     assert "cannot prompt y/N per member" in refused.output
-
-
-def test_record_takes_a_count_and_not_a_stored_team(tmp_path: Path) -> None:
-    _seed(tmp_path, {"duck": "microduck:sim2d"}, {})
-    result = runner.invoke(
-        app,
-        [
-            "record",
-            "team-kick",
-            "--team",
-            "pair",
-            "--llm",
-            "fake",
-            "--runs-dir",
-            str(tmp_path / "runs"),
-        ],
-    )
-    assert result.exit_code == 1, result.output
-    assert "record pins the simulator" in result.output
-
-
-def test_a_coordinator_team_of_one_is_refused(tmp_path: Path) -> None:
-    """The members are folded in with `model_copy`, which skips the field validator, so the
-    lower bound has to be checked here or a one-duck auction runs."""
-    _seed(tmp_path, {"lonely": "microduck:sim2d"}, {"solo": ["lonely"]})
-    result = runner.invoke(app, ["run", "team-kick", "--team", "solo", *_run_args(tmp_path)])
-    assert result.exit_code == 1, result.output
-    assert "2 to 4 ducks" in result.output
-    assert not (tmp_path / "runs").exists()
 
 
 def test_a_stored_team_refuses_the_endpoint_flags_it_would_have_dropped(

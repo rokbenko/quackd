@@ -165,7 +165,7 @@ def test_with_nothing_registered_it_says_to_register_first(
 @pytest.mark.parametrize(
     ("argv", "needle"),
     [
-        (["team", "create", "3", "--robot", "duck-a"], "simulated ducks"),
+        (["team", "create", "3", "--robot", "duck-a"], "a number reads as a count, not a name"),
         (["team", "create", "K", "--robot", "duck-a"], "not a valid team name"),
         (["team", "create", "k", "--robot", "ghost"], "no robot called 'ghost'"),
         (["team", "show", "ghost"], "no team called 'ghost'"),

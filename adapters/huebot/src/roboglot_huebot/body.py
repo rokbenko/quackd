@@ -79,7 +79,6 @@ LOOK_REFUSED = "Huebot's shim does not answer robot.look yet, so Roboglot sends 
 
 
 _NO_LOOK = "its shim does not answer robot.look yet, so Roboglot turns no head on it"
-_NO_PLACE = "nothing on a Huebot says where it is, and this walks by a map"
 
 WITHHELD = MappingProxyType(
     {
@@ -89,8 +88,6 @@ WITHHELD = MappingProxyType(
             "its maker has not said what ground_pick does on a Huebot, or how its state says it "
             "holds something"
         ),
-        "explore": _NO_PLACE,
-        "find": _NO_PLACE,
     }
 )
 """The family's verbs Huebot does not have, and why, which `extras.not_offered` carries to the
@@ -129,7 +126,7 @@ HUEBOT = Body(
     limits=MappingProxyType({"max_vx": 0.15, "max_vy": 0.1, "max_wz": 0.75}),
     # No `grab`, until its maker says what `ground_pick` does on Huebot and how its state reports
     # that it holds something. No `gaze` or `watch`: they send `robot.look`, which its shim does
-    # not answer yet. No `explore` or `find`: nothing says where a Huebot is.
+    # not answer yet.
     verbs=frozenset({"sit", "stand", "kick", "stand_up", "quack", "say"}),
     core_texts=MappingProxyType(
         {
@@ -217,4 +214,4 @@ HUEBOT = Body(
     claims_deadman=_claims_deadman,
     withheld=WITHHELD,
 )
-"""Huebot: the maker's figures, the verbs it can be offered, and no simulator, map or mediad."""
+"""Huebot: the maker's figures, the verbs it can be offered, and no map or mediad."""

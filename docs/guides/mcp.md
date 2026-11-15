@@ -12,23 +12,11 @@ chatting with in Claude Code or Claude Desktop is the one flying the robot, and 
 the robot, the verbs and the executor rather than a choice of brain. Everything about `--llm`,
 `roboglot list-models` and the catalogue belongs to `roboglot run`.
 
-Works against a simulated duck with no hardware at all. The simulator is the Microduck's own,
-so `roboglot[microduck]` is the whole install, and a bare `uvx roboglot` has no robot in it to
-serve.
-
-For a duck that really walks, add the physics extra and name the physics backend:
-
-```bash
-claude mcp add roboglot -- uvx --from "roboglot[mujoco]" roboglot serve-mcp --robot microduck:mujoco
-```
-
-That is upstream's own MuJoCo model on `alpha_walking.onnx`, a walking policy Pollen trained
-before the `velstand.onnx` a robot on a current release walks on, both fetched at a pinned commit
-into `~/.roboglot/cache` on the first connect and checked against a recorded sha256. The frames
-`robot_observe` returns come from the head of a robot that is walking, and the gait undershoots
-what it is asked, which `report_state` says ([ADR-0030](../adr/0030-mujoco-physics-backend.md)). The
-first connect downloads the extra and about 10 MB of model with nothing on screen, so `sim2d`
-stays the fast way in and is what the configs below use.
+Works against a mock with no hardware at all: `microduck:mock`, the Microduck's in-memory test
+double, which is what the configs below serve. The mock is the Microduck's own, so
+`roboglot[microduck]` is the whole install, and a bare `uvx roboglot` has no robot in it to
+serve. A mock shows the tools, the contract and the gates working, not how a robot behaves: its
+camera sends grey frames, so there is no ball to find, and its pose is scripted.
 
 ## Tools
 
@@ -41,7 +29,7 @@ first member, else the first Microduck, else the first declared.
 |---|---|
 | `robot_list` | Every robot this server fronts: name, adapter, backend, vendor, model, embodiment, mobility, manifest id and digest, its `datasheet` as data and as one paragraph of `datasheet_text`, loaded contract, health and which one is the default. Call this first. |
 | `robot_list_verbs(robot?)` | That robot's verbs from its own manifest: params, safety class, `canonical` name and `aliases`, whether it is `core`, whether it is `before_verdict` (it looks, speaks or brakes, so it runs before the pilot has judged the task), and whether its current contract allows it. |
-| `robot_assess_task(robot?, verdict, reason, limits_consulted?, estimates?, needs?)` | Your verdict on whether that body can do the task, judged against the datasheet in its `robot_list` row: `feasible`, `infeasible` or `uncertain`. Required before the first verb that moves the body, and `robot_run_verb` refuses anything that does until you answer (the `verdict` gate). An `infeasible` answer names, in `could`, the robots here whose datasheets meet what the task needs, so it can be handed over. `uncertain` stays pending: there is no terminal to ask on, so ask the person you are chatting with and answer again. Answering again replaces the earlier verdict, which is how an `uncertain` is cleared once you have asked, and is also why an `infeasible` here is not the end of the session the way it is the end of a `roboglot run`. A `feasible` whose `needs` that robot's own datasheet does not meet, or does not publish, is refused before it is recorded and names the need, which is the check a bid is already held to at the coordinator. The exceptions are the four [concepts/safety.md](../concepts/safety.md#when-a-feasible-verdict-contradicts-itself) lists: a zero and a `none` ask for nothing, and a body that publishes no terrain, or does not move, meets `indoor_flat`. A `work_height_m` is not held against a robot's own verdict when its sheet publishes no working height band, though such a robot is still left out of `could` for a task that names one. When a need is refused: answer `infeasible` if that need decides the task, `uncertain` if a person could know the figure, or correct a need you asked more of than the task turns on. Moves nothing and costs no step. |
+| `robot_assess_task(robot?, verdict, reason, limits_consulted?, estimates?, needs?)` | Your verdict on whether that body can do the task, judged against the datasheet in its `robot_list` row: `feasible`, `infeasible` or `uncertain`. Required before the first verb that moves the body, and `robot_run_verb` refuses anything that does until you answer (the `verdict` gate). An `infeasible` answer names, in `could`, the robots here whose datasheets meet what the task needs, so it can be handed over. `uncertain` stays pending: there is no terminal to ask on, so ask the person you are chatting with and answer again. Answering again replaces the earlier verdict, which is how an `uncertain` is cleared once you have asked, and is also why an `infeasible` here is not the end of the session the way it is the end of a `roboglot run`. A `feasible` whose `needs` that robot's own datasheet does not meet, or does not publish, is refused before it is recorded and names the need. The exceptions are the four [concepts/safety.md](../concepts/safety.md#when-a-feasible-verdict-contradicts-itself) lists: a zero and a `none` ask for nothing, and a body that publishes no terrain, or does not move, meets `indoor_flat`. A `work_height_m` is not held against a robot's own verdict when its sheet publishes no working height band, though such a robot is still left out of `could` for a task that names one. When a need is refused: answer `infeasible` if that need decides the task, `uncertain` if a person could know the figure, or correct a need you asked more of than the task turns on. Moves nothing and costs no step. |
 | `robot_run_verb(robot?, verb, params?)` | Run any verb through that robot's executor (`search_scan`, `go_to` or its alias `walk_to`, `kick`, `gaze`, `express`, …). Refusals come back as `ok: false`, and a verb the manifest does not list is a refusal too. The result carries a `log` list of what happened behind it (see below). |
 | `robot_observe(robot?)` | The `observe` verb through the executor (it counts against the budget), returning the camera frame as a PNG image, a one-line detection summary, and the log as a final text block. A robot with several cameras returns one image per camera, each preceded by a `camera <name>:` line, and the detection summary is the primary camera's alone, because a bearing measured through one lens means nothing through another. A camera that gave nothing this step costs its own picture and nothing else. |
 | `robot_say(robot?, text)` | The `say` verb, with a `log` like `robot_run_verb`. No robot here has text to speech, so it degrades: one of seven tones on a Microduck, the same seven tags sent to its shim on a Huebot, one of the duck's own sounds on an Open Duck. A robot without a `sound` intent refuses with `ok: false`. |
@@ -68,11 +56,8 @@ value applied to all of them, and each keeps its memory under its registered nam
 ([guides/registry.md](registry.md)). `--team` refuses `--robot`, `--robots`, `--address`, `--token`
 and `--camera-url`, because the registry already answers all five.
 
-Simulated robots in one team each get their own world; a shared arena over MCP is future
-work. A team **task file** is still refused here, whichever kind it is: the coordinator needs
-a referee this process does not run, and a pilot team needs one LLM per robot rather than
-the one LLM driving this session. Run either with `roboglot run` instead
-([guides/team.md](team.md)).
+A team **task file** is still refused here: a pilot team needs one LLM per robot rather than
+the one LLM driving this session. Run it with `roboglot run` instead ([guides/team.md](team.md)).
 
 ## What the log shows
 
@@ -96,13 +81,12 @@ envelope, recorded as `tool_call` and `tool_result`: what the client asked for, 
 cost in seconds and budget.
 
 ```
-tool    robot_run_verb verb='go_to', params={'target': 'ball'} on duck
-verb    go_to(target='ball') from mcp
-->      look(x=1, y=0, z=0)
-->      move x47 over 4.6 s (vx 0.05..0.2, vy 0, wz 0..1)
+tool    robot_run_verb verb='move', params={'vx': 0.15, 'duration_s': 1} on microduck
+verb    move(vx=0.15, duration_s=1) from mcp
+->      move x10 over 0.9 s (vx 0.15, vy 0, wz 0)
 ->      stop
-<-      go_to ok: reached the ball: ~0.24 m away, bearing +0° (4.8 s sim, 0.2 s wall, 49 intents)
-done    ok in 4.8 s sim, 0.2 s wall budget: step 2/40, LLM calls 0/40, 0.2/5 min
+<-      move ok: walked vx=0.15 vy=0.00 wz=0.00 for 1.0s (0.0 s, 11 intents)
+done    ok in 0.0 s budget: step 1/40, LLM calls 0/40, 0.0/5 min
 ```
 
 A `gate` line appears whenever a rule fires, and says which one: `gate allowlist: refused
@@ -123,8 +107,10 @@ or key is driving the session, which makes them the operator's to account for an
 Roboglot's, and an MCP session has no run boundary to total anything over, since it begins when
 the client spawns the server and ends whenever the chat does. Roboglot shows what Roboglot can see.
 
-On a simulator the robot's own clock and the wall clock are different numbers, and the line
-shows both when they disagree. On hardware there is one clock and one number.
+The seconds on a verb's `<-` line and on its `done` line are the wall clock's. A burst's `over`
+and the budget's minutes are counted on the robot's own clock, which on a mock moves only as its
+verbs sleep: the burst above spans 0.9 of the mock's seconds, in a call that took under a tenth of
+a wall second.
 
 The list is capped at thirty lines per call so a long approach does not fill the LLM's
 context. The uncapped version goes to the server's stderr, one block per call written when
@@ -147,7 +133,7 @@ Verified against the current docs (`code.claude.com/docs/en/mcp`, 2026-08). Two 
 **1. One command** (local scope by default; `--scope project` shares it via `.mcp.json`):
 
 ```bash
-claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp --robot microduck:sim2d
+claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp --robot microduck:mock
 ```
 
 **2. Project file** — commit a `.mcp.json` at the repo root:
@@ -157,7 +143,7 @@ claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp -
   "mcpServers": {
     "roboglot": {
       "command": "uvx",
-      "args": ["--from", "roboglot[microduck]", "roboglot", "serve-mcp", "--robot", "microduck:sim2d"]
+      "args": ["--from", "roboglot[microduck]", "roboglot", "serve-mcp", "--robot", "microduck:mock"]
     }
   }
 }
@@ -167,12 +153,12 @@ claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp -
 (No `"type"` key: Claude Code reads an entry with `command` as a stdio server.)
 
 `--from "roboglot[microduck]"` is what puts a duck in the environment `uvx` builds. The `roboglot`
-on PyPI is the loop and no robot, so a bare `uvx roboglot serve-mcp --robot microduck:sim2d`
+on PyPI is the loop and no robot, so a bare `uvx roboglot serve-mcp --robot microduck:mock`
 never reaches the tool list: it stops at `adapter 'microduck' needs an extra`. Swap the extra
 for the body you own, `roboglot[lerobot]` or `roboglot[rosbridge]` or any of the ten, and name
 that robot after `--robot`.
 
-Then in Claude Code: *"List the duck's verbs, then find the ball and kick it."*
+Then in Claude Code: *"List the duck's verbs, then walk it forward for a second and quack."*
 
 > **If you are working on Roboglot itself**, this repo ships its own `.mcp.json`, and it says
 > `uv run --no-sync` rather than `uvx` on purpose: it serves the code in your working tree
@@ -196,7 +182,7 @@ Edit `claude_desktop_config.json` — Settings → Developer → *Edit Config*:
   "mcpServers": {
     "roboglot": {
       "command": "uvx",
-      "args": ["--from", "roboglot[microduck]", "roboglot", "serve-mcp", "--robot", "microduck:sim2d"],
+      "args": ["--from", "roboglot[microduck]", "roboglot", "serve-mcp", "--robot", "microduck:mock"],
       "env": {"ROBOGLOT_LOG": "1"}
     }
   }
@@ -231,10 +217,11 @@ spawns it on your laptop as always, and `--host` names the board, the way it doe
 read its frames, and `robot_list` and the server's startup log name the detector in use. A
 board whose daemon does not answer refuses the server before it starts. `--host` and
 `--detector` are for one robot: with `--robots` or `--team` either is refused, because one
-board is one camera and one detector and a team has several bodies. On 2026-09-25
-`roboglot serve-mcp --robot microduck:sim2d --host 127.0.0.1:19874` answered an `initialize`
-handshake against Roboglot's daemon serving a board made of files, not a Jetson, and
-`robot_list` named `color_blob`, the detector a simulator keeps.
+board is one camera and one detector and a team has several bodies. On 2026-11-15
+`roboglot serve-mcp --robot microduck:mock --host 127.0.0.1:19874` answered an `initialize`
+handshake against Roboglot's daemon serving a board made of files and a fake camera, not a
+Jetson, and `robot_list` named `color_blob`, the colour detector on this machine: a mock keeps
+it, and that daemon was started with `--no-detect`.
 
 Reaching it from the Claude mobile app would need a different shape: a remote connector,
 which is a server that runs persistently somewhere reachable over the network, with its own
@@ -253,21 +240,21 @@ you would most like to poke at from the sofa.
 ## Useful flags
 
 ```
-roboglot serve-mcp --robot microduck:sim2d --seed 7    # a different world
 roboglot serve-mcp --glotfile find-and-kick            # start with a contract loaded
 roboglot serve-mcp --glotfile find-and-kick --lock-glotfile   # and refuse a file that asks for more
 roboglot serve-mcp --dry-run                           # intents are logged, never sent
 roboglot serve-mcp --yes                               # allow confirm-gated verbs (no terminal to ask)
 roboglot serve-mcp --robot microduck:jsonrpc --address tcp://127.0.0.1:9870   # real robot, experimental
-roboglot serve-mcp --robots duck=microduck:sim2d,arm=lerobot:mock             # a team: robot_* tools, one executor each
+roboglot serve-mcp --robots duck=microduck:mock,arm=lerobot:mock              # a team: robot_* tools, one executor each
 roboglot serve-mcp --team kitchen                                            # the same, from a stored team
 roboglot serve-mcp --no-log                            # no result carries a log of what happened
-roboglot serve-mcp --robot open_duck:sim2d                                     # a buildable duck, no hardware needed
-roboglot serve-mcp --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 --yes  # the arm's pick and manipulate, run by a policy server
 ```
 
-`--policy-url` names the policy server one LeRobot arm hands its `pick` and `manipulate`
-segments to (`roboglot policy serve`, [guides/policies.md](policies.md),
+A line that names no robot serves the one adapter installed, on its `mock`, and is refused where
+several are installed.
+
+`--policy-url` names the policy server a real LeRobot arm, `lerobot:real`, hands its `pick` and
+`manipulate` segments to (`roboglot policy serve`, [guides/policies.md](policies.md),
 [the arm's page](../adapters/lerobot/README.md#a-policy-in-a-process-of-its-own-roboglot-policy-serve)),
 with `--policy-token`, or else `ROBOGLOT_POLICY_TOKEN`, or else the token file the server wrote.
 It is asked what it serves as the server starts, and one that does not answer refuses it. So
@@ -290,8 +277,8 @@ a terminal to say whether the arm did the task
 ([the arm's page](../adapters/lerobot/README.md#a-scripted-pilot-that-a-person-judges---controller-vla)).
 
 A session's budget counts its minutes from the robot's connect, on the clock the robot keeps,
-which on `lerobot:mujoco` is the simulator's own: the `done` lines and every result's budget
-read them against `max_minutes`, and the session's verbs are refused once they pass it.
+which on a mock is the mock's own: the `done` lines and every result's budget read them against
+`max_minutes`, and the session's verbs are refused once they pass it.
 
 > [!NOTE]
 > `--decision-llm` is not among these, on purpose. Over MCP the pilot LLM *is* the client, so
@@ -335,9 +322,9 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
 
 ## The two-minute script
 
-1. `claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp --robot microduck:sim2d` (≈20 s, first run downloads Roboglot and the duck)
-2. Open Claude Code in any folder and ask: **"Use the Roboglot tools. List the verbs, grab a frame, then find the ball and kick it. Quack when you're done."**
-3. Watch it call `robot_list` → `robot_list_verbs` → `robot_observe` → `robot_assess_task` → `robot_run_verb("search_scan")` → `robot_run_verb("go_to")` → `robot_run_verb("kick")` → `robot_say`.
+1. `claude mcp add roboglot -- uvx --from "roboglot[microduck]" roboglot serve-mcp --robot microduck:mock` (≈20 s, first run downloads Roboglot and the duck)
+2. Open Claude Code in any folder and ask: **"Use the Roboglot tools. List the verbs, grab a frame, then walk forward for a second and kick. Quack when you're done."**
+3. Watch it call `robot_list` → `robot_list_verbs` → `robot_observe` → `robot_assess_task` → `robot_run_verb("move")` → `robot_run_verb("kick")` → `robot_say`. The frame is the mock's grey one, with nothing in it to find.
 4. Ask: **"Load tasks/patrol-and-quack.glot and follow it."** — now the allowlist and budgets apply, and the LLM has the task body as instructions.
 
 ## Safety in an MCP session
@@ -377,11 +364,11 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   session started with `--dry-run` moves nothing at either end. A real arm with no pose recorded
   is refused before anything connects, `--dry-run` or not, since at the end there would be
   nothing to fold it to and it would be left holding itself up wherever it stopped, and a mock
-  or a simulator with none ends the way it always did. Recording
-  one is `roboglot robot rest-pose NAME` ([guides/registry.md](registry.md)).
-- `explore` and `find` run for minutes, and a client may wait less than that for one tool
-  call: ask for fewer minutes than your client waits, and `stop` from beside it ends either at
-  once. Both are confirm-gated, so a server reaches them only with `--yes`.
+  with none ends the way it always did. Recording one is `roboglot robot rest-pose NAME`
+  ([guides/registry.md](registry.md)).
+- MOSS's `explore` runs for up to eight minutes, and a client may wait less than that for one
+  tool call: ask for fewer minutes than your client waits, and a `stop` from beside it ends it
+  at the check it makes every second. It is confirm-gated, so a server reaches it only with `--yes`.
 - Confirm-gated verbs are **refused** unless the server was started with `--yes`, because
   there is no terminal to ask on. The refusal text tells the LLM why. A `dangerous` verb is
   refused even then, since `--yes` is nobody being asked: it runs only from a terminal, where a

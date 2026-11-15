@@ -3,16 +3,15 @@
 An arm has no legs, no head and no voice, so its manifest lists none of that: `move`,
 `go_to`, `search_scan`, `say` and `gaze` do not exist here. What it has is joints, a
 gripper, `place`, and, when a policy is available, `pick` and `manipulate`, each one skill
-intent that the arm's own learned controller executes (the thesis, unchanged). Three
-backends: `mock` (the real backend's own code over an arm in memory with a scripted policy,
-offline), `real` (LeRobot behind `roboglot[lerobot]`, Python 3.12 or newer, first driven on an
-arm on 2026-09-15) and `mujoco` (the real backend's own code over a physics model of the
-SO-101, behind `roboglot[lerobot-sim]`, for rehearsing a task at home).
+intent that the arm's own learned controller executes (the thesis, unchanged). Two backends:
+`mock` (the real backend's own code over an arm in memory with a scripted policy, offline)
+and `real` (LeRobot behind `roboglot[lerobot]`, Python 3.12 or newer, first driven on an arm
+on 2026-09-15).
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from typing import Any
 
 from PIL import Image
@@ -71,18 +70,13 @@ __version__ = "0.34.0"
 """Kept in step with Roboglot's own version by scripts/set_version.py. It lives here rather
 than being read from the core, because this file is all an adapter's sdist contains."""
 
-BACKENDS = ("mock", "real", "mujoco")
-SIMULATOR_BACKENDS = ("mujoco",)
-"""The backends that drive a simulated arm rather than one on a desk. Read before anything is
-built (`roboglot.adapters.factory.is_simulator`), so a command that must only ever run on a
-simulator refuses a real arm before connecting to it."""
+BACKENDS = ("mock", "real")
 REST_POSE_BACKENDS = ("real",)
 """The backends a run, an MCP session or a team refuses without a recorded rest pose. Read
 before anything is built (`roboglot.adapters.factory.needs_rest_pose`). An arm with no rest pose
 has nothing to be folded to at the end, and the real arm's close keeps its torque rather than let
 it fall where it stands (`LeRobotReal.KEEPS_TORQUE_WITHOUT_A_POSE`), so such a session would end
-with it holding itself up wherever it stopped (ADR-0058). The mock and the simulator have no arm
-to drop."""
+with it holding itself up wherever it stopped (ADR-0058). The mock has no arm to drop."""
 DEFAULT_ID = "arm-01"
 
 
@@ -286,8 +280,8 @@ class LeRobotAdapter:
 
     def rests_where_it_reads(self) -> None:
         """The arm's own (`LeRobotReal.rests_where_it_reads`), where it has one: `rest-pose` reads
-        an arm folded by hand, and its close then lets go of it there. The mock and the simulator
-        run the arm's own, and would let go of an arm with no pose without it."""
+        an arm folded by hand, and its close then lets go of it there. The mock runs the arm's
+        own, and would let go of an arm with no pose without it."""
         rests = getattr(self.transport, "rests_where_it_reads", None)
         if callable(rests):
             rests()
@@ -385,7 +379,7 @@ class LeRobotAdapter:
     def set_stop_check(self, check: Callable[[], bool] | None) -> None:
         """Hand the backend a way to hear that a stop was asked for while it connects, or take
         it away. Passed on to a backend that retries its connect (`LeRobotReal`, which the mock
-        and the simulator are too), and a no-op on one that does not. The agent loop hands its
+        is too), and a no-op on one that does not. The agent loop hands its
         abort flag's `is_set` to any body that has this before it connects, and takes it back
         afterwards."""
         forward = getattr(self.transport, "set_stop_check", None)
@@ -435,22 +429,6 @@ class LeRobotAdapter:
         if not callable(forward):
             raise TypeError(f"the {self.backend} backend cannot be told a segment's length")
         forward(seconds)
-
-    def frozen_inference_s(self, segment_s: float) -> float:
-        """The wall seconds the backend's clock stands still over a segment that long while its
-        policy thinks: the simulator's, and nothing on any other. Passed on for
-        `set_segment_s`'s reason."""
-        ask = getattr(self.transport, "frozen_inference_s", None)
-        return float(ask(segment_s)) if callable(ask) else 0.0
-
-    def slow_policy(self) -> str | None:
-        """Why the executor's timeout ended the last segment, when the backend can tell that
-        its policy answered slower than it declared: the simulator's, and nothing on any other,
-        whose clock does not stand still while the policy thinks. Passed on for
-        `set_segment_s`'s reason."""
-        ask = getattr(self.transport, "slow_policy", None)
-        said = ask() if callable(ask) else None
-        return said if isinstance(said, str) and said else None
 
     def ask_policy(self) -> dict[str, Any] | None:
         """Ask the policy server what it serves, now, and say it as the record names it
@@ -511,36 +489,14 @@ class LeRobotAdapter:
     def mobility(self) -> str:
         return "none"
 
-    @property
-    def is_simulator(self) -> bool:
-        """Whether this arm is the simulator's (`lerobot:mujoco`) rather than one on a desk. Not
-        `perception.is_simulated`, which counts the mock too."""
-        from roboglot_lerobot.sim.transport import LeRobotSim
-
-        return isinstance(self.transport, LeRobotSim)
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
 
 
-def _arm_on(backend: str, robot_type: str | None) -> ArmType:
-    """The arm a robot is on this backend. The simulator is a physics model of an SO-101, so it
-    is told of no other: a rehearsal on it would say nothing about another arm's reach."""
-    arm = arm_type(robot_type or ROBOT_TYPE)
-    if backend in SIMULATOR_BACKENDS and arm.robot_type != ROBOT_TYPE:
-        raise AdapterError(
-            f"lerobot:{backend} is a physics model of an {ROBOT_TYPE}, so it cannot rehearse an "
-            f"{arm.robot_type}: register that arm on lerobot:real or lerobot:mock"
-        )
-    return arm
+def _arm_on(robot_type: str | None) -> ArmType:
+    """The arm a robot is: the type its registration names (`--robot-type`), an SO-101 when
+    nobody says."""
+    return arm_type(robot_type or ROBOT_TYPE)
 
 
 def describe(
@@ -552,13 +508,12 @@ def describe(
 ) -> RobotManifest:
     """Static: the mock always has its camera and its scripted policy; the real backend
     claims neither until connect() finds them, and claims no joint ranges either, because
-    they are read off the arm's calibration file. The simulator is the real backend's code and
-    describes itself as the real backend does.
+    they are read off the arm's calibration file.
 
-    With `policy`, the policy server a run hands its segments to, the real backend and the
-    simulator claim `pick` and `manipulate` before they connect, since the connect that would
-    find the policy is the one given it here: a task that allows them validates before anything
-    connects, as it would once connected. The mock runs its own scripted policy and refuses one
+    With `policy`, the policy server a run hands its segments to, the real backend claims `pick`
+    and `manipulate` before it connects, since the connect that would find the policy is the one
+    given it here: a task that allows them validates before anything connects, as it would once
+    connected. The mock runs its own scripted policy and refuses one
     (`_refuse_policy`).
 
     `robot_type` is which arm a registered robot is (`--robot-type`): its name and its sheet."""
@@ -570,7 +525,7 @@ def describe(
         robot_id,
         camera=offline,
         policy=offline or policy is not None,
-        robot_type=_arm_on(backend, robot_type).robot_type,
+        robot_type=_arm_on(robot_type).robot_type,
     )
 
 
@@ -606,7 +561,7 @@ def _refuse_policy(backend: str) -> None:
     if backend == "mock":
         raise AdapterError(
             "lerobot:mock runs its own scripted policy and reaches no policy server: "
-            "--policy-url is for lerobot:real and lerobot:mujoco"
+            "--policy-url is for lerobot:real"
         )
 
 
@@ -657,48 +612,28 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
-    faults: str | None = None,
-    scene: Sequence[Mapping[str, Any]] | None = None,
     policy: PolicyChoice | None = None,
     robot_type: str | None = None,
 ) -> LeRobotAdapter:
-    """`faults` is a spec of bus faults for the simulator to meet (`sim.faults.FaultPlan`),
-    seeded by `seed`, and refused on any other backend: an arm on a desk has the faults it
-    has. `scene` is the objects the simulator lays on its table in place of its default ones
-    (`sim.model.parse_scene`), refused on any other backend for the same reason: the table in
-    front of a real arm has on it what somebody put there.
-
-    `policy` is the policy server the arm hands its `pick` and `manipulate` segments to
+    """`policy` is the policy server the arm hands its `pick` and `manipulate` segments to
     (`--policy-url`), reached through a `RemoteRunner` (`_policy_runner`), which the real
-    backend and the simulator both take as their policy and check against the arm at connect,
-    before torque (`LeRobotReal._fit_policy`), and play the chunks of as `--async-chunks` says
+    backend takes as its policy and checks against the arm at connect, before torque
+    (`LeRobotReal._fit_policy`), and plays the chunks of as `--async-chunks` says
     (`PolicyLoop.async_chunks`). The mock refuses one (`_refuse_policy`).
 
     `robot_type` is which arm this is (`arms.ARMS`, `--robot-type`), an SO-101 when nobody says. A
     type nobody answers for is refused here, as it is built, on every backend: the owner rule's
     (`ArmType.refusal`)."""
-    arm = _arm_on(backend, robot_type)
+    arm = _arm_on(robot_type)
     if not arm.drivable:
         raise AdapterError(arm.refusal)
     _check_rest_pose(rest_pose)
     if policy is not None:
         _refuse_policy(backend)
-    if faults is not None and backend != "mujoco":
-        raise AdapterError(
-            f"lerobot:{backend} has no faults to be told of: only the simulator, "
-            "lerobot:mujoco, takes a fault spec."
-        )
-    if scene is not None and backend != "mujoco":
-        raise AdapterError(
-            f"lerobot:{backend} has no scene to lay out: only the simulator, lerobot:mujoco, "
-            "takes one."
-        )
     # The name the arm was asked for by, before the default fills it in: the registered name
     # for every robot built from the registry, which is the only place a rest pose comes from.
     # The close note names it in the commands it gives a person, and says NAME where there
@@ -719,30 +654,6 @@ def make(
                 robot_type=arm.robot_type,
                 # the arm's own cap, from the same variable, since the mock runs the arm's code
                 max_step_deg=step_from_env(),
-            ),
-            robot_id=robot_id,
-        )
-    if backend == "mujoco":
-        from roboglot_lerobot.real import parse_camera_urls, step_from_env
-        from roboglot_lerobot.sim.camera import CAMERA_HINT
-        from roboglot_lerobot.sim.faults import FaultPlan
-        from roboglot_lerobot.sim.transport import LeRobotSim
-
-        start = seed if seed is not None else 0
-        return LeRobotAdapter(
-            LeRobotSim(
-                address=address,
-                robot_id=robot_id or DEFAULT_ID,
-                seed=start,
-                live=live,
-                faults=None if faults is None else FaultPlan.parse(faults, seed=start),
-                max_step_deg=step_from_env(),
-                cameras=parse_camera_urls(camera_urls(camera_url), label=backend, hint=CAMERA_HINT),
-                rest_pose=rest_pose,
-                registered_name=registered_name,
-                scene=scene,
-                policy=_policy_runner(policy, arm),
-                async_chunks=policy is None or policy.async_chunks,
             ),
             robot_id=robot_id,
         )
@@ -775,11 +686,9 @@ __all__ = [
     "JOINTS",
     "REACH",
     "ROBOT_TYPE",
-    "SIMULATOR_BACKENDS",
     "LeRobotAdapter",
     "conditions",
     "describe",
-    "doctor_rows",
     "implementations",
     "lerobot_manifest",
     "make",
@@ -794,14 +703,12 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from roboglot_lerobot import upstream_api
     from roboglot_lerobot.policy import endpoint_upstream_api as endpoints
     from roboglot_lerobot.policy import upstream_api as policies
-    from roboglot_lerobot.sim import upstream_api as so_arm100
 
     # The first row is the one in this table that is not a list of what nobody has tried. An
     # SO-101 ran the real backend on 2026-09-15, so the column says what that run did and did
-    # not cover. The second is the arm's simulator model, which lerobot:mujoco loads and no arm
-    # has been compared against. The third is LeRobot's policies, read at the version the
-    # laptop runs, which the policy server loads, and has loaded a tiny random ACT and a tiny
-    # random X-VLA alone in CI. The fourth is Hugging Face's Inference Endpoints, which
+    # not cover. The second is LeRobot's policies, read at the version the laptop runs, which
+    # the policy server loads, and has loaded a tiny random ACT and a tiny random X-VLA alone
+    # in CI. The third is Hugging Face's Inference Endpoints, which
     # `roboglot policy endpoint` starts a policy server on, read from the API's own document,
     # huggingface_hub's source and Hugging Face's pages; no endpoint has been created or paid
     # for. Every module here is walked by doctor's pins table and by the nightly drift job, so
@@ -812,12 +719,6 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
             upstream_api,
             "docs/adapters/lerobot/README.md",
             "run on an SO-101 on 2026-09-15; the pick policy was not exercised",
-        ),
-        (
-            "SO-ARM100",
-            so_arm100,
-            "docs/adapters/lerobot/README.md",
-            "anything against an arm: lerobot:mujoco loads it, and nobody has compared the two",
         ),
         (
             "LeRobot policies",
@@ -839,54 +740,3 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
 
 
 UPSTREAMS = _upstream_rows()
-
-
-def doctor_rows() -> list[Any]:
-    """What `roboglot doctor` says about the arm's simulator on this machine: whether the extra
-    that installs MuJoCo is here and at which version, which commit of the SO-101's model the
-    simulator runs, and whether that model is in the cache yet or the first connect fetches it.
-
-    Doctor asks every installed adapter this with no arguments, so it cannot know which robot,
-    if any, a person asked about, and it answers only what is true of the machine. Nothing here
-    imports `mujoco`, makes a GL context or fetches anything: the version is read from the
-    installer's metadata and the cache is only looked at. Whether this machine can draw the
-    scene is the simulator's own connect, which renders once, and `doctor --robot NAME`
-    reaches it for a registered `lerobot:mujoco` robot, with the address it was registered
-    with or, when it has none, on the calibration LeRobot keeps under its name."""
-    import importlib.metadata
-    import os
-    from pathlib import Path
-
-    from roboglot.doctor import TransportRow
-    from roboglot_lerobot.sim import SIM_EXTRA
-    from roboglot_lerobot.sim import upstream_api as so
-    from roboglot_lerobot.sim.assets import ASSETS_ENV, cached_so101
-
-    try:
-        version: str | None = importlib.metadata.version("mujoco")
-    except importlib.metadata.PackageNotFoundError:
-        version = None
-    pin = so.PIN[:7]
-    model = cached_so101()
-    # A checkout named by the variable is not the cache, and a connect never fetches in its
-    # place: one without the model is refused, so that is what the row has to say, with what
-    # to do about it, rather than promising a fetch that will not happen.
-    override = os.environ.get(ASSETS_ENV)
-    if override and model is None:
-        note = (
-            f"{ASSETS_ENV} points at {Path(override).expanduser()}, which has no "
-            f"{so.MODEL_FILE}, so a connect refuses: point it at the {so.SIM_DIR} directory "
-            f"of an SO-ARM100 checkout, or unset it to let Roboglot fetch {pin}"
-        )
-    elif override and model is not None and model.pinned:
-        note = f"SO-ARM100 at {pin} from {ASSETS_ENV} at {model.directory}"
-    elif model is None:
-        note = f"SO-ARM100 at {pin}: not in the cache yet, and the first connect fetches it"
-    elif model.pinned:
-        note = f"SO-ARM100 at {pin}: in the cache at {model.directory}"
-    else:
-        note = f"SO-ARM100 from {ASSETS_ENV} at {model.directory}, which differs from {pin}"
-    status = f"mujoco {version}" if version is not None else f"missing ({SIM_EXTRA})"
-    # found only when a connect has both things it needs here, the physics and the model
-    ready = version is not None and model is not None
-    return [TransportRow("lerobot:mujoco", status, note, found=ready)]

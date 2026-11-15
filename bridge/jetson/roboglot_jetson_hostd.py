@@ -420,11 +420,12 @@ class Cv2Camera:
             self._cap.release()
 
 
-#: The scene `--camera fake` paints: the colours and horizon Roboglot's own simulator uses,
-#: copied rather than imported, because nothing on the board may import roboglot. An orange ball
-#: on a pale floor under a pale sky is what its colour detector is tuned for, so the fake
-#: exercises that detector as well as the plumbing. It exercises no camera: the frame is
-#: synthesised, so `Cv2Camera`'s capture, resize and encode never run under it.
+#: The scene `--camera fake` paints: the colours and horizon Roboglot's own mocks draw
+#: (`roboglot.perception.palette`), copied rather than imported, because nothing on the board
+#: may import roboglot. An orange ball on a pale floor under a pale sky is what its colour
+#: detector is tuned for, so the fake exercises that detector as well as the plumbing. It
+#: exercises no camera: the frame is synthesised, so `Cv2Camera`'s capture, resize and encode
+#: never run under it.
 FAKE_SKY = (204, 222, 240)
 FAKE_FLOOR = (236, 229, 212)
 FAKE_BALL = (255, 140, 0)

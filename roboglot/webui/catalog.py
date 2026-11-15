@@ -33,11 +33,11 @@ def adapters() -> list[dict[str, Any]]:
     return list_adapters()
 
 
-def is_simulated(backend: str | None) -> bool:
-    """Whether a backend is a simulator or a mock: nothing to connect, nothing to plug in."""
-    from roboglot.perception import is_simulated as simulated
+def is_mock(backend: str | None) -> bool:
+    """Whether a backend is a mock: nothing to connect, nothing to plug in."""
+    from roboglot.perception import is_mock as mock
 
-    return simulated(backend)
+    return mock(backend)
 
 
 def drives(adapter: str) -> bool:
@@ -66,7 +66,7 @@ def robot_identity(
 ) -> str | None:
     """The body a run would drive, as one key: a registered name and its spec at the same address
     are one robot, so the page holds them as one job. The spec alone where there is no address,
-    as for a simulator or a mock."""
+    as for a mock."""
     if not robot:
         return None
     spec, where = robot.strip(), (address or "").strip()

@@ -133,7 +133,7 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     was wrong.
 
     Each surface carries both halves now: not by itself a reason, and a reason when a limit
-    turns on the thing nobody has seen. The MCP twin is held to the same words in
+    turns on the thing nobody has seen. The MCP side is held to the same words in
     `tests/test_mcp_server.py`, where there is a client to ask."""
     from pathlib import Path as _Path
 
@@ -144,7 +144,7 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     registry = default_registry()
     duck = load_glot("tasks/find-and-kick.glot")
     allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
-    prompt = build_system_prompt(duck, [registry.view(n) for n in allow], "sim2d")
+    prompt = build_system_prompt(duck, [registry.view(n) for n in allow])
     rule = next(line for line in prompt.splitlines() if "Until then" in line)
     repo = _Path(__file__).resolve().parents[1]
     surfaces = {
@@ -389,24 +389,11 @@ async def test_an_unanswered_doubt_does_not_clear_the_gate() -> None:
     assert (await executor.run_verb("walk", {"vx": 0.1, "duration_s": 0.1})).ok
 
 
-async def test_a_team_member_is_never_asked_for_a_verdict() -> None:
-    """A member is a state machine, not a pilot: there is nobody there to ask, so the gate is
-    off by default and the team never turns it on."""
-    import inspect
-
-    from roboglot.team import member as team_member
-
-    executor, _transport, _events = _executor()
-    assert executor.require_verdict is False
-    assert (await executor.run_verb("walk", {"vx": 0.1, "duration_s": 0.1})).ok
-    assert "require_verdict" not in inspect.getsource(team_member)
-
-
 # ── the matcher ─────────────────────────────────────────────────────────────────────────
 
 
 def test_a_figure_nobody_published_is_not_a_yes() -> None:
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     assert missing_needs({"payload_kg": 0.1}, duck) == ["payload_kg >= 0.1 (not published)"]
     assert missing_needs({"manipulator": "gripper"}, duck) == ["manipulator = gripper (has beak)"]
 
@@ -463,7 +450,7 @@ def test_a_zero_asks_for_nothing_a_working_height_included() -> None:
     on an arm met that refusal as the y/N question on nearly every run. Every number now reads
     a zero the same way, band or no band, and a task whose hands really work at the floor says
     so with a height above zero."""
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     nothing = dict.fromkeys(NEEDS_NUMBERS, 0)
     assert missing_needs(nothing, duck) == []
     assert own_sheet_objection(nothing, duck) is None
@@ -487,7 +474,7 @@ def test_the_objection_names_the_need_and_the_three_ways_out() -> None:
     wherever it is driving from. It offers `uncertain` beside `infeasible` because the pilot
     measured on Qwen3-32B answered `uncertain` to a refusal that named only `infeasible`, and
     for a figure nobody published that is the right destination: it asks a person."""
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     said = own_sheet_objection({"endurance_min": 45}, duck)
     assert said is not None
     assert said.startswith("this body does not meet what you said the task needs")
@@ -520,7 +507,7 @@ def test_a_need_that_is_not_a_number_falls_through_to_the_refusal() -> None:
     publish the figure: the band, the arm count and every other number. The duck publishes
     none of them, which is how the first fix passed its own test. So a null asked of a body
     with a payload, a band or arms raised just the same."""
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     assert missing_needs({"payload_kg": None}, duck) == ["payload_kg >= None (not published)"]
     assert missing_needs({"payload_kg": "heavy"}, duck) == ["payload_kg >= heavy (not published)"]
     assert missing_needs({"payload_kg": True}, duck) == ["payload_kg >= True (not published)"]
@@ -688,7 +675,7 @@ def test_a_bid_carries_its_facts_so_a_stranger_can_judge_them() -> None:
 
 
 def test_datasheet_value_reads_one_field_or_says_nothing() -> None:
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     assert datasheet_value(duck, "mass_kg") == 0.8
     assert datasheet_value(duck, "payload_kg") is None
     assert datasheet_value(duck, "manipulator") == "beak"
@@ -699,7 +686,7 @@ def test_datasheet_value_reads_one_field_or_says_nothing() -> None:
 
 
 def test_the_hint_names_a_body_that_could_or_says_none_does() -> None:
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     able = solo_hint({"payload_kg": 1.0, "manipulator": "gripper"}, duck)
     assert able.startswith("By their datasheets, xlerobot and alohamini could")
     assert "needs manipulator=gripper, payload_kg=1" in able
@@ -720,7 +707,7 @@ def test_the_hint_names_the_most_only_for_a_need_nobody_meets() -> None:
     above the most anybody publishes, which is what "the most" answers."""
     from roboglot.adapters.factory import bodies_that_could, installed_manifests
 
-    duck = describe(RobotSpec("microduck", "sim2d"))
+    duck = describe(RobotSpec("microduck", "mock"))
     unmet = {"payload_kg": 0, "terrain": "outdoor"}
     assert not bodies_that_could(unmet), "this test needs a need that nobody here meets"
     said = solo_hint(unmet, duck)

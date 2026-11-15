@@ -1,19 +1,17 @@
 """A team of pilots: one `AgentLoop` per body, on wall-clock time, talking over the bus.
 
-The other kind of team ([`runner.py`](runner.py)) is a referee and N state machines in one
-simulated arena on a lockstep clock. This one has no referee and no arena. Each member is a
+There is no referee. Each member is a
 real `AgentLoop` with its own provider, executor, allowlist, budget, heartbeat, memory and
 feasibility verdict, running at the same time as the others, on any backend, and the only
 thing that coordinates them is what they say to each other (ADR-0034).
 
 Three consequences worth saying out loud, because they are the cost of that:
 
-- **Nothing is reproducible.** There is no shared clock, so a seed does not fix a run.
-- **Nothing is checked against the world.** The auction vetoes a claimed kick with the
-  simulator's own `ball_displacement_m`. Here there is no one world to ask, so the outcome is
+- **Nothing is reproducible.** There is no shared clock, so no two runs are the same.
+- **Nothing is checked against the world.** There is no one world to ask, so the outcome is
   the members' own claims, which is exactly as true as a solo run's.
-- **N simulated members are N separate worlds.** Two `microduck:sim2d` pilots cannot see each
-  other. A shared arena stays an auction feature.
+- **N mock members are N separate bodies.** Two `microduck:mock` pilots cannot see each
+  other.
 
 What this does guarantee: every member ends, every transport closes, and a member that raises
 stops the others with a reason that names it.
@@ -59,7 +57,7 @@ BusFactory = Callable[[Callable[[TeamMessage], None]], Bus]
 
 ViewFactory = Callable[[str], "Sink | None"]
 """`view(name) -> Sink | None`: a view per member, by member name, and one more for
-`TEAM_LOG`: the team's own events (the planner's call, the coordinator's story). Return a
+`TEAM_LOG`: the team's own events, those of no single member. Return a
 distinct sink per name, or two members' intent bursts fold into one line."""
 
 TEAM_LOG = "team"
@@ -69,31 +67,26 @@ def member_specs(
     members: list[str],
     robots: dict[str, str] | None,
     duck_default: str | dict[str, str] | None,
-    *,
-    fallback: str | None = None,
 ) -> dict[str, RobotSpec]:
-    """Each member's robot: `--robots`, else the task file's `robots:`, else `fallback`.
+    """Each member's robot: `--robots`, else the task file's `robots:`, else this machine's.
 
-    A coordinator team passes `DEFAULT_MEMBER`, because a coordinator team is N views of one
-    simulated Microduck world and there is nothing else it could be. A pilot team passes
-    None, because it is N separate bodies of whatever kind, and the machine's own answer to
-    "which robot, then" is `default_spec()`: the one adapter installed if there is one, the
-    Microduck if the Microduck is among several, and a refusal naming what to install if there
-    is none. Hardcoding the duck here was a second default that outlived the first."""
+    Member by member, so a command line that names one member's body (`--robot NAME`, a
+    registered robot called after it) leaves the others to the task file. It used to take the
+    file's whole list or none of it, and sent a member the command line did not name to the
+    machine's answer. A team is N separate bodies of whatever kind, and the machine's own answer
+    to "which robot, then" is `default_spec()`: the one adapter installed if there is one, and
+    otherwise a refusal that says what to install or lists what is here."""
     given: dict[str, str] = {}
-    if robots:
-        given = dict(robots)
-    elif isinstance(duck_default, dict):
+    if isinstance(duck_default, dict):
         given = dict(duck_default)
     elif isinstance(duck_default, str):
         given = dict.fromkeys(members, duck_default)
+    given.update(robots or {})
     specs: dict[str, RobotSpec] = {}
     chosen: RobotSpec | None = None
     for name in members:
         if (named := given.get(name)) is not None:
             parsed = parse_robot_spec(named)
-        elif fallback is not None:
-            parsed = parse_robot_spec(fallback)
         else:
             from roboglot.adapters.factory import default_spec
 
@@ -174,7 +167,7 @@ class SpecEntry:
 
 
 def roster_from_specs(specs: Mapping[str, RobotSpec]) -> dict[str, SpecEntry]:
-    """`member_specs(...)` (the auction's own resolver) turned into a roster."""
+    """`member_specs(...)` turned into a roster."""
     return {name: SpecEntry(name, spec) for name, spec in specs.items()}
 
 
@@ -196,7 +189,6 @@ class PilotTeamResult:
     """What the whole team cost, or None the moment one member could not be priced: a team
     bill quietly missing a robot is worse than no team bill."""
     log_dropped: int = 0
-    gif_path: Path | None = None
 
     @property
     def ok(self) -> bool:
@@ -256,11 +248,9 @@ async def run_pilot_team(
     roster: Roster,
     *,
     providers: Mapping[str, LLMProvider],
-    seed: int | None = None,
     runs_dir: str | Path = "runs",
     dry_run: bool = False,
     max_steps: int | None = None,
-    live: bool = False,
     yes: bool = False,
     memories: Mapping[str, RobotMemory] | None = None,
     fov_deg: float | None = None,
@@ -331,12 +321,7 @@ async def run_pilot_team(
     # built before the run directory exists, so a missing extra or a bad address fails with
     # nothing on disk to explain away
     adapters = {
-        name: make_adapter(
-            entry.robot_spec,
-            seed=seed,
-            live=live and name == members[0],
-            **entry.adapter_kwargs(),
-        )
+        name: make_adapter(entry.robot_spec, **entry.adapter_kwargs())
         for name, entry in roster.items()
     }
     if before_connect is not None:
@@ -354,9 +339,7 @@ async def run_pilot_team(
     def now() -> float:
         return time.perf_counter() - wall0
 
-    # `stamp="t"`: these are wall seconds, and writing them under the auction's `sim_t` would
-    # be a lie in the one file a replay reads times from
-    transcript = TeamTranscript(run_dir, now, stamp="t")
+    transcript = TeamTranscript(run_dir, now)
     talks = {"members": 0, "notices": 0}
 
     def tap(msg: Any) -> None:
@@ -431,7 +414,6 @@ async def run_pilot_team(
             }
             for name in members
         },
-        seed=seed,
         dry_run=dry_run,
         contract=duck.frontmatter.model_dump(),
         # as each member's `run_start` says it, so the team's own record agrees with them
@@ -554,7 +536,6 @@ async def run_pilot_team(
             loops=loops,
             run_dir=run_dir,
             wall_elapsed_s=round(time.perf_counter() - wall0, 2),
-            seed=seed,
             dry_run=dry_run,
             team_name=team_name,
             run_name=run_name,
@@ -598,7 +579,6 @@ def _finish(
     loops: Mapping[str, AgentLoop],
     run_dir: Path,
     wall_elapsed_s: float,
-    seed: int | None,
     dry_run: bool,
     team_name: str | None,
     run_name: str | None = None,
@@ -662,7 +642,6 @@ def _finish(
         "steps": sum(results[name].steps for name in members),
         "llm_calls": sum(results[name].llm_calls for name in members),
         "wall_elapsed_s": wall_elapsed_s,
-        "seed": seed,
         "transport": backends.pop() if len(backends) == 1 else "mixed",
         "dry_run": dry_run,
         "log_dropped": log_dropped,

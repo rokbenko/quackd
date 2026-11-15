@@ -15,7 +15,6 @@ two robots on the sim board. The systemd unit names the directory in `ROBOGLOT_O
     met.jsonl         0600  every meeting, and every robot refused and why
     runs/                   the run records, newest kept
     memory/                 what the robot remembers between runs
-    cache/                  downloads Roboglot keeps
     service.lock            held by the one service that runs here
 
 A `ROBOGLOT_ONBOARD_DIR` that only a `.env` file set is refused, the way an endpoint's registry is
@@ -129,10 +128,6 @@ class OnboardDir:
         return self.root / "memory"
 
     @property
-    def cache(self) -> Path:
-        return self.root / "cache"
-
-    @property
     def lock(self) -> Path:
         return self.root / "service.lock"
 
@@ -164,7 +159,7 @@ class OnboardDir:
         has modes. A folder already there keeps the mode it has: whoever chose it chose that
         too, and every secret in it is a file of mode 0600 regardless. Each folder made is synced
         into the one above it, so the keys written next do not vanish with a power cut."""
-        for folder in (self.root, self.keys, self.runs, self.memory, self.cache):
+        for folder in (self.root, self.keys, self.runs, self.memory):
             if folder.is_dir():
                 continue
             try:

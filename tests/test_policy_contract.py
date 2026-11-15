@@ -1649,9 +1649,9 @@ def test_a_bench_says_a_step_slower_than_half_a_chunk_can_leave_the_arm_waiting(
             assert said.endswith("serve the policy where it answers faster"), said
 
 
-async def test_the_longest_latency_the_server_takes_still_plays_on_the_simulators_clock() -> None:
+async def test_the_longest_latency_the_server_takes_still_plays_on_a_lockstep_clock() -> None:
     """Half a chunk, on a lockstep clock, which holds each chunk back its declared latency as
-    the simulator does: every chunk after the first lands as the one before runs out, so the
+    the mock's does: every chunk after the first lands as the one before runs out, so the
     arm is starved only while the first is on its way, and the segment ends on its chunks."""
     _, info = S.served_policy(S.ServeOptions(policy="scripted:sweep"))
     rate, chunk = info.rate_hz, info.n_action_steps

@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "roboglot-microduck"
 dynamic = ["version"]
-description = "The Microduck adapter for Roboglot, with its simulators. Install it as roboglot[microduck]."
+description = "The Microduck adapter for Roboglot. Install it as roboglot[microduck]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
@@ -13,11 +13,6 @@ authors = [{ name = "Rok Benko" }]
 dependencies = ["roboglot>=0.34.0,<0.35"]
 
 [project.optional-dependencies]
-# The physics simulator: MuJoCo on the CPU, no GPU, both imported only inside connect().
-# onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
-# velstand a stock robot runs; the meshes and those policies are fetched at run time and never
-# shipped here (docs/reference/licenses.md).
-mujoco = ["mujoco>=3.12,<4", "onnxruntime>=1.20"]
 # The duck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
 # mediad's GET /frame, one PNG per request, needs none of this. Heavy, and needed by nobody
 # who is not pulling the track off a real Microduck.

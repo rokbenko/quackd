@@ -15,9 +15,8 @@ body:
       label: Robot
       description: >-
         The `--robot <adapter>:<backend>` you ran. `roboglot list-adapters` lists every one.
-        Put `browser demo` if you hit it in the web page, or `not robot specific` for the
-        CLI, docs, validation or MCP.
-      placeholder: "microduck:mujoco"
+        Put `not robot specific` for the CLI, docs, validation or MCP.
+      placeholder: "lerobot:real"
     validations:
       required: true
   - type: dropdown

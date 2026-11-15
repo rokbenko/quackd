@@ -2,9 +2,9 @@
 
 An open hardware 3D printed biped duck, about 42 cm tall, that walks on its own 50 Hz ONNX
 policy on a Raspberry Pi Zero 2 W. It is the first robot Roboglot supports that you can build
-yourself today, and the reason this adapter exists. The `sim2d` and `mock` backends run
-offline; the `bridge` backend talks to a daemon Roboglot ships for the duck's Pi, and has
-**never been run against a physical duck by us**.
+yourself today, and the reason this adapter exists. The `mock` backend runs offline. The
+`bridge` backend talks to a daemon Roboglot ships for the duck's Pi, and has **never been run
+against a physical duck by us**.
 
 Everything else, including every LLM call, runs off this Pi entirely: on your laptop or in
 the cloud, talking to the two daemons below over the network (see the
@@ -18,9 +18,9 @@ on-robot code). Read on 2026-09-03 at `3203734` and `b23317a`.
 ```bash
 uv pip install 'roboglot[open_duck]'
 
-roboglot list-verbs --robot open_duck:sim2d
-roboglot run open-duck-scout --robot open_duck:sim2d --llm fake
-roboglot validate tasks/find-and-kick.glot --robot open_duck:sim2d
+roboglot list-verbs --robot open_duck:mock
+roboglot run open-duck-scout --robot open_duck:mock --llm fake
+roboglot validate tasks/find-and-kick.glot --robot open_duck:mock
 # exit 1: requires kick, but open-duck-01 (open-duck-mini-v2) does not provide it
 ```
 
@@ -36,7 +36,6 @@ core wheel, which is why there was no extra to name.
 
 | `--robot` | What it is | Status |
 |---|---|---|
-| `open_duck:sim2d` | a duck in the cartoon world | ✅ `open-duck-scout` 10 of 10 seeds |
 | `open_duck:mock` | scripted, for tests | ✅ |
 | `open_duck:bridge` | a real duck, through Roboglot's daemon on its Pi | 🧪 never run on a duck |
 

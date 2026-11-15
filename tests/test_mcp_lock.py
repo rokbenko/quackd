@@ -18,11 +18,11 @@ from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from typer.testing import CliRunner
 
+from roboglot.adapters.factory import make_adapter
 from roboglot.cli import app
 from roboglot.glotfile.schema import GlotFrontmatter
 from roboglot.glotfile.widen import widened_by
 from roboglot.mcp_server import build_server
-from roboglot.transport.sim2d import Sim2DTransport
 
 
 def _duck(path: Path, front: str, name: str = "task") -> str:
@@ -51,7 +51,9 @@ success:
 
 @contextlib.asynccontextmanager
 async def _connected(**kwargs: Any) -> AsyncIterator[tuple[ClientSession, Any]]:
-    server, session = build_server(Sim2DTransport(seed=1), heartbeat_period_s=0.05, **kwargs)
+    server, session = build_server(
+        make_adapter("microduck:mock"), heartbeat_period_s=0.05, **kwargs
+    )
     async with create_client_server_memory_streams() as (client_streams, server_streams):
         low = server._lowlevel_server
         task = asyncio.create_task(
@@ -219,7 +221,7 @@ def test_the_flag_wants_a_contract_to_hold_to() -> None:
     assert result.exit_code != 0 and "--glotfile" in result.output
 
 
-@pytest.mark.parametrize("fleet", [["--robots", "a=microduck:sim2d"], ["--team", "kitchen"]])
+@pytest.mark.parametrize("fleet", [["--robots", "a=microduck:mock"], ["--team", "kitchen"]])
 def test_the_flag_holds_one_robot_and_refuses_a_team(fleet: list[str]) -> None:
     result = CliRunner().invoke(
         app, ["serve-mcp", "--glotfile", "hello-world", "--lock-glotfile", *fleet]

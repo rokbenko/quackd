@@ -11,7 +11,7 @@ budgets:
   max_minutes: 5
   max_llm_calls: 40
 success:
-  - Ball displaced more than 0.3 m in sim, or human confirms the kick landed.
+  - Ball displaced more than 0.3 m, or a human confirms the kick landed.
 abort_when:
   - Battery below 15%
   - Same verb fails 3 times in a row

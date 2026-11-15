@@ -210,8 +210,8 @@ def test_a_closed_port_refuses_every_read_and_write_as_lerobot_s_does() -> None:
     is not open, in one sentence under the class that refused (`up.NOT_CONNECTED`), and the mock's
     follower used to answer them all, before its connect and after its close alike. So a hand-off
     over a mock nobody had connected was let go of and read back rather than refused at its first
-    read, as the arm's is. It refuses them now, as the arm and the simulator do, and touches no
-    motor doing so, and the bus's own disconnect still passes over a closed port without a word."""
+    read, as the arm's is. It refuses them now, as the arm does, and touches no motor doing so,
+    and the bus's own disconnect still passes over a closed port without a word."""
     arm = _follower()
     follower = "SOFollower is not connected. Run `.connect()` first."
     bus = "SerialMotorsBus is not connected. Run `.connect()` first."
@@ -322,8 +322,8 @@ async def test_the_mock_is_the_real_backend_and_reads_its_travel_off_its_calibra
 async def test_the_mock_moves_under_the_step_the_arm_s_variable_sets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`ROBOGLOT_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm and its simulator, so a
-    rehearsal under a lowered cap moves as slowly as the arm will and says so in its manifest."""
+    """`ROBOGLOT_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm, so a rehearsal under
+    a lowered cap moves as slowly as the arm will and says so in its manifest."""
     lowered = MAX_STEP_DEG / 2
     monkeypatch.setenv(STEP_ENV, str(lowered))
     adapter = make("mock")

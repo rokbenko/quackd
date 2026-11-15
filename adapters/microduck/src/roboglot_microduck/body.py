@@ -153,8 +153,6 @@ class Body:
     """The backends that say where it is before anything connects."""
     map_backends: tuple[str, ...] = ()
     """The backends that reach its own `mapd` (`--map-address`)."""
-    room_backends: tuple[str, ...] = ()
-    """The backends a room (`--room`) is laid out in."""
     mediad: bool = False
     """Whether it runs `mediad`, so that a `/frame` URL is mediad's picture and `webrtc://` its
     track. On any other body a URL of that shape is somebody's snapshot server, whose frames say
@@ -229,17 +227,11 @@ DATASHEET = Datasheet(
 
 PLACES_BACKENDS = frozenset({"jsonrpc", "mock"})
 """The backends that say where the duck is before anything connects: robotd's contact odometry
-(`upstream_api.STATE_ODOM`) and the mock's scripted pose. A simulator says where the duck is only
-in a room it was given (`ROOM_BACKENDS`)."""
+(`upstream_api.STATE_ODOM`) and the mock's scripted pose."""
 
 MAP_BACKENDS = ("jsonrpc",)
 """The backends that reach the duck's own `mapd` (`--map-address`): a real duck, beside its
-robotd. A simulator keeps its own map of the room it was given (`ROOM_BACKENDS`)."""
-
-ROOM_BACKENDS = ("sim2d", "mujoco")
-"""The backends a room (`--room`) is laid out in. A simulator given one keeps a map of it the way
-the duck's own `mapd` keeps one (`transports.mapd.sim_map_params`), and offers the place verbs. A
-real duck's room is the one it stands in, and the mock scripts its own."""
+robotd."""
 
 
 def _robotd_line(robotd: dict[str, Any]) -> str:
@@ -268,11 +260,11 @@ MICRODUCK = Body(
     model="microduck",
     blurb=BLURB,
     datasheet=DATASHEET,
-    backends=("sim2d", "mujoco", "mock", "jsonrpc"),
+    backends=("mock", "jsonrpc"),
     intents=("twist", "skill", "gaze", "sound", "pose"),
     sensors=("battery", "odometry", "imu", "tof"),
     # Roboglot's own clamp, robotd's being none (`NO_TWIST_CLAMP`). The turn is the one upstream's
-    # walking task was trained on (sim3d's `TRAINING_TWIST`) and its pad asks for from
+    # walking task was trained on (`rl_upstream_api.TRAINING_TWIST`) and its pad asks for from
     # daemon-v0.16.2, where v8's velstand follows it well: past that is asking, not getting.
     limits=MappingProxyType({"max_vx": 0.3, "max_vy": 0.2, "max_wz": 1.0}),
     verbs=frozenset(
@@ -286,8 +278,6 @@ MICRODUCK = Body(
             "gaze",
             "say",
             "watch",
-            "explore",
-            "find",
         }
     ),
     core_texts=MappingProxyType(
@@ -391,7 +381,6 @@ MICRODUCK = Body(
     default_address=DEFAULT_ADDRESS,
     places_backends=PLACES_BACKENDS,
     map_backends=MAP_BACKENDS,
-    room_backends=ROOM_BACKENDS,
     mediad=True,
     reads_the_ball=True,
 )

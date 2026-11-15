@@ -37,7 +37,6 @@ from roboglot_toddlerbot import (
     toddlerbot_manifest,
 )
 from roboglot_toddlerbot.mock import ToddlerBotMock
-from roboglot_toddlerbot.sim2d import ToddlerBotSim2D
 from roboglot_toddlerbot.verbs import MOTIONS, SHIPPED_MOTIONS, neck_limits
 from tests.fake_jetson_hostd import FakeHostd
 
@@ -154,7 +153,7 @@ def test_limits_stay_inside_the_schema() -> None:
 
 def test_digest_ignores_the_id_and_the_backend() -> None:
     a = toddlerbot_manifest("mock", "one", camera=True, walk=True)
-    b = toddlerbot_manifest("sim2d", "two", camera=True, walk=True)
+    b = toddlerbot_manifest("bridge", "two", camera=True, walk=True)
     assert a.digest() == b.digest()
     assert a.digest() != toddlerbot_manifest("mock", "one", camera=True, walk=False).digest()
 
@@ -201,7 +200,7 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
     m = toddlerbot_manifest("mock", camera=True, walk=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
     allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], "mock", manifest=m)
+    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
     for verb in ABSENT:
         with pytest.raises(VerbNotFound):
@@ -375,37 +374,10 @@ async def test_the_gripper_build_grips_through_the_executor() -> None:
     assert mock.holding["right"] is True
 
 
-# ── the simulator ──────────────────────────────────────────────────────────────────────
-
-
-async def test_the_simulated_humanoid_walks_looks_and_performs() -> None:
-    adapter = ToddlerBotAdapter(ToddlerBotSim2D(seed=3))
-    manifest = await adapter.connect()
-    ex = _executor(adapter, manifest)
-    sim = adapter.transport
-    assert isinstance(sim, ToddlerBotSim2D)
-
-    assert (await ex.run_verb("observe", {})).ok
-    assert (await ex.run_verb("move", {"vx": 0.15, "duration_s": 0.5})).ok
-    assert (await ex.run_verb("look", {"yaw_deg": 25.0})).ok
-    assert sim.neck_yaw == pytest.approx(25.0)
-    assert (await ex.run_verb("stand", {})).ok and sim.stands == 1
-    assert (await ex.run_verb("perform", {"motion": "hold"})).ok
-    assert sim.performed == ["hold"]
-    assert (await ex.run_verb("stop", {})).ok
-
-
-async def test_the_simulator_refuses_the_skills_this_body_has_not_got() -> None:
-    sim = ToddlerBotSim2D(seed=1)
-    await sim.connect()
-    for intent in (Intent.sound("chirp"), Intent.do("kick_left"), Intent.do("ground_pick")):
-        assert not (await sim.send_intent(intent)).accepted
-
-
 # ── the factory ────────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.parametrize("backend", ["mock", "sim2d", "bridge"])
+@pytest.mark.parametrize("backend", ["mock", "bridge"])
 def test_the_factory_builds_every_backend(backend: str) -> None:
     adapter = make_adapter(f"toddlerbot:{backend}")
     assert adapter.name == "toddlerbot" and adapter.backend == backend
@@ -569,7 +541,6 @@ def test_the_deadman_flag_says_what_each_backend_can_actually_do() -> None:
     offline doubles emulate one, and the static `bridge` manifest cannot know whether a daemon
     is there until it has answered the handshake."""
     assert describe("mock").safety_authority.deadman is True
-    assert describe("sim2d").safety_authority.deadman is True
     assert describe("bridge").safety_authority.deadman is False, "nothing has answered yet"
     # and connecting is what turns it true
     assert toddlerbot_manifest("bridge", deadman=True).safety_authority.deadman is True

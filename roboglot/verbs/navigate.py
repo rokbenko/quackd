@@ -689,7 +689,7 @@ async def navigate(
     `goal_yaw` at the end when one is given. Refused before anything moves when the robot does not
     know where it is, its frame is not the goal's, its map has no way there, or the way is longer
     than `timeout_s` allows. Stopped, whatever ends it. `verb` is the one a stop or a refused twist
-    is said to have ended, for a verb that walks by this as `explore` does."""
+    is said to have ended."""
     state = await ctx.transport.get_state()
     extras = state.extras if isinstance(state.extras, dict) else {}
     walk = _Walk(
@@ -718,8 +718,8 @@ async def navigate(
     except SafetyStop:
         # the run's own rule, read at a stop: its reader stopped the body before it raised, and a
         # stop awaited here would let the run's abort cancel this walk before its words are read.
-        # One raised anywhere else, as a sleep raises one for a window closed or a body handed to
-        # another goal, came with the last twist still standing
+        # One raised anywhere else, as a sleep raises one for a body handed to another goal, came
+        # with the last twist still standing
         if not walk.reading_rule:
             await ctx.transport.stop()
         raise

@@ -60,7 +60,6 @@ def _run(
             robot,
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             "--no-memory",
             *flags,
         ],
@@ -188,13 +187,12 @@ def test_an_unlisted_id_whose_entry_names_no_tool_choice_is_sent_none(tmp_path: 
 
 
 def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Path) -> None:
-    """On the simulator, which has a camera: the control run proves frames were there to send."""
+    """On the mock, which has a camera: the control run proves frames were there to send."""
     with FakeOpenRouter() as stand_in:
         seeing = _run(
             stand_in,
             tmp_path / "seeing",
             llm="openrouter:roboglot-stub/tool-model",
-            robot="microduck:sim2d",
         )
     assert seeing.exit_code == 0, seeing.output
     assert sum(_images(post.body) for post in stand_in.posts()) > 0
@@ -203,7 +201,6 @@ def test_a_text_only_entry_is_sent_no_frames_where_a_seeing_one_is(tmp_path: Pat
             stand_in,
             tmp_path / "blind",
             llm="openrouter:roboglot-stub/text-only",
-            robot="microduck:sim2d",
         )
     assert blind.exit_code == 0, blind.output
     assert all(_images(post.body) == 0 for post in stand_in.posts())
@@ -330,7 +327,6 @@ def test_a_claude_row_is_asked_and_keeps_its_reasoning_past_eight_exchanges(
             stand_in,
             tmp_path / "runs",
             llm="openrouter:anthropic/claude-opus-5.5",
-            robot="microduck:sim2d",
             duck=str(duck),
         )
     assert result.exit_code == 0, result.output

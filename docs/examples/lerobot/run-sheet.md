@@ -1,9 +1,9 @@
 # The SO-101 run sheet
 
-A card for each of 220 experiments on an SO-101 arm, E001 to E220: what it is for, what to expect, how to set it
-up and the lines to run. It is the run sheet the comment at the top of a [task file](README.md) names. Start with
-[the arm's steps](../../adapters/lerobot/README.md#getting-started), which go from an empty laptop to the first runs
-and say how a line is built.
+A card for each of 219 experiments on an SO-101 arm, E001 to E220 but for E199: what it is for, what to expect, how
+to set it up and the lines to run. It is the run sheet the comment at the top of a [task file](README.md) names.
+Start with [the arm's steps](../../adapters/lerobot/README.md#getting-started), which go from an empty laptop to the
+first runs and say how a line is built.
 
 > [!WARNING]
 > **Cutting the servo supply is the only thing that stops this arm in every case.** Keep a hand on the switch
@@ -99,9 +99,9 @@ Claude as the pilot. Set the server up once (E145), and remove it when you are d
 
 ### A policy, scripted first
 
-No torch and no checkpoint. Then the arm against its twin, joint by joint.
+No torch and no checkpoint.
 
-[E197](#e197-a-policy-that-holds-still) [E198](#e198-a-policy-that-sweeps) [E199](#e199-the-arm-against-its-twin)
+[E197](#e197-a-policy-that-holds-still) [E198](#e198-a-policy-that-sweeps)
 
 ### From the page
 
@@ -4739,7 +4739,6 @@ Free space.
 **Expect.** It asks three times: whether the arm should try at all, since a scripted pilot's verdict is always `uncertain`, whether to start the segment, and at the end `Did the arm do it?`. The segment should end within a second or two, with the arm where it was. On the arm's twin: `policy 1 segment, 2 chunks, 1.0 s sim at 10 Hz`. Send back the `policy` block of `summary.json`: `hz` beside `late_ticks`, `starved_ticks` and `round_trip_ms`.
 
 - A joint that reads past its travel is refused, so this needs an arm calibrated with every joint taken into its fold: `do refused: shoulder_lift reads -100.0, outside its calibrated travel of -84.2..84.2, so the policy was not started` is what the lab arm's calibration got on the twin.
-- Run it on the twin first: the same line with `--robot arm-01-sim`.
 
 **First, in a second PowerShell with the same two setup lines: leave it running**
 
@@ -4789,28 +4788,6 @@ roboglot run --goal "sweep the wrist" --robot arm-01 --policy-url http://127.0.0
 
 ```bash
 roboglot policy check --policy-url http://127.0.0.1:9875 --bench
-```
-
-### E199: The arm against its twin
-
-Free space. Its files are in [e199/](e199/).
-
-**Goal.** The simulator assumes each joint's sign and zero, and only an arm can settle that. From the same mid-range pose, nudge each joint five degrees in the positive direction on both, and compare. Until then the twin's green says it does what it says, not that it moves like an arm.
-
-**Expect.** Two `summary.json` files and two videos of the same five nudges. For each joint: did it turn the same way? A joint that turns the other way on the twin is a finding worth an issue. The twin runs on this arm's own calibration, and it opens no port, so its line can run with the arm powered off.
-
-- The twin first, registered in [At the arm, first](../../adapters/lerobot/README.md#at-the-arm-first). Its table holds a red cube and a pen and nothing else. Clear the arm's sweep before its line.
-
-**On the twin**
-
-```bash
-roboglot run docs/examples/lerobot/e199/positive-nudge.glot --robot arm-01-sim --llm openai:gpt-6-sol --max-steps 18 --no-memory --run-name twin
-```
-
-**On the arm**
-
-```bash
-roboglot run docs/examples/lerobot/e199/positive-nudge.glot --robot arm-01 --llm openai:gpt-6-sol --max-steps 18 --no-memory --run-name arm
 ```
 
 ### E200: Smooth or staircase

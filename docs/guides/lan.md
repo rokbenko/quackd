@@ -17,7 +17,7 @@ uv pip install 'roboglot[lan,microduck]'   # zeroconf + paho-mqtt, and a robot t
 A Roboglot instance can advertise the robot it fronts, and another can list what answers:
 
 ```bash
-roboglot announce --robot microduck:sim2d --name duck-01         # until Ctrl-C (or --for 30)
+roboglot announce --robot microduck:mock --name duck-01          # until Ctrl-C (or --for 30)
 roboglot discover --timeout 3                                    # a table of what answered
 ```
 
@@ -44,7 +44,7 @@ from roboglot.adapters.factory import RobotSpec, describe
 from roboglot.lan.announce import announce
 from roboglot.lan.discover import discover
 
-ann = announce(describe(RobotSpec("microduck", "sim2d", "duck")), adapter="microduck")
+ann = announce(describe(RobotSpec("microduck", "mock", "duck")), adapter="microduck")
 for robot in discover(timeout_s=3.0):
     print(robot.manifest_id, robot.adapter, robot.addresses, robot.matches(some_manifest))
 ann.close()
@@ -82,43 +82,41 @@ each other through a simulated network on one machine. It has not run between tw
 
 `roboglot.team.mqtt_bus.MqttBus` implements the same two-method `Bus` protocol as the
 in-process bus (`publish`, `subscribe`) over a broker, and keeps the team's one hard rule:
-nobody ever awaits the bus. paho runs its own network thread; `publish` is a synchronous
-local fan-out plus a non-blocking hand-off; members still `drain()` between sim sleeps.
+nobody ever awaits the bus. paho runs its own network thread, `publish` is a synchronous
+local fan-out plus a non-blocking hand-off, and members still `drain()` between their turns.
 
 | | |
 |---|---|
-| Topics | `roboglot/<team_id>/ctl` (TASK, BID, CLAIM, ROLE, RESULT, HINT, VERDICT, TALK) at QoS 1, `roboglot/<team_id>/hb` (HB) at QoS 0, `retain=False` everywhere |
+| Topics | `roboglot/<team_id>/ctl`, the one topic, carrying `TALK`, the one kind of message, at QoS 1 with `retain=False` |
 | Payload | the pydantic `TeamMessage` JSON, exactly what `team.jsonl` records |
 | Echo | a broker sends your own publications back; a message whose `src` is one of this node's subscribers is dropped and counted |
-| Duplicates | QoS 1 is at least once; the coordinator's handlers are idempotent (minimum bid per source, maximum exclusion, idempotent heartbeats), so a duplicate changes no decision, and a test pins that |
+| Duplicates | QoS 1 is at least once, so a remote message can arrive twice, and a pilot hears a repeated `TALK` as said twice |
 | Threads | remote messages are marshalled onto the event loop with `call_soon_threadsafe` before they are tapped and pushed, because the transcript writer is not thread-safe |
 | Tap | fires exactly once per message per node: on publish for local messages, on receive for remote ones, so `team.jsonl` on the node that owns the run directory carries every message once |
 
 Library-only:
 
 ```python
+from roboglot.team import run_pilot_team
 from roboglot.team.mqtt_bus import MqttBus
-from roboglot.team.runner import run_team
 
-result = await run_team(
+result = await run_pilot_team(
     duck,
-    provider=provider,
+    roster,
+    providers=providers,
     bus_factory=lambda tap: MqttBus("desk-1", host="broker.local", tap=tap),
 )
 ```
 
-Either runner starts the bus inside its event loop and closes it at the end of the run. There
-is still no `--bus` flag on purpose, for a different reason per kind. A coordinator team
-across machines also needs a distributed clock, because it runs on one lockstep simulator
-clock, and that is out of scope. A pilot team has no shared clock to distribute, so nothing
+The runner starts the bus inside its event loop and closes it at the end of the run. There is
+still no `--bus` flag on purpose. A pilot team has no shared clock to distribute, so nothing
 stands in its way except that nobody has run one across two machines, and a flag would imply
 somebody had. `MqttBus(..., client=)` takes a fake client, which is how the tests run: two
 nodes on a synchronous fake broker with zero sockets.
 
-**Status.** Round-trips of every message kind, echo, duplicates, threading and a full
-`team-kick` run over the bus are tested on a fake broker in the suite. The real path was
-exercised once by us: two `MqttBus` nodes with real paho 2.1 clients against an `amqtt`
-0.12 broker on `localhost:1883` (one Windows 11 machine), all eight message kinds that
-existed that day delivered in order, echo dropped, tap once per node. `TALK`, the ninth,
-rides `ctl` like the rest and has crossed a fake broker in the suite and no real one. It has
-not carried a team of either kind between two machines, for the reasons above.
+**Status.** Round-trips of `TALK`, echo, threading and a full `team-hello` run over the bus are
+tested on a fake broker in the suite. The real path was exercised once by us, before `TALK`
+existed: two `MqttBus` nodes with real paho 2.1 clients against an `amqtt` 0.12 broker on
+`localhost:1883` (one Windows 11 machine), every message delivered in order, echo dropped, tap
+once per node. `TALK` has crossed a fake broker in the suite and no real one. It has not
+carried a team between two machines, for the reason above.

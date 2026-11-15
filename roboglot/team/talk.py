@@ -45,7 +45,7 @@ class Peer:
 
     name: str
     key: str
-    """`adapter:backend`, so a pilot can tell a simulated peer from a real one."""
+    """`adapter:backend`, so a pilot can tell a mock peer from a real one."""
     manifest: RobotManifest | None = None
 
 

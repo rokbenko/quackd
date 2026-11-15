@@ -119,9 +119,7 @@ def make(
     backend: str,
     *,
     robot_id=None,
-    seed=None,
     address=None,
-    live=False,
     camera_url=None,  # one url, a sequence of them, or None
     token=None,
     rest_pose=None,  # {joint: degrees} read off the body, or None
@@ -135,15 +133,15 @@ module lazily. Declare the entry point, install the package, and the name works 
 importable (an editable install keeps metadata for a module somebody has since moved) and
 asks yours for the body.
 
-The seven `make()` keywords are the same on every adapter, because the factory calls every
-one of them the same way. Accept all seven even where the body has nothing to do with one:
+The five `make()` keywords are the same on every adapter, because the factory calls every
+one of them the same way. Accept all five even where the body has nothing to do with one:
 the Microduck takes `token` and does not use it, since `robotd`'s socket has nothing to
 authenticate to. Two of them arrive in a shape your body may not want, and both have a
 helper in `roboglot/adapters/base.py` that answers for you:
 
 | Keyword | What arrives | What you do |
 |---|---|---|
-| `camera_url` | whatever `--camera-url` was given, as a tuple, because the flag repeats | `one_camera_url(camera_url, spec=...)` for a body with one camera: it returns the url or refuses the second with a message naming who takes several. A body that genuinely reads more (today that is `lerobot:real` and its simulator `lerobot:mujoco`, and `MULTI_CAMERA_SPECS` is the list) keeps the tuple and implements `get_frames()` |
+| `camera_url` | whatever `--camera-url` was given, as a tuple, because the flag repeats | `one_camera_url(camera_url, spec=...)` for a body with one camera: it returns the url or refuses the second with a message naming who takes several. A body that genuinely reads more (today that is `lerobot:real`, and `MULTI_CAMERA_SPECS` is the list) keeps the tuple and implements `get_frames()` |
 | `rest_pose` | degrees per joint, from the registry, for a body that parks | drive to it, or `refuse_rest_pose(name, rest_pose)`, which raises when one is present. Never accept it and ignore it |
 
 ### Two more the module may declare, both for `doctor`
@@ -191,8 +189,8 @@ a diagnostics command to be describable.
 
 **`CONNECT`** is what connecting each of your real backends takes, which the page `roboglot ui`
 shows beside its address field when somebody picks your robot. It maps a backend to a
-`roboglot.adapters.catalogue.Connect`, or to a dict of its fields. A simulator or a mock needs
-nothing and has no entry.
+`roboglot.adapters.catalogue.Connect`, or to a dict of its fields. A mock needs nothing and has
+no entry.
 
 | Field | What it says |
 |---|---|
@@ -238,7 +236,7 @@ them. A module that declares none keeps its `STATUS` line.
 
 | Attribute | What it is |
 |---|---|
-| `TIERS` | one entry per backend, each a `roboglot.adapters.catalogue.Tier` or a dict of its fields. `name` is `rehearsed` for a simulator or a mock, `bound` for code that reaches a robot it has never met, `verified` once it has. `owner` and `date` are who answers for a bound backend's first hardware run and the day named for it, or who ran a verified one and the first day it ran. `note` is what the tier rests on. Tiers for some backends and not others are read as none |
+| `TIERS` | one entry per backend, each a `roboglot.adapters.catalogue.Tier` or a dict of its fields. `name` is `rehearsed` for a mock, `bound` for code that reaches a robot it has never met, `verified` once it has. `owner` and `date` are who answers for a bound backend's first hardware run and the day named for it, or who ran a verified one and the first day it ran. `note` is what the tier rests on. Tiers for some backends and not others are read as none |
 | `FAMILY` | `arm`, `biped`, `wheeled` or `humanoid`: the kind of body, which is its manifest's `embodiment`. A base that carries arms adds `arm` as a second entry |
 | `ROBOT_TYPES` | the kinds of robot your one adapter builds through one SDK, the default first, which `roboglot robot add --robot-type` chooses among, as LeRobot's robot types are on the arm. Your `describe` and `make` then take a `robot_type` keyword, passed only when a registered robot names one, and a robot that names one for an adapter without it is refused |
 | `ROUTE` | `sdk`, `wire` or `bridge`: how an intent reaches the robot, the three routes under [Backends](#backends-mock-first-then-whichever-route-the-robot-leaves-you) |
@@ -285,8 +283,8 @@ lives. The rules, enforced by the model itself
   where a task turns on it
   ([reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)). The same sheet
   describes the body on every backend, which is part of why `digest()` matches across them.
-- **`digest()`** is the capability fingerprint discovery advertises; it ignores `id` and
-  `backend`, so the same robot over `sim2d` and `mock` hashes the same.
+- **`digest()`** is the capability fingerprint discovery advertises. It ignores `id` and
+  `backend`, so the Microduck described over `mock` and over `jsonrpc` hashes the same.
 
 > [!WARNING]
 > `read_only` is taken on trust, twice. A verb carrying it runs before the pilot has judged
@@ -406,45 +404,18 @@ What the three rules above actually cost, beyond writing it:
   something has to say the client is still there while a long verb runs, because the executor
   sends one command and then waits.
 
-### A simulator, if the cartoon world already draws the body
+### A backend that parks the body, or one on its way out
 
-Four of the ten bodies here ship a `sim2d` backend. The arena itself stayed in the core
-(`roboglot/sim2d/`, with `roboglot/transport/mock.py` beside it) when the robots moved out into
-their own packages, because neither was ever one robot's: the Microduck uses `Sim2DTransport`
-as it is and the other three subclass it, and seven of the ten mocks draw their synthetic
-frame with `roboglot/sim2d/render.py`. It is worth writing when the shared 2D world can represent the
-body honestly and the robot has a task worth running end to end; it is not worth writing for a
-body the world would have to lie about. It earns a ✅ only with a seeded acceptance sweep that
-checks the world's ground truth, not merely a run that does not crash.
-
-There are two physics simulators, neither is a general one, and neither is in the core. The
-`sim3d/` package inside `roboglot-microduck` holds one arena and a `Body` protocol with two
-implementations, a kinematic puppet and the Microduck on its own trained policy. The `sim/`
-package inside `roboglot-lerobot` is the arm's, `lerobot:mujoco`, and it is built the other way
-round: not a world a body is dropped into, but the arm's real backend with a simulated follower
-under it, so a task rehearsed there runs through the code that drives the arm
-([ADR-0047](../adr/0047-the-arms-simulator-runs-the-real-backend.md)). Both fetch their model from
-upstream at a pinned commit and hash every file, and CI runs each on a stand-in that needs
-nothing fetched. A physics body for a new robot means its MJCF, its own controller and a reason
-the cartoon cannot serve, usually that you need to know whether a gait works, or that its real
-backend has enough logic of its own to be worth rehearsing. `sim2d` is still what the shared
-world and the team are built on.
-
-A simulator of a real body declares itself: the module lists it in `SIMULATOR_BACKENDS`, and
-`roboglot.adapters.factory.is_simulator(spec)` reads that before anything is built. That is what
-`roboglot preflight` refuses anything else by, so a command meant for a model never opens a real
-body's port. A module that declares none has none.
-
-A real body that has to be put down before it is let go of declares that in the same module.
+A real body that has to be put down before it is let go of declares that in its adapter's module.
 `REST_POSE_BACKENDS` lists the backends that a run, a dry run, an MCP session and a team refuse
 while no rest pose is recorded for the robot, and
 `roboglot.adapters.factory.needs_rest_pose(spec)` reads it before anything is built, so the
 refusal names the robot and the command that records a pose, and nothing has connected. The
 LeRobot arm's `real` is the one listed, because an SO-101 has no brake: with no pose there is
 nothing to fold the arm to at the end, and its close keeps such an arm powered rather than let
-it fall where it stands, which would leave it holding itself up wherever it stopped. Its mock and
-its simulator are not, having no arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a person supports the
-arm through and the other is how a pose comes to be recorded at all
+it fall where it stands, which would leave it holding itself up wherever it stopped. Its mock is
+not, having no arm to drop, and `doctor` and `rest-pose` never ask, since one is a probe a
+person supports the arm through and the other is how a pose comes to be recorded at all
 ([ADR-0058](../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)). A backend listed
 there has to support `roboglot robot rest-pose` as well (`supports_rest_pose`), or every run of it
 is refused with a way back that refuses too. A module that declares none needs none.
@@ -561,9 +532,9 @@ object, and `tests/test_workspace.py` holds the two windows together.
 
 Every backend carries a **tier**
 ([ADR-0076](../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)): described,
-a body Roboglot lists and reasons about from one YAML and drives no part of; rehearsed, a mock or
-a simulator; bound, a backend that reaches a real robot and has never met one; verified, run on
-hardware by a named person on a date. The marks in the tables above are the tiers' marks.
+a body Roboglot lists and reasons about from one YAML and drives no part of; rehearsed, a mock;
+bound, a backend that reaches a real robot and has never met one; verified, run on hardware by a
+named person on a date. The marks in the tables above are the tiers' marks.
 
 And one **rule**, since 2026-11-05: bound code enters this repository only with a named owner
 and a date for its first hardware run, kept in the catalogue row and held by a test. A robot
@@ -603,7 +574,8 @@ publishes, and a package published from anywhere else needs none of it: see the 
 Then, for one Roboglot publishes:
 
 6. A row in `OFFICIAL` in `roboglot/adapters/catalogue.py`: the name, the backends in order
-   (the first is what `--robot <name>` means with no backend after it), a `Tier` for each
+   (the first is what `--robot <name>` means with no backend after it, and the default for a
+   command with no `--robot` only where this is the one adapter installed), a `Tier` for each
    backend, from which the line `list-adapters` prints is rendered, a one-line summary, the
    family and the route, the extra and the SDK to probe for, and in `_CONNECT` beside it a
    `Connect` block for each real backend, which a row in `tests/test_adapters_connect.py` holds

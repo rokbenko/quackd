@@ -142,9 +142,6 @@ def _watch(job: Any) -> None:
         run_dir = widgets.run_folder(view) if view.get("end") else None
         if run_dir is not None:
             st.caption(f"Run folder: {run_dir}")
-            gif = run_dir / "run.gif"
-            if gif.is_file():
-                st.image(str(gif), caption="run.gif")
         widgets.terminal(view)
         # once the run ends, the whole screen is drawn again, so the form comes back above it
         if view["running"]:

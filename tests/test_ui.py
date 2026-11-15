@@ -96,10 +96,10 @@ def test_a_mark_nobody_defined_draws_nothing() -> None:
 
 
 def test_the_registry_status_emoji_becomes_something_a_codepage_can_carry() -> None:
-    fancy = "✅ built-in: sim2d · \U0001f9ea jsonrpc — experimental"
+    fancy = "✅ built-in: mock · \U0001f9ea jsonrpc — experimental"
     assert ui.degrade(fancy, ui.UNICODE) == fancy, "a terminal that can show it, sees it"
     plain = ui.degrade(fancy, ui.ASCII)
-    assert plain == "[ok] built-in: sim2d - [exp] jsonrpc - experimental"
+    assert plain == "[ok] built-in: mock - [exp] jsonrpc - experimental"
     assert plain.isascii()
 
 
@@ -145,13 +145,13 @@ def test_the_verdict_wears_its_outcome() -> None:
 def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:
     console, raw = narrow()
     console.print(
-        ui.run_header("find-and-kick", [("robot", "microduck:sim2d")], hint="Ctrl-C stops it")
+        ui.run_header("find-and-kick", [("robot", "microduck:mock")], hint="Ctrl-C stops it")
     )
     console.print(ui.verdict("success", "kicked it", counters=["steps 7", "LLM calls 8"]))
     out = drawn(console, raw)
     assert "?" not in out, "a glyph that arrives as a question mark is a glyph not worth having"
     assert out.isascii()
-    for needle in ("find-and-kick", "microduck:sim2d", "Ctrl-C stops it", "SUCCESS", "kicked it"):
+    for needle in ("find-and-kick", "microduck:mock", "Ctrl-C stops it", "SUCCESS", "kicked it"):
         assert needle in out, needle
 
 
@@ -294,7 +294,10 @@ def test_the_status_line_follows_a_run_through_its_phases() -> None:
     for event, expected in (
         (LogEvent("verb_start", 0.0, {"name": "go_to", "params": {"target": "ball"}}), "go_to("),
         (LogEvent("verb_end", 0.0, {"name": "go_to", "ok": True}), "observing"),
-        (LogEvent("claim", 0.0, {"kicker": "duck-1", "dist": 0.6}), "claim duck-1"),
+        (
+            LogEvent("talk", 0.0, {"src": "duck-1", "to": "arm", "text": "here", "ok": True}),
+            "talk duck-1 -> arm",
+        ),
         (LogEvent("run_end", 0.0, {"outcome": "success"}), "finishing"),
     ):
         status.sink(event)

@@ -5,10 +5,9 @@ for the robot that is to answer the same calls the Microduck's `robotd` answers,
 this is a body of the Microduck's family (ADR-0075): the protocol, the version gate, the hold on a
 walk the robot does not take and the reliance on the robot's own deadman are `roboglot_microduck`'s,
 and `body.py` says what differs. What it leaves out is what Huebot's shim does not answer yet,
-`robot.look`, so there is no `gaze` and no `watch`, and the Microduck's simulators, which draw the
-Microduck's body and gait and not Huebot's. It has no `grab` either, until its maker says what
-`ground_pick` does on Huebot. Two backends: `mock`, the core's scripted body, and `jsonrpc`, the
-shim, which nobody has run (docs/adapters/huebot/README.md).
+`robot.look`, so there is no `gaze` and no `watch`. It has no `grab` either, until its maker says
+what `ground_pick` does on Huebot. Two backends: `mock`, the core's scripted body, and `jsonrpc`,
+the shim, which nobody has run (docs/adapters/huebot/README.md).
 """
 
 from __future__ import annotations
@@ -99,16 +98,14 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
 ) -> HuebotAdapter:
     refuse_rest_pose("huebot", rest_pose)
-    # `token`, `seed` and `live` are accepted and unused, deliberately: the factory calls every
-    # adapter's `make` with the same keywords. The protocol has no authentication at all, so the
+    # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
+    # with the same keywords. The protocol has no authentication at all, so the
     # shim is reached over ssh or on the robot itself, never through an open port.
     return make_for(
         HUEBOT, backend, HuebotAdapter, robot_id=robot_id, address=address, camera_url=camera_url

@@ -29,8 +29,7 @@ ROBOT_TYPE = up.ROBOT_TYPE_SO101.name
 
 SO_ENCODER_TICKS = 4096
 """An sts3215 turn in encoder counts (`up.STS3215_RESOLUTION`); degrees use it less one. Both SO
-arms run that servo, and the simulator, which is only ever an SO-101, reads this itself rather
-than a type."""
+arms run that servo."""
 
 SO_HOT_C = 60.0
 """Refuse to move a joint at or above this. The servo's own cut-off is 70 (`up.TEMPERATURE_C`)."""
@@ -122,7 +121,8 @@ _SO100_REACH = Figure(
     note="the farthest the moving jaw's pivot gets from the shoulder over the joints' limits, "
     "rounded down; the fingers go further, and the file does not say how far",
 )
-"""As `REACH` is for the SO-101, from `shoulder_lift` outwards, read at the simulator's pin:
+"""As `REACH` is for the SO-101, from `shoulder_lift` outwards, read at TheRobotStudio/SO-ARM100's
+commit `5f6d2b8`:
 
     elbow_flex    (0,        0.11257, 0.028)   0.116 m
     wrist_flex    (0,        0.0052,  0.1349)  0.135 m

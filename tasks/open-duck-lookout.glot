@@ -6,7 +6,7 @@ glot: 1
 name: open-duck-lookout
 description: Stand still, look around with the head only, and say what you can see.
 author: rok
-robots: open_duck:sim2d
+robots: open_duck:mock
 requires: [observe, say]
 verbs:
   allow: [gaze, observe, say, quack, report_state, stop]

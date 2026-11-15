@@ -12,7 +12,7 @@ behaviours on purpose, because they are the ones an adapter gets wrong:
 - **Only the three-omniwheel base can strafe**; the other variants take `y.vel` and do nothing
   with it.
 
-The camera is a synthetic frame with an orange disc in the arena, so `observe`, `search_scan`
+The camera is a synthetic frame with an orange disc at a fixed spot, so `observe`, `search_scan`
 in turn mode and `go_to` run offline all the way through the executor's gates. Build it with
 `camera=False` to get the cart upstream actually ships, which has every camera commented out.
 """
@@ -82,7 +82,7 @@ class XLerobotMock:
         self.stale_ms: float = 0.0
         """Set a test to something over 500 to make `link_fresh` refuse."""
 
-    # ── physics ─────────────────────────────────────────────────────────────────────
+    # ── motion ──────────────────────────────────────────────────────────────────────
 
     def _integrate(self, dt: float) -> None:
         if self._last_cmd_t is not None and self._t - self._last_cmd_t > WATCHDOG_S:

@@ -6,12 +6,12 @@ body. The frontmatter is a contract the executor enforces; the body is the promp
 is never trusted to self-police.**
 `.glot` is the format name the way `Dockerfile` is: a task for a LeRobot arm is a `.glot`
 too. `glot: 1` (Roboglot 0.4) adds what a multi-robot task needs, and `glot: 2` adds what a
-task says about the *body*: a correction to the robot's own datasheet, and what a team role
-physically needs ([ADR-0019](../adr/0019-glot-spec-v1.md),
-[ADR-0032](../adr/0032-datasheets-and-the-verdict.md)). `glot: 3` adds what a task lets the
-body's learned policy be told, and for how long ([`policy`](#policy-v3)). `glot: 4` adds one
-thing a task says about the pilot rather than the body: that it may be given a part to play
-([`play`](#play-v4)). `glot: 0` files parse and run unchanged.
+task says about the *body*: a correction to the robot's own datasheet
+([ADR-0019](../adr/0019-glot-spec-v1.md), [ADR-0032](../adr/0032-datasheets-and-the-verdict.md)).
+`glot: 3` adds what a task lets the body's learned policy be told, and for how long
+([`policy`](#policy-v3)). `glot: 4` adds one thing a task says about the pilot rather than the
+body: that it may be given a part to play ([`play`](#play-v4)). `glot: 0` files parse and run
+unchanged, but for a `team:` block ([Versioning](#versioning)).
 
 Machine-readable schema: [`../roboglot/glotfile/schema.json`](../../roboglot/glotfile/schema.json)
 (generated from `roboglot/glotfile/schema.py`; a test keeps them in sync).
@@ -34,25 +34,25 @@ non-comment line must be `---`.
 
 | Field | Type | Required | Enforced by | Meaning |
 |---|---|---|---|---|
-| `glot` | `0`, `1`, `2`, `3` or `4` | yes | parser | Spec version. `1` unlocks `requires`, `robots`, `team.roles`, `team.frame_hints` and `team.allocation.method: pilots`; `2` unlocks `datasheet` and `team.roles.<role>.needs`; `3` unlocks `policy`; `4` unlocks `play`. Using a key under too low a version is an error that names the fix. |
+| `glot` | `0`, `1`, `2`, `3` or `4` | yes | parser | Spec version. `1` unlocks `requires`, `robots` and `team`, `2` unlocks `datasheet`, `3` unlocks `policy` and `4` unlocks `play`. Using a key under too low a version is an error that names the fix. |
 | `name` | slug `^[a-z0-9][a-z0-9-]{0,63}$` | yes | parser | Identifier; run directories and the fake pilot's strategies key on it. |
 | `description` | string | yes | — | One human-facing line. Shown in the system prompt. |
 | `author` | string | no | — | Credit. |
 | `verbs.allow` | list of verb names, ≥ 1, unique | yes | **executor** | The only verbs the LLM may call. `stop` is always allowed. Unknown names fail `roboglot validate`. |
 | `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [concepts/safety.md](../concepts/safety.md#who-the-record-says-was-asked)). |
 | `budgets.max_steps` | int 1–1000 (default 40) | no | **executor** | Maximum verb executions. |
-| `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (sim time on every simulator, `sim2d` and both bodies' `mujoco`, wall-clock on hardware). Checked before each LLM call and again the moment the LLM answers, so a provider that replies late cannot spend the overrun. A verb that watches for it ends at its next tick once the minutes are spent, as `move`, `go_to`, `watch` and the arm's `move_joints` do. One that does not runs to its own end, so a run can overshoot by that verb's own timeout. |
+| `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (a mock's own clock on a mock, wall-clock on hardware). Checked before each LLM call and again the moment the LLM answers, so a provider that replies late cannot spend the overrun. A verb that watches for it ends at its next tick once the minutes are spent, as `move`, `go_to`, `watch` and the arm's `move_joints` do. One that does not runs to its own end, so a run can overshoot by that verb's own timeout. |
 | `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the LLM's API could not answer, and Roboglot asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). |
-| `success` | list of strings, ≥ 1 | yes | LLM (+ ground truth in sim tests) | Criteria the LLM judges itself against via `declare_success(reason)`. |
+| `success` | list of strings, ≥ 1 | yes | LLM | Criteria the LLM judges itself against via `declare_success(reason)`. |
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |
-| `play` (v4) | bool | no (default `false`) | — | The task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section, `## Playing a part`, to the system prompt and changes no gate. `roboglot run --play` or `--no-play` overrides it for one run ([`play`](#play-v4), [guides/play.md](../guides/play.md)). An auction team cannot carry it. |
+| `play` (v4) | bool | no (default `false`) | — | The task may give the pilot a part to play, an animal, a person or a character, which it acts out with the body it has. Adds one section, `## Playing a part`, to the system prompt and changes no gate. `roboglot run --play` or `--no-play` overrides it for one run ([`play`](#play-v4), [guides/play.md](../guides/play.md)). |
 | `providers` | list of strings | no | — | Tested-with, **not** a restriction. |
 | `learned_verbs` | list of `{name, policy, description?, metadata?}` | no | `validate` rejects non-empty | Reserved for v2 ([concepts/learned-verbs.md](../concepts/learned-verbs.md)). |
-| `team` | mapping, see below | no | **coordinator** or **pilots** | Cooperating robots. Absent means a single robot, unless the run names a stored team (`--team NAME`), which makes it a pilot team. |
+| `team` | mapping, see below (v1) | no | **pilots** | Cooperating robots, one LLM pilot each. Absent means a single robot, unless the run names a stored team (`--team NAME`), which makes it a team all the same. |
 | `requires` | list of verb names ⊆ `allow` (v1) | no (default `[]`) | `validate --robot` | The verbs the task *needs*. Checked against each robot's manifest. For a v0 file every allowed verb is required. |
 | `datasheet` (v2) | mapping, see below | no | loop and MCP session | Corrections and additions to the robot's own datasheet, for the build in front of you. Rendered in the prompt as coming from the task file. |
-| `robots` | `<adapter>[:<backend>]`, or a mapping member → spec (v1) | no | CLI | The default robot(s), so `roboglot run <task>` needs no `--robot`. Flags win over the file. |
+| `robots` | `<adapter>[:<backend>]`, or a mapping member → spec (v1) | no | CLI | The robot the task runs on, or one per team member, so `roboglot run <task>` needs no `--robot`. Flags win over the file. |
 | `policy` (v3) | mapping, see below | no | **executor** and the robot | The instructions `manipulate` may give the robot's learned policy, how long each segment runs and how long they may run in all ([`policy`](#policy-v3)). Needs `manipulate` in `verbs.allow`. |
 
 ### `requires` and `robots` (v1)
@@ -62,47 +62,32 @@ and `roboglot validate <task> --robot <adapter>:<backend>` says so with a field-
 such as `requires kick, but arm-01 (lerobot-so101) does not provide it` (exit 1). Verbs in
 `allow` that are not required are advisory: a robot may lack them and still qualify, and
 `validate` reports them as a weaker `verbs.allow` line. For a solo task every listed robot
-must provide every required verb; for a team, the team as a whole must (see the roles
-below). Aliases count: a robot that provides `observe` satisfies `get_frame`.
+must provide every required verb, and for a team, the team as a whole must. Aliases count: a
+robot that provides `observe` satisfies `get_frame`.
 
-`robots` names the default robot for a solo task (`robots: microduck:sim2d`) or one per
-team member (`robots: {duck-01: microduck:sim2d, duck-02: microduck:sim2d}`).
+`robots` names the robot for a solo task (`robots: microduck:mock`) or one per team member
+(`robots: {duck: microduck:mock, arm: lerobot:mock}`, as the bundled `team-hello` has it).
 
 ### `team` — cooperating robots
 
-`allocation.method` chooses the kind. **`auction`** (the default) is the 0.3 coordinator:
-2 to 4 Microducks in one `sim2d` arena on a lockstep clock, members are state machines, at
-most one LLM call for the whole run, and every other key in this block is read. An auction
-task with a non-empty `verbs.confirm` fails `roboglot validate`, because an auction member has
-no pilot and no terminal to prompt on. **`pilots`** (`glot: 1`, 0.9) is the other kind: 2 to 8
-bodies on any backend, one LLM pilot each, on wall-clock time, splitting the work by talking.
-A pilot team reads only `members`, takes `verbs.confirm` with `--yes`, and names no roles.
+A team (`glot: 1`) is 2 to 8 bodies on any backend, one LLM pilot each, on wall-clock time,
+splitting the work by talking. It reads only `members` and takes `verbs.confirm` with `--yes`.
 Full semantics: [guides/team.md](../guides/team.md).
 
 | Field | Type | Default | Enforced by | Meaning |
 |---|---|---|---|---|
-| `team.members` | int, or a list of unique slugs. 2–4 for an auction, 2–8 for pilots | 3 | coordinator or pilots | Member count (named `duck-0`…) or explicit names. `--team N` overrides the count for an auction; `--team NAME` supplies the members from the registry. |
-| `team.allocation.method` | `auction` · `pilots` (v1) | `auction` | parser | Which kind of team. `auction`: Contract Net, one referee, sim2d Microducks. `pilots`: one LLM per body, any backend, and every other `allocation`, `safety`, `search` and `roles` key below is ignored ([ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)). |
-| `team.allocation.bid` | `ball_distance` | `ball_distance` | coordinator | Lower camera-estimated distance wins. |
-| `team.allocation.tie_break` | `duck_id` | `duck_id` | coordinator | Lexicographic member name. |
-| `team.allocation.hysteresis_pct` | 0–100 | 20 | coordinator | A challenger must bid this much lower to unseat the current claimant. |
-| `team.allocation.claim_lease_s` | > 0 ≤ 60 | 6 | coordinator | Longest a claim may be held before re-auction (sim clock). A fixed fuse from the grant, not a progress timer. |
-| `team.safety.min_separation_m` | 0.1–2.0 | 0.4 | coordinator | Non-kickers keep at least this far from the action. |
-| `team.safety.one_claimant` | bool | true | coordinator | At most one robot approaches the ball. Always enforced, `false` is rejected at validation. |
-| `team.safety.per_duck_heartbeat_s` | > 0 ≤ 10 | 1.0 | coordinator | Bus heartbeat period; the watchdog presumes a duck dead after 3× this, or this plus 2.5 s, whichever is longer. |
-| `team.search.partition` | `heading` | `heading` | coordinator | Each duck owns a heading sector. |
-| `team.search.restart_s` | > 0 ≤ 120 | 8 | member | Re-scan the sector when nothing was found for this long. |
-| `team.roles` (v1) | mapping `{spotter: {requires: [...]}, kicker: {requires: [...]}}` | absent | coordinator | Heterogeneous roles, **auction only**. A robot bids only for a role whose `requires` its manifest satisfies. Roboglot knows exactly these two roles (both must be given), one robot each; `members` must then be a named list. Each role's `requires` ⊆ `allow`. |
-| `team.roles.<role>.needs` (v2) | mapping in the datasheet vocabulary | `{}` | coordinator | What the body must be able to do, not only what it must know. See the rules below. Checked by `validate --robots`, by the member before it bids, and by the coordinator from what the bid carried ([guides/team.md](../guides/team.md)). |
-| `team.frame_hints` (v1) | `auto` · `on` · `off` | `auto` | runner | Share arena-frame target hints between robots. `auto` is on only when every member runs in `sim2d`; there is no shared frame on hardware ([guides/team.md](../guides/team.md)). |
+| `team.members` | int, or a list of unique slugs, 2 to 8 | 3 | pilots | Member count (named `duck-0`…) or explicit names. `--team NAME` supplies the members from the registry. |
+| `team.allocation.method` | `pilots` | `pilots` | parser | Which kind of team, and `pilots` is the only kind: one LLM per body, any backend ([ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)). |
 
 Unknown keys anywhere are errors (`extra="forbid"`).
 
 ### `needs` — the datasheet vocabulary (v2)
 
-A role's `needs` is checked against a robot's datasheet, and each key is checked its own way.
-The same vocabulary is what a pilot names in `assess_task`, so a refusal and a role are
-worded alike ([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
+A pilot's verdict names, in `assess_task`, what the task would need of a body, and each key of
+that `needs` is checked against the robot's datasheet its own way. A `feasible` verdict is held
+to the body's own sheet by these rules, the same rules say which other body could do a task,
+and a `glot: 2` task file can correct the sheet they read ([`datasheet`](#datasheet-v2),
+[reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
 
 | Key | How it is checked |
 |---|---|
@@ -125,16 +110,15 @@ of them exist so that an honest answer is not refused: a zero, a `none`, the flo
 no published terrain is already told to assume, and the flat indoor floor a body that does not
 move stands on. The words are `manipulator: none · beak · gripper · arms · any`,
 `mobility: none · legged · wheeled · any` and `terrain: indoor_flat · indoor · outdoor`. Of
-those, `terrain` is the one to be careful with: five shipped bodies are rated `indoor_flat`,
-the SO-101 does not move, and the rosbridge body publishes nothing, so a role asking for
-`indoor` or `outdoor` can be filled by no robot Roboglot ships today
-([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
+those, `terrain` is the one to be careful with: seven shipped bodies are rated `indoor_flat` and
+the other three publish no terrain, so a task needing `indoor` or `outdoor` can be done by no
+robot Roboglot ships today ([reference/manifest-spec.md](manifest-spec.md#the-datasheet)).
 
-A role is read strictly on one point where a pilot's own verdict is not. A pilot judging its
-own body is not refused for a `work_height_m` its sheet publishes no band for, because its
-prompt never lists a working height as missing and it had no way to know. A role, the
-coordinator judging a bid and the list of other bodies that could do a task all refuse it,
-because a body that never said how high it works is not the one to offer a task at a height.
+The list of other bodies that could do a task is read strictly on one point where a pilot's own
+verdict is not. A pilot judging its own body is not refused for a `work_height_m` its sheet
+publishes no band for, because its prompt never lists a working height as missing and it had no
+way to know. The list refuses it, because a body that never said how high it works is not the
+one to offer a task at a height.
 
 ### `abort_when` — what is enforced
 
@@ -155,12 +139,11 @@ The spec says this plainly rather than pretending prose is policy.
 Anything the robot's manifest provides (`roboglot list-verbs`, or `list-verbs --robot`):
 the core verbs `observe report_state stop say move go_to search_scan approach_and map mark_place
 forget_place go_to_place` on any robot that meets their requirements, a robot's own extensions
-(Microduck: `sit stand stand_up kick grab gaze quack`, `watch` on a run started with
-`--decision-frames`, and `explore` and `find` in a simulator given `--room`), plus any registered
-learned verb. The 0.3 names `get_frame`, `walk_to` and `walk` are permanent aliases of `observe`,
-`go_to` and `move`; a file may use either spelling but not both.
-`stop` may never appear in `confirm`. Params and ranges come from the registry, not the
-`.glot` file ([ADR-0018](../adr/0018-core-verbs-extensions-aliases.md)).
+(Microduck: `sit stand stand_up kick grab gaze quack`, and `watch` on a run started with
+`--decision-frames`), plus any registered learned verb. The 0.3 names `get_frame`, `walk_to`
+and `walk` are permanent aliases of `observe`, `go_to` and `move`; a file may use either
+spelling but not both. `stop` may never appear in `confirm`. Params and ranges come from the
+registry, not the `.glot` file ([ADR-0018](../adr/0018-core-verbs-extensions-aliases.md)).
 
 ## Body
 
@@ -182,7 +165,7 @@ is refused at runtime and the LLM is told so.
   or transport that failed, or a bug). The robot is stopped in every case and its adapter
   closed.
 - `--max-steps` on the CLI overrides `budgets.max_steps` for one run.
-- `--play` and `--no-play` override `play` for one run, on `run`, `record` and `preflight`.
+- `--play` and `--no-play` override `play` for one run, on `run`.
 - `--dry-run` executes the verbs their adapter declared `read_only` (`observe`, alias
   `get_frame`, `report_state`, the rosbridge base's `introspect`) and logs everything else
   without sending an intent.
@@ -192,13 +175,12 @@ is refused at runtime and the LLM is told so.
 `roboglot validate <files or globs or bundled names>` prints a table and exits 1 on any
 failure, with a path and a field-level reason. Checks: parse, schema (a `policy` section's
 bounds, `manipulate` allowed beside it, no `pick` beside a list of instructions, and no
-`policy` in a team task among them), unknown verbs, `learned_verbs` empty, no `confirm` or
-`play` in an auction team. With `--robot <adapter>:<backend>` (one or
-more) or `--robots name=spec,...`, the file is also checked against those robots' manifests:
-`requires` (or, for v0, `allow`) per robot, and every team role fillable by at least one
-robot. Without a flag, the task file's own `robots:` default is used, and a file that names no
-robot is checked against every body installed here, with what each offers a policy server:
-a task is coherent when something here can keep it.
+`policy` in a team task among them), unknown verbs and `learned_verbs` empty. With
+`--robot <adapter>:<backend>` (one or more) or `--robots name=spec,...`, the file is also
+checked against those robots' manifests: `requires` (or, for v0, `allow`) by each robot for a
+solo task, and by at least one robot for a team. Without a flag, the task file's own `robots:`
+default is used, and a file that names no robot is checked against every body installed here,
+with what each offers a policy server: a task is coherent when something here can keep it.
 
 ## Resolution
 
@@ -207,16 +189,16 @@ a task is coherent when something here can keep it.
 
 ## Versioning
 
-`glot: 0` is the 0.1 to 0.3 contract ([ADR-0005](../adr/0005-glot-spec-v0.md)); `glot: 1`
-adds `requires`, `robots`, `team.roles`, `team.frame_hints` and, since 0.9,
-`team.allocation.method: pilots` ([ADR-0019](../adr/0019-glot-spec-v1.md),
-[ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)); `glot: 2` adds `datasheet` and
-`team.roles.<role>.needs` ([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)); `glot: 3`
-(0.16) adds `policy`; `glot: 4` (0.19) adds `play`
-([ADR-0055](../adr/0055-a-pilot-can-play-a-part.md)). Older files keep parsing because the version
-is explicit and the parser is strict; the only new rejections a v0 file can hit are two
-contradictions no shipped file contains (a verb listed next to its alias, `stop` in `confirm`).
-Older Roboglot versions refuse newer files, which is the correct failure.
+`glot: 0` is the 0.1 to 0.3 contract ([ADR-0005](../adr/0005-glot-spec-v0.md)). `glot: 1`
+adds `requires`, `robots` and `team` ([ADR-0019](../adr/0019-glot-spec-v1.md),
+[ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)), `glot: 2` adds `datasheet`
+([ADR-0032](../adr/0032-datasheets-and-the-verdict.md)), `glot: 3` (0.16) adds `policy` and
+`glot: 4` (0.19) adds `play` ([ADR-0055](../adr/0055-a-pilot-can-play-a-part.md)). Older files
+keep parsing because the version is explicit and the parser is strict, with two exceptions. A
+v0 file can hit two contradictions no shipped file contains, a verb listed next to its alias and
+`stop` in `confirm`. And a `team:` block in a `glot: 0` file, or one with any key but `members`
+and `allocation.method: pilots`, is refused with the key named, because the kind of team it was
+written for is gone. Older Roboglot versions refuse newer files, which is the correct failure.
 
 ### `datasheet` (v2)
 
@@ -253,7 +235,7 @@ v3 task file says which words those may be and how long the policy may drive:
 | Field | Type | Default | Enforced by | Meaning |
 |---|---|---|---|---|
 | `policy.instructions` | list of unique one-line strings, at most 12, each at most 200 characters | `[]` | **executor** | The only instructions `manipulate` takes, word for word. They become an enum in the verb's own schema, so the pilot is shown exactly these, the executor refuses any other words, and a decision LLM can be offered each one. Empty lets the pilot word each subtask itself, held to the same one line and the same length, as the target the pilot gives `pick` is. A list refuses `pick` in `verbs.allow`, because `pick` tells the policy a target of the pilot's own. |
-| `policy.segment_s` | number > 0, at most 60 | 10 | robot and **executor** | How long one segment runs in the robot's time, unless it ends sooner. The robot is told it before the first segment, and the executor's timeout for `manipulate` is this plus 10 s, plus, on the simulator, the wall time its clock stands still while the policy thinks, at most ten minutes of it. |
+| `policy.segment_s` | number > 0, at most 60 | 10 | robot and **executor** | How long one segment runs in the robot's time, unless it ends sooner. The robot is told it before the first segment, and the executor's timeout for `manipulate` is this plus 10 s. |
 | `policy.total_s` | number > 0, at most 3600, and at least `segment_s` | 120 | **executor** | The seconds of segments the run may spend in all, `pick`'s as well as `manipulate`'s, each charged the seconds its verb said it ran, or the robot's clock across the call when it said none, a call cancelled or aborted mid-segment among them. A segment the robot refused before it began says it ran 0 s. One segment runs at a time, and a `pick` or `manipulate` sent while one runs is refused. Checked before each segment, so the last may run past it by at most its own length, and once it is spent the next `pick` or `manipulate` is refused as a budget. |
 
 `manipulate` must be in `verbs.allow`, and a team task cannot carry a `policy`, because it
@@ -309,11 +291,10 @@ comes from the frame every observation brings the pilot on an arm with a camera.
 A plain `roboglot validate` checks a v3 file with no policy server running: the arm offers
 `manipulate` to one, so the file is coherent wherever the arm is installed. `--robot NAME`
 checks it against that body as it is registered, and a registration holds no policy server.
-So on `lerobot:real` or `lerobot:mujoco`, or a robot registered as either, it refuses
-`manipulate`, and says to start a server with `roboglot policy serve` and give `roboglot run` its
-address with `--policy-url`. `--robot lerobot:mock` checks the file against an arm that has a
-policy of its own. `roboglot preflight` and `roboglot run` with `--policy-url` check it against the
-arm itself.
+So on `lerobot:real`, or a robot registered as it, it refuses `manipulate`, and says to start a
+server with `roboglot policy serve` and give `roboglot run` its address with `--policy-url`.
+`--robot lerobot:mock` checks the file against an arm that has a policy of its own. `roboglot run`
+with `--policy-url` checks it against the arm itself.
 
 ```console
 $ roboglot validate stack-blocks.glot
@@ -352,12 +333,9 @@ reason says plainly what the body will do and every other reason what it actuall
 words the pilot reads, and no gate reads them
 ([concepts/safety.md](../concepts/safety.md#what-roboglot-does-not-protect-against)).
 
-Each member of a pilot team reads the section. A coordinator team has no pilot to read it, so
-`play` beside `team.allocation.method: auction` is refused, a coordinator team refuses a
-played file whatever the flags, and it refuses `--play` and `--no-play` with any file.
-`--controller vla` reads no prompt either: it refuses `--play`, and a played file unless
-`--no-play` turns its part off. Over MCP, a played file's `robot_load_glotfile` result carries
-the section's paragraphs, worded for a chat, as `play`.
+Each member of a team reads the section. `--controller vla` reads no prompt: it refuses
+`--play`, and a played file unless `--no-play` turns its part off. Over MCP, a played file's
+`robot_load_glotfile` result carries the section's paragraphs, worded for a chat, as `play`.
 
 ```yaml
 ---

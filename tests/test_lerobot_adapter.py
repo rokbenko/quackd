@@ -573,7 +573,7 @@ class FakeArm:
 
         `send_action()` reads the step cap off it the same way, on every send, as upstream's
         does (`up.SO_ACTION_CLAMP`), so a test, or a later change to the cap between two sends,
-        reaches this fake and the simulated follower through the same seam. It starts at
+        reaches this fake and upstream's follower through the same seam. It starts at
         `step`. A config a test swaps in to model the flag alone carries no cap, and the fake
         then keeps capping at `step`, as it did before the cap was on the config."""
 
@@ -889,7 +889,7 @@ async def _braked(
 async def test_a_stop_from_beside_a_move_ends_it_where_it_is() -> None:
     """Over MCP a second call's `stop` answered `stopped (velocity zeroed)`, and the arm's next
     tick sent the ramp's next goal: it held for a tenth of a second and went on to where the
-    pilot had first sent it. Seen on the arm's twin, with a pilot told the brake had worked."""
+    pilot had first sent it, with a pilot told the brake had worked."""
     arm = FakeArm(step=MAX_STEP_DEG)
     _adapter, ex, _clock = await _paced(arm)
     goal = 60.0
@@ -5615,7 +5615,7 @@ async def test_a_motor_that_kept_its_torque_through_the_release_is_named_and_nev
 
 
 async def test_the_mock_names_a_joint_its_release_left_holding() -> None:
-    """The mock's twin of the partial release, so a rehearsal of `roboglot robot release` and of
+    """The mock's copy of the partial release, so a rehearsal of `roboglot robot release` and of
     the end-of-run offer ends on the line the arm would: its in-memory release used to take on
     every motor, so its close could only ever say nothing held the arm."""
     mock = LeRobotMock(rest_pose=dict(REST))
@@ -6392,7 +6392,7 @@ async def test_a_fold_or_a_policy_start_over_a_wedged_bus_quotes_the_wedge(where
 
 
 async def test_the_mock_closes_a_release_nothing_read_back_in_the_real_close_s_words() -> None:
-    """The mock's twin, so a rehearsal of `roboglot robot release` or of the end-of-run offer can
+    """The mock's copy, so a rehearsal of `roboglot robot release` or of the end-of-run offer can
     end the way an arm whose read-back failed ends: its in-memory release always read back, so
     its close could only ever say the arm was limp or name a joint still on."""
     mock = LeRobotMock()

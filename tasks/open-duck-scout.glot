@@ -1,4 +1,4 @@
-# A task for an Open Duck Mini v2 (--robot open_duck:sim2d by default). It walks, so it
+# A task for an Open Duck Mini v2 (--robot open_duck:mock by default). It walks, so it
 # scouts: find the ball, walk up to it, say where it is. There is no kick on this robot and
 # no way back up if it falls, so the task never asks it to rush (docs/adapters/open_duck/README.md).
 ---
@@ -6,7 +6,7 @@ glot: 1
 name: open-duck-scout
 description: Find the ball, walk up to it, and say where it is. This duck cannot kick.
 author: rok
-robots: open_duck:sim2d
+robots: open_duck:mock
 requires: [observe, go_to, say]
 verbs:
   allow: [search_scan, go_to, move, gaze, observe, say, quack, report_state, stop]

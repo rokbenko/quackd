@@ -2045,7 +2045,7 @@ async def test_an_arm_connects_to_the_tiny_act_and_a_segment_runs_through_it(
     served_act: Served, offline: TinyAct
 ) -> None:
     """The arm's check at connect reads the tiny ACT's features and quantiles and lets it on,
-    and `manipulate` plays its chunks on the simulator's lockstep clock, inference frozen in
+    and `manipulate` plays its chunks on a lockstep clock, as the mock's is, inference frozen in
     the loop's turn, through HTTP. A random policy's goals mean nothing, and whatever ended the
     segment, it ran: it was not refused and nothing raised."""
     runner = RemoteRunner(served_act.url, token=TOKEN, motors=offline.motors)

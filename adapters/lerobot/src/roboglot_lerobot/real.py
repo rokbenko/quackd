@@ -326,9 +326,7 @@ CAMERA_HINT = (
     f"opencv:///dev/video2, with any of {', '.join(CAMERA_KEYS)} after a ?. Run "
     "`lerobot-find-cameras opencv` to see which index is which: it saves a frame per camera"
 )
-"""What a refused `--camera-url` is told a camera is, after why it was refused. The simulator
-parses the same urls and passes a hint of its own (`sim/camera.py`), because a camera there is
-a mount in a scene and not a webcam on a USB port."""
+"""What a refused `--camera-url` is told a camera is, after why it was refused."""
 CAMERA_CONNECT_S = 15.0
 """Long enough for the open plus upstream's warmup, which reads frames before returning."""
 CAMERA_CLOSE_S = 10.0
@@ -390,9 +388,7 @@ def parse_camera_url(url: str, *, label: str = "real", hint: str = CAMERA_HINT) 
     has (`up.OPENCV_MODE_DEFAULTS_TO_THE_CAMERA`). Asking for one it cannot do is a refusal
     at connect (`up.OPENCV_MODE_IS_A_DEMAND`), and the webcam in a lab drawer is unknown.
 
-    `label` and `hint` are whose refusal it is and what it says a camera is: the simulator
-    parses the same urls, so that a task's camera flags rehearse unchanged, and refuses them
-    in its own name."""
+    `label` and `hint` are whose refusal it is and what it says a camera is."""
 
     def refused(why: str) -> AdapterError:
         return _camera_refusal(why, url, label, hint)
@@ -924,7 +920,7 @@ class Clock(Protocol):
     what a test's clock says.
 
     A clock may also say it is `lockstep`: time that runs only while everyone waiting on it is
-    asleep, as the simulator's does. A policy segment reads it, and on such a clock awaits the
+    asleep, as the mock's does. A policy segment reads it, and on such a clock awaits the
     runner's inference with time standing still (`policy/loop.py`). It is looked up rather than
     declared here, and a clock without it is the wall's kind."""
 
@@ -987,9 +983,9 @@ still hold, which a release `let_go` made says the same way (`LeRobotReal._relea
 class LeRobotReal:
     name = "real"
     label = "real"
-    """What every refusal this backend makes says it is, after `lerobot`. The simulator runs
-    this same code under its own (`sim/transport.py`), and a refusal from a rehearsal must not
-    read as one from the arm on the desk."""
+    """What every refusal this backend makes says it is, after `lerobot`. The mock runs this
+    same code under its own (`mock.py`), and a refusal from a rehearsal must not read as one
+    from the arm on the desk."""
     mobility = "none"
 
     def __init__(
@@ -1184,7 +1180,6 @@ class LeRobotReal:
         (`_hold`), in the order the arm reported them. Cleared at the start of every hold. The
         core `stop` verb reads it and says which, so a stop that left a joint alone is not
         reported in the same words as one that held all five."""
-        self.post_sleep: Callable[[], None] | None = None
         self._in_hand = False
         """This arm is limp in somebody's hands, because `let_go()` put it there.
 
@@ -1269,13 +1264,6 @@ class LeRobotReal:
         ValueError, and the length stays what it was."""
         self.segment_s = checked_segment_s(seconds)
 
-    def frozen_inference_s(self, segment_s: float) -> float:
-        """The wall seconds this arm's clock stands still over a segment of `segment_s` while
-        its policy thinks, which the executor's timeout has to cover too. Nothing on the
-        wall's clock, where the thinking happens inside the segment's own seconds; the
-        simulator, whose clock waits for it, says otherwise."""
-        return 0.0
-
     @property
     def policy_stopped_by(self) -> str | None:
         """What cancelled the last segment something else stopped, in a clause a verb can say
@@ -1358,9 +1346,7 @@ class LeRobotReal:
         """`(goal, recorded)`: what every judgement of the rest pose drives to and judges by,
         the reachable goal (`rest_reachable`) and the pose as recorded (`verbs.rest_goal`),
         which the half-line rule reads the side of a clipped joint from. One place, so the
-        rest move, the release, the take-hold and the close all judge the same pose, and the
-        simulator can put a joint its start settled out of the table where the arm really
-        rests (`sim.world.ArmWorld.settled`)."""
+        rest move, the release, the take-hold and the close all judge the same pose."""
         return self.rest_reachable, rest_goal(self.rest_pose or {})
 
     def _outside_travel(self, joint: str, reading: float) -> bool:
@@ -2413,19 +2399,17 @@ class LeRobotReal:
 
     def _torque_left_on(self, why: str) -> str:
         """The close's line for an arm it kept torque on away from its rest pose
-        (`verbs.torque_left_on`), which the simulator words for a simulated arm, or with no rest
-        pose recorded at all (`TORQUE_LEFT_ON_WITHOUT_A_POSE`)."""
+        (`verbs.torque_left_on`), or with no rest pose recorded at all
+        (`TORQUE_LEFT_ON_WITHOUT_A_POSE`)."""
         if self.rest_pose is None:
             return TORQUE_LEFT_ON_WITHOUT_A_POSE.format(name=self.registered_name or UNNAMED)
         return torque_left_on(why, self.registered_name)
 
     RELEASE_NOT_KNOWN = TORQUE_RELEASE_NOT_KNOWN
-    """What the close says of a release that raised or did not come back, which the simulator words
-    for a simulated arm."""
+    """What the close says of a release that raised or did not come back."""
 
     RELEASE_NAMED = TORQUE_RELEASE_NAMED
-    """What it says of a release that raised naming some of the arm's motors, which the simulator
-    words for a simulated arm too."""
+    """What it says of a release that raised naming some of the arm's motors."""
 
     def _release_not_known(self, error: Exception) -> str:
         """What the close says of its own release when the disconnect that makes it raised `error`,
@@ -2464,7 +2448,7 @@ class LeRobotReal:
     """Whether the close keeps the torque of an arm with no rest pose recorded. True for an arm on
     a desk: with no pose there is nowhere it is known to rest, so nowhere it may be let go of, and
     an arm a probe found holding itself up would fall from where it stood (ADR-0058). The
-    simulator's arm drops on nothing, and its runs need no pose, so its close lets go as it did."""
+    mock's arm drops on nothing, and its runs need no pose, so its close lets go (`LeRobotMock`)."""
 
     async def _unposed(self) -> tuple[str | None, bool]:
         """Why an arm with no rest pose keeps its torque, and whether it answered the read that
@@ -2559,10 +2543,8 @@ class LeRobotReal:
 
     def _heartbeat_reads(self) -> Callable[[], Any]:
         """What the heartbeat's probe runs in the worker thread: the same three transactions
-        as every other probe (`_read_all`). The simulator marks them as the heartbeat's, in
-        that thread, so that no seeded fault lands on a read whose timing is the wall's
-        (`sim/faults.py`). An arm on a desk is told nothing: whose read it answers makes no
-        difference to it."""
+        as every other probe (`_read_all`), kept apart so a test can tell the heartbeat's reads
+        from the rest."""
         return self._read_all
 
     async def _probe(self, trace: bool = True) -> dict[str, Any]:
@@ -4001,5 +3983,3 @@ class LeRobotReal:
 
     async def sleep(self, seconds: float) -> None:
         await self.clock.sleep(seconds)
-        if self.post_sleep is not None:
-            self.post_sleep()

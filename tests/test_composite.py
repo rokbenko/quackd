@@ -15,7 +15,6 @@ from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import Executor
 from roboglot.transport.base import Ack, Intent
 from roboglot.transport.mock import MockTransport
-from roboglot.transport.sim2d import Sim2DTransport
 from roboglot.verbs.core import (
     LOST_TICKS,
     LOST_WZ,
@@ -24,8 +23,10 @@ from roboglot.verbs.core import (
     TICK_S,
     SearchScanParams,
     scan_steps,
+    views_round,
 )
 from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
+from roboglot_open_duck.mock import OpenDuckMock
 
 DUCK = parse_glot_text(
     """---
@@ -42,47 +43,45 @@ x
 )
 
 
-def _executor(registry: VerbRegistry, seed: int) -> tuple[Executor, Sim2DTransport]:
-    transport = Sim2DTransport(seed=seed)
-    ex = Executor(registry, transport, contract=DUCK.frontmatter, detector=ColorBlobDetector())
-    return ex, transport
+def _executor(registry: VerbRegistry, facing: float) -> tuple[Executor, OpenDuckMock]:
+    """A body that walks and sees: the Open Duck's mock integrates every twist it is given and
+    draws its orange ball where it lies in the world, from wherever the duck has got to, facing
+    `facing` radians from the ball's side of the room to begin with."""
+    body = OpenDuckMock()
+    body.theta = facing
+    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=ColorBlobDetector())
+    return ex, body
+
+
+def _ball_from(body: OpenDuckMock) -> tuple[float, float]:
+    """How far the ball truly is from the duck, and its bearing off where the camera points."""
+    assert body.ball_xy is not None
+    dx, dy = body.ball_xy[0] - body.x, body.ball_xy[1] - body.y
+    bearing = math.atan2(dy, dx) - body.theta - math.radians(body.head_yaw_deg)
+    return math.hypot(dx, dy), math.atan2(math.sin(bearing), math.cos(bearing))
 
 
 async def test_search_scan_finds_the_ball(registry: VerbRegistry) -> None:
-    ex, transport = _executor(registry, seed=4)
+    ex, body = _executor(registry, facing=math.pi)
+    assert abs(_ball_from(body)[1]) > math.radians(90), "the ball starts behind the duck"
     result = await ex.run_verb("search_scan", {"target": "ball"})
     assert result.ok, result.summary
-    _dist, bearing = transport.world.relative(transport.world.ball.x, transport.world.ball.y)
+    _dist, bearing = _ball_from(body)
     assert abs(bearing) < 0.9  # the ball is now in the 90° field of view
 
 
 async def test_walk_to_reaches_the_ball(registry: VerbRegistry) -> None:
-    ex, transport = _executor(registry, seed=2)
+    ex, body = _executor(registry, facing=2.0)
     assert (await ex.run_verb("search_scan", {"target": "ball"})).ok
     result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": 0.25})
     assert result.ok, result.summary
-    true_dist, true_bearing = transport.world.relative(
-        transport.world.ball.x, transport.world.ball.y
-    )
+    true_dist, true_bearing = _ball_from(body)
     assert true_dist <= 0.36
     assert abs(true_bearing) < 0.6
 
 
-async def test_approach_and_kick_moves_the_ball(registry: VerbRegistry) -> None:
-    ex, transport = _executor(registry, seed=6)
-    assert (await ex.run_verb("search_scan", {"target": "ball"})).ok
-    result = await ex.run_verb(
-        "approach_and", {"target": "ball", "stop_distance": 0.22, "then": "kick"}
-    )
-    assert result.ok, result.summary
-    # the kick connected; how far the ball travels also depends on walls (seed 6 bounces)
-    assert transport.world.kicks_connected == 1
-    assert transport.world.last_kick_ball_moved_m is not None
-    assert transport.world.last_kick_ball_moved_m > 0.1
-
-
 async def test_walk_to_without_detector_explains(registry: VerbRegistry) -> None:
-    transport = Sim2DTransport(seed=0)
+    transport = MockTransport()
     ex = Executor(registry, transport, contract=DUCK.frontmatter, detector=None)
     result = await ex.run_verb("walk_to")
     assert not result.ok and "detector" in result.summary
@@ -817,3 +816,9 @@ async def test_search_scan_sends_no_look_after_a_stop_beside_it(registry: VerbRe
     await body.brake
     assert not result.ok and result.data.get("ended_by") == STOP_ENDED, result.summary
     assert "look" not in body.after, f"sent after the stop was counted: {body.after}"
+
+
+def test_a_sensor_45_degrees_wide_looks_40_degrees_apart_as_a_camera_does() -> None:
+    assert views_round(45.0) == (40.0, 9)
+    assert scan_steps(SearchScanParams(), 45.0) == (40.0, min(MAX_SCAN_STEPS, 9))
+    assert views_round(90.0) == (72.0, 5)

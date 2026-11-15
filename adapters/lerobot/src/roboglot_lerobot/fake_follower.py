@@ -1,11 +1,10 @@
-"""The SO-101 follower in memory: what `lerobot:mock` drives, with no physics under it.
+"""The SO-101 follower in memory: what `lerobot:mock` drives, with no dynamics under it.
 
-`lerobot:mock` is the real backend over this follower, as `lerobot:mujoco` is the real backend
-over a simulated one (`sim/follower.py`). It carries the surface `LeRobotReal` touches, the one
-`SimFollower` and the tests' `FakeArm` carry, so the connect, the travel read off a calibration,
-the refusals past it, the rest move, the hold, the release, the take-hold, a policy segment and
-the close all run over it as they run over an arm. Under that surface it is an arm in memory, as
-plain as the backend's code allows:
+`lerobot:mock` is the real backend over this follower. It carries the surface `LeRobotReal`
+touches (`follower.py`), the one the tests' `FakeArm` carries, so the connect, the travel read
+off a calibration, the refusals past it, the rest move, the hold, the release, the take-hold, a
+policy segment and the close all run over it as they run over an arm. Under that surface it is
+an arm in memory, as plain as the backend's code allows:
 
 - **The travel.** A calibration in ticks, which the real backend reads the travel off with
   LeRobot's degrees formula (`real.joint_ranges`), so the travel it refuses past is one it
@@ -21,7 +20,7 @@ plain as the backend's code allows:
   is the goal that was sent, to the bit.
 - **A limp joint does not move.** A goal written with torque off is taken and not driven to,
   then or once torque comes back on: the best case of `up.TORQUE_ENABLE_HOLDS_PRESENT`, as the
-  tests' `FakeArm` has it, where the simulator gives the worst. A goal written to a joint in
+  tests' `FakeArm` has it. A goal written to a joint in
   `stuck`, a joint seized or held back, is not driven to either.
 - **Only the keys given.** A send moves the joints it names and leaves the others where they
   are, which is what lets a hold leave the gripper's squeeze alone.
@@ -40,8 +39,8 @@ plain as the backend's code allows:
   (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`), and shuts the port whatever that did
   (`up.DISCONNECT_RELEASES_THE_PORT`).
 - **A closed port refuses.** A read, a send, a torque write and the follower's disconnect are
-  refused on a port that is not open, in LeRobot's words (`up.NOT_CONNECTED`), as the arm's are
-  and the simulator's, so nothing reaches the mock's motors before its connect or after its close.
+  refused on a port that is not open, in LeRobot's words (`up.NOT_CONNECTED`), as the arm's are,
+  so nothing reaches the mock's motors before its connect or after its close.
   It used to answer either way, so a hand-off over a mock nobody had connected was let go of and
   read back rather than refused at its first read, as the arm's is, and a test of one could not
   fail for want of the connect. A second connect while the port is open is refused as upstream's
@@ -49,7 +48,7 @@ plain as the backend's code allows:
   0.7.0's is.
 
 `FakeCamera` is the view the mock offers, read as the real backend reads a webcam. Nothing here
-imports LeRobot or MuJoCo.
+imports LeRobot.
 """
 
 from __future__ import annotations

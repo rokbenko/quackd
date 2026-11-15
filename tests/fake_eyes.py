@@ -9,7 +9,7 @@ eyes, so everything between the verb and the wire runs as it does on a real run:
 the copy kept, the line in the record, the translation out and back. It decodes the JPEG each
 request carries and finds the orange ball in it with Roboglot's own `ColorBlobDetector`, and
 answers where it is as a distribution over the sectors `watch` asks about, so a test can close
-the loop on a simulator and read the world's own truth after it. It is a far better perceiver
+the loop and then read where the ball truly was in each picture. It is a far better perceiver
 than any LLM: what it proves is that the frame sent is the one the head was pointing at, upright
 and fresh, and that the head follows what the frame shows, and nothing about how well a decision
 LLM sees.

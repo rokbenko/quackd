@@ -22,16 +22,19 @@ from typing import Any
 import cv2
 import numpy as np
 import pytest
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from roboglot.perception.base import Detection
 from roboglot.perception.blobs import Candidates, biggest_blobs, rgb_to_hsv
 from roboglot.perception.color_blob import DEFAULT_TARGETS, ColorBlobDetector, HSVRange, Target
-from roboglot.sim2d.render import render_duckcam
-from roboglot.sim2d.world import World
+from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 
 REPO = Path(__file__).resolve().parents[1]
 ON_ARM = platform.machine().lower() in ("arm64", "aarch64")
+BALL_RADIUS_M = 0.05
+CAMERA_HEIGHTS_M = (0.2, 0.3, 0.35, 0.4, 0.5)
+"""Where the adapters' mocks carry their cameras, from rosbridge's wheeled base at 20 cm to
+ToddlerBot's at 50."""
 
 
 def _every_colour(red: int) -> np.ndarray:
@@ -319,12 +322,38 @@ def _detect_with_opencv(detector: ColorBlobDetector, image: Image.Image) -> list
     return out
 
 
-def _simulator_frames(count: int) -> list[Image.Image]:
+def _mock_frame(size: int, camera_height_m: float, balls: list[tuple[float, float]]) -> Image.Image:
+    """A frame as the adapters' mocks draw theirs: the sky over a floor from the horizon down, and
+    the orange ball at each (distance, bearing in radians), far to near so a near one hides what is
+    behind it. A ball at a wide bearing or close in runs off the frame, which is the edge the
+    detector measures a clipped ball by."""
+    image = Image.new("RGB", (size, size), SKY)
+    draw = ImageDraw.Draw(image)
+    horizon = int(size * HORIZON)
+    draw.rectangle([0, horizon, size, size], fill=FLOOR)
+    f = focal_px(size)
+    for distance, bearing in sorted(balls, reverse=True):
+        cx = size / 2 - math.tan(bearing) * f
+        ground_y = horizon + f * camera_height_m / distance
+        r = max(1.0, f * BALL_RADIUS_M / distance)
+        draw.ellipse([cx - r, ground_y - 2 * r, cx + r, ground_y], fill=BALL)
+    return image
+
+
+def _mock_frames(count: int) -> list[Image.Image]:
+    """One to three balls a frame, anywhere from a quarter of a metre to two and a half, and as
+    far as 56 degrees to a side of a lens 90 wide, so some are clipped and some are out of view."""
     rng = np.random.default_rng(7)
-    return [
-        render_duckcam(World(seed=seed), size=int(rng.choice([128, 256, 256, 320, 480])))
-        for seed in range(count)
-    ]
+    frames: list[Image.Image] = []
+    for _ in range(count):
+        size = int(rng.choice([128, 256, 256, 320, 480]))
+        height = float(rng.choice(CAMERA_HEIGHTS_M))
+        balls = [
+            (float(rng.uniform(0.25, 2.5)), math.radians(float(rng.uniform(-56.0, 56.0))))
+            for _ in range(int(rng.integers(1, 4)))
+        ]
+        frames.append(_mock_frame(size, height, balls))
+    return frames
 
 
 def _with_sensor_noise(image: Image.Image, rng: np.random.Generator) -> Image.Image:
@@ -357,12 +386,27 @@ def _saturated(density: float, height: int = 240, width: int = 320) -> Image.Ima
             fov_deg=62.0,
             calibrated=False,
         ),
+        # an upright target measures by its half-width, and one of its own beside the ball is a
+        # detector of two labels, whose answer is sorted across both
+        ColorBlobDetector(
+            targets=(
+                *DEFAULT_TARGETS,
+                Target("upright", HSVRange(5, 22, s_lo=200, v_lo=200), 0.05, round=False),
+            ),
+            max_per_label=2,
+        ),
     ],
-    ids=["default", "several per label", "no minimum area", "a target of ones own"],
+    ids=[
+        "default",
+        "several per label",
+        "no minimum area",
+        "a target of ones own",
+        "an upright target beside the ball",
+    ],
 )
 def test_every_field_of_every_detection_is_what_opencv_gave(detector: ColorBlobDetector) -> None:
     rng = np.random.default_rng(3)
-    frames = _simulator_frames(60)
+    frames = _mock_frames(60)
     frames += [_with_sensor_noise(frame, rng) for frame in frames[:40]]
     frames += [_saturated(density) for density in (0.05, 0.2, 0.5, 1.0)]
     seen = 0

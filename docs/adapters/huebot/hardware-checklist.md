@@ -23,7 +23,7 @@ roboglot run hello-world --robot huebot:mock --llm fake --no-memory
 
 `huebot:mock` is the core's scripted body under Huebot's manifest, so it rehearses the pilot,
 each task's allowlist and reading a run's log while it happens. It touches nothing below: no
-socket, no handshake, no deadman. There is no simulator of Huebot's body or gait.
+socket, no handshake, no deadman.
 
 ## Before step 1: Huebot's own behaviours off
 

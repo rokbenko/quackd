@@ -1,11 +1,9 @@
 """The blackboard: a tiny pub/sub bus every team message crosses exactly once.
 
 In-process by default; `roboglot.team.mqtt_bus.MqttBus` fills the same two-method `Bus`
-protocol over a broker (0.4, library-only). One hard rule keeps the lockstep clock alive:
-**nobody ever awaits the bus**.
-Publishing is a synchronous fan-out to per-subscriber queues; consumers drain between
-sim sleeps. A participant blocked on a queue would not be asleep on the clock, and the
-whole team's time would stop.
+protocol over a broker (0.4, library-only). One hard rule: **nobody ever awaits the bus**.
+Publishing is a synchronous fan-out to per-subscriber queues; each pilot drains its own between
+turns, so a quiet peer never holds up a loud one.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """The Open Duck Mini v2 adapter: an open-hardware biped that walks on its own ONNX policy.
 
-Three backends behind one manifest: `sim2d` (a duck in the cartoon world), `mock` (scripted,
-for tests) and `bridge` (a real duck through the Roboglot bridge daemon on its Raspberry Pi,
-EXPERIMENTAL and never run on hardware by us).
+Two backends behind one manifest: `mock` (scripted, for tests) and `bridge` (a real duck
+through the Roboglot bridge daemon on its Raspberry Pi, EXPERIMENTAL and never run on hardware
+by us).
 
 This is the first robot Roboglot supports whose upstream has **no network control API at all**.
 The runtime reads a local pygame gamepad and runs a 50 Hz ONNX walk policy; the only socket
@@ -18,7 +18,7 @@ here, they are simply never declared, so they do not exist anywhere in Roboglot 
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable, Sequence
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
 from PIL import Image
@@ -54,7 +54,7 @@ __version__ = "0.34.0"
 rather than being read from the core, because this file is all an adapter's sdist
 contains."""
 
-BACKENDS = ("sim2d", "mock", "bridge")
+BACKENDS = ("mock", "bridge")
 DEFAULT_ID = "open-duck-01"
 CONTROL_HZ = 50
 
@@ -241,7 +241,7 @@ class OpenDuckAdapter:
 
     async def connect(self) -> RobotManifest:
         await self.transport.connect()
-        # a live duck reports what its owner actually built; sim and mock report everything
+        # a live duck reports what its owner actually built; the mock reports everything
         self._features = dict(getattr(self.transport, "features", None) or {})
         self.manifest = open_duck_manifest(
             self.backend,
@@ -253,7 +253,7 @@ class OpenDuckAdapter:
             head=bool(self._features.get("head", True)),
             bridge_version=getattr(self.transport, "bridge_version", None),
             runtime_commit=getattr(self.transport, "runtime_commit", None),
-            # sim2d and mock have no `safety` block and are unchanged; a bridge that reports
+            # the mock has no `safety` block and is unchanged; a bridge that reports
             # none has not told us it has a deadman, so the manifest stops saying it does
             deadman=self._deadman_claim(),
             deadman_ms=getattr(self.transport, "deadman_ms", None),
@@ -266,8 +266,8 @@ class OpenDuckAdapter:
         The Open Duck's runtime has no deadman of its own — its command source is a local
         pad, which is never silent — so the guarantee is entirely Roboglot's daemon on the Pi.
         A bridge that reports no `safety` block has not told us it has one, and the manifest
-        must not say so on its behalf. sim2d and mock have no such block and are unchanged:
-        the claim is about hardware."""
+        must not say so on its behalf. The mock has no such block and is unchanged: the claim is
+        about hardware."""
         if not hasattr(self.transport, "safety"):
             return True
         return bool(getattr(self.transport, "deadman_ms", None))
@@ -344,34 +344,9 @@ class OpenDuckAdapter:
     def implementations(self) -> dict[str, Verb]:
         return open_duck_verbs()
 
-    # ── sim-only passthroughs (recorder, team) ─────────────────────────────────────
-
     @property
     def mobility(self) -> str:
         return "legged"
-
-    @property
-    def world(self) -> Any:
-        return self.transport.world  # type: ignore[attr-defined]
-
-    @property
-    def clock(self) -> Any:
-        return self.transport.clock  # type: ignore[attr-defined]
-
-    @property
-    def duck_index(self) -> int:
-        return int(self.transport.duck_index)  # type: ignore[attr-defined]
-
-    def add_tick_hook(self, hook: Callable[[Any], None]) -> None:
-        self.transport.add_tick_hook(hook)  # type: ignore[attr-defined]
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
 
 
 # ── what the factory calls ──────────────────────────────────────────────────────────────
@@ -394,9 +369,7 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
@@ -405,12 +378,6 @@ def make(
     # refused on every backend, not only on the one that would have opened the camera
     refuse_rest_pose("open_duck", rest_pose)
     url = one_camera_url(camera_url, spec=f"open_duck:{backend}")
-    if backend == "sim2d":
-        from roboglot_open_duck.sim2d import OpenDuckSim2D
-
-        return OpenDuckAdapter(
-            OpenDuckSim2D(seed if seed is not None else 0, live=live), robot_id=robot_id
-        )
     if backend == "mock":
         from roboglot_open_duck.mock import OpenDuckMock
 

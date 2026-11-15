@@ -1,6 +1,14 @@
 # ADR-0071: A duck explores what its map has not seen, and stops so the map can look
 
-**Status:** accepted · **Date:** 2026-10-27 · Builds on [ADR-0068](0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md) (Roboglot reads a map rather than making one), [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a reflex with named ways out) and [ADR-0067](0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md) (a stop ends the verb beside it) · Implemented in `roboglot/space/frontier.py`, `roboglot/verbs/explore.py`, `roboglot/verbs/navigate.py` and the Microduck's `verbs.py` and manifest · Documented in [docs/adapters/microduck/README.md](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen)
+**Status:** superseded · **Date:** 2026-10-27 · Builds on [ADR-0068](0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md) (Roboglot reads a map rather than making one), [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a reflex with named ways out) and [ADR-0067](0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md) (a stop ends the verb beside it) · Implemented in `roboglot/space/frontier.py`, `roboglot/verbs/explore.py`, `roboglot/verbs/navigate.py` and the Microduck's `verbs.py` and manifest · Documented in [docs/adapters/microduck/README.md](https://github.com/rokbenko/quackd/blob/v0.34.0/docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen)
+
+**Superseded 2026-11-15:** the Microduck's `explore` and `find` were removed, since only a
+simulator given a room could offer them, and the rooms and the simulated map went with the
+simulators. Everything below is left as the record of what 0.28 to 0.34 shipped, and none of it
+applies to the current tree. A duck still walks to a place it marked, on its odometry, and on
+`mapd` once a robotd release carries it
+([ADR-0068](0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md)),
+and MOSS's own `explore` is unchanged. See the CHANGELOG's Unreleased entry for the removal.
 
 ## Context
 

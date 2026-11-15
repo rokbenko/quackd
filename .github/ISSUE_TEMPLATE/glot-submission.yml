@@ -27,7 +27,7 @@ body:
       description: >-
         The `--robot <adapter>:<backend>` it targets, or the `robots:` line in the file.
         `roboglot validate your.glot --robot <spec>` should pass for it.
-      placeholder: e.g. microduck:sim2d, or open_duck:sim2d
+      placeholder: e.g. microduck:jsonrpc, or lerobot:real
     validations:
       required: true
   - type: dropdown

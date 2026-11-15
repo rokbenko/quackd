@@ -226,9 +226,7 @@ def test_a_real_run_through_the_table_answers_in_the_page_and_holds_its_robot(
     page's answer lets it finish."""
     jobs = Jobs(cwd=tmp_path)
     args = ["run", str(_gated_duck(tmp_path)), "--robot", "microduck:mock", "--llm", "fake"]
-    job = jobs.start(
-        "goal", [*args, "--no-gif", "--runs-dir", str(tmp_path / "runs")], robot="mock"
-    )
+    job = jobs.start("goal", [*args, "--runs-dir", str(tmp_path / "runs")], robot="mock")
     _until(lambda: bool(job.snapshot()["asks"]))
     with pytest.raises(RuntimeError, match="mock is busy"):
         jobs.start("goal", args, robot="mock")

@@ -432,8 +432,6 @@ def test_a_map_address_is_refused_by_name_where_nothing_reads_one() -> None:
     from roboglot.adapters.base import AdapterError
     from roboglot.adapters.factory import make_adapter
 
-    with pytest.raises(AdapterError, match="keeps its own map of the room"):
-        make_adapter("microduck:sim2d", map_address="tcp://127.0.0.1:9871")
     with pytest.raises(AdapterError, match="--map-address is for microduck:jsonrpc"):
         make_adapter("microduck:mock", map_address="tcp://127.0.0.1:9871")
     with pytest.raises(AdapterError, match="reads no map the robot keeps"):
@@ -790,8 +788,8 @@ def test_a_map_address_is_refused_for_a_body_that_reads_no_map(tmp_path: Any) ->
         reg.add_robot(RobotEntry(name="arm", spec="lerobot:mock", map_address="tcp://h:9871"))
     reg.add_robot(RobotEntry(name="duck", spec="microduck:jsonrpc", map_address="tcp://h:9871"))
     with pytest.raises(RegistryError, match="--clear map-address"):
-        reg.update_robot("duck", {"spec": "microduck:sim2d"})
-    reg.update_robot("duck", {"spec": "microduck:sim2d", "map_address": None})
+        reg.update_robot("duck", {"spec": "microduck:mock"})
+    reg.update_robot("duck", {"spec": "microduck:mock", "map_address": None})
 
 
 def test_doctor_refuses_a_map_address_with_no_robot_to_connect_to() -> None:

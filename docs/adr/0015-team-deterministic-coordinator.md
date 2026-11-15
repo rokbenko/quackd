@@ -1,6 +1,13 @@
 # ADR-0015: Teams are a deterministic coordinator with one planner call
 
-**Status:** accepted, amended · **Date:** 2026-08-31
+**Status:** superseded · **Date:** 2026-08-31
+
+**Superseded 2026-11-15:** the coordinator team was removed from Roboglot with the simulators it
+ran on, and with it the auction, the role machines and the planner's one call. Everything below,
+the amendment of 2026-09-13 included, is left as the record of what 0.3 to 0.34 shipped, and
+none of it applies to the current tree. A team is a team of pilots, one LLM per body
+([ADR-0034](0034-registered-robots-and-pilot-teams.md)), over the bus this ADR built, which
+carries their `TALK` and nothing else. See the CHANGELOG's Unreleased entry for the removal.
 
 **Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** the "Out
 of scope for 0.3" line below says per-duck LLM pilots and LLM-negotiated bids are not built.

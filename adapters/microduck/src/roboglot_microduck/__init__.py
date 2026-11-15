@@ -27,7 +27,6 @@ from roboglot.adapters.manifest import (
     verb_spec,
 )
 from roboglot.perception import ASSUMED_LENS
-from roboglot.space.room import RoomError
 from roboglot.space.source import SpatialSource
 from roboglot.transport.base import (
     Ack,
@@ -46,7 +45,6 @@ from roboglot_microduck.body import (
     DATASHEET,
     MAP_BACKENDS,
     MICRODUCK,
-    ROOM_BACKENDS,
     Body,
 )
 from roboglot_microduck.verbs import (
@@ -62,25 +60,6 @@ rather than being read from the core, because this file is all an adapter's sdis
 contains."""
 
 BACKENDS = MICRODUCK.backends
-
-NO_MAP_WHY = (
-    "it says where it is by odometry alone and keeps no map on this connection, and exploring "
-    "walks by a map: a simulator given --room keeps one"
-)
-"""Why `explore` and `find` are not offered on a duck with places and no map, in
-`extras.not_offered`, which the pilot reads beside its body and a refusal quotes: both walk to
-what a map has not seen, and odometry sees nothing."""
-
-NO_SIZE_WHY = (
-    "nothing publishes the real duck's body radius, which exploring plans its way round a room "
-    "by: a simulator given --room knows its own"
-)
-"""Why `explore` and `find` are not offered on a real duck whatever answers beside its robotd: a
-way through a room keeps the body's radius from everything solid, and the real duck's is
-published nowhere, where each simulator's is its own body's (`transports.mapd.sim_map_params`)."""
-
-NO_CAMERA_WHY = "it has no camera on this connection, and find looks for things with one"
-"""Why `find` is not offered on a duck that explores but has no frame to look in."""
 
 
 def offered_skill_verbs(body: Body, skills: Collection[str] | None) -> list[str]:
@@ -103,8 +82,6 @@ def manifest_for(
     camera_fov_deg: float | None = None,
     camera_fov_assumed: str | None = None,
     places: bool | None = None,
-    mapped: bool | None = None,
-    sized: bool | None = None,
     skills: Collection[str] | None = None,
 ) -> RobotManifest:
     """A body of this family as data. Static: no connection needed (validate, announce, doctor).
@@ -112,17 +89,8 @@ def manifest_for(
     `places` is whether the duck says where it is on this connection, which settles whether it
     can name places and list them (`roboglot.verbs.places`). None is what the backend promises
     before anything connects: a robotd sends its odometry and the mock scripts a pose, so both
-    declare them, and the simulators say nothing of where the duck is and declare none. A
-    connection whose transport carries no reading (`spatial_of`) leaves them out whatever was
-    declared, as one with no frame leaves out the camera's verbs.
-
-    `mapped` is whether that reading keeps a map, which `explore` and `find` walk by, and `sized`
-    whether it knows how big the body is, which they plan their way round a room by. None is what
-    the backend may have before anything connects: a robotd may have `mapd` beside it and a
-    simulator given a room keeps a map, but only a simulator knows how big its duck is, the real
-    duck's radius being published nowhere. `find` also looks through the camera. A duck with
-    places that cannot explore or find says why, in `extras.not_offered`, which the pilot reads
-    beside its body.
+    declare them. A connection whose transport carries no reading (`spatial_of`) leaves them out
+    whatever was declared, as one with no frame leaves out the camera's verbs.
 
     `camera` is the one thing a description of the robot cannot settle on its own. robotd's
     socket carries no picture, so on the jsonrpc backend a frame exists only when `--camera-url`
@@ -164,25 +132,16 @@ def manifest_for(
             verb_spec(CORE[name], core=True)
             for name in ("map", "mark_place", "forget_place", "go_to_place")
         ]
-    keeps_map = mapped if mapped is not None else backend in body.map_backends or places is True
-    knows_size = sized if sized is not None else backend in body.room_backends
-    offers_explore = offers_places and keeps_map and knows_size and "explore" in verbs
-    offers_find = offers_explore and camera and "find" in verbs
     offered = offered_skill_verbs(body, skills)
     gated = body.skill_verbs or {}
-    # `watch` looks through the camera, `explore` walks by a map and `find` does both, so each is
-    # a verb of a duck that has what it needs, declared below
+    # `watch` looks through the camera, so it is a verb of a duck that has one, declared below
     extensions = [
         verb_spec(v, core=False)
         for n, v in verbs.items()
-        if n not in ("say", "watch", "explore", "find") and (n not in gated or n in offered)
+        if n not in ("say", "watch") and (n not in gated or n in offered)
     ]
     if camera and "watch" in verbs:
         extensions.append(verb_spec(verbs["watch"], core=False))
-    if offers_explore:
-        extensions.append(verb_spec(verbs["explore"], core=False))
-    if offers_find:
-        extensions.append(verb_spec(verbs["find"], core=False))
     sensors: list[Sensor] = list(body.sensors)
     if camera:
         sensors.insert(0, "camera")
@@ -190,9 +149,9 @@ def manifest_for(
     # being fallen, and the three verbs that walk on what the camera sees, which had no
     # precondition at all until posture began failing closed. A precondition is read once, when
     # the verb starts, and what stops a duck picked up halfway through one is the transport's
-    # hold on `robot.move`. The simulators never report `unknown`, so on them the one change is
-    # that a seated or fallen duck is refused the three, where it used to be steered while its
-    # legs ignored every twist. Each applies only to a verb this body declares here.
+    # hold on `robot.move`. The mock never reports `unknown`, so on it the one change is that a
+    # seated or fallen duck is refused the three, where it used to be steered while its legs
+    # ignored every twist. Each applies only to a verb this body declares here.
     preconditions: dict[str, list[str]] = {
         "move": ["standing"],
         "kick": ["standing"],
@@ -206,8 +165,6 @@ def manifest_for(
         # the head alone, as `gaze`: a seated duck may watch, and a fallen or held one may not
         "watch": ["not_fallen"],
         "go_to_place": ["standing"],  # it walks; where it is the verb checks
-        "explore": ["standing"],
-        "find": ["standing"],
     }
     declared = {spec.name for spec in core + extensions}
     preconditions = {verb: names for verb, names in preconditions.items() if verb in declared}
@@ -216,11 +173,6 @@ def manifest_for(
     # what this duck lacks here, said beside its body where the pilot judges a task; the
     # datasheet is the body's own, the same on every backend
     not_offered = dict(body.withheld)
-    if offers_places and not offers_explore:
-        why = NO_SIZE_WHY if keeps_map else NO_MAP_WHY
-        not_offered |= {"explore": why, "find": why}
-    elif offers_explore and not offers_find:
-        not_offered["find"] = NO_CAMERA_WHY
     if not_offered:
         extras["not_offered"] = not_offered
     if camera and camera_fov_deg is not None:
@@ -259,8 +211,6 @@ def microduck_manifest(
     camera_fov_deg: float | None = None,
     camera_fov_assumed: str | None = None,
     places: bool | None = None,
-    mapped: bool | None = None,
-    sized: bool | None = None,
 ) -> RobotManifest:
     """The Microduck as data: `manifest_for` over its own body, which says what each of these is."""
     return manifest_for(
@@ -271,8 +221,6 @@ def microduck_manifest(
         camera_fov_deg=camera_fov_deg,
         camera_fov_assumed=camera_fov_assumed,
         places=places,
-        mapped=mapped,
-        sized=sized,
     )
 
 
@@ -293,11 +241,9 @@ class MicroduckAdapter:
 
     def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
         # A transport built for one body says what it may send in that body's terms, so a Huebot
-        # over a Microduck's would send looks its shim does not answer. The simulators and the
-        # mock carry no body, and are any body's.
-        # Only a `Body` is a body here: the physics transport's `body` names the physics model
-        # it loads. By name and not by identity, since a test that imports the package afresh
-        # holds a second `MICRODUCK`, which is the same body.
+        # over a Microduck's would send looks its shim does not answer. The mock carries no body,
+        # and is any body's. By name and not by identity, since a test that imports the package
+        # afresh holds a second `MICRODUCK`, which is the same body.
         theirs = getattr(transport, "body", None)
         if isinstance(theirs, Body) and theirs.name != self.body.name:
             raise ValueError(f"a {self.name} adapter over a transport built for {theirs.name}")
@@ -314,7 +260,7 @@ class MicroduckAdapter:
 
     async def connect(self) -> RobotManifest:
         await self.transport.connect()
-        # sim and mock always have a camera. A real duck has one only if a frame actually
+        # The mock always has a camera. A real duck has one only if a frame actually
         # arrived: a URL that was typed but never answered is not a camera, and advertising
         # `observe` on the strength of one is how a pilot gets told it can see.
         if hasattr(self.transport, "camera_working"):
@@ -322,7 +268,7 @@ class MicroduckAdapter:
         else:
             camera = getattr(self.transport, "camera_url", True) is not None
         # The lens the camera reported, read once a frame has arrived, which is where the
-        # transport learns it. The simulators report none: the detector knows their lens.
+        # transport learns it. The mock reports none: the detector knows its lens.
         assumed = getattr(self.transport, "camera_fov_assumed", None)
         source = spatial_of(self.transport)
         # The skills a robot listed, which a gated body's verbs that send `robot.do` are offered
@@ -335,13 +281,9 @@ class MicroduckAdapter:
             camera=camera,
             camera_fov_deg=_lens(getattr(self.transport, "camera_fov_deg", None)),
             camera_fov_assumed=assumed if isinstance(assumed, str) else None,
-            # a robotd that reports no odometry, and a simulator not asked for a room, say
-            # nothing of where the duck is, and a pilot offered places there could mark none
+            # a robotd that reports no odometry says nothing of where the duck is, and a pilot
+            # offered places there could mark none
             places=source is not None,
-            # a reading of odometry alone, where no mapd answered, keeps no map to explore by,
-            # and mapd's map comes with no body radius to plan a way round a room by
-            mapped=source is not None and source.has_grid and source.view is not None,
-            sized=source is not None and bool(source.footprint_m),
             skills=tuple(str(s) for s in listed) if isinstance(listed, Sequence) else None,
         )
         return self.manifest
@@ -378,7 +320,7 @@ class MicroduckAdapter:
         extras: dict[str, Any] = {"policy": state.policy, "posture": state.posture}
         # Which robotd answered, a row in doctor's health block, so the release a robot runs is
         # on the screen at the checklist's go/no-go gate whether or not it is the one Roboglot
-        # read. Only a real robot says; the simulators and the mock have no such record.
+        # read. Only a real robot says; the mock has no such record.
         key = self.body.health_key
         if isinstance(hello := state.extras.get(key), dict):
             extras[key] = self.body.health_line(hello)
@@ -422,8 +364,8 @@ class MicroduckAdapter:
         """When the frame `get_frame` hands out now was taken, at the earliest, on the clock `now()`
         reads, which `go_to` and `search_scan` read off the object they were handed, this
         adapter, to act only on a frame taken after a move of theirs had settled. On `jsonrpc`
-        from mediad's `/frame`, and None from every camera that cannot say, which the simulators
-        are among: they draw a frame when it is asked for, so every frame they hand out is new."""
+        from mediad's `/frame`, and None from every camera that cannot say, the mock's among
+        them."""
         return frame_taken_at_of(self.transport)
 
     @property
@@ -431,22 +373,22 @@ class MicroduckAdapter:
         """How long one frame of the camera takes to follow the last, which `go_to` reads off the
         object it was handed, this adapter, to tell whether its steering law keeps up with the
         camera: on `jsonrpc` from mediad's `/frame`, and None from every camera that does not
-        say, the simulators' among them."""
+        say, the mock's among them."""
         return frame_period_of(self.transport)
 
     @property
     def frames_upright(self) -> bool:
         """Whether every frame this duck hands out is upright and known fresh, which `watch` needs,
         since it turns the head by where a thing is across the picture, and uses a frame only once
-        it was taken after the head settled: on the simulators always, which draw each frame when
-        it is asked for, and on `jsonrpc` from mediad's `/frame` alone, whose frames say when they
-        were taken. A transport that does not say is taken for one whose frames may be neither."""
+        it was taken after the head settled: on the mock always, whose frames are whatever its test
+        hands it, and on `jsonrpc` from mediad's `/frame` alone, whose frames say when they were
+        taken. A transport that does not say is taken for one whose frames may be neither."""
         return getattr(self.transport, "frames_upright", False) is True
 
     @property
     def twist_shown_since(self) -> Callable[[float], bool] | None:
-        """The transport's own `twist_shown_since` on `jsonrpc`, and None on the simulators and
-        the mock, which say nothing of the kind. `search_scan` reads it off the object it was
+        """The transport's own `twist_shown_since` on `jsonrpc`, and None on the mock, which says
+        nothing of the kind. `search_scan` reads it off the object it was
         handed, this adapter (`roboglot.transport.base.twist_shown_since_of`), to count the turns
         it made by the ones robotd's state showed it took, since nothing answers a `robot.move`.
         This adapter did not pass it on before 0.21.0, so a run's scan counted the turns it sent:
@@ -463,12 +405,6 @@ class MicroduckAdapter:
         and a property that answered for every backend would read as a duck that knows where it
         is (`roboglot.transport.base.spatial_of`)."""
         return spatial_of(self.transport)
-
-    @property
-    def head_pitches(self) -> bool:
-        """Whether a look's pitch moves this duck's camera: on every backend but the cartoon,
-        whose world is flat, so `watch` asks no `height` there."""
-        return getattr(self.transport, "head_pitches", True) is not False
 
     @property
     def camera_fps(self) -> float | None:
@@ -503,7 +439,7 @@ class MicroduckAdapter:
     def lens_given(self, fov_deg: float) -> None:
         """Hand the field of view `--fov-deg` gave to the transport, when it keeps a record of
         the lens, so that the state says what the detector measures through: on `jsonrpc` it
-        stops listing the lens it assumed. The simulators keep none."""
+        stops listing the lens it assumed. The mock keeps none."""
         given = getattr(self.transport, "lens_given", None)
         if callable(given):
             given(fov_deg)
@@ -523,56 +459,12 @@ class MicroduckAdapter:
     def implementations(self) -> dict[str, Verb]:
         return dict(verbs_for(self.body))
 
-    # ── sim-only passthroughs the team and the recorder use today ──────────────────
-
-    @property
-    def world(self) -> Any:
-        return self.transport.world  # type: ignore[attr-defined]
-
-    @property
-    def clock(self) -> Any:
-        return self.transport.clock  # type: ignore[attr-defined]
-
-    @property
-    def duck_index(self) -> int:
-        return int(self.transport.duck_index)  # type: ignore[attr-defined]
-
-    def add_tick_hook(self, hook: Callable[[Any], None]) -> None:
-        self.transport.add_tick_hook(hook)  # type: ignore[attr-defined]
-
-    @property
-    def post_sleep(self) -> Callable[[], None] | None:
-        return getattr(self.transport, "post_sleep", None)
-
-    @post_sleep.setter
-    def post_sleep(self, hook: Callable[[], None] | None) -> None:
-        self.transport.post_sleep = hook  # type: ignore[attr-defined]
-
 
 # ── what the factory calls (the same four names on every adapter package) ───────────────
 
 
-def describe(
-    backend: str, robot_id: str | None = None, *, room: str | None = None
-) -> RobotManifest:
-    _refuse_room(backend, room)
-    # a simulator given a room says where the duck is; any other backend as it promises
-    return microduck_manifest(
-        backend, robot_id or "microduck", places=True if room is not None else None
-    )
-
-
-def _refuse_room(backend: str, room: str | None) -> None:
-    """Refuse a room on a backend that lays none out, rather than take it and drop it."""
-    if room is None or backend in ROOM_BACKENDS:
-        return
-    where = " or ".join(f"microduck:{b}" for b in ROOM_BACKENDS)
-    if backend == "jsonrpc":
-        raise AdapterError(
-            "microduck:jsonrpc is a real duck, whose room is the one it stands in: --room lays "
-            f"a room out in {where}"
-        )
-    raise AdapterError(f"microduck:{backend} lays out no room: --room is for {where}")
+def describe(backend: str, robot_id: str | None = None) -> RobotManifest:
+    return microduck_manifest(backend, robot_id or "microduck")
 
 
 def _refuse_map_address(backend: str, map_address: str | None) -> None:
@@ -580,11 +472,6 @@ def _refuse_map_address(backend: str, map_address: str | None) -> None:
     it."""
     if map_address is None or backend in MAP_BACKENDS:
         return
-    if backend in ROOM_BACKENDS:
-        raise AdapterError(
-            f"microduck:{backend} keeps its own map of the room --room lays out: --map-address "
-            "is where a real duck's mapd answers, for microduck:jsonrpc"
-        )
     raise AdapterError(
         f"microduck:{backend} reaches no mapd: --map-address is for microduck:jsonrpc"
     )
@@ -607,32 +494,19 @@ def make_for(
     adapter: type[AdapterT],
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
-    room: str | None = None,
     map_address: str | None = None,
 ) -> AdapterT:
     """A transport for `body` on `backend` and the adapter over it, which is what every `make` built
     on this package comes to once it has refused what its own body does not take. What a body has
-    no use for it leaves out, as Huebot leaves out a seed, a room and a map."""
+    no use for it leaves out, as Huebot leaves out a map."""
     url = one_camera_url(camera_url, spec=f"{body.name}:{backend}")
     from roboglot_microduck.transports.factory import make_transport
 
-    try:
-        transport = make_transport(
-            backend,
-            body=body,
-            seed=seed,
-            address=address,
-            live=live,
-            camera_url=url,
-            room=room,
-            map_address=map_address,
-        )
-    except RoomError as e:
-        raise AdapterError(str(e)) from None
+    transport = make_transport(
+        backend, body=body, address=address, camera_url=url, map_address=map_address
+    )
     return adapter(transport, robot_id=robot_id)
 
 
@@ -640,17 +514,13 @@ def make(
     backend: str,
     *,
     robot_id: str | None = None,
-    seed: int | None = None,
     address: str | None = None,
-    live: bool = False,
     camera_url: str | Sequence[str] | None = None,
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
-    room: str | None = None,
     map_address: str | None = None,
 ) -> MicroduckAdapter:
     refuse_rest_pose("microduck", rest_pose)
-    _refuse_room(backend, room)
     _refuse_map_address(backend, map_address)
     # `token` is accepted and unused, deliberately: the factory calls every adapter's `make`
     # with the same four keywords, and this robot has nothing to authenticate to. `robotd`'s
@@ -662,11 +532,8 @@ def make(
         backend,
         MicroduckAdapter,
         robot_id=robot_id,
-        seed=seed,
         address=address,
-        live=live,
         camera_url=camera_url,
-        room=room,
         map_address=map_address,
     )
 
@@ -694,13 +561,12 @@ __all__ = [
 
 
 # What this adapter reads from upstream, for `roboglot doctor`. Three rows: the robot's own IPC
-# protocol, the model and walking policy the physics backend fetches at run time and never ships,
-# and `mapd`, the onboard map read on its branch. Declared here rather than in a table in the
-# core (ADR-0022).
+# protocol, the command ranges its walking policy is trained with, and `mapd`, the onboard map
+# read on its branch. Declared here rather than in a table in the core (ADR-0022).
 def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
     from roboglot_microduck import mapd_upstream_api as mapd
+    from roboglot_microduck import rl_upstream_api as rl
     from roboglot_microduck import upstream_api as robotd
-    from roboglot_microduck.sim3d import upstream_api as rl
 
     return (
         (
@@ -712,8 +578,8 @@ def _upstream_rows() -> tuple[tuple[str, object, str, str], ...]:
         (
             "microduck_rl",
             rl,
-            "docs/adr/0030-mujoco-physics-backend.md",
-            "a robot: the model and the policies are fetched at run time and never shipped",
+            "docs/adapters/microduck/README.md",
+            "a robot: only the walking task's command ranges are read, in its training config",
         ),
         (
             "mapd",

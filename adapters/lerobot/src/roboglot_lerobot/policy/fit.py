@@ -76,9 +76,8 @@ def _ticks(n: int) -> str:
 
 def chunk_outrun(latency_s: float, rate_hz: float, chunk: int, per_tick: bool) -> bool:
     """Whether a chunk of `chunk` actions that takes `latency_s` to come back lands after its
-    last action's tick. The loop plays a chunk's actions from the tick it lands at, and the
-    simulator holds each chunk back its declared latency, so it would play none of them, and
-    neither would an arm. A policy that answers one action a tick is never outrun this way."""
+    last action's tick. The loop plays a chunk's actions from the tick it lands at, so an arm
+    would play none of them. A policy that answers one action a tick is never outrun this way."""
     return not per_tick and latency_ticks(latency_s, rate_hz) >= chunk
 
 

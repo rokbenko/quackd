@@ -337,7 +337,7 @@ def test_make_refuses_a_camera_url_and_a_rest_pose() -> None:
     with pytest.raises(AdapterError, match="does not return to a rest pose"):
         make("mock", rest_pose={"arm/a": 0.0})
     with pytest.raises(ValueError, match="unknown moss backend"):
-        make("sim2d")
+        make("real")
 
 
 def test_the_mock_reads_its_knobs_off_the_address() -> None:
@@ -1100,7 +1100,6 @@ def test_a_run_on_moss_litter_still_ends_with_the_missions_stop(tmp_path: Path) 
             "fake",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
         ],
     )
     out = " ".join(result.output.split())

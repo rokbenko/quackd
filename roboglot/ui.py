@@ -76,8 +76,8 @@ MEMBER_STYLES = (
     "bright_green",
 )
 """One per robot in a team. Several narrate at once and the eye finds a colour faster than it
-reads a name; the coordinator's own lines are bold and wear none of these. Eight of them,
-because that is what a pilot team may hold (`PILOTS_MAX_MEMBERS`); an auction uses four."""
+reads a name; the team's own lines are bold and wear none of these. Eight of them, because
+that is what a pilot team may hold (`PILOTS_MAX_MEMBERS`)."""
 
 MARKS = ("start", "send", "ok", "fail", "warn", "other", "note", "team", "end")
 """The kinds of moment a log line can be, and the glyph fields that answer for them."""
@@ -625,7 +625,6 @@ def verdict(
     *,
     counters: Sequence[str] = (),
     run_dir: Path | str | None = None,
-    gif_path: Path | str | None = None,
     glyphs: Glyphs | None = None,
 ) -> RenderableType:
     """How it ended: the word, why, what it cost, and where the evidence is.
@@ -645,7 +644,7 @@ def verdict(
             body.add_row(Text(reason))
         if counters:
             body.add_row(joined(counters, g))
-        where = [(k, path_text(v)) for k, v in (("run dir", run_dir), ("gif", gif_path)) if v]
+        where = [("run dir", path_text(run_dir))] if run_dir else []
         if where:
             body.add_row(kv_grid(where))
         return Panel(

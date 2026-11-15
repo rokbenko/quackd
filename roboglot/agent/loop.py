@@ -411,11 +411,7 @@ class RunConfig:
     heartbeat_period_s: float = 0.5
     log: Any = lambda _m: None
     on_frame: Any = None
-    """Optional callback (img, caption) for a recorder (M2). Called on every captured frame."""
-    on_caption: Callable[[str], None] | None = None
-    """Optional callback for a recorder: the verb starting now, said as it starts. A frame's
-    caption names the verb before it, so a verb that runs for minutes, as `find` does, would be
-    drawn all along under the name of the one that ran before it."""
+    """Optional callback (img, caption) for a live view. Called on every captured frame."""
     keep_images_for_last_n: int = 2
     hand_off: HandOff | None = None
     """Somebody at the robot, ready to place it by hand (`roboglot run --by-hand`).
@@ -447,7 +443,7 @@ class RunConfig:
     episode written at the end, the prompt says nothing about earlier runs."""
     fov_deg: float | None = None
     """The horizontal field of view of the camera actually in front of you. None falls back
-    to the robot's manifest, then to the simulator's, which is flagged as uncalibrated."""
+    to the robot's manifest, then to a default, which is flagged as uncalibrated."""
     acknowledge: Callable[[str], bool | Awaitable[bool]] | None = None
     """Asked once, before the first leg moves, when the robot cannot see a fall and cannot
     recover from one — so the only guard is the person in the room. None means nobody is
@@ -555,7 +551,6 @@ class RunResult:
     usage: Usage
     run_dir: Path
     final_state: dict[str, Any] = field(default_factory=dict)
-    gif_path: Path | None = None
     log_dropped: int = 0
     """Events a view raised on and never showed. The transcript has them all."""
     decision_calls: int = 0
@@ -1054,9 +1049,9 @@ class AgentLoop:
 
         Read off the budget's clock, which `check_time` is the one reading of, every heartbeat
         period: an LLM call is not a place to be sharper than the heartbeat that watches the
-        robot through it. On a simulator that clock is the simulator's and stands still while an
-        LLM thinks, so a simulated run is never cut off here, only past its minutes in a verb,
-        as it always was."""
+        robot through it. On a mock that clock is the mock's and stands still while an LLM
+        thinks, so a run on a mock is never cut off here, only past its minutes in a verb, as it
+        always was."""
         period = max(self.cfg.heartbeat_period_s, 0.01)
         while True:
             try:
@@ -1116,8 +1111,8 @@ class AgentLoop:
         `LONGEST_ASKED_WAIT_S`, and for a wait that would run past `max_minutes`, since the
         clock is checked only between turns and a wait past it would hold the robot after the
         task's time was up. That is the budget's clock, which is the wall's on a real robot and
-        the simulator's or the mock's own elsewhere, and theirs does not move while the loop
-        waits, so there only the schedule bounds the waits."""
+        the mock's own on a mock, and that one does not move while the loop waits, so there only
+        the schedule bounds the waits."""
         if transient.status is None and not self._provider_answered:
             return None
         if attempt > len(ASK_AGAIN_AFTER_S):
@@ -1144,8 +1139,8 @@ class AgentLoop:
     def _on_frames(self, frames: Sequence[CameraFrame], caption: str) -> None:
         """Every camera's picture to the record, the primary's to whoever asked for a frame.
 
-        `cfg.on_frame` is the GIF recorder and a team's own viewer, and both draw one world
-        rather than a contact sheet, so they keep being handed the view that steers."""
+        `cfg.on_frame` is a live view, which draws one picture rather than a contact sheet, so
+        it keeps being handed the view that steers."""
         if not frames:
             return
         # the body's camera list rather than this step's frames: a two-camera arm that hands
@@ -1979,20 +1974,13 @@ class AgentLoop:
         `--by-hand` run whose take-hold was refused ends: a joint placed past its travel, a
         servo that never took torque back, or a torque write nothing read back. Nothing read
         says that arm is holding itself up, the one thing the questions begin by saying, and it
-        is in a person's hands already. The close's own line says which arm they are holding.
-
-        Nor on a simulator (`is_simulator`), which has no arm to hold: the questions told a
-        person to clear the way of an arm nobody can reach, and the close then said there was
-        nothing to hold. The close's own line is what they hear, and it says what applies to a
-        simulated arm."""
+        is in a person's hands already. The close's own line says which arm they are holding."""
         person = self.cfg.person
         if person is None or self.cfg.dry_run or parked is None:
             return
         if not parked.recorded or parked.reached or not parked.answered:
             return
         if getattr(self.cfg.transport, "in_hand", None) is True:
-            return
-        if getattr(self.cfg.transport, "is_simulator", False) is True:
             return
         with contextlib.suppress(*self._what_a_press_cannot_end()):
             # from before the questions: a press made as the second fold arrives is counted by
@@ -2775,7 +2763,7 @@ class AgentLoop:
             "llm_calls": self.budget.llm_calls,
             # Three clocks that were one, and they answer different questions. `elapsed_s`
             # is the budget's: it starts after `run_start`, restarts after a `--by-hand`
-            # handover, and on a simulator it is the simulator's own time, which is what
+            # handover, and on a mock it is the mock's own time, which is what
             # `max_minutes` is checked against and all it is. `wall_s` is the run as
             # somebody standing next to the robot experienced it, connect and teardown
             # included. `llm_latency_s` is how much of that was spent waiting on the
@@ -3092,14 +3080,12 @@ class AgentLoop:
             system = build_system_prompt(
                 self.duck,
                 [registry.view(n) for n in allow],
-                backend_name(cfg.transport),
                 manifest=manifest,
                 memory_text=memory_text,
                 assumptions=first_state.extras.get("assumptions") or None,
                 team_text=cfg.link.prompt_section() if cfg.link is not None else None,
                 task_images=[p.name for p in cfg.task_images] or None,
                 by_hand=cfg.hand_off is not None and not cfg.dry_run,
-                adapter=adapter_name(cfg.transport),
                 # as `_observe` decides whether an observation carries the frames it read
                 sees=bool(cfg.provider.supports_vision),
                 play=self.play,
@@ -3495,8 +3481,6 @@ class AgentLoop:
                     break
 
                 last_verb = call.name
-                if cfg.on_caption is not None:
-                    cfg.on_caption(f"step {self.budget.steps}: {call.name}")
                 try:
                     last_result = await self.executor.run_verb(
                         call.name,

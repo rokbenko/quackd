@@ -8,7 +8,7 @@ that, sorted by what you came to do. What has run on a real robot and what has n
 
 - [The first run on an SO-101 arm](adapters/lerobot/first-run.md): from an empty laptop to a
   wave, written for somebody who has never run Roboglot or LeRobot.
-- [FAQ](faq.md): the simulators, LLMs and providers, seeing what happened, real robots,
+- [FAQ](faq.md): running without a robot, LLMs and providers, seeing what happened, real robots,
   driving it from somewhere else, security and privacy, what it can and cannot drive, and the
   name.
 - [Safety](concepts/safety.md): read it before anything with a motor.
@@ -30,10 +30,9 @@ How to do one thing with Roboglot.
 | [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `roboglot policy serve` |
 | [Registered robots and teams](guides/registry.md) | a name for a robot, and for a team, kept between runs |
 | [Memory](guides/memory.md) | what a robot keeps between runs |
-| [Exploring](guides/explore.md) | a duck in a simulated room exploring it and finding the ball, with the `find-the-ball` and `favourite-spot` starters, and checking a task against a room |
-| [Places](guides/places.md) | naming a spot a robot stands on and walking back to it, in a simulated room with its own map or on a real duck's odometry, and `roboglot map` and `roboglot places` from a shell |
+| [Places](guides/places.md) | naming a spot a robot stands on and walking back to it, by the robot's own odometry or its map, shown on a wheeled base's mock, and `roboglot map` and `roboglot places` from a shell |
 | [Playing a part](guides/play.md) | a task that gives the pilot a part to play, an animal, a person or a character, acted out with the body it has |
-| [Team mode](guides/team.md) | several robots on one task, as pilots or under a coordinator |
+| [Team mode](guides/team.md) | several robots on one task, one LLM pilot each |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
 | [An NVIDIA Jetson](guides/jetson.md) | a board Roboglot reaches with `--host`, and the one `roboglot onboard`, Robot Passport's service, runs on |
 
@@ -145,8 +144,7 @@ than rewriting it.
 
 - [examples/lerobot/](examples/lerobot/README.md): the shoot-day task files for the SO-101 arm, and
   [the run sheet](examples/lerobot/run-sheet.md) with a card for each experiment.
-- [assets/](assets/README.md): the pictures and transcripts these pages show, and how each one
-  was made.
+- [assets/](assets/README.md): the pictures these pages show, and how each one was made.
 
 How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRIBUTING.md),
 [SECURITY.md](../SECURITY.md), [RELEASING.md](../RELEASING.md) and

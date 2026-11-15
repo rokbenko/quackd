@@ -1,8 +1,8 @@
-"""One interface for "a duck", whether it is a mock, a cartoon, or 800 g of servos.
+"""One interface for "a duck", whether it is a mock or 800 g of servos.
 
 The protocol is small on purpose: frames in, state in, intents out, plus a heartbeat and a
-stop. Time is part of the interface (`now`/`sleep`) so the simulator can run faster than
-real time while the real robot keeps its deadman fed.
+stop. Time is part of the interface (`now`/`sleep`) so a mock can run faster than real time
+while the real robot keeps its deadman fed.
 """
 
 from __future__ import annotations
@@ -50,12 +50,6 @@ DEFAULT_CAMERA_NAME = "camera"
 """What a single frame is called when the transport names no camera. Never shown to an
 LLM: a camera's name is only spoken when a body has more than one."""
 
-FRAME_HEAD_YAW_DEG = "roboglot.head_yaw_deg"
-"""The key in a frame's `info` under which a body that knows it records where its camera pointed
-from the trunk when the frame was taken, in degrees of yaw, positive left, the convention
-`DuckState.extras["head_yaw_deg"]` is in. That one says where the camera points now, and a frame
-handed out from memory can be older than the head's last move (`frame_head_yaw_of`)."""
-
 
 @dataclass(frozen=True)
 class CameraFrame:
@@ -77,8 +71,8 @@ class CameraFrame:
 class DuckState(BaseModel):
     """A compact snapshot the LLM can read in one glance.
 
-    `x, y, theta` are only known in sim (or from upstream odometry, which drifts); real
-    robots may leave them `None`. `extras` carries transport-specific detail without
+    `x, y, theta` are known on a mock, or from a robot's own map or odometry, which drifts;
+    real robots may leave them `None`. `extras` carries transport-specific detail without
     forcing it into the contract.
     """
 
@@ -102,8 +96,8 @@ class DuckState(BaseModel):
         # An unchanging `posture=unknown` reads as "no news". It is not: on a backend where
         # nothing watches for falls, `fallen=False` is silence, and a pilot told elsewhere
         # that moving verbs refuse when it is down will read an accepted move as proof it is
-        # upright. Say so in every observation instead. Backends that always know (the
-        # simulator, the mock) set no such key and are unchanged.
+        # upright. Say so in every observation instead. A backend that always knows (the
+        # mock) sets no such key and is unchanged.
         if self.extras.get("fall_detection") is False:
             parts.append("fall-blind=nothing-detects-falls")
         if self.extras.get("state_stale"):
@@ -119,7 +113,7 @@ class DuckState(BaseModel):
         if self.holding:
             parts.append("holding=object-in-beak")
         # A reading of where the robot is says which kind it is, since an odometry pose drifts
-        # and a map's can be lost; `pose=` is the simulators' plain truth, kept for a state with
+        # and a map's can be lost; `pose=` is a state's own x, y and theta, kept for a state with
         # no reading, which every recorded run before places was.
         if isinstance(where := self.extras.get("where"), dict):
             parts.append(f"where={where_summary(where)}")
@@ -228,7 +222,7 @@ class DuckTransport(Protocol):
         ...
 
     def now(self) -> float:
-        """Transport time in seconds (sim time for the simulator, monotonic for hardware)."""
+        """Transport time in seconds (the mock's own for a mock, monotonic for hardware)."""
         ...
 
     async def sleep(self, seconds: float) -> None:
@@ -322,7 +316,7 @@ def spatial_of(transport: Any) -> SpatialSource | None:
     """The robot's reading of where it is, or None when its body does not say.
 
     A transport that knows where its robot is carries a `spatial` attribute, the source for this
-    connection (`roboglot.space.source`): odometry, a robot's own map, a simulator's. A transport
+    connection (`roboglot.space.source`): odometry, a robot's own map, a mock's pose. A transport
     without one is a body Roboglot has no pose for, and the place verbs are not offered on it. An
     adapter that wraps a transport has to pass the attribute on, as it passes every other one a
     caller asks for by name."""
@@ -378,9 +372,3 @@ def twist_shown_since_of(transport: Any, since: float) -> bool | None:
     verb, so the body can tell the calling verb's twists from another call's."""
     shown = getattr(transport, "twist_shown_since", None)
     return bool(shown(since)) if callable(shown) else None
-
-
-def frame_head_yaw_of(image: Image.Image | None) -> float | None:
-    """Where the camera pointed from the trunk when `image` was taken, in degrees of yaw positive
-    left, when the body recorded it on the frame (`FRAME_HEAD_YAW_DEG`), or None."""
-    return None if image is None else _finite(image.info.get(FRAME_HEAD_YAW_DEG))

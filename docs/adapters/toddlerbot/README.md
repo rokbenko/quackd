@@ -17,7 +17,7 @@ non-commercial**, so Roboglot vendors none of it.
 uv pip install 'roboglot[toddlerbot]'
 
 # offline
-roboglot run toddlerbot-lookout --robot toddlerbot:sim2d --llm fake
+roboglot run toddlerbot-lookout --robot toddlerbot:mock --llm fake
 
 # a real robot, once Roboglot's daemon is running on it
 roboglot run toddlerbot-lookout --robot toddlerbot:bridge \
@@ -34,7 +34,6 @@ the adapter was part of the core wheel, which is why there was no extra to name.
 | `--robot` | What it is | Status |
 |---|---|---|
 | `toddlerbot:mock` | the daemon's answers in memory | ✅ every verb runs offline in the test suite |
-| `toddlerbot:sim2d` | the cartoon world with a humanoid profile | ✅ `toddlerbot-lookout` 10 of 10 seeds |
 | `toddlerbot:bridge` | the real robot, through the daemon Roboglot ships | 🧪 names VERIFIED at the pin, the protocol and the daemon exercised against a fake body over loopback, **never run on a robot** |
 
 ## Why Roboglot ships a daemon
@@ -85,10 +84,9 @@ file, so none of it was ever machine-verified by anyone.
   will refuse once the robot has fallen. Roboglot calls it `stand` rather than `posture`
   because what it does is reach one specific pose, not choose among several.
 - **Read its own IMU.** The daemon never touches `ThreadedIMU`. Orientation arrives in the
-  observation as a quaternion on `rot`, which both the real body and the simulated one
-  fill, so the shape that upstream's threaded IMU returns is not a fact Roboglot depends on
-  and is not cited here. If a future verb ever needs the IMU directly, that is the point at
-  which somebody has to read it at the pin.
+  observation as a quaternion on `rot`, which the real body fills, so the shape that upstream's
+  threaded IMU returns is not a fact Roboglot depends on and is not cited here. If a future verb
+  ever needs the IMU directly, that is the point at which somebody has to read it at the pin.
 - **Report a battery.** Bus voltage is read in C++ and only printed, so a battery abort can
   never fire here.
 - **Report a position.** The observation carries motor positions and an orientation. There is
@@ -178,17 +176,6 @@ laptop and go back to the board as JPEGs to be detected, a round trip nobody has
 server or a detector saturating that board does to the fifty hertz loop beside it either, and on
 this body a starved loop is a fall.
 
-## The contract job, and what a green one means
-
-`.github/workflows/toddlerbot-contract.yml` runs nightly and on demand, and it is the only
-thing here that installs upstream: a blobless sparse checkout, Roboglot's real daemon under
-`--sim mujoco`, and Roboglot's real client over a real socket. Its own comments carry the
-reasoning, including why `MUJOCO_GL` and `xvfb` are not needed and what is needed instead.
-
-**A green run still means nothing about hardware.** It means the protocol, the fifty hertz
-loop, the clamp and the deadman hold up against thirty simulated motors that push back,
-which is strictly more than the fake body proves and strictly less than a robot.
-
 ## VERIFIED (read from upstream source on 2026-09-05, at `84e02d1`)
 
 | Thing | Value | Used for |
@@ -249,10 +236,6 @@ which is strictly more than the fake body proves and strictly less than a robot.
 | The envelope | `command_range` | rows 5, 6 and 7 are the walk velocities |
 | All three or none | `control_inputs` | a partial dict raises mid-tick |
 | Never clipped upstream | `walk_x` | out-of-envelope goes straight to the network, so Roboglot clamps to the envelope before sending |
-| The simulated body | `MuJoCoSim` | takes the Robot, runs at the same fifty hertz |
-| Headless by default | `vis_type` | only render or view build anything that needs GL |
-| Do not use it | `controller_type` | the position controller's step takes the wrong arity |
-| Paths are relative | `scene.xml` | so the daemon changes directory to the checkout root |
 
 ## UNVERIFIED, and what Roboglot does about it
 

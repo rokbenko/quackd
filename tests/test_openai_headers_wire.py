@@ -493,7 +493,6 @@ def test_a_whole_run_on_a_board_sends_the_key_on_every_turn_and_nothing_ambient(
             "microduck:mock",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             "--no-memory",
         ],
     )

@@ -15,9 +15,14 @@ def screen() -> None:
     st.caption(
         "What a robot keeps from one run to the next: the notes its pilot reads at the start."
     )
+    chosen = setup().get("robot")
+    # the robot set up on the page and every registered one: there is no default body to offer
     choices = sorted(
-        {str(setup().get("robot") or "microduck:sim2d"), *(r["name"] for r in catalog.registered())}
+        {*([str(chosen)] if chosen else []), *(r["name"] for r in catalog.registered())}
     )
+    if not choices:
+        st.info("Set up a robot, or register one, and its notes are read here.")
+        return
     robot = widgets.pick("_memory_robot", "Robot", choices, default=setup().get("robot"))
     shown = jobs.run_command(["memory", "show", "--robot", robot, "--raw"])
     notes = []

@@ -1,6 +1,11 @@
 # ADR-0050: A router is a vendor whose list is read on the day
 
-**Status:** accepted · **Date:** 2026-10-06 · Amends [ADR-0031](0031-llm-catalogue.md) (one vendor's tuple is a selection rather than all `--llm` takes after the colon, and its rows carry a price date of their own), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (a turn's cost can be what the vendor says it billed rather than rate times tokens) and [ADR-0010](0010-providers.md) (one call per turn holds on this vendor without `parallel_tool_calls`) · Implemented in `roboglot/agent/providers/openrouter.py`, with changes in the factory, the catalogue, pricing, the loop, the team planner and the browser demo · Documented in [docs/guides/openrouter.md](../guides/openrouter.md)
+**Status:** accepted, amended · **Date:** 2026-10-06 · Amends [ADR-0031](0031-llm-catalogue.md) (one vendor's tuple is a selection rather than all `--llm` takes after the colon, and its rows carry a price date of their own), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (a turn's cost can be what the vendor says it billed rather than rate times tokens) and [ADR-0010](0010-providers.md) (one call per turn holds on this vendor without `parallel_tool_calls`) · Implemented in `roboglot/agent/providers/openrouter.py`, with changes in the factory, the catalogue, pricing, the loop, the team planner and the browser demo · Documented in [docs/guides/openrouter.md](../guides/openrouter.md)
+
+**Amended 2026-11-15:** the browser demo is gone from this repository with the simulators, and
+the team planner the status line names is gone with the coordinator team, so the browser's six
+rows below and its client's run against the stand-in have nothing left to apply to. See the
+CHANGELOG's Unreleased entry.
 
 ## Context
 

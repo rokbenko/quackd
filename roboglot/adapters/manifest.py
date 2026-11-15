@@ -207,7 +207,7 @@ class Datasheet(BaseModel):
     renders those as clamps. `None` means not published, and the prompt says so in those words
     and tells the pilot to answer `uncertain` where a task turns on it, and the verdict gate
     refuses a `feasible` that names it (refuse by default). The same datasheet describes a
-    body on every backend: sim2d, mock or real, the body is the body, which is what keeps
+    body on every backend: mock or real, the body is the body, which is what keeps
     digests equal across backends.
     """
 
@@ -405,14 +405,14 @@ class RobotManifest(BaseModel):
     def not_offered(self) -> dict[str, str]:
         """The verbs this body leaves out here, each with why, as it says in `extras.not_offered`:
         what it lacks on this backend or connection, beside what the body cannot do anywhere (a
-        Microduck whose reading keeps no map says why it does not explore)."""
+        Huebot says why it has no `gaze`)."""
         said = self.extras.get("not_offered")
         if not isinstance(said, dict):
             return {}
         return {str(verb): why for verb, why in said.items() if isinstance(why, str)}
 
     def digest(self) -> str:
-        """A capability fingerprint: the same robot over sim2d and mock hashes the same.
+        """A capability fingerprint: the same robot over a mock and a real backend hashes the same.
 
         `id` and `backend` are excluded on purpose; discovery carries the id separately."""
         payload = self.model_dump(mode="json", exclude={"id", "backend"})

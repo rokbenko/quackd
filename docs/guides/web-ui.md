@@ -10,7 +10,7 @@ a run loads and the run directory it writes are the terminal's own. The Setup sc
 command to type at a terminal for the same run, which makes the page a way to learn the CLI as
 well as a way around it.
 
-![The Goal screen after a run of find the ball and kick it on the cartoon simulator, with the scripted pilot: the last frame the run saved, its steps as a terminal narrates them, and its outcome](../assets/ui-goal.png)
+![The Goal screen after the bundled open-duck-scout on the Open Duck Mini's mock, with the scripted pilot: the task file, the last frame the run saved with the ball close up, its steps as a terminal narrates them, and its outcome](../assets/ui-goal.png)
 
 ## Install and start
 
@@ -21,7 +21,7 @@ uv pip install "roboglot[ui]"
 roboglot ui
 ```
 
-Or with nothing installed, the page and the duck's cartoon simulator in one go:
+Or with nothing installed, the page and the Microduck's mock in one go:
 
 ```bash
 uvx --from "roboglot[ui,microduck]" roboglot ui
@@ -68,22 +68,25 @@ Without the extra it says what to install:
 ## A first goal, with no robot and no key
 
 1. Start `roboglot ui`. The page opens on **Setup**.
-2. Under **Robot**, choose the adapter `microduck` and the backend `sim2d`, the duck's cartoon
-   simulator. It needs `roboglot[microduck]`, and the page says so where it is missing.
+2. Under **Robot**, choose the adapter `microduck` and the backend `mock`, the duck's in-memory
+   test double. It needs `roboglot[microduck]`, and the page says so where it is missing.
 3. Under **Pilot**, leave **An LLM** and choose the vendor `fake`, the scripted pilot, which needs
    no key and no network.
-4. Open **Goal**, type `find the ball and kick it` and press **Run**.
+4. Open **Goal**, type `look around and tell me what you see` and press **Run**.
 
-![The Setup screen: the robot is microduck on its sim2d backend, flown by the scripted pilot](../assets/ui-setup.png)
+The pictures on this page were taken on `open_duck:mock`, the Open Duck Mini's mock, which draws
+an orange ball for its camera where the Microduck's draws none.
+
+![The Setup screen: the robot is open_duck on its mock backend, flown by the scripted pilot](../assets/ui-setup.png)
 
 While the run goes, the Goal screen shows what it is waiting on, its camera, its steps as a
 terminal narrates them, and any question it puts to you, with a Yes and a No. When it ends it shows
-the outcome, the run's folder, the last frame it saved and, on a simulator that draws one, its
-`run.gif`. Setup's **Same as** shows the same run as the command to type at a terminal, with
-`...` where the Goal screen's goal goes:
+the outcome, the run's folder and the last frame it saved, which on the mock is grey. Setup's
+**Same as** shows the same run as the command to type at a terminal, with `...` where the Goal
+screen's goal goes:
 
 ```bash
-roboglot run --goal ... --llm fake --robot microduck:sim2d
+roboglot run --goal ... --llm fake --robot microduck:mock
 ```
 
 A goal can also be a task file: **A task file** on the Goal screen offers the ones that ship with
@@ -109,15 +112,15 @@ is still moving it. Questions are answered with their buttons, never by typing, 
 always a command. **End the session** stops the robot, folds it where it folds and lets go of it.
 Everything a line can be is in [Driving a robot](drive.md).
 
-![The Chat screen: quack, taken by the exact lane, then a goal the scripted pilot flew to success](../assets/ui-chat.png)
+![The Chat screen on the Open Duck Mini's mock: quack, taken by the exact lane, then walk a square, which the scripted pilot flew to success](../assets/ui-chat.png)
 
 > [!NOTE]
 > A chat's goals fly with what Setup chose for a goal, the pilot's settings, memory and a VLA pilot
 > among them, and put their questions to you with the same buttons, each named after its goal:
 > whether to run a gated verb, whether to go ahead when the pilot is not sure, and whether the arm
 > did it. Under a VLA pilot each line is its one instruction to the arm's policy
-> ([Driving a robot](drive.md#a-vla-pilot-a-line-at-a-time)). The few options still marked *goal
-> only*, a GIF and a picture, do not reach a chat.
+> ([Driving a robot](drive.md#a-vla-pilot-a-line-at-a-time)). The one option still marked *goal
+> only*, a picture, does not reach a chat.
 
 ## The pilot
 
@@ -161,8 +164,7 @@ reach a run as keys do.
 
 The page reads these options from the commands themselves, so a flag added to `roboglot run`
 appears on the page with nothing changed in it. It leaves out the few it sets itself or cannot
-apply: `--front`, `--live`, `--verbose`, `--log`, `--log-prompt`, `--by-hand`, `--team` and
-`--robots`.
+apply: `--front`, `--verbose`, `--log`, `--log-prompt`, `--by-hand`, `--team` and `--robots`.
 
 **Same as**, at the bottom of Setup, is the command each mode would run, a goal's and a chat's,
 built from what you changed and nothing else.
@@ -311,8 +313,7 @@ page in your browser that points a name of its own at it
 
 - **Runs** lists the run directories under the working folder's `runs/`, with how each ended, its
   steps, its seconds and its cost. One replays as `roboglot log` replays it, the system prompt shown
-  if you ask, with its frames, its `run.gif` and what its terminal showed, and a chat's goals one by
-  one.
+  if you ask, with its frames and what its terminal showed, and a chat's goals one by one.
 - **Robots** is the registry, tokens never shown: register a robot, forget one after a second
   click, and look for robots announcing themselves on the network, which needs `roboglot[lan]`.
   Recording an arm's rest pose and releasing an arm need somebody at the arm, so the screen gives
@@ -359,7 +360,6 @@ the same command under **Same as** reproduces it at a terminal.
 - `--by-hand`, and the questions at the end of a run about an arm that missed its rest pose: both
   wait for somebody at the arm to press Enter, and stay at the terminal.
 - Teams: `--team`, `--robots` and task files with a `team:` block.
-- A GIF of a chat: `roboglot drive` takes no `--gif`.
-- `--live`, and a picture sent with a chat line.
+- A picture sent with a chat line.
 - HTTPS. Streamlit can serve it through its own settings, and Roboglot has no flag for it yet.
 - An app to install on the phone.

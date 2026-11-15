@@ -133,7 +133,7 @@ size or a sequence number, and one longer than this is not any of them."""
 MAX_LATENCY_S = FIRST_CHUNK_S
 """The latency a policy must declare less than: the loop's grace for a segment's first chunk
 (`loop.FIRST_CHUNK_S`). A policy that takes this long to answer ends every segment starved
-before its first chunk lands, on the arm and on the simulator alike."""
+before its first chunk lands, on the arm and on the mock alike."""
 MIN_JPEG_QUALITY = 50
 """The lowest JPEG quality a server may ask for. Below it a policy sees blocks and ringing it
 never saw in training, and the bytes it saves do not matter on any link a policy runs over."""
