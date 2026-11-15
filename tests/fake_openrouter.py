@@ -6,7 +6,7 @@ each `POST /api/v1/chat/completions` with the next turn of a script, in the shap
 documents: a tool call, `reasoning` and `reasoning_details` beside it, and a `usage` carrying
 `cost`. Anything else is a 404, which is how a stray `/responses` request shows up.
 
-It proves what quackd sends and what it makes of an answer shaped like OpenRouter's. It proves
+It proves what Roboglot sends and what it makes of an answer shaped like OpenRouter's. It proves
 nothing about OpenRouter, and nothing that passes against it has ever reached a real LLM.
 
 By hand, from the repository root:
@@ -74,16 +74,16 @@ def llm(
     }
 
 
-#: The list a test runs against unless it hands in its own: one entry per way an id quackd does
+#: The list a test runs against unless it hands in its own: one entry per way an id Roboglot does
 #: not carry can be taken or refused. Every id is under an author no real list has.
 LLMS: list[dict[str, Any]] = [
-    llm("quackd-stub/tool-model"),
-    llm("quackd-stub/tool-model:free", prompt="0", completion="0", cache_read=None),
-    llm("quackd-stub/no-tool-choice", tool_choice=False),
-    llm("quackd-stub/text-only", image=False),
-    llm("quackd-stub/no-tools", tools=False, tool_choice=False),
-    llm("quackd-stub/expired", expires="2000-01-01"),
-    llm("quackd-stub/variable", prompt="-1", completion="-1", cache_read=None),
+    llm("roboglot-stub/tool-model"),
+    llm("roboglot-stub/tool-model:free", prompt="0", completion="0", cache_read=None),
+    llm("roboglot-stub/no-tool-choice", tool_choice=False),
+    llm("roboglot-stub/text-only", image=False),
+    llm("roboglot-stub/no-tools", tools=False, tool_choice=False),
+    llm("roboglot-stub/expired", expires="2000-01-01"),
+    llm("roboglot-stub/variable", prompt="-1", completion="-1", cache_read=None),
 ]
 
 #: Each script is the calls a pilot makes, in order, one per POST. The first is always the
@@ -208,8 +208,8 @@ class FakeOpenRouter:
     script describes, asked again."""
     fail_status: int = 529
     fail_headers: dict[str, str] = field(default_factory=lambda: {"retry-after-ms": "1"})
-    """Sent with each failure: a `retry-after-ms` of 1, a wait shorter than any of quackd's own,
-    so the wait quackd sits out is its schedule's. An SDK left to retry on its own spends its
+    """Sent with each failure: a `retry-after-ms` of 1, a wait shorter than any of Roboglot's own,
+    so the wait Roboglot sits out is its schedule's. An SDK left to retry on its own spends its
     tries at once on it."""
     requests: list[Recorded] = field(default_factory=list)
 

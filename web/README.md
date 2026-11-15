@@ -1,13 +1,13 @@
 # The browser demo
 
 A static page that puts a Microduck in front of you with no install: type a sentence, and an
-LLM you bring the key for turns it into the robot's own skills while quackd decides what
+LLM you bring the key for turns it into the robot's own skills while Roboglot decides what
 it is allowed to do. The keyboard is live the whole time, next to the box you type in, so the
 two ways of driving a robot sit a centimetre apart. It is the same idea as
-`quackd run --goal "..." --robot microduck:mujoco`, with the same physics and the same
+`roboglot run --goal "..." --robot microduck:mujoco`, with the same physics and the same
 walking policy, in seven modules of plain JavaScript with no build step instead of Python.
 
-It lives at <https://www.quackd.org/simulator>. That domain is served by quackd-web, a separate
+It lives at <https://www.roboglot.org/simulator>. That domain is served by roboglot-web, a separate
 Vercel project, whose build fetches this directory into its own `/simulator` at a pinned commit,
 so the bytes a visitor gets are that project's build output rather than anything this repository
 deploys. There is no build step at either end: what ships is `web/` as it stands, because
@@ -16,19 +16,19 @@ everything heavy here is a CDN URL the page fetches at run time.
 ### Why the paths are absolute
 
 Every local reference in `index.html` is `/simulator/...` rather than `style.css`. That is not
-a style choice. quackd-web sets `trailingSlash: false`, so a visitor to `/simulator/` is
+a style choice. roboglot-web sets `trailingSlash: false`, so a visitor to `/simulator/` is
 redirected to `/simulator`, and from *that* URL a relative `style.css` resolves to
 `/style.css` — the landing page's root, not this directory. The HTML would arrive and every
 asset under it would 404. `tests/test_web.py` fails if a relative path comes back.
 
 `vercel.json` at the repository root carries the same mount, rewriting `/simulator/*` to `/*`,
 so this directory would answer on the mount as well as at its own root if it were ever deployed
-on its own. It is not today: quackd-web is the only Vercel project, and this config is here so
+on its own. It is not today: roboglot-web is the only Vercel project, and this config is here so
 that a standalone deploy would not serve an unstyled page.
 
 ### The link back
 
-The mount is one direction of a loop. quackd-web points at `/simulator` from five places — its
+The mount is one direction of a loop. roboglot-web points at `/simulator` from five places — its
 hero, its loop section, its try section, its footer and the nav — and lists that address in its
 `sitemap.xml`, so a visitor can arrive here having never seen the product page: from a shared
 link, from search, from an agent reading the sitemap.
@@ -36,9 +36,9 @@ link, from search, from an agent reading the sitemap.
 This page answers in the header with one deliberate way back — the `What is this?` link, which
 used to open the GitHub README and now opens the landing page, because a README is for somebody
 who has already decided to care and this visitor has just watched a duck walk — plus the brand
-lockup (the mark and the word `quackd`, wrapped in an anchor inside the `h1`, which stays an
+lockup (the mark and the word `roboglot`, wrapped in an anchor inside the `h1`, which stays an
 `h1`), which is home on every site on the web and was inert here. Both are the absolute
-`https://www.quackd.org/` rather than a bare `/`, because `/` here is the mount's parent in
+`https://www.roboglot.org/` rather than a bare `/`, because `/` here is the mount's parent in
 production and, under `serve.py`, a redirect straight back to `/simulator/` — a relative link
 would loop in development. `tests/test_web.py` fails if that link goes.
 
@@ -60,7 +60,7 @@ stylesheet and the script, because nothing answers on `/simulator` at the root.
 
 Nothing in this directory is a robot. Everything heavy is fetched by the visitor's browser
 from whoever owns it, which is also how the licences stay clean — the Microduck's meshes
-are CC BY-NC-SA 4.0 and quackd redistributes none of them.
+are CC BY-NC-SA 4.0 and Roboglot redistributes none of them.
 
 | What | From | Size |
 |---|---|---|
@@ -79,7 +79,7 @@ named in `SECURITY.md` with the rest. Neither serves script, so neither can exec
 page the way the jsDelivr tags can, and both families have a full fallback stack behind them
 in `style.css`, so a visitor who blocks them loses the typeface and nothing else.
 
-What the page does serve from this directory is three PNGs, and they are quackd's own:
+What the page does serve from this directory is three PNGs, and they are Roboglot's own:
 `assets/duck-mark.png` is the mark in the header and on the loading panel,
 `assets/favicon-96.png` is the tab icon and `assets/apple-touch-icon.png` the home-screen
 one. They replaced a 🦆 emoji and an inline-SVG favicon built around the same emoji. There
@@ -89,10 +89,10 @@ are no other images: the arena is drawn with WebGL and the film grain is a data 
 nothing else in the repository shows this one. `tests/test_web.py` checks that this page asks
 for it.
 
-Neither it nor `assets/favicon-96.png` is drawn here. Both are cut out of quackd-web's
+Neither it nor `assets/favicon-96.png` is drawn here. Both are cut out of roboglot-web's
 `src/assets/duck-source.png` by [`make_mark.py`](make_mark.py), which is in this directory
 because until 0.9 nothing recorded how they were made, and both had shipped with the bottom of
-the duck's head sliced off at the image boundary. Run it after a checkout of quackd-web, and
+the duck's head sliced off at the image boundary. Run it after a checkout of roboglot-web, and
 fix that repository's own copies at the same time. `assets/apple-touch-icon.png` is not one of
 its outputs: that head was already whole and it sits on a plate the script does not redraw.
 
@@ -117,27 +117,27 @@ to proxy it through. Every call is billed to you.
   documents no `tool_choice` at all and so can only be asked rather than told, and Qwen, Kimi
   and Meta take `auto`. DeepSeek is asked with `required` and with its thinking turned off,
   because thinking mode refuses `required`. Those `tool_choice` values and DeepSeek's thinking
-  switch are copied from the provider classes in `quackd/agent/providers/`. The page sends no
+  switch are copied from the provider classes in `roboglot/agent/providers/`. The page sends no
   `parallel_tool_calls`, which the CLI sends as false to OpenAI, Grok, Mistral and Meta, so a
   turn may come back with several calls, and the page takes the first.
 - **OpenRouter** is OpenAI-shaped too, and a router: what the page sends reaches OpenRouter and
   the provider it picks for the LLM. The page asks it the way
-  `quackd/agent/providers/openrouter.py` does. Every row is told to call a tool except the two
+  `roboglot/agent/providers/openrouter.py` does. Every row is told to call a tool except the two
   Claude rows, which refuse a forced call and are asked with `auto`. Every request carries
   `provider: {"require_parameters": true}`, so OpenRouter routes only to an endpoint that
-  honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name quackd
+  honours what was asked, and `HTTP-Referer` and `X-OpenRouter-Title` headers that name Roboglot
   and say nothing about you. It is never moved to the Responses API, and an LLM's
   `reasoning_details` go back on the turn that made the call. The dropdown holds the seven rows
   the catalogue carries. The CLI can also name an id they leave out, a `:free` one included,
-  checked against OpenRouter's list when a run starts unless quackd refuses its spelling first,
-  and the page cannot. No OpenRouter LLM has answered a real quackd request, from this page or
+  checked against OpenRouter's list when a run starts unless Roboglot refuses its spelling first,
+  and the page cannot. No OpenRouter LLM has answered a real Roboglot request, from this page or
   the CLI.
 - **GLM is not offered here, and is on the CLI.** See below.
 - **Some OpenAI reasoning LLMs** refuse function tools on `/v1/chat/completions` and
   name `/v1/responses` in the 400. Every verb here is a function tool, so the page reads
   that answer, moves the run to the Responses API and stays there for the rest of it.
   `gpt-6-astra` is one such LLM and needs nothing set. This is the same switch
-  `quackd/agent/providers/openai.py` makes for the CLI, kept in step by
+  `roboglot/agent/providers/openai.py` makes for the CLI, kept in step by
   `test_the_browser_and_python_agree_on_which_400_means_responses`. Where the catalogue
   already records `api: "responses"` for an LLM, the page opens the run there and the failed
   call is never made. The 400 reader stays for every LLM it does not record, which is any id
@@ -151,9 +151,9 @@ to proxy it through. Every call is billed to you.
 
 The LLM field is a dropdown, not a text box. It is grouped by the catalogue's own statuses —
 current, legacy, preview, specialised, open — and it opens on the vendor's default, so the
-page offers exactly what `quackd list-models` does and a typo cannot reach a vendor at all.
+page offers exactly what `roboglot list-models` does and a typo cannot reach a vendor at all.
 
-`quackd/agent/providers/catalogue.py` is the only place an LLM is ever added. `web/src/catalogue.js`
+`roboglot/agent/providers/catalogue.py` is the only place an LLM is ever added. `web/src/catalogue.js`
 is generated from it:
 
 ```bash
@@ -168,17 +168,18 @@ Every cloud vendor is in `catalogue.js`, including GLM, which the page cannot ca
 stays one to one with Python; `PROVIDERS` in `src/providers.js` is what decides the dropdown.
 
 Local is the exception and keeps its free-text box. A local server serves whatever you pulled,
-so quackd has no list to offer and does not pretend to (ADR-0014).
+so Roboglot has no list to offer and does not pretend to (ADR-0014).
 
 ## Which vendors this page can offer, and why GLM is not one
 
 The CLI calls a vendor from your machine. This page calls it from your browser, which means a
 vendor that refuses a cross-origin preflight cannot be offered here at all, however well it
-works under `quackd run`. So it was measured rather than assumed, on **2026-09-12**, with an
-`OPTIONS` preflight to each vendor's `/chat/completions` from both origins this page is served
-from (`http://localhost:8000` and `https://www.quackd.org`), asking for `POST` with
-`authorization` and `content-type`. OpenRouter was measured the same way on **2026-10-06**,
-also asking for `http-referer` and `x-openrouter-title`, the two headers the page sends it:
+works under `roboglot run`. So it was measured rather than assumed, on **2026-09-12**, with an
+`OPTIONS` preflight to each vendor's `/chat/completions` from both origins this page was served
+from then, `http://localhost:8000` and the public site, asking for `POST` with `authorization`
+and `content-type`; the site's new address, `https://www.roboglot.org`, was not measured.
+OpenRouter was measured the same way on **2026-10-06**, also asking for `http-referer` and
+`x-openrouter-title`, the two headers the page sends it:
 
 | Vendor | Preflight | Verdict |
 |---|---|---|
@@ -199,7 +200,7 @@ reads that as a refusal and never sends the POST. The `POST` itself does carry
 `Authorization` header and a JSON content type is always preflighted, so the browser never
 reaches it. Nothing the page can do fixes that from this side. It needs a header from Z.ai.
 
-GLM therefore stays on the CLI, where it works — `quackd run --llm glm` is unaffected —
+GLM therefore stays on the CLI, where it works — `roboglot run --llm glm` is unaffected —
 and stays in `catalogue.js` so the two LLM lists remain identical. `tests/test_web.py` fails
 if a vendor drops out of `PROVIDERS` without being named in this file, so this cannot happen
 quietly to the next vendor.
@@ -233,24 +234,24 @@ read it. The absence is the argument the page is making, and it is the reason th
 sits a centimetre from the box rather than behind a mode.
 
 Underneath there are exactly two learned policies: `alpha_stand` stands the duck up and
-`alpha_walking` walks it. The kick is quackd's own scripted impulse and not a policy, exactly
+`alpha_walking` walks it. The kick is Roboglot's own scripted impulse and not a policy, exactly
 as in `sim3d`. None of it reads English.
 
 ## The switch, and what it decides now
 
-`quackd is on` runs the loop: a system prompt carrying the contract, one verb per turn, an
+`roboglot is on` runs the loop: a system prompt carrying the contract, one verb per turn, an
 executor that checks the verb against the allowlist before the robot moves, and a budget that
 ends the run whatever the LLM thinks.
 
-`quackd is off` removes that layer, and only that layer. The physics, the robot and its two
+`roboglot is off` removes that layer, and only that layer. The physics, the robot and its two
 policies are identical; what is gone is anything that reads English, so typing a sentence
 gets the honest answer the page prints — this robot understands a twist, three numbers, and a
 walking policy that turns them into steps, and it has never seen your words. It is not a
 rigged comparison against a worse LLM: there is no LLM,
-because before quackd there was nowhere to put one.
+because before Roboglot there was nowhere to put one.
 
 What the switch no longer decides is whether you may drive. It used to: the cockpit was
-hidden while quackd was on and the keydown handler returned early on the toggle's state, so
+hidden while Roboglot was on and the keydown handler returned early on the toggle's state, so
 the demo's argument arrived as an either/or. The keyboard was never the layer, and it is not
 gated on the layer any more.
 
@@ -320,7 +321,7 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
   the manifest's fifteen and none of the three composites, which is what Python's own prompt
   tells an LLM to prefer. `DEFAULT_CONTRACT` allows exactly those seven with 18 steps and 3
   minutes, so it is the same verb definitions and the same allowlist-and-budget machinery as
-  Python, not the same allowlist and not the same budget as any `.duck` in `ducks/`.
+  Python, not the same allowlist and not the same budget as any `.glot` in `tasks/`.
 - **No datasheet, and no feasibility gate.** Python hands its pilot the body as numbers and
   refuses every verb that moves until the LLM has answered `assess_task` — the release's
   headline guarantee, and the one on that list the page does not have. `pilot.js` is a
@@ -342,7 +343,7 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
   xorshift and in Python by numpy's PCG64. The spawn ranges and the rejection rules match; the
   stream does not, so seed 3 is a different arena in each.
 - **No `extra_body`.** The CLI can merge a JSON object into every request body, with
-  `--extra-body` or `QUACKD_EXTRA_BODY`, for a field a server wants and quackd never sends.
+  `--extra-body` or `ROBOGLOT_EXTRA_BODY`, for a field a server wants and Roboglot never sends.
   This page has no such door, so an LLM that has to be told something in the body, Qwen3 and
   its thinking being the one that came up, cannot be told it here.
 - **No prompt cache and no effort setting.** The CLI marks every Claude request for Anthropic's
@@ -354,7 +355,7 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
   LLM. Here the pre-filled goal still needs a key, or a local server, before anything
   happens.
 - **OpenRouter's seven rows and no others.** The CLI can also name an id the rows leave out,
-  checked against OpenRouter's public LLM list when a run starts unless quackd refuses its
+  checked against OpenRouter's public LLM list when a run starts unless Roboglot refuses its
   spelling first. The page offers the rows the catalogue carries in a dropdown, with no free text
   for any cloud vendor.
 
@@ -364,13 +365,13 @@ Deliberately, and none of it is a bug. This list is the canonical one: `README.m
 |---|---|
 | `index.html` | the page: the fonts, the onnxruntime tag, the copy, the keycap legend |
 | `serve.py` | the mount, locally: stdlib only, serves this directory under `/simulator` the way the deploy does |
-| `make_mark.py` | cuts `assets/duck-mark.png` and `assets/favicon-96.png` out of quackd-web's duck. Run it after that repository's art changes |
+| `make_mark.py` | cuts `assets/duck-mark.png` and `assets/favicon-96.png` out of roboglot-web's duck. Run it after that repository's art changes |
 | `build_catalogue.py` | writes `src/catalogue.js` from Python's catalogue. Stdlib only. Run it after adding an LLM |
-| `style.css` | hand-authored, in the quackd-web design language |
-| `assets/` | quackd's own mark: the header logo, the favicon, the touch icon |
+| `style.css` | hand-authored, in the roboglot-web design language |
+| `assets/` | Roboglot's own mark: the header logo, the favicon, the touch icon |
 | `src/microduck.js` | the robot: MJCF, the 50 Hz loop, the policy, the gait floor |
-| `src/pilot.js` | quackd itself: the clock, the verbs, the contract, the loop |
-| `src/catalogue.js` | GENERATED. the LLM list, from `quackd/agent/providers/catalogue.py` |
+| `src/pilot.js` | Roboglot itself: the clock, the verbs, the contract, the loop |
+| `src/catalogue.js` | GENERATED. the LLM list, from `roboglot/agent/providers/catalogue.py` |
 | `src/providers.js` | one tool call from any cloud vendor the page offers or a local server |
 | `src/view.js` | three.js built from the compiled model's own geoms |
 | `src/record.js` | canvas capture, and the post the Share button writes |

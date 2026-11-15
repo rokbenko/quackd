@@ -1,6 +1,6 @@
 """Pictures that come with the task: what loads, what is refused, and what each one is called.
 
-`quackd run --image sketch.png` reads a file a person named, and everything it accepts has to
+`roboglot run --image sketch.png` reads a file a person named, and everything it accepts has to
 leave here as PNG bytes small enough to ride in every request of the whole run. So these tests
 build real files with PIL and read the loader's answer back through PIL, rather than trusting
 that a function that returned without raising produced something a provider could carry.
@@ -16,8 +16,8 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 
-from quackd.agent import images
-from quackd.agent.images import TaskImageError, load_task_images
+from roboglot.agent import images
+from roboglot.agent.images import TaskImageError, load_task_images
 
 PNG_MAGIC = b"\x89PNG"
 
@@ -52,9 +52,9 @@ def decoded(png: bytes) -> tuple[str, tuple[int, int]]:
         return img.format or "", img.size
 
 
-def test_every_format_quackd_takes_comes_back_as_png(tmp_path: Path) -> None:
+def test_every_format_roboglot_takes_comes_back_as_png(tmp_path: Path) -> None:
     """A JPEG is lossy, a WebP is a different codec and a GIF arrives in palette mode, and
-    every provider quackd speaks to is handed a PNG. The magic bytes are the only proof that
+    every provider Roboglot speaks to is handed a PNG. The magic bytes are the only proof that
     the re-encode happened rather than the source file being passed along."""
     paths = [
         str(drawing(tmp_path / "sketch.png")),
@@ -160,13 +160,13 @@ def test_a_file_that_is_not_a_picture_is_refused_by_name(tmp_path: Path) -> None
         load_task_images([str(notes)])
 
     assert str(notes) in str(refusal.value)
-    assert "not a picture quackd can read" in str(refusal.value)
+    assert "not a picture Roboglot can read" in str(refusal.value)
 
 
-def test_a_format_quackd_does_not_send_is_refused_and_lists_the_ones_it_does(
+def test_a_format_roboglot_does_not_send_is_refused_and_lists_the_ones_it_does(
     tmp_path: Path,
 ) -> None:
-    """PIL reads far more than quackd sends. A netpbm file decodes perfectly well and is still
+    """PIL reads far more than Roboglot sends. A netpbm file decodes perfectly well and is still
     refused, because the refusal's job is to tell a person which file to convert. It cannot
     say what the file is: no decoder off the list is asked (tests/test_image_formats.py)."""
     netpbm = tmp_path / "raw.ppm"
@@ -185,7 +185,7 @@ def test_a_picture_whose_exif_cannot_be_read_is_one_line_and_not_a_traceback(
     tmp_path: Path,
 ) -> None:
     """`exif_transpose` reads the block with PIL's TIFF reader, which raises `SyntaxError` for one
-    that is no TIFF, and `quackd run --image` ended in a traceback over a picture that opens."""
+    that is no TIFF, and `roboglot run --image` ended in a traceback over a picture that opens."""
     broken = tmp_path / "broken.png"
     Image.new("RGB", (16, 16), "white").save(broken, format="PNG", exif=b"this is no tiff")
 
@@ -340,8 +340,8 @@ def test_a_picture_claiming_to_be_enormous_is_one_line_and_not_a_traceback(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PIL raises `DecompressionBombError` from inside `Image.open`, before any check of
-    quackd's own runs. It is not an `OSError`, so every clause here used to miss it and a
-    `quackd run --image` ended in a traceback rather than in the one line every other bad
+    Roboglot's own runs. It is not an `OSError`, so every clause here used to miss it and a
+    `roboglot run --image` ended in a traceback rather than in the one line every other bad
     file gets.
 
     The cap is lowered rather than a real bomb being written, because the point is the class
@@ -351,7 +351,7 @@ def test_a_picture_claiming_to_be_enormous_is_one_line_and_not_a_traceback(
     with pytest.raises(TaskImageError) as caught:
         load_task_images([str(path)])
     assert str(path) in str(caught.value)
-    assert "larger than anything quackd will decode" in str(caught.value)
+    assert "larger than anything Roboglot will decode" in str(caught.value)
 
 
 def test_a_sixteen_bit_picture_is_scaled_into_a_byte_rather_than_clipped(
@@ -414,7 +414,7 @@ def test_a_picture_over_the_bomb_limit_refuses_instead_of_printing_a_warning(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """PIL raises above twice its limit and merely *warns* between the limit and twice it, and
-    that warning went to the terminal as a raw site-packages line in the middle of quackd's own
+    that warning went to the terminal as a raw site-packages line in the middle of Roboglot's own
     output, after which the run carried on as though nothing had happened."""
     path = drawing(tmp_path / "big.png", size=(400, 400))
     monkeypatch.setattr(Image, "MAX_IMAGE_PIXELS", 100)
@@ -422,4 +422,4 @@ def test_a_picture_over_the_bomb_limit_refuses_instead_of_printing_a_warning(
         warnings.simplefilter("error")  # any warning that escaped would raise here instead
         with pytest.raises(TaskImageError) as caught:
             load_task_images([str(path)])
-    assert "larger than anything quackd will decode" in str(caught.value)
+    assert "larger than anything Roboglot will decode" in str(caught.value)

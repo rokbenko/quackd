@@ -8,25 +8,25 @@
 ## On a robot's own computer
 
 Three commands, on the robot's Jetson, as the user the robot's software runs as. Not as root:
-`quackd onboard` refuses root.
+`roboglot onboard` refuses root.
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv tool install "quackd[onboard]"
-quackd onboard
+uv tool install "roboglot[onboard]"
+roboglot onboard
 ```
 
-The first installs uv. The second installs quackd with what a robot needs: zeroconf for the LAN, an
+The first installs uv. The second installs Roboglot with what a robot needs: zeroconf for the LAN, an
 OpenAI-compatible client for its brain, and, on Linux, bleak and dbus-fast for Bluetooth through
-BlueZ. quackd needs Python 3.11 or later and JetPack 6 ships 3.10, so on JetPack 6 write
-`uv tool install --python 3.12 "quackd[onboard]"`, and uv fetches a Python of its own for quackd.
+BlueZ. Roboglot needs Python 3.11 or later and JetPack 6 ships 3.10, so on JetPack 6 write
+`uv tool install --python 3.12 "roboglot[onboard]"`, and uv fetches a Python of its own for Roboglot.
 Without it uv stops with `the current Python version (3.10.12) does not satisfy Python>=3.11`.
 
-`quackd onboard` is a wizard, and it does the rest in this order:
+`roboglot onboard` is a wizard, and it does the rest in this order:
 
 1. **The board.** It finds the Jetson by itself, an Orin or a Thor, and checks that BlueZ can
    advertise. On anything else it stops and says why, and on another robot's Linux computer
-   `quackd onboard --board generic` names the computer instead.
+   `roboglot onboard --board generic` names the computer instead.
 2. **About six questions**: the robot's name, what it is, its owner's label and contact, how a
    person stops it, its brain, a provider and LLM with its key typed hidden or an LLM server's
    URL, and how close another robot must come before the two meet.
@@ -39,12 +39,12 @@ Without it uv stops with `the current Python version (3.10.12) does not satisfy 
 6. **Address privacy.** It offers to switch on BlueZ's address privacy, so the radio's own address
    changes too, and changes nothing without asking.
 7. **The service.** It prints the sudo lines it is about to run, installs and starts
-   `quackd-onboard.service`, and shows its status.
+   `roboglot-onboard.service`, and shows its status.
 
 From then on the robot announces itself to robots that come close, checks their passports, and lets
 its brain talk to the ones you trust. An edit to the passport section reaches other robots once
-`quackd onboard sign` has signed it, with your passphrase, and the rest of the file takes effect when
-the service reloads it ([quackd.md](quackd.md)).
+`roboglot onboard sign` has signed it, with your passphrase, and the rest of the file takes effect when
+the service reloads it ([roboglot.md](roboglot.md)).
 
 > [!WARNING]
 > Nobody has run these three commands on a Jetson yet, or the service over a real Bluetooth radio.
@@ -63,14 +63,14 @@ One command plays five acts between two simulated robots: a mock Unitree G1 EDU 
 courier company, and a mock Agile ONE SN belonging to a household.
 
 ```bash
-uv tool install "quackd[onboard]"
-quackd onboard demo --offline
+uv tool install "roboglot[onboard]"
+roboglot onboard demo --offline
 ```
 
 With `--keep ~/demo`, so its records stay:
 
 ```
-$ quackd onboard demo --offline --keep ~/demo
+$ roboglot onboard demo --offline --keep ~/demo
 act strangers: they meet over the link as strangers, and neither brain sees the 
 other's name
 household | 20:19:04 radio: 339ce23bb9491852 is near, about 1.39 m (-62.1 >= 
@@ -81,7 +81,7 @@ household | 20:19:04 radio: the link to 339ce23bb9491852 opened
 pilot) met
 household | 20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) met
 household | 20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) 
-said: hello from a quackd robot, staying where I am
+said: hello from a roboglot robot, staying where I am
 household | 20:19:05 g1-edu-mock: a meeting starts
 household | 20:19:05 radio: met 339ce23bb9491852 over the link
 household | 20:19:05 the meeting ended: success
@@ -89,7 +89,7 @@ household | 20:19:05 the meeting ended: success
   courier | 20:19:05 radio: 0b73bc256e01cdf6 is near, about 0.98 m (-58.8 >= 
 -65.6 dBm for 1.0 s)
   courier | 20:19:05 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
-pilot) said: hello from a quackd robot, staying where I am
+pilot) said: hello from a roboglot robot, staying where I am
   courier | 20:19:08 the meeting ended: success
 act appointment: they meet as known robots, and each brain hears the other by 
 name
@@ -103,13 +103,13 @@ household | 20:19:19 radio: the link to 8a98effc78cab7f1 opened
 met
 household | 20:19:19 g1-edu-mock (known, g1-edu-mock to the pilot) met
 household | 20:19:19 g1-edu-mock (known, g1-edu-mock to the pilot) said: hello 
-from a quackd robot, staying where I am
+from a roboglot robot, staying where I am
 household | 20:19:19 g1-edu-mock: a meeting starts
 household | 20:19:19 radio: met 8a98effc78cab7f1 over the link
 household | 20:19:19 the meeting ended: success
   courier | 20:19:19 agile-one-sn-mock: a meeting starts
   courier | 20:19:19 agile-one-sn-mock (known, agile-one-sn-mock to the pilot) 
-said: hello from a quackd robot, staying where I am
+said: hello from a roboglot robot, staying where I am
   courier | 20:19:22 the meeting ended: success
 act office: they share a network, so the hello goes over the LAN
 household | 20:19:32 radio: a880b71f3b96fcf5 is near, about 1.46 m (-62.6 >= 
@@ -119,11 +119,11 @@ household | 20:19:32 radio: a880b71f3b96fcf5 is near, about 1.46 m (-62.6 >=
 household | 20:19:33 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) met
 household | 20:19:33 g1-edu-mock: a meeting starts
 household | 20:19:33 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) 
-said: hello from a quackd robot, staying where I am
+said: hello from a roboglot robot, staying where I am
   courier | 20:19:33 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
 pilot) met
   courier | 20:19:33 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
-pilot) said: hello from a quackd robot, staying where I am
+pilot) said: hello from a roboglot robot, staying where I am
   courier | 20:19:33 agile-one-sn-mock: a meeting starts
   courier | 20:19:33 radio: met bdc6d2db764619e2 over the LAN
   courier | 20:19:33 the meeting ended: success
@@ -179,7 +179,7 @@ every record is in /home/robot/demo
 
 `--offline` flies both brains on a scripted pilot, so it needs no key and costs nothing, and CI runs
 it that way on Windows, macOS and Linux. Without it, `--llm` and `--base-url` choose the brain both
-robots use, as they do for `quackd run`. The five acts:
+robots use, as they do for `roboglot run`. The five acts:
 
 | Act | What happens |
 |---|---|
@@ -198,11 +198,11 @@ expected against what it saw, and exits 0 only when every act matched.
 Each robot gets a folder of its own. The same wizard sets each up, with `--board sim`:
 
 ```bash
-quackd onboard --board sim --dir ~/sim/one
+roboglot onboard --board sim --dir ~/sim/one
 ```
 
 ```
-$ quackd onboard --board sim --dir ~/sim/one
+$ roboglot onboard --board sim --dir ~/sim/one
 ✓ the sim board: this computer stands in for a robot's own
 this robot's name (lower case, digits, - and _) [robot-01]: one
 what it is: humanoid, quadruped, biped, wheeled or tracked [humanoid]: humanoid
@@ -220,7 +220,7 @@ a passphrase for your owner key (12 characters at least):
 Repeat for confirmation: 
 ✓ signed /home/robot/sim/one/passport.jws (a new owner key: keep its passphrase,
 nothing recovers it)
-start it with: quackd onboard serve --dir /home/robot/sim/one --board sim
+start it with: roboglot onboard serve --dir /home/robot/sim/one --board sim
 ```
 
 and again with `--dir ~/sim/two`. On the sim board it installs no service and offers no address
@@ -228,8 +228,8 @@ privacy. It prints the command that runs the service in a terminal instead, and 
 given a place in the simulated room, one standing still and one walking toward it from 6 m:
 
 ```bash
-quackd onboard serve --board sim --dir ~/sim/one --path 0,0@0
-quackd onboard serve --board sim --dir ~/sim/two --path "6,0@0 1,0@8"
+roboglot onboard serve --board sim --dir ~/sim/one --path 0,0@0
+roboglot onboard serve --board sim --dir ~/sim/two --path "6,0@0 1,0@8"
 ```
 
 Each prints what it does, one line at a time. Robot one, then robot two, until their first meeting ended:
@@ -239,7 +239,7 @@ Each prints what it does, one line at a time. Robot one, then robot two, until t
 20:18:17 radio: 2ef01e9a77341d05 is near, about 1.52 m (-63.0 >= -65.6 dBm for 1.2 s)
 20:18:17 two (stranger, stranger-0406f179 to the pilot) met
 20:18:18 two: a meeting starts
-20:18:18 two (stranger, stranger-0406f179 to the pilot) said: hello from a quackd robot, staying where I am
+20:18:18 two (stranger, stranger-0406f179 to the pilot) said: hello from a roboglot robot, staying where I am
 20:18:21 the meeting ended: success
 ```
 
@@ -248,7 +248,7 @@ Each prints what it does, one line at a time. Robot one, then robot two, until t
 20:18:17 radio: 55fb788ac8f66da8 is near, about 1.45 m (-62.5 >= -65.6 dBm for 1.0 s)
 20:18:17 radio: meeting 55fb788ac8f66da8
 20:18:18 one (stranger, stranger-00a1a74a to the pilot) met
-20:18:18 one (stranger, stranger-00a1a74a to the pilot) said: hello from a quackd robot, staying where I am
+20:18:18 one (stranger, stranger-00a1a74a to the pilot) said: hello from a roboglot robot, staying where I am
 20:18:18 one: a meeting starts
 20:18:18 radio: met 55fb788ac8f66da8 over the LAN
 20:18:18 the meeting ended: success
@@ -258,17 +258,17 @@ Once the second robot is within the 2 m `robot.yaml` asks for unless you answere
 two meet, and each shows the other in its status and in the robots it met:
 
 ```bash
-quackd onboard status --dir ~/sim/one
-quackd onboard met --dir ~/sim/one
+roboglot onboard status --dir ~/sim/one
+roboglot onboard met --dir ~/sim/one
 ```
 
 ```
-$ quackd onboard status --dir ~/sim/one
+$ roboglot onboard status --dir ~/sim/one
 ╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
 │ passport  checks out, until 2027-10-28T20:17:54Z                             │
 │ board     sim: a computer standing in for a robot's own                      │
 │ brain     fake                                                               │
-│ radio     sim, ready: the sim air at /home/robot/.quackd/sim-air, on network │
+│ radio     sim, ready: the sim air at /home/robot/.roboglot/sim-air, on network │
 │           home                                                               │
 │           advertising, scanning (4.5 passport adverts a second), taking      │
 │           links; 0 links open                                                │
@@ -283,7 +283,7 @@ $ quackd onboard status --dir ~/sim/one
 │ run       idle                                                               │
 │ met       2026-10-28T20:18:17Z two (stranger)                                │
 ╰──────────────────────────────────────────────────────────────────────────────╯
-$ quackd onboard met --dir ~/sim/one
+$ roboglot onboard met --dir ~/sim/one
 met by one (1)                                           
 ╭──────────────────┬───────┬──────────┬─────────────────╮
 │ when             │ robot │ short id │ tier or refusal │
@@ -292,6 +292,6 @@ met by one (1)
 ╰──────────────────┴───────┴──────────┴─────────────────╯
 ```
 
-They are strangers to each other, so neither brain hears what the other says. `quackd onboard pin`
-with the other's name changes that from the next word it says, and [quackd.md](quackd.md#pinning)
+They are strangers to each other, so neither brain hears what the other says. `roboglot onboard pin`
+with the other's name changes that from the next word it says, and [roboglot.md](roboglot.md#pinning)
 shows it.

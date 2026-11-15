@@ -1,5 +1,5 @@
-"""The Microduck's own map, `mapd`, as quackd reaches it beside robotd
-(`quackd_microduck.transports.mapd`): a fake of each on a TCP port, as a tunnel gives them, and
+"""The Microduck's own map, `mapd`, as Roboglot reaches it beside robotd
+(`roboglot_microduck.transports.mapd`): a fake of each on a TCP port, as a tunnel gives them, and
 the source that walks by the map, read without either."""
 
 from __future__ import annotations
@@ -15,17 +15,17 @@ from typing import Any
 
 import pytest
 
-from quackd.space.odometry import OdometrySource, OdometryTrack
-from quackd.space.places import FrameRecord, Place, PlaceBook, PlaceStore
-from quackd.space.pose import Pose2D
-from quackd.space.source import SpatialSourceBase
-from quackd.transport.base import Intent
-from quackd.verbs.places import PLACE_VERBS, GoToPlaceParams
-from quackd.verbs.registry import VerbContext
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck import mapd_upstream_api as mapd_api
-from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
-from quackd_microduck.transports.mapd import (
+from roboglot.space.odometry import OdometrySource, OdometryTrack
+from roboglot.space.places import FrameRecord, Place, PlaceBook, PlaceStore
+from roboglot.space.pose import Pose2D
+from roboglot.space.source import SpatialSourceBase
+from roboglot.transport.base import Intent
+from roboglot.verbs.places import PLACE_VERBS, GoToPlaceParams
+from roboglot.verbs.registry import VerbContext
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck import mapd_upstream_api as mapd_api
+from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+from roboglot_microduck.transports.mapd import (
     FINGERPRINT_STOPS,
     LOST_WORDS,
     STALE_S,
@@ -283,7 +283,7 @@ def test_odometry_begun_again_since_mapds_state_carries_nothing() -> None:
     assert fix.pose is not None and (fix.pose.x, fix.pose.y) == (2.0, 1.0)
 
 
-def test_mapds_words_for_not_knowing_are_quackds_and_an_unknown_one_is_lost_too() -> None:
+def test_mapds_words_for_not_knowing_are_roboglots_and_an_unknown_one_is_lost_too() -> None:
     assert set(LOST_WORDS) == set(mapd_api.MAPD_LOST_WORDS.name.split(", "))
     source, track = _source()
     _odometry(source, track, 0.0, 0.0, 0.0, 10.0)
@@ -387,7 +387,7 @@ class _Printed(SpatialSourceBase):
         return self.prints
 
     def resolve_frame(self, records: Any) -> Any:
-        from quackd.space.pose import FrameRef
+        from roboglot.space.pose import FrameRef
 
         return FrameRef("map", "map:new", persistent=True)
 
@@ -413,7 +413,7 @@ def test_a_map_address_is_kept_with_the_robot_and_left_out_of_the_file_while_emp
 ) -> None:
     import json
 
-    from quackd.registry import Registry, RobotEntry
+    from roboglot.registry import Registry, RobotEntry
 
     reg = Registry(tmp_path)
     reg.add_robot(RobotEntry(name="duck", spec="microduck:jsonrpc", map_address="tcp://h:9871"))
@@ -429,8 +429,8 @@ def test_a_map_address_is_kept_with_the_robot_and_left_out_of_the_file_while_emp
 
 
 def test_a_map_address_is_refused_by_name_where_nothing_reads_one() -> None:
-    from quackd.adapters.base import AdapterError
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.base import AdapterError
+    from roboglot.adapters.factory import make_adapter
 
     with pytest.raises(AdapterError, match="keeps its own map of the room"):
         make_adapter("microduck:sim2d", map_address="tcp://127.0.0.1:9871")
@@ -474,8 +474,8 @@ def _fakes_on_their_own_loop() -> Iterator[tuple[FakeRobotd, FakeMapd]]:
 
 
 def _probe(map_address: str | None) -> Any:
-    from quackd import doctor
-    from quackd_microduck import describe
+    from roboglot import doctor
+    from roboglot_microduck import describe
 
     with _fakes_on_their_own_loop() as (robot, map_):
         return doctor.probe(
@@ -551,7 +551,7 @@ async def test_a_map_begun_with_a_turn_in_place_is_not_another_map_begun_so(tmp_
         await fake.stop()
 
 
-async def test_a_map_quackd_saw_replaced_is_never_known_again_and_its_places_say_so(
+async def test_a_map_roboglot_saw_replaced_is_never_known_again_and_its_places_say_so(
     tmp_path: Any,
 ) -> None:
     fake = FakeMapd()
@@ -570,7 +570,7 @@ async def test_a_map_quackd_saw_replaced_is_never_known_again_and_its_places_say
         f2 = book.frame()
         door = book.view(book.store.get("door"))  # type: ignore[arg-type]
         await source.close()
-        assert f2 is None or f2.id != f1.id, "the map quackd saw replaced is back"
+        assert f2 is None or f2.id != f1.id, "the map Roboglot saw replaced is back"
         assert door.status == "orphaned" and "wiped" in (door.reason or ""), door
     finally:
         await fake.stop()
@@ -680,7 +680,7 @@ async def test_a_young_maps_frame_outlives_a_blip_in_the_link(tmp_path: Any) -> 
 async def test_the_first_mark_place_beside_mapd_is_kept(robotd: FakeRobotd, mapd: FakeMapd) -> None:
     """The reading carried no frame until something had asked for one, and the place book read
     the reading first, so the first mark of every session was refused as no reading yet."""
-    from quackd.verbs.places import MarkPlaceParams
+    from roboglot.verbs.places import MarkPlaceParams
 
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", map_address=mapd.address)
     adapter = MicroduckAdapter(t)
@@ -701,7 +701,7 @@ class _OddGrid(FakeMapd):
 
 
 def _links() -> list[asyncio.Task[Any]]:
-    return [t for t in asyncio.all_tasks() if t.get_name() == "quackd-mapd-link" and not t.done()]
+    return [t for t in asyncio.all_tasks() if t.get_name() == "roboglot-mapd-link" and not t.done()]
 
 
 async def test_a_grid_that_is_not_mapds_leaves_robotd_connected_by_odometry_and_no_link_open(
@@ -714,7 +714,7 @@ async def test_a_grid_that_is_not_mapds_leaves_robotd_connected_by_odometry_and_
         try:
             assert isinstance(t.spatial, OdometrySource)
             assert t.mapd_report()["state"] == "refused"
-            assert f"answered {mapd_api.MAPD_GRID.name} as quackd did not read it" in (
+            assert f"answered {mapd_api.MAPD_GRID.name} as Roboglot did not read it" in (
                 t.map_warning or ""
             )
             assert not _links(), "mapd's links outlived the probe that refused it"
@@ -783,7 +783,7 @@ async def test_a_link_lost_while_the_other_opens_is_tried_again(monkeypatch: Any
 
 
 def test_a_map_address_is_refused_for_a_body_that_reads_no_map(tmp_path: Any) -> None:
-    from quackd.registry import Registry, RegistryError, RobotEntry
+    from roboglot.registry import Registry, RegistryError, RobotEntry
 
     reg = Registry(tmp_path)
     with pytest.raises(RegistryError, match="reads no map the robot keeps"):
@@ -797,7 +797,7 @@ def test_a_map_address_is_refused_for_a_body_that_reads_no_map(tmp_path: Any) ->
 def test_doctor_refuses_a_map_address_with_no_robot_to_connect_to() -> None:
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     result = CliRunner().invoke(
         app, ["doctor", "--robot", "microduck:jsonrpc", "--map-address", "tcp://127.0.0.1:1"]

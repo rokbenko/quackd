@@ -22,8 +22,8 @@ import pytest
 from rich.console import Console
 from rich.control import Control
 
-from quackd import ui
-from quackd.log import LogEvent
+from roboglot import ui
+from roboglot.log import LogEvent
 
 
 def narrow() -> tuple[Console, io.BytesIO]:
@@ -105,7 +105,7 @@ def test_the_registry_status_emoji_becomes_something_a_codepage_can_carry() -> N
 
 # ── text is data ────────────────────────────────────────────────────────────────────────
 
-MARKUP = "the ball is [behind] the sofa [/think] and [bold] quackd[anthropic]"
+MARKUP = "the ball is [behind] the sofa [/think] and [bold] roboglot[anthropic]"
 
 
 @pytest.mark.parametrize(
@@ -125,7 +125,7 @@ def test_nothing_here_reads_what_somebody_else_wrote_as_markup(renderable: Any) 
     console, buf = wide(400)
     console.print(renderable)
     out = buf.getvalue()
-    for tag in ("[behind]", "[/think]", "[bold]", "quackd[anthropic]"):
+    for tag in ("[behind]", "[/think]", "[bold]", "roboglot[anthropic]"):
         assert tag in out, tag
 
 
@@ -156,7 +156,7 @@ def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:
 
 
 def test_the_renderables_read_the_console_drawing_them_not_the_one_at_import() -> None:
-    """`quackd log` replays onto stdout and a run narrates onto stderr, and tests hand
+    """`roboglot log` replays onto stdout and a run narrates onto stderr, and tests hand
     round buffers of their own. Choosing the glyph when the panel is built gets all three
     wrong, which is why they are deferred."""
     panel = ui.verdict("success", "done")
@@ -241,7 +241,7 @@ def test_the_status_line_names_the_step_and_counts_a_long_wait() -> None:
 
 
 def test_a_turn_asked_again_says_it_is_waiting_rather_than_choosing() -> None:
-    """A failure quackd asks the same turn again after is followed by up to a minute in which
+    """A failure Roboglot asks the same turn again after is followed by up to a minute in which
     nothing happens, and a line about the LLM's answer over that minute says the LLM has
     answered when it is not even being asked. An answer that came still says what it was."""
     console, _ = wide()
@@ -418,7 +418,7 @@ def test_the_status_stack_empties_even_when_the_run_raises() -> None:
 
 def test_installing_the_log_handler_leaves_records_reaching_a_root_handler() -> None:
     """Turning off propagation is the obvious way to stop a record being handled twice, and
-    it would have been wrong: quackd puts no handler on the root logger, so there is nothing
+    it would have been wrong: Roboglot puts no handler on the root logger, so there is nothing
     to stop, and what it would really have stopped is pytest's own caplog, which is how four
     tests read what the MCP server logged."""
     import logging
@@ -431,18 +431,18 @@ def test_installing_the_log_handler_leaves_records_reaching_a_root_handler() -> 
 
     ui.install_logging()
     ui.install_logging()  # twice: it must replace its handler, not stack a second one
-    quackd_log = logging.getLogger("quackd")
-    assert quackd_log.propagate is True
-    assert sum(1 for h in quackd_log.handlers if type(h).__name__ == "RichHandler") == 1
+    roboglot_log = logging.getLogger("roboglot")
+    assert roboglot_log.propagate is True
+    assert sum(1 for h in roboglot_log.handlers if type(h).__name__ == "RichHandler") == 1
 
     root, handler = logging.getLogger(), Capture()
     root.addHandler(handler)
     try:
-        logging.getLogger("quackd.mcp").warning("a line an MCP test would assert on")
+        logging.getLogger("roboglot.mcp").warning("a line an MCP test would assert on")
     finally:
         root.removeHandler(handler)
-        for h in list(quackd_log.handlers):
-            quackd_log.removeHandler(h)
+        for h in list(roboglot_log.handlers):
+            roboglot_log.removeHandler(h)
     assert seen == ["a line an MCP test would assert on"]
 
 
@@ -512,7 +512,7 @@ def test_a_live_region_frame_puts_nothing_in_the_file(tmp_path: Path) -> None:
 
 
 def test_the_blank_lines_in_the_file_are_the_ones_the_run_asked_for(tmp_path: Path) -> None:
-    """`print` is quackd talking and `line` is Rich tidying up after its own live region."""
+    """`print` is Roboglot talking and `line` is Rich tidying up after its own live region."""
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
@@ -526,7 +526,7 @@ def test_the_blank_lines_in_the_file_are_the_ones_the_run_asked_for(tmp_path: Pa
 def test_a_note_reaches_the_file_and_never_the_terminal(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """What you typed at a prompt is echoed by the terminal itself, so quackd never prints it
+    """What you typed at a prompt is echoed by the terminal itself, so Roboglot never prints it
     and a tee cannot see it. Without this the file would hold every question and no answer."""
     console, buf = tee()
     capture = ui.begin_capture()
@@ -543,7 +543,7 @@ def test_attaching_carries_the_buffer_in_with_the_header_first(tmp_path: Path) -
     """The first thing a run prints is its header and the first thing a bad flag prints is an
     error, and neither of them has a run directory to go in yet."""
     console, _ = tee()
-    capture = ui.begin_capture(header=("$ quackd run find-and-kick", ""))
+    capture = ui.begin_capture(header=("$ roboglot run find-and-kick", ""))
     console.print("before there was anywhere to put it")
     assert capture.path is None
     assert list(tmp_path.iterdir()) == []
@@ -551,7 +551,7 @@ def test_attaching_carries_the_buffer_in_with_the_header_first(tmp_path: Path) -
     console.print("and after")
     capture.close()
     assert saved(tmp_path) == (
-        "$ quackd run find-and-kick\n\nbefore there was anywhere to put it\nand after\n"
+        "$ roboglot run find-and-kick\n\nbefore there was anywhere to put it\nand after\n"
     )
 
 
@@ -559,7 +559,7 @@ def test_a_run_that_never_got_a_directory_leaves_nothing_behind(tmp_path: Path) 
     """A command refused on a bad flag has printed a sentence and made no run. It must not
     leave a directory, or a file in somebody else's."""
     console, buf = tee()
-    capture = ui.begin_capture(header=("$ quackd run --robot nonsense",))
+    capture = ui.begin_capture(header=("$ roboglot run --robot nonsense",))
     console.print("error: no adapter called nonsense")
     capture.close()
     assert capture.path is None
@@ -619,7 +619,7 @@ def test_the_screen_keeps_its_colour_and_the_file_carries_none(tmp_path: Path) -
 
 
 ESCAPED = "\x1b[2Jthe ball is \x1b[31mbehind\x1b[0m the sofa"
-"""A goal somebody typed, or a line of a `.duck` fetched off the internet. `ESC[2J` clears
+"""A goal somebody typed, or a line of a `.glot` fetched off the internet. `ESC[2J` clears
 the screen of whoever cats the file and `ESC[31m` repaints the rest of it red."""
 
 
@@ -642,7 +642,7 @@ def test_the_other_characters_that_drive_a_terminal_are_dropped_too(tmp_path: Pa
     """A bell, a carriage return, a window title and a delete. Rich's own set covers the
     bell and the carriage return before either end sees them; the ESC and the DEL are this
     file's to take out, which is why the screen still has both."""
-    said = "\x07the arm stalled\x7f\r\x1b]0;quackd owns your title bar\x07 at 0.3 rad"
+    said = "\x07the arm stalled\x7f\r\x1b]0;Roboglot owns your title bar\x07 at 0.3 rad"
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
@@ -652,7 +652,7 @@ def test_the_other_characters_that_drive_a_terminal_are_dropped_too(tmp_path: Pa
     out = saved(tmp_path)
     for control in ("\x07", "\r", "\x1b", "\x7f"):
         assert control not in out, repr(control)
-    assert out == "the arm stalled]0;quackd owns your title bar at 0.3 rad\n"
+    assert out == "the arm stalled]0;Roboglot owns your title bar at 0.3 rad\n"
 
 
 def test_tab_and_newline_are_layout_and_are_kept(tmp_path: Path) -> None:
@@ -770,12 +770,12 @@ def test_what_the_loggers_said_is_part_of_what_you_saw(
     capture = ui.begin_capture()
     capture.attach(tmp_path)
     ui.install_logging()
-    quackd_log = logging.getLogger("quackd")
+    roboglot_log = logging.getLogger("roboglot")
     try:
-        logging.getLogger("quackd.transport").warning("the camera stopped answering")
+        logging.getLogger("roboglot.transport").warning("the camera stopped answering")
     finally:
-        for handler in list(quackd_log.handlers):
-            quackd_log.removeHandler(handler)
+        for handler in list(roboglot_log.handlers):
+            roboglot_log.removeHandler(handler)
     capture.close()
     capsys.readouterr()
     assert "the camera stopped answering" in saved(tmp_path)

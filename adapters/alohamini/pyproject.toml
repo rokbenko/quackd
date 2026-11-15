@@ -3,31 +3,31 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-alohamini"
+name = "roboglot-alohamini"
 dynamic = ["version"]
-description = "The AlohaMini adapter for quackd. Install it as quackd[alohamini]."
+description = "The AlohaMini adapter for Roboglot. Install it as roboglot[alohamini]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35", "pyzmq>=26"]
+dependencies = ["roboglot>=0.34.0,<0.35", "pyzmq>=26"]
 
 
-[project.entry-points."quackd.adapters"]
-alohamini = "quackd_alohamini"
+[project.entry-points."roboglot.adapters"]
+alohamini = "roboglot_alohamini"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/alohamini/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_alohamini/__init__.py"
+path = "src/roboglot_alohamini/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_alohamini"]
+packages = ["src/roboglot_alohamini"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

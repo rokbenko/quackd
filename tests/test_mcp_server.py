@@ -18,13 +18,13 @@ from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from PIL import Image
 
-from quackd.mcp_server import DuckSession, build_server
-from quackd.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, TransportError
-from quackd.transport.mock import MockTransport
-from quackd.transport.sim2d import Sim2DTransport
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import REST, LeRobotMock
-from quackd_lerobot.verbs import TOL_DEG
+from roboglot.mcp_server import DuckSession, build_server
+from roboglot.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, TransportError
+from roboglot.transport.mock import MockTransport
+from roboglot.transport.sim2d import Sim2DTransport
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import REST, LeRobotMock
+from roboglot_lerobot.verbs import TOL_DEG
 
 TOOLS = {
     # 0.4: six fleet tools
@@ -35,7 +35,7 @@ TOOLS = {
     "robot_assess_task",
     "robot_observe",
     "robot_say",
-    "robot_load_duckfile",
+    "robot_load_glotfile",
     # memory between sessions (docs/guides/memory.md)
     "robot_recall",
     "robot_remember",
@@ -83,7 +83,7 @@ async def test_tools_and_basic_calls() -> None:
     async with connected() as (client, session, transport):
         tools = await client.list_tools()
         assert {t.name for t in tools.tools} == TOOLS
-        from quackd.mcp_server import TOOL_NAMES
+        from roboglot.mcp_server import TOOL_NAMES
 
         assert set(TOOL_NAMES) == TOOLS  # the docs test reads the same constant
         assert not [t.name for t in tools.tools if t.name.startswith("duck_")], (
@@ -138,7 +138,7 @@ async def test_contract_is_enforced_after_loading_a_duck() -> None:
     async with connected() as (client, _session, _transport):
         await _cleared(client)
         assert _data(await client.call_tool("robot_run_verb", {"verb": "kick"}))["ok"] is True
-        loaded = _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))
+        loaded = _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))
         assert loaded["ok"] and loaded["name"] == "hello-world"
         assert "Task" in loaded["instructions"]
         refused = _data(await client.call_tool("robot_run_verb", {"verb": "kick"}))
@@ -152,15 +152,15 @@ async def test_contract_is_enforced_after_loading_a_duck() -> None:
         ]
         assert all(r["ok"] for r in results[:5])
         assert results[5]["ok"] is False and "budget" in results[5]["summary"]
-        bad = _data(await client.call_tool("robot_load_duckfile", {"path": "nope.duck"}))
+        bad = _data(await client.call_tool("robot_load_glotfile", {"path": "nope.glot"}))
         assert bad["ok"] is False
 
 
 async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
-    # regression: `robot_load_duckfile` is a tool the LLM holds, and adopting a contract
+    # regression: `robot_load_glotfile` is a tool the LLM holds, and adopting a contract
     # built a fresh Budget, so a pilot out of steps could load a wider duck and carry on
     async with connected() as (client, session, _transport):
-        assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
+        assert _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))["ok"]
         results = [
             _data(await client.call_tool("robot_run_verb", {"verb": "quack"})) for _ in range(6)
         ]
@@ -169,7 +169,7 @@ async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
         assert spent is not None and spent.steps == 5
 
         # find-and-kick allows more steps than hello-world, and the five are still gone
-        loaded = _data(await client.call_tool("robot_load_duckfile", {"path": "find-and-kick"}))
+        loaded = _data(await client.call_tool("robot_load_glotfile", {"path": "find-and-kick"}))
         assert loaded["ok"] and "already spent" in loaded["note"]
         carried = session.executor.budget
         assert carried is not None and carried is not spent
@@ -181,17 +181,17 @@ async def test_reloading_a_duck_keeps_the_failure_tally() -> None:
     # the same escape by another door: abort_when counts consecutive failures, and adopting
     # a contract used to clear them, so a reload reset the count as well as the budget
     async with connected() as (client, session, _transport):
-        assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
+        assert _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))["ok"]
         session.executor.consecutive_failures["walk"] = 2
-        assert _data(await client.call_tool("robot_load_duckfile", {"path": "find-and-kick"}))["ok"]
+        assert _data(await client.call_tool("robot_load_glotfile", {"path": "find-and-kick"}))["ok"]
         assert session.executor.consecutive_failures == {"walk": 2}
 
 
-async def test_load_duckfile_refuses_flock_ducks() -> None:
-    # regression: only serve() guarded flock ducks; the load tool adopted them silently
+async def test_load_glotfile_refuses_team_ducks() -> None:
+    # regression: only serve() guarded team tasks; the load tool adopted them silently
     async with connected() as (client, session, _transport):
-        res = _data(await client.call_tool("robot_load_duckfile", {"path": "flock-kick"}))
-        assert res["ok"] is False and "flock" in res["error"]
+        res = _data(await client.call_tool("robot_load_glotfile", {"path": "team-kick"}))
+        assert res["ok"] is False and "team" in res["error"]
         assert session.duck is None  # nothing was adopted
 
 
@@ -208,8 +208,8 @@ async def test_dry_run_sends_nothing() -> None:
 
 
 async def test_confirm_gated_verbs_need_yes() -> None:
-    from quackd.verbs.learned import LearnedVerbSpec, register_learned_verb
-    from quackd.verbs.registry import default_registry
+    from roboglot.verbs.learned import LearnedVerbSpec, register_learned_verb
+    from roboglot.verbs.registry import default_registry
 
     registry = default_registry()
     register_learned_verb(
@@ -228,7 +228,7 @@ async def test_confirm_gated_verbs_need_yes() -> None:
 @pytest.mark.parametrize("path", ["hello-world", "find-and-kick"])
 async def test_bundled_ducks_load_by_name(path: str) -> None:
     async with connected() as (client, _session, _transport):
-        assert _data(await client.call_tool("robot_load_duckfile", {"path": path}))["ok"]
+        assert _data(await client.call_tool("robot_load_glotfile", {"path": path}))["ok"]
 
 
 def _flat(lines: list[str]) -> str:
@@ -237,8 +237,8 @@ def _flat(lines: list[str]) -> str:
 
 
 async def test_a_call_comes_back_with_what_happened_behind_it() -> None:
-    """Over MCP the LLM is the pilot, so its own reasoning is not quackd's to show. What
-    quackd can see, it says: the verb, the intents, what came back, and how long it took."""
+    """Over MCP the LLM is the pilot, so its own reasoning is not Roboglot's to show. What
+    Roboglot can see, it says: the verb, the intents, what came back, and how long it took."""
     async with connected() as (client, _session, _transport):
         await _cleared(client)
         result = _data(
@@ -256,7 +256,7 @@ async def test_a_call_comes_back_with_what_happened_behind_it() -> None:
 
 async def test_a_refusal_says_which_rule_refused_it() -> None:
     async with connected() as (client, _session, _transport):
-        assert _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))["ok"]
+        assert _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))["ok"]
         refused = _data(await client.call_tool("robot_run_verb", {"verb": "kick"}))
         assert refused["ok"] is False
         assert "allowlist" in _flat(refused["log"])
@@ -320,7 +320,7 @@ def _blocks(caplog: Any) -> list[list[str]]:
 
 
 async def test_the_stderr_view_logs_a_call_as_one_block_at_its_end(caplog: Any) -> None:
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     async with connected() as (client, _session, _transport):
         await client.call_tool("robot_run_verb", {"verb": "quack", "params": {"text": "hi"}})
     flat = " | ".join(" ".join(m.split()) for m in caplog.messages)
@@ -333,7 +333,7 @@ async def test_the_stderr_view_logs_a_call_as_one_block_at_its_end(caplog: Any) 
 async def test_two_calls_at_once_log_two_blocks_not_an_interleaving(caplog: Any) -> None:
     """One coalescing view shared by concurrent calls merged their bursts and attributed one
     call's intents to the other. Each call is logged as its own block when it ends."""
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     async with connected() as (client, _session, _transport):
         await asyncio.gather(
             client.call_tool(
@@ -349,7 +349,7 @@ async def test_two_calls_at_once_log_two_blocks_not_an_interleaving(caplog: Any)
 async def test_out_of_call_events_reach_stderr_at_once(caplog: Any) -> None:
     """The heartbeat's stop is the last event of a dying session. Buffered behind a
     coalescing view it waited for a next event that never came."""
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     async with connected() as (_client, session, _transport):
         assert session.event_log is not None
         session.event_log.emit("note", text="heartbeat failed: gone — sending stop")
@@ -364,7 +364,7 @@ async def test_the_heartbeat_narrates_to_stderr_and_lands_in_no_calls_log(caplog
     be open. The heartbeat runs in a task that predates every capture block, so its note and
     the stop it sends go straight to stderr; the call that comes afterwards carries its own
     refusal and nothing of the link that died."""
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     async with connected(MockTransport(fail_heartbeat_after=1)) as (client, session, _transport):
         await asyncio.wait_for(session.executor.abort.wait(), timeout=2.0)
         stderr = " | ".join(" ".join(m.split()) for m in caplog.messages)
@@ -381,9 +381,9 @@ async def test_cap_lines_at_the_real_defaults_through_a_long_call(caplog: Any) -
     """An uncapped log_text would put a megabyte of text into the LLM's context window on
     one call. stderr keeps every line; the result keeps the first few, the last many, and a
     line saying how many are missing so the reader knows to go and look."""
-    from quackd.log import MCP_LOG_MAX_LINES
+    from roboglot.log import MCP_LOG_MAX_LINES
 
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     async with connected() as (client, _session, _transport):
         await _cleared(client)
         caplog.clear()  # the verdict is not part of the call being measured
@@ -452,7 +452,7 @@ def test_the_two_lines_the_log_writes_about_itself_say_log() -> None:
     """Every other line in the list comes from the robot; these two come from the renderer and
     are what a pilot reads when the list is shorter than the call it just made. `cap_lines` and
     `call_lines` are the pair `_call` runs, so this is the wording that reaches the wire."""
-    from quackd.log import LogEvent, call_lines, cap_lines
+    from roboglot.log import LogEvent, call_lines, cap_lines
 
     cut = next(line for line in cap_lines([f"line {i}" for i in range(100)]) if "more" in line)
     assert "the full log is on the server's stderr" in cut
@@ -467,7 +467,7 @@ def test_the_two_lines_the_log_writes_about_itself_say_log() -> None:
 async def test_an_aborted_sessions_refusal_says_the_heartbeat_failed() -> None:
     """The heartbeat's task predates every capture block, so its own note reaches no call's
     log_text. Without this the pilot was told the session had aborted and never why."""
-    from quackd.mcp_server import build_server
+    from roboglot.mcp_server import build_server
 
     transport = MockTransport(fail_heartbeat_after=0)
     _server, session = build_server(transport, heartbeat_period_s=0.01)
@@ -535,11 +535,11 @@ async def test_nothing_moves_until_the_pilot_has_judged_the_task() -> None:
 
 
 async def test_a_new_task_file_is_a_new_question_about_the_body() -> None:
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.factory import make_adapter
 
     async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, session, _t):
         await _cleared(client)
-        loaded = _data(await client.call_tool("robot_load_duckfile", {"path": "hello-world"}))
+        loaded = _data(await client.call_tool("robot_load_glotfile", {"path": "hello-world"}))
         assert loaded["ok"]
         assert "assess it with robot_assess_task" in loaded["note"]
         assert loaded["datasheet_text"].startswith("microduck: ")
@@ -593,7 +593,7 @@ async def test_the_mcp_verdict_tool_says_what_the_prompt_says() -> None:
 def test_the_mcp_play_field_says_what_the_prompt_says_about_the_verdict() -> None:
     """A played file hands an MCP pilot its part in the load result, which speaks of the
     verdict as well, so it is held to the same two halves of #25's rule."""
-    from quackd.agent.prompts import play_paragraphs
+    from roboglot.agent.prompts import play_paragraphs
 
     for still in (True, False):
         said = "\n\n".join(
@@ -610,7 +610,7 @@ async def test_the_mcp_verdict_tool_spells_out_the_words_needs_takes() -> None:
     one it most needs on an arm, `mobility: none`, did not exist. The description names every
     word the checker accepts, read from the same tuples, and says a 0 or a none asks for
     nothing."""
-    from quackd.verdict import MANIPULATOR_WORDS, MOBILITY_WORDS, TERRAIN_ORDER
+    from roboglot.verdict import MANIPULATOR_WORDS, MOBILITY_WORDS, TERRAIN_ORDER
 
     assert "none" in MOBILITY_WORDS and "none" in MANIPULATOR_WORDS, "the words an arm needs"
     async with connected() as (client, _session, _transport):
@@ -653,7 +653,7 @@ async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> Non
     robot's own sheet without ever looking at it, so over MCP a body still moved on a need
     nobody published. The default body here is a bare simulator with no manifest, which is
     structurally why nothing at this level had ever had a datasheet in hand."""
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.factory import make_adapter
 
     async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, session, adapter):
         refused = _data(
@@ -715,7 +715,7 @@ async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> Non
 
 
 async def test_the_robot_list_row_carries_the_body_as_data_and_as_a_sentence() -> None:
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.factory import make_adapter
 
     async with connected(make_adapter("microduck:sim2d", seed=1)) as (client, _s, _t):
         row = _data(await client.call_tool("robot_list", {}))["robots"][0]
@@ -759,11 +759,11 @@ async def test_a_session_whose_rest_pose_lies_past_the_travel_says_so_once_and_s
     """An MCP session has no transcript of its own to put the sentence in, so it goes to the
     log where the rest move's own reason goes, once, at connect. The session starts: an arm
     parked at the edge of its travel has reached the pose it can be driven to."""
-    from quackd_lerobot.mock import MOCK_RANGES
+    from roboglot_lerobot.mock import MOCK_RANGES
 
     floor = MOCK_RANGES["wrist_flex"][0]
     arm = LeRobotMock(rest_pose=dict(REST) | {"wrist_flex": floor - 11.0})
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     _server, session = build_server(LeRobotAdapter(arm), heartbeat_period_s=0.05)
     await session.connect()
     try:
@@ -776,7 +776,7 @@ async def test_a_session_whose_rest_pose_lies_past_the_travel_says_so_once_and_s
 
 
 async def test_a_dry_run_session_never_moves_the_arm() -> None:
-    """`--dry-run` is a promise that nothing is sent, and the rest move is quackd's own send
+    """`--dry-run` is a promise that nothing is sent, and the rest move is Roboglot's own send
     rather than the pilot's, which makes it the one most easily forgotten."""
     arm = _arm_away_from_its_rest_pose()
     _server, session = build_server(LeRobotAdapter(arm), dry_run=True, heartbeat_period_s=0.05)
@@ -920,7 +920,7 @@ async def test_the_dead_primary_is_not_renamed_to_whichever_lens_survived() -> N
 
 async def test_a_one_camera_observe_reads_back_exactly_as_it_did_before() -> None:
     """Camera names are for the bodies that have more than one. A single camera's name is
-    quackd's own default rather than anything its owner chose, so saying it would put a word
+    Roboglot's own default rather than anything its owner chose, so saying it would put a word
     in the pilot's mouth: one summary line, one picture, and no name anywhere."""
     async with connected() as (client, session, _transport):
         frame = await client.call_tool("robot_observe", {})

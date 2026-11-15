@@ -12,7 +12,7 @@ now one of four tiers, described, rehearsed, bound and verified, kept as data on
 
 ## Context
 
-ADR-0006 made `quackd/transport/upstream_api.py` the only module allowed to spell a
+ADR-0006 made `roboglot/transport/upstream_api.py` the only module allowed to spell a
 Microduck upstream name, tagged VERIFIED or UNVERIFIED, with a test proving UNVERIFIED
 names are reachable only from the experimental transports. 0.4 adds two more upstreams:
 LeRobot and rosbridge (roslibpy). The rule must scale without weakening.
@@ -20,10 +20,10 @@ LeRobot and rosbridge (roslibpy). The rule must scale without weakening.
 ## Decision
 
 - Each adapter that talks to a third-party SDK or wire protocol owns
-  `quackd/adapters/<name>/upstream_api.py`, using the same `UpstreamRef` dataclass
-  (re-exported from `quackd/transport/upstream_api.py`; it does not move). Every VERIFIED
+  `roboglot/adapters/<name>/upstream_api.py`, using the same `UpstreamRef` dataclass
+  (re-exported from `roboglot/transport/upstream_api.py`; it does not move). Every VERIFIED
   ref carries a permalink to the upstream file and line that was read, pinned to a commit
-  hash and dated; anything not read from source is UNVERIFIED and says what quackd does
+  hash and dated; anything not read from source is UNVERIFIED and says what Roboglot does
   about it.
 - `tests/test_upstream_api.py` is parametrized over `(module, ALLOWED paths, source
   prefix)`. The Microduck row keeps today's ALLOWED set verbatim. A new row's ALLOWED set
@@ -33,7 +33,7 @@ LeRobot and rosbridge (roslibpy). The rule must scale without weakening.
   README row shows ⏳, never 🧪 or ✅.
 - `docs/adapter-status.md` is the human-readable table of every ref file;
   `docs/transport-status.md` becomes a short redirect and its docs test is retargeted in
-  the same commit. `quackd doctor` prints the UNVERIFIED list per adapter.
+  the same commit. `roboglot doctor` prints the UNVERIFIED list per adapter.
 - No adapter row gets ✅ unless we exercised it against its real target ourselves.
 
 ## Consequences

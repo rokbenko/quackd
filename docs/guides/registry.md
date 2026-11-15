@@ -1,4 +1,4 @@
-# Registered robots and flocks
+# Registered robots and teams
 
 A name for a robot, kept between runs. Not the *verb* registry
 ([concepts/architecture.md](../concepts/architecture.md)), which is a robot's vocabulary: this is
@@ -10,7 +10,7 @@ Reaching a real robot took a spec, an address, a token and a camera URL, and one
 secret:
 
 ```bash
-quackd run fetch --robot open_duck:bridge --address tcp://10.0.0.5:9871 \
+roboglot run fetch --robot open_duck:bridge --address tcp://10.0.0.5:9871 \
   --token 8f2c... --camera-url http://10.0.0.5:9872/snapshot.jpg
 ```
 
@@ -19,26 +19,26 @@ name=<adapter>:<backend>,...` gave a name, and the name died with the process. R
 once instead:
 
 ```bash
-quackd robot add scout open_duck:bridge --address tcp://10.0.0.5:9871 --token 8f2c...
-quackd run fetch --robot scout
+roboglot robot add scout open_duck:bridge --address tcp://10.0.0.5:9871 --token 8f2c...
+roboglot run fetch --robot scout
 ```
 
 `--robot NAME` works wherever a robot is run or inspected: `run`, `validate`, `list-verbs`,
-`doctor`, `serve-mcp` and `quackd memory`. Two commands take `--robot` and not a registered
+`doctor`, `serve-mcp` and `roboglot memory`. Two commands take `--robot` and not a registered
 name: `record`, which pins the simulator, and `announce`, which advertises a static manifest
 and so wants an `<adapter>:<backend>` spec.
 
 ## The commands
 
 ```bash
-quackd robot add NAME <adapter>[:<backend>]   # register one
-quackd robot list [--probe]                   # what is registered, and optionally who answers
-quackd robot show NAME                        # everything about one, including what it remembers
-quackd robot edit NAME [--field X] [--clear F] # change it
-quackd robot rest-pose NAME [--clear]         # read where this arm rests, off the arm
-quackd robot release NAME [--yes]             # fold the arm to its rest pose, let go there
-quackd robot remove NAME [--force]            # forget it
-quackd robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehearse on
+roboglot robot add NAME <adapter>[:<backend>]   # register one
+roboglot robot list [--probe]                   # what is registered, and optionally who answers
+roboglot robot show NAME                        # everything about one, including what it remembers
+roboglot robot edit NAME [--field X] [--clear F] # change it
+roboglot robot rest-pose NAME [--clear]         # read where this arm rests, off the arm
+roboglot robot release NAME [--yes]             # fold the arm to its rest pose, let go there
+roboglot robot remove NAME [--force]            # forget it
+roboglot robot twin SOURCE [NAME] [--force]     # a simulator of an arm, to rehearse on
 ```
 
 `add` takes `--address`, `--map-address`, `--camera-url`, `--token`, `--host` and `--host-token`
@@ -49,13 +49,13 @@ only people read. `--camera-url` repeats, for the one body that reads more than 
 takes the same flags, and `--clear` empties a field.
 
 ```
-$ quackd robot add duck-a microduck:mock --note "the cream one"
+$ roboglot robot add duck-a microduck:mock --note "the cream one"
 + added duck-a: microduck:mock
-  quackd run <duck> --robot duck-a
+  roboglot run <task> --robot duck-a
 ```
 
 ```
-$ quackd robot list
+$ roboglot robot list
 robots (--robot NAME)
 +-------------------------------------------------+
 | name   | robot          | pilot | note          |
@@ -70,7 +70,7 @@ A column nobody has filled is left out, so the table stays readable on a narrow 
 `--json` prints one object per line and nothing else, for a script.
 
 ```
-$ quackd robot show arm
+$ roboglot robot show arm
 name         arm
 robot        lerobot:mock
 body         lerobot-so101 (arm, mobility none) 8 verbs: observe, report_state, stop,
@@ -90,10 +90,10 @@ host         -
 host token   -
 pilot        fake
 note         -
-flocks       -
+teams       -
 added        2026-09-25T10:13:26Z
 updated      2026-09-25T10:13:29Z
-memory       0 notes, 0 runs  ~/.quackd/memory/arm.jsonl
+memory       0 notes, 0 runs  ~/.roboglot/memory/arm.jsonl
 ```
 
 `body` is the robot's static manifest, read without connecting to anything. `rest pose` is the
@@ -103,12 +103,12 @@ file's full path, which this page writes from your home directory as `~`. `--jso
 record for a script, with each token reduced to whether there is one:
 
 ```
-$ quackd robot show arm --json
+$ roboglot robot show arm --json
 {"name": "arm", "spec": "lerobot:mock", "adapter": "lerobot", "backend": "mock", "address": null,
 "map_address": null, "robot_type": null, "camera_url": null, "rest_pose": {"shoulder_pan": 0.0,
 "shoulder_lift": -90.0, "elbow_flex": 90.0, "wrist_flex": 0.0, "wrist_roll": 0.0, "gripper": 100.0},
 "token_set": false, "host": null, "host_token_set": false, "llm": "fake", "note": null,
-"spec_problem": null, "added": "2026-09-25T10:13:26Z", "updated": "2026-09-25T10:13:29Z", "flocks": []}
+"spec_problem": null, "added": "2026-09-25T10:13:26Z", "updated": "2026-09-25T10:13:29Z", "teams": []}
 ```
 
 That is one line of output, wrapped here to fit the page.
@@ -118,14 +118,14 @@ That is one line of output, wrapped here to fit the page.
 `--camera-url` can be given more than once, on `add`, on `edit` and on a run:
 
 ```
-$ quackd robot add arm-01 lerobot:real --address COM5 \
+$ roboglot robot add arm-01 lerobot:real --address COM5 \
     --camera-url "opencv://1?name=top" --camera-url "opencv://2?name=side"
 + added arm-01: lerobot:real at COM5
-  quackd run <duck> --robot arm-01
+  roboglot run <task> --robot arm-01
 ```
 
 ```
-$ quackd robot show arm-01     # the camera rows
+$ roboglot robot show arm-01     # the camera rows
 camera     opencv://1?name=top
            opencv://2?name=side
 ```
@@ -140,7 +140,7 @@ Only the LeRobot arm reads several, on the desk (`lerobot:real`) or in its simul
 opening the first and dropping the rest:
 
 ```
-$ quackd robot add duck-a microduck:mock --camera-url a --camera-url b
+$ roboglot robot add duck-a microduck:mock --camera-url a --camera-url b
 x error: microduck:mock takes one camera url; only lerobot:real and lerobot:mujoco take several
 ```
 
@@ -155,56 +155,56 @@ exchanges rather than on every one, that is up to eighteen where one camera is n
 ## A board it uses
 
 `--host` and `--host-token` keep the board this robot's runs reach: a machine they use and do
-not run on, such as an NVIDIA Jetson running quackd's host daemon, for the LLM server,
+not run on, such as an NVIDIA Jetson running Roboglot's host daemon, for the LLM server,
 the camera and the detector on it ([guides/jetson.md](jetson.md)).
 
 ```
-$ quackd robot add bench lerobot:real --address COM5 --host jetson.local --host-token 3b9a...
+$ roboglot robot add bench lerobot:real --address COM5 --host jetson.local --host-token 3b9a...
 + added bench: lerobot:real at COM5, host jetson.local
-  quackd run <duck> --robot bench
+  roboglot run <task> --robot bench
 ```
 
 `robot show` prints the host and only whether a token is set, and `--json` does the same as
 `host` and `host_token_set`. `robot list` gains a `host` column once some robot has one.
 
 ```
-$ quackd robot show bench     # the host rows
+$ roboglot robot show bench     # the host rows
 host        jetson.local
 host token  set
 ```
 
 A run of `bench` then uses that board with no flag. `--host` on the line beats the stored one,
-and the stored one beats `QUACKD_HOST`. The token climbs its own ladder, `--host-token`, then
-the stored one, then `QUACKD_HOST_TOKEN`, with one rule the other fields do not need: the
+and the stored one beats `ROBOGLOT_HOST`. The token climbs its own ladder, `--host-token`, then
+the stored one, then `ROBOGLOT_HOST_TOKEN`, with one rule the other fields do not need: the
 robot's token rides only when the robot stores a board, so it is never sent to a board the
 environment named. `--host 127.0.0.1` through an ssh tunnel still carries it, because that is
 the same board reached another way. A host token therefore needs a host, and clearing the host
 clears its token:
 
 ```
-$ quackd robot edit bench --clear host
+$ roboglot robot edit bench --clear host
 + updated bench: host, host-token
 
-$ quackd robot edit bench --host-token 3b9a...
+$ roboglot robot edit bench --host-token 3b9a...
 x error: bench would have a host token and no host: the token is for one board's daemon, so give
 --host too, or --clear host-token
 ```
 
 Nothing asks the board anything while you register it: `add` and `edit` check that the host
-is a machine with an optional port and store it. `quackd doctor --robot bench` is where the
+is a machine with an optional port and store it. `roboglot doctor --robot bench` is where the
 board is asked, through the stored host and token. Both fields are left out of `robots.json`
-while they are empty, so a file that never named a board is still one quackd 0.12 to 0.14
+while they are empty, so a file that never named a board is still one Roboglot 0.12 to 0.14
 reads. A robot that does name a board makes the whole file one those releases refuse, since
 they read it with no room for a field they do not know, and two installs on one machine share
-`~/.quackd` unless `QUACKD_REGISTRY_DIR` moves one of them.
+`~/.roboglot` unless `ROBOGLOT_REGISTRY_DIR` moves one of them.
 
 A Microduck that runs `mapd`, its own map, beside its robotd keeps where that answers too, which
 no robotd release carries yet:
 
 ```
-$ quackd robot add duck microduck:jsonrpc --address tcp://127.0.0.1:9870 --map-address tcp://127.0.0.1:9871
+$ roboglot robot add duck microduck:jsonrpc --address tcp://127.0.0.1:9870 --map-address tcp://127.0.0.1:9871
 + added duck: microduck:jsonrpc at tcp://127.0.0.1:9870
-  quackd run <duck> --robot duck
+  roboglot run <task> --robot duck
 ```
 
 A run of `duck` then walks by the map with no flag, `--map-address` on the line beats the stored
@@ -230,7 +230,7 @@ is limp. Fold it by hand into a pose it holds with the power off, then record wh
 up:
 
 ```
-$ quackd robot rest-pose arm --yes
+$ roboglot robot rest-pose arm --yes
 arm (lerobot:mock) is at
 shoulder_pan   0.0
 shoulder_lift  -90.0
@@ -239,7 +239,7 @@ wrist_flex     0.0
 wrist_roll     0.0
 gripper        100.0
 + recorded arm's rest pose (6 joints)
-  quackd run <duck> --robot arm starts from it and returns to it before letting go
+  roboglot run <task> --robot arm starts from it and returns to it before letting go
 ```
 
 Those joints are the mock arm's; a real SO-101 reports its own. Without `--yes` the same
@@ -248,11 +248,11 @@ to ask on it says so instead of guessing. `--address` reaches an arm the registr
 address for yet. There is no flag that takes a pose as numbers, because a pose nobody watched
 the arm hold is a pose that may not hold.
 
-`--clear` forgets it, and `quackd robot edit NAME --clear rest-pose` is the same thing by the
+`--clear` forgets it, and `roboglot robot edit NAME --clear rest-pose` is the same thing by the
 other door:
 
 ```
-$ quackd robot rest-pose arm --clear
+$ roboglot robot rest-pose arm --clear
 + cleared arm's rest pose
   a run now leaves the arm where it stands, and torque drops there
 ```
@@ -262,29 +262,29 @@ with no rest pose is refused, and names the way back (captured with `arm-01` reg
 `lerobot:real`):
 
 ```
-$ quackd robot rest-pose arm-01 --clear
+$ roboglot robot rest-pose arm-01 --clear
 + cleared arm-01's rest pose
   a run, a dry run or an MCP session of arm-01 is now refused until a pose is recorded again
-  quackd robot rest-pose arm-01
+  roboglot robot rest-pose arm-01
 ```
 
 Only the LeRobot arm is parked today, and a body that cannot hold a pose refuses to keep one
 rather than keeping it and ignoring it:
 
 ```
-$ quackd robot rest-pose duck --yes
+$ roboglot robot rest-pose duck --yes
 x error: duck (microduck:mock) has no joints, so there is no rest pose to record
-  a rest pose is for an arm: quackd list-adapters
+  a rest pose is for an arm: roboglot list-adapters
 
-$ quackd robot rest-pose cart --yes
-x error: cart (xlerobot:mock) has joints, and quackd does not drive it to a rest pose yet: only the
+$ roboglot robot rest-pose cart --yes
+x error: cart (xlerobot:mock) has joints, and Roboglot does not drive it to a rest pose yet: only the
 LeRobot arm does today
 ```
 
 What a recorded pose then changes is [concepts/safety.md](../concepts/safety.md): a run drives the
 arm to it before the pilot gets control and back to it on every exit path there is, an MCP session
-does the same at both ends and refuses to start if it cannot get there, `quackd doctor` returns
-the arm it probed, and `quackd robot release` folds the arm to it before letting go (below). The
+does the same at both ends and refuses to start if it cannot get there, `roboglot doctor` returns
+the arm it probed, and `roboglot robot release` folds the arm to it before letting go (below). The
 arm's own side of it, including what happens to a pose recorded past the travel the arm's
 calibration recorded, is
 [adapters/lerobot/README.md](../adapters/lerobot/README.md#a-pose-past-the-travel).
@@ -309,7 +309,7 @@ is calibrated again.
 ### Releasing the arm
 
 An arm that could not get back to its rest pose keeps its torque at the end of a run, holding
-itself up rather than falling, and the line the run ends on says so. `quackd robot release` is
+itself up rather than falling, and the line the run ends on says so. `roboglot robot release` is
 how you put that arm down without reaching for the power switch: it folds the arm to its
 recorded rest pose, closes its gripper and takes torque off there, because an SO-101 has no brake
 and an arm let go of where it stands drops. Captured on `lerobot:mock` registered as `arm-01`,
@@ -317,7 +317,7 @@ whose rest pose has `shoulder_pan` at 30 while the mock stands at 0, so the fold
 go, with `y` typed at the question:
 
 ```
-$ quackd robot release arm-01
+$ roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it
 off, and the arm then folds to its rest pose, closes its gripper and is let go of there: support it
 while it connects, then take your hands away when it says so, before it folds
@@ -345,22 +345,22 @@ question and nothing else, and answering `n` connects nothing. With no terminal 
 it refuses before anything connects:
 
 ```
-$ quackd robot release arm-01
+$ roboglot robot release arm-01
 ✗ error: no terminal to ask on: pass --yes to fold it to its rest pose and let go there
-  quackd robot release arm-01 --yes
+  roboglot robot release arm-01 --yes
 ```
 
 And a body that is never handed to a person refuses by name:
 
 ```
-$ quackd robot release duck --yes
-x error: duck (microduck:mock) is not a body quackd takes torque off: only the
+$ roboglot robot release duck --yes
+x error: duck (microduck:mock) is not a body Roboglot takes torque off: only the
 LeRobot arm is
-  quackd list-adapters
+  roboglot list-adapters
 ```
 
 No terminal means a standard input that is not a console: a pipe, a file, or `NUL`. Windows
-calls `NUL` a character device, which a terminal check alone takes for a terminal, so quackd also
+calls `NUL` a character device, which a terminal check alone takes for a terminal, so Roboglot also
 asks whether it has a console mode, and `< NUL` in `cmd` and `< /dev/null` in Git Bash get that
 refusal too, before anything connects.
 
@@ -396,7 +396,7 @@ folds again scripted to miss, with Enter at the first question and no key to rea
 
 ```
 ✗ error: torque stays on and nothing was released: no key could be read
-  clear its way and run quackd robot release arm-01 again, or hold it and cut its power
+  clear its way and run roboglot robot release arm-01 again, or hold it and cut its power
 ```
 
 `--yes` answers neither question: each still waits for its own Enter wherever a terminal can ask
@@ -422,7 +422,7 @@ was. Captured on `lerobot:mock` registered as `arm-02`
 with no rest pose, at a terminal:
 
 ```
-$ quackd robot release arm-02
+$ roboglot robot release arm-02
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it
 off, and with no rest pose recorded there is nothing to fold it to: you are asked before anything
 connects
@@ -437,7 +437,7 @@ the second question does above. Anything else ends on
 `--yes` or not:
 
 ```
-$ quackd robot release arm-02 --yes
+$ roboglot robot release arm-02 --yes
 ✗ error: arm-02 has no rest pose recorded, so there is nothing to fold it to, and taking torque off
 where it stands drops it, which only Enter at a terminal may do
   run it from a terminal, or hold the arm and cut its power
@@ -452,7 +452,7 @@ rest move missed, is
 
 ## A simulator of an arm
 
-`quackd robot twin SOURCE [NAME]` registers NAME, `SOURCE-sim` unless you give one, as
+`roboglot robot twin SOURCE [NAME]` registers NAME, `SOURCE-sim` unless you give one, as
 `lerobot:mujoco`: the real backend's own code over a physics model of the arm. Its address is
 the calibration file SOURCE's runs read, found where LeRobot keeps it under SOURCE's name, so
 the simulated arm has the travel the real one has. SOURCE's rest pose and pilot are copied
@@ -461,12 +461,12 @@ Any other camera is left out and named in the output, because the simulator woul
 every run. Its memory is its own, kept under NAME.
 
 ```
-$ quackd robot twin arm-01
+$ roboglot robot twin arm-01
 + added arm-01-sim: lerobot:mujoco, a simulator of arm-01 on
 /home/you/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json
   copied from arm-01: rest pose, pilot openai:gpt-6-sol, 2 camera urls
-! robots.json now holds a lerobot:mujoco robot, and quackd 0.14 and earlier cannot read the file at all: quackd robot remove arm-01-sim before going back to one
-  quackd preflight <duck> --robot arm-01-sim
+! robots.json now holds a lerobot:mujoco robot, and Roboglot 0.14 and earlier cannot read the file at all: roboglot robot remove arm-01-sim before going back to one
+  roboglot preflight <task> --robot arm-01-sim
 ```
 
 An arm registered with a rest pose and neither a pilot nor a camera, as the lab's `arm-01` is,
@@ -474,12 +474,12 @@ gets `copied from arm-01: rest pose` and then `arm-01 has no pilot or camera to 
 hint that ends `--llm VENDOR[:LLM]`, since its twin has no pilot to rehearse with until you
 name one.
 
-That warning is the one cost of a twin. quackd 0.14 and earlier check every robot in the file
+That warning is the one cost of a twin. Roboglot 0.14 and earlier check every robot in the file
 against the backends they know, and `lerobot:mujoco` is not one of them, so one of those
-installs sharing `~/.quackd` refuses every command that reads the registry until every
+installs sharing `~/.roboglot` refuses every command that reads the registry until every
 `lerobot:mujoco` robot in it is removed, not only the twin just made. Where the file holds more
-than one, the warning names them all. To try a twin while an older quackd still reads
-`~/.quackd`, give this one a registry of its own with `QUACKD_REGISTRY_DIR` or `--registry-dir`,
+than one, the warning names them all. To try a twin while an older Roboglot still reads
+`~/.roboglot`, give this one a registry of its own with `ROBOGLOT_REGISTRY_DIR` or `--registry-dir`,
 and register the arm there as well.
 
 `--address PATH` names the calibration file instead, for an arm calibrated under another id or
@@ -491,7 +491,7 @@ a `lerobot:mujoco` robot registered on a port by `robot add`, as `run`, `preflig
 command builds it. A NAME that is already
 registered is refused as `add` refuses it. `--force` replaces it, and only where it is already a
 `lerobot:mujoco` robot, so no real arm is ever overwritten by its own simulator.
-`quackd preflight` is what the twin is for: it rehearses task files on it, and refuses any robot
+`roboglot preflight` is what the twin is for: it rehearses task files on it, and refuses any robot
 that is not a simulator.
 
 ## Probing
@@ -499,7 +499,7 @@ that is not a simulator.
 `--probe` connects to every registered robot, asks how it is, and closes.
 
 ```
-$ quackd robot list --probe
+$ roboglot robot list --probe
 robots (--robot NAME)
 +---------------------------------------------------------------------+
 | name   | robot          | pilot | note          | reachable         |
@@ -517,7 +517,7 @@ always answers, which is what the rows above are.
 
 A probe reads and lets go: it never drives an arm to its rest pose. So an arm that is not at
 that pose ends a probe holding itself up rather than sagging, and the same row says so: `+ ok,
-torque left on: not at its rest pose`. `quackd doctor` is the other way round and parks the arm
+torque left on: not at its rest pose`. `roboglot doctor` is the other way round and parks the arm
 it probed ([concepts/safety.md](../concepts/safety.md)). A probe's connect still takes torque off
 every motor for a moment, like any connect, and it prints no warning first, so hold an arm that is
 holding itself up before you probe it.
@@ -525,14 +525,14 @@ holding itself up before you probe it.
 Four rarer endings read differently. `torque unknown: the arm did not answer the close` is an arm
 that stopped answering before the close could read it, which is also how an arm whose power was
 cut at the switch looks, so hold it as though it may be limp.
-`torque could NOT be kept: the arm was released where it stood` is an arm quackd could not keep
+`torque could NOT be kept: the arm was released where it stood` is an arm Roboglot could not keep
 powered, so check whether it is still where you left it.
 `torque unknown: the close's release did not finish` is an arm at its rest pose whose release at
 the close raised or did not come back, so some motors may hold and some not: hold it, and cut its
 power to be sure. `torque off in part: some joints may still hold` is one whose release raised
 naming the motors LeRobot could not confirm: every other joint let go, and those may still hold.
 
-No registered robot has been probed on hardware. The one real robot quackd has driven, the
+No registered robot has been probed on hardware. The one real robot Roboglot has driven, the
 SO-101 arm, was reached on 2026-09-15 as `--robot lerobot:real --address COM3` on the command
 line, before it had a name here at all
 ([adapters/lerobot/first-run.md](../adapters/lerobot/first-run.md)). On 2026-09-23 the same arm ran
@@ -547,7 +547,7 @@ else on a command line:
 
 | Refused | Because |
 |---|---|
-| any number (`3`, `42`, `007`) | `--flock 3` already means three simulated ducks |
+| any number (`3`, `42`, `007`) | `--team 3` already means three simulated ducks |
 | any adapter name (`microduck`, `lerobot`, ...) | `--robot microduck` already means `microduck:sim2d` |
 | any `adapter-backend` slug (`microduck-sim2d`, ...) | that is the memory file an unregistered run of that body already opens |
 
@@ -558,8 +558,8 @@ microduck:mock` is a spec, and a bare word that is neither says so in one line.
 
 | | |
 |---|---|
-| Directory | `--registry-dir`, else `$QUACKD_REGISTRY_DIR`, else `~/.quackd` |
-| Files | `robots.json`, and `flocks.json` for [flocks](flock.md) |
+| Directory | `--registry-dir`, else `$ROBOGLOT_REGISTRY_DIR`, else `~/.roboglot` |
+| Files | `robots.json`, and `teams.json` for [teams](team.md) |
 | Format | one JSON object, the name of each robot as its key |
 
 ```jsonc
@@ -593,14 +593,14 @@ Three of those fields carry more than one shape:
 | Field | Shape |
 |---|---|
 | `camera_url` | `null`, one url as a string, or several as a list in the order given, the first being the primary. One camera is stored as a string, so a `robots.json` written by 0.9 reads back unchanged |
-| `rest_pose` | `null`, or degrees per joint as `quackd robot rest-pose` read them off the arm. `null` on every body quackd does not park, which is every body but the LeRobot arm |
+| `rest_pose` | `null`, or degrees per joint as `roboglot robot rest-pose` read them off the arm. `null` on every body Roboglot does not park, which is every body but the LeRobot arm |
 | `llm` | `null`, a vendor on its own (`"fake"`, `"anthropic"`), or a vendor and an LLM (`"anthropic:claude-opus-5"`). One key, in the shape `--llm` takes, and stored canonically: a bare catalogue id is written back with its vendor in front |
 
 **This was two keys until 0.11.** `provider` and `model` were separate, and a file written by
 0.11 or earlier still has them, because nobody re-saves `robots.json` on upgrade. It reads back
 folded into the new shape, so `{"provider": "anthropic", "model": "claude-opus-5"}` is the same
 robot as `"llm": "anthropic:claude-opus-5"`, and the next write of that robot, a
-`quackd robot edit` or anything else that saves the file, stores the new key. A file carrying
+`roboglot robot edit` or anything else that saves the file, stores the new key. A file carrying
 both `llm` and one of the old pair is refused by name instead: it says two different things
 about which pilot this robot uses, and guessing which half was meant is worse than stopping and
 letting you delete the line you did not want.
@@ -609,19 +609,19 @@ A file that says something untrue names itself rather than being trimmed to fit:
 urls under a body that reads one are refused when the file is read, and a rest pose under a
 body that does not park is refused when that robot is built.
 
-A robot this quackd cannot build is kept, from 0.21.0. When its spec names a backend its adapter
+A robot this Roboglot cannot build is kept, from 0.21.0. When its spec names a backend its adapter
 has dropped, as `microduck:websocket` was in 0.19.0, or an adapter not installed here, the spec
 is kept as written rather than refused when the file is read, because that refused every command
-that reads the file, the `edit` and `remove` that would mend it among them. `quackd robot list`
+that reads the file, the `edit` and `remove` that would mend it among them. `roboglot robot list`
 marks the robot and says why, `--json` carries the reason as `spec_problem`, and `show`, `edit`
-and `remove` work on it. Anything that builds it, a run, a flock, `doctor`, `serve-mcp` or
+and `remove` work on it. Anything that builds it, a run, a team, `doctor`, `serve-mcp` or
 `robot list --probe`, refuses it by name with the way out:
 
 ```
-$ quackd run hello-world --robot kitchen
-x error: kitchen is registered as microduck:websocket, which this quackd cannot build (unknown
-backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc): quackd robot edit
-kitchen --spec microduck:<backend>, or quackd robot remove kitchen
+$ roboglot run hello-world --robot kitchen
+x error: kitchen is registered as microduck:websocket, which this Roboglot cannot build (unknown
+backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc): roboglot robot edit
+kitchen --spec microduck:<backend>, or roboglot robot remove kitchen
 ```
 
 For an adapter that is missing, it says to install the package that provides it first. `add` and
@@ -637,7 +637,7 @@ a robot's address is not, so an unknown field or a broken file names itself and 
 command rather than being quietly dropped.
 
 **Tokens are stored in plain text.** `robots.json` is a file in your home directory, not a
-secret store, and it holds a robot's `token` and its board's `host_token` alike. quackd masks
+secret store, and it holds a robot's `token` and its board's `host_token` alike. Roboglot masks
 both in everything it prints, including `--json`, which says only whether each is set.
 `SECURITY.md` says the same.
 
@@ -646,14 +646,14 @@ both in everything it prints, including `--json`, which says only whether each i
 **Memory is keyed by it.** An unregistered run keys its notes by `adapter:backend`, so two
 Microducks on one desk shared one file. A registered robot keys by its name, so `duck-a` and
 `duck-b` keep separate notes ([guides/memory.md](memory.md),
-[ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)).
+[ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)).
 
-**The manifest id is it.** `quackd validate hello-world --robot duck-a` reports the robot as
-`duck-a`, which is what `--robots name=spec` has always done for a flock.
+**The manifest id is it.** `roboglot validate hello-world --robot duck-a` reports the robot as
+`duck-a`, which is what `--robots name=spec` has always done for a team.
 
-**The pilot can be it.** `quackd robot add scout open_duck:bridge --llm anthropic` means
-`quackd run fetch --robot scout` uses Claude without a flag. `--llm` on the line still wins,
-and the stored one still beats `QUACKD_LLM`.
+**The pilot can be it.** `roboglot robot add scout open_duck:bridge --llm anthropic` means
+`roboglot run fetch --robot scout` uses Claude without a flag. `--llm` on the line still wins,
+and the stored one still beats `ROBOGLOT_LLM`.
 
 **Endpoints come from it.** `--address`, `--token`, `--camera-url`, `--host` and
 `--host-token` on the line each override the stored one, field by field, because reaching the
@@ -664,31 +664,31 @@ stored ones included.
 **The rest pose does not.** There is no flag for it on `run`, `doctor` or `serve-mcp`. The
 others are addresses and their tokens, and an address is a route to the same robot; a rest
 pose is a measurement of the arm in front of you, so it changes by being recorded again or
-cleared (`quackd robot rest-pose NAME`), never by a number typed on a command line.
+cleared (`roboglot robot rest-pose NAME`), never by a number typed on a command line.
 
-## Flocks
+## Teams
 
-A flock is a list of registered robot names that you keep, so several robots can be handed one
-task without retyping who they are. `quackd flock` is its CRUD:
+A team is a list of registered robot names that you keep, so several robots can be handed one
+task without retyping who they are. `roboglot team` is its CRUD:
 
 ```bash
-quackd flock create NAME [--robot A --robot B] [--description "..."]
-quackd flock list
-quackd flock show NAME
-quackd flock edit NAME [--add R] [--remove R] [--description "..."] [--rename NEW]
-quackd flock delete NAME
+roboglot team create NAME [--robot A --robot B] [--description "..."]
+roboglot team list
+roboglot team show NAME
+roboglot team edit NAME [--add R] [--remove R] [--description "..."] [--rename NEW]
+roboglot team delete NAME
 ```
 
 ```
-$ quackd flock create kitchen --robot duck-a --robot arm --description "the two by the sink"
-+ created flock kitchen: duck-a, arm (2 robots)
-  quackd run <duck> --flock kitchen
+$ roboglot team create kitchen --robot duck-a --robot arm --description "the two by the sink"
++ created team kitchen: duck-a, arm (2 robots)
+  roboglot run <task> --team kitchen
 ```
 
 With no `--robot` it prints what you have registered, numbered, and asks:
 
 ```
-$ quackd flock create pair
+$ roboglot team create pair
 robots you have registered
 +------------------------------------------------+
 | # | name   | robot          | note             |
@@ -698,7 +698,7 @@ robots you have registered
 | 3 | duck-b | microduck:mock |                  |
 +------------------------------------------------+
 which robots? (numbers or names, comma separated, empty to cancel): 2, 3
-+ created flock pair: duck-a, duck-b (2 robots)
++ created team pair: duck-a, duck-b (2 robots)
 ```
 
 Numbers and names can be mixed, a bad answer says what was wrong and asks again up to three
@@ -706,8 +706,8 @@ times, and an empty answer cancels. Where there is no terminal to ask on, which 
 it says so and tells you to pass `--robot` instead.
 
 ```
-$ quackd flock list
-flocks (--flock NAME)
+$ roboglot team list
+teams (--team NAME)
 +-------------------------------------------------------+
 | name    | robots       | status | description         |
 |---------+--------------+--------+---------------------|
@@ -715,14 +715,14 @@ flocks (--flock NAME)
 +-------------------------------------------------------+
 ```
 
-Order is kept, because it is the order the members are listed and coloured in when the flock
-runs. A flock stores 1 to 8 robots and **runs** with 2 to 8, so a flock you are still building
+Order is kept, because it is the order the members are listed and coloured in when the team
+runs. A team stores 1 to 8 robots and **runs** with 2 to 8, so a team you are still building
 is stored and marked rather than refused.
 
 ```jsonc
 {
   "version": 1,
-  "flocks": {
+  "teams": {
     "kitchen": {
       "members": ["duck-a", "arm"],
       "description": "the two by the sink",
@@ -735,32 +735,32 @@ is stored and marked rather than refused.
 
 ### When a member goes missing
 
-The one broken state either file can be in is a flock naming a robot nobody registered.
-`quackd robot remove` will not create it: it refuses while a flock lists the robot, names the
-flocks, and `--force` drops it from them instead.
+The one broken state either file can be in is a team naming a robot nobody registered.
+`roboglot robot remove` will not create it: it refuses while a team lists the robot, names the
+teams, and `--force` drops it from them instead.
 
 Hand-editing the file can still create it, so every read reports it and running refuses:
 
 ```
-$ quackd flock list
-flocks (--flock NAME)
+$ roboglot team list
+teams (--team NAME)
 +---------------------------------------------------------------+
 | name    | robots          | status                 | description |
 |---------+-----------------+------------------------+-------------|
 | kitchen | ! duck-a - arm  | ! duck-a not registered|             |
 +---------------------------------------------------------------+
-a robot marked as not registered was removed by hand: quackd robot add it back, or
-quackd flock edit NAME --remove it
+a robot marked as not registered was removed by hand: roboglot robot add it back, or
+roboglot team edit NAME --remove it
 ```
 
-Either repair works. quackd will not quietly run the smaller flock, because a member you put
+Either repair works. Roboglot will not quietly run the smaller team, because a member you put
 there on purpose going missing is not a detail.
 
 ## See also
 
-- [guides/flock.md](flock.md) for what happens when a flock runs
+- [guides/team.md](team.md) for what happens when a team runs
 - [guides/memory.md](memory.md) for what each robot remembers between runs
-- [guides/mcp.md](mcp.md) for `quackd serve-mcp --robot NAME`
+- [guides/mcp.md](mcp.md) for `roboglot serve-mcp --robot NAME`
 - [concepts/safety.md](../concepts/safety.md) for what a recorded rest pose does at the end of a
   run, and what happens when the arm cannot reach it
-- [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md) for why any of this exists
+- [ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md) for why any of this exists

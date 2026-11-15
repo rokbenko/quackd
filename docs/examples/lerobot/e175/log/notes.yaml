@@ -1,7 +1,7 @@
 hook: Ctrl-C stopped the run's own fold to rest partway, and the arm held there with torque on until the next release connected, which found it about half a degree from where it was read right after the stop and folded it the rest of the way.
 goal_met: "Partly"
 why_example: >
-  A fold to the rest pose is quackd moving the arm on its own, and a person has to be able to stop it
+  A fold to the rest pose is Roboglot moving the arm on its own, and a person has to be able to stop it
   partway, for a hand, a cable or a cup in its way. Since 0.24.0 Ctrl-C or `q` during a fold stops it
   where it is and keeps torque on, where a run's fold used to finish first. This example presses
   Ctrl-C while the arm is on its way down, to see it stop and hold, and how far it carries on after
@@ -19,16 +19,16 @@ expected: >
   Ctrl-C pressed while the arm is on its way down stops the fold, and the arm holds with torque on,
   at most a step past where the press found it: `the fold was stopped where it was, and nothing was
   released: torque is as the fold left it`. A second release then finishes the fold. The card does
-  this during `quackd robot release`'s fold, after a run left the arm raised, at E171's slow step.
+  this during `roboglot robot release`'s fold, after a run left the arm raised, at E171's slow step.
 showed:
   - >
-    The fold that was stopped was the run's own, not the release's. The video's caption names `quackd
+    The fold that was stopped was the run's own, not the release's. The video's caption names `roboglot
     robot release arm-01` as both hands type, at the moment the run's record has a `q` end its wait to
     hand the arm back: the command went into the run's own terminal, and its first letter, `q`, is a
     run's stop key, `kill switch: 'q' pressed`. It ended that wait and started the run's fold, and the
     command itself never ran.
   - >
-    With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd was `connected in 3.30
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. Roboglot was `connected in 3.30
     s`, the arm was lifted by hand into a raised pose leaning forward over the desk, `holding the pose
     you set, you can let go`, at shoulder_lift 44 and elbow_flex -21, and the pilot's three calls
     ended in its `declare_success`.
@@ -48,7 +48,7 @@ showed:
     (shoulder_lift is at -0 with a goal of -101; a fold to it was stopped partway), so torque was left
     on and it will not fall as it stands`, and the run ended SUCCESS, the scripted pilot's own verdict.
   - >
-    `quackd robot release arm-01`, run once the run had ended, warned that connecting takes torque off
+    `roboglot robot release arm-01`, run once the run had ended, warned that connecting takes torque off
     every motor for a moment and to support the arm while it connects. Nobody did: both hands stayed at
     the laptop, and the arm stayed where it was. It read the arm at shoulder_lift 0.4 and elbow_flex
     49.8, about half a degree from the reading right after the stop, counted 3 s, folded the arm the
@@ -65,7 +65,7 @@ did_not_show:
     the reading right after the stop the arm moved at most 3.2 degrees at the elbow and 2.3 at the
     shoulder, less than one step.
   - >
-    It does not show Ctrl-C during `quackd robot release`'s fold, which the card asks for: the fold
+    It does not show Ctrl-C during `roboglot robot release`'s fold, which the card asks for: the fold
     stopped was the run's own, started by the stray `q`. What it showed instead is the ninth bench
     step, E179's case, in a `--by-hand` run: a run that ended by itself, and Ctrl-C during its fold.
     The release says the same line when its own fold is stopped.
@@ -74,7 +74,7 @@ did_not_show:
     ends: a `q` ends its wait at once, and so does a line typed and entered, and either way the arm
     folds 3 s later.
   - >
-    The take ran at quackd's default step, 5 degrees per send and up to 50 degrees a second, where the
+    The take ran at Roboglot's default step, 5 degrees per send and up to 50 degrees a second, where the
     card's slow step is 1 degree per send and 10 degrees a second.
   - >
     No LLM read anything. The three LLM calls in the table are the scripted pilot's turns, its tokens

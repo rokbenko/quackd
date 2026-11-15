@@ -2,7 +2,7 @@
 geoms, the duck is held by them and counts its bumps, its camera sees them and nothing behind
 them, and its transport keeps the same simulated map the cartoon's does.
 
-Skipped wholesale without `quackd[mujoco]`, and the camera tests without an offscreen context."""
+Skipped wholesale without `roboglot[mujoco]`, and the camera tests without an offscreen context."""
 
 from __future__ import annotations
 
@@ -13,17 +13,17 @@ import pytest
 
 mujoco = pytest.importorskip("mujoco")
 
-from quackd.adapters.factory import make_adapter  # noqa: E402
-from quackd.perception.color_blob import ColorBlobDetector  # noqa: E402
-from quackd.sim2d.world import World  # noqa: E402
-from quackd.space.room import Room, Wall, load_room  # noqa: E402
-from quackd.space.simmap import STAND_IN, SimulatedMap  # noqa: E402
-from quackd.transport.base import spatial_of  # noqa: E402
-from quackd_microduck.sim3d.render import render_headcam  # noqa: E402
-from quackd_microduck.sim3d.scene import DUCK_R, ROOM_GEOM_PREFIX, arena_xml  # noqa: E402
-from quackd_microduck.sim3d.world import CONTROL_DT, MujocoWorld  # noqa: E402
-from quackd_microduck.transports.mapd import sim_map_params  # noqa: E402
-from quackd_microduck.transports.mujoco import MujocoTransport  # noqa: E402
+from roboglot.adapters.factory import make_adapter  # noqa: E402
+from roboglot.perception.color_blob import ColorBlobDetector  # noqa: E402
+from roboglot.sim2d.world import World  # noqa: E402
+from roboglot.space.room import Room, Wall, load_room  # noqa: E402
+from roboglot.space.simmap import STAND_IN, SimulatedMap  # noqa: E402
+from roboglot.transport.base import spatial_of  # noqa: E402
+from roboglot_microduck.sim3d.render import render_headcam  # noqa: E402
+from roboglot_microduck.sim3d.scene import DUCK_R, ROOM_GEOM_PREFIX, arena_xml  # noqa: E402
+from roboglot_microduck.sim3d.world import CONTROL_DT, MujocoWorld  # noqa: E402
+from roboglot_microduck.transports.mapd import sim_map_params  # noqa: E402
+from roboglot_microduck.transports.mujoco import MujocoTransport  # noqa: E402
 from tests.gl import require_render  # noqa: E402
 
 TWO_ROOMS = load_room("two-rooms")
@@ -60,7 +60,7 @@ def test_without_a_room_the_scene_is_the_arena_it_always_was() -> None:
     arena = arena_xml("", ball=(0.5, 0.5))
     assert ROOM_GEOM_PREFIX not in arena
     for side in ("east", "west", "north", "south"):
-        assert f'name="quackd_wall_{side}"' in arena
+        assert f'name="roboglot_wall_{side}"' in arena
     assert 'pos="1.02 0.0 0.08"' in arena, "the arena's own walls, where they always stood"
     world = MujocoWorld(seed=0)
     try:
@@ -175,7 +175,7 @@ async def test_a_duck_in_a_room_on_the_physics_backend_says_where_its_map_says_i
 
 
 async def test_microduck_mujoco_takes_a_room(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_MUJOCO_BODY", "puppet")
+    monkeypatch.setenv("ROBOGLOT_MUJOCO_BODY", "puppet")
     adapter = make_adapter("microduck:mujoco", seed=3, room="two-rooms")
     try:
         manifest = await adapter.connect()

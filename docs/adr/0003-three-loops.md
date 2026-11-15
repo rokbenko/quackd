@@ -1,9 +1,9 @@
 # ADR-0003: Three loops, three rates, three owners
 
-**Status:** accepted, amended · **Date:** 2026-08-28 · Amended by [ADR-0024](0024-open-duck-mini.md) (0.5: on an Open Duck Mini v2, whose runtime has no network control API, quackd's own daemon hosts the reflex loop. It still writes none of the control code, and feeds that loop the same command vector a gamepad would, so "quackd never touches this" below should be read as "quackd never writes this")
+**Status:** accepted, amended · **Date:** 2026-08-28 · Amended by [ADR-0024](0024-open-duck-mini.md) (0.5: on an Open Duck Mini v2, whose runtime has no network control API, Roboglot's own daemon hosts the reflex loop. It still writes none of the control code, and feeds that loop the same command vector a gamepad would, so "Roboglot never touches this" below should be read as "Roboglot never writes this")
 
 **Amended 2026-09-28 by [ADR-0048](0048-policies-are-the-arms-executor.md):** the steering tier has a second kind of loop on the
-SO-101 arm. A segment of the arm's learned policy, `pick` or `manipulate`, is a loop in quackd's
+SO-101 arm. A segment of the arm's learned policy, `pick` or `manipulate`, is a loop in Roboglot's
 process, paced on the arm's clock at the policy's own rate, anywhere from 1 to 60 Hz rather
 than the composites' 10 Hz. Like a composite it calls no LLM: the policy's inference runs in a
 server process of its own, and the loop takes its goals and holds each to the arm's rules
@@ -17,7 +17,7 @@ verbs never call the LLM" below reads "never call the *pilot*". The steering tie
 of loop on a Microduck, `watch`, which keeps a thing the pilot described in view with the head, a
 look at most every half second, by asking a decision LLM that can see closed questions about each
 frame, where the thing is across it and, on a head that tilts, how high, on a run started with
-`--decision-frames`. What comes back is a sector, and quackd turns it into a move of its own,
+`--decision-frames`. What comes back is a sector, and Roboglot turns it into a move of its own,
 clamped to the head's numbers, so the decision LLM decides where and never how. The pilot calls it
 as a verb and reads its result as it reads any verb's, how the call ended and where across the
 picture the thing was last seen, and the decision LLM's answers go to the record and no further.
@@ -32,14 +32,14 @@ note says it plainly: "LLM latency means the agent is a *high-level* controller"
 
 | Loop | Rate | Where | Owner |
 |---|---|---|---|
-| Reflexes | 50 Hz | onboard `robotd` | RL policies: balance, gait, stand-up. quackd never touches this. |
-| Steering | 5–20 Hz | quackd process | perception + composite verbs (`walk_to` closes the approach loop from detections). |
+| Reflexes | 50 Hz | onboard `robotd` | RL policies: balance, gait, stand-up. Roboglot never touches this. |
+| Steering | 5–20 Hz | Roboglot process | perception + composite verbs (`walk_to` closes the approach loop from detections). |
 | Deliberation | ~0.2–1 Hz | LLM | reads a frame summary + state, picks the next **verb**, judges success. |
 
 The LLM decides **what**; the steering loop decides **how to get there**; the RL policies
 keep the duck **upright**. Concretely:
 
-- The LLM's only output is one tool call per turn (`quackd/agent/loop.py` enforces it).
+- The LLM's only output is one tool call per turn (`roboglot/agent/loop.py` enforces it).
 - Composite verbs never call the LLM. `walk_to` runs a 10 Hz detect→steer loop in Python.
 - Built-in verbs are intents (`robot.move`, `robot.do`), never joint targets.
 - The transport owns time (`now()`/`sleep()`), so the steering loop runs at sim speed in the

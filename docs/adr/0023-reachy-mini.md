@@ -2,10 +2,10 @@
 
 **Status:** superseded · **Date:** 2026-09-02 · Implemented in Phase 2 of 0.4 ([design](../design/multi-robot.md))
 
-**Superseded 2026-09-12:** the Reachy Mini adapter was removed from quackd. Everything below
+**Superseded 2026-09-12:** the Reachy Mini adapter was removed from Roboglot. Everything below
 is left as the record of what 0.4 through 0.8 actually shipped; none of it applies to the
 current tree. See the CHANGELOG's 0.9.0 entry for the removal and
-[ADR-0020](0020-heterogeneous-flocks.md)'s amendment for what the removal did and did not take
+[ADR-0020](0020-heterogeneous-teams.md)'s amendment for what the removal did and did not take
 with it.
 
 ## Context
@@ -18,7 +18,7 @@ and antenna motion (`goto_target`, `look_at_world`, `look_at_image`), a camera
 via `media.play_sound(file)` or raw PCM. It has **no text-to-speech** (the upstream TTS
 example calls an external Hugging Face Space), **no battery readout**, **no
 client-disconnect deadman** and **no e-stop primitive** that we could find. The owner had
-to decide what quackd's speaker verb means on such a robot.
+to decide what Roboglot's speaker verb means on such a robot.
 
 ## Decision
 
@@ -32,29 +32,29 @@ to decide what quackd's speaker verb means on such a robot.
   alternatives, no `say` at all or a local TTS extra, were rejected: the first makes a
   duck-and-reachy dialogue impossible, the second adds a heavy dependency and untested
   audio routing.
-- **`stop` is `cancel_move()`. quackd never calls `disable_motors()`**, which makes the
+- **`stop` is `cancel_move()`. Roboglot never calls `disable_motors()`**, which makes the
   head limp; the same principle as never sending `robot.relax` on the Microduck. The
   manifest's `safety_authority.native` is `none` because no client deadman or e-stop was
-  verified; quackd's own 2 Hz heartbeat and short gaze moves are the only client-side
+  verified; Roboglot's own 2 Hz heartbeat and short gaze moves are the only client-side
   authority, and the docs say so.
 - **`express`'s enum is built from the manifest at connect time**, from the local Hugging
   Face cache only, never downloaded; if the library is unavailable the verb is omitted and
-  a `.duck` that requires it fails validation against that robot. Sim and mock use a fixed
+  a `.glot` that requires it fails validation against that robot. Sim and mock use a fixed
   curated tuple.
 - **`wake_up` ships as a confirm-gated extension** (it moves every joint); `goto_sleep`
   and `disable_motors` are not exposed.
 - **The `sdk` backend is EXPERIMENTAL** with the same label as `jsonrpc`: verified names
   at a pinned commit, never run against a robot by us. It never passes `spawn_daemon=True`
   (that kills a mismatched daemon), serializes every SDK call under one lock with a
-  per-call timeout, and is never imported by the default path; `quackd doctor` reads its
+  per-call timeout, and is never imported by the default path; `roboglot doctor` reads its
   version through package metadata only.
 - Reachy's `gaze` is its own verb (bearing 180 degrees either way, pitch 40 degrees, no
-  fall precondition) under the same name, so a `.duck` that requires `gaze` is satisfied
+  fall precondition) under the same name, so a `.glot` that requires `gaze` is satisfied
   by both robots and the Microduck builtin stays byte-for-byte unchanged.
 
 ## Consequences
 
-- A "Battery below N%" abort is unenforceable on Reachy; `quackd validate` warns.
+- A "Battery below N%" abort is unenforceable on Reachy; `roboglot validate` warns.
 - Bearings are camera-relative on every robot; on a head the body bearing is
   `gaze_yaw_deg + bearing_deg`, reported by `search_scan` and documented.
 - Flipping the `say` policy is one constant in the manifest builder if the owner changes

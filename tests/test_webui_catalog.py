@@ -1,5 +1,5 @@
-"""What the page's pickers offer, read from quackd's own catalogues, and the probe that checks a
-robot from a child process (`quackd.webui.catalog`, `quackd.webui.probe`). No Streamlit."""
+"""What the page's pickers offer, read from Roboglot's own catalogues, and the probe that checks a
+robot from a child process (`roboglot.webui.catalog`, `roboglot.webui.probe`). No Streamlit."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from quackd.agent.providers.catalogue import PROVIDER_NAMES, default_llm_for
-from quackd.doctor import EXTRAS
-from quackd.webui import catalog
+from roboglot.agent.providers.catalogue import PROVIDER_NAMES, default_llm_for
+from roboglot.doctor import EXTRAS
+from roboglot.webui import catalog
 
 
 def test_the_robots_are_list_adapters_own_rows() -> None:
-    from quackd.adapters.factory import list_adapters
+    from roboglot.adapters.factory import list_adapters
 
     assert catalog.adapters() == list_adapters()
     microduck = next(row for row in catalog.adapters() if row["name"] == "microduck")
@@ -72,22 +72,22 @@ def test_dotenv_is_read_and_never_loaded_into_the_page(
 ) -> None:
     """A value the page loaded would reach every run it starts looking as if the shell had set
     it, past the checks that keep some settings out of a project's `.env`."""
-    monkeypatch.delenv("QUACKD_UI_TEST_VALUE", raising=False)
-    (tmp_path / ".env").write_text("QUACKD_UI_TEST_VALUE=from-the-file\n", encoding="utf-8")
-    assert catalog.dotenv(tmp_path)["QUACKD_UI_TEST_VALUE"] == "from-the-file"
-    assert "QUACKD_UI_TEST_VALUE" not in os.environ
+    monkeypatch.delenv("ROBOGLOT_UI_TEST_VALUE", raising=False)
+    (tmp_path / ".env").write_text("ROBOGLOT_UI_TEST_VALUE=from-the-file\n", encoding="utf-8")
+    assert catalog.dotenv(tmp_path)["ROBOGLOT_UI_TEST_VALUE"] == "from-the-file"
+    assert "ROBOGLOT_UI_TEST_VALUE" not in os.environ
 
 
 def test_the_line_that_installs_an_adapter_names_its_extra_once() -> None:
-    """The row's `extra` is the whole of what goes in the quotes, `quackd[lerobot]`, and the setup
-    page wrapped it in a second `quackd[...]`."""
+    """The row's `extra` is the whole of what goes in the quotes, `roboglot[lerobot]`, and the setup
+    page wrapped it in a second `roboglot[...]`."""
     rows = [row for row in catalog.adapters() if row.get("extra")]
     assert rows
     for row in rows:
         assert catalog.install_line(row) == f'uv pip install "{row["extra"]}"'
-        assert "quackd[quackd[" not in catalog.install_line(row)
+        assert "roboglot[roboglot[" not in catalog.install_line(row)
     (arm,) = [row for row in rows if row["name"] == "lerobot"]
-    assert catalog.install_line(arm) == 'uv pip install "quackd[lerobot]"'
+    assert catalog.install_line(arm) == 'uv pip install "roboglot[lerobot]"'
 
 
 def test_an_adapter_that_names_no_extra_is_given_no_command_for_one() -> None:
@@ -114,7 +114,7 @@ def test_only_the_keys_typed_with_a_value_reach_a_run() -> None:
 
 def _probe(tmp_path: Path, request: object) -> dict[str, object]:
     done = subprocess.run(
-        [sys.executable, "-P", "-m", "quackd.webui.probe", json.dumps(request)],
+        [sys.executable, "-P", "-m", "roboglot.webui.probe", json.dumps(request)],
         cwd=tmp_path,
         capture_output=True,
         text=True,
@@ -139,7 +139,7 @@ def test_the_probe_checks_a_robot_in_a_child_and_answers_in_one_line(tmp_path: P
 
 def test_a_registered_name_and_its_spec_at_the_same_address_are_one_robot(tmp_path: Path) -> None:
     """The page holds one job per body, whichever way the body is named."""
-    from quackd.registry import Registry, RobotEntry
+    from roboglot.registry import Registry, RobotEntry
 
     Registry(tmp_path).add_robot(RobotEntry(name="arm-01", spec="lerobot:real", address="COM5"))
     named = catalog.robot_identity("arm-01", None, registry_dir=str(tmp_path))

@@ -12,9 +12,9 @@ from types import ModuleType
 
 import pytest
 
-from quackd.agent.decision.catalogue import PRESET_NAMES, PRESETS
-from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, PRICES_CHECKED
-from quackd.agent.providers.factory import (
+from roboglot.agent.decision.catalogue import PRESET_NAMES, PRESETS
+from roboglot.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, PRICES_CHECKED
+from roboglot.agent.providers.factory import (
     CLOUD_NAMES,
     EXTRA_FOR,
     KEY_ENV,
@@ -23,8 +23,8 @@ from quackd.agent.providers.factory import (
     default_llm_for,
     llms_for,
 )
-from quackd.verbs.registry import default_registry
-from quackd_microduck import upstream_api as up
+from roboglot.verbs.registry import default_registry
+from roboglot_microduck import upstream_api as up
 from tests.adapter_layout import adapter_module
 
 REPO = Path(__file__).resolve().parents[1]
@@ -41,10 +41,10 @@ def _as_rendered(markdown: str) -> str:
     return markdown.replace("\\|", "|")
 
 
-def test_every_body_quackd_ships_has_a_row_on_the_safety_pages_other_bodies() -> None:
-    """What stops each body when quackd goes quiet is on one page, a row for every adapter the
+def test_every_body_roboglot_ships_has_a_row_on_the_safety_pages_other_bodies() -> None:
+    """What stops each body when Roboglot goes quiet is on one page, a row for every adapter the
     factory lists, so a new body cannot ship without saying it."""
-    from quackd.adapters.factory import ADAPTER_NAMES
+    from roboglot.adapters.factory import ADAPTER_NAMES
 
     page = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
     section = page.split("## On other bodies", 1)[1].split("\n## ", 1)[0]
@@ -60,7 +60,7 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     pages through `test_adapter_doc_lists_every_upstream_ref` and `robotd` through this one.
     Without the second loop the newest table is the only one that can go stale in silence.
     """
-    from quackd_microduck.sim3d import upstream_api as microduck_rl
+    from roboglot_microduck.sim3d import upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     doc = _as_rendered(doc)
@@ -73,9 +73,9 @@ def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
 
 
 def test_the_microduck_page_lists_every_mapd_ref() -> None:
-    """`mapd`, the duck's onboard map, is a third upstream on the same page: a branch quackd read
+    """`mapd`, the duck's onboard map, is a third upstream on the same page: a branch Roboglot read
     and no release carries, every row of it an assumption, so every row is said."""
-    from quackd_microduck import mapd_upstream_api as mapd
+    from roboglot_microduck import mapd_upstream_api as mapd
 
     doc = _as_rendered(
         (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
@@ -109,9 +109,9 @@ def test_the_microduck_page_says_which_physics_read_it_is() -> None:
 
     The robot's read has the guard above, and nothing held this one: a re-pin that moved the
     simulator's policies and left the page would go on sending somebody checking the licence to
-    a revision quackd no longer fetches. The re-read on 2026-10-09 moved the policies from
+    a revision Roboglot no longer fetches. The re-read on 2026-10-09 moved the policies from
     `088524a`, older than upstream's `v5`, to `v7`."""
-    from quackd_microduck.sim3d import upstream_api as microduck_rl
+    from roboglot_microduck.sim3d import upstream_api as microduck_rl
 
     doc = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     section = doc.split("\n## The duck's physics upstreams\n", 1)[1].split("\n## ", 1)[0]
@@ -136,11 +136,11 @@ def test_the_microduck_page_says_which_physics_read_it_is() -> None:
 
 
 def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
-    """The page says how long robotd's state has to show a `robot.move` before quackd holds the
-    walk back, in frames and in seconds at the rate quackd subscribes at. All three are numbers
+    """The page says how long robotd's state has to show a `robot.move` before Roboglot holds the
+    walk back, in frames and in seconds at the rate Roboglot subscribes at. All three are numbers
     in `jsonrpc_unix.py`, and the page is where somebody on a slow tunnel reads why a walk that
     robotd took was stopped."""
-    from quackd_microduck.transports.jsonrpc_unix import (
+    from roboglot_microduck.transports.jsonrpc_unix import (
         MOVE_ECHO_FRAMES,
         STATE_HZ,
         move_echo_after_s,
@@ -149,7 +149,7 @@ def test_the_microduck_page_states_the_echo_window_the_transport_uses() -> None:
     page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     said = (
         f"{_NUMBER_WORDS[MOVE_ECHO_FRAMES]} frames after it went out "
-        f"({move_echo_after_s(STATE_HZ):g} s at the {STATE_HZ} Hz quackd subscribes at)"
+        f"({move_echo_after_s(STATE_HZ):g} s at the {STATE_HZ} Hz Roboglot subscribes at)"
     )
     assert said in " ".join(page.split()), f"the Microduck page does not say {said!r}"
 
@@ -159,7 +159,7 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
     frame, which is what an alpha over WebRTC reports as `camera_fov_deg`. Both are worked out
     here from the solve `upstream_api.py` carries, so the page cannot keep a number the solve
     no longer gives."""
-    from quackd_microduck.webrtc import upright_fov_deg
+    from roboglot_microduck.webrtc import upright_fov_deg
 
     page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     page = " ".join(page.split())
@@ -190,7 +190,7 @@ def test_the_microduck_page_states_the_alpha_lens_the_calibration_gives() -> Non
 
 def test_the_microduck_page_states_the_beta_solve_and_where_its_axis_sits() -> None:
     """The page gives the beta family's calibration, the 85.2 degrees it makes of a beta's frame,
-    and how far its principal point sits from the centre quackd's detectors take a bearing from,
+    and how far its principal point sits from the centre Roboglot's detectors take a bearing from,
     and what that does to a bearing at the middle of the picture and at its edges, then with the
     solve's distortion too. Each is worked out here from the solve `upstream_api.py` carries, as
     the alpha's are, so the page cannot keep a number the solve no longer gives."""
@@ -223,12 +223,12 @@ def test_the_microduck_page_states_the_beta_solve_and_where_its_axis_sits() -> N
 
 
 def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
-    """The page says how often quackd asks mediad's `/frame` for a frame against any other
+    """The page says how often Roboglot asks mediad's `/frame` for a frame against any other
     camera, how old a frame may get, how long connect waits for the first, and the lens a tall
     or a wide first frame is taken for. Each is a number in the code or in upstream's source, and
     the page is where somebody with a duck at the other end of a tunnel reads why a run saw what
     it saw."""
-    from quackd_microduck.transports.jsonrpc_unix import (
+    from roboglot_microduck.transports.jsonrpc_unix import (
         CAMERA_FPS,
         FIRST_FRAME_WAIT_S,
         MEDIAD_FRAME_FPS,
@@ -242,15 +242,15 @@ def test_the_microduck_page_states_how_it_reads_mediads_frame() -> None:
     lens = math.degrees(2 * math.atan(math.tan(math.radians(half)) * width / height))
     for said in (
         f"| How often | {MEDIAD_FRAME_FPS:g} frames a second |",
-        f"quackd asks mediad for {MEDIAD_FRAME_FPS:g} frames a second, where any other HTTP "
+        f"Roboglot asks mediad for {MEDIAD_FRAME_FPS:g} frames a second, where any other HTTP "
         f"camera is asked for {CAMERA_FPS:g}",
         f"a frame older than {camera_stale_after_s(MEDIAD_FRAME_FPS):g} s is not handed out",
         f"waits up to {FIRST_FRAME_WAIT_S:g} s for the first frame",
         f"sees {up.IMX219_FOV_DEG:g}° along its long side",
-        f"across a {width} by {height} frame, the default 720p turned upright, quackd measures "
+        f"across a {width} by {height} frame, the default 720p turned upright, Roboglot measures "
         f"through {lens:.1f}°",
         f"2·atan(tan {half:g}° · w/h)",
-        f"at any size quackd measures through {up.GC2093_FOV_DEG:g}°, the field the focal length "
+        f"at any size Roboglot measures through {up.GC2093_FOV_DEG:g}°, the field the focal length "
         "of upstream's own solve of the beta's lens gives across the frame's width",
     ):
         assert said in page, f"the Microduck page does not say {said!r}"
@@ -260,8 +260,8 @@ def test_the_microduck_page_states_the_gaze_hold_the_transport_keeps() -> None:
     """The page says how often a held gaze goes out again, against how long robotd waits before
     it glances, and how long `go_to` and `search_scan` wait for a glance to fade. Each is a number
     in the code, and the page is where somebody watching a real head reads whether what it does
-    is quackd's or robotd's."""
-    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+    is Roboglot's or robotd's."""
+    from roboglot_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
 
     page = (REPO / "docs" / "adapters" / "microduck" / "README.md").read_text(encoding="utf-8")
     page = " ".join(page.split())
@@ -290,7 +290,7 @@ def test_the_microduck_pages_say_when_robotd_glances() -> None:
     sooner than it is. A stop ends the gaze hold no more than GAZE_HOLD_S after the head last went
     out, so the first glance comes from twice IDLE_AFTER less GAZE_HOLD_S to twice IDLE_AFTER
     after it, and each of those numbers is worked out here from the ones the code holds."""
-    from quackd_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
+    from roboglot_microduck.transports.jsonrpc_unix import GAZE_HOLD_S
 
     first = 2 * up.IDLE_AFTER_S
     after_stop = f"from {first - GAZE_HOLD_S:g} to {first:g} s after"
@@ -313,16 +313,16 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
     """robotd keeps one twist, the newest from any client, and ranks none above another. `padd`
     re-sends its stop every HEARTBEAT while a pad's sticks are still and asks robotd to sit the
     duck PAD_LOST_SIT after a driving pad goes, and robotd's deadman zeroes a twist older than
-    its `deadman_ms` (`up.PAD_DRIVES`, `up.DEADMAN`). The pages said a gamepad out-ranked quackd,
+    its `deadman_ms` (`up.PAD_DRIVES`, `up.DEADMAN`). The pages said a gamepad out-ranked Roboglot,
     that letting go of its sticks stopped the robot, and that a pad dropping out left the deadman
-    to stop a walk, which it cannot while quackd re-sends its twist every MOVE_RESEND_S. Step 8
+    to stop a walk, which it cannot while Roboglot re-sends its twist every MOVE_RESEND_S. Step 8
     of the checklist tested the deadman with the pad in hand, whose stop halts the legs first.
 
-    Two orderings carry all of it, so they are held first: quackd's re-send is shorter than the
+    Two orderings carry all of it, so they are held first: Roboglot's re-send is shorter than the
     deadman, which is why the deadman does not fire while a verb walks, and so is a pad's
     heartbeat, which is why step 8 runs with the pad switched off. Then each page says the
     numbers as `upstream_api.py` and the verbs hold them, worked out here, not written."""
-    from quackd.verbs.core import MOVE_RESEND_S
+    from roboglot.verbs.core import MOVE_RESEND_S
 
     assert MOVE_RESEND_S < up.DEADMAN_S, "a walk's own re-sends would let the deadman fire"
     assert up.PAD_HEARTBEAT_S < up.DEADMAN_S, "a pad's stops would not beat the deadman"
@@ -333,10 +333,10 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
     safety = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
     safety = " ".join(safety.split())
     for said in (
-        "**A gamepad does not out-rank quackd.**",
-        f"sends a stop every {ms(up.PAD_HEARTBEAT_S)}, and quackd re-sends its twist every "
+        "**A gamepad does not out-rank Roboglot.**",
+        f"sends a stop every {ms(up.PAD_HEARTBEAT_S)}, and Roboglot re-sends its twist every "
         f"{ms(MOVE_RESEND_S)} while a verb walks",
-        "**robotd's deadman does not fire while quackd walks the duck.**",
+        "**robotd's deadman does not fire while Roboglot walks the duck.**",
         f"It zeroes a twist older than {up.DEADMAN_S:g} s",
         f"asks robotd to sit the duck {up.PAD_LOST_SIT_S:g} s after the pad went",
     ):
@@ -344,7 +344,7 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
     checklist = _microduck_page("hardware-checklist.md")
     for said in (
         "## 8. Pull the tunnel out, mid-walk, with the pad switched off",
-        f"its stop halts the legs within {ms(up.PAD_HEARTBEAT_S)} of quackd's last twist",
+        f"its stop halts the legs within {ms(up.PAD_HEARTBEAT_S)} of Roboglot's last twist",
         f"ask robotd to sit the duck {up.PAD_LOST_SIT_S:g} s later",
         f"{up.DEADMAN_S:g} s after the last one `robotd`'s deadman zeroes the velocity",
     ):
@@ -355,13 +355,13 @@ def test_the_microduck_pages_say_what_stops_a_walk_and_when() -> None:
         f"{up.PAD_LOST_SIT_S:g} s later asks robotd to sit a duck",
         f"`[safety] deadman_ms`, {ms(up.DEADMAN_S)} by default",
         f"every {ms(MOVE_RESEND_S)} while a verb walks, so the deadman does not fire during a "
-        "quackd walk",
+        "Roboglot walk",
     ):
         assert said in page, f"the Microduck page does not say {said!r}"
 
 
 def test_the_microduck_page_names_each_field_it_reads_that_the_floor_lacks() -> None:
-    """quackd reads two of the fields robotd added after `up.API_FLOOR`: `safety.picked_up`, for
+    """Roboglot reads two of the fields robotd added after `up.API_FLOOR`: `safety.picked_up`, for
     whether somebody holds the duck, and `frames`, for where the camera points. The page said it
     read one, `safety.picked_up`, a sentence written before the gaze hold began reading `frames`,
     so a reader learned that only pick-up detection rests on a field a robotd at the floor lacks,
@@ -370,19 +370,19 @@ def test_the_microduck_page_names_each_field_it_reads_that_the_floor_lacks() -> 
     fields = (up.SAFETY_PICKED_UP.name, up.STATE_FRAMES.name.rsplit(".", 1)[1])
     page = _microduck_page("README.md")
     intro = page.split(" ## Upstream API ", 1)[1].split(" ### ", 1)[0]
-    said = f"of which quackd reads {_NUMBER_WORDS[len(fields)]}: `{fields[0]}`"
+    said = f"of which Roboglot reads {_NUMBER_WORDS[len(fields)]}: `{fields[0]}`"
     assert said in intro, f"the Microduck page's Upstream API section does not say {said!r}"
     assert f"and `{fields[1]}`, where the camera points" in intro
     assert all(field in up.API_FLOOR.note for field in fields), up.API_FLOOR.note
 
 
-#: What the pages said about a real Microduck before quackd read robotd again at daemon-v0.16.1,
+#: What the pages said about a real Microduck before Roboglot read robotd again at daemon-v0.16.1,
 #: in the words they said it in. The re-read falsified each one, and a page reverted to any of
 #: them would read as current.
 _RETIRED_MICRODUCK_CLAIMS = (
-    # the login: upstream's own tools log in as `microduck`, and `radxa` was quackd's guess
+    # the login: upstream's own tools log in as `microduck`, and `radxa` was Roboglot's guess
     "radxa@",
-    # the version: quackd reads API v41, and serves a robotd from API v23 up
+    # the version: Roboglot reads API v41, and serves a robotd from API v23 up
     "`duck-ipc-proto` v23",
     "API v23, pinned",
     # the camera: mediad serves GET /frame and media.frame as well as its WebRTC track
@@ -395,23 +395,23 @@ _RETIRED_MICRODUCK_CLAIMS = (
     "a policy whose name contains `sit`",
     # falls: limp_fall, robotd's own answer to a fall, is off by default at daemon-v0.16.1, and
     # from daemon-v0.16.2 it hands the duck to a policy upstream says gets up, which nobody has
-    # seen do so under quackd
+    # seen do so under Roboglot
     "recovers from falls itself",
     # the pad: robotd keeps one twist, the newest from any client, and ranks none above another,
-    # so a gamepad does not out-rank quackd, letting go of sticks nobody touched stops nothing,
-    # and the deadman cannot stop a walk quackd goes on re-sending, whatever the pad does
+    # so a gamepad does not out-rank Roboglot, letting go of sticks nobody touched stops nothing,
+    # and the deadman cannot stop a walk Roboglot goes on re-sending, whatever the pad does
     "Upstream arbitrates authority",
     "gamepad preempts remote control",
     "gamepad preempts remote commands",
-    "has authority and quackd does not arbitrate",
+    "has authority and Roboglot does not arbitrate",
     "keeps authority on hardware",
     "the pad is the authority",
     "the pad's authority",
-    "over any twist quackd sends",
-    "over whatever twist quackd sends",
+    "over any twist Roboglot sends",
+    "over whatever twist Roboglot sends",
     "releasing the sticks stops the robot",
     "leaves robotd's deadman to stop the walking",
-    # the pad as the e-stop: its stops land between quackd's twists, not over them, and step 8
+    # the pad as the e-stop: its stops land between Roboglot's twists, not over them, and step 8
     # of the checklist tests the deadman with the pad switched off
     "gamepad is the real e-stop",
     "pad in hand as the e-stop",
@@ -437,16 +437,16 @@ _RETIRED_MICRODUCK_CLAIMS = (
 
 
 def test_no_living_document_still_describes_the_microduck_before_the_re_read() -> None:
-    """quackd read robotd again at daemon-v0.16.1, and pages and strings across the tree still
-    said what the read before it had: an account to ssh in as that was quackd's guess, API v23,
+    """Roboglot read robotd again at daemon-v0.16.1, and pages and strings across the tree still
+    said what the read before it had: an account to ssh in as that was Roboglot's guess, API v23,
     WebRTC as the only camera and a snapshot server that stopped `mediad` to get round it,
     posture as an assumption, a robotd that gets a fallen duck up, a gamepad that out-ranks
-    quackd, where robotd walks on the newest twist from either, a simulator walking on the
+    Roboglot, where robotd walks on the newest twist from either, a simulator walking on the
     robot's own policy, which every robotd from daemon-v0.13.0 replaced, and no way to swap a
     policy over the socket. Each was spelled its own way, and a revert of any one reads as
     current, so the old spellings are kept out of every living page and of everything else a
     person reads: NOTICE, the CLI's and the adapters' strings, the pyproject comments, the issue
-    templates and the bundled ducks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
+    templates and the bundled tasks. CHANGELOG, PLAN.md, the ADRs and the design notes keep them,
     dated, as history. Whitespace is collapsed first, so a revert that was reflowed on its way
     back is caught too. Since 0.18.1 it also keeps out a robotd that clamps velocities or
     temperatures: what robotd clamps, at daemon-v0.16.1 and at the four releases of 2026-10-12,
@@ -456,10 +456,10 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
         REPO / "NOTICE",
         REPO / "pyproject.toml",
         *sorted((REPO / "adapters").glob("*/pyproject.toml")),
-        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
         *sorted((REPO / "adapters").rglob("*.py")),
         *sorted((REPO / ".github" / "ISSUE_TEMPLATE").glob("*.yml")),
-        *sorted((REPO / "ducks").glob("*.duck")),
+        *sorted((REPO / "tasks").glob("*.glot")),
     ]
     stale: list[str] = []
     for path in sources:  # each file read once, not once a claim: the tree has hundreds
@@ -467,12 +467,12 @@ def test_no_living_document_still_describes_the_microduck_before_the_re_read() -
         where = path.relative_to(REPO).as_posix()
         stale += [f"{where}: {claim!r}" for claim in _RETIRED_MICRODUCK_CLAIMS if claim in text]
     assert not stale, (
-        "these still describe a real Microduck the way quackd's read before daemon-v0.16.1 did "
+        "these still describe a real Microduck the way Roboglot's read before daemon-v0.16.1 did "
         f"(docs/adapters/microduck/README.md has the read): {stale}"
     )
 
 
-#: The day quackd read robotd at daemon-v0.16.1, the re-read `_RETIRED_MICRODUCK_CLAIMS` dates
+#: The day Roboglot read robotd at daemon-v0.16.1, the re-read `_RETIRED_MICRODUCK_CLAIMS` dates
 #: from. Written out rather than taken from `up.READ_ON`, which moves with every re-pin: the read of
 #: 2026-11-08 left it behind, and the guard below would have stopped reading every ADR since.
 _RE_READ_AT_DAEMON_V0_16_1 = "2026-10-08"
@@ -496,7 +496,7 @@ def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() ->
     ADR-0051, which the re-read added, called the echo's hold on a walk the pad's authority and
     said the hardware checklist asks for the pad in hand as the e-stop, after the checklist had
     moved step 8 to a pad switched off and every living page had stopped saying the pad out-ranks
-    quackd, and the guard did not look at it. Older ADRs are not read here, so their history
+    Roboglot, and the guard did not look at it. Older ADRs are not read here, so their history
     stands."""
     day = _RE_READ_AT_DAEMON_V0_16_1
     adrs = _adrs_dated_from(day)
@@ -508,7 +508,7 @@ def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() ->
         if claim in " ".join(path.read_text(encoding="utf-8").split())
     ]
     assert not stale, (
-        "these ADRs, dated since quackd read robotd at daemon-v0.16.1, still describe a real "
+        "these ADRs, dated since Roboglot read robotd at daemon-v0.16.1, still describe a real "
         f"Microduck the way the read before it did: {stale}"
     )
 
@@ -516,7 +516,7 @@ def test_no_adr_written_since_the_re_read_describes_the_microduck_before_it() ->
 def test_adapter_status_lists_every_backend() -> None:
     """Every row of the catalogue, the described bodies among them: a body with no row on this
     page is one whose numbers are on no page at all."""
-    from quackd.adapters.catalogue import OFFICIAL
+    from roboglot.adapters.catalogue import OFFICIAL
 
     doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
     for row in OFFICIAL:
@@ -531,7 +531,7 @@ def test_adapter_status_says_the_tier_the_catalogue_says() -> None:
     `--robot` is the catalogue's tier for it, with the owner and the date where the tier names
     them, so the page cannot call a backend verified that the catalogue calls bound
     (ADR-0076)."""
-    from quackd.adapters.catalogue import ADAPTERS
+    from roboglot.adapters.catalogue import ADAPTERS
 
     doc = (REPO / "docs" / "adapters" / "status.md").read_text(encoding="utf-8")
     for row in ADAPTERS:
@@ -552,8 +552,8 @@ def test_adapter_status_says_the_tier_the_catalogue_says() -> None:
 
 
 def test_adapter_guide_and_manifest_spec_match_the_code() -> None:
-    from quackd.adapters.factory import ADAPTER_NAMES
-    from quackd.verbs.core import REQUIREMENTS
+    from roboglot.adapters.factory import ADAPTER_NAMES
+    from roboglot.verbs.core import REQUIREMENTS
 
     guide = (REPO / "docs" / "adapters" / "writing-an-adapter.md").read_text(encoding="utf-8")
     for name in ADAPTER_NAMES:
@@ -593,13 +593,13 @@ def test_adapter_doc_lists_every_upstream_ref(adapter: str) -> None:
 
 def test_adapter_doc_lists_every_simulator_upstream_ref() -> None:
     """The arm's simulator reads a second upstream, TheRobotStudio's SO-ARM100, whose refs live
-    in `quackd_lerobot.sim.upstream_api`. The guard above reads `quackd_lerobot.upstream_api`
+    in `roboglot_lerobot.sim.upstream_api`. The guard above reads `roboglot_lerobot.upstream_api`
     only, so without this one the model's table could go stale in silence.
 
     Each ref needs a row of its own in the table for its status. A name found anywhere on the
     page is not enough: the model's file name is in the prose, and `GRIPPER_MAP` is named in a
     VERIFIED row, so either row could go and a looser check would stay green."""
-    from quackd_lerobot.sim import upstream_api as so_arm100
+    from roboglot_lerobot.sim import upstream_api as so_arm100
 
     doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     section = doc.split("\n## The simulator's upstream: SO-ARM100\n", 1)[1].split("\n## ", 1)[0]
@@ -615,17 +615,17 @@ def test_adapter_doc_lists_every_simulator_upstream_ref() -> None:
     )
     assert so_arm100.PIN[:7] in section and so_arm100.READ_ON in section
     assert "fetched at run time and never shipped" in section  # the honesty label
-    assert "QUACKD_LEROBOT_SIM_ASSETS" in section
+    assert "ROBOGLOT_LEROBOT_SIM_ASSETS" in section
 
 
 def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     """LeRobot's policy names are read at another pin than the arm's, the release a policy
-    server installs, in `quackd_lerobot.policy.upstream_api`, and the arm's page carries them
+    server installs, in `roboglot_lerobot.policy.upstream_api`, and the arm's page carries them
     in a section of their own. As with the simulator's, each ref needs a row of its own in the
     table for its status, because a name found anywhere on the page is not enough: the moved
     rows used to sit in the arm's own tables, and a leftover there would keep a looser check
     green."""
-    from quackd_lerobot.policy import upstream_api as policies
+    from roboglot_lerobot.policy import upstream_api as policies
 
     doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     heading = f"\n## The policies' upstream: LeRobot {policies.VERSION}\n"
@@ -643,20 +643,20 @@ def test_adapter_doc_lists_every_policy_upstream_ref() -> None:
     assert policies.PIN[:7] in section and policies.READ_ON in section
     # The honesty label. It went on saying no trained checkpoint had ever been loaded after the
     # laptop's server had loaded trained ones, so it says where none has been loaded instead.
-    assert "No trained checkpoint has been loaded by quackd in CI or on a GPU" in section
+    assert "No trained checkpoint has been loaded by Roboglot in CI or on a GPU" in section
     arm = doc.split("\n## Upstream API\n", 1)[1].split("\n## ", 1)[0]
     stale = [ref.name for ref in policies.all_refs() if f"\n| `{ref.name}` |" in arm]
     assert not stale, f"the arm's own tables still carry policy rows: {stale}"
 
 
 def test_adapter_doc_lists_every_endpoint_upstream_ref() -> None:
-    """Hugging Face's Inference Endpoints, where `quackd policy endpoint` starts a policy server,
+    """Hugging Face's Inference Endpoints, where `roboglot policy endpoint` starts a policy server,
     are read from the API's own document, Hugging Face's pages and huggingface_hub at its tag, in
-    `quackd_lerobot.policy.endpoint_upstream_api`, and the arm's page carries them in a section
+    `roboglot_lerobot.policy.endpoint_upstream_api`, and the arm's page carries them in a section
     of their own. Each ref needs a row of its own in the table for its status, as the policies'
-    do, and the section says when it was read, at which commit and API version, and that quackd
+    do, and the section says when it was read, at which commit and API version, and that Roboglot
     has never created an endpoint."""
-    from quackd_lerobot.policy import endpoint_upstream_api as endpoints
+    from roboglot_lerobot.policy import endpoint_upstream_api as endpoints
 
     doc = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     heading = "\n## The endpoint's upstream: Hugging Face Inference Endpoints\n"
@@ -674,7 +674,7 @@ def test_adapter_doc_lists_every_endpoint_upstream_ref() -> None:
     assert endpoints.PIN[:7] in section and endpoints.READ_ON in section
     assert f"version {endpoints.API_VERSION}" in section
     # the honesty label
-    assert "quackd has never created a Hugging Face Endpoint" in section
+    assert "Roboglot has never created a Hugging Face Endpoint" in section
 
 
 def test_the_rosarm_contract_job_runs_both_distributions_and_stays_out_of_ci() -> None:
@@ -707,40 +707,40 @@ def test_the_rosarm_contract_job_runs_both_distributions_and_stays_out_of_ci() -
     assert "ros:${{ matrix.distro }}" in runs and "/repo:ro" in runs, runs
     assert "bash tests/rosarm_contract/run.sh" in runs, runs
     script = (REPO / "tests" / "rosarm_contract" / "run.sh").read_text(encoding="utf-8")
-    assert "QUACKD_ROSARM_CONTRACT=1" in script and "tests/test_rosarm_contract.py" in script
-    assert "--extra rosarm" in script, "the job installs roslibpy as quackd's own extra does"
+    assert "ROBOGLOT_ROSARM_CONTRACT=1" in script and "tests/test_rosarm_contract.py" in script
+    assert "--extra rosarm" in script, "the job installs roslibpy as Roboglot's own extra does"
     contract = (REPO / "tests" / "test_rosarm_contract.py").read_text(encoding="utf-8")
-    assert 'os.environ.get("QUACKD_ROSARM_CONTRACT") != "1"' in contract
+    assert 'os.environ.get("ROBOGLOT_ROSARM_CONTRACT") != "1"' in contract
     ci = (workflows / "ci.yml").read_text(encoding="utf-8")
-    assert "rosarm_contract" not in ci and "QUACKD_ROSARM_CONTRACT" not in ci
+    assert "rosarm_contract" not in ci and "ROBOGLOT_ROSARM_CONTRACT" not in ci
 
 
 def test_readme_promises() -> None:
     for needle in (
         "not affiliated with or endorsed by Pollen Robotics",
-        "claude mcp add quackd",
+        "claude mcp add roboglot",
         "dr-eureka",
         "github.com/pollen-robotics/microduck_rl",
         "--goal",
         "--llm fake",
         "biped",
-        "pronounced",
-        "One CLI for all your robots",
-        "flock-hello",
-        "quackd flock create",
+        "Talk to your robots. Let them talk to each other.",
+        "the communication layer between people and robots, and between robots",
+        "team-hello",
+        "roboglot team create",
         "Non goals for now",
         "--llm ollama",
-        "quackd list-models",
+        "roboglot list-models",
         "docs/guides/local-llms.md",
         "| Local LLMs (",
-        "--flock",
-        "flock-kick",
-        "docs/guides/flock.md",
+        "--team",
+        "team-kick",
+        "docs/guides/team.md",
         "--no-log",
-        "QUACKD_LOG",
+        "ROBOGLOT_LOG",
     ):
         assert needle in README, needle
-    # every vendor, from the code rather than a list here, so a vendor cannot be added to quackd
+    # every vendor, from the code rather than a list here, so a vendor cannot be added to Roboglot
     # and left out of the one table that tells anyone it exists
     for name in CLOUD_NAMES:
         assert f"--llm {name}" in README, f"the README never shows --llm {name}"
@@ -754,7 +754,7 @@ def test_the_readme_defaults_row_names_every_catalogue_default() -> None:
     """A default that is written down twice is a default that goes stale in one of them.
 
     This cannot stop the row being wrong the day a vendor moves, but it can stop the row being
-    wrong the day quackd itself moves, which is what happened to `gpt-5`, `grok-4` and
+    wrong the day Roboglot itself moves, which is what happened to `gpt-5`, `grok-4` and
     `gemini-2.5-pro`: the code changed under a sentence nobody re-read."""
     row = next((line for line in README.splitlines() if line.startswith("| LLM |")), None)
     assert row, "the README's Configuration table has no LLM row"
@@ -785,12 +785,12 @@ def test_every_key_a_vendor_falls_back_to_is_named_where_keys_are_configured() -
 def test_the_catalogue_is_documented_where_it_is_configured() -> None:
     """The same rule the log is held to, for the thing that now decides every run's LLM."""
     for path, needles in (
-        ("README.md", ("quackd list-models", "catalogue")),
-        ("docs/faq.md", ("quackd list-models", "catalogue")),
-        (".env.example", ("QUACKD_LLM", "list-models")),
+        ("README.md", ("roboglot list-models", "catalogue")),
+        ("docs/faq.md", ("roboglot list-models", "catalogue")),
+        (".env.example", ("ROBOGLOT_LLM", "list-models")),
         ("docs/guides/local-llms.md", ("catalogue",)),
         # the one place the answer is that there is no answer, which is worth saying out loud
-        ("docs/guides/mcp.md", ("selects no LLM", "QUACKD_LLM")),
+        ("docs/guides/mcp.md", ("selects no LLM", "ROBOGLOT_LLM")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -799,14 +799,16 @@ def test_the_catalogue_is_documented_where_it_is_configured() -> None:
 
 def test_the_list_models_row_names_every_kind_it_lists() -> None:
     """`--kind` is how a reader finds the decision LLMs and the policy types from a terminal, so
-    the command table says each one it takes, and that `quackd policy list` prints the policies
+    the command table says each one it takes, and that `roboglot policy list` prints the policies
     as well."""
-    from quackd.cli import MODEL_KINDS
+    from roboglot.cli import MODEL_KINDS
 
-    row = next(line for line in README.splitlines() if line.startswith("| `quackd list-models` |"))
+    row = next(
+        line for line in README.splitlines() if line.startswith("| `roboglot list-models` |")
+    )
     for kind in MODEL_KINDS:
         assert f"`--kind {kind}`" in row, f"the README's list-models row never names --kind {kind}"
-    assert "`quackd policy list`" in row
+    assert "`roboglot policy list`" in row
 
 
 #: The one dash the README is allowed: the leading one of a blockquote attribution,
@@ -865,7 +867,7 @@ def _emitted_kinds(*modules: str) -> set[str]:
 
     kinds: set[str] = set()
     for name in modules:
-        tree = ast.parse((REPO / "quackd" / name).read_text(encoding="utf-8"))
+        tree = ast.parse((REPO / "roboglot" / name).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call) or not node.args:
                 continue
@@ -885,8 +887,8 @@ def test_the_docs_describe_every_log_event_the_code_emits() -> None:
     place this can go stale."""
     # the modules that write a *run* transcript: the loop, the executor and the log, the eyes
     # `watch` looks through, which write its two kinds, and a drive session, whose record is a
-    # run's with kinds of its own (`record`). The flock keeps its own `flock.jsonl`
-    # (docs/guides/flock.md) and the MCP server's two envelope kinds are documented in
+    # run's with kinds of its own (`record`). The team keeps its own `team.jsonl`
+    # (docs/guides/team.md) and the MCP server's two envelope kinds are documented in
     # docs/guides/mcp.md.
     emitted = _emitted_kinds(
         "agent/loop.py",
@@ -920,7 +922,7 @@ def test_the_docs_name_every_gate_the_code_can_fire() -> None:
 
     gates: set[str] = set()
     for name in ("safety.py", "mcp_server.py"):
-        tree = ast.parse((REPO / "quackd" / name).read_text(encoding="utf-8"))
+        tree = ast.parse((REPO / "roboglot" / name).read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -944,21 +946,21 @@ def test_the_docs_name_every_gate_the_code_can_fire() -> None:
 def test_extra_body_is_documented_where_it_is_configured() -> None:
     """A knob nobody can find is a knob nobody has. This one is worse than most to discover by
     reading the source, because the field it carries belongs to the server rather than to
-    quackd, so the name to search for is never in this repository at all."""
+    Roboglot, so the name to search for is never in this repository at all."""
     for path, needles in (
-        ("README.md", ("--extra-body", "QUACKD_EXTRA_BODY")),
+        ("README.md", ("--extra-body", "ROBOGLOT_EXTRA_BODY")),
         (
             "docs/guides/local-llms.md",
             (
                 "--extra-body",
-                "QUACKD_EXTRA_BODY",
+                "ROBOGLOT_EXTRA_BODY",
                 "chat_template_kwargs",
                 # the serve-time way round, so the docs do not imply the client is the only one
                 "--default-chat-template-kwargs",
             ),
         ),
         ("docs/faq.md", ("--extra-body",)),
-        (".env.example", ("QUACKD_EXTRA_BODY", "chat_template_kwargs")),
+        (".env.example", ("ROBOGLOT_EXTRA_BODY", "chat_template_kwargs")),
         # the page has no such door, and its own list of differences is where that is recorded
         ("web/README.md", ("extra_body",)),
     ):
@@ -974,15 +976,15 @@ def test_the_log_is_documented_where_it_is_configured() -> None:
             (
                 "## Log",
                 "--no-log",
-                "QUACKD_LOG",
-                "QUACKD_LOG_PROMPT",
-                "QUACKD_LOG_THINKING",
+                "ROBOGLOT_LOG",
+                "ROBOGLOT_LOG_PROMPT",
+                "ROBOGLOT_LOG_THINKING",
             ),
         ),
-        ("docs/guides/mcp.md", ("log", "--no-log", "QUACKD_LOG")),
+        ("docs/guides/mcp.md", ("log", "--no-log", "ROBOGLOT_LOG")),
         ("docs/concepts/safety.md", ("--dry-run", "dry_run")),
-        (".env.example", ("QUACKD_LOG", "QUACKD_LOG_THINKING", "QUACKD_LOG_PROMPT")),
-        ("docs/guides/flock.md", ("log", "--no-log")),
+        (".env.example", ("ROBOGLOT_LOG", "ROBOGLOT_LOG_THINKING", "ROBOGLOT_LOG_PROMPT")),
+        ("docs/guides/team.md", ("log", "--no-log")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
@@ -997,9 +999,9 @@ def test_how_long_a_run_waits_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         (
             "README.md",
-            ("--effort", "QUACKD_ANTHROPIC_CACHE", "LLM calls p50", "first motion at"),
+            ("--effort", "ROBOGLOT_ANTHROPIC_CACHE", "LLM calls p50", "first motion at"),
         ),
-        (".env.example", ("--effort", "QUACKD_ANTHROPIC_CACHE=")),
+        (".env.example", ("--effort", "ROBOGLOT_ANTHROPIC_CACHE=")),
         (
             "docs/concepts/architecture.md",
             (
@@ -1028,14 +1030,14 @@ def test_the_price_of_a_run_is_documented_where_it_is_configured() -> None:
     variable, and the decision LLM hub for the stepper's own rate, which is a separate variable
     because it prices a separate vendor's tokens.
 
-    The `.env.example` needles carry their `=` on purpose. `QUACKD_PRICE` is also spelled in
-    the prose above the stepper's variable ("the same syntax as QUACKD_PRICE above"), so a
+    The `.env.example` needles carry their `=` on purpose. `ROBOGLOT_PRICE` is also spelled in
+    the prose above the stepper's variable ("the same syntax as ROBOGLOT_PRICE above"), so a
     bare substring check would still pass with the line that actually sets it deleted."""
     for path, needles in (
         ("README.md", ("--price", "--run-name")),
-        ("docs/concepts/architecture.md", ("QUACKD_PRICE", "--price", "--run-name")),
-        ("docs/guides/decision-llms/README.md", ("QUACKD_DECISION_PRICE",)),
-        (".env.example", ("QUACKD_PRICE=", "QUACKD_DECISION_PRICE=")),
+        ("docs/concepts/architecture.md", ("ROBOGLOT_PRICE", "--price", "--run-name")),
+        ("docs/guides/decision-llms/README.md", ("ROBOGLOT_DECISION_PRICE",)),
+        (".env.example", ("ROBOGLOT_PRICE=", "ROBOGLOT_DECISION_PRICE=")),
         # where somebody lands who has already been surprised by a figure, or by its absence
         ("docs/faq.md", ("--price", "--run-name", "unpriced")),
     ):
@@ -1052,12 +1054,12 @@ def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
     There are many decision LLMs now rather than one, so the names a reader has to be able to
     find are not a vendor's: they are `--decision-llm`, `--decision-mode` and `--decision-frames`
     on the front page, because that is where somebody decides whether to read any further, and on
-    the page itself the address for a server quackd has never heard of, the two extras that
+    the page itself the address for a server Roboglot has never heard of, the two extras that
     install the two ways of reaching one, the entry point group a third party publishes into, and
     the flag and the variable that send a picture of wherever the robot is off the machine, which
     SECURITY.md names too.
 
-    `TYPESAFE_API_KEY=` and `QUACKD_DECISION_FRAMES=` carry their `=` because each is also named
+    `TYPESAFE_API_KEY=` and `ROBOGLOT_DECISION_FRAMES=` carry their `=` because each is also named
     in the prose around it, and a variable nobody can find the line for is one nobody sets on
     purpose."""
     for path, needles in (
@@ -1066,21 +1068,21 @@ def test_the_decision_llm_is_documented_where_it_is_configured() -> None:
             "docs/guides/decision-llms/README.md",
             (
                 "--decision-url",
-                "quackd[decision]",
-                "quackd[laya]",
-                "quackd.decision_llms",
+                "roboglot[decision]",
+                "roboglot[laya]",
+                "roboglot.decision_llms",
                 "--decision-frames",
-                "QUACKD_DECISION_FRAMES",
+                "ROBOGLOT_DECISION_FRAMES",
             ),
         ),
         ("SECURITY.md", ("--decision-frames", "frames/NNNN-decision.jpg")),
         (
             ".env.example",
             (
-                "QUACKD_DECISION_LLM",
-                "QUACKD_DECISION_MODE",
-                "QUACKD_DECISION_URL",
-                "QUACKD_DECISION_FRAMES=",
+                "ROBOGLOT_DECISION_LLM",
+                "ROBOGLOT_DECISION_MODE",
+                "ROBOGLOT_DECISION_URL",
+                "ROBOGLOT_DECISION_FRAMES=",
                 "TYPESAFE_API_KEY=",
             ),
         ),
@@ -1118,7 +1120,7 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
     the goals of the policy it lets in are still clipped to the arm's travel. So does
     `--no-async-chunks`, which has the arm wait for every chunk, and the policy guide says what
     it is for."""
-    from quackd.cli import app
+    from roboglot.cli import app
 
     callbacks = {
         (c.name or c.callback.__name__).replace("_", "-"): c.callback
@@ -1129,43 +1131,43 @@ def test_the_policy_server_flags_are_documented_where_they_are_configured() -> N
         params = callbacks[name].__code__.co_varnames
         assert "policy_url" in params and "policy_token" in params, name
         assert "accept_other_frame" in params and "async_chunks" in params, name
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for name in ("run", "preflight", "serve-mcp"):
-        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--policy-url" in row, f"the README's {name} row does not name --policy-url"
         assert "--accept-other-frame" in row, f"the README's {name} row does not name it"
         assert "--no-async-chunks" in row, f"the README's {name} row does not name it"
     frame, chunks = "--accept-other-frame", "--no-async-chunks"
     for path, needles in (
-        ("README.md", ("| Policy |", "--policy-token", "QUACKD_POLICY_TOKEN", frame, chunks)),
+        ("README.md", ("| Policy |", "--policy-token", "ROBOGLOT_POLICY_TOKEN", frame, chunks)),
         (
             "docs/guides/mcp.md",
-            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", "--yes", frame, chunks),
+            ("--policy-url", "--policy-token", "ROBOGLOT_POLICY_TOKEN", "--yes", frame, chunks),
         ),
         (
             "docs/adapters/lerobot/README.md",
-            ("--policy-url", "--policy-token", "QUACKD_POLICY_TOKEN", frame, chunks),
+            ("--policy-url", "--policy-token", "ROBOGLOT_POLICY_TOKEN", frame, chunks),
         ),
         ("docs/guides/policies.md", (chunks, "async_chunks")),
         ("docs/concepts/safety.md", (frame, "clipped")),
         ("docs/adr/0048-policies-are-the-arms-executor.md", (frame,)),
-        (".env.example", ("QUACKD_POLICY_TOKEN=",)),
+        (".env.example", ("ROBOGLOT_POLICY_TOKEN=",)),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
         for needle in needles:
             assert needle in text, f"{path} does not mention {needle!r}"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
-    assert "QUACKD_POLICY_URL" not in env_example, "the policy server's address has no variable"
+    assert "ROBOGLOT_POLICY_URL" not in env_example, "the policy server's address has no variable"
 
 
 def test_the_room_is_documented_where_it_is_configured() -> None:
     """`--room` lays out a room for the duck's simulator on `run`, `record`, `drive` and
     `serve-mcp`, and `validate` checks a task against one, and a flag nobody can find is a room
     nobody maps. The front page names it in all five commands' rows, and the places page names
-    every room quackd ships, says what a room file holds, and quotes `two-rooms` as it ships, so
+    every room Roboglot ships, says what a room file holds, and quotes `two-rooms` as it ships, so
     the example is one a person can copy."""
-    from quackd.cli import app
-    from quackd.space.room import BUILT_IN
+    from roboglot.cli import app
+    from roboglot.space.room import BUILT_IN
 
     callbacks = {
         (c.name or c.callback.__name__).replace("_", "-"): c.callback
@@ -1175,16 +1177,16 @@ def test_the_room_is_documented_where_it_is_configured() -> None:
     commands = ("run", "record", "drive", "serve-mcp", "validate")
     for name in commands:
         assert "room" in callbacks[name].__code__.co_varnames, name
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for name in commands:
-        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--room" in row, f"the README's {name} row does not name --room"
     places = (REPO / "docs" / "concepts" / "places.md").read_text(encoding="utf-8")
     for room in BUILT_IN:
         assert f"`{room}`" in places, f"docs/concepts/places.md does not name the room {room}"
-    shipped = (REPO / "quackd" / "space" / "rooms" / "two-rooms.yaml").read_text(encoding="utf-8")
+    shipped = (REPO / "roboglot" / "space" / "rooms" / "two-rooms.yaml").read_text(encoding="utf-8")
     body = "\n".join(line for line in shipped.splitlines() if not line.startswith("#"))
-    assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one quackd ships"
+    assert f"```yaml\n{body}\n```" in places, "the page's two-rooms is not the one Roboglot ships"
 
 
 def test_the_map_address_is_documented_where_it_is_configured() -> None:
@@ -1192,8 +1194,8 @@ def test_the_map_address_is_documented_where_it_is_configured() -> None:
     `serve-mcp`, `doctor` and `robot add` and `edit`, and a flag nobody can find is a map nobody
     walks by. The front page names it in each command's row, the registry guide among the flags
     `add` takes, and the hardware checklist forwards the socket it names and asks doctor with it."""
-    from quackd.cli import app
-    from quackd_microduck import mapd_upstream_api as mapd
+    from roboglot.cli import app
+    from roboglot_microduck import mapd_upstream_api as mapd
 
     callbacks = {
         (c.name or c.callback.__name__).replace("_", "-"): c.callback
@@ -1202,9 +1204,9 @@ def test_the_map_address_is_documented_where_it_is_configured() -> None:
     }
     for name in ("run", "drive", "serve-mcp", "doctor"):
         assert "map_address" in callbacks[name].__code__.co_varnames, name
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for name in ("run", "drive", "serve-mcp", "doctor", "robot add"):
-        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--map-address" in row, f"the README's {name} row does not name --map-address"
     registry = (REPO / "docs" / "guides" / "registry.md").read_text(encoding="utf-8")
     assert "`--map-address`" in registry and "--clear map-address" in registry
@@ -1222,8 +1224,8 @@ def test_play_is_documented_where_it_is_configured() -> None:
     MCP page, the ADR and the safety page, which says a part unlocks nothing. The guide quotes
     the section as the code renders it for an arm. No variable sets play, so `.env.example` must
     never grow a line for it."""
-    from quackd.agent.prompts import play_section
-    from quackd.cli import app
+    from roboglot.agent.prompts import play_section
+    from roboglot.cli import app
 
     callbacks = {
         (c.name or c.callback.__name__).replace("_", "-"): c.callback
@@ -1233,20 +1235,20 @@ def test_play_is_documented_where_it_is_configured() -> None:
     for name in ("run", "record", "preflight"):
         assert "play" in callbacks[name].__code__.co_varnames, name
     assert "play" not in callbacks["serve-mcp"].__code__.co_varnames
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for name in ("run", "preflight", "record"):
-        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--play" in row and "--no-play" in row, f"the README's {name} row names neither"
     for path, needles in (
-        ("README.md", ("| Play |", "play: true", "duck: 4", "docs/guides/play.md")),
-        ("docs/reference/duck-spec.md", ("`play` (v4)", "duck: 4", "--no-play", "guides/play.md")),
+        ("README.md", ("| Play |", "play: true", "glot: 4", "docs/guides/play.md")),
+        ("docs/reference/glot-spec.md", ("`play` (v4)", "glot: 4", "--no-play", "guides/play.md")),
         (
             "docs/guides/play.md",
-            ("--play", "--no-play", "## Playing a part", "robot_load_duckfile", "run_start.play"),
+            ("--play", "--no-play", "## Playing a part", "robot_load_glotfile", "run_start.play"),
         ),
         ("docs/guides/mcp.md", ("play: true", "guides/play.md")),
         ("docs/concepts/safety.md", ("guides/play.md", "a played run has exactly the verbs")),
-        ("docs/adr/0055-a-pilot-can-play-a-part.md", ("--play", "--no-play", "duck: 4")),
+        ("docs/adr/0055-a-pilot-can-play-a-part.md", ("--play", "--no-play", "glot: 4")),
         ("docs/examples/lerobot/README.md", ("play: true", "--no-play", "guides/play.md")),
     ):
         text = (REPO / path).read_text(encoding="utf-8")
@@ -1256,36 +1258,36 @@ def test_play_is_documented_where_it_is_configured() -> None:
     quoted = play_section(still=True, voice=None, memory=False, joints=True).strip()
     assert quoted in guide, "docs/guides/play.md no longer quotes the section the arm reads"
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
-    assert "QUACKD_PLAY" not in env_example, "no variable sets play"
+    assert "ROBOGLOT_PLAY" not in env_example, "no variable sets play"
 
 
 def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> None:
-    """`quackd policy endpoint` rents a GPU that bills by the hour, so somebody about to start one
-    has to find what it costs, what it asks, where each token goes and that quackd has never
+    """`roboglot policy endpoint` rents a GPU that bills by the hour, so somebody about to start one
+    has to find what it costs, what it asks, where each token goes and that Roboglot has never
     created one: the front page's command and Policy rows, the guide's section with its warning,
     SECURITY.md, `.env.example`, the architecture page, the ADR and its note on ADR-0048, the
     changelog and PLAN.md's item for the first real one. The question the guide quotes is the
     one `up` asks, and the refusal it quotes is the one the client says, each built here by the
     code itself, so a change to either fails here until the page has it."""
-    from quackd_lerobot.policy import endpoint
-    from quackd_lerobot.policy.client import RemoteRunner
-    from quackd_lerobot.verbs import JOINTS
+    from roboglot_lerobot.policy import endpoint
+    from roboglot_lerobot.policy.client import RemoteRunner
+    from roboglot_lerobot.verbs import JOINTS
     from tests.fake_hugging_face import provider_listing
 
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     row = next(
         line
         for line in rows
-        if line.startswith("| `quackd policy list\\|serve\\|check\\|endpoint`")
+        if line.startswith("| `roboglot policy list\\|serve\\|check\\|endpoint`")
     )
     for needle in ("endpoint up NAME --policy", "--policy-url hf:NAME", "never created one"):
         assert needle in row, f"the README's policy row does not say {needle!r}"
     policy_row = next(line for line in README.splitlines() if line.startswith("| Policy |"))
-    assert "`hf:NAME`" in policy_row and "quackd policy endpoint up NAME" in policy_row
+    assert "`hf:NAME`" in policy_row and "roboglot policy endpoint up NAME" in policy_row
     guide = (REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8")
     section = guide.split("\n## On a Hugging Face Endpoint\n", 1)[1].split("\n## ", 1)[0]
     warning = (
-        "quackd has never created a Hugging Face Endpoint: everything here ran against the test "
+        "Roboglot has never created a Hugging Face Endpoint: everything here ran against the test "
         "suite's stand-ins on 127.0.0.1 with a scripted policy behind them."
     )
     unquoted = re.sub(r"^> ?", "", section, flags=re.M).replace("**", "")
@@ -1293,11 +1295,11 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     for needle in (
         "--hub-token-from",
         "--region eu-west-1 --instance nvidia-a10g",
-        "quackd policy endpoint pause",
+        "roboglot policy endpoint pause",
         "--idle-minutes",
         "2026-10-25",
         "python tests/fake_hugging_face.py",
-        "quackd policy check --policy-url hf:arm-smolvla --bench",
+        "roboglot policy check --policy-url hf:arm-smolvla --bench",
     ):
         assert needle in section, f"docs/guides/policies.md's endpoint section lacks {needle!r}"
     record = endpoint.EndpointRecord(
@@ -1328,7 +1330,12 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
     read_first = "reads the endpoint from Hugging Face's API first"
     assert _one_line(read_first) in _one_line(section), "the guide says no API read comes first"
     security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
-    for needle in ("`GET /v1/health`", "quackd policy endpoint", "QUACKD_POLICY_TOKEN", "--yes"):
+    for needle in (
+        "`GET /v1/health`",
+        "roboglot policy endpoint",
+        "ROBOGLOT_POLICY_TOKEN",
+        "--yes",
+    ):
         assert needle in security, f"SECURITY.md does not mention {needle!r}"
     assert "`NAMESPACE_READS`" in security, "SECURITY.md does not say what the bind trusts"
     architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
@@ -1343,11 +1350,11 @@ def test_the_hugging_face_endpoint_is_documented_where_it_is_configured() -> Non
         (
             body
             for _, body in reversed(_changelog_sections(changelog))
-            if "quackd policy endpoint up" in body
+            if "roboglot policy endpoint up" in body
         ),
         "",
     )
-    assert shipped, "no section of CHANGELOG.md names quackd policy endpoint up"
+    assert shipped, "no section of CHANGELOG.md names roboglot policy endpoint up"
     for needle in ("hf:NAME", "/v1/health", "--token-env"):
         assert needle in shipped, f"CHANGELOG.md's endpoint section does not name {needle!r}"
     assert _one_line(read_first) in _one_line(shipped), "the changelog says no API read first"
@@ -1370,9 +1377,11 @@ def test_nothing_names_an_address_for_hugging_face_but_the_code() -> None:
     it reads no variable but the token's own lookup and the Hub token `--hub-token-from` names."""
     env_example = (REPO / ".env.example").read_text(encoding="utf-8")
     assert "\n# HF_TOKEN=\n" in env_example, ".env.example does not name HF_TOKEN"
-    assert not re.search(r"^#?\s*(HF_ENDPOINT|QUACKD_HF\w*|\w*ENDPOINTS?_URL)=", env_example, re.M)
+    assert not re.search(
+        r"^#?\s*(HF_ENDPOINT|ROBOGLOT_HF\w*|\w*ENDPOINTS?_URL)=", env_example, re.M
+    )
     source = (
-        REPO / "adapters" / "lerobot" / "src" / "quackd_lerobot" / "policy" / "endpoint.py"
+        REPO / "adapters" / "lerobot" / "src" / "roboglot_lerobot" / "policy" / "endpoint.py"
     ).read_text(encoding="utf-8")
     read = set(re.findall(r"os\.environ\.get\(([^)]*)\)", source))
     assert read == {
@@ -1391,7 +1400,7 @@ def test_the_controller_is_documented_where_it_is_configured() -> None:
     Policy row, the arm's page where the policy server is, the safety page that says who the
     record says was asked (a `judge` prompt), the page that draws the record, and the MCP page,
     which says why `serve-mcp` refuses it."""
-    from quackd.cli import app
+    from roboglot.cli import app
 
     callbacks = {
         (c.name or c.callback.__name__).replace("_", "-"): c.callback
@@ -1399,9 +1408,9 @@ def test_the_controller_is_documented_where_it_is_configured() -> None:
         if c.callback is not None
     }
     assert "controller" in callbacks["run"].__code__.co_varnames
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for name in ("run", "serve-mcp"):
-        row = next(line for line in rows if line.startswith(f"| `quackd {name}"))
+        row = next(line for line in rows if line.startswith(f"| `roboglot {name}"))
         assert "--controller" in row, f"the README's {name} row does not name --controller"
     policy_row = next(line for line in README.splitlines() if line.startswith("| Policy |"))
     assert "--controller vla" in policy_row
@@ -1422,8 +1431,8 @@ def test_every_question_the_record_keeps_is_named_where_the_record_is_explained(
     lists them and counts them, and the architecture page's `prompt` row lists them. A kind the
     code gained and the pages did not tells a reader the record holds fewer questions than it
     does: `release` went missing from the safety page's list this way, and its count with it."""
-    code = (REPO / "quackd" / "agent" / "loop.py").read_text(encoding="utf-8")
-    gate = (REPO / "quackd" / "safety.py").read_text(encoding="utf-8")
+    code = (REPO / "roboglot" / "agent" / "loop.py").read_text(encoding="utf-8")
+    gate = (REPO / "roboglot" / "safety.py").read_text(encoding="utf-8")
     kinds = set(re.findall(r'_ask_recorded\(\s*"(\w+)"', code)) | set(
         re.findall(r'"prompt",\s*what="(\w+)"', gate)
     )
@@ -1453,10 +1462,10 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
     missing from that row when `--accept-other-frame` added it, and a reader of a run taken
     under the override would have met a key no page explained. The runner here is one reached
     by `--policy-url hf:NAME`, which has every key a block can hold, `endpoint` among them."""
-    from quackd_lerobot.policy import server
-    from quackd_lerobot.policy.client import RemoteRunner
-    from quackd_lerobot.policy.loop import PolicyLoop
-    from quackd_lerobot.verbs import JOINTS
+    from roboglot_lerobot.policy import server
+    from roboglot_lerobot.policy.client import RemoteRunner
+    from roboglot_lerobot.policy.loop import PolicyLoop
+    from roboglot_lerobot.verbs import JOINTS
 
     _, info = server.served_policy(server.ServeOptions(policy="scripted:hold"))
     # a server on a Hugging Face Endpoint, which adds the hf:NAME it was reached by
@@ -1483,7 +1492,7 @@ def test_every_key_a_runs_policy_block_holds_is_named_where_the_record_is_explai
 
 
 def test_the_hand_placed_start_is_documented_where_it_is_configured() -> None:
-    """The one place quackd takes torque off a robot. Somebody about to hold an arm while it is
+    """The one place Roboglot takes torque off a robot. Somebody about to hold an arm while it is
     released should be able to find what happens next in the page they are already reading, and
     the safety page has to carry it whether or not they ever open the arm's own."""
     for path, needles in (
@@ -1519,7 +1528,7 @@ def test_both_ways_a_run_can_start_are_offered_together() -> None:
 
 
 def test_mcp_doc_lists_every_tool() -> None:
-    from quackd.mcp_server import TOOL_NAMES
+    from roboglot.mcp_server import TOOL_NAMES
 
     doc = (REPO / "docs" / "guides" / "mcp.md").read_text(encoding="utf-8")
     missing = [name for name in TOOL_NAMES if f"`{name}" not in doc]
@@ -1528,10 +1537,10 @@ def test_mcp_doc_lists_every_tool() -> None:
 
 
 def test_mcp_json_is_a_stdio_server() -> None:
-    from quackd.adapters.factory import BACKENDS
+    from roboglot.adapters.factory import BACKENDS
 
     cfg = json.loads((REPO / ".mcp.json").read_text(encoding="utf-8"))
-    server = cfg["mcpServers"]["quackd"]
+    server = cfg["mcpServers"]["roboglot"]
     assert "command" in server and "type" not in server
     args = server["args"]
     assert "serve-mcp" in args
@@ -1540,7 +1549,7 @@ def test_mcp_json_is_a_stdio_server() -> None:
     assert backend in BACKENDS.get(adapter, ()), f".mcp.json names {adapter}:{backend}"
     # This is the repo's own config, so it runs the code you are editing, not the release.
     # `uv run` alone re-syncs on launch and loses to the running server's hold on
-    # Scripts/quackd.exe on Windows, so the repo pins --no-sync. Users get `uvx`
+    # Scripts/roboglot.exe on Windows, so the repo pins --no-sync. Users get `uvx`
     # (docs/guides/mcp.md).
     if server["command"] == "uv" and args[0] == "run":
         assert "--no-sync" in args, "uv run re-syncs and fights the server it is launching"
@@ -1560,7 +1569,7 @@ _NUMBER_WORDS = {
     10: "ten",
     11: "eleven",
     12: "twelve",
-    # beyond the count quackd has today, so the day it reaches one of these the guards below
+    # beyond the count Roboglot has today, so the day it reaches one of these the guards below
     # still have a word for it, and a stale "thirteen" can be seen before then
     13: "thirteen",
     14: "fourteen",
@@ -1578,7 +1587,7 @@ def _prose(text: str) -> str:
 
 
 def _living_docs() -> list[Path]:
-    """Every document that describes quackd as it is now.
+    """Every document that describes Roboglot as it is now.
 
     CHANGELOG, PLAN and the ADRs and design notes are excluded: they record what was true
     when they were written, and correcting a number in them would be falsifying history."""
@@ -1671,7 +1680,7 @@ def test_every_table_row_has_as_many_cells_as_its_header() -> None:
     much as outside one, and drops every cell past the header's count without a word, so the
     source looks whole and the page does not. The Microduck page's `robot.do` and `robot.sound`
     rows wrote `ground_pick | kick_left` and `alarm | greet` in code spans and lost every name
-    after the first, and what quackd uses them for. Rows on the XLeRobot and Kev pages, in the
+    after the first, and what Roboglot uses them for. Rows on the XLeRobot and Kev pages, in the
     README and in ADR-0011 lost their ends the same way, and a row the re-read added put what it
     is used for in a fourth cell of a table with three. A row with fewer cells than its header is
     padded rather than cut, and none here means to be short, so it is counted too."""
@@ -1706,13 +1715,13 @@ def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
     """Half of the 0.5 documentation audit was stale counts that no test could see.
 
     "four adapters" was written in six places while five shipped. This does not police
-    prose, only the specific claim that quackd has N adapters."""
-    from quackd.adapters.factory import ADAPTER_NAMES
+    prose, only the specific claim that Roboglot has N adapters."""
+    from roboglot.adapters.factory import ADAPTER_NAMES
 
     right = _NUMBER_WORDS[len(ADAPTER_NAMES)]
     prose = _prose((REPO / name).read_text(encoding="utf-8")).lower()
     # only claim shapes that are unambiguously about how many adapters exist. "two robots
-    # under one contract" is a heterogeneous flock, not a count of adapters.
+    # under one contract" is a heterogeneous team, not a count of adapters.
     # "all eight editable" sat on the guide for the whole of nine adapters, in a shape this
     # did not read
     shapes = (
@@ -1728,7 +1737,7 @@ def test_no_document_claims_the_wrong_number_of_adapters(name: str) -> None:
         for shape in shapes:
             claim = shape.format(w=word)
             assert claim not in prose, (
-                f"{name} says {claim!r}; quackd ships {right} ({', '.join(ADAPTER_NAMES)})"
+                f"{name} says {claim!r}; Roboglot ships {right} ({', '.join(ADAPTER_NAMES)})"
             )
 
 
@@ -1738,8 +1747,8 @@ def test_the_counts_of_bodies_and_distributions_follow_the_adapters() -> None:
     guard read either shape. The badge is the first number a reader meets, and the number of
     distributions is what one version ships, so both follow `ADAPTER_NAMES`, the core counted in
     for the second."""
-    from quackd.adapters.catalogue import ADAPTERS, DESCRIBED_BODIES
-    from quackd.adapters.factory import ADAPTER_NAMES
+    from roboglot.adapters.catalogue import ADAPTERS, DESCRIBED_BODIES
+    from roboglot.adapters.factory import ADAPTER_NAMES
 
     bodies = len(ADAPTER_NAMES)
     badge = re.search(
@@ -1749,7 +1758,7 @@ def test_the_counts_of_bodies_and_distributions_follow_the_adapters() -> None:
     )
     assert badge is not None, "the README has no robots badge"
     # each number is the catalogue's: the adapters, the ones with a verified backend, and the
-    # bodies quackd only describes, which are never counted among the first
+    # bodies Roboglot only describes, which are never counted among the first
     on_hardware = sum(
         1 for row in ADAPTERS if any(tier.name == "verified" for tier in row.tiers.values())
     )
@@ -1762,7 +1771,7 @@ def test_the_counts_of_bodies_and_distributions_follow_the_adapters() -> None:
                 continue
             for claim in (f"{word} distributions", f"the {word} packages"):
                 assert claim not in prose, (
-                    f"{doc.relative_to(REPO)} says {claim!r}; quackd ships "
+                    f"{doc.relative_to(REPO)} says {claim!r}; Roboglot ships "
                     f"{_NUMBER_WORDS[bodies + 1]}, the core and {', '.join(ADAPTER_NAMES)}"
                 )
 
@@ -1788,7 +1797,7 @@ def test_no_living_document_claims_the_wrong_number_of_cloud_providers() -> None
             for shape in shapes:
                 claim = shape.format(w=word)
                 assert claim not in prose, (
-                    f"{path.name} says {claim!r}; quackd has {right} ({', '.join(CLOUD_NAMES)})"
+                    f"{path.name} says {claim!r}; Roboglot has {right} ({', '.join(CLOUD_NAMES)})"
                 )
 
 
@@ -1797,11 +1806,11 @@ def test_the_licences_page_counts_the_policies_the_simulator_pins() -> None:
     number is the set `sim3d/upstream_api.py` pins, counted off its list rather than written here.
 
     The page said nine until the re-read on 2026-10-09, though upstream's set had been ten since
-    `v5` added `velstand.onnx` on 2026-09-14: quackd's pin was older than `v5`, and nothing
+    `v5` added `velstand.onnx` on 2026-09-14: Roboglot's pin was older than `v5`, and nothing
     compared the two. The ADRs keep the count they were written with, so only the living pages
-    are held to it. The list is also where every policy file quackd names has to be: the two the
+    are held to it. The list is also where every policy file Roboglot names has to be: the two the
     simulator fetches, the four it stands in for, and the walk a stock robotd loads."""
-    from quackd_microduck.sim3d import upstream_api as microduck_rl
+    from roboglot_microduck.sim3d import upstream_api as microduck_rl
 
     files = microduck_rl.POLICY_FILES
     right = _NUMBER_WORDS[len(files)]
@@ -1810,7 +1819,7 @@ def test_the_licences_page_counts_the_policies_the_simulator_pins() -> None:
     assert said in " ".join(licences.read_text(encoding="utf-8").split()), (
         f"docs/reference/licenses.md does not say {said!r}"
     )
-    # only the claim about the set: SECURITY.md's "two ONNX policies" are the two quackd fetches
+    # only the claim about the set: SECURITY.md's "two ONNX policies" are the two Roboglot fetches
     for path in _living_docs():
         prose = " ".join(_prose(path.read_text(encoding="utf-8")).lower().split())
         for count, word in _NUMBER_WORDS.items():
@@ -1843,9 +1852,9 @@ def test_the_openrouter_page_agrees_with_the_code() -> None:
     """The guide quotes the code: the rows, how each is asked, its rates, the key, the extra,
     the address, both headers and every refusal. Each is read back off the page here, so a row
     or a reason that changes in one place and not the other fails the suite."""
-    from quackd.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, llms_for
-    from quackd.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENROUTER_REFUSED
-    from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
+    from roboglot.agent.providers.catalogue import OPENROUTER_PRICES_CHECKED, llms_for
+    from roboglot.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENROUTER_REFUSED
+    from roboglot.agent.providers.openrouter import ATTRIBUTION, BASE_URL
 
     page = OPENROUTER_PAGE.read_text(encoding="utf-8")
     rows = llms_for("openrouter")
@@ -1860,7 +1869,7 @@ def test_the_openrouter_page_agrees_with_the_code() -> None:
         )
         assert line in page, f"the page's row for {m.id} is not\n{line}"
     assert f"`--llm openrouter` runs `{rows[0].id}`" in page
-    assert f"`{KEY_ENV['openrouter']}`" in page and f"`quackd[{EXTRA_FOR['openrouter']}]`" in page
+    assert f"`{KEY_ENV['openrouter']}`" in page and f"`roboglot[{EXTRA_FOR['openrouter']}]`" in page
     assert BASE_URL in page and OPENROUTER_PRICES_CHECKED in page
     for name, value in ATTRIBUTION.items():
         assert f"`{name}: {value}`" in page
@@ -1868,13 +1877,13 @@ def test_the_openrouter_page_agrees_with_the_code() -> None:
         assert f"| {why} |" in page, f"the page does not give the reason for {shape}"
     assert "\n## VERIFIED" in page and "\n## UNVERIFIED" in page
     assert "**Nothing here has ever answered a real robot.**" in page
-    assert "**No OpenRouter LLM has answered a real quackd request.**" in page
+    assert "**No OpenRouter LLM has answered a real Roboglot request.**" in page
 
 
 def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
     """In the same words everywhere, until somebody runs one: a vendor tested only against a
     stand-in reads exactly like one that has been flown, unless a page says otherwise."""
-    sentence = "no openrouter llm has answered a real quackd request"
+    sentence = "no openrouter llm has answered a real roboglot request"
     pages = [
         REPO / "README.md",
         REPO / "docs" / "faq.md",
@@ -1891,18 +1900,18 @@ def test_every_page_that_offers_openrouter_says_none_has_answered() -> None:
         text = " ".join(page.read_text(encoding="utf-8").split()).lower()
         assert sentence in text, f"{page.relative_to(REPO)} does not say so"
     # A released note keeps the words it shipped with, which came before the word changed.
-    shipped = "no openrouter model has answered a real quackd request"
+    shipped = "no openrouter model has answered a real roboglot request"
     assert shipped in _one_line(_release_note("0.17.0")), "0.17.0's release note does not say so"
 
 
 def test_the_pypi_summary_names_every_robot() -> None:
     """The one sentence on the PyPI page shipped 0.5 without the Open Duck Mini in it.
 
-    That line and the keywords are how someone searching for their robot finds quackd, and
+    That line and the keywords are how someone searching for their robot finds Roboglot, and
     nothing in the test suite had ever read pyproject.toml."""
     import tomllib
 
-    from quackd.adapters.factory import ADAPTER_NAMES
+    from roboglot.adapters.factory import ADAPTER_NAMES
 
     project = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]
     haystack = (project["description"] + " " + " ".join(project["keywords"])).lower()
@@ -1911,34 +1920,34 @@ def test_the_pypi_summary_names_every_robot() -> None:
     for adapter in ADAPTER_NAMES:
         needle = {"open_duck": "open duck", "rosbridge": "ros"}.get(adapter, adapter)
         assert needle in haystack, (
-            f"pyproject describes quackd without {needle!r}; it ships a {adapter} adapter"
+            f"pyproject describes Roboglot without {needle!r}; it ships a {adapter} adapter"
         )
 
 
 def test_the_readme_starter_table_lists_every_bundled_duck() -> None:
     """`open-duck-lookout` shipped in 0.5 and appeared nowhere in the README."""
-    from quackd.duckfile.parser import list_bundled_ducks
+    from roboglot.glotfile.parser import list_bundled_tasks
 
-    missing = [p.stem for p in list_bundled_ducks() if f"`{p.stem}`" not in README]
+    missing = [p.stem for p in list_bundled_tasks() if f"`{p.stem}`" not in README]
     assert not missing, f"README does not mention: {missing}"
 
 
 def test_no_living_document_claims_the_wrong_number_of_starters() -> None:
     """`microduck-watch`, `moss-lookout` and `nearby-hello` made eighteen bundled starters, and
-    the README still said fifteen ship with the core and nine of them are `duck: 1`. The starter
+    the README still said fifteen ship with the core and nine of them are `glot: 1`. The starter
     table has a guard, and the two counts written beside it had none. One of them sits in a
     comment in a code block, so this reads every page whole rather than only its prose."""
-    from quackd.duckfile.parser import list_bundled_ducks, parse_duck_text
+    from roboglot.glotfile.parser import list_bundled_tasks, parse_glot_text
 
     versions = [
-        parse_duck_text(path.read_text(encoding="utf-8"), str(path)).frontmatter.duck
-        for path in list_bundled_ducks()
+        parse_glot_text(path.read_text(encoding="utf-8"), str(path)).frontmatter.glot
+        for path in list_bundled_tasks()
     ]
     counts = {
         "{w} ship with the core": len(versions),
         "of the {w} bundled starters": len(versions),
         "the {w} written before 0.4": versions.count(0),
-        "the {w} written since are `duck: 1`": versions.count(1),
+        "the {w} written since are `glot: 1`": versions.count(1),
     }
     for path in _living_docs():
         text = path.read_text(encoding="utf-8").lower()
@@ -1954,20 +1963,20 @@ def test_no_living_document_claims_the_wrong_number_of_starters() -> None:
 
 
 def test_the_arm_guide_gives_the_duck_it_has_the_reader_load() -> None:
-    """M09 of the arm's first-run guide has the reader load `arm-look.duck` over MCP and quotes
+    """M09 of the arm's first-run guide has the reader load `arm-look.glot` over MCP and quotes
     what loading it answers, down to `step 0/8, LLM calls 0/8, 0.0/3 min`, and the file itself
-    was nowhere, not on the page and not in `ducks/`. The page gives it now, straight after the
+    was nowhere, not on the page and not in `tasks/`. The page gives it now, straight after the
     sentence that names it, and this holds the file to that sentence and to the budget the
     quoted note shows."""
-    from quackd.duckfile.parser import parse_duck_text
+    from roboglot.glotfile.parser import parse_glot_text
 
     guide = (REPO / "docs" / "adapters" / "lerobot" / "first-run.md").read_text(encoding="utf-8")
-    named = guide.index("The file is `arm-look.duck`")
+    named = guide.index("The file is `arm-look.glot`")
     after = guide[guide.index("\n\n", named) + 2 :]
     fence = "```markdown\n"
-    assert after.startswith(fence), "M09 names arm-look.duck and does not give it"
+    assert after.startswith(fence), "M09 names arm-look.glot and does not give it"
     text = after[len(fence) : after.index("\n```", len(fence))]
-    contract = parse_duck_text(text, "arm-look.duck").frontmatter
+    contract = parse_glot_text(text, "arm-look.glot").frontmatter
     assert contract.name == "arm-look"
     assert contract.robots == "lerobot:mock"
     assert contract.verbs.allow == ["observe", "report_state", "stop"]
@@ -1990,15 +1999,15 @@ def test_no_living_document_quotes_an_exact_test_count() -> None:
 #: What 0.4 and 0.11 each kept alive for one release and the release after removed. A living
 #: document may not spell any of them, and neither may the source that prints to a terminal.
 #: The history files keep them all: that is what a changelog and an ADR are for.
-_REMOVED_SPELLINGS = ("--transport", "--trace", "--no-trace", "quackd trace")
+_REMOVED_SPELLINGS = ("--transport", "--trace", "--no-trace", "Roboglot trace")
 
 #: The same, for names that are read rather than typed. Checked in every source file but
-#: `quackd/cli.py`, whose warner has to spell one in order to say it is not read any more;
+#: `roboglot/cli.py`, whose warner has to spell one in order to say it is not read any more;
 #: that it really is not read is `tests/test_cli_log.py`'s to prove.
-_REMOVED_ENV_NAMES = ("QUACKD_TRACE",)
+_REMOVED_ENV_NAMES = ("ROBOGLOT_TRACE",)
 
 #: How each release phrased its promise. Once the removal has happened, a document still
-#: making the promise is describing a version of quackd that no longer exists. "gone in 0.12"
+#: making the promise is describing a version of Roboglot that no longer exists. "gone in 0.12"
 #: is here because the README said it that way and none of the others would have caught it.
 _KEPT_PROMISES = (
     "go away in 0.5",
@@ -2011,17 +2020,17 @@ _KEPT_PROMISES = (
     "removed in 0.12",
     "stop working in 0.12",
     "stop being read in 0.12",
-    # docs/guides/jetson.md said the doctor section "ships in quackd 0.13.0" and told readers to
+    # docs/guides/jetson.md said the doctor section "ships in Roboglot 0.13.0" and told readers to
     # install from `main` until then. Nothing here could see that go stale on the day it
     # shipped, which is the day this list exists for.
-    "ships in quackd 0.13",
+    "ships in Roboglot 0.13",
     "until 0.13",
 )
 
 
 def test_no_document_still_promises_a_removal_that_happened() -> None:
-    """0.4 said `--transport` and the duck_* tools go in 0.5, and 0.11 said `quackd trace`,
-    the two `--trace` flag pairs and the three `QUACKD_TRACE*` variables go in 0.12. Both
+    """0.4 said `--transport` and the duck_* tools go in 0.5, and 0.11 said `roboglot trace`,
+    the two `--trace` flag pairs and the three `ROBOGLOT_TRACE*` variables go in 0.12. Both
     releases kept their promise, so nothing should still be making either one, and nothing
     should still be offering what went.
 
@@ -2031,15 +2040,15 @@ def test_no_document_still_promises_a_removal_that_happened() -> None:
     two releases ago because the page they read still offered it.
 
     `--no-trace` is a needle of its own, because it does not contain `--trace`."""
-    from quackd.mcp_server import TOOL_NAMES
+    from roboglot.mcp_server import TOOL_NAMES
 
     assert not [n for n in TOOL_NAMES if n.startswith("duck_")]
     # a table title and a TransportError still told users to pass it, and no doc test could
     # see a Python string, so the same rule now covers the source that prints to a terminal.
     # `"trace"` was how the retired subcommand was registered; nothing else quotes the word.
-    for src in sorted((REPO / "quackd").rglob("*.py")):
+    for src in sorted((REPO / "roboglot").rglob("*.py")):
         text = src.read_text(encoding="utf-8")
-        where = f"quackd/{src.relative_to(REPO / 'quackd').as_posix()}"
+        where = f"roboglot/{src.relative_to(REPO / 'roboglot').as_posix()}"
         for spelling in (*_REMOVED_SPELLINGS, '"trace"'):
             assert spelling not in text, f"{where} still offers {spelling}"
         if src.name != "cli.py":
@@ -2055,31 +2064,37 @@ def test_no_document_still_promises_a_removal_that_happened() -> None:
             assert promise not in text, f"{path.name} still promises {promise!r}, which happened"
 
 
-#: The one-liner ADR-0002 minted and ADR-0035 retired. ADR-0002 said "one-liner everywhere",
-#: and everywhere is what happened: the README, the PyPI summary, the `quackd --help` banner,
-#: the package docstring and the browser demo's title all carried a copy of it, and nothing
-#: counted them. quackd is the CLI and the LLM is the brain now, so "an LLM for a brain" is
-#: fine and only the old claim, that quackd itself is a brain for one small robot, is not.
+#: The one-liners ADR-0002 and ADR-0035 minted and their successors retired. ADR-0002 said
+#: "one-liner everywhere", and everywhere is what happened: the README, the PyPI summary, the
+#: `roboglot --help` banner, the package docstring and the browser demo's title all carried a
+#: copy of it, and nothing counted them. Roboglot is the layer and the LLM is the brain now, so
+#: "an LLM for a brain" is fine. The old claims, that Roboglot itself is a brain for one small
+#: robot or one CLI for all of them, are not
+#: ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)).
 _RETIRED_TAGLINES = (
     "Give your Microduck a brain",
     "Give your small robot a brain",
     "Give a Microduck a brain",
     "a brain for any small robot",
     "brain daemon Microduck was missing",
+    "One CLI for all your robots",
+    "one CLI for all your robots",
+    "a command line for the robots you own",
+    "one command line for the robots you own",
 )
 
 #: The three user-facing strings outside the README that carry the replacement, so a revert
 #: in one of them cannot pass while the README still reads correctly.
-_TAGLINE_SITES = ("pyproject.toml", "quackd/__init__.py", "quackd/cli.py")
+_TAGLINE_SITES = ("pyproject.toml", "roboglot/__init__.py", "roboglot/cli.py")
 
 
 def test_the_retired_tagline_is_gone_and_the_new_one_is_everywhere_it_lived() -> None:
     """The history files keep it: they record what was true on the day they were written."""
-    # rglob, not glob: the retired sentence also lived in `quackd/agent/prompts.py`'s neighbours,
+    # rglob, not glob: the retired sentence also lived in `roboglot/agent/prompts.py`'s neighbours,
     # and a guard that reads only the top of the package is a guard with a floor under it
     sources = [
         REPO / "pyproject.toml",
-        *(REPO / "quackd").rglob("*.py"),
+        *(REPO / "roboglot").rglob("*.py"),
         *(REPO / "bridge").rglob("*.py"),
         REPO / "web/index.html",
     ]
@@ -2089,18 +2104,20 @@ def test_the_retired_tagline_is_gone_and_the_new_one_is_everywhere_it_lived() ->
             assert retired not in text, f"{path.name} still carries the retired tagline {retired!r}"
     for name in _TAGLINE_SITES:
         text = (REPO / name).read_text(encoding="utf-8")
-        assert "One CLI for all your robots" in text, f"{name} does not carry the one-liner"
+        assert "communication layer between people and robots, and between robots" in text, (
+            f"{name} does not carry the one-liner"
+        )
 
 
-#: Sentences that were true until 2026-09-15 and are not any more. An SO-101 arm ran quackd
+#: Sentences that were true until 2026-09-15 and are not any more. An SO-101 arm ran Roboglot
 #: that day, so a living document that still says nothing ever has is not merely stale, it is
 #: telling a reader the opposite of what happened. The history files keep them on purpose:
 #: CHANGELOG, PLAN and everything under docs/adr and docs/design record what was true when
 #: they were written, which is what `_living_docs()` already excludes.
 _RETIRED_HARDWARE_CLAIMS = (
-    "no robot of any kind has run quackd",
+    "no robot of any kind has run Roboglot",
     "has never run on any of them",
-    "nothing in quackd has ever run on a real so-101",
+    "nothing in Roboglot has ever run on a real so-101",
     "never run on an arm",
     "nobody has pointed any pilot at a real webcam",
     "nothing has run on a real robot of any kind",
@@ -2112,17 +2129,17 @@ _RETIRED_HARDWARE_CLAIMS = (
 )
 
 
-def test_no_living_document_still_says_no_robot_has_ever_run_quackd() -> None:
+def test_no_living_document_still_says_no_robot_has_ever_run_roboglot() -> None:
     """One body has run on hardware and six have not, and both halves have to survive edits.
 
     The hard part of this change was not flipping the status, it was that the old claim was
     spelled seven different ways across a dozen pages, and a revert in any one of them reads
-    as authoritative. The user-facing strings are checked too, because `quackd doctor` and
+    as authoritative. The user-facing strings are checked too, because `roboglot doctor` and
     `list-adapters` print a status line per adapter and those are read more often than a page.
     """
     sources = [
         REPO / "pyproject.toml",
-        *(REPO / "quackd").rglob("*.py"),
+        *(REPO / "roboglot").rglob("*.py"),
         *(REPO / "adapters").rglob("*.py"),
         # the issue templates are read by the one person best placed to correct us, and the
         # arm's said "nobody has run this" for two days after somebody had
@@ -2134,7 +2151,7 @@ def test_no_living_document_still_says_no_robot_has_ever_run_quackd() -> None:
         text = path.read_text(encoding="utf-8").lower()
         for retired in _RETIRED_HARDWARE_CLAIMS:
             assert retired.lower() not in text, (
-                f"{path.relative_to(REPO)} still says {retired!r}; an SO-101 ran quackd on "
+                f"{path.relative_to(REPO)} still says {retired!r}; an SO-101 ran Roboglot on "
                 "2026-09-15 (docs/adapters/status.md)"
             )
     # and the other half: the six that have not run must not be quietly promoted with it
@@ -2185,7 +2202,7 @@ def test_every_file_in_docs_assets_has_a_row_in_its_catalogue() -> None:
 
 def test_the_readme_opens_with_its_name_and_only_the_browser_demo_shows_its_mark() -> None:
     """Until 2026-09-29 the README opened with a duck's head over its title, and a social card
-    was built around the same head. It made quackd look like a toy rather than a tool that
+    was built around the same head. It made Roboglot look like a toy rather than a tool that
     drives a real arm, so both went. The browser demo keeps the head as its own header mark and
     icons in `web/assets/`, and a living document that names one of those files is pointing a
     reader at a logo the project no longer shows anywhere else.
@@ -2252,11 +2269,11 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
 
     ADR-0035 retired "fleet" from prose and from help text, and kept it in the code, where
     `Fleet` and `build_fleet_server` are imported by name. The split is the point: this guard
-    reads what a person reads, which for `quackd/` means docstrings and help strings rather
+    reads what a person reads, which for `roboglot/` means docstrings and help strings rather
     than identifiers, so it checks the CLI's rendered help rather than the source."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     for path in _living_docs():
         prose = _prose(path.read_text(encoding="utf-8")).lower()
@@ -2264,16 +2281,16 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
     # the help a user actually sees, top level and every sub-app, which is where three of the
     # stale ones were: a source grep would have been satisfied by `fleet_from_flags`
     runner = CliRunner()
-    argvs: tuple[list[str], ...] = ([], ["robot"], ["flock"], ["memory"], ["run"], ["serve-mcp"])
+    argvs: tuple[list[str], ...] = ([], ["robot"], ["team"], ["memory"], ["run"], ["serve-mcp"])
     # Robot Passport's two groups since 0.29.0: `onboard` on a robot's own computer and
     # `passport`, down to `check`
     for argv in (*argvs, ["validate"], ["passport"], ["onboard"]):
         result = runner.invoke(app, [*argv, "--help"])
         # exit code first: a renamed sub-app makes Click print a "No such command" usage page,
         # which contains no "fleet" either, and the assertion below would pass on nothing
-        assert result.exit_code == 0, f"`quackd {' '.join(argv)} --help` did not render"
+        assert result.exit_code == 0, f"`roboglot {' '.join(argv)} --help` did not render"
         assert "fleet" not in result.output.lower(), (
-            f"`quackd {' '.join(argv)} --help` still says fleet"
+            f"`roboglot {' '.join(argv)} --help` still says fleet"
         )
 
 
@@ -2285,7 +2302,7 @@ def test_no_living_document_claims_the_wrong_number_of_mcp_tools() -> None:
     docstring and a test docstring carried the old count for the same reason: nothing counted
     them. This file is scanned too, which is why the stale wordings are described here rather
     than quoted."""
-    from quackd.mcp_server import TOOL_NAMES
+    from roboglot.mcp_server import TOOL_NAMES
 
     right = _NUMBER_WORDS[len(TOOL_NAMES)]
     # 0.5 learned that a doc-only guard cannot see a Python string a user reads: the count
@@ -2295,7 +2312,7 @@ def test_no_living_document_claims_the_wrong_number_of_mcp_tools() -> None:
     here = Path(__file__).resolve()
     sources = [
         p
-        for p in sorted((REPO / "quackd").rglob("*.py")) + sorted((REPO / "tests").glob("*.py"))
+        for p in sorted((REPO / "roboglot").rglob("*.py")) + sorted((REPO / "tests").glob("*.py"))
         if p.resolve() != here
     ]
     for path in _living_docs() + sources:
@@ -2327,7 +2344,7 @@ def test_the_architecture_diagram_names_every_adapter() -> None:
     'N adapters' and not a list"). Nothing was added to catch it, so it came back three
     adapters later. This is that guard.
     """
-    from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS
+    from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS
 
     node = next((line for line in README.splitlines() if 'ADAPTER["robot adapter' in line), None)
     assert node is not None, "the architecture diagram's adapter node has moved or gone"
@@ -2350,7 +2367,7 @@ def test_the_architecture_diagram_names_every_adapter() -> None:
 def test_no_fenced_block_names_a_stale_subset_of_the_adapters() -> None:
     """The general form of the same hole: any fenced block that enumerates most of the
     adapters has to enumerate all of them, or it is a list somebody forgot to update."""
-    from quackd.adapters.factory import ADAPTER_NAMES
+    from roboglot.adapters.factory import ADAPTER_NAMES
 
     for doc in [REPO / "README.md", *sorted((REPO / "docs").rglob("*.md"))]:
         text = doc.read_text(encoding="utf-8")
@@ -2403,7 +2420,7 @@ def test_the_readme_verb_table_has_a_row_per_body_listing_its_real_verbs() -> No
     """
     import asyncio
 
-    from quackd.adapters.factory import ADAPTER_NAMES, make_adapter
+    from roboglot.adapters.factory import ADAPTER_NAMES, make_adapter
 
     assert set(_VERB_TABLE_ROWS) == set(ADAPTER_NAMES), "the row map has drifted from the code"
 
@@ -2437,7 +2454,7 @@ def test_the_readme_verb_table_has_a_row_per_body_listing_its_real_verbs() -> No
 def test_every_body_carries_its_own_numbers_on_its_own_page() -> None:
     """A datasheet is a claim about a real robot, so it belongs where a reader checks it.
     rosbridge is exempt: its numbers come off a bridge and are different every time."""
-    from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+    from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
 
     pages = {
         name: REPO / "docs" / "adapters" / name / "README.md"
@@ -2466,13 +2483,13 @@ def test_the_jetpack_table_matches_the_one_doctor_reads() -> None:
     It lived beside the Jetson container's checks until the container was removed. The table
     outlived it because it describes the board rather than the image, so it sits here with the
     other pages that have to agree with the code."""
-    from quackd import doctor
+    from roboglot import doctor
 
     page = (REPO / "docs" / "guides" / "jetson.md").read_text(encoding="utf-8")
     rows = dict(re.findall(r"^\| `r(\d[\w.]*)` \| ([\w.]+) \|", page, flags=re.M))
     assert rows, "no L4T table found in docs/guides/jetson.md, or its shape changed"
     assert rows == doctor._JETPACK_FOR_L4T, (
-        "docs/guides/jetson.md and quackd/boards/l4t.py disagree about which JetPack an L4T "
+        "docs/guides/jetson.md and roboglot/boards/l4t.py disagree about which JetPack an L4T "
         "release is:\n"
         f"  page:   {sorted(rows.items())}\n"
         f"  doctor: {sorted(doctor._JETPACK_FOR_L4T.items())}"
@@ -2482,7 +2499,7 @@ def test_the_jetpack_table_matches_the_one_doctor_reads() -> None:
 def test_the_page_says_no_jetson_has_run_this() -> None:
     """The claim the Jetson page turns on, and the one a well meaning edit would soften. It is
     spelled this way rather than any of the phrasings `_RETIRED_HARDWARE_CLAIMS` bans, because
-    an SO-101 arm has run quackd and a Jetson has not.
+    an SO-101 arm has run Roboglot and a Jetson has not.
 
     It moved here with the JetPack table when the Jetson container was removed, and the page was
     rewritten for `--host` after that. The page says it where a reader starts and again in its
@@ -2504,23 +2521,23 @@ def test_the_page_says_no_jetson_has_run_this() -> None:
     )
 
 
-#: What 0.13.0 shipped to put quackd on a Jetson, and what the release after it removed: the
+#: What 0.13.0 shipped to put Roboglot on a Jetson, and what the release after it removed: the
 #: image's directory, its compose file, the workflow that built it, the tag it was built as, and
 #: the two commands that ran it, the second being the one an MCP client was told to spawn.
 _JETSON_IMAGE_SPELLINGS = (
     "deploy/jetson",
     "compose.yml",
     "jetson-image",
-    "quackd-jetson:local",
-    "docker compose run --rm quackd",
-    "docker compose run --rm -T quackd",
+    "roboglot-jetson:local",
+    "docker compose run --rm Roboglot",
+    "docker compose run --rm -T Roboglot",
 )
 
 
 def test_no_living_document_still_describes_the_jetson_image() -> None:
-    """Every quackd command but one left the Jetson in 0.15.0, and the one that runs there since
-    0.29.0, `quackd onboard`, is installed with uv and needs no image, so nothing a reader follows
-    today may still build the image or start quackd inside it.
+    """Every Roboglot command but one left the Jetson in 0.15.0, and the one that runs there since
+    0.29.0, `roboglot onboard`, is installed with uv and needs no image, so nothing a reader follows
+    today may still build the image or start Roboglot inside it.
 
     The whole text is read, fenced blocks included, which is where every one of these lived: a
     reader copies a command out of a fence before reading the paragraph around it. The history
@@ -2535,34 +2552,35 @@ def test_no_living_document_still_describes_the_jetson_image() -> None:
         for spelling in _JETSON_IMAGE_SPELLINGS:
             assert spelling not in text, (
                 f"{path.relative_to(REPO).as_posix()} still describes the Jetson image "
-                f"({spelling!r}), which went when quackd left the board in 0.15.0 (ADR-0046)"
+                f"({spelling!r}), which went when Roboglot left the board in 0.15.0 (ADR-0046)"
             )
 
 
-#: What the pages said about quackd and a Jetson while nothing of quackd ran on one. Since 0.29.0
-#: one command does, `quackd onboard`, so a sentence that says quackd never runs on the board
-#: without saying which commands is false the day it is read (ADR-0073). Nor is it only a matter
-#: of passports: with an adapter named in its file, that command drives the robot from the board,
-#: so "the quackd that drives a robot" is no exception to carve out either. "Every quackd command
-#: but `quackd onboard` stays off the board" is a true spelling, and none of these is inside it.
+#: What the pages said about Roboglot and a Jetson while nothing of Roboglot ran on one. Since
+#: 0.29.0 one command does, `roboglot onboard`, so a sentence that says Roboglot never runs on the
+#: board without saying which commands is false the day it is read (ADR-0073). Nor is it only a
+#: matter of passports: with an adapter named in its file, that command drives the robot from the
+#: board, so "the Roboglot that drives a robot" is no exception to carve out either. "Every Roboglot
+#: command but `roboglot onboard` stays off the board" is a true spelling, and none of these is
+#: inside it.
 _RETIRED_JETSON_CLAIMS = (
-    "quackd never runs on an nvidia jetson",
-    "quackd never runs on the jetson",
-    "quackd never runs on the board",
-    "quackd never runs on this board",
-    "quackd never runs on it",
-    "quackd no longer runs on the board",
-    "quackd does not run on it either",
-    "quackd that drives a robot never runs on",
-    "quackd that drives a robot does not run on",
-    "quackd that drives the robot never runs on",
+    "Roboglot never runs on an nvidia jetson",
+    "Roboglot never runs on the jetson",
+    "Roboglot never runs on the board",
+    "Roboglot never runs on this board",
+    "Roboglot never runs on it",
+    "Roboglot no longer runs on the board",
+    "Roboglot does not run on it either",
+    "Roboglot that drives a robot never runs on",
+    "Roboglot that drives a robot does not run on",
+    "Roboglot that drives the robot never runs on",
 )
 
 
-def test_no_living_document_says_quackd_never_runs_on_a_jetson() -> None:
-    """ADR-0046 kept quackd off the board, and ADR-0073 put one command back on it, Robot
+def test_no_living_document_says_roboglot_never_runs_on_a_jetson() -> None:
+    """ADR-0046 kept Roboglot off the board, and ADR-0073 put one command back on it, Robot
     Passport's service, on the robot's own Jetson, which drives the robot from there when the
-    robot's file names an adapter. Every page that said quackd never runs there says which
+    robot's file names an adapter. Every page that said Roboglot never runs there says which
     commands stay off it now, and this keeps the old sentence from coming back unqualified. The
     bridge READMEs are read too, since the person on the board reads those. The history files keep
     the old sentence, dated, as they keep every other."""
@@ -2570,50 +2588,52 @@ def test_no_living_document_says_quackd_never_runs_on_a_jetson() -> None:
         text = " ".join(_prose(path.read_text(encoding="utf-8")).split()).lower()
         for claim in _RETIRED_JETSON_CLAIMS:
             assert claim not in text, (
-                f"{path.relative_to(REPO).as_posix()} says {claim!r}: since 0.29.0 quackd onboard "
-                "runs on a robot's own Jetson, so say which commands stay off it (ADR-0073)"
+                f"{path.relative_to(REPO).as_posix()} says {claim!r}: since 0.29.0 roboglot "
+                "onboard runs on a robot's own Jetson, so say which commands stay off it (ADR-0073)"
             )
 
 
-def test_every_onboard_subcommand_a_page_names_is_one_quackd_has() -> None:
+def test_every_onboard_subcommand_a_page_names_is_one_roboglot_has() -> None:
     """The plan for 0.29.0 let `met` and `forget` fold into `status` and `pin`, and `uninstall`
     become two systemctl lines, if time ran short, and the pages were written before any of them
-    existed. The README's row is held to `quackd onboard --help` by the guard below, and this
-    holds every living page: a `quackd onboard WORD` in a code span, or at the start of a line in
+    existed. The README's row is held to `roboglot onboard --help` by the guard below, and this
+    holds every living page: a `roboglot onboard WORD` in a code span, or at the start of a line in
     a fenced block, names a subcommand the group has."""
-    from quackd.cli import app
+    from roboglot.cli import app
 
     groups = {g.name: g.typer_instance for g in app.registered_groups}
     instance = groups.get("onboard")
-    assert instance is not None, "quackd has no onboard group, and the pages describe one"
+    assert instance is not None, "Roboglot has no onboard group, and the pages describe one"
     offered = {
         (c.name or (c.callback.__name__ if c.callback else "")).replace("_", "-")
         for c in instance.registered_commands
     } | {g.name or "" for g in instance.registered_groups}
     named = re.compile(
-        r"`quackd onboard ([a-z][a-z-]*)|^\s*(?:\$ )?quackd onboard ([a-z][a-z-]*)", re.M
+        r"`roboglot onboard ([a-z][a-z-]*)|^\s*(?:\$ )?roboglot onboard ([a-z][a-z-]*)", re.M
     )
     unknown = sorted(
-        f"{path.relative_to(REPO).as_posix()}: quackd onboard {word}"
+        f"{path.relative_to(REPO).as_posix()}: roboglot onboard {word}"
         for path in _living_docs()
         for match in named.finditer(path.read_text(encoding="utf-8"))
         for word in [match.group(1) or match.group(2)]
         if word not in offered
     )
-    assert not unknown, "pages name onboard subcommands quackd does not have: " + ", ".join(unknown)
+    assert not unknown, "pages name onboard subcommands Roboglot does not have: " + ", ".join(
+        unknown
+    )
 
 
 # ── Robot Passport on the robot's own computer (0.29.0) ─────────────────────────────────
 
 #: What 0.29.0 removed from Robot Passport, spelled the way the pages and the help offered it.
-#: Narrow on purpose: the page `quackd ui` still prints a QR code for a phone, the flock's MQTT bus
+#: Narrow on purpose: the page `roboglot ui` still prints a QR code for a phone, the team's MQTT bus
 #: stays, and a robot's sealed owner key lives at `keys/owner.json` under its own directory, so
 #: none of `qr`, `mqtt` or `owner.json` alone is a needle. The old key directory was
-#: `~/.quackd/keys/`, which is what the last two catch.
+#: `~/.roboglot/keys/`, which is what the last two catch.
 _RETIRED_PASSPORT_SPELLINGS = (
-    "quackd passport serve",
-    "quackd passport qr",
-    "quackd passport stamp",
+    "roboglot passport serve",
+    "roboglot passport qr",
+    "roboglot passport stamp",
     "--pin-owner",
     "meet ros://",
     "meet mqtt://",
@@ -2623,7 +2643,7 @@ _RETIRED_PASSPORT_SPELLINGS = (
     "nearby-hello",
     "#rp=",
     "robot-passport-stamp+jwt",
-    ".quackd/keys/owner.json",
+    ".roboglot/keys/owner.json",
     "keys/robots/",
 )
 
@@ -2657,13 +2677,13 @@ def _rendered_help() -> dict[str, str]:
     a retired spelling used to be offered on, rendered wide so a needle is not wrapped apart."""
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     runner = CliRunner()
     argvs: list[list[str]] = [[], ["run"], ["serve-mcp"], ["discover"]]
     for group in app.registered_groups:
         argvs.append([group.name or ""])
-        assert group.typer_instance is not None, f"quackd {group.name} has no Typer behind it"
+        assert group.typer_instance is not None, f"roboglot {group.name} has no Typer behind it"
         for command in group.typer_instance.registered_commands:
             name = command.name or (command.callback.__name__ if command.callback else "")
             argvs.append([group.name or "", name.replace("_", "-")])
@@ -2672,7 +2692,7 @@ def _rendered_help() -> dict[str, str]:
         result = runner.invoke(
             app, [*argv, "--help"], env={"COLUMNS": "240", "TERMINAL_WIDTH": "240"}
         )
-        assert result.exit_code == 0, f"`quackd {' '.join(argv)} --help` did not render"
+        assert result.exit_code == 0, f"`roboglot {' '.join(argv)} --help` did not render"
         rendered[" ".join(argv)] = " ".join(result.output.split())
     return rendered
 
@@ -2682,7 +2702,7 @@ def test_nothing_a_reader_follows_still_offers_what_robot_passport_removed() -> 
     for its robots: `passport serve`, `qr` and `stamp`, `meet` with its ROS 2 and MQTT sources and
     `--pin-owner`, talk in `run` and `serve-mcp` with the `robot_nearby` tool, the `nearby-hello`
     starter, the sticker's `#rp=` short id, the stamp's JWS type and the keys under
-    `~/.quackd/keys/`. A living page, `.env.example` and the CLI's own help may not offer any of
+    `~/.roboglot/keys/`. A living page, `.env.example` and the CLI's own help may not offer any of
     them again. A block that dates itself to the removal keeps what it names, which is how the
     passport pages keep an anchor older files link."""
     for path in [*_living_docs(), REPO / ".env.example"]:
@@ -2695,34 +2715,36 @@ def test_nothing_a_reader_follows_still_offers_what_robot_passport_removed() -> 
                 )
     for argv, text in _rendered_help().items():
         for spelling in (*_RETIRED_PASSPORT_SPELLINGS, "--talk", "passport qr", "passport stamp"):
-            assert spelling not in text, f"`quackd {argv} --help` still offers {spelling!r}"
+            assert spelling not in text, f"`roboglot {argv} --help` still offers {spelling!r}"
 
 
 def test_every_subcommand_of_a_group_is_named_in_its_readme_row() -> None:
     """A group's README row names what `--help` lists under it, and nothing it does not. The row
-    for `quackd passport` named nine subcommands after eight of them were gone, and nothing
+    for `roboglot passport` named nine subcommands after eight of them were gone, and nothing
     compared the row with the group. Read from the row's first cell, where each code span that
-    starts `quackd GROUP ` names its subcommands, several at once as `a\\|b\\|c`."""
-    from quackd.cli import app
+    starts `roboglot GROUP ` names its subcommands, several at once as `a\\|b\\|c`."""
+    from roboglot.cli import app
 
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
     for group in app.registered_groups:
         name = group.name or ""
         instance = group.typer_instance
-        assert instance is not None, f"quackd {name} has no Typer behind it"
+        assert instance is not None, f"roboglot {name} has no Typer behind it"
         offered = {
             (c.name or (c.callback.__name__ if c.callback else "")).replace("_", "-")
             for c in instance.registered_commands
             if not c.hidden
         } | {g.name or "" for g in instance.registered_groups}
-        cells = [row[2:].split(" | ", 1)[0] for row in rows if row.startswith(f"| `quackd {name}")]
-        assert cells, f"the README's command table has no row for quackd {name}"
+        cells = [
+            row[2:].split(" | ", 1)[0] for row in rows if row.startswith(f"| `roboglot {name}")
+        ]
+        assert cells, f"the README's command table has no row for roboglot {name}"
         named: set[str] = set()
         for cell in cells:
-            for span in re.findall(r"`quackd " + re.escape(name) + r" ([^`]+)`", cell):
+            for span in re.findall(r"`roboglot " + re.escape(name) + r" ([^`]+)`", cell):
                 named |= {part for part in span.split()[0].split("\\|") if part}
         assert named == offered, (
-            f"the README's quackd {name} row names {sorted(named)}, and `quackd {name} --help` "
+            f"the README's roboglot {name} row names {sorted(named)}, and `roboglot {name} --help` "
             f"lists {sorted(offered)}"
         )
 
@@ -2794,14 +2816,20 @@ def test_the_registry_is_documented_where_it_is_configured() -> None:
     for path, needles in (
         (
             "README.md",
-            ("quackd robot", "quackd flock", "QUACKD_REGISTRY_DIR", "--registry-dir", "rest-pose"),
+            (
+                "roboglot robot",
+                "roboglot team",
+                "ROBOGLOT_REGISTRY_DIR",
+                "--registry-dir",
+                "rest-pose",
+            ),
         ),
         (
             "docs/guides/registry.md",
-            ("robots.json", "flocks.json", "--probe", "plain text", "rest-pose", "rest_pose"),
+            ("robots.json", "teams.json", "--probe", "plain text", "rest-pose", "rest_pose"),
         ),
-        (".env.example", ("QUACKD_REGISTRY_DIR",)),
-        ("docs/guides/mcp.md", ("--flock",)),
+        (".env.example", ("ROBOGLOT_REGISTRY_DIR",)),
+        ("docs/guides/mcp.md", ("--team",)),
         ("docs/guides/memory.md", ("registered",)),
         ("SECURITY.md", ("robots.json",)),
     ):
@@ -2811,7 +2839,7 @@ def test_the_registry_is_documented_where_it_is_configured() -> None:
 
 
 def test_the_host_is_documented_where_it_is_configured() -> None:
-    """The same rule again, for the flag that names a board quackd uses and never runs on.
+    """The same rule again, for the flag that names a board Roboglot uses and never runs on.
 
     Each needle has a page it has to be findable from. The README for the flags and the two
     variables, since that is where somebody decides whether any of this is for them, and for
@@ -2825,21 +2853,21 @@ def test_the_host_is_documented_where_it_is_configured() -> None:
     directory, because a daemon nobody can find in the map is one nobody reviews.
 
     Each needle must not run on into a longer name: `--host` is inside `--host-token`, and
-    `QUACKD_HOST` inside `QUACKD_HOST_TOKEN`, so a plain substring check would pass a page that
+    `ROBOGLOT_HOST` inside `ROBOGLOT_HOST_TOKEN`, so a plain substring check would pass a page that
     only ever names the token.
 
     The README and local-llms.md show `--host jetson.local`, and neither the daemon nor Ollama
     answers there as installed: both listen on the board's own loopback. Both pages once gave
     that spelling alone, so each has to name the way that works as installed as well, the
     tunnel and `--host 127.0.0.1`, and the README the `--bind` that makes the other one work."""
-    flags = ("--host", "--host-token", "QUACKD_HOST", "QUACKD_HOST_TOKEN")
+    flags = ("--host", "--host-token", "ROBOGLOT_HOST", "ROBOGLOT_HOST_TOKEN")
     for path, needles in (
         ("README.md", (*flags, "--detector", "--host 127.0.0.1", "--bind")),
         ("docs/guides/jetson.md", (*flags, "--detector")),
         ("docs/guides/local-llms.md", (*flags, "loopback", "tunnel")),
         ("docs/guides/registry.md", flags),
-        (".env.example", ("QUACKD_HOST=", "QUACKD_HOST_TOKEN=")),
-        ("SECURITY.md", ("9874", "X-Quackd-Token")),
+        (".env.example", ("ROBOGLOT_HOST=", "ROBOGLOT_HOST_TOKEN=")),
+        ("SECURITY.md", ("9874", "X-Roboglot-Token")),
         ("CONTRIBUTING.md", ("bridge/jetson",)),
         ("docs/concepts/architecture.md", ("bridge/jetson",)),
     ):
@@ -2866,7 +2894,7 @@ _HOST_CLAIMS_THE_CODE_NEVER_MADE = (
     (
         "rung that answers",
         "the local provider takes the first rung that is set and probes none of them, so a dead "
-        "QUACKD_BASE_URL beats a live QUACKD_HOST",
+        "ROBOGLOT_BASE_URL beats a live ROBOGLOT_HOST",
     ),
     (
         "so the body's keepalives keep flowing",
@@ -2885,7 +2913,7 @@ def test_no_page_repeats_a_host_claim_the_code_never_made() -> None:
         REPO / "CHANGELOG.md",
         *sorted((REPO / "docs" / "adr").glob("0046-*.md")),
         *sorted((REPO / "bridge").rglob("README.md")),
-        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
     ]
     for path in _living_docs() + sources:
         text = _one_line(path.read_text(encoding="utf-8"), seams=path.suffix == ".py")
@@ -2915,9 +2943,9 @@ def test_what_to_send_back_from_a_board_is_one_list() -> None:
 
 
 def test_every_command_is_named_in_the_readme_table_and_the_module_map() -> None:
-    """`quackd memory` shipped in 0.6 and appeared in neither for a release. A command nobody
+    """`roboglot memory` shipped in 0.6 and appeared in neither for a release. A command nobody
     can find is a command nobody has."""
-    from quackd.cli import app
+    from roboglot.cli import app
 
     # hidden commands are left out: `trace` is the 0.11 alias of `log` and is deliberately
     # absent from `--help`, so a README row for it would advertise the spelling being retired
@@ -2929,11 +2957,11 @@ def test_every_command_is_named_in_the_readme_table_and_the_module_map() -> None
     names |= {g.name or "" for g in app.registered_groups}
     names = {n.replace("_", "-") for n in names if n}
     architecture = (REPO / "docs" / "concepts" / "architecture.md").read_text(encoding="utf-8")
-    # the table row, not the prose: `quackd flock` is mentioned in three paragraphs and was
+    # the table row, not the prose: `roboglot team` is mentioned in three paragraphs and was
     # still missing from the one table somebody reads to find out that it exists
     rows = "".join(line for line in README.splitlines(keepends=True) if line.startswith("| `"))
     for name in sorted(names):
-        assert f"| `quackd {name}" in rows, f"the README usage table has no row for {name}"
+        assert f"| `roboglot {name}" in rows, f"the README usage table has no row for {name}"
         assert name in architecture, f"docs/concepts/architecture.md never names {name}"
 
 
@@ -2942,8 +2970,8 @@ def _github_slug(heading: str) -> str:
 
     Backticks and inline links are stripped to their text, everything that is not a word
     character, a hyphen or a space goes, what is left is lowercased and its spaces become
-    hyphens. That is GitHub's rule, and it is why `## The ones quackd names` is reached as
-    `#the-ones-quackd-names`."""
+    hyphens. That is GitHub's rule, and it is why `## The ones Roboglot names` is reached as
+    `#the-ones-roboglot-names`."""
     text = re.sub(r"`|<[^>]+>", "", heading)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     return re.sub(r"[^\w\- ]", "", text.strip().lower()).replace(" ", "-")
@@ -3007,7 +3035,7 @@ def test_the_docs_map_links_every_guide_robot_reference_and_concept_page() -> No
     Twenty six pages once sat side by side in docs/, a guide beside a spec beside one robot's
     checklist. The map is how they stay found now that each kind has a folder of its own, and
     the map says this test holds it to every page in those folders. Robot Passport's pages are
-    held to it too: they have a folder of their own because the protocol is meant to leave quackd
+    held to it too: they have a folder of their own because the protocol is meant to leave Roboglot
     one day, which is no reason for a page to go unlinked meanwhile. The ADRs and the design notes
     are reached through their folders, which the map links."""
     index = REPO / "docs" / "README.md"
@@ -3055,7 +3083,7 @@ def test_every_decision_llm_preset_has_a_page_that_agrees_with_its_row(name: str
         if value is not None:
             assert value in page, f"{path.name} does not carry the row's {field}: {value!r}"
     if spec.extra:
-        assert f"quackd[{spec.extra}]" in page, f"{path.name} does not name its extra"
+        assert f"roboglot[{spec.extra}]" in page, f"{path.name} does not name its extra"
     if spec.price is not None:
         assert f"{spec.price.input:g}" in page, f"{path.name} does not carry its published rate"
     assert f"--decision-llm {name}" in page, f"{path.name} does not show how to name it"
@@ -3079,7 +3107,7 @@ def test_a_page_that_says_where_openais_key_goes_names_the_hosts_it_goes_to(page
     pages name them host by host, which is a list easy to leave behind: the code and the pages
     once named four where OpenAI document eleven for this endpoint. So every host of OpenAI's API a
     page names is one the key goes to, and every one the key goes to is named."""
-    from quackd.agent.providers.openai_headers import OPENAI_HOSTS
+    from roboglot.agent.providers.openai_headers import OPENAI_HOSTS
 
     text = (REPO / page).read_text(encoding="utf-8")
     named = set(re.findall(r"\b(?:[a-z]{2}\.)?api\.openai\.com\b", text))
@@ -3093,8 +3121,8 @@ def test_the_decision_url_help_names_every_host_the_openai_key_goes_to() -> None
     prefixes in front of `api.openai.com`, in one parenthesis, and they are read back here and
     held to the hosts the key goes to, both ways, so a host added to one fails here until the
     other names it."""
-    from quackd.agent.providers.openai_headers import OPENAI_HOSTS
-    from quackd.cli import _DECISION_URL
+    from roboglot.agent.providers.openai_headers import OPENAI_HOSTS
+    from roboglot.cli import _DECISION_URL
 
     said = " ".join(str(_DECISION_URL.help).split())
     listed = re.search(
@@ -3108,7 +3136,7 @@ def test_the_decision_url_help_names_every_host_the_openai_key_goes_to() -> None
 
 def test_a_page_that_says_how_an_address_is_read_keeps_a_system_one_path() -> None:
     """A System One row's client puts `/v1/systemone` after whatever address it is handed, path
-    and all, and quackd hands it the address as given: `factory.resolve_decision_address` holds
+    and all, and Roboglot hands it the address as given: `factory.resolve_decision_address` holds
     only `openai` to the host alone. So a server behind a gateway that serves the format under a
     prefix of its own is reached by naming the prefix. The `jev` and `local` pages, the hub's
     table of flags and the flag's own help said such an address takes no path, which the hub's
@@ -3118,10 +3146,10 @@ def test_a_page_that_says_how_an_address_is_read_keeps_a_system_one_path() -> No
     So the factory keeps the path for every System One row and refuses it for `openai`, and each
     of those four places, read as one line, says the path is kept and no longer says the address
     takes no path. A catalogue row's own address still has none, and saying so is not this."""
-    from quackd.agent.decision.base import DecisionError
-    from quackd.agent.decision.catalogue import SYSTEM_ONE
-    from quackd.agent.decision.factory import resolve_decision_address
-    from quackd.cli import _DECISION_URL
+    from roboglot.agent.decision.base import DecisionError
+    from roboglot.agent.decision.catalogue import SYSTEM_ONE
+    from roboglot.agent.decision.factory import resolve_decision_address
+    from roboglot.cli import _DECISION_URL
 
     gateway = "https://gateway.example/decide"
     rows = [name for name, spec in PRESETS.items() if spec.backend == SYSTEM_ONE]
@@ -3174,7 +3202,7 @@ def test_the_warning_decision_mode_on_prints_names_the_rows_the_hub_estimates() 
     names each of them, as `for NAME at` its maker, and no other, and says a server you run has
     neither; the hub's section on speed and cost names the same rows. A row given a rate fails
     here until the warning names it."""
-    from quackd.cli import _DECISION_MODE_ON_UNMEASURED as said
+    from roboglot.cli import _DECISION_MODE_ON_UNMEASURED as said
 
     priced = {
         name for name, spec in PRESETS.items() if spec.price and spec.price.source == "published"
@@ -3194,8 +3222,8 @@ def test_the_pages_on_decision_frames_say_what_the_code_sends_and_prints() -> No
     states it, and the line a run with the mode off prints, which the page quotes, from the CLI's
     own `_frames_notice`. A frame made larger, or a notice reworded, fails here until the pages
     follow."""
-    from quackd.agent.decision.frames import DETAIL, JPEG_QUALITY, MAX_SIDE_PX
-    from quackd.cli import _DECISION_FRAMES, _frames_notice
+    from roboglot.agent.decision.frames import DETAIL, JPEG_QUALITY, MAX_SIDE_PX
+    from roboglot.cli import _DECISION_FRAMES, _frames_notice
 
     page = (REPO / "docs" / "guides" / "decision-llms" / "openai.md").read_text(encoding="utf-8")
     flat = " ".join(page.split())
@@ -3233,16 +3261,16 @@ def _notes(number: str) -> str:
 def test_adr_0041_names_every_row_with_a_rate_and_says_an_estimate_needs_none() -> None:
     """ADR-0043's note on ADR-0041 ended "the estimate and its `~` exist only where a non-zero
     rate does, which today is Jev alone". ADR-0052 gave `openai` a published rate and left that
-    note standing, and its first half had never held: a turn whose count quackd worked out for
+    note standing, and its first half had never held: a turn whose count Roboglot worked out for
     itself wears the `~` on its log line whatever the rate, so a server you run prints `~$0`
     there. ADR-0052 amends ADR-0041 for both and says so in its header.
 
     So ADR-0041's notes, read without the sentences they quote in order to overturn them, name
     every row the catalogue gives a published rate, and a row given one fails here until a note
     names it too. And they say what a server you run prints on such a turn, which is drawn here
-    by `quackd log`'s own renderer rather than taken on trust: a note that quoted a line the
+    by `roboglot log`'s own renderer rather than taken on trust: a note that quoted a line the
     renderer no longer draws would fail as well."""
-    from quackd.log import LogEvent, render_lines
+    from roboglot.log import LogEvent, render_lines
 
     said = re.sub(r'"[^"]*"', "", _notes("0041"))
     priced = {
@@ -3259,7 +3287,7 @@ def test_adr_0041_names_every_row_with_a_rate_and_says_an_estimate_needs_none() 
         "cost_usd": 0.0,
     }
     drawn = " ".join(text for text, _ in render_lines(LogEvent("decision", 0.0, estimated)))
-    assert "~$0," in drawn, f"quackd log no longer draws an estimated $0 turn as ~$0: {drawn}"
+    assert "~$0," in drawn, f"roboglot log no longer draws an estimated $0 turn as ~$0: {drawn}"
     assert "`~$0`" in said, "ADR-0041's notes do not say a server you run prints ~$0"
     amends = _notes("0052").split(" Amends ", 1)[1].split(" extends ", 1)[0]
     assert "](0041-" in amends, "ADR-0052's header does not say it amends ADR-0041"
@@ -3268,12 +3296,12 @@ def test_adr_0041_names_every_row_with_a_rate_and_says_an_estimate_needs_none() 
 def test_adr_0040_names_every_gate_adr_0052_says_it_added() -> None:
     """ADR-0052 extends ADR-0040's stepper with gates of its own, says which in its header, and
     leaves ADR-0040 a note by it. That note said no other gate changed after the same work had
-    added `interrupted`, for a request a second Ctrl-C or a flock's cancel cuts off. So every
+    added `interrupted`, for a request a second Ctrl-C or a team's cancel cuts off. So every
     gate the header names is one the stepper writes, and ADR-0040's note by ADR-0052 names each
     of them, so a gate added to one fails here until the other has it."""
     extends = _notes("0052").split("extends [ADR-0040]", 1)[1].split(" · ", 1)[0]
     added = set(re.findall(r"`(\w+)`", extends))
-    stepper = (REPO / "quackd" / "agent" / "decision" / "stepper.py").read_text(encoding="utf-8")
+    stepper = (REPO / "roboglot" / "agent" / "decision" / "stepper.py").read_text(encoding="utf-8")
     unwritten = sorted(gate for gate in added if f'"{gate}"' not in stepper)
     assert added and not unwritten, f"ADR-0052 names gates the stepper never writes: {unwritten}"
     note = _notes("0040").split("**Amended 2026-10-10 by [ADR-0052]", 1)[1].split("\n\n", 1)[0]
@@ -3309,13 +3337,13 @@ def test_a_page_that_says_what_the_suites_guard_stops_names_every_marker_it_lets
 
 def test_the_decision_llms_client_keeps_no_header_rule_of_its_own() -> None:
     """`OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go where one rule says for
-    every client quackd builds on OpenAI's SDK (`providers/openai_headers.py`, ADR-0010's amendment
-    of 2026-10-12). The decision LLM's client was written beside a copy of that rule of its own,
-    which kept every line of the variable away from OpenAI's own API too, where the rule sends all
-    three as the SDK sends them, and the pages said what the copy did. So `decisions_api.py`
-    defines none of the rule's pieces and takes them from the module, and a copy that comes back
-    fails here."""
-    source = (REPO / "quackd" / "agent" / "decision" / "decisions_api.py").read_text(
+    every client Roboglot builds on OpenAI's SDK (`providers/openai_headers.py`, ADR-0010's
+    amendment of 2026-10-12). The decision LLM's client was written beside a copy of that rule of
+    its own, which kept every line of the variable away from OpenAI's own API too, where the rule
+    sends all three as the SDK sends them, and the pages said what the copy did. So
+    `decisions_api.py` defines none of the rule's pieces and takes them from the module, and a copy
+    that comes back fails here."""
+    source = (REPO / "roboglot" / "agent" / "decision" / "decisions_api.py").read_text(
         encoding="utf-8"
     )
     for piece in (
@@ -3328,7 +3356,7 @@ def test_the_decision_llms_client_keeps_no_header_rule_of_its_own() -> None:
         "ACCOUNT_HEADERS = ",
     ):
         assert piece not in source, f"decisions_api.py keeps a piece of the rule again: {piece}"
-    assert "from quackd.agent.providers.openai_headers import" in source
+    assert "from roboglot.agent.providers.openai_headers import" in source
 
 
 def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() -> None:
@@ -3345,7 +3373,7 @@ def test_the_hub_says_a_server_nobody_started_reads_as_a_timeout_on_windows() ->
     here: a change to those words fails until the hub follows. It says it of a server on your own
     machine, because a refused connection to 127.0.0.1 is what was timed, and a closed port on
     another machine was not."""
-    from quackd.agent.decision.stepper import _failure
+    from roboglot.agent.decision.stepper import _failure
 
     said = _failure(TimeoutError(), ran_out=True)
     hub = (REPO / "docs" / "guides" / "decision-llms" / "README.md").read_text(encoding="utf-8")
@@ -3376,9 +3404,9 @@ def test_no_living_document_claims_the_wrong_number_of_decision_llms() -> None:
             )
 
 
-#: TypeSafe's confidence page publishes exactly two numbers, 0.5 and 0.9, which are quackd's
+#: TypeSafe's confidence page publishes exactly two numbers, 0.5 and 0.9, which are Roboglot's
 #: brake and confirm-gated floors. The read floor at 0.60 and the motion floor at 0.85 are
-#: quackd's own, set between those two, and nothing published sits there. The claim that all
+#: Roboglot's own, set between those two, and nothing published sits there. The claim that all
 #: four are theirs was written once and then copied onto nine pages and a README row, where it
 #: outlived two rounds of editing, so it is a string now rather than a convention. A number
 #: nobody published is a number nobody has calibrated either, and that is the whole reason
@@ -3423,11 +3451,11 @@ def _one_line(text: str, *, seams: bool = False) -> str:
 
 
 def test_no_living_document_credits_all_four_confidence_floors_to_typesafe() -> None:
-    """Two of the four are quackd's own, and the docs have said otherwise twice.
+    """Two of the four are Roboglot's own, and the docs have said otherwise twice.
 
     `https://docs.typesafe.ai/confidence` states 0.5 (genuinely unsure, route to a human) and
     0.9 (high stakes, proceed with confirmation), and says the right values are domain-specific.
-    quackd's brake and confirm floors sit on those. Its read floor (0.60) and motion floor
+    Roboglot's brake and confirm floors sit on those. Its read floor (0.60) and motion floor
     (0.85) sit between them and are nobody's published guidance, so a page that credits all
     four to a vendor is telling a reader those numbers carry an authority they do not have.
 
@@ -3438,11 +3466,11 @@ def test_no_living_document_credits_all_four_confidence_floors_to_typesafe() -> 
     quoted spans removed: both notes work by quoting the sentence they are overturning.
     """
     # Every source file, not just the stepper's. The one live site this correction missed was
-    # the warning `--decision-mode on` prints, in `quackd/cli.py`, which said the forbidden
+    # the warning `--decision-mode on` prints, in `roboglot/cli.py`, which said the forbidden
     # sentence word for word while the guard read markdown and one module. A string a person
     # reads on their own terminal is the most live site there is.
     sources = [
-        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
         REPO / "docs" / "adr" / "0040-a-discrete-stepper-in-front-of-the-pilot-llm.md",
         REPO / "docs" / "adr" / "0043-decision-llms-are-a-wire-format-and-a-data-row.md",
     ]
@@ -3456,24 +3484,24 @@ def test_no_living_document_credits_all_four_confidence_floors_to_typesafe() -> 
         for wrong in _FLOORS_ARE_NOT_ALL_PUBLISHED:
             assert wrong not in text, (
                 f"{path.relative_to(REPO)} says {wrong!r}, but TypeSafe publish only 0.5 and "
-                "0.9; the 0.60 read floor and the 0.85 motion floor are quackd's own"
+                "0.9; the 0.60 read floor and the 0.85 motion floor are Roboglot's own"
             )
 
 
 #: What the pages written for the arm's simulator said, each beside what the code does. Each
 #: read well, and most were copied into a second page before anybody checked it against the
-#: code: an id quackd chose credited to LeRobot, a pass rule missing the case the lookout sweep
+#: code: an id Roboglot chose credited to LeRobot, a pass rule missing the case the lookout sweep
 #: passes by, LeRobot's own step cap credited to the servo's firmware, and a model's physics
 #: offered as a rehearsal of the arm's.
 _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
     (
         "lerobot's default id",
-        "`arm-01` is quackd's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named, "
+        "`arm-01` is Roboglot's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named, "
         "and no upstream ref gives LeRobot one",
     ),
     (
         "keeps under its default id",
-        "`arm-01` is quackd's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named",
+        "`arm-01` is Roboglot's own DEFAULT_ID, the id it hands LeRobot for an arm nobody named",
     ),
     (
         "the only check that this machine can draw",
@@ -3520,7 +3548,7 @@ _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
         "zeros nobody has checked (JOINT_SIGN, JOINT_ZERO)",
     ),
     (
-        "two of the views are quackd's",
+        "two of the views are Roboglot's",
         "the connect note is one sentence naming whichever of front and top is open "
         "(sim.transport.default_views)",
     ),
@@ -3533,8 +3561,8 @@ _ARM_SIMULATOR_CLAIMS_THE_CODE_NEVER_MADE = (
         "there are three simulators, and the arm's draws nothing in a detector's colour",
     ),
     (
-        "so the cartoon and the mujoco world (`quackd_microduck.sim3d`) share it",
-        "the arm's simulator steps on the flock clock too (quackd_lerobot.sim.clock)",
+        "so the cartoon and the mujoco world (`roboglot_microduck.sim3d`) share it",
+        "the arm's simulator steps on the team clock too (roboglot_lerobot.sim.clock)",
     ),
     (
         "the physics backend's upstreams",
@@ -3585,7 +3613,7 @@ def test_no_page_repeats_a_claim_about_the_arms_simulator_the_code_never_made() 
             for number in ("0016", "0030", "0036", "0045", "0047")
             for path in sorted(adr.glob(f"{number}-*.md"))
         ),
-        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
         *sorted((REPO / "adapters" / "lerobot" / "src").rglob("*.py")),
     ]
     for path in _living_docs() + sources:
@@ -3642,28 +3670,28 @@ def test_no_page_repeats_a_claim_about_the_arms_torque_the_code_never_made() -> 
                 pytest.fail(f"{path.relative_to(REPO).as_posix()} says {wrong!r}: {true}")
 
 
-#: What the pages said about releasing the arm before ADR-0058, when `quackd robot release` and
+#: What the pages said about releasing the arm before ADR-0058, when `roboglot robot release` and
 #: the end of a run took torque off wherever the arm stood, each beside what the code does now.
 #: Checked against the living pages only: the CHANGELOG and the ADRs keep them as history.
 _RELEASE_CLAIMS_RETIRED_BY_ADR_0058 = (
     (
         "the release then lets the arm fall from wherever it is",
-        "`quackd robot release` folds the arm to its rest pose and lets go there; only Enter at "
+        "`roboglot robot release` folds the arm to its rest pose and lets go there; only Enter at "
         "the question after two missed folds lets go where it stands",
     ),
     (
         "Hold it and press Enter to release torque now",
         "a run whose fold missed asks first to clear the arm's way and fold it once more, and "
-        "only then whether to drop it (`quackd.release.CLEAR_THE_WAY`)",
+        "only then whether to drop it (`roboglot.release.CLEAR_THE_WAY`)",
     ),
     (
         "to park it, or cut its power",
-        "the close's torque line names `quackd robot release`, which parks the arm itself, and "
+        "the close's torque line names `roboglot robot release`, which parks the arm itself, and "
         "no longer `doctor --robot` (`verbs.TORQUE_LEFT_ON`)",
     ),
     (
         "RELEASE_OFFER",
-        "the end-of-run offer is two questions now, waiting `quackd.release.CLEAR_THE_WAY_S` and "
+        "the end-of-run offer is two questions now, waiting `roboglot.release.CLEAR_THE_WAY_S` and "
         "`ENTER_DROPS_S`",
     ),
 )
@@ -3692,7 +3720,7 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
     (
         "so that session parks nothing",
         "a session of a real arm with no rest pose is refused before it connects "
-        "(`quackd.registry.no_rest_pose_refusal`)",
+        "(`roboglot.registry.no_rest_pose_refusal`)",
     ),
     (
         "goes limp at the end of every clean session",
@@ -3716,7 +3744,7 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
     (
         "so it would fall there",
         "a real arm's close keeps an arm with no rest pose powered, and the refusal says it would "
-        "be left holding itself up wherever it stopped (`quackd.registry.no_rest_pose_refusal`)",
+        "be left holding itself up wherever it stopped (`roboglot.registry.no_rest_pose_refusal`)",
     ),
     (
         "lets go of an arm with none wherever it stands",
@@ -3740,22 +3768,22 @@ _NO_POSE_CLAIMS_RETIRED_BY_ADR_0058 = (
     (
         "this probe still lets go",
         "doctor keeps a real arm with no rest pose powered, and at a terminal asks whether to drop "
-        "it (`quackd.release.DROP_UNPOSED`)",
+        "it (`roboglot.release.DROP_UNPOSED`)",
     ),
     (
         "support the arm until doctor has finished",
-        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`), so its "
-        "warning says to take them away when it says so (`quackd.cli._doctor_warning`)",
+        "doctor counts the hands away before its fold (`roboglot.release.HANDS_AWAY_S`), so its "
+        "warning says to take them away when it says so (`roboglot.cli._doctor_warning`)",
     ),
     (
         "support the arm until it has finished",
-        "doctor counts the hands away before its fold (`quackd.release.HANDS_AWAY_S`)",
+        "doctor counts the hands away before its fold (`roboglot.release.HANDS_AWAY_S`)",
     ),
 )
 
 
 def test_no_living_page_says_a_real_arm_with_no_rest_pose_runs() -> None:
-    """ADR-0058's ninth decision: a run, a dry run, an MCP session and a flock refuse a real arm
+    """ADR-0058's ninth decision: a run, a dry run, an MCP session and a team refuse a real arm
     with no rest pose, whose close would let go of it wherever it stood. A page that still says
     such a run ends with the arm limp tells a reader something that no longer happens, and
     leaves out the refusal they will meet instead."""
@@ -3765,21 +3793,23 @@ def test_no_living_page_says_a_real_arm_with_no_rest_pose_runs() -> None:
 # The commands a page still prints with a bare real arm on purpose: the run of 2026-09-15 as it
 # was typed, kept as history, and the run the LeRobot page shows being refused.
 _BARE_REAL_RUNS_ON_PURPOSE = {
-    "README.md": 'quackd run --goal "Wave to the camera with an extended arm" --robot lerobot:real',
+    "README.md": (
+        'roboglot run --goal "Wave to the camera with an extended arm" --robot lerobot:real'
+    ),
     "docs/adapters/lerobot/README.md": (
-        "$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake"
+        "$ roboglot run lerobot-lookout --robot lerobot:real --address COM5 --llm fake"
     ),
     # E167's two lines, whose refusal is the experiment
     "docs/examples/lerobot/run-sheet.md": (
-        "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM5"
+        "roboglot run docs/examples/lerobot/e016/wave.glot --robot lerobot:real --address COM5"
     ),
     # E167's log: the line it ran, as it was typed and in its trace, and the same line to try
     "docs/examples/lerobot/e167/README.md": (
-        "docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3"
+        "docs/examples/lerobot/e016/wave.glot --robot lerobot:real --address COM3"
     ),
 }
 _BARE_REAL_RUN = re.compile(
-    r'quackd (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
+    r'roboglot (?:run|serve-mcp)\b[^\n`]*--robot lerobot:real\b|"serve-mcp",[^\]]*"--robot", '
     r'"lerobot:real"'
 )
 
@@ -3805,12 +3835,12 @@ def test_no_living_page_runs_a_real_arm_by_its_spec() -> None:
 _API_CLAIMS_RETIRED_BY_ADR_0059 = (
     (
         "a 429 ends the run",
-        "a 429 is asked again after a wait (`quackd.agent.loop.ASK_AGAIN_AFTER_S`)",
+        "a 429 is asked again after a wait (`roboglot.agent.loop.ASK_AGAIN_AFTER_S`)",
     ),
     (
         "which ends the run once the SDK's own retries are spent",
         "the loop asks the same turn again, and the SDKs retry nothing of their own "
-        "(`quackd.agent.providers.base.NO_SDK_RETRIES`)",
+        "(`roboglot.agent.providers.base.NO_SDK_RETRIES`)",
     ),
     # amended 2026-10-23: the SDK clients are built to retry nothing, and a first press ends a call
     (
@@ -3844,7 +3874,7 @@ def test_the_pages_quote_the_ask_again_the_loop_keeps() -> None:
     words of the loop's own, and safety.md quotes all three, the note as a run printed it. The
     README and the OpenRouter guide count the tries in words. A change to any of them in the
     code fails here until the pages say it too."""
-    from quackd.agent import loop
+    from roboglot.agent import loop
 
     waits = loop.ASK_AGAIN_AFTER_S
     safety = _one_line((REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8"))
@@ -3861,7 +3891,7 @@ def test_the_pages_quote_the_ask_again_the_loop_keeps() -> None:
 
 
 def test_the_arm_left_holding_by_an_exit_that_skips_the_close_has_a_bench_step() -> None:
-    """0.15.0 built the follower to keep torque on a disconnect quackd did not ask for, so a
+    """0.15.0 built the follower to keep torque on a disconnect Roboglot did not ask for, so a
     second Ctrl-C during the fold back to the rest pose leaves the arm holding where 0.14.0
     could drop it. Its release note first said that change had never met an arm without saying
     how the bench would settle it, and PLAN's item for the arm pointed only at 0.14.0's seven
@@ -3978,7 +4008,7 @@ _MCP_CLOCK_STARTS_AT_THE_SPAWN = (
 
 
 def test_no_page_says_an_mcp_sessions_minutes_start_at_the_spawn() -> None:
-    """0.15.0 starts an MCP session's clock once its robot has connected, as a `quackd run`'s
+    """0.15.0 starts an MCP session's clock once its robot has connected, as a `roboglot run`'s
     is, so an arm's connect retries no longer come out of the minutes. docs/guides/mcp.md was
     corrected with the code, and the arm's first-run guide still said, in five paragraphs, that
     the five minutes begin when the client spawns the server."""
@@ -3994,8 +4024,8 @@ def test_no_page_says_an_mcp_sessions_minutes_start_at_the_spawn() -> None:
 
 
 _NOBODY_ASKED = (
-    "under --yes nobody is asked, and without it the confirm reads stdin, so `yes | quackd run` "
-    "and `quackd run < answers.txt` open the gate too (cli.py's `_confirm_prompt`): say a person "
+    "under --yes nobody is asked, and without it the confirm reads stdin, so `yes | roboglot run` "
+    "and `roboglot run < answers.txt` open the gate too (cli.py's `_confirm_prompt`): say a person "
     "at a terminal is asked unless --yes, or a pipe or file on stdin, answers for them"
 )
 
@@ -4023,7 +4053,7 @@ def test_no_page_repeats_a_claim_about_a_policy_run_the_code_never_made() -> Non
         REPO / "CHANGELOG.md",
         REPO / "adapters" / "lerobot" / "README.md",
         *sorted((REPO / "docs" / "adr").glob("0048-*.md")),
-        *sorted((REPO / "quackd").rglob("*.py")),
+        *sorted((REPO / "roboglot").rglob("*.py")),
         *sorted((REPO / "adapters" / "lerobot" / "src").rglob("*.py")),
     ]
     for path in _living_docs() + sources:
@@ -4055,7 +4085,7 @@ def test_the_policy_release_names_every_bench_step_the_arm_still_owes() -> None:
         "CHANGELOG.md's 0.16.0 opening no longer says nothing has compared the simulator "
         "against the arm"
     )
-    owed = _one_line(release.split("**The arm has not run quackd since", 1)[1])
+    owed = _one_line(release.split("**The arm has not run Roboglot since", 1)[1])
     plan = _one_line((REPO / "PLAN.md").read_text(encoding="utf-8"))
     for step in (
         "a second ctrl-c during the fold back to the rest pose",
@@ -4128,8 +4158,8 @@ def test_the_arms_page_gives_a_policy_segment_s_limits_as_the_code_keeps_them() 
     """Each limit a policy segment's loop keeps is a constant in `real.py`, `policy/loop.py` or
     `verbs.py`, and the arm's page says each as a number, so a change to one that leaves the page
     behind fails here. The page's example of the speed cap is worked from the same constants."""
-    from quackd_lerobot import real, verbs
-    from quackd_lerobot.policy import loop
+    from roboglot_lerobot import real, verbs
+    from roboglot_lerobot.policy import loop
 
     page = (REPO / "docs" / "adapters" / "lerobot" / "README.md").read_text(encoding="utf-8")
     section = _one_line(page.split("\n### What `pick` needs", 1)[1].split("\n## ", 1)[0])
@@ -4163,8 +4193,8 @@ def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
     the client waits, so the same missing server is one of two sentences depending on the OS.
     The page once quoted only the Windows one, which the rented GPU's Linux never prints. Both
     are taken from the client here, so a sentence reworded there fails here too."""
-    from quackd_lerobot.policy import client
-    from quackd_lerobot.verbs import JOINTS
+    from roboglot_lerobot.policy import client
+    from roboglot_lerobot.verbs import JOINTS
 
     page = _one_line((REPO / "docs" / "guides" / "policies.md").read_text(encoding="utf-8"))
     for error in (TimeoutError, ConnectionRefusedError):
@@ -4183,7 +4213,7 @@ def test_the_policy_page_quotes_both_sentences_a_missing_server_gets(
 
 
 def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_llm_that_flew_one() -> None:
-    """On 2026-09-29 OpenAI's `gpt-6-sol` flew the lab arm's twin with `quackd run --goal` and
+    """On 2026-09-29 OpenAI's `gpt-6-sol` flew the lab arm's twin with `roboglot run --goal` and
     `--policy-url`, and handed a trained ACT two `manipulate` segments. The release note, the
     README's status row and ADR-0048 each say in one sentence what has never run with a trained
     checkpoint, and all three went on counting an LLM flying with a policy in it after that run,
@@ -4206,12 +4236,12 @@ def test_what_never_ran_with_a_trained_checkpoint_leaves_out_the_llm_that_flew_o
         assert never, f"{name} no longer says what has never run with a trained checkpoint"
         flown = [s for s in never if "flying" in s or "flew" in s]
         assert not flown, f"{name} says an LLM flying with a policy never had one: {flown}"
-        assert "2026-09-29" in text and "`quackd run --goal`" in _one_line(text), (
+        assert "2026-09-29" in text and "`roboglot run --goal`" in _one_line(text), (
             f"{name} does not name the goal run in which an LLM flew a trained ACT"
         )
 
 
-def test_every_licence_quackd_credits_says_where_it_was_read() -> None:
+def test_every_licence_roboglot_credits_says_where_it_was_read() -> None:
     """A licence is a claim about somebody else's page, and the page is how a reader checks it.
 
     Every entry in NOTICE ends on the address of the thing it credits, and every row of the
@@ -4282,7 +4312,7 @@ def _release_rule_breaches(text: str) -> list[str]:
 
 
 def test_a_released_patch_carries_nothing_that_makes_a_minor() -> None:
-    """RELEASING.md: while quackd is 0.x a patch changes nothing a user has to act on and adds
+    """RELEASING.md: while Roboglot is 0.x a patch changes nothing a user has to act on and adds
     nothing to learn, and the changelog's headings say which a release is. So a released
     section whose version has a patch number above zero carries none of the four headings that
     make a minor, and documentation has a heading of its own so that it never needs one. Every
@@ -4401,7 +4431,7 @@ def test_releasing_md_contributing_md_and_the_guard_file_every_entry_alike() -> 
     under `Fixed`, so a contributor who followed it would have turned 0.16.1 into 0.17.0. And
     the patch rule named catalogue data and dependency fixes as a patch's while no row of the
     table let them stay one."""
-    rules = _releasing_section("While quackd is 0.x")
+    rules = _releasing_section("While Roboglot is 0.x")
     rows = re.findall(r"^\| `([^`]+)` \| (.+?) \| (.+?) \|$", rules, flags=re.M)
     table = {heading: (what, release) for heading, what, release in rows}
     assert set(table) == _CHANGELOG_HEADINGS, f"RELEASING.md's table names {sorted(table)}"
@@ -4450,7 +4480,7 @@ def test_a_lock_refresh_raises_no_bump_and_dependabot_writes_only_the_lock() -> 
     CONTRIBUTING.md tells a pull request the same, and the lock is not on the surface. What
     makes that true of Dependabot's pull requests is its `lockfile-only` strategy for uv, which
     never writes a `pyproject.toml`, so this fails if the strategy goes."""
-    rules = _releasing_section("While quackd is 0.x")
+    rules = _releasing_section("While Roboglot is 0.x")
     rows = re.findall(r"^\| `([^`]+)` \| (.+?) \| (.+?) \|$", rules, flags=re.M)
     filed = {heading: release for heading, what, release in rows if "`uv.lock`" in what}
     assert filed == {"Documentation": "no bump of its own"}, (
@@ -4478,12 +4508,14 @@ def test_a_lock_refresh_raises_no_bump_and_dependabot_writes_only_the_lock() -> 
     )
 
 
-def test_the_surface_releasing_md_lists_holds_what_quackd_prints_for_a_script() -> None:
-    """`--json` is the one output quackd's own help says is for a script rather than a person,
+def test_the_surface_releasing_md_lists_holds_what_roboglot_prints_for_a_script() -> None:
+    """`--json` is the one output Roboglot's own help says is for a script rather than a person,
     and eleven commands take it. The surface RELEASING.md lists first left it out, so its rules
     could not say whether a patch may rename a key a script reads."""
-    cli = (REPO / "quackd" / "cli.py").read_text(encoding="utf-8")
-    assert '"--json"' in cli and "for a script" in cli, "quackd/cli.py has no `--json` for scripts"
+    cli = (REPO / "roboglot" / "cli.py").read_text(encoding="utf-8")
+    assert '"--json"' in cli and "for a script" in cli, (
+        "roboglot/cli.py has no `--json` for scripts"
+    )
     surface = _releasing_section("What a version number speaks about")
     assert "`--json`" in surface, "RELEASING.md's surface does not name what `--json` prints"
 
@@ -4605,7 +4637,7 @@ def test_the_web_ui_guides_connect_table_is_what_scripts_connect_docs_writes() -
     rendered, the blocks Setup shows beside its address field, so the page and the guide cannot
     say different things. Read off the page directly too, since a renderer that dropped a row
     would agree with itself."""
-    from quackd.adapters.catalogue import OFFICIAL
+    from roboglot.adapters.catalogue import OFFICIAL
 
     script = _connect_docs_script()
     committed = script.PAGE.read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -4634,7 +4666,7 @@ def test_the_described_bodies_table_is_what_scripts_bodies_docs_writes() -> None
     """A described body is one YAML and no code (ADR-0077), so this table is the only page its
     numbers are on. It is the body files rendered, and read off the page directly too, since a
     renderer that dropped a row would agree with itself."""
-    from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
+    from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
 
     script = _bodies_docs_script()
     committed = script.PAGE.read_text(encoding="utf-8").replace("\r\n", "\n")
@@ -4648,7 +4680,7 @@ def test_the_described_bodies_table_is_what_scripts_bodies_docs_writes() -> None
 
 
 def test_the_readme_sends_a_reader_to_the_described_bodies() -> None:
-    """The front page's table is the ten quackd drives. The bodies it only describes are named
+    """The front page's table is the ten Roboglot drives. The bodies it only describes are named
     under it as what they are, with where their numbers and the way to add one live."""
     section = README.split("\n## Which robots work\n", 1)[1].split("\n## ", 1)[0]
     assert "**Described bodies.**" in section
@@ -4674,10 +4706,10 @@ def _architecture_script() -> ModuleType:
     import sys
 
     script = REPO / "docs" / "assets" / "architecture.py"
-    spec = importlib.util.spec_from_file_location("quackd_docs_architecture", script)
+    spec = importlib.util.spec_from_file_location("roboglot_docs_architecture", script)
     assert spec and spec.loader, f"{script} could not be loaded as a module"
     module = importlib.util.module_from_spec(spec)
-    sys.modules["quackd_docs_architecture"] = module
+    sys.modules["roboglot_docs_architecture"] = module
     spec.loader.exec_module(module)
     return module
 
@@ -4719,7 +4751,7 @@ def test_every_robot_is_drawn_where_its_catalogue_row_says(theme: str) -> None:
     is in the box of its own kind, the first family its row names, and in the box of every route it
     takes. The row that drives nothing is in no box, and neither is a daemon under `bridge/` that
     no row names, the Jetson's: it moves no robot, so it is no binding."""
-    from quackd.adapters.catalogue import ADAPTERS, FAMILIES, ROUTES
+    from roboglot.adapters.catalogue import ADAPTERS, FAMILIES, ROUTES
 
     script = _architecture_script()
     boxes = _drawn(script.FILES[theme])
@@ -4739,7 +4771,7 @@ def test_a_new_robot_joins_the_picture_and_its_band_grows() -> None:
     add, rather than leaving a robot out of the picture."""
     import dataclasses
 
-    from quackd.adapters.catalogue import OFFICIAL, Tier
+    from roboglot.adapters.catalogue import OFFICIAL, Tier
 
     script = _architecture_script()
     before = script.layout().height
@@ -4858,7 +4890,7 @@ def test_the_models_pages_say_what_has_never_run() -> None:
     """The sentences the guides they summarise carry, in the same words, so a page that lists
     a vendor cannot read as if it had been flown when it has only met a stand-in."""
     pilots = (MODELS_DOCS / "pilot-llms.md").read_text(encoding="utf-8")
-    assert "**No OpenRouter LLM has answered a real quackd request.**" in pilots
+    assert "**No OpenRouter LLM has answered a real Roboglot request.**" in pilots
     decisions = (MODELS_DOCS / "decision-llms.md").read_text(encoding="utf-8")
     assert "**Nothing here has ever answered a real robot.**" in decisions
 
@@ -4895,7 +4927,7 @@ def test_every_count_of_the_catalogue_is_the_catalogue_s() -> None:
 def test_the_local_presets_table_is_the_one_the_code_holds() -> None:
     """The guide's table of presets and addresses was typed by hand beside `local.PRESETS`,
     which is what a run actually dials."""
-    from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
+    from roboglot.agent.providers.local import PRESETS as LOCAL_PRESETS
 
     page = (REPO / "docs" / "guides" / "local-llms.md").read_text(encoding="utf-8")
     for name, url in LOCAL_PRESETS.items():
@@ -4908,7 +4940,7 @@ def test_the_local_presets_table_is_the_one_the_code_holds() -> None:
 def test_no_living_document_claims_the_wrong_number_of_policy_types() -> None:
     """The server served three types for nine releases and six from 0.26.0, and every page
     that spells the number is one nobody re-reads the day it moves again."""
-    from quackd.adapters.policies import FAMILIES
+    from roboglot.adapters.policies import FAMILIES
 
     right = _NUMBER_WORDS[len(FAMILIES)]
     for path in _living_docs():
@@ -4925,8 +4957,8 @@ def test_no_living_document_claims_the_wrong_number_of_policy_types() -> None:
 
 def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
     """The three kinds were spread over some twenty-five places in the README, and a
-    reader asking which models quackd takes had no one section to read."""
-    from quackd.adapters.policies import FAMILIES
+    reader asking which models Roboglot takes had no one section to read."""
+    from roboglot.adapters.policies import FAMILIES
 
     headings = re.findall(r"^## (.+)$", _prose(README), flags=re.M)
     robots = headings.index("Which robots work")
@@ -4938,8 +4970,8 @@ def test_the_readme_says_which_models_work_after_which_robots_work() -> None:
         "### Pilot LLMs",
         "### Decision LLMs",
         "### Learned policies and VLAs",
-        "quackd policy serve",
-        "quackd policy endpoint up",
+        "roboglot policy serve",
+        "roboglot policy endpoint up",
         "--decision-mode shadow",
     ):
         assert needle in section, f"the README's models section does not say {needle!r}"
@@ -4958,19 +4990,19 @@ def test_the_readme_pilot_table_has_one_row_per_pilot_with_its_extra_and_key() -
     for name in CLOUD_NAMES:
         row = next((r for r in rows if f"--llm {name}`" in r), None)
         assert row is not None, f"the pilots' table has no row that runs --llm {name}"
-        assert f"`quackd[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row
+        assert f"`roboglot[{EXTRA_FOR[name]}]`" in row and f"`{KEY_ENV[name]}`" in row, row
 
 
 def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> None:
-    """`quackd map` and `quackd places` take a robot as `drive` does and a memory directory as
-    `quackd memory` does, and what each takes beyond those is its own: named in the front page's
+    """`roboglot map` and `roboglot places` take a robot as `drive` does and a memory directory as
+    `roboglot memory` does, and what each takes beyond those is its own: named in the front page's
     rows for the two commands and in the places guide, with the commands themselves, so a flag
     added to either is documented where it is used."""
     from typing import Any
 
     import typer.main
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     root: Any = typer.main.get_command(app)
 
@@ -4987,15 +5019,22 @@ def test_the_place_commands_and_their_own_flags_are_where_a_person_looks() -> No
     own_map = flags(root.commands["map"]) - shared
     own_places = set().union(*(flags(places[name]) for name in ("list", "add", "rm"))) - shared
     assert own_map and own_places
-    rows = [line for line in README.splitlines() if line.startswith("| `quackd ")]
-    map_row = next(line for line in rows if line.startswith("| `quackd map`"))
-    places_row = next(line for line in rows if line.startswith(r"| `quackd places list\|add\|rm`"))
+    rows = [line for line in README.splitlines() if line.startswith("| `roboglot ")]
+    map_row = next(line for line in rows if line.startswith("| `roboglot map`"))
+    places_row = next(
+        line for line in rows if line.startswith(r"| `roboglot places list\|add\|rm`")
+    )
     guide = (REPO / "docs" / "guides" / "places.md").read_text(encoding="utf-8")
     for row, own in ((map_row, own_map), (places_row, own_places)):
         for flag in sorted(own):
             assert flag in row, f"the README's row does not name {flag}: {row[:40]}"
             assert flag in guide, f"docs/guides/places.md does not name {flag}"
-    for command in ("quackd map", "quackd places add", "quackd places list", "quackd places rm"):
+    for command in (
+        "roboglot map",
+        "roboglot places add",
+        "roboglot places list",
+        "roboglot places rm",
+    ):
         assert command in guide, f"docs/guides/places.md does not show {command}"
 
 
@@ -5035,12 +5074,12 @@ def test_the_arms_getting_started_says_what_the_task_files_say() -> None:
     examples = REPO / "docs" / "examples" / "lerobot"
     for path in set(re.findall(r"docs/examples/lerobot/[\w/.-]+\.(?:duck|py|png)", steps)):
         assert (REPO / path).exists(), f"the arm's steps name {path}, which is not there"
-    ducks = [duck.read_text(encoding="utf-8") for duck in examples.glob("*/*.duck")]
+    ducks = [duck.read_text(encoding="utf-8") for duck in examples.glob("*/*.glot")]
     assert f"{len(ducks)} task" in steps and f"{len(ducks)} files valid" in steps
     played = sum("play: true" in duck for duck in ducks)
     assert f"{played} of the task files" in steps
     on_the_arm = re.findall(
-        r"^\s*(quackd run docs/examples/lerobot/([\w/.-]+\.duck) --robot arm-01 .*)$",
+        r"^\s*(roboglot run docs/examples/lerobot/([\w/.-]+\.glot) --robot arm-01 .*)$",
         steps,
         flags=re.M,
     )
@@ -5056,8 +5095,8 @@ def test_the_arms_steps_name_the_row_list_models_prints_first(
     took, and a new default or a new order in the catalogue would make that a false alarm."""
     from typer.testing import CliRunner
 
-    from quackd.agent.providers.catalogue import default_llm_for
-    from quackd.cli import app
+    from roboglot.agent.providers.catalogue import default_llm_for
+    from roboglot.cli import app
 
     monkeypatch.setenv("COLUMNS", "220")
     result = CliRunner().invoke(app, ["list-models", "--llm", "openai"])
@@ -5104,16 +5143,16 @@ def test_every_task_files_first_command_is_on_the_run_sheet() -> None:
     """Each task file opens with the command that runs it, and its card has to say the same."""
     commands = set(_run_sheet_commands())
     missing = []
-    for duck in sorted(_RUN_SHEET.parent.glob("*/*.duck")):
+    for duck in sorted(_RUN_SHEET.parent.glob("*/*.glot")):
         first = re.search(
-            r"^#\s+(quackd (?:run|preflight)\b.*)$", duck.read_text(encoding="utf-8"), re.M
+            r"^#\s+(roboglot (?:run|preflight)\b.*)$", duck.read_text(encoding="utf-8"), re.M
         )
         if first and first.group(1).strip() not in commands:
             missing.append(f"{duck.parent.name}/{duck.name}")
     assert not missing, f"no card has the first command of {missing}"
 
 
-def test_every_quackd_line_on_the_run_sheet_and_in_the_arms_steps_parses(
+def test_every_roboglot_line_on_the_run_sheet_and_in_the_arms_steps_parses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A flag renamed or a subcommand moved leaves 500 lines here wrong with nothing else on the
@@ -5124,7 +5163,7 @@ def test_every_quackd_line_on_the_run_sheet_and_in_the_arms_steps_parses(
 
     from typer.main import get_command
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     monkeypatch.chdir(REPO)
     root = get_command(app)
@@ -5133,7 +5172,7 @@ def test_every_quackd_line_on_the_run_sheet_and_in_the_arms_steps_parses(
     for line in _run_sheet_commands() + _arm_steps_commands():
         for part in re.split(r"\s(?:\||&&)\s", line):
             # --version is the root's own, with no command to walk to
-            if not part.startswith("quackd ") or part == "quackd --version":
+            if not part.startswith("roboglot ") or part == "roboglot --version":
                 continue
             seen += 1
             args = shlex.split(part)[1:]
@@ -5144,7 +5183,7 @@ def test_every_quackd_line_on_the_run_sheet_and_in_the_arms_steps_parses(
                 command = command.commands[args.pop(0)]
             assert command is not root, part
             try:
-                command.make_context("quackd", args)
+                command.make_context("roboglot", args)
             except Exception as e:  # Typer's click again, so its errors are not click's either
                 refused.append(f"{part}: {e}")
     assert seen > 400, seen

@@ -1,6 +1,6 @@
 # XLeRobot: the order to try it in
 
-Nothing in quackd has run on an XLeRobot. This is the order to find out in, written so that
+Nothing in Roboglot has run on an XLeRobot. This is the order to find out in, written so that
 each step can only fail in a way you can recover from. **Wheels on blocks until step 9.**
 
 This is a 12 kg cart with two arms and no brakes. The power station's switch is the only
@@ -25,12 +25,12 @@ e-stop, and nothing reports a battery, so no run will ever abort on a flat one. 
 5. **Note the clock.** The host exits by itself after 3600 seconds and there is no systemd
    unit, autostart or supervisor anywhere upstream. Its exit is upstream's `disconnect()`, which
    drops arm torque, so whatever an arm holds at the hour mark falls. A session longer than
-   an hour needs it restarted, and quackd will report the silence as a heartbeat failure.
-6. `uv pip install 'quackd[xlerobot]'`, which installs the `quackd-xlerobot` package and
+   an hour needs it restarted, and Roboglot will report the silence as a heartbeat failure.
+6. `uv pip install 'roboglot[xlerobot]'`, which installs the `roboglot-xlerobot` package and
    pyzmq and nothing of upstream's, then
 
    ```bash
-   uv run quackd doctor --robot xlerobot:zmq --address tcp://<host>:5555
+   uv run roboglot doctor --robot xlerobot:zmq --address tcp://<host>:5555
    ```
 
    Read back which verbs exist. `doctor` connects; `list-verbs` does not, so it describes the
@@ -39,15 +39,15 @@ e-stop, and nothing reports a battery, so no run will ever abort on a flat one. 
 ## Talking to it, still on blocks
 
 There is no command that runs one verb. Either drive the daemon from an MCP client
-(`quackd serve-mcp --robot xlerobot:zmq --address tcp://<host>:5555`, then `robot_run_verb`, which is
+(`roboglot serve-mcp --robot xlerobot:zmq --address tcp://<host>:5555`, then `robot_run_verb`, which is
 what these steps assume) or give an LLM a goal narrow enough to reach one verb
-(`quackd run --goal "..." --robot xlerobot:zmq --address tcp://<host>:5555 --llm anthropic
+(`roboglot run --goal "..." --robot xlerobot:zmq --address tcp://<host>:5555 --llm anthropic
 --max-steps 3`). `--llm fake` will not do: it answers a free-form goal with a fixed
 script that ignores it.
 
 7. **Check the signs before you trust anything.** `move` with `wz` only, on blocks, and watch
-   which way the wheels turn. Upstream's wire takes **degrees per second** and quackd's `wz`
-   is radians per second, so quackd converts: if that conversion were ever wrong the error
+   which way the wheels turn. Upstream's wire takes **degrees per second** and Roboglot's `wz`
+   is radians per second, so Roboglot converts: if that conversion were ever wrong the error
    would be 57 times, and on blocks you would see it rather than feel it.
 8. **Prove the deadman, and know what it does not cover.** With the wheels turning, pull the
    network cable. The three wheels stop within 500 ms. The fourteen arm and head servos keep
@@ -57,7 +57,7 @@ script that ignores it.
 ## On the floor
 
 9. Wheels down, `move` at `vx` 0.1 for under a second, hand on the power switch. Upstream's
-   own teleop opens at 0.1 m/s and quackd's shared default is 0.15, so ask for 0.1 explicitly.
+   own teleop opens at 0.1 m/s and Roboglot's shared default is 0.15, so ask for 0.1 explicitly.
 10. **Arms last, and one joint at a time.** `move_joints` values are a normalised −100..100
     range, **not degrees**: `use_degrees` is False upstream. A value read as degrees would be
     a different pose entirely.
@@ -79,7 +79,7 @@ Whether the turn direction and the arm units were right, whether the deadman beh
 described, and anything that made the cart move in a way this page did not predict. The
 adapter page's "How to help" says where that goes.
 
-Attach `runs/<timestamp>-<name>/terminal.txt` from whichever `quackd run` you did. It is the
+Attach `runs/<timestamp>-<name>/terminal.txt` from whichever `roboglot run` you did. It is the
 whole session as plain text, opening with the command that started it and the version that ran
 it, so it is usually the one file that answers what happened. Send `transcript.jsonl` beside it
 when the question is about one record rather than the session. The steps you drove from an MCP

@@ -2,7 +2,7 @@ hook: An empty Enter stopped the arm partway through a move, with no LLM in the 
 goal_met: "Partly"
 why_example: >
   In E118 an LLM was asked to stop the arm, and its stop could only land between moves, seconds late.
-  `quackd drive` gives the person a brake that does not go through the LLM at all: an empty Enter
+  `roboglot drive` gives the person a brake that does not go through the LLM at all: an empty Enter
   drops whatever is waiting, ends the verb moving the arm and sends the stop straight to it. This
   example presses it during a move on the real arm, then cuts a second move short with a newer
   command, to see how fast the brake is and how far the arm carries on.
@@ -18,7 +18,7 @@ goal: >
   The other half of E118: an empty Enter brakes at once, with no LLM in the way. It drops every line
   that has not started, ends the verb moving the arm, and sends the stop straight to the body.
 expected: >
-  A brake line ending `Enter (0.2 ms)` for quackd's part, and `brake_ms` in the session's
+  A brake line ending `Enter (0.2 ms)` for Roboglot's part, and `brake_ms` in the session's
   `summary.json` from the press to the stop, 15 ms on the arm's twin. The number to measure is how
   many degrees the arm carries on past the press, against E118's. Typed mid-sweep, `gripper false` is
   a newer command: it ends the verb it finds moving, waits for its stop, then runs, so the sweep ends

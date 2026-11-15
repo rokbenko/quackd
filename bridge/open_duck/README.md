@@ -1,19 +1,19 @@
-# The quackd daemons for an Open Duck Mini v2
+# The Roboglot daemons for an Open Duck Mini v2
 
-This directory was the first part of quackd written to run on a robot, and there are three of
+This directory was the first part of Roboglot written to run on a robot, and there are three of
 them now: `bridge/alohamini/` wraps that robot's own host, and `bridge/toddlerbot/` runs a
 humanoid's whole control loop. This one is not a Python package, it is never imported by
-quackd, and it needs nothing but the standard library and numpy, which your duck's Pi already
+Roboglot, and it needs nothing but the standard library and numpy, which your duck's Pi already
 has.
 
 Two processes, because they have very different jobs and very different budgets:
 
 | File | What it is | Port |
 |---|---|---|
-| `quackd_duck_bridge.py` | upstream's own walk loop, with the gamepad it reads replaced by a socket | 9871 |
-| `quackd_duck_camd.py` | one JPEG over HTTP, captured on a timer | 9872 |
+| `roboglot_duck_bridge.py` | upstream's own walk loop, with the gamepad it reads replaced by a socket | 9871 |
+| `roboglot_duck_camd.py` | one JPEG over HTTP, captured on a timer | 9872 |
 
-For what this robot is to quackd, its verbs and what it cannot do, see
+For what this robot is to Roboglot, its verbs and what it cannot do, see
 [`docs/adapters/open_duck/README.md`](../../docs/adapters/open_duck/README.md). For the order to
 bring one up in, see
 [`docs/adapters/open_duck/hardware-checklist.md`](../../docs/adapters/open_duck/hardware-checklist.md).
@@ -44,7 +44,7 @@ upstream imports to read a gamepad, then runs upstream's own script. Three thing
   stick does, and the policy has seen it. A neck snapping to centre is not.
 - **Head control is off unless you ask for it**, and then it is clamped to 80 percent of
   upstream's own range and rate limited, because upstream warns that head control can break
-  the head. quackd never presses upstream's head-control mode button.
+  the head. Roboglot never presses upstream's head-control mode button.
 - **`stop` is a zero twist with torque still on.** Stop is not limp.
 - **A fall is terminal, and nothing here detects one.** This robot has no get-up policy, and
   the bridge has no fall detection either, so it reports posture as unknown rather than
@@ -56,26 +56,26 @@ upstream imports to read a gamepad, then runs upstream's own script. Three thing
 
 ## Getting the files onto the Pi
 
-`bridge/` ships in the sdist and in the repository, never in the wheel, so `uvx quackd` and
-`pip install quackd` do not give you these files. Clone the repo on the Pi, or copy the two
+`bridge/` ships in the sdist and in the repository, never in the wheel, so `uvx roboglot` and
+`pip install roboglot` do not give you these files. Clone the repo on the Pi, or copy the two
 `.py` files across:
 
 ```bash
 git clone https://github.com/rokbenko/quackd
-cd quackd/bridge/open_duck
+cd roboglot/bridge/open_duck
 bash install.sh          # read it first: it checks rather than fixes
 ```
 
 `install.sh` verifies the runtime and its virtualenv, that nothing else holds the serial
 bus, I2C and the BNO055, Wi-Fi power save, and who owns the camera. It installs both daemons
-to `/opt/quackd`, writes a token to `/etc/quackd/duck-bridge.token`, and installs both
+to `/opt/roboglot`, writes a token to `/etc/roboglot/duck-bridge.token`, and installs both
 systemd units without starting them.
 
 ## The bridge, flag by flag
 
 ```
-python quackd_duck_bridge.py serve [flags]
-python quackd_duck_bridge.py check          # what this duck would advertise, as JSON
+python roboglot_duck_bridge.py serve [flags]
+python roboglot_duck_bridge.py check          # what this duck would advertise, as JSON
 ```
 
 | Flag | Default | What it does |
@@ -85,12 +85,12 @@ python quackd_duck_bridge.py check          # what this duck would advertise, as
 | `--bind` | `127.0.0.1` | loopback on purpose: this port walks a robot |
 | `--port` | `9871` | |
 | `--duck-config` | `~/duck_config.json` | where the capability flags come from |
-| `--token-file` | `/etc/quackd/duck-bridge.token` | if the file exists, a client must send that token |
+| `--token-file` | `/etc/roboglot/duck-bridge.token` | if the file exists, a client must send that token |
 | `--camera-url` | none | the snapshot URL to advertise. **Without it the bridge reports no camera** |
 | `--deadman-ms` | `300` | how long silence is tolerated before the velocities go to zero |
 | `--max-vx`, `--max-vy`, `--max-vyaw` | `0.15`, `0.2`, `1.0` | your own ceilings. Above upstream's own numbers the bridge refuses to start |
 | `--enable-head` | off | EXPERIMENTAL. Upstream warns head control can break the head |
-| `--head-safety` | `0.8` | the fraction of upstream's head range quackd will use. Refused outside (0, 1] |
+| `--head-safety` | `0.8` | the fraction of upstream's head range Roboglot will use. Refused outside (0, 1] |
 | `--workdir` | the script's own directory | where upstream's loop runs from. It opens `polynomial_coefficients.pkl` by relative path, so this has to be the directory holding it |
 | `--patch-watchdog-s` | `150` | how long upstream may take to ask for a controller before the bridge exits. `0` disables |
 | `--settle-s` | `0.5` | on SIGTERM or Ctrl-C, hold zero velocity this long before the loop exits, so the duck comes to a stand. Must stay under the unit's `TimeoutStopSec` |
@@ -104,7 +104,7 @@ is worth knowing before you read the output as a hardware fault.
 ## The camera, flag by flag
 
 ```
-python quackd_duck_camd.py [flags]
+python roboglot_duck_camd.py [flags]
 ```
 
 | Flag | Default | What it does |
@@ -129,38 +129,38 @@ server warns and starts anyway. Setting that flag false is still tidier.
 ## Try the whole thing with no robot
 
 ```bash
-python quackd_duck_camd.py --fake --size 256 --seconds 300
-python quackd_duck_bridge.py serve --fake --enable-head --seconds 300 \
+python roboglot_duck_camd.py --fake --size 256 --seconds 300
+python roboglot_duck_bridge.py serve --fake --enable-head --seconds 300 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg
 ```
 
 Then from a laptop, against that fake. Note `--camera-url` on **both** sides when you are
-tunnelling: the bridge advertises a URL from its own point of view, and passing one to quackd
+tunnelling: the bridge advertises a URL from its own point of view, and passing one to Roboglot
 cannot rescue a bridge that was started without one, because the manifest is narrowed from
 what the bridge reports.
 
 ```bash
-quackd doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
-quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871
-quackd run open-duck-scout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+roboglot doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
+roboglot run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871
+roboglot run open-duck-scout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg
 ```
 
-If the bridge has a token, add `--token <it>` or set `QUACKD_DUCK_TOKEN`. `quackd doctor`
+If the bridge has a token, add `--token <it>` or set `ROBOGLOT_DUCK_TOKEN`. `roboglot doctor`
 with an address connects and prints what the robot actually reported, which is the only way
 to see the difference between the description and your duck.
 
 ## What is honestly degraded
 
 - **`say` and `quack` play a random sound.** The only channel the bridge has to the speaker
-  is upstream's random-sound button, so the mood quackd picks is logged but selects nothing.
+  is upstream's random-sound button, so the mood Roboglot picks is logged but selects nothing.
   The reply says `"how": "the pad's sound button"` for exactly this reason.
 - **Nothing detects a fall.** Posture reads unknown, never standing.
 - **Nothing reports a battery**, so a `battery below N%` abort can never fire.
 
 ## Status
 
-Never run on a physical duck by us. The protocol is exercised end to end in quackd's test
+Never run on a physical duck by us. The protocol is exercised end to end in Roboglot's test
 suite, against this daemon, over loopback. That makes "the protocol works" a fact and keeps
 "the duck walked" a claim nobody has earned yet. If you run it on yours, please open an issue:
 [`docs/adapters/open_duck/hardware-checklist.md`](../../docs/adapters/open_duck/hardware-checklist.md)

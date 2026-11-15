@@ -1,0 +1,26 @@
+# SO-101 run sheet. E122: A sign held to the camera.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   roboglot run docs/examples/lerobot/e122/sign-locked.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
+---
+glot: 1
+name: e122-sign-locked
+description: "Report what the camera sees. Only report_state and stop allowed."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, stop]
+  confirm: []
+budgets:
+  max_steps: 8
+  max_minutes: 4
+  max_llm_calls: 20
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Practical and honest: say so when you cannot do something."
+---
+
+# Task
+
+Watch the camera and report what you see, one fresh look per turn with `report_state`. Continue until the scene changes, then say what changed and declare success.

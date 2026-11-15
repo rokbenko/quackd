@@ -1,17 +1,17 @@
-"""`quackd onboard status`, the radio's half: a snapshot made from the live objects, plain JSON, and
-the lines a person reads from it, on a sim radio, a fake planner and a clock the test turns."""
+"""`roboglot onboard status`, the radio's half: a snapshot made from the live objects, plain JSON,
+and the lines a person reads from it, on a sim radio, a fake planner and a clock the test turns."""
 
 from __future__ import annotations
 
 import json
 import random
 
-from quackd.passport.beacon import FLAG_LINK, new_beacon_id
-from quackd.radio import RadioStatus, Sighting
-from quackd.radio.meet import MeetPolicy, Outcome, Planner
-from quackd.radio.proximity import ProximityPolicy, Tracker
-from quackd.radio.rotation import BeaconRotor
-from quackd.radio.statusview import (
+from roboglot.passport.beacon import FLAG_LINK, new_beacon_id
+from roboglot.radio import RadioStatus, Sighting
+from roboglot.radio.meet import MeetPolicy, Outcome, Planner
+from roboglot.radio.proximity import ProximityPolicy, Tracker
+from roboglot.radio.rotation import BeaconRotor
+from roboglot.radio.statusview import (
     PEERS_SHOWN,
     Rate,
     duration,

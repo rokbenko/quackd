@@ -1,5 +1,5 @@
 """Keys and passports for the Robot Passport tests: the vectors' published test keys, and a 1.0
-passport signed by an owner the way quackd signs one, valid from yesterday for a year."""
+passport signed by an owner the way Roboglot signs one, valid from yesterday for a year."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from quackd.passport import SigningKey, document
+from roboglot.passport import SigningKey, document
 
 VECTORS = Path(__file__).resolve().parents[1] / "docs" / "passport" / "vectors"
 KEYS = json.loads((VECTORS / "keys.json").read_text(encoding="utf-8"))["keys"]

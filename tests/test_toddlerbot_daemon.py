@@ -1,9 +1,9 @@
-"""quackd's ToddlerBot daemon: the seven things upstream does not do.
+"""Roboglot's ToddlerBot daemon: the seven things upstream does not do.
 
 This is the file that earns the `bridge` backend's 🧪. Upstream protects nothing on this
 robot: no clamp, no rate limit, no watchdog, no reset, no e-stop, and a shutdown that
 disables torque and drops a standing humanoid. Every test here is about one of the
-mechanisms quackd added because of that, and the protocol is driven end to end against the
+mechanisms Roboglot added because of that, and the protocol is driven end to end against the
 real daemon over a real loopback socket, exactly as `test_open_duck_daemon.py` does.
 
 What it cannot prove: that any of it is right on 3 kg of servos. Nothing here has run on a
@@ -26,9 +26,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_toddlerbot import ToddlerBotAdapter
-from quackd_toddlerbot.bridge import (
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot_toddlerbot import ToddlerBotAdapter
+from roboglot_toddlerbot.bridge import (
     DEFAULT_PORT,
     PROTOCOL,
     PROTOCOL_VERSION,
@@ -36,12 +36,12 @@ from quackd_toddlerbot.bridge import (
 )
 from tests.conftest import REPO
 
-DAEMON = REPO / "bridge" / "toddlerbot" / "quackd_toddlerbot_bridge.py"
+DAEMON = REPO / "bridge" / "toddlerbot" / "roboglot_toddlerbot_bridge.py"
 
 
 def load_daemon() -> ModuleType:
-    """It lives outside the package on purpose: quackd's core must never import it."""
-    spec = importlib.util.spec_from_file_location("quackd_toddlerbot_bridge", DAEMON)
+    """It lives outside the package on purpose: Roboglot's core must never import it."""
+    spec = importlib.util.spec_from_file_location("roboglot_toddlerbot_bridge", DAEMON)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -276,7 +276,7 @@ def test_silence_slews_to_the_safe_pose_and_never_goes_limp() -> None:
     _ticks(d, 200)
     assert float(np.max(d.target)) > 0.3
 
-    d.command.last_client -= D.DEADMAN_S * 4  # quackd went quiet
+    d.command.last_client -= D.DEADMAN_S * 4  # Roboglot went quiet
     d.tick()
     assert d.deadman_tripped
     assert d.command.mode == D.Command.DEADMAN
@@ -435,7 +435,7 @@ async def test_a_version_mismatch_is_refused_rather_than_guessed() -> None:
 
 async def test_no_daemon_says_what_to_start() -> None:
     link = ToddlerBotBridge(address=f"tcp://127.0.0.1:{_free_port()}")
-    with pytest.raises(TransportError, match="quackd-toddlerbot-bridge"):
+    with pytest.raises(TransportError, match="roboglot-toddlerbot-bridge"):
         await link.connect()
     await link.close()
 
@@ -443,23 +443,23 @@ async def test_no_daemon_says_what_to_start() -> None:
 # ── 6. the rules this file lives by ────────────────────────────────────────────────────
 
 
-def test_the_daemon_never_imports_quackd() -> None:
-    """quackd's dependencies do not belong on a robot, and this file is the proof."""
+def test_the_daemon_never_imports_roboglot() -> None:
+    """Roboglot's dependencies do not belong on a robot, and this file is the proof."""
     for line in DAEMON.read_text(encoding="utf-8").splitlines():
         # the statement only: a late import's comment may well say the word
         stripped = line.split("#", 1)[0].strip()
         if stripped.startswith(("import ", "from ")):
-            assert "quackd" not in stripped, f"the daemon imports quackd: {stripped}"
+            assert "roboglot" not in stripped, f"the daemon imports Roboglot: {stripped}"
 
 
 def test_the_daemon_runs_with_upstream_absent() -> None:
-    """It is the only quackd code that runs on the robot, and it must start before upstream
+    """It is the only Roboglot code that runs on the robot, and it must start before upstream
     is proven good, so nothing at import time may need it."""
     import subprocess
 
     script = (
         "import sys\n"
-        "for name in ('toddlerbot', 'torch', 'mujoco', 'jax', 'quackd'):\n"
+        "for name in ('toddlerbot', 'torch', 'mujoco', 'jax', 'roboglot'):\n"
         "    sys.modules[name] = None\n"
         "import importlib.util\n"
         f"spec = importlib.util.spec_from_file_location('d', r'{DAEMON}')\n"
@@ -476,7 +476,7 @@ def test_it_ships_in_the_sdist_and_never_in_the_wheel() -> None:
     build = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["hatch"][
         "build"
     ]["targets"]
-    assert build["wheel"]["packages"] == ["quackd"]
+    assert build["wheel"]["packages"] == ["roboglot"]
     assert "bridge" in build["sdist"]["include"]
 
 
@@ -622,7 +622,7 @@ def test_this_robot_does_not_take_the_open_ducks_ports() -> None:
     """The Open Duck Mini already has 9871 for its bridge and 9872 for its camera daemon,
     and SECURITY.md tells people to tunnel that pair."""
     taken = set()
-    for name in ("quackd_duck_bridge.py", "quackd_duck_camd.py"):
+    for name in ("roboglot_duck_bridge.py", "roboglot_duck_camd.py"):
         text = (REPO / "bridge" / "open_duck" / name).read_text(encoding="utf-8")
         for line in text.splitlines():
             if line.startswith("DEFAULT_PORT"):
@@ -684,7 +684,7 @@ async def test_the_manifest_offers_only_the_motions_the_daemon_reported() -> Non
 
 async def test_the_envelope_comes_from_the_checkpoint_rather_than_a_gin_file() -> None:
     """`command_range` is read off the checkpoint that is actually loaded, so a policy trained
-    tighter than quackd's own caps narrows the manifest to what it can really do."""
+    tighter than Roboglot's own caps narrows the manifest to what it can really do."""
     with _Serving(walk=True, envelope={"max_vx": 0.12, "max_vy": 0.05, "max_wz": 0.4}) as s:
         adapter = ToddlerBotAdapter(ToddlerBotBridge(address=s.address))
         manifest = await adapter.connect()
@@ -695,7 +695,7 @@ async def test_the_envelope_comes_from_the_checkpoint_rather_than_a_gin_file() -
 
 
 async def test_an_envelope_wider_than_the_schema_is_narrowed_not_believed() -> None:
-    """`limits` may only ever narrow. A checkpoint trained wider than quackd's caps does not
+    """`limits` may only ever narrow. A checkpoint trained wider than Roboglot's caps does not
     get to widen them."""
     with _Serving(walk=True, envelope={"max_vx": 9.0, "max_vy": 9.0, "max_wz": 9.0}) as s:
         adapter = ToddlerBotAdapter(ToddlerBotBridge(address=s.address))
@@ -795,7 +795,7 @@ async def test_a_connected_client_is_not_treated_as_gone_part_way_through_a_verb
     """The deadman fires after half a second of silence and `stand` takes three, so without a
     keepalive every long verb would be cancelled underneath itself by the safe-pose slew.
 
-    quackd's own `Heartbeat` cannot be that signal: its period is a run setting rather than
+    Roboglot's own `Heartbeat` cannot be that signal: its period is a run setting rather than
     the manifest's, and it defaults to the same half second the deadman uses. The transport
     keeps its own timer instead."""
     with _Serving() as s:
@@ -976,7 +976,7 @@ async def test_a_frame_over_asyncios_default_line_reaches_the_client() -> None:
 async def test_a_line_over_the_limit_costs_that_frame_and_not_the_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("quackd_toddlerbot.bridge.READER_LIMIT", 2**15)
+    monkeypatch.setattr("roboglot_toddlerbot.bridge.READER_LIMIT", 2**15)
     with _Serving(camera=True) as s:
         s.daemon.camera = _LongFrames()
         link = ToddlerBotBridge(address=s.address, request_timeout_s=0.5)

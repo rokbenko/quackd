@@ -31,7 +31,7 @@ jobs:
       fail-fast: false
       matrix:
         # Windows is here because it is a documented path, not a courtesy: a Microduck's
-        # robotd speaks over a unix socket, Windows cannot open one, and quackd's answer is a
+        # robotd speaks over a unix socket, Windows cannot open one, and Roboglot's answer is a
         # specific `ssh -L` message covered by a test that only runs on Windows. Without a
         # Windows job that test never ran anywhere, and neither did the path it describes.
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -43,7 +43,7 @@ jobs:
           enable-cache: true
       - name: Lock is current
         # `uv sync` re-locks in silence when pyproject has drifted, so a stale lock used to
-        # reach a release rather than a CI failure. quackd[alohamini] once shipped unlocked.
+        # reach a release rather than a CI failure. roboglot[alohamini] once shipped unlocked.
         run: uv lock --check
       - name: Sync (default deps + dev extra — every adapter, no SDKs, no keys)
         run: uv sync --python ${{ matrix.python }} --extra dev
@@ -56,18 +56,18 @@ jobs:
       - name: Tests (no network, no API keys; seeded sweeps must be 10 of 10)
         run: uv run pytest -n auto -m "not serial"
         env:
-          QUACKD_STRICT_SEEDS: "1"
+          ROBOGLOT_STRICT_SEEDS: "1"
       - name: The tests that hold a margin on a wall clock, on their own
         # Whatever the stage above did: a run that failed there still says how these went.
         if: ${{ !cancelled() }}
         run: uv run pytest -m serial
         env:
-          QUACKD_STRICT_SEEDS: "1"
-      - name: Validate starter ducks
+          ROBOGLOT_STRICT_SEEDS: "1"
+      - name: Validate starter tasks
         # bash explicitly: pwsh is the default shell on the Windows runner and does not expand
-        # a glob for an external command, so this would hand quackd the literal `ducks/*.duck`.
+        # a glob for an external command, so this would hand Roboglot the literal `tasks/*.glot`.
         shell: bash
-        run: uv run quackd validate ducks/*.duck
+        run: uv run roboglot validate tasks/*.glot
 
   # The claim the split exists to make: the core on its own is the loop and no robot, and it
   # says so rather than failing somewhere confusing. Proven against built wheels rather than
@@ -85,22 +85,22 @@ jobs:
       - name: Install the core alone
         run: |
           uv venv --python 3.12 bare
-          uv pip install --python bare dist/quackd-*.whl
+          uv pip install --python bare dist/roboglot-*.whl
       - name: The core carries no adapter, and says what to install
         shell: bash
         run: |
           set -euo pipefail
-          ./bare/bin/quackd doctor --json > report.json
+          ./bare/bin/roboglot doctor --json > report.json
           python - <<'PY'
           import json
           rows = json.load(open("report.json"))["adapters"]
-          # ten adapters, none here, and the row of bodies quackd only describes (ADR-0077)
+          # ten adapters, none here, and the row of bodies Roboglot only describes (ADR-0077)
           assert len(rows) == 11, rows
           assert not any(r["adapter_installed"] or r["installed"] for r in rows), rows
           (described,) = [r for r in rows if r["kind"] == "described"]
           assert len(described["backends"]) >= 12, described
           PY
-          ! ./bare/bin/quackd run hello-world --llm fake 2>err.txt
+          ! ./bare/bin/roboglot run hello-world --llm fake 2>err.txt
           grep -q "no robot adapter is installed" err.txt
       - name: The core carries no OpenCV, and its detector and its QR code work without it
         shell: bash
@@ -109,8 +109,8 @@ jobs:
           ! ./bare/bin/python -c "import cv2" 2>/dev/null
           ./bare/bin/python - <<'PY'
           from PIL import Image, ImageDraw
-          from quackd.perception.color_blob import ColorBlobDetector
-          from quackd.webui.launch import qr_lines
+          from roboglot.perception.color_blob import ColorBlobDetector
+          from roboglot.webui.launch import qr_lines
           frame = Image.new("RGB", (256, 256), (90, 110, 90))
           ImageDraw.Draw(frame).ellipse((100, 100, 150, 150), fill=(255, 140, 0))
           found = ColorBlobDetector().detect(frame)
@@ -121,28 +121,28 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          uv pip install --python bare dist/quackd_lerobot-*.whl
-          ./bare/bin/quackd list-verbs --robot lerobot:mock | grep -q move_joints
+          uv pip install --python bare dist/roboglot_lerobot-*.whl
+          ./bare/bin/roboglot list-verbs --robot lerobot:mock | grep -q move_joints
       - name: A body over another package's family brings that package with it
         shell: bash
         run: |
           set -euo pipefail
           uv venv --python 3.12 thin
-          uv pip install --python thin dist/quackd-*.whl dist/quackd_microduck-*.whl dist/quackd_huebot-*.whl
-          ./thin/bin/quackd list-verbs --robot huebot:mock > verbs.txt
+          uv pip install --python thin dist/roboglot-*.whl dist/roboglot_microduck-*.whl dist/roboglot_huebot-*.whl
+          ./thin/bin/roboglot list-verbs --robot huebot:mock > verbs.txt
           grep -q stand_up verbs.txt
           ! grep -q gaze verbs.txt
-          ./thin/bin/quackd doctor --robot huebot:mock --json > report.json
+          ./thin/bin/roboglot doctor --robot huebot:mock --json > report.json
       - name: A family over another package's binding brings that package with it
         shell: bash
         run: |
           set -euo pipefail
           uv venv --python 3.12 cell
-          uv pip install --python cell dist/quackd-*.whl dist/quackd_rosbridge-*.whl dist/quackd_rosarm-*.whl
-          ./cell/bin/quackd list-verbs --robot rosarm:mock > verbs.txt
+          uv pip install --python cell dist/roboglot-*.whl dist/roboglot_rosbridge-*.whl dist/roboglot_rosarm-*.whl
+          ./cell/bin/roboglot list-verbs --robot rosarm:mock > verbs.txt
           grep -q move_joints verbs.txt
           ! grep -q introspect verbs.txt
-          ./cell/bin/quackd doctor --robot rosarm:mock --json > report.json
+          ./cell/bin/roboglot doctor --robot rosarm:mock --json > report.json
 
   physics:
     name: physics · mujoco + osmesa
@@ -165,10 +165,10 @@ jobs:
       # libosmesa6 is the only thing the image is missing.
       MUJOCO_GL: osmesa
       PYOPENGL_PLATFORM: osmesa
-      QUACKD_STRICT_SEEDS: "1"
+      ROBOGLOT_STRICT_SEEDS: "1"
       # Without this a runner that cannot make a context turns every rendering test into a
       # skip and the job goes green having proved nothing, which is the state it exists to end.
-      QUACKD_REQUIRE_GL: "1"
+      ROBOGLOT_REQUIRE_GL: "1"
     steps:
       - uses: actions/checkout@v7
       - name: OSMesa, the software rasteriser mujoco renders through
@@ -194,7 +194,7 @@ jobs:
         run: uv run pytest tests/test_sim3d.py tests/test_acceptance_mujoco.py tests/test_lerobot_sim.py tests/test_lerobot_sim_parity.py tests/test_preflight.py -m "not real_duck and not so101_model"
 
   ui:
-    name: ui · the page quackd ui serves
+    name: ui · the page roboglot ui serves
     runs-on: ubuntu-latest
     # The files that need Streamlit, with it installed: the page's screens, its token, and a
     # goal, a chat and a Stop run through it end to end. The page's plain modules and the JSON
@@ -212,25 +212,25 @@ jobs:
       - name: Sync (dev + the ui extra, Streamlit and what it brings)
         run: uv sync --python 3.12 --extra dev --extra ui
       - name: Types, with Streamlit's own present
-        run: uv run mypy quackd/webui
+        run: uv run mypy roboglot/webui
       - name: The page, and a goal, a chat and a Stop run through it
         run: uv run pytest tests/test_webui_app.py tests/test_webui_options.py tests/test_webui_jobs.py tests/test_webui_catalog.py
-      - name: quackd ui starts and answers
+      - name: roboglot ui starts and answers
         run: |
-          uv run quackd ui --port 8599 --no-browser > ui.log 2>&1 &
+          uv run roboglot ui --port 8599 --no-browser > ui.log 2>&1 &
           page=$!
           for _ in $(seq 1 60); do curl -fsS http://127.0.0.1:8599/_stcore/health && break; sleep 1; done
           curl -fsS http://127.0.0.1:8599/_stcore/health
           # said once the page answers, from a thread of its own, so it may trail the health check.
           # Looked for and never printed: the line carries the page's token, and this log is public
-          for _ in $(seq 1 20); do grep -q "quackd ui: http://127.0.0.1:8599" ui.log && break; sleep 1; done
-          grep -q "quackd ui: http://127.0.0.1:8599" ui.log || { sed -E 's/token=[^ &]+/token=(hidden)/g' ui.log; exit 1; }
+          for _ in $(seq 1 20); do grep -q "roboglot ui: http://127.0.0.1:8599" ui.log && break; sleep 1; done
+          grep -q "roboglot ui: http://127.0.0.1:8599" ui.log || { sed -E 's/token=[^ &]+/token=(hidden)/g' ui.log; exit 1; }
           kill "$page"
 
   onboard:
     name: onboard · py${{ matrix.python }} · bleak and dbus-fast
     runs-on: ubuntu-latest
-    # `quackd onboard` runs on a robot's own computer, and its Bluetooth half is BlueZ over D-Bus,
+    # `roboglot onboard` runs on a robot's own computer, and its Bluetooth half is BlueZ over D-Bus,
     # so bleak and dbus-fast install on Linux only and only with the onboard extra. Everything of
     # the radio that is plain Python (the advert, the link frames, proximity, rotation, the sim
     # air) runs in `test`, on all six cells, without them. What this job adds is the two packages
@@ -240,7 +240,7 @@ jobs:
     # stops. bleak's scanner and client never run here: they talk to a real bluetoothd.
     #
     # A matrix of two, as `test` is on Linux, because dbus-fast has a wheel per Python and a
-    # Jetson's JetPack 6 runs 3.10 or a uv-managed 3.12, and 3.11 is the floor quackd keeps.
+    # Jetson's JetPack 6 runs 3.10 or a uv-managed 3.12, and 3.11 is the floor Roboglot keeps.
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -248,8 +248,8 @@ jobs:
         python: ["3.11", "3.12"]
     env:
       # without it a runner where dbus-fast or the bus went missing would skip the D-Bus tests
-      # and go green having proved nothing, as QUACKD_REQUIRE_GL is for the physics job
-      QUACKD_REQUIRE_DBUS: "1"
+      # and go green having proved nothing, as ROBOGLOT_REQUIRE_GL is for the physics job
+      ROBOGLOT_REQUIRE_DBUS: "1"
     steps:
       - uses: actions/checkout@v7
       - name: A D-Bus daemon, for the private bus the tests run on
@@ -290,7 +290,7 @@ jobs:
   # does in uv.lock, so this job runs the newest hub LeRobot allows. `--no-sync` from then on, or
   # `uv run` would sync them both away again. Not a matrix: nothing here differs by platform that
   # the default suite does not already run six times. Pillow is the lock's here as in every job,
-  # 13 being quackd's floor and inside LeRobot 0.7.0's cap, so no job runs an older one.
+  # 13 being Roboglot's floor and inside LeRobot 0.7.0's cap, so no job runs an older one.
   policy:
     name: policy · torch cpu + lerobot, a tiny ACT and a tiny X-VLA offline
     runs-on: ubuntu-latest
@@ -298,12 +298,12 @@ jobs:
     env:
       # anything the test's own cache cannot answer is refused rather than fetched
       HF_HUB_OFFLINE: "1"
-      QUACKD_STRICT_SEEDS: "1"
+      ROBOGLOT_STRICT_SEEDS: "1"
       # without it a runner where torch did not install would skip the half that matters and
-      # go green having proved nothing, as QUACKD_REQUIRE_GL is for the physics job
-      QUACKD_REQUIRE_TORCH: "1"
+      # go green having proved nothing, as ROBOGLOT_REQUIRE_GL is for the physics job
+      ROBOGLOT_REQUIRE_TORCH: "1"
       # the same for the arm's bus: no rustypot is a failure here, not a skip
-      QUACKD_REQUIRE_LEROBOT_BUS: "1"
+      ROBOGLOT_REQUIRE_LEROBOT_BUS: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7

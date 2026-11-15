@@ -1,0 +1,66 @@
+# The arm task where every turn is a choice among things the arm can already do, which is what
+# makes it the worked example in docs/guides/decision-llms/README.md. Nothing here authors an
+# angle: the gripper opens or it shuts, and where it stops is the only thing Roboglot knows about
+# holding.
+#
+# It is also worth running on its own account. README.md says nobody has yet measured whether
+# the band that infers `holding` from a gripper stopping short of shut is right, and this is
+# the task that asks the question. Run it with `--by-hand` and put something in the gripper.
+---
+glot: 1
+name: arm-grip-check
+description: Say whether the arm is holding anything, prove it with the gripper, then let it go.
+author: rok
+robots: lerobot:mock
+requires: [report_state, gripper]
+verbs:
+  allow: [report_state, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 12
+  max_minutes: 3
+  max_llm_calls: 12
+success:
+  - You have said whether the arm was holding anything when the run began, and what the gripper
+    did to show it.
+  - Nothing is held at the end, or you have said why it could not be released.
+abort_when:
+  - Same verb fails 3 times in a row
+persona: A careful hand. Read first, then act, then say what happened in one sentence.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+Find out whether this arm is holding anything, show that you are right, and then let go of it.
+
+## Strategy
+
+1. `report_state` first. It says where every joint is, whether torque is on, how warm the
+   servos are, and whether it reads as holding something.
+2. Close the gripper with `gripper`. This is the one move that is *supposed* to stop short: it
+   reports where it stopped and whether that counts as holding something. A gripper that shuts
+   all the way was holding nothing.
+3. `report_state` again and compare. Two readings that disagree are the interesting result,
+   not a failure.
+4. `place` opens the gripper where the arm is and needs something to be held, so it is refused
+   when there is nothing in it. That refusal is an answer.
+5. `stop` holds the arm where it is, then say in one sentence what you found.
+
+## Notes
+
+- **Nothing here moves a joint to an angle.** This arm's `move_joints` is not in the allowlist
+  on purpose: the whole task is reading and gripping, so it needs no pose and improvises none.
+- An empty gripper that binds looks exactly like a full one from here. Nothing on this arm
+  reports grip force, so `holding` is inferred from the gripper stopping short of shut, and
+  saying that the two cannot be told apart is a better answer than picking one.
+- With `--by-hand` you set the arm down holding something before the run starts, which is the
+  version of this task worth doing on real hardware.
+- The gripper is exempt from the hot-servo rule, because refusing to open a hot one would
+  strand whatever it is holding.
+
+## Memory
+
+Before you declare, call `remember` once with what the gripper read when it closed, and on
+what: that number is the only evidence anybody has about where the holding band should sit.

@@ -42,10 +42,10 @@ jobs:
       MUJOCO_GL: osmesa
       PYOPENGL_PLATFORM: osmesa
       # Ten seeds of ten, where a developer's machine is asked for eight.
-      QUACKD_STRICT_SEEDS: "1"
+      ROBOGLOT_STRICT_SEEDS: "1"
       # Without this a runner that cannot make a context turns the rendering tests, and every
       # sweep that connects, into skips, and the job goes green having proved nothing.
-      QUACKD_REQUIRE_GL: "1"
+      ROBOGLOT_REQUIRE_GL: "1"
     steps:
       - uses: actions/checkout@v7
       - name: OSMesa, the software rasteriser mujoco renders through
@@ -61,9 +61,9 @@ jobs:
         # The watchdog. A changed or missing file fails here, with the name of the file that
         # did not match, rather than on a stranger's first rehearsal.
         run: |
-          uv run python -c "from quackd_lerobot.sim.assets import ensure_so101; a = ensure_so101(); print(a.model_path, 'pinned:', a.pinned)"
+          uv run python -c "from roboglot_lerobot.sim.assets import ensure_so101; a = ensure_so101(); print(a.model_path, 'pinned:', a.pinned)"
       - name: The grasp and acceptance sweeps on the real model, ten seeds each
         # Each sweep prints its seeds into this log whether it passes or not, and the grasp
-        # sweep whether quackd's holding verdict agreed with the world's truth: that is data
+        # sweep whether Roboglot's holding verdict agreed with the world's truth: that is data
         # for the bench, and never asserted.
         run: uv run pytest tests/test_lerobot_sim_model.py tests/test_lerobot_sim.py -m so101_model

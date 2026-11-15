@@ -5,17 +5,17 @@ Every test here is marked `so101_model`. The maker's model is fetched at run tim
 shipped, and CI's gating jobs fetch nothing, so these skip wherever it is not already fetched.
 The nightly `lerobot-sim-assets` job fetches it at its pin the way a first run would and runs
 them there; a developer runs them against the cache, or against a checkout named by
-`QUACKD_LEROBOT_SIM_ASSETS`.
+`ROBOGLOT_LEROBOT_SIM_ASSETS`.
 
 - **The grasp sweep.** On each seed a cube is laid somewhere on the table, and the arm is driven
   through the real backend's own verbs to open over it, come down around it, close and lift.
   Where to put the joints is worked out from where the cube lies, through the loaded model's own
   kinematics, since only the model knows where its fingers are. The world's truth is the judge:
-  the cube off the table and touching both pads. quackd's own verdict, the gripper settling
+  the cube off the table and touching both pads. Roboglot's own verdict, the gripper settling
   inside `HOLD_MIN` and `HOLD_MAX`, is recorded beside it and printed, and never asserted:
   whether it agrees with a real gripper is a question for the bench.
 - **The acceptance sweep.** The bundled arm lookout and a grasp task with a sidecar, each
-  rehearsed seed after seed through `quackd preflight`'s own loop.
+  rehearsed seed after seed through `roboglot preflight`'s own loop.
 - **The cameras.** The real meshes drawn from the front and from the wrist.
 - **The physics against the wall.** With nothing rendering, the model steps faster than real
   time, which is what lets a rehearsal cost less than the run it rehearses.
@@ -40,17 +40,17 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from quackd.adapters.factory import describe, parse_robot_spec
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.preflight import FIRST_SEED, FileReport, Rehearsal
-from quackd.safety import allow_all
-from quackd.verbs.registry import VerbResult
-from quackd_lerobot.real import HOLD_MAX, HOLD_MIN, joint_ranges
-from quackd_lerobot.sim.camera import open_renderer
-from quackd_lerobot.sim.clock import SUBSTEPS
-from quackd_lerobot.sim.model import (
+from roboglot.adapters.factory import describe, parse_robot_spec
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.preflight import FIRST_SEED, FileReport, Rehearsal
+from roboglot.safety import allow_all
+from roboglot.verbs.registry import VerbResult
+from roboglot_lerobot.real import HOLD_MAX, HOLD_MIN, joint_ranges
+from roboglot_lerobot.sim.camera import open_renderer
+from roboglot_lerobot.sim.clock import SUBSTEPS
+from roboglot_lerobot.sim.model import (
     CUBE,
     MOUNTS,
     PEN,
@@ -62,9 +62,9 @@ from quackd_lerobot.sim.model import (
     generic_calibration,
     load,
 )
-from quackd_lerobot.sim.transport import GL_CHECK_SIZE
-from quackd_lerobot.sim.world import JAWS_CLEARANCE, LIFT_MIN_M, ArmWorld, WorldError
-from quackd_lerobot.verbs import GRIPPER_OPEN, GRIPPER_S, JOINTS, MOVE_MIN_S, published_travel
+from roboglot_lerobot.sim.transport import GL_CHECK_SIZE
+from roboglot_lerobot.sim.world import JAWS_CLEARANCE, LIFT_MIN_M, ArmWorld, WorldError
+from roboglot_lerobot.verbs import GRIPPER_OPEN, GRIPPER_S, JOINTS, MOVE_MIN_S, published_travel
 from tests.test_lerobot_adapter import _executor
 from tests.test_lerobot_sim import JAWS_START, WALL_S, _camera, _closes_onto, _needs_gl, _sim_arm
 from tests.test_preflight import GRASP_TASK, LOOKOUT, _duck
@@ -74,8 +74,8 @@ mujoco = pytest.importorskip("mujoco")
 pytestmark = pytest.mark.so101_model
 
 SEEDS = range(10)
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
-"""Seeds of ten a sweep must pass: all ten where `QUACKD_STRICT_SEEDS=1` asks, as the nightly
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
+"""Seeds of ten a sweep must pass: all ten where `ROBOGLOT_STRICT_SEEDS=1` asks, as the nightly
 job does, and eight on a developer's machine, as `test_acceptance_mujoco.py` asks of the
 Microduck."""
 BODY = JOINTS[:-1]
@@ -268,7 +268,7 @@ def _degrees(arm: ArmModel, q: np.ndarray) -> dict[str, float]:
 
 
 def _so101() -> Path:
-    from quackd_lerobot.sim.assets import AssetError, ensure_so101
+    from roboglot_lerobot.sim.assets import AssetError, ensure_so101
 
     try:
         return ensure_so101(offline=True).model_path
@@ -318,7 +318,7 @@ class Grasp:
     """Both pads on it, at the same instant."""
     lift_m: float
     holding: bool | None
-    """quackd's verdict as the gripper closed, None where the arm never got that far."""
+    """Roboglot's verdict as the gripper closed, None where the arm never got that far."""
     position: float | None
     """Where the gripper settled, 0 shut to 100 open."""
     why: str = ""
@@ -330,7 +330,7 @@ class Grasp:
 
     @staticmethod
     def verdict(closed: VerbResult) -> tuple[bool | None, float | None]:
-        """quackd's verdict on a close, and where the gripper settled. A close the executor
+        """Roboglot's verdict on a close, and where the gripper settled. A close the executor
         refused or cut short, a timeout say, never reached the verb that gives a verdict, so it
         has none, and counting it as `on nothing` would have it agree with the grasp it failed."""
         holding = closed.data.get("holding")
@@ -347,7 +347,7 @@ class Grasp:
         verdict = "on something" if self.holding else "on nothing"
         agrees = "agrees" if self.holding == self.ok else "DISAGREES"
         return (
-            f"seed {self.seed}: {truth}; quackd said closed {verdict} at "
+            f"seed {self.seed}: {truth}; Roboglot said closed {verdict} at "
             f"{self.position:.1f}/100, which {agrees}"
         )
 
@@ -403,12 +403,12 @@ async def _grasp(model: Path, seed: int) -> Grasp:
 
 
 def _tally(grasps: Sequence[Grasp]) -> str:
-    """The sweep's last line: how many seeds the world says held, and how often quackd's
+    """The sweep's last line: how many seeds the world says held, and how often Roboglot's
     verdict agreed, out of the closes that gave one."""
     said = [g for g in grasps if g.holding is not None]
     return (
         f"grasp sweep: {sum(g.ok for g in grasps)} of {len(grasps)} lifted between both pads; "
-        f"quackd's holding verdict ({HOLD_MIN:g} < gripper < {HOLD_MAX:g}, settled) agreed on "
+        f"Roboglot's holding verdict ({HOLD_MIN:g} < gripper < {HOLD_MAX:g}, settled) agreed on "
         f"{sum(g.holding == g.ok for g in said)} of {len(said)}"
     )
 
@@ -417,11 +417,11 @@ async def test_a_seeded_grasp_lifts_the_cube_between_both_pads(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """`MIN_SUCCESSES` of ten seeds lift the cube clear of the table with both pads on it,
-    judged by the world and not by quackd. That guards the slip settings in `sim/model.py`
+    judged by the world and not by Roboglot. That guards the slip settings in `sim/model.py`
     (`IMPRATIO` and `NOSLIP_ITERATIONS`): with both at MuJoCo's defaults the stiff pads let the
     cube go on every seed. It does not guard the pads' own settings: the cube is held with those
     at MuJoCo's defaults too, and what they change is where the gripper settles, which is
-    quackd's verdict, printed here and never asserted."""
+    Roboglot's verdict, printed here and never asserted."""
     model = _so101()
     grasps = [await _grasp(model, seed) for seed in SEEDS]
     successes = sum(g.ok for g in grasps)
@@ -433,12 +433,12 @@ async def test_a_seeded_grasp_lifts_the_cube_between_both_pads(
 
 def test_a_close_that_never_ran_gives_no_verdict_to_count() -> None:
     """A close the executor cut short carries no verdict, and the tally leaves it out. Read as
-    `on nothing`, it would count as quackd agreeing with the grasp that failed because of it."""
+    `on nothing`, it would count as Roboglot agreeing with the grasp that failed because of it."""
     held = Grasp(0, True, True, LIFT_MIN_M, True, (HOLD_MIN + HOLD_MAX) / 2)
     holding, position = Grasp.verdict(VerbResult.fail("gripper timed out; stopped"))
     assert (holding, position) == (None, None)
     dropped = Grasp(1, False, False, 0.0, holding, position)
-    assert "quackd said" not in dropped.line()
+    assert "Roboglot said" not in dropped.line()
     assert _tally([held, dropped]).endswith("agreed on 1 of 1")
 
 
@@ -474,11 +474,11 @@ def _passed(report: FileReport, capsys: pytest.CaptureFixture[str]) -> None:
 async def test_the_lookout_passes_preflight_seed_after_seed(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The bundled arm lookout as `quackd preflight` rehearses it, connect cycles first, on the
+    """The bundled arm lookout as `roboglot preflight` rehearses it, connect cycles first, on the
     generic arm and the simulator's own table, with the scripted pilot it ships with."""
     model = _so101()
     _gl_or_skip(model)
-    rehearsal = _rehearsal(tmp_path, lambda duck: FakeProvider.for_duck(duck.name))
+    rehearsal = _rehearsal(tmp_path, lambda duck: FakeProvider.for_glot(duck.name))
     _passed(await rehearsal.file(str(LOOKOUT)), capsys)
 
 
@@ -708,7 +708,7 @@ def test_a_fold_the_model_cannot_settle_clear_is_refused() -> None:
         ArmWorld(arm, rest_pose=rest, name="bench-twin")
     said = str(refused.value)
     assert "of settling still leaves lower_arm " in said and " mm into the table" in said, said
-    assert "quackd robot rest-pose bench-twin" in said, said
+    assert "roboglot robot rest-pose bench-twin" in said, said
 
 
 # ── the cameras and the clock ───────────────────────────────────────────────────────────

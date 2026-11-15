@@ -7,17 +7,17 @@ transport has met a real rosbridge only in CI, against a stand-in for the arm's 
 ([Status](#status)).
 
 > [!WARNING]
-> quackd is not a safety system. On an industrial arm the risk assessment, the guarding, the
-> emergency stop and the pendant are the integrator's. quackd's confirmation before every move
-> and its speed ceiling are courtesies, not safeguards, and when quackd goes quiet in the middle
+> Roboglot is not a safety system. On an industrial arm the risk assessment, the guarding, the
+> emergency stop and the pendant are the integrator's. Roboglot's confirmation before every move
+> and its speed ceiling are courtesies, not safeguards, and when Roboglot goes quiet in the middle
 > of a move the arm finishes that move. The pendant's stop is the brake. `--yes` answers a move
 > on `rosarm:mock`, as it answers a `confirm` verb on any other body, and on `rosarm:ws` a person
-> answers each move: `--yes`, a flock's standing answer and an MCP session are refused before
-> its question is put. A script answering `quackd run` on stdin still answers it on both.
+> answers each move: `--yes`, a team's standing answer and an MCP session are refused before
+> its question is put. A script answering `roboglot run` on stdin still answers it on both.
 
-Four bodies, which quackd also describes from their makers' figures: a Universal Robots UR5e, a
+Four bodies, which Roboglot also describes from their makers' figures: a Universal Robots UR5e, a
 KUKA LBR iisy 3 R760, a KUKA LBR iiwa 7 R800 and a Yaskawa MotoMini. Each sits behind a ROS 2
-driver, its maker's for three of them and the LBR-Stack for the iiwa, and quackd reaches the
+driver, its maker's for three of them and the LBR-Stack for the iiwa, and Roboglot reaches the
 driver through `rosbridge_server` with
 [roslibpy](https://github.com/gramaziokohler/roslibpy), as the rosbridge adapter reaches a
 wheeled base ([docs/adapters/rosbridge/README.md](../rosbridge/README.md)). A registered robot
@@ -27,11 +27,11 @@ refuses a bridge that cannot cancel in time, are
 [ADR-0078](../../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md).
 
 ```bash
-uv pip install "quackd[rosarm]"
-quackd list-verbs --robot rosarm:mock
-quackd run rosarm-lookout --robot rosarm:mock --llm fake
-quackd robot add cell-1 rosarm:mock --robot-type yaskawa-motomini
-quackd run rosarm-lookout --robot cell-1 --llm fake
+uv pip install "roboglot[rosarm]"
+roboglot list-verbs --robot rosarm:mock
+roboglot run rosarm-lookout --robot rosarm:mock --llm fake
+roboglot robot add cell-1 rosarm:mock --robot-type yaskawa-motomini
+roboglot run rosarm-lookout --robot cell-1 --llm fake
 ```
 
 The lookout reads the arm back and moves nothing. On the UR5e, the arm nobody named, it ends:
@@ -48,17 +48,17 @@ and on the MotoMini registered as `cell-1`:
 │ says motion possible                                                                            │
 ```
 
-`quackd robot add` refuses the real backend at the door, in the words `make()` refuses it with,
+`roboglot robot add` refuses the real backend at the door, in the words `make()` refuses it with,
 so no `robots.json` holds a robot that cannot run:
 
 ```text
-$ quackd robot add cell-2 rosarm:ws --robot-type ur5e --address ws://127.0.0.1:9090
+$ roboglot robot add cell-2 rosarm:ws --robot-type ur5e --address ws://127.0.0.1:9090
 ✗ error: rosarm:ws on a ur5e is described and not driven: bound code needs a named owner and a date
 for its first hardware run (docs/adr/0076), and nobody has named either for this arm; rosarm:mock
 rehearses it (docs/adapters/rosarm/README.md#status)
 ```
 
-The extra is three packages: `quackd-rosarm`, `quackd-rosbridge`, whose binding and refs this
+The extra is three packages: `roboglot-rosarm`, `roboglot-rosbridge`, whose binding and refs this
 family uses, and roslibpy, through the rosbridge package's own extra. The mock imports no
 roslibpy.
 
@@ -67,7 +67,7 @@ roslibpy.
 | `--robot` | Tier | What it is |
 |---|---|---|
 | `rosarm:mock` | ✅ rehearsed | `RosArmWs`, the transport `ws` runs, over a fake bridge and a fake arm (`fake.py`) on a clock of its own: every line from the verbs down to the calls roslibpy would make runs in the suite, in fake time, on all four bodies |
-| `rosarm:ws` | 📄 described | the same transport over roslibpy 2.x to `rosbridge_server`. Bound code, refused at `make()` and at `quackd robot add` for every body until an owner names a date for that arm's first hardware run ([ADR-0076](../../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) |
+| `rosarm:ws` | 📄 described | the same transport over roslibpy 2.x to `rosbridge_server`. Bound code, refused at `make()` and at `roboglot robot add` for every body until an owner names a date for that arm's first hardware run ([ADR-0076](../../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) |
 
 The day somebody names a date for one arm, that body's tier in `bodies.py` becomes bound with the
 owner and the date, `ws` gains a connect block, and `make()` builds that body and no other. A
@@ -75,22 +75,22 @@ hardware checklist for that run is owed by whoever names the date, so there is n
 
 ## The four arms
 
-The figures, mass, payload, reach, are the body files' (`quackd/adapters/bodies/`), which the
+The figures, mass, payload, reach, are the body files' (`roboglot/adapters/bodies/`), which the
 described row reads too, so `described:ur5e` and `rosarm:mock` say the same 20.6 kg, 6 joints,
 5 kg and 0.85 m of a UR5e. What a driver answers to is a record in
-[`adapters/rosarm/src/quackd_rosarm/bodies.py`](../../../adapters/rosarm/src/quackd_rosarm/bodies.py),
+[`adapters/rosarm/src/roboglot_rosarm/bodies.py`](../../../adapters/rosarm/src/roboglot_rosarm/bodies.py),
 every value a stock bringup's default read in the driver's own files. The address sets the
 action, the readings topic and a prefix for every joint's name, and turns the status read off;
 the joint names themselves and the status topics are the record's.
 
-| `--robot-type` | Driver | Action | Joints | Readings | What quackd reads of the driver | `can_move` means |
+| `--robot-type` | Driver | Action | Joints | Readings | What Roboglot reads of the driver | `can_move` means |
 |---|---|---|---|---|---|---|
 | `ur5e` | ur_robot_driver, Humble or Jazzy | `/scaled_joint_trajectory_controller/follow_joint_trajectory` | `shoulder_pan_joint` to `wrist_3_joint` | `/joint_states` | `/io_and_status_controller/robot_program_running` and `/io_and_status_controller/safety_mode` | the program runs and the safety mode is NORMAL or REDUCED |
 | `kuka-lbr-iisy-3-r760` | kuka_rsi_driver, built from source, on iiQKA.OS2 | `/joint_trajectory_controller/follow_joint_trajectory` | `joint_1` to `joint_6` | `/joint_states`, positions alone | `/event_broadcaster/hardware_event`, sent only when it changes | the latest event heard is no CONTROL_STOPPED or ERROR; an event that says neither, or none heard yet, is believed |
 | `kuka-lbr-iiwa-7-r800` | the LBR-Stack over FRI | `/lbr/joint_trajectory_controller/follow_joint_trajectory` | `lbr_A1` to `lbr_A7` | `/lbr/joint_states`, the commands sent under its stock `open_loop` | nothing: where FRI's session state is published is not settled | the driver is believed |
 | `yaskawa-motomini` | MotoROS2 0.2.1 on the YRC1000micro | `/follow_joint_trajectory`, MotoROS2's own server | `joint_1` to `joint_6` | `/joint_states` | `/robot_status` | motion possible, and neither e-stopped nor in error |
 
-What the person at the cell does before quackd's first goal, none of which quackd does:
+What the person at the cell does before Roboglot's first goal, none of which Roboglot does:
 
 - **UR5e**: the arm powered on and its brakes released on the pendant, and the External Control
   program playing, unless the driver runs headless.
@@ -114,7 +114,7 @@ as the SO-101's `not_hot` believes a backend with no thermometer.
 - **`send_action_goals_in_new_thread:=true`.** Without it the bridge runs each goal to its end on
   the thread that reads every message from its client, so a cancel is reached only after the move
   has finished (rosbridge_suite issue #909). Jazzy's launch file sets it true and Humble's false.
-  quackd asks the bridge for the parameter at connect and refuses a bridge that says false, or
+  Roboglot asks the bridge for the parameter at connect and refuses a bridge that says false, or
   whose answer it cannot read:
 
   ```text
@@ -130,7 +130,7 @@ as the SO-101's `not_hot` believes a backend with no thermometer.
   `respawn:=true`, which brings rosapi back.
 - **The robot's description** on `robot_state_publisher`'s parameter or its latched topic, with a
   lower, an upper and a velocity on every joint: a goal with no travel to check it against is one
-  quackd will not send.
+  Roboglot will not send.
 
 ## The address
 
@@ -141,41 +141,41 @@ ws://HOST:9090?action=/scaled_joint_trajectory_controller/follow_joint_trajector
 Every key defaults from the body record, so `ws://cell.local:9090` is enough for a stock bringup.
 `prefix` goes before each joint's name (UR's `tf_prefix`), `urdf_param` and `urdf_topic` take
 `off`, `bridge_node` names a bridge started under another name or a namespace, and `status=off`
-reads no status topic of the driver's. A key quackd does not read is refused, since a typo read
+reads no status topic of the driver's. A key Roboglot does not read is refused, since a typo read
 as nothing
 would put a stock default in front of an arm somebody configured otherwise.
 
 At connect each check is a refusal that says what it found: the thread parameter, the action among
 `/rosapi/action_servers`, no goal still running on that action, the first `/joint_states` naming
 every joint, read by name and never by place, and the description's limits. A goal still running
-then was sent before quackd connected, by another client or by an earlier run that went quiet in
-the middle of a move, and quackd reads it off the action's own status, which the controller behind
+then was sent before Roboglot connected, by another client or by an earlier run that went quiet in
+the middle of a move, and Roboglot reads it off the action's own status, which the controller behind
 the UR5e, the iisy and the iiwa publishes whenever a goal changes and latches:
 
 ```text
 rosarm: /scaled_joint_trajectory_controller/follow_joint_trajectory is still running a goal sent
-before quackd connected (executing): another client's, or one an earlier run left going when it went
-quiet, so the arm may be moving. quackd sends no goal over a running one: wait for it to end, or
+before Roboglot connected (executing): another client's, or one an earlier run left going when it went
+quiet, so the arm may be moving. Roboglot sends no goal over a running one: wait for it to end, or
 stop it on the pendant, then connect again
 ```
 
 MotoROS2 is read to publish no such status, so on the MotoMini nothing is heard and nothing is
-refused, and quackd's first goal there waits behind one still running, unanswered until that one
+refused, and Roboglot's first goal there waits behind one still running, unanswered until that one
 ends. Nor is a goal another client sends after the check looked for, or a trajectory published on
-a JointTrajectoryController's own topic, which has no goal and so no status: quackd's next goal
+a JointTrajectoryController's own topic, which has no goal and so no status: Roboglot's next goal
 would replace either.
 
 ## The manifest
 
-`rosarm:mock` on the UR5e, cut to the fields quackd decides:
+`rosarm:mock` on the UR5e, cut to the fields Roboglot decides:
 
 ```json
 {"manifest": 1, "id": "cell-01", "vendor": "universal-robots", "model": "ur5e", "embodiment": "arm", "mobility": "none", "intents": ["joint"], "sensors": ["joint_state"], "verbs": ["report_state", "stop", "move_joints"], "safety": {"report_state": "safe", "stop": "safe", "move_joints": "confirm"}, "preconditions": {"move_joints": ["fresh_state", "can_move"]}, "safety_authority": {"native": "estop", "deadman": false, "heartbeat_hz": 2.0}, "frame": {"reference": "base", "note": "joint space in degrees; no camera, no Cartesian goals"}, "limits": {"speed_share": 0.1}, "extras": {"robot_type": "ur5e", "joints": ["shoulder_pan_joint", "shoulder_lift_joint", "elbow_joint", "wrist_1_joint", "wrist_2_joint", "wrist_3_joint"], "action": "/scaled_joint_trajectory_controller/follow_joint_trajectory", "joint_states": "/joint_states", "status_topics": ["/io_and_status_controller/robot_program_running", "/io_and_status_controller/safety_mode"], "speed_share": 0.1, "tolerance_deg": 0.5, "joint_range_deg": {"shoulder_pan_joint": [-360.0, 360.0], "shoulder_lift_joint": [-360.0, 360.0], "elbow_joint": [-180.0, 180.0], "wrist_1_joint": [-360.0, 360.0], "wrist_2_joint": [-360.0, 360.0], "wrist_3_joint": [-360.0, 360.0]}}}
 ```
 
 The figures are the body file's: 20.6 kg, 6 joints, 5 kg of payload and 0.85 m of reach, each
-the maker's own. `safety_authority` says `estop` and no deadman, because nothing between quackd
-and the arm ends a goal when quackd goes quiet. The travel is the robot's own description,
+the maker's own. `safety_authority` says `estop` and no deadman, because nothing between Roboglot
+and the arm ends a goal when Roboglot goes quiet. The travel is the robot's own description,
 published to a tenth of a degree rounded inward; `ws` claims none until a bridge has served it.
 
 ## Verbs
@@ -184,9 +184,9 @@ published to a tenth of a degree rounded inward; `ws` claims none until a bridge
 |---|---|---|
 | `report_state` | yes, the family's own | every joint in degrees to a tenth, whether a move is running, what the driver says about itself, how old the oldest of the joints' latest readings is, what the readings are on this body, and that it holds nothing |
 | `stop` | yes, core | cancels the running goal and waits a bounded time for its CANCELED result; never gated |
-| `move_joints` | yes, the family's own, confirmed by a person every time. On `rosarm:mock` `--yes` or a script answering `quackd run` on stdin may answer it; on `rosarm:ws` a standing answer is refused and only a person, or such a script, answers it | the SO-101's parameters exactly, `positions` in degrees by joint name and `duration_s` |
-| `gripper`, `place`, `pick`, `manipulate` | no | no gripper or tool is fitted: what goes on its flange is the integrator's choice, and quackd drives none |
-| a rest pose | no | quackd parks an industrial arm nowhere: its controller and its brakes hold it where it stops, and a move nobody asked for at the end of a run is the hazard, not the cure |
+| `move_joints` | yes, the family's own, confirmed by a person every time. On `rosarm:mock` `--yes` or a script answering `roboglot run` on stdin may answer it; on `rosarm:ws` a standing answer is refused and only a person, or such a script, answers it | the SO-101's parameters exactly, `positions` in degrees by joint name and `duration_s` |
+| `gripper`, `place`, `pick`, `manipulate` | no | no gripper or tool is fitted: what goes on its flange is the integrator's choice, and Roboglot drives none |
+| a rest pose | no | Roboglot parks an industrial arm nowhere: its controller and its brakes hold it where it stops, and a move nobody asked for at the end of a run is the hazard, not the cure |
 | a hand-off | no | hand guiding a cobot is a mode on its own pendant |
 | `observe` | no camera here | a `--host` board's camera gives it, as it gives any body |
 
@@ -197,10 +197,10 @@ How `move_joints` works underneath:
 2. **Two points, both at rest**, under a header stamp of zero: the present reading at a time from
    start of 0 and the goal at `duration_s`, each with zero velocities and accelerations. It is the
    one shape all four take, and on the controller it is a quintic that starts and stops smoothly.
-3. **One goal at a time.** quackd never sends a goal over a running one: MotoROS2 is read to
+3. **One goal at a time.** Roboglot never sends a goal over a running one: MotoROS2 is read to
    take a second goal only once the first has ended, and one rule for four arms is the simpler
    one.
-4. **Arrival is quackd's judgement.** After the result, every joint must read within 0.5 degrees
+4. **Arrival is Roboglot's judgement.** After the result, every joint must read within 0.5 degrees
    of its goal on `/joint_states`, or the verb fails naming the joint furthest off. A SUCCEEDED
    proves little where the tolerances are left at 0, as they are on the iisy and the iiwa. A joint
    within 0.5 degrees of its goal is at it, so a goal that near where every joint already reads
@@ -218,13 +218,13 @@ How `move_joints` works underneath:
 
    ```text
    move_joints is answered by a person on this robot, each time, while nobody is asked here (--yes,
-   a flock's standing answer or the MCP server): run it from a terminal, with quackd run or quackd
+   a team's standing answer or the MCP server): run it from a terminal, with roboglot run or Roboglot
    drive and without --yes, and answer its confirm yourself
    ```
 
-   `quackd run --yes` runs the task with every `move_joints` refused in those words, and the pilot
+   `roboglot run --yes` runs the task with every `move_joints` refused in those words, and the pilot
    hears them; without `--yes` it asks at the terminal, and a person's yes, or a script's on stdin,
-   clears the move. `quackd
+   clears the move. `roboglot
    drive` asks the person at its keyboard, or in its page, for each move, and under `--yes` the move
    is refused the same way. An MCP session asks nobody, so with or without `--yes` the move is
    refused, and a task that needs one is run from a terminal instead. On `rosarm:mock` `--yes`
@@ -236,7 +236,7 @@ How `move_joints` works underneath:
    controller's sign that it has started, and a goal that shows no start within 8 s is cancelled
    as one nobody answered.
 
-## Stop, the watchdog, and quackd going quiet
+## Stop, the watchdog, and Roboglot going quiet
 
 - **`stop`** cancels the running goal and waits up to 2 s for it to end CANCELED, and up to 8 s
   when the goal has not started yet, since the bridge holds that cancel until it has the goal. On a
@@ -248,24 +248,24 @@ How `move_joints` works underneath:
   use the hardware switch.
 - **The heartbeat** fails, and the run ends with a stop, when the socket is down, when no new
   `/joint_states` has come for five of the stream's own periods, half a second at least, and when
-  the driver stops the arm itself while quackd watches: a UR safety mode other than NORMAL or
+  the driver stops the arm itself while Roboglot watches: a UR safety mode other than NORMAL or
   REDUCED or its program stopped, a KUKA CONTROL_STOPPED or ERROR, a MotoROS2 e-stop or error. An
   arm that cannot move when the run starts is a refused move, not a failed heartbeat, so the
   lookout can still say so.
 - **A socket that drops is let go of for good.** roslibpy holds what it is handed while the
   socket is down and sends it once its factory has reconnected by itself, a goal among them.
   So no goal is handed over on a dropped socket, and the heartbeat that finds it down lets go of
-  the client: quackd hands it nothing more, and a new run or session is what drives the arm
+  the client: Roboglot hands it nothing more, and a new run or session is what drives the arm
   again. It closes this client's socket alone, never roslibpy's event loop, which every client
-  in the process shares, another robot's in a flock among them.
-- **When quackd goes quiet in the middle of a move, the arm finishes that move and holds there.**
+  in the process shares, another robot's in a team among them.
+- **When Roboglot goes quiet in the middle of a move, the arm finishes that move and holds there.**
   rosbridge cancels nothing for a client that has gone, the controller's own command timeout is
   off by default and counts from the end of a trajectory, and MotoROS2 is read to watch only its
   own agent.
   So the bound is one move: at most 12 s, at the speed asked. The manifest says it rather than
   implying a deadman, and the suite shows it on all four fake arms. A run that connects while that
   move runs is refused until it has ended, on the three arms whose controller says so.
-- **A goal can still wake a MotoMini.** quackd never calls `start_traj_mode`, and a goal that
+- **A goal can still wake a MotoMini.** Roboglot never calls `start_traj_mode`, and a goal that
   arrives while MotoROS2's energy saving function has turned the servos off makes MotoROS2 call it
   itself and turn them on. A person confirms every move first for this reason among others.
 
@@ -276,7 +276,7 @@ How `move_joints` works underneath:
 - **The travel is the robot's own**, each joint's lower and upper from the description the bridge
   serves, published to a tenth rounded inward. MotoROS2 publishes no limits, so on the MotoMini
   the description comes from the owner's `robot_state_publisher`.
-- **A speed ceiling of quackd's own:** no joint goes faster than a tenth of its rated velocity,
+- **A speed ceiling of Roboglot's own:** no joint goes faster than a tenth of its rated velocity,
   18 degrees a second on a UR5e joint rated at 180, at the fastest point of its move and not on
   average. The JointTrajectoryController plays two points at rest as a quintic, whose speed at
   the middle is 15/8 of its mean, and MotoROS2 as a cubic, whose is 3/2, so a move takes at least
@@ -288,7 +288,7 @@ How `move_joints` works underneath:
   mode (its impedance modes turn it off), `/lbr/joint_states`
   reports the command, so arrival there proves the command arrived, and `report_state` says so.
 - **NaN is a reading of nothing.** The iisy's velocities and efforts are NaN unless its RSI
-  configuration maps them; quackd reads positions alone.
+  configuration maps them; Roboglot reads positions alone.
 
 ## Upstream API
 
@@ -300,10 +300,10 @@ MotoROS2 0.2.1 at `41ac074`, its interfaces at `b91a194`, the MotoMini's descrip
 `a77f186`; industrial_msgs at `d547cdc`. JointState and JointTrajectory are read at rosbridge's
 own pin of ros2/common_interfaces. On 2026-11-09, where an action's server publishes its goals'
 statuses: rcl at `18d96c9` and rclcpp at `35b821a`, both on jazzy. Every ref is in
-[`adapters/rosarm/src/quackd_rosarm/upstream_api.py`](../../../adapters/rosarm/src/quackd_rosarm/upstream_api.py),
+[`adapters/rosarm/src/roboglot_rosarm/upstream_api.py`](../../../adapters/rosarm/src/roboglot_rosarm/upstream_api.py),
 with its line. Nothing has been run against a controller.
 
-### From the binding (imported from `quackd_rosbridge.upstream_api` by name)
+### From the binding (imported from `roboglot_rosbridge.upstream_api` by name)
 
 The robot's description is read where the base adapter's introspection reads it, under
 `DESCRIPTION_PARAM`, `DESCRIPTION_TOPIC` and `DESCRIPTION_NAMES`, which the rosbridge page lists
@@ -316,16 +316,16 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `op=action_feedback {id, action, values}` | read as the goal having started, and nothing more |
 | `op=action_result {id, action, values, status, result}` | how a goal ended |
 | `rosbridge_library 2.0.0 has actions` | what the bridge must be |
-| `send_action_goals_in_new_thread` | why quackd refuses a bridge that says false |
+| `send_action_goals_in_new_thread` | why Roboglot refuses a bridge that says false |
 | `IncomingQueue` | the reader a goal blocks |
 | `send_action_goals_in_new_thread defaults by branch` | why a Humble bridge needs the flag |
 | `/rosbridge_websocket` | where the parameter is asked for |
 | `actions_glob` | why a goal can go unanswered, and the verb has a deadline of its own |
 | `No action server available` | a refusal the verb says |
 | `Action goal was rejected` | the same, for a controller that rejected it |
-| `result true carries the goal's own status` | why quackd reads the status and not the flag |
+| `result true carries the goal's own status` | why Roboglot reads the status and not the flag |
 | `a cancel reaches a goal the bridge is still running` | how the stop is answered |
-| `a client that goes cancels nothing` | why one move runs on when quackd goes quiet |
+| `a client that goes cancels nothing` | why one move runs on when Roboglot goes quiet |
 | `/rosapi/action_servers` | the check that the action is there |
 | `rosapi_msgs/srv/GetActionServers` | its shape |
 | `/rosapi/get_param` | the parameter and the description |
@@ -340,8 +340,8 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `roslibpy.GoalStatus` | the status the result carries |
 | `resultback({status, values}) and errback({status, values})` | how a result and a refusal arrive |
 | `self.once("ready", callback)` | a goal handed over while the socket is down would go out when roslibpy reconnects by itself, so no goal is sent on a dropped socket, and the heartbeat lets go of the client for good |
-| `reactor.callFromThread(reactor.stop)` | why the transport closes its own socket and never calls `terminate()`, which would end every roslibpy client's socket in the process, another robot's in a flock among them |
-| `a subscription is transient_local when every publisher on the topic is` | how the status a controller latched reaches quackd at connect |
+| `reactor.callFromThread(reactor.stop)` | why the transport closes its own socket and never calls `terminate()`, which would end every roslibpy client's socket in the process, another robot's in a team among them |
+| `a subscription is transient_local when every publisher on the topic is` | how the status a controller latched reaches Roboglot at connect |
 
 ### VERIFIED (read from source at the pins)
 
@@ -359,14 +359,14 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `Can't accept new action goals. Controller is not running.` | an inactive controller rejects every goal |
 | `allow_partial_joints_goal` | false by default: a goal names every joint |
 | `allow_nonzero_velocity_at_trajectory_end` | false on jazzy, true on humble |
-| `a header stamp of zero starts the trajectory now` | the stamp quackd sends |
+| `a header stamp of zero starts the trajectory now` | the stamp Roboglot sends |
 | `time_from_start strictly increasing` | the controller's check |
-| `do quintic interpolation` | between two points that carry velocities and accelerations, as quackd's goal's do: at rest at both ends, its speed at the middle is 15/8 of its mean, which is the speed the ceiling holds |
+| `do quintic interpolation` | between two points that carry velocities and accelerations, as Roboglot's goal's do: at rest at both ends, its speed at the middle is 15/8 of its mean, which is the speed the ceiling holds |
 | `a cancel holds the arm where it is` | unless `decelerate_on_cancel`, false by default |
 | `a new goal ends the running one` | ABORTED on jazzy, CANCELED on humble |
 | `Current goal cancelled during deactivate transition.` | a goal running when its controller stops ends ABORTED |
 | `Goal successfully reached!` | SUCCEEDED once the last point's time has passed |
-| `send feedback` | a running goal's feedback, which quackd reads as the controller having started it |
+| `send feedback` | a running goal's feedback, which Roboglot reads as the controller having started it |
 | `a tolerance of 0 is not checked` | and every tolerance defaults to 0 |
 | `constraints.goal_time` | 0 by default: a goal outside its tolerance waits for ever |
 | `cmd_timeout` | 0 by default: nothing ends a goal when its client goes quiet |
@@ -405,24 +405,24 @@ with the rest of that adapter's refs ([docs/adapters/rosbridge/README.md](../ros
 | `motoros2_interfaces/msg/InitTrajEnum` | the codes of a goal MotoROS2 will not run |
 | `motoros2_interfaces/msg/MotionReadyEnum` | the codes of a goal sent while motion is not possible |
 | `robot_status` | how MotoROS2 fills it |
-| `start_traj_mode` | which a person calls, and quackd never does |
+| `start_traj_mode` | which a person calls, and Roboglot never does |
 | `the MotoMini's joint limits` | from Yaskawa's own description |
 | `industrial_msgs/msg/RobotStatus` | e-stopped, drives powered, motion possible, in motion, in error |
 | `industrial_msgs/msg/TriState` | 1 TRUE, 0 FALSE, -1 UNKNOWN |
 
-### UNVERIFIED (our assumptions, and what quackd does about each)
+### UNVERIFIED (our assumptions, and what Roboglot does about each)
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
 | `STOCK_NAMES` | every name in a body record is a stock bringup's default. The address sets the action, the readings topic and a joint prefix, and the connect checks the action and the joints against the bridge; a status topic nothing publishes is read as no status |
-| `BRIDGE_NODE_NAME` | that the bridge is `/rosbridge_websocket` and rosapi reaches its parameters; an answer quackd cannot read is refused, and `?bridge_node=` names another |
+| `BRIDGE_NODE_NAME` | that the bridge is `/rosbridge_websocket` and rosapi reaches its parameters; an answer Roboglot cannot read is refused, and `?bridge_node=` names another |
 | `STATUS_TYPES_LOADED` | that the bridge's machine has the driver's message package; without it no status is read, and `can_move` believes the driver |
 | `UR_PROTECTIVE_STOP` | how a protective stop reaches the controller is not settled; any safety mode but NORMAL and REDUCED is a stop |
 | `IIWA_STATUS` | where FRI's session state is published is not settled; nothing is read of the iiwa's driver |
 | `IIWA_READINGS` | that the iiwa runs the stock `open_loop: true`; `report_state` says its readings are the commands |
 | `MOTO_FIRST_POINT` | that a MotoMini at rest reads close enough to its command for a first point taken from the reading; one that does not is aborted with its reason |
-| `MOTO_SINGLE_GOAL` | that MotoROS2 answers no second goal while one runs; quackd never sends one |
-| `ACTION_STATUS_HEARD` | that the bridge hands quackd the status a controller latched within a second of subscribing; nothing heard is read as no goal running, since a controller that has had no goal publishes none |
+| `MOTO_SINGLE_GOAL` | that MotoROS2 answers no second goal while one runs; Roboglot never sends one |
+| `ACTION_STATUS_HEARD` | that the bridge hands Roboglot the status a controller latched within a second of subscribing; nothing heard is read as no goal running, since a controller that has had no goal publishes none |
 | `MOTO_NO_ACTION_STATUS` | that MotoROS2 publishes no goal status, as rclc under it publishes none; on a MotoMini the connect hears nothing and refuses nothing |
 | `ONE_MOVE_WHEN_QUIET` | that an arm whose client goes quiet finishes its move and holds; every move fits in 12 s, and the manifest claims no deadman |
 | `FAKE_FROM_READING` | that the fake behaves as these sources read; it has met no bridge, no controller and no arm |

@@ -1,11 +1,11 @@
 # ADR-0071: A duck explores what its map has not seen, and stops so the map can look
 
-**Status:** accepted · **Date:** 2026-10-27 · Builds on [ADR-0068](0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md) (quackd reads a map rather than making one), [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a reflex with named ways out) and [ADR-0067](0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md) (a stop ends the verb beside it) · Implemented in `quackd/space/frontier.py`, `quackd/verbs/explore.py`, `quackd/verbs/navigate.py` and the Microduck's `verbs.py` and manifest · Documented in [docs/adapters/microduck/README.md](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen)
+**Status:** accepted · **Date:** 2026-10-27 · Builds on [ADR-0068](0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md) (Roboglot reads a map rather than making one), [ADR-0054](0054-a-reflex-may-look-through-a-decision-llm.md) (a reflex with named ways out) and [ADR-0067](0067-a-stop-ends-the-verb-beside-it-and-a-newer-command-ends-the-one-it-finds-moving.md) (a stop ends the verb beside it) · Implemented in `roboglot/space/frontier.py`, `roboglot/verbs/explore.py`, `roboglot/verbs/navigate.py` and the Microduck's `verbs.py` and manifest · Documented in [docs/adapters/microduck/README.md](../adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen)
 
 ## Context
 
 `mapd`, the Microduck's onboard mapper, and the simulators' stand-in for it take a keyframe only
-when the duck stands still, and see a room a stop at a time. ADR-0068 gave quackd a reading of
+when the duck stands still, and see a room a stop at a time. ADR-0068 gave Roboglot a reading of
 where the duck is, places, and a walk to a place on the map. What the map has not seen, nothing
 walked to: a pilot could only `move` and hope, and a map grew where a person happened to drive
 the duck. Pollen's posts, which ADR-0068 starts from, name exploring among what the map makes
@@ -87,7 +87,7 @@ possible.
   began, so `go_to_place start` brings it back. A real duck does not explore until somebody cites
   its body radius, `mapd` or not.
 - On a real duck, once it explores, the body turns for every view: whether `mapd` takes a
-  keyframe from where the head looks is not something the branch quackd read says, and the
+  keyframe from where the head looks is not something the branch Roboglot read says, and the
   hardware checklist asks.
 - A pilot over MCP may give `explore` more minutes than its client waits for one tool call; `stop`
   from beside it ends it at once.

@@ -51,7 +51,7 @@ export class Recorder {
 
   get seconds() { return this.recording ? (performance.now() - this.startedAt) / 1000 : 0; }
 
-  save(name = "quackd-microduck.webm") {
+  save(name = "roboglot-microduck.webm") {
     if (!this.blob) return;
     const url = URL.createObjectURL(this.blob);
     const link = document.createElement("a");
@@ -66,12 +66,12 @@ export class Recorder {
  * The post, with what the viewer actually typed in it. Short on purpose: a claim, the thing
  * that makes it interesting, and somewhere to go. X counts any link as 23 characters.
  */
-export function shareText(goal, { quackd = true } = {}) {
+export function shareText(goal, { roboglot = true } = {}) {
   const asked = (goal || "walk in a square").trim().replace(/\s+/g, " ").slice(0, 60);
-  if (!quackd) {
-    return `A Microduck without a brain: I typed "${asked}" and nothing happened, because a robot understands three numbers, not English. quackd is the missing layer — try it in your browser:`;
+  if (!roboglot) {
+    return `A Microduck without a brain: I typed "${asked}" and nothing happened, because a robot understands three numbers, not English. Roboglot is the missing layer — try it in your browser:`;
   }
-  return `I typed "${asked}" and a Microduck did it 🦆🧠 quackd turns a sentence into the robot's own skills, and decides what it is allowed to do. Runs in your browser with your own API key:`;
+  return `I typed "${asked}" and a Microduck did it 🦆🧠 Roboglot turns a sentence into the robot's own skills, and decides what it is allowed to do. Runs in your browser with your own API key:`;
 }
 
 export function shareUrl(goal, options) {

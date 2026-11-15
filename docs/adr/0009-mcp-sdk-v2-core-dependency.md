@@ -4,7 +4,7 @@
 
 ## Context
 
-`quackd serve-mcp` is the second wow-demo ("I asked Claude to make the duck patrol my
+`roboglot serve-mcp` is the second wow-demo ("I asked Claude to make the duck patrol my
 desk"). The brief allows an `[mcp]` extra "if the SDK is heavy". The official Python SDK
 moved to a **v2** line in 2026 (`mcp` 2.1.1 at time of writing): `FastMCP` became
 `MCPServer` (`from mcp.server import MCPServer`; `Context` and `Image` live in
@@ -30,7 +30,7 @@ The MCP tree is an order of magnitude smaller than a dependency we cannot drop.
 
 ## Consequences
 
-- `uvx quackd serve-mcp --transport sim2d` works with zero extras; the config snippets in
+- `uvx roboglot serve-mcp --transport sim2d` works with zero extras; the config snippets in
   `docs/mcp.md` need no install step.
 - A v3 SDK will require a deliberate bump (pinned `<3`), not a silent break.
 - If `Image.data` semantics differ from the migration guide (raw bytes vs. base64), the

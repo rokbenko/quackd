@@ -1,11 +1,11 @@
 # A LeRobot SO-101 arm: the order to try it in
 
-quackd has run on an SO-101 on two afternoons, 2026-09-15 and 2026-09-23, both times on the
+Roboglot has run on an SO-101 on two afternoons, 2026-09-15 and 2026-09-23, both times on the
 same arm, and [adapters/status.md](../status.md) lists exactly what it did and what fell
-over. That makes this a robot quackd has worked on, not a robot quackd is tested on. Four of
+over. That makes this a robot Roboglot has worked on, not a robot Roboglot is tested on. Four of
 the questions at the foot of this page came back from the first afternoon still unanswered,
-the second added more, and what quackd changed after the second has not run on an arm yet.
-Both afternoons ran LeRobot 0.6.1, and quackd now installs 0.7.0, whose motor bus is new from
+the second added more, and what Roboglot changed after the second has not run on an arm yet.
+Both afternoons ran LeRobot 0.6.1, and Roboglot now installs 0.7.0, whose motor bus is new from
 the port it opens to the words a failure raises, so every step below is that bus's first time
 on an arm too, and the questions at the foot of the page say what only it can answer. This is
 the order to find out in, written so that each step can only fail in a way you can recover
@@ -18,7 +18,7 @@ body joints run with whatever their firmware defaults to, so the elbow has no ca
 your finger or its own gears. An arm also sweeps a volume rather than occupying a spot, and
 a gripper is a pinch hazard at any torque. Read
 [adapters/lerobot/README.md](README.md) first, or
-[adapters/lerobot/first-run.md](first-run.md) if you have never run quackd or LeRobot at all:
+[adapters/lerobot/first-run.md](first-run.md) if you have never run Roboglot or LeRobot at all:
 it is the same ground at walking pace, and it hands back to this file the moment anything is
 about to move.
 
@@ -29,14 +29,14 @@ about to move.
    motors come in more than one variant, with different stall torque and different supplies.
    Upstream's assembly page sends you to
    [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100) for that list, and
-   it is the authority on which supply yours takes. Neither LeRobot nor quackd reads the
+   it is the authority on which supply yours takes. Neither LeRobot nor Roboglot reads the
    voltage, so neither can warn you: the wrong supply is either an arm that cannot hold
    itself up or an arm with more torque than you were expecting.
 2. **Clear the whole sweep**, not the footprint. Take anything fragile out of the gripper and
    off the desk within arm's length, and keep hands out of the volume from here on. Clamp the base
    to the desk as well: an SO-101 is light for its reach, so a quick move can tip a base nothing is
    holding.
-3. **Fit a switch you can reach.** There is no e-stop on an SO-101 and quackd cannot give it
+3. **Fit a switch you can reach.** There is no e-stop on an SO-101 and Roboglot cannot give it
    one: cutting the servo supply is the only thing that stops this arm in every case,
    including the one where the controlling process has died with a goal still standing. Put
    an inline switch on that supply, on the side of the desk you will be standing on.
@@ -45,13 +45,13 @@ about to move.
    commands it installs.
 
    ```bash
-   uv pip install 'quackd[lerobot]'      # Python 3.12 or newer, and it pulls torch
-   uv run quackd doctor
+   uv pip install 'roboglot[lerobot]'      # Python 3.12 or newer, and it pulls torch
+   uv run roboglot doctor
    ```
 
-   That extra is two packages rather than one: `quackd-lerobot`, the arm adapter, which
-   installs on any Python quackd supports, and through its own `[sdk]` extra, LeRobot. A
-   plain `uv pip install quackd` brings neither, and no other robot's extra does either.
+   That extra is two packages rather than one: `roboglot-lerobot`, the arm adapter, which
+   installs on any Python Roboglot supports, and through its own `[sdk]` extra, LeRobot. A
+   plain `uv pip install roboglot` brings neither, and no other robot's extra does either.
 
    Two rows matter: `lerobot`, and `lerobot (feetech bus)`. rustypot, the library that drives
    the motors since LeRobot 0.7.0, lives in lerobot's own `[feetech]` extra rather than its
@@ -67,7 +67,7 @@ This is where the arm is energised for the first time, so the sweep from step 2 
 clear and the switch from step 3 has to be fitted and within reach before you start.
 
 5. **Find the port, then calibrate with upstream's own tool**, which is interactive and which
-   quackd never triggers:
+   Roboglot never triggers:
 
    ```bash
    lerobot-find-port
@@ -87,14 +87,14 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    It writes `<calibration dir>/robots/so_follower/<id>.json`, where the calibration directory
    is `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else
-   `$HF_HOME/lerobot/calibration`. **The id has to be the one quackd will use**: the name step 6
-   registers the arm under with `quackd robot add <name> lerobot:real`, `arm-01` on this page,
+   `$HF_HOME/lerobot/calibration`. **The id has to be the one Roboglot will use**: the name step 6
+   registers the arm under with `roboglot robot add <name> lerobot:real`, `arm-01` on this page,
    which is also the id a bare `--robot lerobot:real` uses. A run needs that name, because only
-   a registered name keeps a rest pose. quackd reads every joint's travel out of that file and
+   a registered name keeps a rest pose. Roboglot reads every joint's travel out of that file and
    refuses to drive an arm without one, and two arms sharing an id share a file with nothing in
    it to say which arm it came from. So move an old file aside before you calibrate a different
    arm under its id: the tool's first prompt offers to use it, and Enter writes the other arm's
-   travel into this arm's servos, after which quackd reads the arm as calibrated.
+   travel into this arm's servos, after which Roboglot reads the arm as calibrated.
 
    Upstream will ask you to move every joint through its range **except `wrist_roll`**, and it
    records a full encoder turn for that one rather than anything you swept. That is not a
@@ -113,7 +113,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 6. **Connect and read the arm back.**
 
    ```bash
-   uv run quackd doctor --robot lerobot:real --address /dev/ttyACM0
+   uv run roboglot doctor --robot lerobot:real --address /dev/ttyACM0
    ```
 
    This one connects, unlike `list-verbs`, which does not. Read four things off it: that the
@@ -133,7 +133,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    pose, so from step 7 on this page writes `--robot arm-01` where it used to write the pair:
 
    ```bash
-   uv run quackd robot add arm-01 lerobot:real --address /dev/ttyACM0
+   uv run roboglot robot add arm-01 lerobot:real --address /dev/ttyACM0
    ```
 
    The name has to be the calibration id from step 5.
@@ -143,20 +143,20 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    end there would be nothing to fold the arm to, and it would be left holding itself up
    wherever it stopped.
 
-   **Then check that a connect quackd refuses lets go of the arm.** Register the same port once
+   **Then check that a connect Roboglot refuses lets go of the arm.** Register the same port once
    more, under a name nothing was calibrated as, point `doctor` at it, and remove the name again:
 
    ```bash
-   uv run quackd robot add arm-uncalibrated lerobot:real --address /dev/ttyACM0
-   uv run quackd doctor --robot arm-uncalibrated
-   uv run quackd robot remove arm-uncalibrated --yes
+   uv run roboglot robot add arm-uncalibrated lerobot:real --address /dev/ttyACM0
+   uv run roboglot doctor --robot arm-uncalibrated
+   uv run roboglot robot remove arm-uncalibrated --yes
    ```
 
    LeRobot has no calibration under that id, so its connect goes through and switches torque on,
-   as every connect does, and quackd then refuses the arm: `the arm is not calibrated`. A refusal
-   of quackd's own lets go of the arm on its way out. Since 0.15.0 it has to ask for that, by
+   as every connect does, and Roboglot then refuses the arm: `the arm is not calibrated`. A refusal
+   of Roboglot's own lets go of the arm on its way out. Since 0.15.0 it has to ask for that, by
    writing the flag LeRobot's disconnect reads just before it disconnects, because the arm is
-   otherwise built to keep torque on any disconnect quackd did not ask for. Keep a hand under
+   otherwise built to keep torque on any disconnect Roboglot did not ask for. Keep a hand under
    the arm while it energises for a moment, then press gently on the forearm once the refusal is
    printed: it should give, limp, as it did after the first `doctor` above. Report which it did.
    An arm that still resists is the refusal keeping it energised with nothing said: hold it and
@@ -167,7 +167,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    or on the desk, a shape it holds with torque off and cannot topple out of. Then:
 
    ```bash
-   uv run quackd robot rest-pose arm-01
+   uv run roboglot robot rest-pose arm-01
    ```
 
    It connects, reads every joint, prints them, and asks before it writes anything, and only a
@@ -178,7 +178,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    it to:
 
    ```
-   $ quackd robot rest-pose arm-01 --yes
+   $ roboglot robot rest-pose arm-01 --yes
    arm-01 (lerobot:mock) is at
    shoulder_pan   0.0
    shoulder_lift  -90.0
@@ -187,7 +187,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    wrist_roll     0.0
    gripper        100.0
    ✓ recorded arm-01's rest pose (6 joints)
-     quackd run <duck> --robot arm-01 starts from it and returns to it before letting go
+     roboglot run <task> --robot arm-01 starts from it and returns to it before letting go
    ```
 
    If you took every joint into the fold during step 5, the fold is inside the travel and the
@@ -197,7 +197,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    there was any warning: it lay about 20 degrees past the floor of `shoulder_lift`'s travel,
    the servo would not be driven there, runs aborted before their first LLM call, every run
    that got to its end kept torque on, and a `stop` hauled the folded shoulder up out of its
-   fold. quackd now drives each joint clipped into its travel, counts the edge of the travel as
+   fold. Roboglot now drives each joint clipped into its travel, counts the edge of the travel as
    reaching a joint recorded past it, lets go there, says once per run which joint is free to
    settle the rest of the way, and never writes a goal for a joint that reads past its travel
    ([adapters/lerobot/README.md](README.md#a-pose-past-the-travel)). The fix is still to
@@ -212,34 +212,34 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    | What you run | What it does about the pose |
    |---|---|
-   | `quackd run ... --robot arm-01` | drives the arm there before the pilot gets its first turn, and a run that cannot get there aborts before the first LLM call. Returns it there between the final `stop` and the disconnect, on every exit: success, failure, infeasible, budget, abort, an error, Ctrl-C |
-   | `quackd doctor --robot arm-01` | probes the arm, returns it there afterwards, and says which in a `rest pose` row |
-   | `quackd robot release arm-01` | connects, folds the arm there from wherever it stands, and lets go of it there. Where the fold misses it asks twice before anything drops, as a run at a terminal does (below) |
-   | `quackd robot list --probe` | reads the arm and never moves it, so it says `torque left on: not at its rest pose` when it had to keep the arm up, or `torque unknown: the arm did not answer the close` when the arm stopped answering before the probe could tell |
-   | `quackd serve-mcp --robot arm-01` | the same at both ends, and it refuses to start if it cannot get there |
+   | `roboglot run ... --robot arm-01` | drives the arm there before the pilot gets its first turn, and a run that cannot get there aborts before the first LLM call. Returns it there between the final `stop` and the disconnect, on every exit: success, failure, infeasible, budget, abort, an error, Ctrl-C |
+   | `roboglot doctor --robot arm-01` | probes the arm, returns it there afterwards, and says which in a `rest pose` row |
+   | `roboglot robot release arm-01` | connects, folds the arm there from wherever it stands, and lets go of it there. Where the fold misses it asks twice before anything drops, as a run at a terminal does (below) |
+   | `roboglot robot list --probe` | reads the arm and never moves it, so it says `torque left on: not at its rest pose` when it had to keep the arm up, or `torque unknown: the arm did not answer the close` when the arm stopped answering before the probe could tell |
+   | `roboglot serve-mcp --robot arm-01` | the same at both ends, and it refuses to start if it cannot get there |
    | `--dry-run` | nothing at all: a dry run never moves the arm |
 
    Torque is released only where the arm is known to be at that pose, or at the edge of its
-   travel where the pose lies past it. Anywhere else quackd turns LeRobot's `disconnect()` flag
+   travel where the pose lies past it. Anywhere else Roboglot turns LeRobot's `disconnect()` flag
    off, leaves the arm holding itself up, and says so once:
 
    ```
    the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-   stands. To put it down, clear whatever is in its way and run quackd robot release arm-01,
+   stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01,
    which folds it to its rest pose and lets go of it there: support the arm while that connects,
    because connecting takes torque off every motor for a moment. Or hold it and cut its power
    ```
 
    That line is for an arm that answered the close's own read. An arm that stopped answering
    gets a different one, because nothing can read whether its torque is on:
-   `quackd cannot tell whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut its power`.
+   `roboglot cannot tell whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut its power`.
    `robot list --probe` shortens that one to `torque unknown`.
 
    > [!WARNING]
    > That is a change in behaviour and it is the one to read twice. A probe or a dry run on an
    > arm away from its recorded rest pose now leaves torque **on** where it used to drop it.
    > The arm will not fall as it stands, and it will also not let go until
-   > `quackd robot release arm-01` folds it back to the pose and lets go of it there, until a
+   > `roboglot robot release arm-01` folds it back to the pose and lets go of it there, until a
    > run or `doctor` puts it back, or until you cut its power. Support it for every one of
    > those, not only the first: a run, `doctor` and the release all begin by connecting, and
    > connecting takes torque off every motor for a moment. The release then says it folds the
@@ -254,7 +254,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    | Row | What it means |
    |---|---|
-   | `none recorded (quackd robot rest-pose <name>)` | nothing is recorded, so this probe let go wherever the arm stood |
+   | `none recorded (roboglot robot rest-pose <name>)` | nothing is recorded, so this probe let go wherever the arm stood |
    | `at it already` | the arm was there, and torque was released there |
    | `returned to it` | the probe drove it back and let go there |
    | `not reached: <reason>` | it could not get there, so torque is still on |
@@ -263,7 +263,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    and the same sentence the run says comes out under the table as advice. The verdict stays
    green, because the arm reached the pose it can be driven to.
 
-   `quackd robot rest-pose arm-01 --clear` forgets the pose again and says what that costs: a
+   `roboglot robot rest-pose arm-01 --clear` forgets the pose again and says what that costs: a
    run, a dry run or an MCP session of the arm is refused until a pose is recorded again.
 
    > [!IMPORTANT]
@@ -276,7 +276,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 7. **`lerobot-lookout`.** No verb in it moves a joint.
 
    ```bash
-   uv run quackd run lerobot-lookout --robot arm-01
+   uv run roboglot run lerobot-lookout --robot arm-01
    ```
 
    It reads the arm and reports where the joints are, whether torque is on and whether
@@ -302,10 +302,10 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    `outputs/captured_images/`. Open the pictures: on a laptop index 0 is usually the built-in
    webcam, so the one you plugged in is often 1 or 2. On the bench on 2026-09-15 it was
    `opencv://1`, and `opencv://2` after a replug, at 640x480, with no `?backend=` key needed.
-   That is one laptop's answer and not a prediction about yours. Then ask quackd for a frame:
+   That is one laptop's answer and not a prediction about yours. Then ask Roboglot for a frame:
 
    ```bash
-   uv run quackd doctor --robot arm-01 --camera-url "opencv://1"
+   uv run roboglot doctor --robot arm-01 --camera-url "opencv://1"
    ```
 
    Quote the url: a bare `&` is a parse error in PowerShell and backgrounds the command in
@@ -319,7 +319,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    url, because a daemon started without it has no `observe` verb at all:
 
    ```bash
-   uv run quackd serve-mcp --robot arm-01 --camera-url "opencv://1"
+   uv run roboglot serve-mcp --robot arm-01 --camera-url "opencv://1"
    ```
 
    Then `robot_observe` from the client. What comes back is the frame and a line of
@@ -337,7 +337,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    more than one. Every other body refuses a second one and names who takes several.
 
    ```bash
-   uv run quackd robot edit arm-01 \
+   uv run roboglot robot edit arm-01 \
        --camera-url "opencv://1?name=top" --camera-url "opencv://2?name=side"
    ```
 
@@ -374,7 +374,7 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    cannot see are working.
 
    ```bash
-   uv run quackd run --goal "roll the wrist ten degrees, then stop" \
+   uv run roboglot run --goal "roll the wrist ten degrees, then stop" \
        --robot arm-01 --llm anthropic --max-steps 3 --dry-run
    ```
 
@@ -417,16 +417,16 @@ clear and the switch from step 3 has to be fitted and within reach before you st
 
    A dry run never moves the arm, and that includes the rest pose: it neither drives the arm
    there at the start nor puts it back at the end. So an arm that was away from its rest pose
-   when you started is still away from it when the dry run finishes, and quackd keeps torque on
+   when you started is still away from it when the dry run finishes, and Roboglot keeps torque on
    rather than dropping the arm there.
 
 ## Moving, one joint at a time
 
 There is no command that runs one verb. Either drive the daemon from an MCP client
-(`quackd serve-mcp --robot arm-01`, then `robot_run_verb`, which is what these steps assume.
+(`roboglot serve-mcp --robot arm-01`, then `robot_run_verb`, which is what these steps assume.
 The camera comes with the name if you stored it in step 8, and a session with no camera has no
 `observe` verb at all) or give an LLM a goal narrow enough to reach one verb
-(`quackd run --goal "..." --robot arm-01 --llm anthropic --max-steps 3`).
+(`roboglot run --goal "..." --robot arm-01 --llm anthropic --max-steps 3`).
 `--llm fake` will not do: it answers a free-form goal with a fixed script that ignores it.
 
 Both of those drive the arm to its rest pose before you get a turn, and back to it before they
@@ -437,18 +437,18 @@ as the run's, moved to the moment the daemon comes up.
 at walking pace: which client to configure and how, what each tool answers, what every refusal
 means, and which moments move the arm without anybody asking for it.
 
-10. **`gripper` open, then closed on nothing, and watch which way it goes.** quackd assumes
+10. **`gripper` open, then closed on nothing, and watch which way it goes.** Roboglot assumes
     100 is open and 0 is closed, and that is an assumption about how your arm was assembled
     and calibrated, not a fact about the model. If yours runs the other way, stop here and
-    say so in an issue: everything quackd believes about holding something rests on this, and
-    it would be believing the opposite. The bench arm on 2026-09-15 ran the way quackd assumes:
+    say so in an issue: everything Roboglot believes about holding something rests on this, and
+    it would be believing the opposite. The bench arm on 2026-09-15 ran the way Roboglot assumes:
     commanded 100 it reported 98 and stood open, commanded closed it reported 3 with the jaws
     nearly touching. That is one arm, built and calibrated by one person, which is why this
     step is still here.
 11. **One joint, small, in the middle of its range.** `move_joints` with
     `{"wrist_roll": 10}`. It takes the `duration_s` it is given, five seconds when none is,
     and stops. However short that time, the arm moves at most 5 degrees per action re-sent
-    ten times a second, so 50 degrees a second, and `QUACKD_LEROBOT_MAX_STEP_DEG` lowers that
+    ten times a second, so 50 degrees a second, and `ROBOGLOT_LEROBOT_MAX_STEP_DEG` lowers that
     if it looks fast in the room. Try it once with `"duration_s": 0.2`, which for ten degrees
     is the cap, and once with a few seconds, and check the second is visibly slower. For scale,
     the free-form goals on the bench on 2026-09-15 came out as wrist-roll waves of about plus
@@ -463,16 +463,16 @@ means, and which moments move the arm without anybody asking for it.
     cannot fire on it.
 13. **Pull the USB cable mid-move.** The run should end within about a second, saying the arm
     did not answer. The arm holds its last goal under torque: it must not sag and it must not
-    carry on. There is no rest pose in this one, because quackd cannot drive an arm it cannot
+    carry on. There is no rest pose in this one, because Roboglot cannot drive an arm it cannot
     reach: the arm stays where it stopped, holding itself up, which is the safe half of the two
-    ways this could end. The note the run closes with cannot say so: it says quackd cannot tell
+    ways this could end. The note the run closes with cannot say so: it says Roboglot cannot tell
     whether the arm is holding itself up, and to hold it and cut its power, and nothing is
     asked, because the arm did not answer. Before you plug it back in, put a hand under the
-    arm: every command that reconnects, a run, `doctor` or `quackd robot release arm-01`, takes
+    arm: every command that reconnects, a run, `doctor` or `roboglot robot release arm-01`, takes
     torque off every motor for a moment. Either cut its power with your hand under it, or
-    support it while `quackd robot release arm-01` connects and take your hand away as soon as
+    support it while `roboglot robot release arm-01` connects and take your hand away as soon as
     it prints where the arm is, since it then folds the arm to its rest pose at once and lets go
-    of it there, or park it with `quackd doctor --robot arm-01`, supporting the arm while it
+    of it there, or park it with `roboglot doctor --robot arm-01`, supporting the arm while it
     connects and taking your hands away when it says so, before the next step.
 
     Report the line the run ended on word for word. Since 0.15.0 a call that ran out of time
@@ -480,17 +480,17 @@ means, and which moments move the arm without anybody asking for it.
 
     The reconnect is where the other half of 0.15.0's change to the connect would show, if it
     shows at all. A connect can fail after LeRobot's own connect has switched torque on and
-    before quackd has read the arm, when that first read is not answered. Such a connect used to
+    before Roboglot has read the arm, when that first read is not answered. Such a connect used to
     be left to a later disconnect, which took torque off wherever the arm stood. It now closes
     the port with torque kept and says so, `connect failed once the arm was energised`, ending
     `hold the arm, and cut its power`. The window is the few reads between the two, too short to
     time a pull into by hand, and this step does not ask you to try. If it ever happens, here or
     at any later connect, keep your hand under the arm, check that it is still holding once
-    quackd has exited, and report the line and whether it held.
-14. **Ctrl-C mid-move.** quackd's kill switch sends `stop`, which re-sends the present
+    Roboglot has exited, and report the line and whether it held.
+14. **Ctrl-C mid-move.** Roboglot's kill switch sends `stop`, which re-sends the present
     position as the goal. The arm should freeze where it is rather than sag, and rather than
     finish the motion it was in the middle of. Then, with a rest pose recorded in step 6, the
-    freeze is not the end of it: quackd folds the arm back to that pose and lets go there,
+    freeze is not the end of it: Roboglot folds the arm back to that pose and lets go there,
     because that is the one place letting go is safe. Expect that motion, and keep the hand on
     the switch through it. The one joint the freeze does not hold is one the move was lifting
     out of a fold past its travel: every goal past the travel is the edge to the servo, so that
@@ -499,10 +499,10 @@ means, and which moments move the arm without anybody asking for it.
 
     Then do it once more, and this time press a second Ctrl-C during the fold back to the rest
     pose, with a hand under the arm and the other on the switch. The second press skips
-    quackd's close, so nothing lets go on purpose. The arm should still hold where it stood once
-    quackd has exited, rather than fall when the process lets go of it. Before 0.15.0 that exit
+    Roboglot's close, so nothing lets go on purpose. The arm should still hold where it stood once
+    Roboglot has exited, rather than fall when the process lets go of it. Before 0.15.0 that exit
     could take torque off and drop it, which is why the hand goes under it first. Then put it
-    down: support it while `quackd robot release arm-01` connects, and take your hand away as
+    down: support it while `roboglot robot release arm-01` connects, and take your hand away as
     soon as it prints where the arm is, or cut its power with your hand under it, before the
     next step.
 
@@ -520,10 +520,10 @@ means, and which moments move the arm without anybody asking for it.
     the line as it came, and whether the arm moved after your hand left it.
 
     That line is also the close reading back what it asked the disconnect to do, where it used
-    to assume it. The arm should still be holding once quackd has exited. A line that says
-    instead that quackd `could not keep torque on, so the arm was released where it stood` means
-    the disconnect let go after all, which an arm quackd built should never do: report it, and
-    whether the arm dropped. Then put it down: support it while `quackd robot release arm-01`
+    to assume it. The arm should still be holding once Roboglot has exited. A line that says
+    instead that Roboglot `could not keep torque on, so the arm was released where it stood` means
+    the disconnect let go after all, which an arm Roboglot built should never do: report it, and
+    whether the arm dropped. Then put it down: support it while `roboglot robot release arm-01`
     connects, and take your hand away as soon as it prints where the arm is, or cut its power
     with your hand under it.
 
@@ -549,9 +549,9 @@ means, and which moments move the arm without anybody asking for it.
 
 ## Handing the arm over, and taking it back
 
-`--by-hand` is one of the two ways a person can have quackd take torque off a robot, and it
+`--by-hand` is one of the two ways a person can have Roboglot take torque off a robot, and it
 takes it off at the one pose the arm is known to hold without any: the fold you recorded in
-step 6. The other, `quackd robot release`, folds the arm to that pose and lets go there too. It
+step 6. The other, `roboglot robot release`, folds the arm to that pose and lets go there too. It
 lets go wherever the arm stands only on Enter at a question that says the arm will drop, put
 after two folds missed, as a run at a terminal also puts it, or before it connects to an arm
 with no rest pose.
@@ -566,7 +566,7 @@ takes torque off an arm:
 ✗ error: arm-bare (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one
 included, there is nothing to fold it to, and it would be left holding itself up wherever it
 stopped
-  quackd robot rest-pose arm-bare
+  roboglot robot rest-pose arm-bare
 ```
 
 15. **Set the starting pose yourself with `--by-hand`.** Run the lookout for this one. No verb
@@ -574,7 +574,7 @@ stopped
     hands and the rest move at each end, which is as small as this can be made.
 
     ```bash
-    uv run quackd run lerobot-lookout --robot arm-01 --by-hand
+    uv run roboglot run lerobot-lookout --robot arm-01 --by-hand
     ```
 
     The arm is driven to the rest pose first, exactly as in step 7, and then torque comes off
@@ -587,7 +587,7 @@ stopped
     rest of the way, so have your hand under that joint in particular. This is the only moment
     the hand-off releases it, because that release is refused anywhere but that pose. The
     other way to have torque taken off is one you ask for by name:
-    `quackd robot release arm-01`, which folds the arm to this same pose and lets go of it here,
+    `roboglot robot release arm-01`, which folds the arm to this same pose and lets go of it here,
     through the same door, and lets go wherever the arm stands only after two folds missed and
     you pressed Enter at a question that says the arm will drop. A run at a terminal whose last
     rest move missed asks the same two questions (step 6).
@@ -603,12 +603,12 @@ stopped
     That prompt does not say one thing: every body joint has to read inside its calibrated
     travel when you press Enter, and above all a joint the run named as recorded past its
     travel. That one was let go at the edge and may have settled back into the fold, so lift it
-    clear first. Press Enter with a joint still past its travel and quackd does not take hold:
+    clear first. Press Enter with a joint still past its travel and Roboglot does not take hold:
     torque stays off, the run stops, and it names the joint to lift inside its travel, saying
     the arm is still limp at its rest pose if you had not lifted it at all.
 
     Lift the arm, put something in the gripper, squeeze the jaws shut on it with your fingers,
-    hold the arm where the work should start, and press Enter. quackd writes the pose you are
+    hold the arm where the work should start, and press Enter. Roboglot writes the pose you are
     holding as the goal **before** it switches torque back on, writes it again afterwards, and
     reads every joint back, because nothing upstream documents what a servo does with the goal
     it was last told when it is re-energised, and the goal this one was last told is the fold.
@@ -623,13 +623,13 @@ stopped
     is the first of the two questions the hand placed start adds at the foot of this page:
     those angles came off `lerobot:mock`, which holds whatever it is told. A joint that moved
     more than five degrees between the two reads is refused by name and the run ends before the
-    LLM gets a turn, so anything quackd accepted moved less than that, and the angles it
+    LLM gets a turn, so anything Roboglot accepted moved less than that, and the angles it
     printed are what to read against where you thought you left the arm. A joint you placed
     outside its calibrated travel is refused before torque comes back on at all: the refusal
     names it, where it reads and its travel, the arm stays limp in your hands, and the run ends.
     Check on the arm that nothing after that line moves it or puts torque on it, not the stop,
     not the fold, and not moving the joint back inside while the teardown runs, and that the
-    last line says it is limp in your hands. If the refusal instead says quackd could not
+    last line says it is limp in your hands. If the refusal instead says Roboglot could not
     confirm whether the arm has torque, hold the arm as though it may move or drop and cut its
     power; nothing folds it then either.
 
@@ -661,7 +661,7 @@ stopped
     set down on the paper, and a goal short enough to read in one line. That is the second of
     the two the hand placed start adds down there, and nobody has an answer to it either.
 
-16. **Ctrl-C while the arm is still in your hands**, which is the one window quackd has where
+16. **Ctrl-C while the arm is still in your hands**, which is the one window Roboglot has where
     a robot is limp and the software is waiting. Do it on the lookout run again, with the arm
     lifted and held.
 
@@ -704,17 +704,17 @@ stopped
     the gripper settled, which is the one thing this change could have broken here: report it.
 18. **Hand the arm to a learned policy, and only after every step above.** `pick` and
     `manipulate` reach this arm through a policy server, a process of its own that no
-    checkpoint ever leaves: `quackd policy serve` in a second terminal, with
-    `quackd[lerobot-vla]` in a Python 3.12 environment, and `--policy-url
+    checkpoint ever leaves: `roboglot policy serve` in a second terminal, with
+    `roboglot[lerobot-vla]` in a Python 3.12 environment, and `--policy-url
     http://127.0.0.1:9875` on the run ([guides/policies.md](../../guides/policies.md)). Rehearse
     each command on the arm's twin first
     ([section 17 of the first run](first-run.md#17-optional-hand-the-arm-to-a-learned-policy)), then
     run it on the arm. Start with a scripted policy that needs no torch and moves nothing,
-    `quackd policy serve --policy scripted:hold`, which holds the arm where it reads, and a pilot
+    `roboglot policy serve --policy scripted:hold`, which holds the arm where it reads, and a pilot
     that asks no LLM:
 
     ```bash
-    quackd run --goal "hold the arm where it is" --robot arm-01 --policy-url http://127.0.0.1:9875 --controller vla
+    roboglot run --goal "hold the arm where it is" --robot arm-01 --policy-url http://127.0.0.1:9875 --controller vla
     ```
 
     It asks you three times: whether the arm should try at all, since its verdict is always
@@ -722,9 +722,9 @@ stopped
     `Did the arm do it?`. The segment should end on a stall within a second or two, with the arm
     where it was. Then `scripted:sweep`, which swings `wrist_flex` 5 degrees either side of where
     it started, one swing every 2 s, and only then a checkpoint you have checked with
-    `quackd policy check --bench`.
+    `roboglot policy check --bench`.
 
-    What holds the arm while a policy drives it is quackd's, not LeRobot's. It moves no joint
+    What holds the arm while a policy drives it is Roboglot's, not LeRobot's. It moves no joint
     faster than a verb may, the verbs' 50 degrees a second at the default step, whatever the
     policy's rate. A goal past the travel is clipped and counted rather than refused, and a
     joint reading outside its travel is left out of every goal. It stops a `pick`'s policy the
@@ -733,18 +733,18 @@ stopped
     stop from anywhere. **A joint that reads past its travel is the exception** to the speed
     cap: the servo would take any goal for it as the end of the travel and drive there at its
     own speed, which is why a policy's goals leave it out, and a rise a move had already started
-    goes on whatever quackd sends. Keep a hand on the switch.
+    goes on whatever Roboglot sends. Keep a hand on the switch.
 
     **Then measure the one number only this bench can give**: how fast the policy's loop runs
     on the real bus while the same laptop infers. `summary.json` of the run has a `policy` block
     with it, `hz` beside `late_ticks`, `starved_ticks` and `round_trip_ms`, and the arm's state
     carries `extras.timing` for every bus call and every tick. Send those back with what
-    `quackd policy check --bench` said on the same laptop, and say which policy it was.
+    `roboglot policy check --bench` said on the same laptop, and say which policy it was.
 
 ## What to report
 
 [Open a LeRobot hardware report](https://github.com/rokbenko/quackd/issues/new?template=lerobot-hardware-report.yml),
-which asks for exactly the list below, or a plain issue with `quackd doctor` output and
+which asks for exactly the list below, or a plain issue with `roboglot doctor` output and
 `runs/<timestamp>-<name>/terminal.txt` from the run. That file is the whole session as plain
 text, opening with the command that started it and the version that ran it, so it is usually
 the one that answers what happened. Send `transcript.jsonl` beside it when the question is
@@ -762,15 +762,15 @@ parameter taken out of `--base-url`, `--address`, `--camera-url`, `--decision-ur
 
 **Four things one afternoon on one bench did not answer**, and which still need a real arm:
 
-- **Whether the holding band is anywhere near right.** quackd calls it holding when the
+- **Whether the holding band is anywhere near right.** Roboglot calls it holding when the
   gripper is told to close, settles, and settles between 8 and 90 of 100. Nobody has yet seen
   what a real grasp reads. The gripper on 2026-09-15 closed on air, not on an object.
-- **What a joint reads in degrees Celsius**, cold and after ten minutes of work. quackd
+- **What a joint reads in degrees Celsius**, cold and after ten minutes of work. Roboglot
   refuses to move at 60, below the servo's own 70 cut-off, and both numbers are Feetech's
   documentation rather than anything measured here. Nothing on the bench ran long enough to
   find out what the second number is. LeRobot 0.7.0 surfaces no overload or overheat alarm
-  at all, so that read is the only heat guard quackd has.
-- **Whether 5 degrees an action felt right.** The figure is quackd's own choice for a first
+  at all, so that read is the only heat guard Roboglot has.
+- **Whether 5 degrees an action felt right.** The figure is Roboglot's own choice for a first
   run, not anything upstream recommends for this arm, and nobody has said whether it looked
   right standing next to the arm.
 - **Whether a stall is caught.** Hold a joint gently against its goal and see whether the verb
@@ -788,7 +788,7 @@ between you and it is the opposite of what that wants. Afterwards,
 `--decision-llm jev --decision-mode shadow` changes nothing about a run and records what the
 decision LLM would have chosen on each turn beside what the pilot LLM actually chose.
 Two numbers come out of it that exist nowhere yet, for [`jev`](../../guides/decision-llms/jev.md)
-and for every other decision LLM quackd names alike: how long one takes to answer a real arm's
+and for every other decision LLM Roboglot names alike: how long one takes to answer a real arm's
 state, and how often it agrees with the pilot LLM on one. Each one's page asks for exactly those two
 under *How to help*. The task
 built for it is `arm-grip-check`, which also happens to be the one that asks the holding-band
@@ -798,7 +798,7 @@ question above ([guides/decision-llms/README.md](../../guides/decision-llms/READ
 postdates that afternoon and has been exercised against `lerobot:mock` and in the test suite,
 and not yet on a real arm.
 
-- **Whether the arm stays where you put it when torque comes back on.** quackd writes the pose
+- **Whether the arm stays where you put it when torque comes back on.** Roboglot writes the pose
   you are holding as the goal before it enables torque, writes it again after, reads every
   joint back and refuses the run if one of them moved more than five degrees, because nothing
   upstream documents what a servo does with the goal it was last told when it is re-energised.
@@ -807,7 +807,7 @@ and not yet on a real arm.
   arm behaved differently from an empty one.
 - **Whether a gripper you closed with your fingers keeps a pencil through a drawing move.** The
   squeeze your hand left is written back as the gripper's goal when torque returns, and a
-  position is not a grip: nothing on this arm reports force, and quackd says it is holding
+  position is not a grip: nothing on this arm reports force, and Roboglot says it is holding
   nothing on a hand placed start, because closing on an object is what makes this body say
   otherwise. Put a pencil in it, run something that draws, and say whether it was still there
   at the end.
@@ -815,9 +815,9 @@ and not yet on a real arm.
 **And one the bench of 2026-09-23 brought with it**, which applies only if a run named a joint
 as recorded past its travel:
 
-- **Whether a joint let go at the edge of its travel settles onto its fold.** quackd parks it at
+- **Whether a joint let go at the edge of its travel settles onto its fold.** Roboglot parks it at
   the edge, releases torque there, and says it is free to settle the rest of the way, which is
-  a statement about what quackd does and not about what the joint will do. Whether it drops or
+  a statement about what Roboglot does and not about what the joint will do. Whether it drops or
   eases down, and whether one folded past the *top* of its travel settles at all, is for the
   arm's weight and its servos to answer. Say which joint, how far the note said it had to go,
   and what it did, then calibrate folded, record the pose again, and say whether the note went
@@ -849,24 +849,24 @@ answer. Each is an open item in PLAN.md:
 
 - **Whether an arm calibrated on 0.6.1 still reads as calibrated**, with every joint's travel
   as it was and a reading at a fixed pose within a tick of 0.6.1's (step 6).
-- **Whether a second program on the arm's port is refused as it opens it.** Run `quackd doctor
+- **Whether a second program on the arm's port is refused as it opens it.** Run `roboglot doctor
   --robot arm-01` in a second window while step 7's run holds the port, on Linux and macOS
   above all, where the old bus let the two talk over each other. Keep a hand under the arm
   while it tries: a doctor that does get the port switches torque off every motor for a moment.
 - **What the arm says with its servo supply off, and with one servo's cable out.** Fold it to
-  its rest pose first. With the supply off, run `quackd doctor --robot arm-01`: every motor
+  its rest pose first. With the supply off, run `roboglot doctor --robot arm-01`: every motor
   should be missing and the refusal should send you to the arm's cables and power. Then, with
   the supply still off, unplug the cable into the gripper's servo, switch the supply back on
   and run it again: the refusal should name `gripper`. Report how long each took to be said,
   and the USB pull of step 13 the same way.
 - **Whether a stalled gripper or forearm still stops the move.** LeRobot 0.7.0 raises nothing
-  for an overload, so quackd's stall check and its 60 °C refusal are what is left: the forearm
+  for an overload, so Roboglot's stall check and its 60 °C refusal are what is left: the forearm
   held back in step 14's third Ctrl-C, and the gripper closed on foam in step 17.
 
 **And two with one answer each, from one arm on one laptop.** A second answer is what turns
 either of them from an anecdote into a fact:
 
-- **Which end of the gripper's 0..100 range is open.** quackd assumes 100. That arm agreed
+- **Which end of the gripper's 0..100 range is open.** Roboglot assumes 100. That arm agreed
   (step 10), and which end yours opens at is still a question about how it was built and
   calibrated rather than about the model.
 - **Which OpenCV index the camera turned out to be**, if you brought one, and whether it

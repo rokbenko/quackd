@@ -1,9 +1,9 @@
 """The arm's robot types: one adapter, one SDK, three of LeRobot's arms as data.
 
 The code that drives an arm reads LeRobot's `Robot` and `MotorsBus` and nothing of one arm, so a
-type is a record (`quackd_lerobot.arms`). What this holds is that the record is the only thing that
-changes: the SO-101 is described exactly as it was, a type nobody answers for is never built, and
-a registered robot's type reaches every place that describes or builds it.
+type is a record (`roboglot_lerobot.arms`). What this holds is that the record is the only thing
+that changes: the SO-101 is described exactly as it was, a type nobody answers for is never built,
+and a registered robot's type reaches every place that describes or builds it.
 """
 
 from __future__ import annotations
@@ -19,26 +19,26 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.base import AdapterError, PolicyChoice
-from quackd.adapters.catalogue import BY_NAME
-from quackd.adapters.factory import RobotSpec, describe, make_adapter
-from quackd.registry import Registry, RegistryError, RobotEntry
-from quackd.transport.base import TransportError
-from quackd_lerobot import BACKENDS, ROBOT_TYPE, LeRobotAdapter, lerobot_manifest, make
-from quackd_lerobot import describe as describe_arm
-from quackd_lerobot import upstream_api as up
-from quackd_lerobot.arms import ARMS, ArmType
-from quackd_lerobot.mock import HOT_JOINT_MARGIN_C, LeRobotMock
-from quackd_lerobot.real import LeRobotReal, joint_ranges
-from quackd_lerobot.verbs import JOINTS
+from roboglot.adapters.base import AdapterError, PolicyChoice
+from roboglot.adapters.catalogue import BY_NAME
+from roboglot.adapters.factory import RobotSpec, describe, make_adapter
+from roboglot.registry import Registry, RegistryError, RobotEntry
+from roboglot.transport.base import TransportError
+from roboglot_lerobot import BACKENDS, ROBOT_TYPE, LeRobotAdapter, lerobot_manifest, make
+from roboglot_lerobot import describe as describe_arm
+from roboglot_lerobot import upstream_api as up
+from roboglot_lerobot.arms import ARMS, ArmType
+from roboglot_lerobot.mock import HOT_JOINT_MARGIN_C, LeRobotMock
+from roboglot_lerobot.real import LeRobotReal, joint_ranges
+from roboglot_lerobot.verbs import JOINTS
 from tests.conftest import REPO
 from tests.test_lerobot_adapter import FakeArm
 
 SO101_DIGESTS = {
-    (False, False): "0ccd3bf9097cd348",
-    (False, True): "382363112ab7a70a",
-    (True, False): "5283a93a65bd3a5c",
-    (True, True): "a72c88eaaa121ec6",
+    (False, False): "3d1d4b2ee2ddde14",
+    (False, True): "6bca66231efcd2c7",
+    (True, False): "cfd2361aa8b8d275",
+    (True, True): "4eb2209262adc321",
 }
 """An SO-101's description by camera and policy, on every backend, as it was before there were
 types: an arm registered before 0.33.0 says what it said, to its pilot and to a peer."""
@@ -56,7 +56,7 @@ def test_an_so101_is_described_exactly_as_before_there_were_types(
 
 
 def test_the_catalogue_lists_the_types_the_adapter_builds_in_its_order() -> None:
-    """The catalogue is strings, read on a machine with no adapter, so `quackd robot add` can
+    """The catalogue is strings, read on a machine with no adapter, so `roboglot robot add` can
     refuse a type before anything is installed. It lists what the adapter builds, so a type the
     adapter only describes is never registered, and then refused in words about a rest pose."""
     assert BY_NAME["lerobot"].robot_types == tuple(t for t, arm in ARMS.items() if arm.drivable)
@@ -90,7 +90,7 @@ def test_a_type_nobody_answers_for_is_refused_as_it_is_built_on_every_backend(
     backend: str,
 ) -> None:
     """Described, and so listed, with its maker's figures, and never built: not even the mock,
-    which would rehearse an arm nobody has said quackd drives."""
+    which would rehearse an arm nobody has said Roboglot drives."""
     assert describe_arm("real", robot_type="koch_follower").model == "lerobot-koch"
     # the simulator refuses it as an SO-101's physics model before the owner rule: either refuses
     with pytest.raises(AdapterError, match=r"described and not driven|physics model of an so101"):
@@ -113,7 +113,7 @@ def test_a_type_is_its_own_sheet_and_the_same_verbs() -> None:
     assert so100.verb_names() == so101.verb_names()
     assert so100.datasheet.payload_kg is None, "nobody publishes what an SO-100 lifts"
     assert so100.datasheet.reach_m is not None and so100.datasheet.reach_m.value == 0.33
-    assert "No SO-100 has run quackd" in " ".join(so100.datasheet.notes)
+    assert "No SO-100 has run Roboglot" in " ".join(so100.datasheet.notes)
     with pytest.raises(AdapterError, match=r"choose one of so101_follower, so100_follower$"):
         describe_arm("real", robot_type="so102_follower")
 
@@ -129,7 +129,7 @@ async def test_the_mock_stands_in_for_the_type_it_was_built_as() -> None:
 
 
 def test_a_robot_type_is_stored_read_back_and_left_out_when_there_is_none(tmp_path: Path) -> None:
-    """Left out of the file when absent, so an older quackd still reads it: robots.json is a
+    """Left out of the file when absent, so an older Roboglot still reads it: robots.json is a
     file nobody re-saves on upgrade, and an older release refuses a key it does not know."""
     registry = Registry(tmp_path)
     registry.add_robot(RobotEntry(name="old", spec="lerobot:real", address="COM5"))
@@ -165,11 +165,11 @@ def test_a_type_is_taken_at_the_door_where_the_adapter_is_not_installed(
 ) -> None:
     """The catalogue's list is the word there: a robot is registered on a machine that cannot
     build it, as it is with no type."""
-    from quackd.adapters import factory
-    from quackd.adapters.base import AdapterNotInstalled
+    from roboglot.adapters import factory
+    from roboglot.adapters.base import AdapterNotInstalled
 
     def not_here(adapter: str) -> Any:
-        raise AdapterNotInstalled(adapter, f"quackd[{adapter}]")
+        raise AdapterNotInstalled(adapter, f"roboglot[{adapter}]")
 
     monkeypatch.setattr(factory, "_module", not_here)
     registry = Registry(tmp_path)

@@ -9,9 +9,9 @@ from typing import Any
 import pytest
 from rich.console import Console
 
-from quackd.agent.providers.catalogue import PRICES_CHECKED, Price
-from quackd.agent.providers.pricing import fmt_usd
-from quackd.log import (
+from roboglot.agent.providers.catalogue import PRICES_CHECKED, Price
+from roboglot.agent.providers.pricing import fmt_usd
+from roboglot.log import (
     ConsoleLog,
     EventLog,
     LineLog,
@@ -23,7 +23,6 @@ from quackd.log import (
     capturing,
     counting,
     fan_out,
-    flock_caption,
     fmt_duration,
     fmt_value,
     log_enabled_default,
@@ -32,11 +31,12 @@ from quackd.log import (
     render_call,
     render_events,
     render_lines,
+    team_caption,
     thinking_limit_default,
 )
-from quackd.transport.base import Ack, Intent
-from quackd.transport.mock import MockTransport
-from quackd.verbs.watch import CAMERA_SAID
+from roboglot.transport.base import Ack, Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.watch import CAMERA_SAID
 
 
 def events(event_log: EventLog) -> list[LogEvent]:
@@ -356,10 +356,10 @@ def test_a_whole_run_is_timed_in_the_units_a_person_would_say_it_in() -> None:
 def test_the_price_line_says_where_the_rate_came_from_or_that_there_is_no_rate() -> None:
     """The head of a replay has to account for the cost figure the rest of the run shows,
     including when there is not one: a missing row would leave a reader to guess whether the
-    run was free, whether quackd forgot, or whether the LLM is simply unpriced. The dicts
+    run was free, whether Roboglot forgot, or whether the LLM is simply unpriced. The dicts
     here are real `Price.record()` output, because that is what `run_start` carries."""
     assert _price_line(None) == (
-        "unpriced: quackd has no rate for this LLM, so no cost was computed"
+        "unpriced: Roboglot has no rate for this LLM, so no cost was computed"
     )
     catalogue = Price(input=10.0, output=50.0, cache_read=1.0, cache_write=12.5).record()
     assert _price_line(catalogue) == f"$10/M in, $50/M out (catalogue, checked {PRICES_CHECKED})"
@@ -370,7 +370,7 @@ def test_the_price_line_says_where_the_rate_came_from_or_that_there_is_no_rate()
     stepper = Price(input=0.042, output=0.0, source="published").record()
     assert _price_line(typed, stepper) == "$3/M in, $15/M out (--price), stepper $0.042/M in"
     assert _price_line(None, stepper) == (
-        "unpriced: quackd has no rate for this LLM, so no cost was computed, stepper $0.042/M in"
+        "unpriced: Roboglot has no rate for this LLM, so no cost was computed, stepper $0.042/M in"
     )
 
 
@@ -468,7 +468,7 @@ def test_the_tokens_line_prices_the_call_when_it_can() -> None:
 
 
 def test_a_tokens_line_from_before_the_money_renders_exactly_as_it_always_did() -> None:
-    """Every transcript recorded before this change replays through this renderer: `quackd log`
+    """Every transcript recorded before this change replays through this renderer: `roboglot log`
     reads run directories written months ago, and tests/golden/log_lines.json holds the lines
     those runs printed. A record with no cache buckets, no cost and no running cost has to come
     out of here byte for byte, which is why every new piece is written only when the key is
@@ -518,7 +518,7 @@ def test_the_stepper_line_carries_its_tokens_and_its_fraction_of_a_cent() -> Non
     """The whole argument for a stepper is the ratio between what one of its questions costs
     and what the pilot LLM call it stands in for costs, so both numbers ride in the parenthesis
     that already holds the seconds. A `~` marks a turn the decision LLM did not count for
-    itself and quackd had to estimate from the characters it sent, and it goes on both numbers
+    itself and Roboglot had to estimate from the characters it sent, and it goes on both numbers
     because the cost is derived from the count."""
 
     def line(**extra: Any) -> str:
@@ -573,13 +573,13 @@ def test_a_declined_question_is_named_on_the_stepper_line_and_wants_attention() 
     assert (
         three.body == "refused to answer next_verb, done and need_human, to the pilot LLM (0.40 s)"
     )
-    # a record without the names, which quackd never writes, still says which gate it was
+    # a record without the names, which Roboglot never writes, still says which gate it was
     (bare, _rest) = lines()
     assert bare.body == "refused, to the pilot LLM (0.40 s)" and bare.mark == "warn"
 
 
 def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handover() -> None:
-    """The run ended in the middle of this turn's request, by a second Ctrl-C or a flock's
+    """The run ended in the middle of this turn's request, by a second Ctrl-C or a team's
     cancel, which the record names where an error's type would be. Nothing failed and nobody
     takes the turn, so the line says neither: not the red `ERROR` of a failed call and not its
     `so the pilot LLM takes this turn`, but what cut it off, after how long, and the bill of a
@@ -595,7 +595,7 @@ def test_a_turn_an_interrupt_cut_off_is_drawn_as_neither_a_failure_nor_a_handove
     (line,) = render_events(LogEvent("decision", 0.0, data))
     assert line.label == "decide" and line.style == "yellow" and line.mark == "warn"
     assert line.body == "interrupted by KeyboardInterrupt after 0.40 s, ~42 tok ~$0.000004"
-    # a record without the name, which quackd never writes, still says what happened
+    # a record without the name, which Roboglot never writes, still says what happened
     (bare,) = render_events(LogEvent("decision", 0.0, {"gate": "interrupted", "latency_s": 0.1}))
     assert bare.body == "interrupted by an interrupt after 0.10 s"
 
@@ -672,7 +672,7 @@ def test_llm_request_says_when_there_are_more_images_than_messages() -> None:
     every one-camera run, and the second is only spelled out where they differ.
 
     The third case is why the fallback exists. A transcript recorded before the loop split
-    the count carries `images` alone, and there it meant exchanges: `quackd log` replays
+    the count carries `images` alone, and there it meant exchanges: `roboglot log` replays
     those run directories and `tests/golden/log_lines.json` holds the lines they printed,
     so an old event has to render the string it always did.
     """
@@ -774,7 +774,7 @@ def test_run_start_shows_the_prompt_once_and_can_be_asked_not_to() -> None:
         "run_start",
         0.0,
         {
-            "duck": "find-and-kick",
+            "glot": "find-and-kick",
             "provider": "anthropic",
             "model": "claude-opus-5",
             "transport": "sim2d",
@@ -875,10 +875,10 @@ def test_every_kind_of_moment_keeps_the_mark_its_glyph_is_chosen_from() -> None:
     assert marks["prompt_yes"] == ["note"] and marks["prompt_no"] == ["warn"]
     assert marks["declare_success"] == ["ok"] and marks["declare_failure"] == ["fail"]
     assert marks["llm_error"] == ["fail"] and marks["llm_no_tool_call"] == ["warn"]
-    # a failure quackd asks the same turn again after is a warning: the run goes on
+    # a failure Roboglot asks the same turn again after is a warning: the run goes on
     assert marks["llm_error_asked_again"] == ["warn"]
     assert marks["observation_error"] == ["fail"] and marks["enforce"] == ["warn"]
-    assert marks["flock_claim"] == ["flock"] and marks["member_end"] == ["end"]
+    assert marks["team_claim"] == ["team"] and marks["member_end"] == ["end"]
     assert marks["note"] == ["note"] and marks["memory"] == ["note"]
     assert marks["assess_feasible"] == ["ok"], "a verdict that clears the way reads like one"
     assert marks["assess_infeasible"] == ["warn"], "nothing broke: this body cannot"
@@ -886,7 +886,7 @@ def test_every_kind_of_moment_keeps_the_mark_its_glyph_is_chosen_from() -> None:
     assert marks["assess_invalid"] == ["fail"]
     assert marks["tool_result"] == ["ok"] and marks["tool_result_sim"] == ["fail"]
     # and nothing invents a mark the glyph table has no field for
-    from quackd import ui
+    from roboglot import ui
 
     for name, found in marks.items():
         assert all(m in ui.MARKS for m in found), (name, found)
@@ -986,7 +986,7 @@ def test_an_observation_that_failed_is_a_line_not_a_rule() -> None:
     assert "ERROR camera timed out" in buffer.getvalue()
 
 
-def test_a_flock_member_is_never_given_a_rule_of_its_own() -> None:
+def test_a_team_member_is_never_given_a_rule_of_its_own() -> None:
     """Three members narrate at once; a rule each would be three rules per step and none of
     them would mean the run had moved on."""
     view, buffer = console_log(prefix="duck-1  ")
@@ -1003,7 +1003,7 @@ def test_the_system_prompt_is_a_block_between_two_rules() -> None:
         LogEvent(
             "run_start",
             0.0,
-            {"duck": "d", "transport": "mock", "system_prompt": "line one\n\nline three"},
+            {"glot": "d", "transport": "mock", "system_prompt": "line one\n\nline three"},
         )
     )
     out = buffer.getvalue()
@@ -1019,7 +1019,7 @@ def test_the_system_prompt_is_a_block_between_two_rules() -> None:
 def test_the_system_prompt_is_respelled_for_the_stream_like_every_other_line() -> None:
     view, raw = narrow_log()
     prompt = "## Rules (enforced by the executor — not optional)"
-    view(LogEvent("run_start", 0.0, {"duck": "d", "transport": "mock", "system_prompt": prompt}))
+    view(LogEvent("run_start", 0.0, {"glot": "d", "transport": "mock", "system_prompt": prompt}))
     out = shown(raw, view)
     assert "executor - not optional" in out and "?" not in out
 
@@ -1059,7 +1059,7 @@ def test_a_yes_and_a_no_do_not_come_out_looking_like_each_other() -> None:
 def test_a_refused_hold_is_not_logged_as_held() -> None:
     """A take-hold is recorded under the stage it was trying for, `held`, whatever came of it,
     and the line used to print that stage as its first word. So a take-hold that left torque off
-    under a joint placed past its travel came out as "held: ..., so quackd left torque off", to
+    under a joint placed past its travel came out as "held: ..., so Roboglot left torque off", to
     a person holding the arm and reading the first word. A refused hold and a refused release
     say so in that word, and a hold that took is unchanged."""
     joints = {"wrist_flex": 12.0}
@@ -1126,7 +1126,7 @@ def test_the_system_prompt_is_still_the_one_thing_drawn_as_a_rule() -> None:
         LogEvent(
             "run_start",
             0.0,
-            {"duck": "d", "transport": "mock", "system_prompt": "line one\nline two"},
+            {"glot": "d", "transport": "mock", "system_prompt": "line one\nline two"},
         )
     )
     view(LogEvent("prompt", 0.1, {"what": "confirm", "question": "run kick()?", "answer": True}))
@@ -1160,7 +1160,7 @@ def test_a_live_run_does_not_repeat_the_header_the_cli_just_printed() -> None:
             "run_start",
             0.0,
             {
-                "duck": "d",
+                "glot": "d",
                 "provider": "fake",
                 "transport": "mock",
                 "connect_s": 0.5,
@@ -1181,7 +1181,7 @@ def test_a_replay_introduces_the_run_because_nothing_else_did() -> None:
             "run_start",
             0.0,
             {
-                "duck": "find-and-kick",
+                "glot": "find-and-kick",
                 "provider": "anthropic",
                 "model": "claude-opus-5",
                 "adapter": "microduck",
@@ -1208,7 +1208,7 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
     the only answer to "when was this" was the directory name, which gets renamed and copied.
 
     The run name row is there only when somebody typed one. The price row has three states and
-    they are not two: a rate that was used, a `price` of null for a run quackd could not cost
+    they are not two: a rate that was used, a `price` of null for a run Roboglot could not cost
     and which needs the panel to say so, and no `price` key at all for a transcript recorded
     before there were prices. Telling that third reader their run was "unpriced" would be
     describing this release rather than their run, so it gets no row."""
@@ -1217,7 +1217,7 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
 
     def panel(**extra: Any) -> str:
         view, buffer = console_log(header=True)
-        data = {"duck": "find-and-kick", "provider": "fake", "transport": "sim2d", **extra}
+        data = {"glot": "find-and-kick", "provider": "fake", "transport": "sim2d", **extra}
         view(LogEvent("run_start", 0.0, data))
         return buffer.getvalue()
 
@@ -1228,7 +1228,7 @@ def test_a_replay_says_when_the_run_happened_what_it_was_called_and_its_rate() -
 
     anonymous = panel(started_at=started, price=None)
     assert "run name" not in anonymous, "an empty row would read as a run called nothing"
-    assert "price     unpriced: quackd has no rate for this LLM" in anonymous
+    assert "price     unpriced: Roboglot has no rate for this LLM" in anonymous
 
     before = panel(started_at=started)
     assert "price" not in before, (
@@ -1244,7 +1244,7 @@ def test_a_replay_says_a_run_played_and_nothing_for_one_that_did_not() -> None:
 
     def panel(**extra: Any) -> str:
         view, buffer = console_log(header=True)
-        data = {"duck": "arm-part", "provider": "fake", "transport": "mock", **extra}
+        data = {"glot": "arm-part", "provider": "fake", "transport": "mock", **extra}
         view(LogEvent("run_start", 0.0, data))
         return " ".join(buffer.getvalue().split())
 
@@ -1256,7 +1256,7 @@ def test_a_replay_says_a_run_played_and_nothing_for_one_that_did_not() -> None:
     for quiet in (plain, panel()):
         assert " play " not in f" {quiet} ", quiet
     # every recorded run_start carries connect_s, so the word sits before the connect time
-    data = {"duck": "x", "provider": "fake", "transport": "mock", "connect_s": 0.25}
+    data = {"glot": "x", "provider": "fake", "transport": "mock", "connect_s": 0.25}
     head = render_lines(LogEvent("run_start", 0.0, {**data, "play": {"on": False}}))[0][0]
     assert " play " not in f" {head} ", head
     head = render_lines(LogEvent("run_start", 0.0, {**data, "play": {"on": True}}))[0][0]
@@ -1363,9 +1363,9 @@ def test_a_long_log_is_capped_and_says_what_it_cut() -> None:
 )
 def test_the_env_switch(monkeypatch: pytest.MonkeyPatch, value: str | None, on: bool) -> None:
     if value is None:
-        monkeypatch.delenv("QUACKD_LOG", raising=False)
+        monkeypatch.delenv("ROBOGLOT_LOG", raising=False)
     else:
-        monkeypatch.setenv("QUACKD_LOG", value)
+        monkeypatch.setenv("ROBOGLOT_LOG", value)
     assert log_enabled_default() is on
 
 
@@ -1375,7 +1375,7 @@ def test_the_env_switch(monkeypatch: pytest.MonkeyPatch, value: str | None, on: 
 def test_how_much_thinking_the_console_shows(
     monkeypatch: pytest.MonkeyPatch, value: str, limit: int | None
 ) -> None:
-    monkeypatch.setenv("QUACKD_LOG_THINKING", value)
+    monkeypatch.setenv("ROBOGLOT_LOG_THINKING", value)
     assert thinking_limit_default() == limit
     assert parse_thinking_limit(value) == limit  # a flag and the environment agree
 
@@ -1388,9 +1388,9 @@ def test_the_prompt_env_switch(
     monkeypatch: pytest.MonkeyPatch, value: str | None, shown: bool
 ) -> None:
     if value is None:
-        monkeypatch.delenv("QUACKD_LOG_PROMPT", raising=False)
+        monkeypatch.delenv("ROBOGLOT_LOG_PROMPT", raising=False)
     else:
-        monkeypatch.setenv("QUACKD_LOG_PROMPT", value)
+        monkeypatch.setenv("ROBOGLOT_LOG_PROMPT", value)
     assert prompt_shown_default() is shown
 
 
@@ -1398,7 +1398,7 @@ def test_none_means_unlimited_thinking_on_the_console_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`None` used to mean "read the environment" here and "unlimited" in `render_lines`."""
-    monkeypatch.setenv("QUACKD_LOG_THINKING", "100")
+    monkeypatch.setenv("ROBOGLOT_LOG_THINKING", "100")
     event = LogEvent("llm", 0.0, {"thinking": "x" * 5000, "tool_calls": [], "usage": {}})
 
     buffer = io.StringIO()
@@ -1425,7 +1425,7 @@ def test_a_prefixed_view_names_its_robot_on_every_line_including_continuations()
     assert any("second line" in line for line in printed)
 
 
-def test_the_coordinators_events_render_as_flock_lines_in_the_recorders_words() -> None:
+def test_the_coordinators_events_render_as_team_lines_in_the_recorders_words() -> None:
     cases = [
         (
             LogEvent("auction", 0.0, {"first_bid": "duck-1", "dist": 0.42}),
@@ -1451,9 +1451,9 @@ def test_the_coordinators_events_render_as_flock_lines_in_the_recorders_words() 
         ((text, _),) = render_lines(event)
         assert text.startswith(needle), (event.kind, text)
     # the GIF's caption and the console line are the same words, one upper and one lower
-    word, detail = flock_caption("claim", {"kicker": "duck-1", "dist": 0.62}) or ("", "")
+    word, detail = team_caption("claim", {"kicker": "duck-1", "dist": 0.62}) or ("", "")
     assert word == "CLAIM" and detail.startswith("duck-1 (0.62 m)")
-    assert flock_caption("verb_end", {}) is None
+    assert team_caption("verb_end", {}) is None
 
 
 def test_a_verb_ended_by_another_layer_is_yellow_and_keeps_its_own_word() -> None:
@@ -1506,7 +1506,7 @@ def test_the_done_line_says_sim_seconds_on_a_simulator() -> None:
 
 
 def test_a_watch_look_is_one_line_saying_what_it_was_told_and_what_it_did() -> None:
-    """`watch`'s rows, as `quackd log` draws them: what the decision LLM said, the move it made
+    """`watch`'s rows, as `roboglot log` draws them: what the decision LLM said, the move it made
     or that it held still, what the look cost, and the way the call ended on the look that ended
     it, each with the count toward the exit it is on."""
     billed = {"latency_s": 0.61, "usage": {"input_tokens": 1203, "output_tokens": 0}}

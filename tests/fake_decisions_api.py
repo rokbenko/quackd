@@ -1,4 +1,4 @@
-"""OpenAI's SDK as `quackd.agent.decision.decisions_api` reaches it, never leaving the machine.
+"""OpenAI's SDK as `roboglot.agent.decision.decisions_api` reaches it, never leaving the machine.
 
 Installed into `sys.modules` as `openai`, it is the module `decisions_api.py` imports lazily and
 would otherwise find in whatever state a developer's machine happens to be in, and not at all
@@ -22,11 +22,11 @@ of `{value, probability}`, and a `refusal` carries its name and nothing else. No
 LLM: the answers are whatever the test scripted, which is the point.
 
 What one installed SDK does with the headers it is handed is a property of that SDK rather than
-of quackd, and only a test that drives the real one can show it:
+of Roboglot, and only a test that drives the real one can show it:
 `tests/test_decisions_api_wire.py`, wherever the SDK is installed, which is the locked release
 and no other. So this fake also carries a model of how each kind of release the extra allows
-merges the headers quackd hands it with the lines of `OPENAI_CUSTOM_HEADERS` (`RELEASES`), read
-from the releases themselves, so that CI can hold quackd's rule to all of them and not only to
+merges the headers Roboglot hands it with the lines of `OPENAI_CUSTOM_HEADERS` (`RELEASES`), read
+from the releases themselves, so that CI can hold Roboglot's rule to all of them and not only to
 the one a developer happens to have.
 """
 

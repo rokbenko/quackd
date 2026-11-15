@@ -1,5 +1,5 @@
-"""Render the table of the bodies quackd only describes into `docs/adapters/status.md`, from the
-body files under `quackd/adapters/bodies/`, or check that the page still holds what they say.
+"""Render the table of the bodies Roboglot only describes into `docs/adapters/status.md`, from the
+body files under `roboglot/adapters/bodies/`, or check that the page still holds what they say.
 
 A described body (ADR-0077) is one YAML and no code, so nothing but this table would ever put
 its numbers on a page. The table sits between two markers this script owns. A figure is changed
@@ -9,7 +9,7 @@ fails when the page says something the files no longer do.
     uv run --no-sync python scripts/bodies_docs.py          # rewrite the page
     uv run --no-sync python scripts/bodies_docs.py --check  # exit 1 if the page would change
 
-It imports the described module and the catalogue and nothing else of quackd's, and reads no
+It imports the described module and the catalogue and nothing else of Roboglot's, and reads no
 environment.
 """
 
@@ -20,9 +20,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
-from quackd.adapters.described import DRIVES_NOTHING, describe
-from quackd.adapters.manifest import Figure, RobotManifest
+from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
+from roboglot.adapters.described import DRIVES_NOTHING, describe
+from roboglot.adapters.manifest import Figure, RobotManifest
 
 REPO = Path(__file__).resolve().parents[1]
 PAGE = REPO / "docs" / "adapters" / "status.md"
@@ -31,7 +31,7 @@ BLOCK = "described-bodies"
 _START = re.compile(rf"^<!-- generated: {BLOCK}\b[^\n]*-->$", re.M)
 _END = re.compile(rf"^<!-- end generated: {BLOCK} -->$", re.M)
 START_MARKER = (
-    f"<!-- generated: {BLOCK}, by scripts/bodies_docs.py from quackd/adapters/bodies/*.yaml. "
+    f"<!-- generated: {BLOCK}, by scripts/bodies_docs.py from roboglot/adapters/bodies/*.yaml. "
     "Change a body file and run the script, not this table. -->"
 )
 _READ = re.compile(r"read (\d{4}-\d{2}-\d{2})")

@@ -1,10 +1,10 @@
 {
-  "duck": "e166-raise-for-the-switch",
+  "glot": "e166-raise-for-the-switch",
   "run_name": null,
   "command": [
-    "quackd",
+    "roboglot",
     "run",
-    "D:/Development/quackd-shoot/docs/examples/lerobot/e166/raise-for-the-switch.duck",
+    "D:/Development/roboglot-shoot/docs/examples/lerobot/e166/raise-for-the-switch.glot",
     "--robot",
     "arm-01",
     "--camera-url",

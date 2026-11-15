@@ -1,8 +1,8 @@
 """Turning tokens into dollars, and the rate card the dollars come from.
 
-quackd counted tokens from its first release and never turned them into money, so every reader
+Roboglot counted tokens from its first release and never turned them into money, so every reader
 of a transcript did the arithmetic by hand against a rate card they had to go and find.
-`quackd/agent/providers/pricing.py` is that arithmetic and this file holds it to the three rules
+`roboglot/agent/providers/pricing.py` is that arithmetic and this file holds it to the three rules
 it promises, because each of them fails silently and expensively when it breaks:
 
 - **An unknown rate is `None`, never zero.** Four Cohere LLMs genuinely have no published
@@ -17,7 +17,7 @@ it promises, because each of them fails silently and expensively when it breaks:
   to stop anyone writing again in a renderer.
 
 The rate parser's refusals get a test each, and each asserts the message names its source. The
-same junk arrives from `--price` and from a `QUACKD_PRICE` that a `.env` three directories up
+same junk arrives from `--price` and from a `ROBOGLOT_PRICE` that a `.env` three directories up
 set, and which of the two you are looking at is the whole question when the run has just failed.
 """
 
@@ -28,9 +28,9 @@ import datetime as dt
 
 import pytest
 
-from quackd.agent.providers import catalogue as cat
-from quackd.agent.providers.catalogue import PRICES_CHECKED, Price
-from quackd.agent.providers.pricing import (
+from roboglot.agent.providers import catalogue as cat
+from roboglot.agent.providers.catalogue import PRICES_CHECKED, Price
+from roboglot.agent.providers.pricing import (
     FAKE,
     PRICE_ENV,
     SCRIPTED,
@@ -176,7 +176,7 @@ def test_the_vla_pilot_is_free_as_the_scripted_one_is() -> None:
     judges the arm, so it is priced as `--llm fake` is and prints `$0`. The pricing module may
     not import the pilot, which imports pydantic, so the name is spelled in both places and
     held together here."""
-    from quackd.agent.providers import vla
+    from roboglot.agent.providers import vla
 
     assert vla.NAME == VLA_PILOT and vla.NAME in SCRIPTED
     assert price_for(vla.NAME, "scripted:stack-blocks") == FAKE
@@ -210,7 +210,7 @@ def test_an_id_the_vendor_does_not_list_has_no_rate() -> None:
     assert price_for("openai", "gpt-nope") is None
 
 
-def test_a_provider_quackd_has_never_heard_of_has_no_rate() -> None:
+def test_a_provider_roboglot_has_never_heard_of_has_no_rate() -> None:
     assert price_for("hal9000", "whatever") is None
 
 
@@ -239,7 +239,7 @@ def test_the_environment_variable_is_used_when_no_flag_was_passed(
 
 
 def test_an_empty_environment_variable_reads_as_unset(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The suite sets `QUACKD_PRICE` empty rather than deleting it, because the CLI loads a
+    """The suite sets `ROBOGLOT_PRICE` empty rather than deleting it, because the CLI loads a
     developer's `.env` and `load_dotenv` does not overwrite a name already in the environment.
     Empty therefore has to mean unset here, or every test in the suite would be priced by it."""
     monkeypatch.setenv(PRICE_ENV, "")
@@ -261,7 +261,7 @@ def test_the_flag_wins_over_the_variable_when_both_are_set(
 
 
 def test_an_uncatalogued_llm_with_no_override_stays_unpriced() -> None:
-    """The whole reason `--price` exists: an LLM quackd has never heard of reports nothing
+    """The whole reason `--price` exists: an LLM Roboglot has never heard of reports nothing
     rather than reporting nothing owed."""
     assert resolve_price("cohere", "command-a-plus-05-2026") is None
 
@@ -307,7 +307,7 @@ def test_a_cached_prompt_is_charged_once_and_not_again_at_the_full_rate() -> Non
 
 
 def test_a_usage_whose_parts_exceed_its_whole_is_floored_rather_than_going_negative() -> None:
-    """A vendor that reported its buckets disjoint where quackd expects them nested would drive
+    """A vendor that reported its buckets disjoint where Roboglot expects them nested would drive
     the remainder below zero, and a negative line item would net off against the rest of the run
     and hide spend. The remainder floors at zero and the parts are still charged."""
     usage = {"input_tokens": 100, "cache_read_tokens": 200, "cache_write_tokens": 300}
@@ -383,7 +383,7 @@ def test_a_real_cost_below_the_printing_floor_is_not_recorded_as_zero() -> None:
 
 
 def test_no_price_reads_as_unpriced_rather_than_as_zero() -> None:
-    """The distinction the whole module turns on: quackd does not know what this cost, which is
+    """The distinction the whole module turns on: Roboglot does not know what this cost, which is
     not the same claim as it having been free."""
     assert fmt_usd(None) == "unpriced"
 
@@ -460,7 +460,7 @@ def test_every_catalogued_llm_carries_a_source_of_catalogue() -> None:
 
 def test_the_rate_record_carries_the_checked_date_only_for_a_catalogued_rate() -> None:
     """The date is a claim about this table and nothing else. Stamping it onto a `--price` the
-    user typed, or onto the scripted pilot's zero, would tell a reader that quackd had verified
+    user typed, or onto the scripted pilot's zero, would tell a reader that Roboglot had verified
     a number it was simply handed."""
     catalogued = Price(5.0, 25.0, 0.5, 6.25).record()
     assert catalogued["checked"] == PRICES_CHECKED
@@ -498,7 +498,7 @@ def test_three_cohere_llms_are_the_only_unpriced_ones() -> None:
 
 
 def test_coheres_default_llm_is_one_of_the_unpriced_ones() -> None:
-    """Which is why no test anywhere may assert that every vendor default has a price: `quackd
+    """Which is why no test anywhere may assert that every vendor default has a price: `roboglot
     run --llm cohere` with no LLM half reports `cost_usd: null` and says `cost unpriced`,
     and that is the correct answer rather than a gap to be closed."""
     default = cat.default_llm_for("cohere")
@@ -520,15 +520,15 @@ def test_an_llm_that_is_genuinely_free_is_priced_at_zero_rather_than_left_unpric
 
 
 def test_pricing_costs_nothing_to_import() -> None:
-    """`quackd --help` imports the catalogue and every press of TAB does too, and this module
+    """`roboglot --help` imports the catalogue and every press of TAB does too, and this module
     sits beside it and is imported by the CLI on the way to building a run directory. Read as
     source rather than by importing, because by the time this test runs the suite has imported
-    half of quackd already and an accidental dependency would be satisfied from the cache.
+    half of Roboglot already and an accidental dependency would be satisfied from the cache.
 
     Stricter than its sibling in `test_catalogue.py`: every import root is checked against the
     stdlib names this module is allowed, so a new heavy dependency fails here whether or not
     anybody thought to add its name to a list."""
-    source = (REPO / "quackd" / "agent" / "providers" / "pricing.py").read_text(encoding="utf-8")
+    source = (REPO / "roboglot" / "agent" / "providers" / "pricing.py").read_text(encoding="utf-8")
     for forbidden in ("import pydantic", "from pydantic", "import openai", "import anthropic"):
         assert forbidden not in source
     roots: set[str] = set()
@@ -537,7 +537,7 @@ def test_pricing_costs_nothing_to_import() -> None:
             roots.update(alias.name.split(".")[0] for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
             roots.add(node.module.split(".")[0])
-    assert roots <= {"__future__", "collections", "math", "os", "quackd", "typing"}, (
+    assert roots <= {"__future__", "collections", "math", "os", "roboglot", "typing"}, (
         f"pricing.py has picked up {sorted(roots)}, and --help pays for every one of them"
     )
 
@@ -577,9 +577,9 @@ def test_every_openrouter_row_was_read_off_openrouters_list_on_its_own_date() ->
 
 
 def test_a_rate_the_person_gave_beats_the_bill_and_the_bill_beats_the_rate_card() -> None:
-    """`--price` and `QUACKD_PRICE` are a person saying what this costs them, a negotiated
-    rate or a key quackd cannot see; the bill is what the vendor charged; the rate card is
-    quackd's own arithmetic, and the last resort."""
+    """`--price` and `ROBOGLOT_PRICE` are a person saying what this costs them, a negotiated
+    rate or a key Roboglot cannot see; the bill is what the vendor charged; the rate card is
+    Roboglot's own arithmetic, and the last resort."""
     usage = {"input_tokens": 1_000_000, "output_tokens": 0}
     card = Price(2.0, 10.0)
     assert turn_cost(usage, card, billed=0.25) == TurnCost(0.25, True)

@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from quackd.passport import link
-from quackd.passport.link import (
+from roboglot.passport import link
+from roboglot.passport.link import (
     MAX_DATAGRAM,
     MIN_DATAGRAM,
     PERIPHERAL_BIT,
@@ -36,7 +36,7 @@ from quackd.passport.link import (
     encode,
     split,
 )
-from quackd.passport.talk import MAX_HELLO_BYTES
+from roboglot.passport.talk import MAX_HELLO_BYTES
 
 VECTORS = Path(__file__).resolve().parents[1] / "docs" / "passport" / "vectors"
 LINK = json.loads((VECTORS / "ble-link.json").read_text(encoding="utf-8"))

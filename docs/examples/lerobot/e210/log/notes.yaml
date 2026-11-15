@@ -1,13 +1,13 @@
-hook: "With the arm's power on this time, unlike E211, Ctrl-C pressed while quackd was still connecting meant no fold and no move: the arm sagged a little as the connect switched its torque off and on, then stayed where a hand had raised it, holding itself up."
+hook: "With the arm's power on this time, unlike E211, Ctrl-C pressed while Roboglot was still connecting meant no fold and no move: the arm sagged a little as the connect switched its torque off and on, then stayed where a hand had raised it, holding itself up."
 goal_met: "Yes"
 why_example: >
   A by-hand run starts by folding the arm to its rest pose, and connecting takes torque off every
-  motor for a moment, so a raised arm needs a hand under it while quackd connects. A person who
+  motor for a moment, so a raised arm needs a hand under it while Roboglot connects. A person who
   presses Ctrl-C then, with a hand under the arm, means nothing should move after that. Until 0.30.2
   the fold started all the same. This example presses during the connect, with the arm powered and
   answering, to see that nothing moves after the press.
 why_result: >
-  quackd sent no move after the press. The run never folded and never handed the arm over, ended `✗
+  Roboglot sent no move after the press. The run never folded and never handed the arm over, ended `✗
   ABORTED` on `kill switch` with no step taken, and its close kept torque on, so the arm stayed up
   where it had been held instead of dropping. The only movement was a small sag as the connect
   switched torque off and on, the one the card allows for. With the arm powered and answering, which
@@ -23,12 +23,12 @@ expected: >
 showed:
   - >
     The arm's power was on this time, unlike in E211, where it was off and nothing answered. Here the
-    arm answered: quackd was `connected in 2.57 s`.
+    arm answered: Roboglot was `connected in 2.57 s`.
   - >
     The arm was lifted by hand into a raised pose and held there while the run started, and Ctrl-C
     landed during the connect: the trace prints `kill switch: Ctrl-C` before `connected in 2.57 s`.
   - >
-    quackd sent no move after it. `moving to the rest pose` never came up, nothing folded, and nothing
+    Roboglot sent no move after it. `moving to the rest pose` never came up, nothing folded, and nothing
     said the arm was yours. The only command the run logged was a `stop`, which holds the arm where it
     is, and the panel says `✗ ABORTED`, `kill switch`, `steps 0`, 2.9 s after the start.
   - >
@@ -41,7 +41,7 @@ showed:
     folds it.
   - >
     The arm held there. The run's last reading had shoulder_lift at -13.2 and elbow_flex at 28.0.
-    `quackd robot release arm-01`, run afterwards with nobody supporting the arm through its connect,
+    `roboglot robot release arm-01`, run afterwards with nobody supporting the arm through its connect,
     read -12.9 and 28.8, under a degree away, then counted 3 s, folded the arm to its rest pose with
     LeRobot clamping 27 of its goals, and let go: `✓ torque reads off on every joint of arm-01`.
   - >

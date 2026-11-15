@@ -3,14 +3,14 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-lerobot"
+name = "roboglot-lerobot"
 dynamic = ["version"]
-description = "The LeRobot SO-101 arm adapter for quackd. Install it as quackd[lerobot]."
+description = "The LeRobot SO-101 arm adapter for Roboglot. Install it as roboglot[lerobot]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35"]
+dependencies = ["roboglot>=0.34.0,<0.35"]
 
 # The arm's own SDK. LeRobot needs Python 3.12 and pulls torch, and the marker keeps the lock
 # solvable on 3.11, where this package still installs and still gives you `lerobot:mock`.
@@ -18,7 +18,7 @@ dependencies = ["quackd>=0.34.0,<0.35"]
 # the arm's port fails, which is a worse thing to find out at a bench than at an install. Since
 # 0.7.0 that library is rustypot, which replaced feetech-servo-sdk under one bus for every Feetech
 # and Dynamixel servo (LeRobot's #4672), and 0.7.0 is the release upstream_api.py was read at. The
-# floor is that release, because 0.6's bus is not the one quackd reads the arm through, and the
+# floor is that release, because 0.6's bus is not the one Roboglot reads the arm through, and the
 # ceiling is its next patch: the arm's stop, release and close lean on the bus as it reads at
 # 0.7.0, and a patch may move it, so rustypot, the part that talks to the port, is held below its
 # next minor too. Raise them with upstream_api.py and with the ignores in .github/dependabot.yml;
@@ -31,7 +31,7 @@ sdk = [
 # The arm's simulator, `lerobot:mujoco`: MuJoCo on the CPU and nothing of LeRobot's, so it
 # installs on 3.11 as well. The SO-101's model is fetched at run time and never shipped.
 sim = ["mujoco>=3.12,<4"]
-# The policy server's, `quackd policy serve --policy REPO@REVISION`, in a process of its own and
+# The policy server's, `roboglot policy serve --policy REPO@REVISION`, in a process of its own and
 # never the arm's: LeRobot with torch, and the extras of every type the server serves that has
 # one, `[smolvla]`, `[pi]` for pi05 and pi0 and `[xvla]`, which bring the transformers their
 # tokenizers load with. A GR00T answers with diffusers and dm-tree besides, so those two come
@@ -45,21 +45,21 @@ vla = [
   "dm-tree>=0.1.8,<1.0.0; python_version >= '3.12'",
 ]
 
-[project.entry-points."quackd.adapters"]
-lerobot = "quackd_lerobot"
+[project.entry-points."roboglot.adapters"]
+lerobot = "roboglot_lerobot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/lerobot/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_lerobot/__init__.py"
+path = "src/roboglot_lerobot/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_lerobot"]
+packages = ["src/roboglot_lerobot"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

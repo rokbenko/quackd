@@ -1,4 +1,4 @@
-"""What a typed line means before anything is asked of anybody (`quackd.drive.lanes`)."""
+"""What a typed line means before anything is asked of anybody (`roboglot.drive.lanes`)."""
 
 from __future__ import annotations
 
@@ -6,17 +6,17 @@ from typing import Any
 
 import pytest
 
-import quackd_microduck
-from quackd.adapters.factory import RobotSpec, describe
-from quackd.agent.decision.stepper import discrete_calls
-from quackd.drive.lanes import ExactLane, is_brake, session_word
-from quackd.drive.presets import presets_for
-from quackd.verbs.registry import NoParams, Verb, VerbResult, registry_from_manifest
+import roboglot_microduck
+from roboglot.adapters.factory import RobotSpec, describe
+from roboglot.agent.decision.stepper import discrete_calls
+from roboglot.drive.lanes import ExactLane, is_brake, session_word
+from roboglot.drive.presets import presets_for
+from roboglot.verbs.registry import NoParams, Verb, VerbResult, registry_from_manifest
 
 
 def _lane(extra: list[Verb] | None = None) -> ExactLane:
     manifest = describe(RobotSpec("microduck", "mock"))
-    adapter = quackd_microduck.MicroduckAdapter.__new__(quackd_microduck.MicroduckAdapter)
+    adapter = roboglot_microduck.MicroduckAdapter.__new__(roboglot_microduck.MicroduckAdapter)
     registry = registry_from_manifest(manifest, adapter)
     for verb in extra or ():
         registry.register(verb, replace=True)
@@ -132,7 +132,7 @@ def test_a_line_that_names_a_call_outright_is_that_call(
         ("Turn left.", "turn left"),
     ],
 )
-def test_a_preset_is_a_move_with_quackds_numbers(line: str, preset: str) -> None:
+def test_a_preset_is_a_move_with_roboglots_numbers(line: str, preset: str) -> None:
     matched = _lane().parse(line)
     assert matched is not None and matched.preset == preset and matched.verb == "move"
     assert matched.label.startswith(f"{preset}: move(")
@@ -183,4 +183,4 @@ def test_a_dangerous_verb_is_named_and_refused() -> None:
     risky = Verb("cartwheel", "flips the body", _does_nothing, NoParams, safety_class="dangerous")
     matched = _lane([risky]).parse("cartwheel")
     assert matched is not None and matched.verb == "cartwheel"
-    assert matched.refused is not None and "quackd run" in matched.refused
+    assert matched.refused is not None and "roboglot run" in matched.refused

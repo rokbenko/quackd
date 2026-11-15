@@ -1,10 +1,10 @@
-"""Cut quackd's mark out of the duck, and write the two transparent exports of it.
+"""Cut Roboglot's mark out of the duck, and write the two transparent exports of it.
 
-    uv run python web/make_mark.py                  # needs a quackd-web checkout beside this one
+    uv run python web/make_mark.py                  # needs a roboglot-web checkout beside this one
     uv run python web/make_mark.py --source PATH    # or point it at duck-source.png yourself
 
 The mark is the duck's head, and it is not drawn here or anywhere else in this repository. The
-only original is `src/assets/duck-source.png` in quackd-web, 1086x1448 of rendered 3D duck on
+only original is `src/assets/duck-source.png` in roboglot-web, 1086x1448 of rendered 3D duck on
 an opaque near-white plate, and every head crop is a derivative of it. Two of those crops were
 committed here with the bottom of the head sliced off at the image boundary, taking the chin,
 the lower jaw and the orange mouth with them, and nothing recorded how to make them again.
@@ -41,7 +41,7 @@ from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
 ASSETS = HERE / "assets"
-DEFAULT_SOURCE = HERE.parent.parent / "quackd-web" / "src" / "assets" / "duck-source.png"
+DEFAULT_SOURCE = HERE.parent.parent / "roboglot-web" / "src" / "assets" / "duck-source.png"
 
 #: How far from the corner's colour a pixel may sit and still be the plate behind the duck.
 #: The plate is (254, 254, 254) with a little dither in it. The duck's lightest pixel is the
@@ -131,7 +131,7 @@ def main() -> None:
     if not args.source.is_file():
         raise SystemExit(
             f"no duck at {args.source}.\n"
-            "The original lives in quackd-web, which this repository does not vendor. Clone it "
+            "The original lives in roboglot-web, which this repository does not vendor. Clone it "
             "beside this checkout, or pass --source."
         )
 
@@ -151,7 +151,7 @@ def main() -> None:
         image.save(path, optimize=True)
         print(f"wrote {path} ({path.stat().st_size // 1024} KB, ink {ink})")
 
-    print("quackd-web keeps its own copies of these two. They need the same fix.")
+    print("roboglot-web keeps its own copies of these two. They need the same fix.")
 
 
 if __name__ == "__main__":

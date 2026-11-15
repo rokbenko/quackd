@@ -26,9 +26,9 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.decision import factory
-from quackd.agent.decision.base import TIMEOUT_S, DecisionError, client_timeout
-from quackd.agent.decision.catalogue import (
+from roboglot.agent.decision import factory
+from roboglot.agent.decision.base import TIMEOUT_S, DecisionError, client_timeout
+from roboglot.agent.decision.catalogue import (
     DECISIONS_API,
     ENTRY_POINT_GROUP,
     IN_PROCESS,
@@ -36,7 +36,7 @@ from quackd.agent.decision.catalogue import (
     PRESETS,
     SYSTEM_ONE,
 )
-from quackd.agent.decision.factory import (
+from roboglot.agent.decision.factory import (
     decision_llm_is_available,
     find_preset,
     make_decision_llm,
@@ -47,8 +47,8 @@ from quackd.agent.decision.factory import (
     resolve_decision_price,
     resolve_decision_url,
 )
-from quackd.agent.decision.stepper import MAX_IN_A_ROW, Call, Stepper, verb_class
-from quackd.agent.providers.catalogue import PRICES_CHECKED
+from roboglot.agent.decision.stepper import MAX_IN_A_ROW, Call, Stepper, verb_class
+from roboglot.agent.providers.catalogue import PRICES_CHECKED
 from tests import fake_laya, fake_systemone
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -103,7 +103,7 @@ def test_every_preset_row_is_complete() -> None:
 def test_only_the_hosted_rows_carry_a_key_or_a_price_and_only_jev_an_llm_variable() -> None:
     """The things that belong to a vendor rather than to a format. Two rows are hosted, so two
     carry a key and a published rate, and a third growing either is the table drifting back
-    towards one-module-per-vendor. The LLM variable is the one SDK's own that quackd honours
+    towards one-module-per-vendor. The LLM variable is the one SDK's own that Roboglot honours
     where that SDK owns the address, which is `jev` alone: `openai`'s backend always hands its
     SDK an address."""
     for name, spec in PRESETS.items():
@@ -136,7 +136,7 @@ def test_a_preset_url_carries_no_path() -> None:
 
 def test_only_the_two_rows_that_are_told_an_address_lack_one() -> None:
     """`local` exists to be told and `laya` has none to tell, and everything else listens
-    somewhere quackd can name without being asked."""
+    somewhere Roboglot can name without being asked."""
     assert {name for name, spec in PRESETS.items() if spec.url is None} == {"jev", "local", "laya"}
 
 
@@ -156,14 +156,14 @@ def test_the_extras_the_table_names_exist_and_install_what_it_says() -> None:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     extras = pyproject["project"]["optional-dependencies"]
     for name, spec in PRESETS.items():
-        assert spec.extra in extras, f"{name}: quackd[{spec.extra}] is not declared"
+        assert spec.extra in extras, f"{name}: roboglot[{spec.extra}] is not declared"
         installs = " ".join(extras[spec.extra])
         assert spec.sdk is not None
         assert spec.sdk.replace("_", "-") in installs, f"{name}: {spec.extra} does not install it"
 
 
 def test_neither_optional_extra_is_in_all() -> None:
-    """`quackd[all]` is the three pilot SDKs. A decision LLM generates nothing and cannot pilot
+    """`roboglot[all]` is the three pilot SDKs. A decision LLM generates nothing and cannot pilot
     a robot, and the in-process one would put torch in there."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     everything = " ".join(pyproject["project"]["optional-dependencies"]["all"])
@@ -171,7 +171,7 @@ def test_neither_optional_extra_is_in_all() -> None:
 
 
 def test_the_openai_row_installs_nothing_the_pilot_does_not() -> None:
-    """Its extra is the pilot's own, so naming it adds no package to `quackd[all]` and no line
+    """Its extra is the pilot's own, so naming it adds no package to `roboglot[all]` and no line
     to the lock: every requirement it installs is already one `all` carries, word for word."""
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     extras = pyproject["project"]["optional-dependencies"]
@@ -185,7 +185,7 @@ def test_the_catalogue_costs_nothing_to_import() -> None:
 
     Read off the import statements rather than off the text, because the module's own docstring
     names every one of these in the course of promising not to import them."""
-    source = (ROOT / "quackd" / "agent" / "decision" / "catalogue.py").read_text(encoding="utf-8")
+    source = (ROOT / "roboglot" / "agent" / "decision" / "catalogue.py").read_text(encoding="utf-8")
     imported: set[str] = set()
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
@@ -374,9 +374,9 @@ def test_a_named_llm_beats_the_variable(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
-    """Not `None`, which quackd reserves for "there is a rate and nobody here knows it". An
+    """Not `None`, which Roboglot reserves for "there is a rate and nobody here knows it". An
     LLM on your own machine bills you in electricity, and that is the same `$0` the rest of
-    quackd already prices a local pilot at.
+    Roboglot already prices a local pilot at.
 
     OpenAI's rate was once read on a day of its own and is now read with the pilots' catalogue,
     so the record carries that day. Its guide prices the cache at gpt-6-luna's own rates, so a
@@ -393,7 +393,7 @@ def test_a_server_you_run_is_free_and_the_hosted_ones_are_not() -> None:
 
 
 def test_the_price_variable_overrides_any_row(monkeypatch: pytest.MonkeyPatch) -> None:
-    """For the paid endpoint sitting behind `local`, which quackd has no way to know about."""
+    """For the paid endpoint sitting behind `local`, which Roboglot has no way to know about."""
     monkeypatch.setenv(factory.PRICE_ENV, "in=1.5,out=0")
     price = resolve_decision_price(PRESETS["local"])
     assert price.input == 1.5 and price.source == factory.PRICE_ENV
@@ -407,13 +407,13 @@ def test_the_client_being_absent_names_the_extra_that_installs_it(
 ) -> None:
     monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
     ok, why = decision_llm_is_available(PRESETS["kev"])
-    assert not ok and "quackd[decision]" in why
+    assert not ok and "roboglot[decision]" in why
 
 
 def test_the_in_process_one_names_its_own_extra(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "laya", None)
     ok, why = decision_llm_is_available(PRESETS["laya"])
-    assert not ok and "quackd[laya]" in why
+    assert not ok and "roboglot[laya]" in why
 
 
 def test_the_hosted_one_needs_a_key_and_says_which(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -462,7 +462,7 @@ def test_a_server_you_run_gets_a_word_for_a_key_and_its_own_port(
 
 def test_the_hosted_one_is_handed_no_key_and_no_address(monkeypatch: pytest.MonkeyPatch) -> None:
     """Both belong to the SDK, which reads its own variables for them and validates the key
-    better than quackd could."""
+    better than Roboglot could."""
     fake = fake_systemone.install(monkeypatch, fake_systemone.FakeDecisionLLM())
     monkeypatch.setenv("TYPESAFE_API_KEY", "sk-hosted")
     monkeypatch.setenv(factory.ENV_URL, "")
@@ -482,7 +482,7 @@ def test_the_clients_own_clock_sits_above_the_steppers_second(
 ) -> None:
     """TypeSafe's client hands its `timeout` to httpx2 for each operation of a request, so set to
     the stepper's second it came due together with the stepper's own bound, and one slow turn
-    could be recorded as quackd's `no answer within 1.0 s` or as the SDK's own timeout, whichever
+    could be recorded as Roboglot's `no answer within 1.0 s` or as the SDK's own timeout, whichever
     the event loop reached first. Above it, the stepper's bound is the one clock that ends a
     turn. The retry budget only decides whether a retry is started, so it stays at the second,
     and the SDK never sleeps towards a retry the turn would not live to send."""
@@ -508,7 +508,7 @@ def test_the_client_being_absent_is_a_sentence_rather_than_a_traceback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setitem(sys.modules, "typesafe_sdk", None)
-    with pytest.raises(DecisionError, match=r"quackd\[decision\]"):
+    with pytest.raises(DecisionError, match=r"roboglot\[decision\]"):
         make_decision_llm(PRESETS["kev"], url="http://127.0.0.1:8009")
 
 
@@ -570,7 +570,7 @@ async def test_the_in_process_one_loads_once_and_asks_for_the_decision_checkpoin
     assert {model for _s, _q, model in router.calls} == {"typed-decisions"}
 
 
-async def test_the_in_process_one_reports_a_count_quackd_bills_as_measured(
+async def test_the_in_process_one_reports_a_count_roboglot_bills_as_measured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Laya counts the tokens it actually read, so its turns are measured rather than estimated.
@@ -597,7 +597,7 @@ async def test_the_in_process_one_reports_a_count_quackd_bills_as_measured(
 
 async def test_an_older_in_process_package_still_loads(monkeypatch: pytest.MonkeyPatch) -> None:
     """The keyword that preloads the right checkpoint is younger than the class it belongs to,
-    and quackd would rather load the wrong one once than refuse to run."""
+    and Roboglot would rather load the wrong one once than refuse to run."""
     router = fake_laya.install(
         monkeypatch,
         fake_laya.FakeRouter(answers=fake_laya.turn("stop"), rejects=("default",)),
@@ -690,7 +690,7 @@ def test_a_plugin_is_named_in_a_refusal(plugin: Any) -> None:
         parse_decision_llm("nosuch")
 
 
-def test_a_plugin_cannot_take_a_name_quackd_ships(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_a_plugin_cannot_take_a_name_roboglot_ships(monkeypatch: pytest.MonkeyPatch) -> None:
     """Otherwise a package on an index could quietly become the thing `--decision-llm jev`
     reaches, which is the whole supply-chain question in one line."""
     monkeypatch.setattr(
@@ -810,7 +810,7 @@ async def test_a_number_that_is_no_probability_is_unreadable_on_every_row(
 async def test_the_state_is_measured_and_shown_with_its_letters_as_letters() -> None:
     """A letter outside ASCII is one character, to the measure and to the LLM. `state_chars`
     used to count JSON's six-character escape for it, so a goal in Slovenian measured longer than
-    the same goal in ASCII, and the flock's chatter, written into the state as JSON of its own,
+    the same goal in ASCII, and the team's chatter, written into the state as JSON of its own,
     reached the backend as escapes."""
     shown: list[dict[str, str]] = []
 
@@ -821,12 +821,12 @@ async def test_the_state_is_measured_and_shown_with_its_letters_as_letters() -> 
             shown.append(dict(state))
             return {"answers": _takes_stop()}
 
-    flock = {"features": {"flock": {"duck": "žoga je pod mizo"}}}
-    slovenian = await _advise_with(None, llm=Keeps(), goal="poberi žogo", **flock)
-    ascii_only = await _advise_with(None, llm=Keeps(), goal="poberi zogo", **flock)
+    team = {"features": {"team": {"duck": "žoga je pod mizo"}}}
+    slovenian = await _advise_with(None, llm=Keeps(), goal="poberi žogo", **team)
+    ascii_only = await _advise_with(None, llm=Keeps(), goal="poberi zogo", **team)
     assert slovenian.record["state_chars"] == ascii_only.record["state_chars"]
     assert shown[0]["goal"] == "poberi žogo"
-    assert "žoga je pod mizo" in shown[0]["flock"] and "\\u" not in shown[0]["flock"]
+    assert "žoga je pod mizo" in shown[0]["team"] and "\\u" not in shown[0]["team"]
 
 
 async def test_a_probability_may_be_certain_and_may_be_a_whole_number() -> None:
@@ -916,7 +916,7 @@ async def test_a_backend_that_never_answers_costs_one_turn_and_not_the_run() -> 
 def test_the_address_variable_never_retargets_the_hosted_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`QUACKD_DECISION_URL` is the line somebody leaves in a `.env` after an afternoon with a
+    """`ROBOGLOT_DECISION_URL` is the line somebody leaves in a `.env` after an afternoon with a
     server on their own machine. Applied to the hosted row it would send that vendor's key --
     which its client reads for itself -- to whatever is listening on localhost."""
     monkeypatch.setenv(factory.ENV_URL, "http://127.0.0.1:8009")
@@ -966,7 +966,7 @@ def test_a_run_of_jev_at_an_address_you_typed_keeps_its_stepper_without_the_key(
 
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     fake = fake_systemone.install(
         monkeypatch, fake_systemone.FakeDecisionLLM(answers=fake_systemone.turn("stop"))
@@ -1038,7 +1038,7 @@ def test_a_blank_address_is_a_shell_saying_unset(
 
 def test_a_blank_mode_flag_does_not_discard_the_variable(monkeypatch: pytest.MonkeyPatch) -> None:
     """`--decision-mode ""` is what a wrapper script produces from an unset variable of its
-    own. Taken as a spoken answer it threw away a `QUACKD_DECISION_MODE=shadow` and ran the
+    own. Taken as a spoken answer it threw away a `ROBOGLOT_DECISION_MODE=shadow` and ran the
     stepper for real, which is the one direction this must never fail in."""
     monkeypatch.setenv(factory.ENV_MODE, "shadow")
     assert resolve_decision_mode("", named=True) == "shadow"
@@ -1057,7 +1057,7 @@ def test_a_plugin_that_cannot_be_imported_does_not_take_doctor_with_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """`find_spec("pkg.mod")` imports `pkg` to ask it, and a stranger's package may raise
-    anything at all. This runs on the path of `quackd doctor` and of every press of TAB."""
+    anything at all. This runs on the path of `roboglot doctor` and of every press of TAB."""
     monkeypatch.setattr(
         importlib.metadata,
         "entry_points",
@@ -1072,7 +1072,7 @@ def test_a_plugin_that_cannot_be_imported_does_not_take_doctor_with_it(
 
 def test_a_plugin_cannot_take_a_backends_name_either(monkeypatch: pytest.MonkeyPatch) -> None:
     """A built-in name is guarded; a *backend* name was not, so a plugin calling itself
-    `systemone` had quackd's own HTTP client built for it and its `make` never called."""
+    `systemone` had Roboglot's own HTTP client built for it and its `make` never called."""
     monkeypatch.setattr(
         importlib.metadata,
         "entry_points",
@@ -1100,7 +1100,7 @@ def test_a_streak_can_never_be_longer_than_half_the_run() -> None:
 
 
 def test_a_verb_the_task_file_gated_answers_to_the_confirm_floor() -> None:
-    """`Executor.needs_confirm` reads the `.duck`'s own `verbs.confirm` as well as the
+    """`Executor.needs_confirm` reads the `.glot`'s own `verbs.confirm` as well as the
     manifest's safety class. A floor that could not see it let a verb its author gated on a
     person through at 0.85 instead of 0.90, and under `--yes` nothing else would have noticed.
     """

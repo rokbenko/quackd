@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from quackd.latency import SPREAD, nearest_rank, spread
+from roboglot.latency import SPREAD, nearest_rank, spread
 
 
 def test_a_percentile_is_always_a_value_that_was_measured() -> None:

@@ -6,7 +6,7 @@ always do, and once on upstream's own trained gait, which needs the model in the
 is marked `real_duck`. The second is the one the README's claim rests on, and it exists
 because that claim had no test behind it at all.
 
-Skipped without `quackd[mujoco]` or without an OpenGL context, because the composite verbs
+Skipped without `roboglot[mujoco]` or without an OpenGL context, because the composite verbs
 steer on rendered frames and there is nothing to steer on without one.
 """
 
@@ -21,21 +21,21 @@ import pytest
 
 pytest.importorskip("mujoco")
 
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.fake import FakeProvider
-from quackd.duckfile.parser import load_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.sim2d.recorder import FrameRecorder
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck.sim3d.world import MujocoWorld
-from quackd_microduck.transports.mujoco import MujocoTransport
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.glotfile.parser import load_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.sim2d.recorder import FrameRecorder
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck.sim3d.world import MujocoWorld
+from roboglot_microduck.transports.mujoco import MujocoTransport
 from tests.gl import require_render
 
 SEEDS = range(10)
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 #: What the trained gait manages on the same ten seeds. Measured on one machine, because CI
 #: fetches no model; the number in the docs is this number and moves when it does.
-REAL_MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+REAL_MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 #: A ten-seed sweep is one test, and `faulthandler_timeout` is per test. This is a tripwire
 #: for a ten-fold regression, not a benchmark: per-seed times stay in the report either way.
 MAX_SWEEP_S = 600.0
@@ -43,7 +43,7 @@ MAX_SWEEP_S = 600.0
 
 async def test_find_and_kick_acceptance_in_mujoco(tmp_path: Path) -> None:
     _opengl_or_skip()
-    duck = load_duck("find-and-kick")
+    duck = load_glot("find-and-kick")
     successes = 0
     report = []
     walls: list[float] = []
@@ -52,10 +52,10 @@ async def test_find_and_kick_acceptance_in_mujoco(tmp_path: Path) -> None:
         adapter = MicroduckAdapter(transport)
         recorder = FrameRecorder(adapter, size=96) if seed == 0 else None
         t0 = time.perf_counter()
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
                 duck=duck,
-                provider=FakeProvider.for_duck("find-and-kick"),
+                provider=FakeProvider.for_glot("find-and-kick"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,
@@ -89,17 +89,17 @@ async def test_find_and_kick_on_the_real_duck(tmp_path: Path) -> None:
     """
     _opengl_or_skip()
     _cached_microduck()
-    duck = load_duck("find-and-kick")
+    duck = load_glot("find-and-kick")
     successes = 0
     report = []
     for seed in SEEDS:
         transport = MujocoTransport(seed=seed, body="microduck")
         adapter = MicroduckAdapter(transport)
         t0 = time.perf_counter()
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
                 duck=duck,
-                provider=FakeProvider.for_duck("find-and-kick"),
+                provider=FakeProvider.for_glot("find-and-kick"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,
@@ -128,7 +128,7 @@ def _opengl_or_skip() -> None:
 
 
 def _cached_microduck() -> object:
-    from quackd_microduck.sim3d.assets import AssetError, ensure_microduck
+    from roboglot_microduck.sim3d.assets import AssetError, ensure_microduck
 
     try:
         return ensure_microduck(offline=True)
@@ -148,7 +148,7 @@ class _BallPlaced(MujocoTransport):
     async def connect(self) -> None:
         import mujoco
 
-        from quackd_microduck.sim3d.scene import BALL_R
+        from roboglot_microduck.sim3d.scene import BALL_R
 
         await super().connect()
         world = self.world
@@ -167,33 +167,33 @@ class _BallPlaced(MujocoTransport):
 async def test_watch_turns_and_tilts_the_head_onto_the_ball_in_mujoco(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`watch` closed through quackd's own client for OpenAI's Decisions API, on the fake SDK,
+    """`watch` closed through Roboglot's own client for OpenAI's Decisions API, on the fake SDK,
     with `BlobEyes` answering where the ball is in each JPEG it is handed. The ball is left of the
     head and below it, on the floor, so both the yaw and the pitch have to close, and both stay
     inside the Microduck's envelope (`MICRODUCK_HEAD`) while they do."""
-    from quackd.agent.decision.catalogue import PRESETS
-    from quackd.agent.decision.factory import make_decision_llm, resolve_decision_price
-    from quackd.agent.providers.base import ToolCall
-    from quackd.duckfile.parser import parse_duck_text
-    from quackd_microduck.verbs import MICRODUCK_HEAD
+    from roboglot.agent.decision.catalogue import PRESETS
+    from roboglot.agent.decision.factory import make_decision_llm, resolve_decision_price
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot_microduck.verbs import MICRODUCK_HEAD
     from tests import fake_decisions_api as fake_api
     from tests.fake_eyes import BlobEyes
 
     _opengl_or_skip()
     # no cap on the wall's clock a busy machine could reach, as in tests/test_watch.py's
     # `unhurried`: the cap has its own test, and this one holds the loop
-    monkeypatch.setattr("quackd.verbs.watch.WALL_SLACK_S", 600.0)
+    monkeypatch.setattr("roboglot.verbs.watch.WALL_SLACK_S", 600.0)
     fake = fake_api.install(monkeypatch, BlobEyes(noise=0.02, seed=5))
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
     for name in ("OPENAI_BASE_URL", "OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
         monkeypatch.setenv(name, "")
     openai = PRESETS["openai"]
     transport = _BallPlaced(bearing_deg=25.0, distance_m=0.6)
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: watch-mujoco\ndescription: d\nverbs:\n  allow: [watch]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: watch-mujoco\ndescription: d\nverbs:\n  allow: [watch]\n"
         "success: [x]\n---\n# Task\nWatch the ball.\n"
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(

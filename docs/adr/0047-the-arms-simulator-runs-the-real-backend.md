@@ -1,6 +1,6 @@
 # ADR-0047: The arm's simulator runs the real backend
 
-**Status:** accepted · **Date:** 2026-09-27 · Amends [ADR-0030](0030-mujoco-physics-backend.md) (whose MuJoCo backend was the Microduck's alone) and [ADR-0016](0016-flock-lockstep-clock.md) (the lockstep clock, now with a participant per sleep, and the waiter fix found on the way) · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (what the simulator reproduces of the arm's servos, and what it only assumes) · Implemented in `adapters/lerobot/src/quackd_lerobot/sim/`, `quackd/preflight.py`, `quackd robot twin` in `quackd/cli.py`, and `.github/workflows/lerobot-sim-assets.yml` ([page](../adapters/lerobot/README.md#the-simulator-lerobotmujoco), [first run](../adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator))
+**Status:** accepted · **Date:** 2026-09-27 · Amends [ADR-0030](0030-mujoco-physics-backend.md) (whose MuJoCo backend was the Microduck's alone) and [ADR-0016](0016-team-lockstep-clock.md) (the lockstep clock, now with a participant per sleep, and the waiter fix found on the way) · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (what the simulator reproduces of the arm's servos, and what it only assumes) · Implemented in `adapters/lerobot/src/roboglot_lerobot/sim/`, `roboglot/preflight.py`, `roboglot robot twin` in `roboglot/cli.py`, and `.github/workflows/lerobot-sim-assets.yml` ([page](../adapters/lerobot/README.md#the-simulator-lerobotmujoco), [first run](../adapters/lerobot/first-run.md#16-between-visits-rehearse-on-the-simulator))
 
 ## Context
 
@@ -13,7 +13,7 @@ arm they could not explain. Each of those was decided by the code between the pi
 bus, and every one of them was found at the bench, where finding it costs an afternoon with
 somebody else's arm.
 
-quackd could not rehearse any of it at home. `lerobot:mock` is the same verbs over an arm of its
+Roboglot could not rehearse any of it at home. `lerobot:mock` is the same verbs over an arm of its
 own: a goal lands the instant it is sent, nothing is ever lost on a bus, and the refusals it
 mirrors are written again in the mock rather than run from the real backend, whose code it
 never touches. The cartoon has no arm at all. `microduck:mujoco` is physics, but the
@@ -29,11 +29,11 @@ survive that:
   real backend also paces itself on a clock, names itself in every refusal, and meets a person
   at the arm in `--by-hand`, and each of those needs an answer on a simulator.
 - A clock keyed on asyncio tasks freezes, and so does one gate that a single task holds while
-  others ride on it. `FlockClock.sleep(pid, 0)` registers an id and never lets it go.
+  others ride on it. `TeamClock.sleep(pid, 0)` registers an id and never lets it go.
 - `--live` is still lockstep, so nothing about a rate can ever be read off the simulator.
 - `--robot arm-01:mujoco` does not parse, because a registered name is a name and not an
   adapter.
-- A bare `--robot lerobot:mujoco` would read the calibration under `arm-01`, the id quackd gives
+- A bare `--robot lerobot:mujoco` would read the calibration under `arm-01`, the id Roboglot gives
   an arm nobody named, and so load the calibration of whatever arm this machine last calibrated
   under that name.
 - The world's truth has to be read before the teardown moves anything, or every run is judged
@@ -47,8 +47,8 @@ survive that:
 Two faults already in the code were found along the way, and each has its own commit and its
 own note. `lerobot:real` built its follower asking LeRobot's garbage-collection disconnect to
 drop torque, so an exit that skipped `close()` could drop the arm
-([ADR-0036](0036-what-the-arm-does-not-say.md)). And `FlockClock` could lose a waiter when two
-tasks slept under one id ([ADR-0016](0016-flock-lockstep-clock.md)).
+([ADR-0036](0036-what-the-arm-does-not-say.md)). And `TeamClock` could lose a waiter when two
+tasks slept under one id ([ADR-0016](0016-team-lockstep-clock.md)).
 
 What happened at the bench is the reason for this decision and nothing more. No number from
 that afternoon's traces is a constant anywhere below: travel comes from a calibration file read
@@ -67,7 +67,7 @@ travel, the hold that skips a joint past it, the release and the take-hold, the 
 it says, and the policy loop. A refusal names its backend through a label, `lerobot mujoco:`
 where the arm's says `lerobot real:`, and the camera parser takes the same label with a hint
 about the scene's mounts. The simulator is known to be one before anything is built:
-`quackd_lerobot` exports `SIMULATOR_BACKENDS = ("mujoco",)`, and the core asks
+`roboglot_lerobot` exports `SIMULATOR_BACKENDS = ("mujoco",)`, and the core asks
 `factory.is_simulator(spec)`, which is how `preflight` refuses a real arm and how `doctor`
 knows it may connect a registered simulator. Once one is built, the adapter's own
 `is_simulator` is how `doctor` and `robot release` know not to ask anybody to hold it. Neither
@@ -103,7 +103,7 @@ wrist camera mount. Its joint and actuator names are LeRobot's motor names, and 
 the calibration LeRobot recommends. The file and the 15 meshes it names are fetched one at a
 time from raw.githubusercontent, each checked against a recorded sha256, and installed into the
 cache in one rename. The file defines no table, light, camera or physics option, so those are
-quackd's: a scene built in Python around the model, with front, top and wrist views, contact
+Roboglot's: a scene built in Python around the model, with front, top and wrist views, contact
 settings proved by a seeded grasp sweep, and gripper pads cut from the finger meshes' own
 vertices at load time, because MuJoCo collides a mesh as its convex hull and the fixed finger's
 hull fills the opening the jaw closes into. The map from LeRobot's degrees onto the model is a
@@ -181,14 +181,14 @@ keeps. Where the fold and the model disagree is left to the bench, and so is whe
 own rest move presses its gripper into the table, which the model's did with the recorded fold
 at the edge of the lab arm's travel before the parked pose was settled.
 
-**Time is lockstep, with a participant per sleep.** `SimClock` sits on `FlockClock` and uses
+**Time is lockstep, with a participant per sleep.** `SimClock` sits on `TeamClock` and uses
 only its public calls. Every `sleep(s)` takes a fresh id, numbered in arrival order and
-zero-padded so the flock clock's sorted wake order is arrival order, parks under it and
+zero-padded so the team clock's sorted wake order is arrival order, parks under it and
 unregisters it on the way out. So time runs while every sleeper is parked and stops the moment
 any of them is awake, and with nobody sleeping nobody is registered and time stands still. A
 pilot's thinking, a verb's reads and writes and a lone task's work between two sleeps cost no
 sim time, and two verbs sleeping at once over MCP both reach their wake-up. A sleep of zero or
-less yields to the loop and never touches the flock clock. The clock turns the flock clock's
+less yields to the loop and never touches the team clock. The clock turns the team clock's
 interruptions into the transport's own errors, so the rest move and the take-hold, which sleep
 on it directly, meet the same failures a verb does. Its step is the model's timestep times five
 substeps, 0.01 s, a tenth of a verb's tick. A sleep is rounded to whole steps, so the clock
@@ -209,7 +209,7 @@ reads and control writes under it.
 **Faults are seeded and counted per kind, and the heartbeat draws none.** A spec of rates for the
 handshake, `configure()`'s Lock write, a goal write, a torque write and the torque and
 temperature reads, plus `read_loss_from=N` for an arm that drops off the bus, is given with
-`--faults` to `quackd preflight`, and to `make()` only when given. The call at ordinal `n` of
+`--faults` to `roboglot preflight`, and to `make()` only when given. The call at ordinal `n` of
 kind `k` fails when a draw keyed on the seed, `k` and `n` falls under `k`'s rate, so a fault lands
 on the same call of its kind whatever else happened, and a retry is an ordinal of its own. The
 heartbeat reads on the wall's clock, so how many reads it has made by any given call is chance,
@@ -225,7 +225,7 @@ attribute is not called `world`, which the core would take for a world to record
 carries the arm back through the scene, and what a rehearsal judges is that snapshot or the peak
 before it. The heartbeat's reads no longer feed the grasp trace `pick` watches, so a grasp is
 judged on the loop's own reads. On an arm, `pick` can notice a grasp one poll later than it did,
-and nothing in quackd loads a policy for `pick` yet.
+and nothing in Roboglot loads a policy for `pick` yet.
 
 **Nobody places a released arm, so gravity does.** `take_hold()` first lets the released arm
 fall for `PLACE_SETTLE_S` of sim time, and then meets whatever pose the table, the stops and its
@@ -234,7 +234,7 @@ travel ([ADR-0039](0039-an-arm-placed-by-hand.md), [ADR-0045](0045-a-rest-pose-t
 as they happen. A close over an arm still in a hand lets it settle the same way. Closing the
 `--live` viewer during that fall is a stop.
 
-**`quackd robot twin` makes a simulator of a registered arm.** `twin SOURCE [NAME]` registers
+**`roboglot robot twin` makes a simulator of a registered arm.** `twin SOURCE [NAME]` registers
 NAME, `SOURCE-sim` unless named, as `lerobot:mujoco`, with the calibration file SOURCE's runs
 read as its address, and SOURCE's rest pose, pilot and each camera the simulator renders.
 Memory stays separate under NAME. It refuses a NAME that is SOURCE, a source that is not a
@@ -243,7 +243,7 @@ over anything that is not already `lerobot:mujoco`, so no arm is overwritten by 
 simulator. A backend on a registered name, `--robot arm-01:mujoco`, would have been a second
 grammar for `--robot` to save one command.
 
-**`quackd preflight` rehearses task files on a simulator, and refuses anything else before it is
+**`roboglot preflight` rehearses task files on a simulator, and refuses anything else before it is
 built.** A robot for which `is_simulator` is False is refused with a pointer to `robot twin`,
 before the factory makes anything, because a real arm refused after it was built would already
 have had its port opened. So is a pilot nobody named, since the scripted one rehearses nothing an
@@ -257,7 +257,7 @@ and every check in the task's sidecar held. A rest move that stalled or ran out 
 run whatever the sidecar says, and the close is named for which it was. A sidecar that asks
 `at_rest: true` fails a robot with no rest pose, and one that asks `at_rest: false` passes it,
 since no rest move was made. The sidecar is
-`<task>.sim.yaml` beside the file and never its frontmatter, which `robot_load_duckfile` hands
+`<task>.sim.yaml` beside the file and never its frontmatter, which `robot_load_glotfile` hands
 an MCP pilot whole: a pilot that can read what it will be marked on is rehearsing the marking.
 It lays out the table and says what has to be so, `at_rest`, `joint_moved`, `lifted` and
 `moved`, with every threshold the task's own and measured from the run's start.
@@ -292,14 +292,14 @@ drives, so a task rehearsed in one would run through code the lab never runs. Th
 LeRobot itself, which is Python 3.12 and torch, where this simulator installs on 3.11 with
 MuJoCo alone.
 
-**Isaac Lab.** It needs an NVIDIA RTX GPU and Isaac Sim underneath it. quackd's own promise is a
+**Isaac Lab.** It needs an NVIDIA RTX GPU and Isaac Sim underneath it. Roboglot's own promise is a
 laptop with no GPU, and the laptop this project is built on has integrated graphics. What a
 rehearsal needs is a follower that behaves like the servo under the backend's own code, and
 MuJoCo on the CPU is enough for that.
 
 ## Consequences
 
-- **What the simulator reproduces is what LeRobot and the servo do with a goal, under quackd's
+- **What the simulator reproduces is what LeRobot and the servo do with a goal, under Roboglot's
   own code, and not the arm.** Its dynamics are the model's, a calculation and another robot's
   servo properties (`SERVO_DYNAMICS`), so a settle time, a push or a grasp that holds is
   evidence about the model. Only the bench can say it about an arm, and the simulator never
@@ -314,14 +314,14 @@ MuJoCo on the CPU is enough for that.
   - The gripper on a real pen: its reading against the band that infers holding. The simulator's
     pen is a capsule in the model's physics and says nothing about that band.
   - The front and wrist cameras' extrinsics and field of view, which would replace the default
-    mounts. Front and top are quackd's views of the table and not where any real camera stands,
+    mounts. Front and top are Roboglot's views of the table and not where any real camera stands,
     and the wrist view is rendered from upstream's printed mount, which may not be where the
     lab's camera sits (`WRIST_CAMERA_POSE`). A connect note and the state's assumptions say so.
   - The policy loop's rate on the real bus, which no lockstep clock can measure.
   - The seven bench steps 0.14.0 still owes, which the simulator does not replace.
 - **The servos never warm.** Every temperature reads as a room's, so the heat refusal is never
   rehearsed.
-- **A registry with a `lerobot:mujoco` robot in it is unreadable to quackd 0.14 and earlier,**
+- **A registry with a `lerobot:mujoco` robot in it is unreadable to Roboglot 0.14 and earlier,**
   which check every robot against the backends they know. `robot twin` says so in its warning
   and names every such robot in the file, and removing them makes the file readable again.
 - **Physics is not the cost.** On this project's laptop the model steps several times faster
@@ -331,7 +331,7 @@ MuJoCo on the CPU is enough for that.
   two cameras about doubled the wall time of a rehearsal of `lerobot-lookout`.
 - **A rehearsal takes one rest pose for all its seeds.** A seed lays the table out differently,
   but an object placed between the jaws sits where the arm's rest pose puts them, on every seed.
-- [ADR-0030](0030-mujoco-physics-backend.md), [ADR-0016](0016-flock-lockstep-clock.md),
+- [ADR-0030](0030-mujoco-physics-backend.md), [ADR-0016](0016-team-lockstep-clock.md),
   [ADR-0036](0036-what-the-arm-does-not-say.md) and
   [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) each carry a note pointing here.
   None of their decisions is reversed.

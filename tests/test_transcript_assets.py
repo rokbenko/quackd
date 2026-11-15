@@ -27,7 +27,7 @@ from typing import Any
 
 import pytest
 
-from quackd.memory import DEFAULT_DIR as MEMORY_DEFAULT_DIR
+from roboglot.memory import DEFAULT_DIR as MEMORY_DEFAULT_DIR
 
 REPO = Path(__file__).resolve().parents[1]
 TRANSCRIPTS = sorted((REPO / "docs" / "assets" / "transcripts").glob("*.jsonl"))
@@ -67,7 +67,7 @@ def _rows(path: Path) -> list[dict[str, Any]]:
 
 
 def _strings(node: Any) -> Iterator[str]:
-    """Every string anywhere in a decoded record, keys excluded: keys are quackd's own."""
+    """Every string anywhere in a decoded record, keys excluded: keys are Roboglot's own."""
     if isinstance(node, str):
         yield node
     elif isinstance(node, dict):
@@ -93,7 +93,7 @@ def test_there_are_transcripts_to_check() -> None:
 def test_a_published_transcript_is_a_whole_run(path: Path) -> None:
     """JSONL, one record a line, opening on `run_start` and closing on `run_end`.
 
-    A file cut short still renders in `quackd log` (`test_log_of_a_cut_transcript_says_so`),
+    A file cut short still renders in `roboglot log` (`test_log_of_a_cut_transcript_says_so`),
     which is right for a run that died and wrong for a file published as evidence: the totals
     every table quotes live in the last record."""
     rows = _rows(path)
@@ -110,7 +110,7 @@ def test_a_published_transcript_is_a_whole_run(path: Path) -> None:
 
 #: The one path a published transcript may keep that is not relative. `memory.path` is
 #: `str(memory_dir(...))` and `memory_dir` calls `expanduser`, so a real run records
-#: `/home/<somebody>/.quackd/memory/...`. Writing the default back in its unexpanded form
+#: `/home/<somebody>/.roboglot/memory/...`. Writing the default back in its unexpanded form
 #: names nobody and stays true, which is what the Qwen3 pair does. Any other `~` path is a
 #: person's machine and this is not the place for it. Taken from the code, not spelled here,
 #: so moving the default moves the exemption with it.
@@ -155,9 +155,9 @@ def test_a_published_transcript_carries_nothing_from_the_machine_it_ran_on(path:
     rows = _rows(path)
     start = rows[0]
 
-    duck_path = start.get("duck_path")
-    assert isinstance(duck_path, str) and duck_path, f"{path.name} has no duck_path"
-    assert _is_relative(duck_path), f"{path.name}: duck_path is {duck_path!r}"
+    glot_path = start.get("glot_path")
+    assert isinstance(glot_path, str) and glot_path, f"{path.name} has no glot_path"
+    assert _is_relative(glot_path), f"{path.name}: glot_path is {glot_path!r}"
 
     memory = start.get("memory")
     if isinstance(memory, dict):

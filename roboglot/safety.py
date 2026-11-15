@@ -1,0 +1,2096 @@
+"""The layer that does not trust the LLM.
+
+Upstream's `robotd` is the safety authority for the robot's body. This module is the
+authority for the *conversation*: every verb call — from the agent loop or an MCP client —
+passes through `Executor`, which checks the `.glot` allowlist, asks a human when the
+contract says so, counts budgets, and can run with the transport disconnected (`dry_run`).
+`Heartbeat` and the kill switch make "the LLM stalled" and "the human panicked" both end in
+a `stop` intent.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import atexit
+import contextlib
+import functools
+import math
+import os
+import queue
+import signal
+import sys
+import threading
+import time
+from collections import deque
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn
+
+from pydantic import ValidationError
+
+from roboglot.adapters.base import backend_name
+from roboglot.answers import answered, confirm_question
+from roboglot.glotfile.schema import (
+    DEFAULT_POLICY_TOTAL_S,
+    POLICY_VERBS,
+    Budgets,
+    GlotFrontmatter,
+)
+from roboglot.keys import ConsoleKeys, console_keys, in_the_background
+from roboglot.log import (
+    A_PERSON,
+    A_PIPE,
+    EventLog,
+    LoggedTransport,
+    Tally,
+    a_person_was_asked,
+    asked_on,
+    counting,
+    who_answered,
+)
+from roboglot.perception.base import Detector, detect_times
+from roboglot.space.places import PlaceBook, PlaceStore
+from roboglot.transport.base import (
+    CameraFrame,
+    DuckState,
+    DuckTransport,
+    TransportError,
+    spatial_of,
+)
+from roboglot.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
+    Verb,
+    VerbContext,
+    VerbNotFound,
+    VerbRegistry,
+    VerbResult,
+)
+from roboglot.verdict import BEFORE_VERDICT, MOVES_THE_BODY, Verdict
+
+if TYPE_CHECKING:
+    from roboglot.adapters.manifest import RobotManifest
+
+CANCELLED_BY_ABORT = "abort"
+CANCELLED_BY_TIMEOUT = "timeout"
+CANCELLED_FROM_OUTSIDE = "cancel"
+CANCELLED_BY_PAUSE = "pause"
+CANCELLED_BY_PREEMPT = "preempt"
+PAUSE_ENDED = "pause"
+"""`ended_by` in the result of a verb a granted pause ended (`Executor._ended_by_pause`), which
+`abort_when`'s count of failures in a row passes over."""
+"""Why the executor cancelled a running verb, as the message of the `CancelledError` the verb is
+handed (`Executor._execute`): the abort it races, a pause granted to a robot met, a newer
+command (`Executor.preempt`), the verb's own timeout, or the caller going away. A verb that keeps
+a record of its own names its ending by it."""
+
+Source = Literal["agent", "mcp", "cli", "person", "decision", "peer"]
+"""Who asked for this verb. `decision` is the discrete stepper answering a turn the pilot LLM
+never saw, whichever decision LLM was behind it: which one that was is recorded once for the
+run (`run_start.decision_llm`) rather than on every verb, so swapping Jev for a server you run
+yourself changes nothing here. The log already prints `from <source>` for anything that is not
+the agent, so the record says who chose a verb without a renderer knowing the word. `peer` is
+a robot met over Robot Passport, through the courtesy handler and nothing else
+(`roboglot.passport_courtesy`), and the `peer` gate holds it to the two verbs a courtesy runs.
+`person` is somebody at `roboglot drive`'s keyboard naming one call, and `cli` a line drive read
+off a pipe or a file (`PERSONS`)."""
+
+PERSONS = frozenset({"person", "cli"})
+"""The sources whose own call clears the verdict gate by itself. Somebody who named one call of
+this body's, at the keyboard or in a file they piped in, has made the judgement the gate waits
+for, for that call and the verbs it runs, and for nothing after it: `verdict` is never written,
+so the pilot's next call is gated as it always was. A composite's calls inherit its source, so a
+nested call from one of these can only come from such a person's own command. Only
+`roboglot/drive` passes either, and a test holds every other caller to that."""
+
+PEER_VERBS = ("stop", "say")
+"""The verbs a peer's courtesy may run: `stop`, which a granted pause begins with, and `say`,
+which a body identifies itself by sound with. A peer never asks for either by name; the handler
+runs them for it, and the `peer` gate refuses anything else a peer might reach."""
+
+WHILE_PAUSED = frozenset(
+    {
+        "stop",
+        "observe",
+        "report_state",
+        "say",
+        "quack",
+        "introspect",
+        "map",
+        "mark_place",
+        "forget_place",
+    }
+)
+"""What still runs while a pause this robot granted holds: the brake, and the verbs Roboglot knows
+move no part of the body. It is not `BEFORE_VERDICT`, which is what a pilot needs before it
+judges: `gaze`, `look` and `watch` turn a head and `express` moves antennas, and a robot that
+answered that it is holding still holds still. A verb this set does not name waits, a sensor a
+third party marked `read_only` among them, since a flag on a verb Roboglot has never seen is no
+promise that nothing turns, and a learned verb waits whatever it is called."""
+
+
+class SafetyStop(Exception):
+    """Base for every reason the run must end now, regardless of what the LLM wants."""
+
+    outcome = "aborted"
+    """The word `verb_end` records. A layer above the executor that ends a verb for a reason
+    of its own overrides this, so the log says `PREEMPTED` and not the red `ERROR` that
+    means a bug."""
+
+
+class Preempted(SafetyStop):
+    """A verb a newer command ended before it was done, the body stopped after it, or one a
+    newer command came in time to stop from starting (`Executor.preempt`). Raised rather than
+    returned, so `abort_when`'s count of failures in a row never sees it: moving on to the next
+    command is neither the verb's failure nor anybody's."""
+
+    outcome = "preempted"
+    """The team's word for a member it redirected (`TeamPreempted`), and drive's for a command
+    it moved on from."""
+
+
+class BudgetExceeded(SafetyStop):
+    pass
+
+
+class Aborted(SafetyStop):
+    """An `abort_when` condition or the kill switch fired."""
+
+
+class VerbNotAllowed(PermissionError):
+    """Refused, but the run continues — the LLM is told and may choose differently."""
+
+
+class VerdictRequired(VerbNotAllowed):
+    """A verb that moves the body, before the pilot has said the task fits this body.
+
+    Refused like any other gate, and the run goes on: the pilot is told which tool records a
+    verdict, and may record one and try again."""
+
+
+class ConfirmDenied(PermissionError):
+    """A human said no."""
+
+
+def _invalid(e: ValidationError) -> str:
+    return "; ".join(f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors())
+
+
+@dataclass
+class Budget:
+    limits: Budgets
+    now: Callable[[], float] = time.monotonic
+    steps: int = 0
+    llm_calls: int = 0
+    stepper_calls: int = 0
+    """Turns the discrete stepper answered (`roboglot run --decision-mode on`).
+
+    Not a limit and never checked. A stepper turn runs a verb, and the verb charges a step
+    like every other one, so `max_steps` already bounds it and a second number in the `.glot`
+    would bound nothing the first two do not. This exists so `status()` can say where the
+    turns went."""
+    started_at: float | None = None
+    policy_total_s: float = DEFAULT_POLICY_TOTAL_S
+    """How many seconds of policy segments, `pick`'s and `manipulate`'s alike
+    (`POLICY_VERBS`), the run may spend: the task file's `policy.total_s`, or the named default
+    for a task with none and a session with no task."""
+    policy_s: float = 0.0
+    """The seconds of segments spent so far, each as its verb said it ran. A segment is one
+    step against `max_steps` like any verb; this is the other half of its cost."""
+    calls_word: str = "LLM calls"
+    """What `status()` calls `llm_calls`. A VLA pilot's run says `turns`, since no LLM is asked in
+    it, and `max_llm_calls` holds its turns all the same."""
+
+    def start(self) -> None:
+        self.started_at = self.now()
+
+    @property
+    def elapsed_s(self) -> float:
+        return 0.0 if self.started_at is None else self.now() - self.started_at
+
+    def check(self) -> None:
+        if self.steps >= self.limits.max_steps:
+            raise BudgetExceeded(f"max_steps ({self.limits.max_steps}) reached")
+        if self.llm_calls >= self.limits.max_llm_calls:
+            # the key a person raises, by its name, which on a VLA pilot's run holds its turns
+            here = (
+                ""
+                if self.calls_word == Budget.calls_word
+                else f", which counts {self.calls_word} here"
+            )
+            raise BudgetExceeded(f"max_llm_calls ({self.limits.max_llm_calls}) reached{here}")
+        self.check_time()
+
+    def check_time(self) -> None:
+        if self.elapsed_s > self.limits.max_minutes * 60:
+            raise BudgetExceeded(f"max_minutes ({self.limits.max_minutes:g}) exceeded")
+
+    def note_step(self) -> None:
+        self.check()
+        self.steps += 1
+
+    def note_llm_call(self) -> None:
+        self.check()
+        self.llm_calls += 1
+
+    def note_stepper_call(self) -> None:
+        """A turn the stepper answered: no pilot LLM call to charge, and the verb charges the step.
+
+        The clock is the one budget a turn with no pilot LLM call can still hit, so it is the one
+        that is checked here."""
+        self.check_time()
+        self.stepper_calls += 1
+
+    def check_policy(self) -> None:
+        """Before a `pick` or a `manipulate`: refuse it once the segments have spent
+        `policy_total_s`.
+        Checked before each segment rather than inside one, so the last may run past the
+        total by at most its own seconds, and never starts with nothing left."""
+        if self.policy_s >= self.policy_total_s:
+            raise BudgetExceeded(
+                f"policy total_s ({self.policy_total_s:g} s of segments) spent: "
+                f"{self.policy_s:.1f} s have run"
+            )
+
+    def note_policy(self, seconds: float) -> None:
+        """After a `pick` or a `manipulate`: charge the seconds its segment ran."""
+        self.policy_s += seconds
+
+    def status(self) -> str:
+        return (
+            f"step {self.steps}/{self.limits.max_steps}, "
+            f"{self.calls_word} {self.llm_calls}/{self.limits.max_llm_calls}, "
+            # absent until the stepper has answered once, so every run without one reads
+            # exactly as it always has: this string is in every observation the pilot LLM is
+            # handed, and `roboglot log` parses it back out
+            + (f"{self.stepper_calls} by the stepper, " if self.stepper_calls else "")
+            # the same rule, for the seconds a policy has driven the body
+            + (f"policy {self.policy_s:.1f}/{self.policy_total_s:g} s, " if self.policy_s else "")
+            + f"{self.elapsed_s / 60:.1f}/{self.limits.max_minutes:g} min"
+        )
+
+
+def _segment_seconds(result: VerbResult | None, before: float | None, after: float | None) -> float:
+    """What one policy segment charges against `policy_total_s`: the seconds its result says it
+    ran. A result that does not say, or a call that ended with none, is charged the robot's
+    clock across the call (`before` to `after`), since its segment may have run all of it: a
+    call the executor ended itself, a timeout, a verb that raised, a cancellation or an abort.
+    A `do` refused before its segment began says it ran 0 s, however long the refusal took on
+    the wall. A call nobody could time charges nothing, and a number that is not one, a bool or
+    a NaN, is never believed as one."""
+    said = None if result is None else result.data.get("seconds")
+    if isinstance(said, int | float) and not isinstance(said, bool) and math.isfinite(said):
+        return max(0.0, float(said))
+    if before is not None and after is not None and math.isfinite(after - before):
+        return max(0.0, after - before)
+    return 0.0
+
+
+ConfirmFn = Callable[[str, dict[str, Any]], bool | Awaitable[bool]]
+"""Asked before a gated verb runs. Return True to proceed: at once, as a terminal's prompt and
+every standing answer do, or later, from a coroutine, as a drive session's goal asks the person
+driving (`roboglot.answers`)."""
+
+
+def deny_all(_name: str, _params: dict[str, Any]) -> bool:
+    return False
+
+
+def allow_all(_name: str, _params: dict[str, Any]) -> bool:
+    return True
+
+
+@dataclass
+class Executor:
+    """allowlist → confirm gate → budget → preconditions → (dry-run |) execute with timeout."""
+
+    registry: VerbRegistry
+    transport: DuckTransport
+    contract: GlotFrontmatter | None = None
+    budget: Budget | None = None
+    detector: Detector | None = None
+    dry_run: bool = False
+    confirm: ConfirmFn = deny_all
+    log: Callable[[str], None] = lambda _m: None
+    on_frame: Callable[[Any, str], None] = lambda _i, _c: None
+    on_frames: Callable[[Sequence[CameraFrame], str], None] = lambda _f, _c: None
+    """Beside `on_frame`, because a body with several cameras has no single picture: whoever
+    records or returns what a verb saw wants all of them, and the steering loops want one."""
+    abort: asyncio.Event = field(default_factory=asyncio.Event)
+    consecutive_failures: dict[str, int] = field(default_factory=dict)
+    history: list[tuple[str, dict[str, Any], VerbResult]] = field(default_factory=list)
+    manifest: RobotManifest | None = None
+    """The connected robot's manifest, handed to verbs so composites can pick a strategy."""
+    verdict: Verdict | None = None
+    """The pilot's latest word on whether this body can do the task it is on."""
+    paused_until: float = 0.0
+    """The `time.monotonic()` until which a pause this robot granted a peer holds (`pause_for`):
+    the `paused` gate admits nothing that moves the body before then, whoever asks, the pilot
+    included. 0 is no pause, which is every run no peer ever asked."""
+    open_to_peers: bool = False
+    """Whether a robot met may have a courtesy run now (`roboglot.passport_courtesy`). A run opens
+    it once its pilot has the body and closes it before its teardown, and an MCP session once it
+    has connected and until it closes. Outside those windows the body is moved by its rest move
+    and its hand-over, which no gate sees, so a pause granted then could not be kept."""
+    _moving: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
+    """The verbs moving the body now, which a granted pause or a newer command ends (`pause_for`,
+    `preempt`)."""
+    _halted: dict[asyncio.Task[VerbResult], tuple[str, str]] = field(
+        default_factory=dict, init=False, repr=False
+    )
+    """Those a pause or a newer command ended, with which it was and why, so `_execute` answers
+    for them rather than raising their cancel (`CANCELLED_BY_PAUSE`, `CANCELLED_BY_PREEMPT`)."""
+    preempts: int = 0
+    """How many times a newer command has ended the verbs moving the body (`preempt`). A verb
+    compares it with the count from before its gates once its state is read, so one admitted
+    while a newer command came does not start after it (`_run_admitted`)."""
+    preempted_by: str = ""
+    """Why the last of those happened, in the newer command's words."""
+    require_verdict: bool = False
+    """On where an `assess_task` tool was offered: the agent loop and every MCP session. A
+    team member is a state machine with no pilot to ask, so its executor never does."""
+    event_log: EventLog | None = None
+    """Where the executor narrates itself: `verb_start`, every `gate` that fires, every
+    `intent` a verb sends, `verb_end`. None is silent, which is what tests get."""
+    eyes: Any = None
+    """What `watch` looks through, handed to every verb's context (`VerbContext.eyes`), or None
+    on every run that did not ask for frames."""
+    stops: int = 0
+    """How many times `stop` has been asked for through this executor, from any caller. A
+    verb's context compares it with the count when the verb began (`VerbContext.interrupted`),
+    so a verb that runs for a while ends on a brake pulled from beside it."""
+    first_motion_at: float | None = None
+    """When the first verb that moved the body (`_moves_now`) was handed to the transport, on
+    `time.monotonic()`'s clock, or None until one has come back having done so: it answered ok, or
+    the body took an intent of it. Never on a dry run, which hands nothing over, and never a read.
+    The loop writes it as `first_motion_s` on the record's own
+    clock, which is how long somebody standing by the robot waited for it to do anything at all:
+    on the README's arm run two LLM calls and the serial port's ten seconds came first."""
+    first_motion_llm_calls: int | None = None
+    """How many LLM calls the run had made when that verb went, the one that chose it
+    included, or None until one has gone."""
+    segment: str | None = field(default=None, init=False)
+    """The policy verb (`POLICY_VERBS`), as it was called, whose segment is between its check
+    against `policy_total_s` and its charge, or None. Another is refused meanwhile."""
+    places: PlaceStore = field(default_factory=lambda: PlaceStore("session", persist=False))
+    """This robot's places (`roboglot.space.places`). A run or an MCP session with memory on hands
+    in the store beside its memory file; every other keeps one that writes nothing, so places
+    marked where nothing is remembered last as long as the executor does. Verbs read them against
+    where the robot is now through `place_book`."""
+
+    def place_book(self) -> PlaceBook | None:
+        """The robot's places read against where it is now, or None on a body that does not say
+        where it is (`roboglot.transport.base.spatial_of`)."""
+        source = spatial_of(self.transport)
+        return PlaceBook(self.places, source) if source is not None else None
+
+    # ── narration ───────────────────────────────────────────────────────────────────
+
+    def _emit(self, kind: str, **data: Any) -> None:
+        if self.event_log is not None:
+            self.event_log.emit(kind, **data)
+
+    def _note(self, text: str) -> None:
+        """A free-text line for both audiences: `log` is a contract other callers rely on
+        (the team's `member_log`, the MCP logger, tests), and the event log observes it."""
+        self.log(text)
+        self._emit("note", text=text)
+
+    def _robot_now(self) -> float | None:
+        """The robot's own clock, or None when it has none to give (a transport that raises,
+        or a simulator not connected yet). Never a reason to lose the verb."""
+        with contextlib.suppress(Exception):
+            return float(self.transport.now())
+        return None
+
+    def _timed_out(
+        self, name: str, verb: Verb, *, timed: bool, unstopped: str | None = None
+    ) -> str:
+        """What a verb this executor's own timeout ended says, asked after the stop that follows
+        it, and why that stop failed when it did (`unstopped`, from `_stop_after`). A policy
+        segment's adds why, where the robot can tell (`slow_policy`): a simulator's clock stands
+        still while its policy thinks, so a policy slower than the latency it declared outruns a
+        timeout sized from that latency, and the bare timeout read as a simulator that had hung.
+        Never a reason to lose the result."""
+        stopped = "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+        said = f"{name} timed out after {verb.timeout_s:g}s; {stopped}"
+        why = None
+        if timed:
+            with contextlib.suppress(Exception):
+                ask = getattr(self.transport, "slow_policy", None)
+                why = ask() if callable(ask) else None
+        return f"{said}. {why}" if isinstance(why, str) and why else said
+
+    def _clock(self) -> str | None:
+        """What to call the robot's clock when it is not the wall clock. A free-running
+        simulator's seconds are the ones that mean something to a reader; on hardware `now()`
+        is monotonic, so there is nothing to distinguish and the key is absent."""
+        return "sim" if backend_name(self.transport) in ("sim2d", "mujoco") else None
+
+    def logged_transport(self) -> Any:
+        """The transport as verbs see it: the real one, or a wrapper that narrates every
+        intent. Also what the executor itself sends its safety stops through."""
+        if self.event_log is None:
+            return self.transport
+        return LoggedTransport(self.transport, self.event_log)
+
+    async def _stop_after(self) -> str | None:
+        """Send the stop the executor owes a verb it ended, or one that ended in an error, and
+        return why it failed, or None when it did not. Never raises.
+
+        These stops run on the way out of a failure, and a link that has dropped is the commonest
+        failure there is, so the stop is the call most likely to fail too. A transport whose stop
+        raised took the whole call with it: `run_verb` raised the stop's own error from inside
+        the handler that exists to turn the verb's into a result, and the pilot got a traceback
+        for a verb the result would have explained. `LoggedTransport.stop` caught it already; a
+        run without an event log had no such cover.
+
+        A transport that knows its stop did not land says so in `stop_error` and does not raise,
+        which is how the core `stop` verb hears it. This stop is the same call, so it reads the
+        same attribute: without it, an abort said "a stop was sent" over an arm whose hold never
+        reached it."""
+        transport = self.logged_transport()
+        try:
+            await transport.stop()
+        except Exception as e:
+            return f"{type(e).__name__}: {e}"
+        undelivered = getattr(transport, "stop_error", None)
+        return str(undelivered) if undelivered else None
+
+    # ── policy ──────────────────────────────────────────────────────────────────────
+
+    @property
+    def allowed(self) -> list[str]:
+        if self.contract is not None:
+            return list(self.contract.verbs.allow)
+        # No contract (MCP without a loaded task file): every non-dangerous verb.
+        return [v.name for v in self.registry.verbs() if v.safety_class != "dangerous"]
+
+    def is_allowed(self, name: str) -> bool:
+        """Alias-aware: a task that allows `walk_to` also allows `go_to`, and vice versa."""
+        canonical = self.registry.canonical(name)
+        if canonical == "stop":
+            return True
+        return canonical in {self.registry.canonical(a) for a in self.allowed}
+
+    @property
+    def cleared(self) -> bool:
+        """Whether a verb that moves the body may run."""
+        return self.verdict is not None and self.verdict.go
+
+    def needs_confirm(self, verb: Verb) -> bool:
+        if self.registry.canonical(verb.name) == "stop":
+            return False  # never gated, whatever a contract or a manifest says
+        if self.contract is not None:
+            gated = {self.registry.canonical(c) for c in self.contract.verbs.confirm}
+            if self.registry.canonical(verb.name) in gated:
+                return True
+        return verb.safety_class in ("confirm", "dangerous")
+
+    def _may_move(self, canonical: str, verb: Verb) -> bool:
+        """Whether a verb may move the body, which a pause refuses and ends: anything outside
+        `WHILE_PAUSED`, and a learned verb whatever it is called, since it is an unproven policy."""
+        return canonical not in WHILE_PAUSED or verb.kind == "learned"
+
+    def _moves_now(self, canonical: str, verb: Verb) -> bool:
+        """Whether a verb about to run is the robot moving, for `first_motion_at`: one that may
+        move the body (`_may_move`), less a sensor marked `read_only` that Roboglot has not named
+        as motion, as the verdict gate reads it, and never on a dry run.
+
+        Not `_may_move` alone, which is the pause gate's caution: it holds a third party's
+        `read_only` verb still because the flag is no promise, and the record took a `locate`
+        that reads where things are for the robot moving, on a dry run as well, where such a
+        verb runs for real since it sends nothing."""
+        if self.dry_run:
+            return False
+        if verb.read_only and canonical not in MOVES_THE_BODY:
+            return False
+        return self._may_move(canonical, verb)
+
+    def _parsed(self, name: str, canonical: str, verb: Verb, params: dict[str, Any]) -> Any:
+        """A call's arguments as its verb reads them. `stop` is never refused for them: it takes
+        none, and a pilot in trouble that sends one anyway has reached for the brake, which was
+        counted before any gate (`stops`), so a verb beside it had already ended on a stop that
+        then never left. Only a third party's stop that cannot run without its own is refused."""
+        try:
+            return verb.params.model_validate(params)
+        except ValidationError as e:
+            if canonical != "stop":
+                raise
+            parsed = verb.params.model_validate({})
+            self._emit("gate", name=name, gate="params", outcome="ignored", reason=_invalid(e))
+            return parsed
+
+    def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
+        """The `paused` gate: refuse a verb that may move the body while a pause holds."""
+        held = self.paused_until - time.monotonic()
+        if held > 0 and self._may_move(canonical, verb):
+            reason = (
+                f"{name} waits: a pause this robot granted a robot it met holds {held:.1f} s "
+                "more, and until it ends only stop and the verbs that move nothing run"
+            )
+            self._emit("gate", name=name, gate="paused", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
+
+    def pause_for(self, seconds: float) -> None:
+        """Hold the body still for `seconds` (docs/passport/talk.md#what-roboglot-does-with-an-ask):
+        every verb already moving it is ended now, as an abort ends one, and the `paused` gate
+        admits nothing that moves it until the hold is over. Without the first half a `move`
+        that began a second earlier went on sending its twists for the rest of its duration,
+        and a `go_to` for up to its whole timeout, past a robot told this one was holding
+        still. A second pause only ever lengthens the hold, never shortens one already running."""
+        self.paused_until = max(self.paused_until, time.monotonic() + seconds)
+        # Cancelled here, not through something they wait on: a task cancelled before its next
+        # step never takes it, so none of them sends another intent after this returns, and the
+        # stop the courtesy sends next is the last thing the body is told.
+        for task in list(self._moving):
+            if not task.done():
+                self._halted[task] = (CANCELLED_BY_PAUSE, "")
+                task.cancel(CANCELLED_BY_PAUSE)
+
+    def preempt(self, reason: str) -> int:
+        """End every verb moving the body now, for a newer command, and say how many there were.
+
+        `pause_for` with no hold after it: the command that asks for this starts as soon as they
+        have stopped, and nothing is refused after it but a verb already admitted and still
+        reading the body's state, which would otherwise start after the newer one had begun
+        (`_run_admitted`). Each verb it ends answers with `Preempted`, in `reason`'s words, once
+        a stop has been sent after it. A read runs on beside it, as it runs on beside a pause,
+        and `stop` is never in its way."""
+        self.preempts += 1
+        self.preempted_by = reason
+        ended = 0
+        # cancelled here, for the reason `pause_for` gives: a task cancelled before its next step
+        # never takes it, so nothing it would have sent goes out after this returns
+        for task in list(self._moving):
+            if not task.done():
+                self._halted[task] = (CANCELLED_BY_PREEMPT, reason)
+                task.cancel(CANCELLED_BY_PREEMPT)
+                ended += 1
+        return ended
+
+    def context(
+        self, source: Source = "agent", *, stops: int | None = None, name: str | None = None
+    ) -> VerbContext:
+        """`source` is the outer call's, so a composite's nested verbs are narrated as coming
+        from the same pilot (an MCP session's `approach_and` runs an MCP `go_to`). `stops` is
+        the count of stops the verb answers to, the one taken when it was asked for, so a stop
+        that came while it was still being admitted ends it; now, by default. `name` is the verb
+        the context is for, which a rule that fires mid-verb names in its gate record.
+
+        A composite's nested calls answer to that same count. Each used to take a count of its
+        own when it was admitted, so a stop sent between two of a composite's calls was already
+        in the count the second one started from: it walked, or kicked, as if nobody had braked,
+        unless the composite happened to check between its calls. A `stop` the composite sends
+        through `run_verb` itself counts as well, as it always did for `interrupted`: a call that
+        would move the body after it is not started (`_overtaken`)."""
+        stops_then = self.stops if stops is None else stops
+        return VerbContext(
+            transport=self.logged_transport(),
+            detector=self.detector,
+            dry_run=self.dry_run,
+            takes_no_arguments=self._takes_no_arguments,
+            # a verb's own log line is a `note` as well, so it is not the one thing the log
+            # cannot see. Not the executor's own arrows: those would double `verb_start`.
+            log=self._note,
+            on_frame=self.on_frame,
+            on_frames=self.on_frames,
+            run_verb=lambda verb, params: self.run_verb(
+                verb, params, source=source, nested=True, outer_stops=stops_then
+            ),
+            # an adapter carries its manifest after connect; a bare transport has none
+            manifest=self.manifest or getattr(self.transport, "manifest", None),
+            eyes=self.eyes,
+            interrupted=self._interruption(stops_then),
+            abort_when=self._abort_rule_reader(name),
+            places=self.place_book(),
+        )
+
+    def _abort_rule_reader(self, name: str | None) -> Callable[[DuckState], Awaitable[None]]:
+        """`VerbContext.abort_when` for a verb beginning now: the rules an admission reads
+        (`_check_abort_conditions`), read against a state the verb took mid-way. One that fires
+        is recorded as the admission's `abort_when` gate is, the body is stopped, and only then is
+        the run aborted, so the verb that read the rule leaves with its own `Aborted` rather than
+        the abort racing it and cancelling the stop half sent. The abort is set however the stop
+        ends, a timeout, a pause or a newer command landing in it included: the rule fired, and
+        the run is over whatever else ends the verb. A composite whose nested call read the rule
+        is ended by that abort in its turn, with a stop of its own after it."""
+
+        async def abort_when(state: DuckState) -> None:
+            reason = self._abort_rule_fired(state)
+            if reason is None:
+                return
+            self._emit(
+                "gate",
+                name=name or "verb",
+                gate="abort_when",
+                outcome="fired",
+                reason=reason,
+                state=state.summary(),
+            )
+            try:
+                unstopped = await self._stop_after()
+            finally:
+                self.abort.set()
+            if unstopped is not None:
+                raise Aborted(f"{reason}; the stop sent mid-verb failed: {unstopped}")
+            raise Aborted(f"{reason}; the verb stopped where it stood")
+
+        return abort_when
+
+    def _takes_no_arguments(self, name: str) -> bool:
+        """`VerbContext.takes_no_arguments`. A verb that does not exist is for the gates that
+        refuse it to say so."""
+        try:
+            self.registry.get(name).params.model_validate({})
+        except VerbNotFound:
+            return True
+        except ValidationError:
+            return False
+        return True
+
+    def _interruption(self, stops_then: int) -> Callable[[], str | None]:
+        """`VerbContext.interrupted` for a verb beginning now: `STOPPED` once a `stop` has been
+        asked for since, or the budget's own sentence once the run's minutes are spent, which
+        `check_time` is the one reading of, and None otherwise. Neither is an abort, which
+        cancels the verb from outside and needs no asking."""
+
+        def interrupted() -> str | None:
+            if self.stops != stops_then:
+                return STOPPED
+            if self.budget is not None:
+                try:
+                    self.budget.check_time()
+                except BudgetExceeded as e:
+                    return str(e)
+            return None
+
+        return interrupted
+
+    # ── the one entry point ─────────────────────────────────────────────────────────
+
+    async def run_verb(
+        self,
+        name: str,
+        params: dict[str, Any] | None = None,
+        *,
+        source: Source = "agent",
+        nested: bool = False,
+        picked_by: str | None = None,
+        outer_stops: int | None = None,
+    ) -> VerbResult:
+        """Every verb call, from the agent loop, an MCP client or a composite.
+
+        The narration wraps the gates: exactly one `verb_start` and, whatever happens after
+        it, exactly one `verb_end` with an `outcome`, so a reader of the log never sees a
+        verb that started and vanished. `ok`/`fail` are the verb's own verdict; `refused`,
+        `denied`, `budget` and `aborted` are the executor's, and `error` is a bug.
+
+        `picked_by` names the decision LLM that read a person's own words as this call, where
+        one did (`roboglot drive`'s fast lane): the call is still theirs for the verdict gate,
+        and the record says who chose it. `outer_stops` is a composite's count of stops, which
+        its nested call answers to in place of one of its own (`context`)."""
+        params = params or {}
+        canonical = self.registry.canonical(name)
+        started = time.perf_counter()
+        robot_started = self._robot_now()
+        outcome, summary, ok = "error", "verb exited unexpectedly", False
+        data_keys: list[str] = []
+        with counting() as counter:
+            try:
+                # inside the try: a record sink that raises here must still leave a verb_end
+                self._emit(
+                    "verb_start",
+                    name=name,
+                    canonical=canonical,
+                    params=params,
+                    source=source,
+                    nested=nested,
+                    **({"picked_by": picked_by} if picked_by else {}),
+                )
+                result = await self._run_verb(
+                    name,
+                    canonical,
+                    params,
+                    sent=counter,
+                    source=source,
+                    nested=nested,
+                    picked_by=picked_by,
+                    outer_stops=outer_stops,
+                )
+            except VerbNotAllowed as e:
+                outcome, summary = "refused", str(e)
+                raise
+            except ConfirmDenied as e:
+                outcome, summary = "denied", str(e)
+                raise
+            except BudgetExceeded as e:
+                outcome, summary = "budget", str(e)
+                raise
+            except Aborted as e:
+                outcome, summary = "aborted", str(e)
+                raise
+            except SafetyStop as e:
+                # another layer ended the verb on purpose (a team role change): its own word,
+                # so the console does not call a routine handover an error
+                outcome, summary = e.outcome, str(e)
+                raise
+            except asyncio.CancelledError:
+                # the caller went away (an MCP client, the CLI's second Ctrl-C). `_execute`
+                # has already cancelled the verb and sent a stop, and said so in a gate.
+                outcome, summary = "aborted", "cancelled from outside"
+                raise
+            except BaseException as e:  # a cancelled task ends the verb too, and says so
+                outcome, summary = "error", f"{type(e).__name__}: {e}"
+                raise
+            else:
+                ok = result.ok
+                outcome, summary, data_keys = (
+                    ("ok" if ok else "fail"),
+                    result.summary,
+                    list(result.data),
+                )
+                return result
+            finally:
+                clocks: dict[str, Any] = {}
+                robot_now = self._robot_now()
+                if robot_started is not None and robot_now is not None:
+                    clocks["transport_s"] = round(robot_now - robot_started, 3)
+                    if (label := self._clock()) is not None:
+                        clocks["clock"] = label
+                self._emit(
+                    "verb_end",
+                    name=name,
+                    canonical=canonical,
+                    ok=ok,
+                    outcome=outcome,
+                    summary=summary,
+                    data_keys=data_keys,
+                    elapsed_s=round(time.perf_counter() - started, 3),
+                    intents=dict(counter),
+                    source=source,
+                    nested=nested,
+                    **clocks,
+                    **detect_times(self.detector),
+                )
+
+    async def _run_verb(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        *,
+        sent: Tally,
+        source: Source,
+        nested: bool,
+        picked_by: str | None = None,
+        outer_stops: int | None = None,
+    ) -> VerbResult:
+        # before any gate, so a newer command that comes while this one is still being admitted
+        # stops it starting after that command has (`_run_admitted`)
+        preempts = self.preempts
+        if canonical == "stop":
+            # counted before any gate, since a brake asked for is a brake pulled, whoever asked:
+            # a verb running beside this call ends on it (`_interruption`)
+            self.stops += 1
+        # and the stops this verb has to answer to are counted from here, not from when it
+        # starts: one asked for while it was still reading the body's state used to land in
+        # the count it started from, so it walked the whole walk the stop was meant to end. A
+        # composite's nested call counts from where the composite did (`context`).
+        stops = self.stops if outer_stops is None else outer_stops
+        # `stop` is the one verb an aborted session must still be able to run. The abort is
+        # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
+        # which is the moment the pilot reaches for the brake, and refusing it here closed
+        # the panic button exactly when it was needed.
+        if self.abort.is_set() and canonical != "stop":
+            self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
+            raise Aborted("run aborted")
+        if not self.is_allowed(name):
+            reason = f"verb {name!r} is not in this task's allowlist ({', '.join(self.allowed)})"
+            self._emit("gate", name=name, gate="allowlist", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
+        try:
+            verb = self.registry.get(name)
+        except VerbNotFound:
+            self._emit(
+                "gate",
+                name=name,
+                gate="unknown",
+                outcome="refused",
+                reason=f"unknown verb {name!r}",
+            )
+            raise VerbNotAllowed(f"unknown verb {name!r}") from None
+        if source == "peer" and canonical not in PEER_VERBS:
+            reason = (
+                f"{name} is not a verb a courtesy runs: a robot met over Robot Passport can have "
+                "this one pause or identify itself, and nothing else"
+            )
+            self._emit("gate", name=name, gate="peer", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
+
+        # A verb declared `read_only` by whoever wrote it is a sensor, whatever body it came
+        # with: a third-party `locate` that reads where things are must run before the
+        # verdict for the same reason `observe` does, or the pilot judges feasibility blind.
+        # `BEFORE_VERDICT` is matched by name, and a learned verb is excluded from that half
+        # on purpose: it is an unproven policy, so a `.glot` that named one `observe` on a
+        # body with no camera verb would otherwise have it run before any verdict. The
+        # confirm gate below would still stop it, and `--yes` answers the confirm gate.
+        # `MOVES_THE_BODY` wins over the flag: where Roboglot has said a name is motion, a verb
+        # arriving under that name and carrying `read_only` is saying two contradictory things
+        # about itself, and the gate believes Roboglot's own record rather than the newcomer.
+        looks = (canonical in BEFORE_VERDICT and verb.kind != "learned") or (
+            verb.read_only and canonical not in MOVES_THE_BODY
+        )
+        self._hold_still_for(name, canonical, verb)
+        if self.require_verdict and not looks and not self.cleared and source in PERSONS:
+            # the person's own command is the verdict for its own call, and the record says
+            # whose word it was, the way an answer to a confirm says it (`who_answered`), and
+            # who read their words as this call where somebody did. A verb that call runs is
+            # covered by its row, as a pilot's nested verbs are by its verdict, and has none of
+            # its own: each used to say a person had named it, which nobody had.
+            if not nested:
+                said = A_PERSON if source == "person" else A_PIPE
+                whose = (
+                    f"{picked_by} read what {said} typed as this call"
+                    if picked_by
+                    else f"{said} named this call"
+                )
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="verdict",
+                    outcome="allowed",
+                    reason=f"{whose}, which stands for the verdict for it alone",
+                )
+        elif self.require_verdict and not looks and not self.cleared:
+            why = (
+                self.verdict.blocking_reason()
+                if self.verdict is not None
+                else "no feasibility verdict has been recorded for this task yet"
+            )
+            reason = (
+                f"{name} moves the body, and {why}: record a verdict first "
+                "(feasible, infeasible or uncertain)"
+            )
+            self._emit("gate", name=name, gate="verdict", outcome="refused", reason=reason)
+            raise VerdictRequired(reason)
+
+        try:
+            parsed = self._parsed(name, canonical, verb, params)
+        except ValidationError as e:
+            msgs = _invalid(e)
+            self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
+            return VerbResult.fail(f"invalid params for {name}: {msgs}")
+
+        # before a person is asked anything: a call a stop has overtaken is not going to start,
+        # and a question about it would be answered for nothing
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
+            return overtaken
+
+        if self.needs_confirm(verb):
+            # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
+            # team's standing answer, the MCP server and a pipe on stdin all answer without
+            # asking anybody, so the verb is refused before its confirm is put, and only a
+            # person at a terminal can run it (ADR-0056). Refused rather than denied: nobody
+            # said no, and the fix is a terminal, not `--yes`.
+            if verb.safety_class == "dangerous" and not a_person_was_asked(self.confirm):
+                reason = (
+                    f"{name} is a dangerous verb, and only a person can clear it, while nobody "
+                    "is asked here (--yes, a team's standing answer, the MCP server or a "
+                    "pipe): run it from a terminal, without --yes, and answer its confirm "
+                    "yourself"
+                )
+                self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
+                raise VerbNotAllowed(reason)
+            # A backend may decline a standing answer for one of its verbs: `--yes`, a team's
+            # standing answer and the MCP server answer nobody, so the verb is refused before
+            # its confirm is put (`Verb.no_standing_answer`, ADR-0078). The CLI's own question on
+            # a pipe is left as it is, and so is what a person answers.
+            if verb.no_standing_answer and who_answered(self.confirm) not in (A_PERSON, A_PIPE):
+                reason = (
+                    f"{name} is answered by a person on this robot, each time, while nobody is "
+                    "asked here (--yes, a team's standing answer or the MCP server): run it "
+                    "from a terminal, with roboglot run or roboglot drive and without --yes, and "
+                    "answer its confirm yourself"
+                )
+                self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
+                raise VerbNotAllowed(reason)
+            try:
+                answer = await answered(self.confirm, name, parsed.model_dump(), abort=self.abort)
+            except asyncio.CancelledError:
+                # cancelled while the question waited, by the composite that called this verb
+                # running out of time or by a cancel from outside: nobody answered, the gate says
+                # so, and the cancellation goes on up
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="confirm",
+                    outcome="denied",
+                    answer=None,
+                    reason="the prompt raised CancelledError",
+                )
+                raise
+            except Exception as e:
+                # typer's y/N prompt raises click's `Abort` (a RuntimeError) on Ctrl-C or
+                # EOF. An asker that raised has not said yes, and the run deserves to be told
+                # so in the gate's words rather than as `verb_end error "Abort: "`.
+                why = f"the prompt raised {type(e).__name__}" + (f": {e}" if str(e) else "")
+                # unanswered, never declined: nobody said no, so neither the gate's `answer`
+                # nor the words the pilot reads may say somebody did
+                self._emit(
+                    "gate", name=name, gate="confirm", outcome="denied", answer=None, reason=why
+                )
+                raise ConfirmDenied(f"nobody answered whether to run {name} ({why})") from e
+            asked = a_person_was_asked(self.confirm)
+            if asked:
+                # the exchange, beside the gate's record of what it decided: only where a
+                # person was really asked, never for `--yes` or a team's standing answer
+                self._emit(
+                    "prompt",
+                    what="confirm",
+                    question=confirm_question(name, parsed.model_dump()),
+                    answer=answer,
+                    **asked_on(self.confirm),
+                )
+            # The same care in the gate's own reason, which said `a human said yes` however the
+            # answer arrived. Under `--yes`, a team's standing answer or a pipe on stdin the
+            # gate really did open, and the record should say that and not name a witness.
+            said = ("yes" if answer else "no") if asked else ("allowed" if answer else "denied")
+            self._emit(
+                "gate",
+                name=name,
+                gate="confirm",
+                outcome="allowed" if answer else "denied",
+                answer=answer,
+                reason=f"a human said {said}" if asked else f"the confirm gate was {said}",
+            )
+            if not answer:
+                raise ConfirmDenied(f"human declined {name}")
+
+        # A segment of the body's learned policy has a budget of its own seconds as well as
+        # its step, checked first so a segment refused for time charges no step. Nested or
+        # not: the seconds are the body's, whoever asked for them. `pick` hands the arm to the
+        # same policy as `manipulate` does, so its seconds are the same budget's.
+        timed = canonical in POLICY_VERBS
+        if timed and self.segment is not None:
+            # One segment at a time, from its check to its charge. Over MCP every call is a
+            # task of its own, and a second one let in while the first ran was checked against
+            # seconds nobody had charged yet, then cancelled the first on the arm and ran its
+            # own, so the arm could run past `total_s` by as many segments as calls came in.
+            # Refused rather than queued, so the pilot hears it now and decides.
+            reason = (
+                f"{self.segment} is still running a segment of the body's learned policy: wait "
+                f"for it to end, or send stop, before {name}"
+            )
+            self._emit("gate", name=name, gate="segment", outcome="refused", reason=reason)
+            raise VerbNotAllowed(reason)
+        if self.budget is not None and (timed or not nested):
+            try:
+                if timed:
+                    self.budget.check_policy()
+                # A peer's courtesy draws on a budget of its own (`roboglot.passport_courtesy`),
+                # never the pilot's: an identify every ten seconds used to spend six of a run's
+                # forty steps a minute. And `stop` is charged while there is a step left and
+                # never refused for want of one, as no other gate refuses it: a session whose
+                # steps were spent used to have its brake refused with them.
+                if not nested and source != "peer":
+                    try:
+                        self.budget.note_step()
+                    except BudgetExceeded:
+                        if canonical != "stop":
+                            raise
+            except BudgetExceeded as e:
+                self._emit("gate", name=name, gate="budget", outcome="exceeded", reason=str(e))
+                raise
+        if not timed:
+            return await self._run_admitted(
+                name,
+                canonical,
+                params,
+                verb,
+                parsed,
+                sent=sent,
+                source=source,
+                preempts=preempts,
+                stops=stops,
+                nested=nested,
+            )
+        # held from the check above, with nothing awaited since it, to the segment's charge
+        self.segment = name
+        try:
+            return await self._run_admitted(
+                name,
+                canonical,
+                params,
+                verb,
+                parsed,
+                sent=sent,
+                source=source,
+                timed=True,
+                preempts=preempts,
+                stops=stops,
+                nested=nested,
+            )
+        finally:
+            self.segment = None
+
+    async def _run_admitted(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        verb: Verb,
+        parsed: Any,
+        *,
+        sent: Tally,
+        source: Source,
+        timed: bool = False,
+        preempts: int | None = None,
+        stops: int | None = None,
+        nested: bool = False,
+    ) -> VerbResult:
+        """A verb every gate has let through: its state, its abort conditions and its
+        preconditions, then the verb itself, or the dry run's word for it. `timed` is a policy
+        segment's, whose seconds are charged on every way out. `preempts` is the executor's count
+        of newer commands from before the gates, which a verb that may move the body is refused
+        on once it has changed (`preempt`), and `stops` its count of stops from then, which the
+        verb ends on once that has changed (`_interruption`). A `nested` call's `stops` is its
+        composite's, and one that has changed by the time it is admitted is not started."""
+        try:
+            state = await self.transport.get_state()
+        except Exception as e:
+            # the one in-verb transport failure that used to send no stop. A link that
+            # cannot report state cannot be trusted to be holding a zero twist either.
+            unstopped = await self._stop_after()
+            said = str(e)
+            if (
+                unstopped is not None
+                and isinstance(e, TransportError)
+                and len(e.args) == 1
+                # once: an error a link raises again for every read would gain a clause each time
+                and "the stop sent after it failed" not in said
+            ):
+                # and a stop that did not land is said beside the read, which is all a pilot or
+                # a chat is told: the arm reads before it writes its hold, so over one gone
+                # silent the stop held nothing. The error itself is kept, its class and code. A
+                # wedged bus answers the read and the stop with one sentence, said once
+                why = " the same way" if unstopped in said else f": {unstopped}"
+                e.args = (f"{said}; the stop sent after it failed{why}",)
+            raise
+        # Read again after the last await before the verb is tracked as moving. A pause
+        # granted while this verb waited on that state read, or on a person's confirm before
+        # it, found nothing to end, and the gate it had already passed is not asked twice, so
+        # the verb used to run in full after the stop a robot met was promised.
+        self._hold_still_for(name, canonical, verb)
+        # and a newer command that came meanwhile found nothing moving to end, so this verb, which
+        # it replaces, would start after it had: refused here instead, before anything is sent
+        if preempts is not None and self.preempts != preempts and self._may_move(canonical, verb):
+            reason = f"{name} did not start: {self.preempted_by}"
+            self._emit("gate", name=name, gate="preempted", outcome="refused", reason=reason)
+            raise Preempted(reason)
+        # and the abort, for the same reason: a kill switch, a failed heartbeat or a drive
+        # session's brake set while this verb read the body's state found it in nothing it could
+        # cancel, and the verb sent its first twist after the abort that was meant to end it
+        if self.abort.is_set() and canonical != "stop":
+            self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
+            raise Aborted("run aborted")
+        # and a call that a stop sent while it read the body's state has overtaken, for the reason
+        # the gate before the confirm gives (`_overtaken`)
+        if overtaken := self._overtaken(name, canonical, params, verb, stops):
+            return overtaken
+        try:
+            self._check_abort_conditions(state)
+        except Aborted as e:
+            self._emit(
+                "gate",
+                name=name,
+                gate="abort_when",
+                outcome="fired",
+                reason=str(e),
+                state=state.summary(),
+            )
+            # The brake is the one verb a rule that fired must still let through: the rule is
+            # there to stop the body, and a `stop` it refused was a stop never sent, on a body
+            # whose battery had just been read as too low to trust with anything else.
+            if canonical != "stop":
+                raise
+        for pre in verb.preconditions:
+            refusal = pre(state)
+            if refusal:
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="precondition",
+                    outcome="refused",
+                    reason=refusal,
+                    state=state.summary(),
+                )
+                return self._record(name, params, VerbResult.fail(f"cannot {name}: {refusal}"))
+
+        if self.dry_run and not verb.read_only:
+            self.log(f"[dry-run] would run {name}({parsed.model_dump()})")
+            self._emit(
+                "gate",
+                name=name,
+                gate="dry_run",
+                outcome="skipped",
+                reason=f"would run {name}, sent nothing",
+                params=parsed.model_dump(),
+            )
+            return self._record(
+                name, params, VerbResult.success(f"[dry-run] {name} not sent", dry_run=True)
+            )
+
+        self.log(f"→ {name}({parsed.model_dump()})")
+        # Here, after every gate, the state read, the preconditions and the dry run's branch, so
+        # a verb that was refused, a dry run and a read never count as the robot moving.
+        may_be_first = self.first_motion_at is None and self._moves_now(canonical, verb)
+        handed_over = time.monotonic()
+        calls_by_then = self.budget.llm_calls if self.budget is not None else None
+        robot_before = self._robot_now() if timed else None
+        result: VerbResult | None = None
+        try:
+            result = await self._execute(
+                verb,
+                parsed,
+                interruptible=canonical != "stop",
+                source=source,
+                name=name,
+                stops=stops,
+            )
+        except TimeoutError:
+            unstopped = await self._stop_after()
+            result = VerbResult.fail(self._timed_out(name, verb, timed=timed, unstopped=unstopped))
+        except SafetyStop:
+            raise
+        except Exception as e:  # a buggy verb must not take the run down un-stopped
+            unstopped = await self._stop_after()
+            stopped = (
+                "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+            )
+            said = f"{name} raised {type(e).__name__}: {e}"
+            # a nested verb's failed read has said already that its stop did not land, and a
+            # verb and its stop that raised alike are still two failures, each said
+            once = unstopped is not None and "the stop sent after it failed" in said
+            result = VerbResult.fail(said if once else f"{said}; {stopped}")
+        finally:
+            # Charged however the call ends. A call cancelled from outside, an MCP client that
+            # went, or one aborted mid-segment leaves with no result, and its segment ran all
+            # the while: without this a client that cancelled every call just short of its end
+            # ran the policy for as long as it liked with nothing charged.
+            if timed and self.budget is not None:
+                self.budget.note_policy(_segment_seconds(result, robot_before, self._robot_now()))
+            # And only once it is known: a verb past every gate can still send nothing, the way
+            # the arm's `move_joints` answers a goal off its travel with the range. A verb that
+            # says it worked is believed, since only `send_intent` is tallied and a rest move or
+            # a skill goes by a method of its own.
+            if (
+                may_be_first
+                and self.first_motion_at is None
+                and ((result is not None and result.ok) or sent.accepted)
+            ):
+                self.first_motion_at = handed_over
+                self.first_motion_llm_calls = calls_by_then
+        self.log(f"← {name}: {'ok' if result.ok else 'FAIL'} {result.summary}")
+        return self._record(name, params, result)
+
+    async def _execute(
+        self,
+        verb: Verb,
+        parsed: Any,
+        *,
+        interruptible: bool,
+        source: Source = "agent",
+        name: str | None = None,
+        stops: int | None = None,
+    ) -> VerbResult:
+        """Run one verb, racing it against the abort event as well as the clock.
+
+        `asyncio.wait_for` knows only about the clock, so a kill switch, a Ctrl-C or a failed
+        heartbeat used to set a flag that nothing looked at until the verb returned on its
+        own. On a robot that meant the legs kept moving for the rest of a `go_to` — up to its
+        whole timeout — after the human had already reached for the brake, and the verb's own
+        10 Hz resend kept feeding the deadman throughout, so nothing else stopped it either.
+
+        The `finally` owns both tasks, because `asyncio.wait` cancels nothing when it is
+        itself cancelled. Without it an outer cancellation — an MCP client dropping the call,
+        the second Ctrl-C this CLI documents — left the verb running with no stop: the log
+        recorded that the verb had ended and then went on recording the intents it kept
+        sending. `finished` says the block was left normally, so it is exactly the signal for
+        "interrupted from outside" without catching `BaseException`.
+
+        `stop` is never interruptible: it is what the abort is trying to achieve."""
+        called = name or verb.name
+        verb_task: asyncio.Task[VerbResult] = asyncio.ensure_future(
+            verb.execute(self.context(source, stops=stops, name=called), parsed)
+        )
+        abort_task: asyncio.Task[bool] | None = None
+        waiting: set[asyncio.Future[Any]] = {verb_task}
+        if interruptible:
+            abort_task = asyncio.ensure_future(self.abort.wait())
+            waiting.add(abort_task)
+            if self._may_move(self.registry.canonical(verb.name), verb):
+                self._moving.add(verb_task)
+        done: set[asyncio.Future[Any]] = set()
+        finished = False
+        try:
+            done, _ = await asyncio.wait(
+                waiting, return_when=asyncio.FIRST_COMPLETED, timeout=verb.timeout_s
+            )
+            finished = True
+        finally:
+            # the loser is always cancelled: an abort waiter left behind would otherwise
+            # accumulate one task per verb for the life of the run
+            self._moving.discard(verb_task)
+            halted = self._halted.pop(verb_task, None)
+            if abort_task is not None and not abort_task.done():
+                abort_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await abort_task
+            # Nothing the verb does from here can be trusted to end, so take the legs back. The
+            # cancel says why, which a verb that keeps a record of its own reads off the
+            # `CancelledError` it is handed (`watch`'s `ended`): the abort, its timeout, or a
+            # caller that went away.
+            if verb_task not in done:
+                if abort_task is not None and abort_task in done:
+                    why = CANCELLED_BY_ABORT
+                elif finished:
+                    why = CANCELLED_BY_TIMEOUT
+                else:
+                    why = CANCELLED_FROM_OUTSIDE
+                verb_task.cancel(why)
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await verb_task
+            if not finished:
+                if halted is None:  # one a pause or a newer command ended is said once, below
+                    self._emit(
+                        "gate",
+                        name=called,
+                        gate="cancelled",
+                        outcome="fired",
+                        reason="the call was cancelled; the verb was cancelled and a stop was sent",
+                    )
+                with contextlib.suppress(Exception):
+                    await self.logged_transport().stop()
+        if halted is not None:
+            if self.abort.is_set():  # an abort that landed with the pause is what leaves
+                await self._aborted_mid_verb(called)
+            kind, why = halted
+            if kind == CANCELLED_BY_PREEMPT:
+                await self._preempted_mid_verb(called, why)
+            return await self._ended_by_pause(called)
+        if verb_task in done:
+            return verb_task.result()
+        if abort_task is not None and abort_task in done:
+            await self._aborted_mid_verb(called)
+        raise TimeoutError
+
+    async def _aborted_mid_verb(self, called: str) -> NoReturn:
+        """What a verb the abort cancelled comes to: a stop after it, and `Aborted`."""
+        self._emit(
+            "gate",
+            name=called,
+            gate="abort",
+            outcome="fired",
+            reason="aborted mid-verb: the verb was cancelled and a stop was sent",
+        )
+        # the abort is what leaves here, even when the stop after it failed: a heartbeat that
+        # lost the link sets it, and that stop's own error used to leave in its place
+        if (unstopped := await self._stop_after()) is not None:
+            raise Aborted(
+                f"aborted mid-verb; the verb was cancelled, and the stop sent after it failed: "
+                f"{unstopped}"
+            )
+        raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
+
+    async def _preempted_mid_verb(self, called: str, why: str) -> NoReturn:
+        """What a verb a newer command ended comes to: a stop after it, and `Preempted` in the
+        newer command's words, which the caller that asked for the verb reads as the verb's end
+        and goes on from (`preempt`)."""
+        self._emit(
+            "gate",
+            name=called,
+            gate="preempted",
+            outcome="fired",
+            reason=f"ended by a newer command, {why}; a stop was sent",
+        )
+        unstopped = await self._stop_after()
+        raise Preempted(
+            f"{called} ended: {why}; a stop was sent"
+            + (f", and it failed: {unstopped}" if unstopped else "")
+        )
+
+    async def _ended_by_pause(self, called: str) -> VerbResult:
+        """What a verb a granted pause ended comes to: a stop after it, and a result saying why,
+        which the pilot reads as it reads any other verb's."""
+        held = max(0.0, self.paused_until - time.monotonic())
+        self._emit(
+            "gate",
+            name=called,
+            gate="paused",
+            outcome="fired",
+            reason="ended by a pause this robot granted a robot it met; a stop was sent",
+        )
+        unstopped = await self._stop_after()
+        return VerbResult.fail(
+            f"{called} ended: a robot this one met asked it to pause, and it is holding still "
+            f"for {held:.0f} s more"
+            + (f"; the stop sent after it failed: {unstopped}" if unstopped else ""),
+            ended_by=PAUSE_ENDED,
+        )
+
+    # ── abort conditions the executor enforces itself ───────────────────────────────
+
+    def _record(self, name: str, params: dict[str, Any], result: VerbResult) -> VerbResult:
+        self.history.append((name, params, result))
+        key = self.registry.canonical(name)  # `walk` and `move` failures count together
+        if result.ok:
+            self.consecutive_failures[key] = 0
+        elif result.data.get("ended_by") in (PAUSE_ENDED, STOP_ENDED):
+            # not the verb's failure, nor the pilot's: two pauses a robot met asked for used
+            # to make two in a row of `move`, and `abort_when` ended the run on them, and a stop
+            # from beside a verb that ends it is the brake working by the same rule
+            pass
+        else:
+            n = self.consecutive_failures.get(key, 0) + 1
+            self.consecutive_failures[key] = n
+            limit = self.contract.repeat_failure_abort if self.contract else None
+            if limit is not None and n >= limit:
+                self.abort.set()
+                self._emit(
+                    "gate",
+                    name=name,
+                    gate="abort_when",
+                    outcome="fired",
+                    reason=f"{name} failed {n} times in a row",
+                    last=result.summary,
+                )
+                raise Aborted(f"abort_when: {name} failed {n} times in a row")
+        return result
+
+    def _overtaken(
+        self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
+    ) -> VerbResult | None:
+        """The result of a call that would move the body and that a stop has overtaken, or None.
+        A stop that came while it waited on its gates or read the body's state, as a second MCP
+        call does, ends it. A composite's call answers to the stops its composite answers to
+        (`context`), so a stop sent between two of the composite's calls is the brake pulled on the
+        whole of it. A verb that polls for it would end at its first check, but a kick or a scoop
+        or a gripper sends its one intent without looking, so it is ended here, before it sends
+        anything. A call that only looks or speaks runs, as it runs beside a pause or a newer
+        command."""
+        if (
+            stops is None
+            or self.stops == stops
+            or canonical == "stop"
+            or not self._may_move(canonical, verb)
+        ):
+            return None
+        reason = f"{name} did not start: {STOPPED}"
+        self._emit("gate", name=name, gate="stopped", outcome="refused", reason=reason)
+        return self._record(
+            name, params, VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED)
+        )
+
+    def _check_abort_conditions(self, state: DuckState) -> None:
+        if (reason := self._abort_rule_fired(state)) is not None:
+            self.abort.set()
+            raise Aborted(reason)
+
+    def _abort_rule_fired(self, state: DuckState) -> str | None:
+        """The `abort_when` rule `state` fires, in the words an abort says, or None. A reading
+        and nothing else: the admission's gate and a verb's own reading mid-way
+        (`_abort_rule_reader`) each decide when to set the abort."""
+        if self.contract is None:
+            return None
+        threshold = self.contract.battery_abort_percent
+        if (
+            threshold is not None
+            and state.battery_percent is not None
+            and state.battery_percent < threshold
+        ):
+            return f"abort_when: battery {state.battery_percent:.0f}% below {threshold:g}%"
+        return None
+
+
+class Heartbeat:
+    """Pings the transport every `period_s`. One miss → stop intent + abort."""
+
+    def __init__(
+        self,
+        transport: DuckTransport,
+        abort: asyncio.Event,
+        *,
+        period_s: float = 0.5,
+        log: Callable[[str], None] = lambda _m: None,
+        event_log: EventLog | None = None,
+    ) -> None:
+        self.transport = transport
+        self.abort = abort
+        self.period_s = period_s
+        self.log = log
+        self.event_log = event_log
+        self.beats = 0
+        self.failure: Exception | None = None
+        self._task: asyncio.Task[None] | None = None
+
+    async def _run(self) -> None:
+        me = asyncio.current_task()
+        while not self.abort.is_set():
+            try:
+                await self.transport.heartbeat()
+                self.beats += 1
+            except Exception as e:
+                self.failure = e
+                # Everything in here is best effort and the abort is in a `finally`, because
+                # setting it is the one thing that must happen: a log call or an event sink that
+                # raised used to kill this task outright, leaving the abort unset and the run
+                # with no idea the link had gone.
+                try:
+                    # "sending stop", not "stopping the duck": the heartbeat fails precisely
+                    # when the link is in doubt, which is when a stop is least likely to
+                    # arrive. What actually stops a body whose deadman we cannot reach is the
+                    # deadman itself.
+                    message = f"heartbeat failed: {e} — sending stop"
+                    with contextlib.suppress(Exception):
+                        self.log(message)
+                    stopper: Any = self.transport
+                    if self.event_log is not None:
+                        with contextlib.suppress(Exception):
+                            self.event_log.emit("note", text=message)
+                        stopper = LoggedTransport(self.transport, self.event_log)
+                    with contextlib.suppress(Exception):
+                        await stopper.stop()
+                finally:
+                    self.abort.set()
+                return
+            if me is not None and me.cancelling():
+                # Python 3.11's wait_for, which a transport's wait for its answer goes through,
+                # loses a cancel that lands as its call returns, and the cancel is still asked for.
+                # Nothing else ends this loop, so it beat on for good and `stop`, the first line
+                # of the run's teardown, waited on it
+                raise asyncio.CancelledError
+            await asyncio.sleep(self.period_s)
+
+    def start(self) -> None:
+        self._task = asyncio.create_task(self._run(), name="roboglot-heartbeat")
+
+    async def stop(self) -> None:
+        if self._task is not None:
+            self._task.cancel()
+            # a task that already died of its own exception re-raises it here, and this is
+            # the first line of the loop's teardown: it must not take the stop, the final
+            # state and the transcript's close down with it
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await self._task
+            self._task = None
+
+
+TYPED_AHEAD_S = 0.5
+"""How long after a deliberate question is put an Enter is taken for one typed before it
+(`KillSwitch.wait_for_enter(deliberate=True)`). The key thread reads whatever was already in the
+terminal the moment it starts, and an Enter pressed twice, or pressed while the command was
+still starting, used to answer the question that followed it before anybody could have read it:
+one of those questions connects an arm and lets it drop. Nobody reads a sentence about a falling
+arm and decides in half a second, and an Enter that comes too soon is passed by rather than
+taken, so a person who did mean it presses it again, and is told when (`ENTER_TOO_SOON`)."""
+ENTER_ALONE_S = 0.45
+"""How long a bare Enter has to stand with no other Enter behind it to say yes to a question that
+moves or drops an arm. A key pressed and held is a stream of Enters, and its first repeat can come
+a second after the press, past any wait a person could be asked to sit through, so a wait before
+it proves nothing. What gives it away is the next Enter. An answer takes this long to be sure of.
+A no needs no such care."""
+ENTER_QUIET_S = 2.0
+"""How long since the last Enter a bare one has to come to say yes to the same question. Enter held
+down from before the question is a stream with the key's own repeat between each, which is 2.5 a
+second at the slowest Windows' keyboard settings go, and slower where somebody has asked for it.
+A terminal says nothing of a key coming up, so a key set to repeat slower than this cannot be told
+from somebody pressing it, and nothing that reads a terminal can do better. Somebody who stops and
+presses it once more gets through, and whoever does not is told (`ENTER_TOO_SOON`)."""
+ENTER_TOO_SOON = (
+    "that Enter answered nothing, because it came too soon after the question or too close to "
+    f"another: take your finger off it, wait {ENTER_QUIET_S:.0f} s and press it once"
+)
+"""Said once a wait, at the first Enter it passes by. A person who presses it again and again, as
+somebody at an arm's jaws will, would otherwise never get through and never know why."""
+ENTER_BEHIND_Q_S = 2.0
+"""How long after a `q` at a console an Enter is taken for the old habit of finishing the line,
+and answers nothing (`KillSwitch._watch_keys`). The press ends the run and the question that
+opens the gripper is up a moment later, so this errs long: an Enter passed by costs a second
+press of it, and one taken costs what was in the jaws."""
+ASK_POLL_S = 0.05
+"""How often a question put on the loop's thread looks for what else may have ended it
+(`KillSwitch.ask`). An untimed wait there cannot be interrupted on Windows, Ctrl-C included."""
+SIGNAL_LOOK_S = 0.25
+"""The longest a signal waits to be acted on (`KillSwitch._look_for_a_signal`). Python acts on one
+on the main thread between bytecodes, so one landing in the instant before the event loop goes to
+sleep interrupts nothing: a Ctrl-C or a SIGTERM waited for the loop's next timer, however far off,
+and under load that was seen at twenty seconds."""
+
+
+class _Enter(NamedTuple):
+    """One Enter the key thread read."""
+
+    at: float
+    """When it was read, which may be well after it came in (`waited`)."""
+    quiet: float
+    """How long since the Enter before it, whatever became of that one: the least it can have
+    been, counted from the earliest this one can have come in."""
+    text: str
+    """What was typed on its line."""
+    answers: bool
+    """False for one that goes to no wait: behind a `q`, or ending the line of a `[y/N]`."""
+    waited: float = 0.0
+    """How long it may have been in the terminal before it was read: back to the last time the key
+    thread looked at the console and found nothing there (`ConsoleKeys.read`). A key thread held up
+    reads what came in meanwhile once it gets going again, and stamps all of it then. Nothing where
+    it reads a stream, which cannot be looked at without a read, and is taken to keep up."""
+
+    @property
+    def earliest(self) -> float:
+        """The earliest it can have come in."""
+        return self.at - self.waited
+
+
+OUTSTAYED_S = 5.0
+"""How long after its close a process has for what is left, which is saying how it went. Past this
+it is stuck on something, and a press gets out (`AfterTheClose`). Far longer than the milliseconds
+that takes, and short enough for somebody still pressing to find the way out."""
+EXIT_PRESSED = 130
+"""The exit code of a process a Ctrl-C ended or had a say in: 128 and the signal, as a shell has."""
+OUTSTAYED = (
+    "\nRoboglot has finished with the robot, and something it was waiting on has not come back, so "
+    "this Ctrl-C ended it. What a run did is in its folder.\n"
+)
+
+
+class AfterTheClose:
+    """What a Ctrl-C does once a command has closed what it had open, for the rest of the process.
+
+    A person still pressing has no way to tell the end of a run from its last moments, and a press
+    past the switch used to raise through the printing of the verdict, or on Windows to end the
+    process in the middle of its exit. So it does nothing to what is left, and it is remembered,
+    since it was still somebody saying stop: `roboglot run a && roboglot run b` must not go on to
+    move an arm after one (`exit_code`). What cannot be taken from them is the way out. asyncio's
+    pool and the exit both wait for their threads, so a call on another body that never came back
+    would otherwise leave nothing but `kill`: once the process has outstayed its close, a press ends
+    it where it stands, with the record already written.
+
+    On Windows a thread's join does not hear a signal at all, so the last stretch of an exit stuck
+    that way still takes closing the window, as it always did. The interpreter puts back the
+    default for a handler like this one as it ends, which is the `0xC000013A`, so `atexit`, which
+    comes after those joins and before that, swaps it for one the interpreter leaves in place."""
+
+    heard = 0
+    """The presses since a close, in this process."""
+
+    def __init__(self) -> None:
+        self.since = time.monotonic()
+        atexit.register(self._deaf_to_the_end)
+
+    def __call__(self, _signum: int, _frame: Any) -> None:
+        AfterTheClose.heard += 1
+        if time.monotonic() - self.since >= OUTSTAYED_S:
+            with contextlib.suppress(OSError):
+                os.write(2, OUTSTAYED.encode())
+            os._exit(EXIT_PRESSED)
+
+    def _deaf_to_the_end(self) -> None:
+        with contextlib.suppress(ValueError):
+            if signal.getsignal(signal.SIGINT) is self:
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    def took_its_time(self) -> None:
+        """What was left was slow on purpose, a `run.gif` on a long run: no sign of being stuck."""
+        self.since = time.monotonic()
+
+    @classmethod
+    def not_stuck_yet(cls) -> None:
+        """`took_its_time`, on whichever one is in place, for what has more to say than a verdict
+        panel and has got as far as saying it (`roboglot doctor`)."""
+        handler = signal.getsignal(signal.SIGINT)
+        if isinstance(handler, cls):
+            handler.took_its_time()
+
+    @classmethod
+    def exit_code(cls, code: Any) -> Any:
+        """`code`, unless it is a success with a press heard after the close."""
+        return EXIT_PRESSED if cls.heard and code in (0, None) else code
+
+
+class KillSwitch:
+    """Ctrl-C or `q` → abort, and Enter → the one thing a run ever waits for a person to do.
+
+    Works on Windows too (no loop.add_signal_handler there). The key thread is the only
+    reader of stdin Roboglot starts, so Enter is noticed here rather than with an `input()` of
+    its own: two readers on one terminal would race for the same keystroke, and the one that
+    lost would hang on a line the other had already taken.
+    """
+
+    def __init__(self, abort: asyncio.Event, log: Callable[[str], None] = lambda _m: None) -> None:
+        self.abort = abort
+        self._line_wanted = threading.Event()
+        self._lines: queue.Queue[str] = queue.Queue()
+        self._asking = threading.Lock()
+        self.log = log
+        self.presses = 0
+        """How many times the switch has fired, for anyone counting rather than waiting."""
+        self.pressed = asyncio.Event()
+        """The switch fired. Unlike `abort`, which stays set for the rest of the run, this one
+        is cleared by whoever waits on it, so a wait can end on a *fresh* Ctrl-C without being
+        ended immediately by one that already happened."""
+        self.entered = asyncio.Event()
+        """Somebody pressed Enter. Set from the key thread, cleared by whoever waits on it."""
+        self.keys_ended = asyncio.Event()
+        """Stdin is finished, so no keystroke is ever coming.
+
+        A wait for a person has to end on this or it never ends at all. The run that needs it
+        is the one that has an arm limp in somebody's hands: without it, a terminal closed at
+        the wrong moment leaves Roboglot waiting for ever, holding nothing."""
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._previous: Any = None
+        self._thread: threading.Thread | None = None
+        self._keys: ConsoleKeys | None = None
+        """The console a key at a time, where there is one to read (`roboglot.keys`)."""
+        self._uninstalled = False
+        self.declined = False
+        """The last deliberate wait ended on a line with something typed on it, which is a no:
+        `n`, `no`, anything but a bare Enter (`wait_for_enter(deliberate=True)`)."""
+        self._enters: deque[_Enter] = deque(maxlen=32)
+        """Each Enter the key thread read, newest last. Written by the key thread and read by a
+        deliberate wait, under the lock."""
+        self._enters_lock = threading.Lock()
+        self._last_enter = -math.inf
+        self._looked: float | None = None
+        """The last moment the key thread looked at the console and found no key there, under the
+        lock: what it reads after that came in after it. None where it reads a stream, and then a
+        bare Enter stands alone by the clock, as it always did there."""
+        self._alone = asyncio.Event()
+        """A look at the console has just shown the newest Enter standing alone long enough to say
+        yes (`ENTER_ALONE_S`). Set from the key thread, so that a deliberate wait looks again then
+        rather than at its next turn, and cleared by that wait."""
+        self._alone_said = False
+        """`_alone` has been set for the newest Enter, under the lock."""
+        self._line: list[str] = []
+        """What has been typed since the last Enter, under the lock."""
+        self._last_key = -math.inf
+        self._looking: asyncio.TimerHandle | None = None
+        self.unanswered: str | None = None
+        """Why the last `ask` came back with no line anybody typed, or None where one did."""
+
+    def _heard_enter(self, text: str, *, answers: bool = True) -> None:
+        """An Enter the key thread read, recorded with what was typed on its line and when, and
+        only then announced, so a wait woken by it finds the line it answers already there. One
+        that answers nothing is recorded too, since it is still the Enter before the next.
+
+        Its quiet counts from the earliest it can have come in. Read late, the one repeat of a
+        press held a moment too long looked like a press of its own after a quiet, and with nothing
+        behind it, it said yes."""
+        now = time.monotonic()
+        with self._enters_lock:
+            waited = 0.0 if self._looked is None else now - self._looked
+            came = now - waited
+            quiet = math.inf if self._last_enter == -math.inf else came - self._last_enter
+            self._enters.append(_Enter(now, quiet, text, answers, waited))
+            self._last_enter = now
+            self._alone_said = False
+        if answers:
+            self._announce(self.entered)
+
+    def _nothing_waiting(self, looked: float) -> None:
+        """The key thread looked at the console at `looked` and found no key there, so what it reads
+        next came in after that moment (`ConsoleKeys.read`). The first such look to show the newest
+        Enter standing alone long enough to say yes wakes a deliberate wait (`_alone`)."""
+        with self._enters_lock:
+            self._looked = looked
+            newest = self._enters[-1] if self._enters else None
+            alone = (
+                newest is not None
+                and newest.answers
+                and not newest.text
+                and not self._alone_said
+                and looked - newest.at >= ENTER_ALONE_S
+            )
+            if alone:
+                self._alone_said = True
+        if alone:
+            self._announce(self._alone)
+
+    def _line_since(self, since: float) -> str | None:
+        """What was typed on the first line from `since` on that says anything: one with something
+        on it, a no, as soon as it is read, or a bare one that comes after quiet (`ENTER_QUIET_S`)
+        and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has
+        been read yet. Enter held down from before a question answered it the moment the question's
+        half second was up, and a no that had to stand alone could be lost, to the next bare
+        Enter's yes.
+
+        Alone is what the key thread has seen, never the clock alone. Held up just after it read
+        the first repeat of a key held down, it had read nothing more by the time the wait looked,
+        or it read the next repeat late and stamped it then, and either way that repeat stood
+        alone and said yes to the question that drops an arm. So at a console an Enter has stood
+        alone once the key thread has looked and found nothing behind it `ENTER_ALONE_S` after it
+        was read, and the Enter after it is measured from the earliest it can have come in. So is
+        `since` for a bare one: typed too soon and read late, past the question's half second, it
+        was taken for one read in good time. A line with something on it goes by when it was read,
+        since a no needs none of this care: passed by for having perhaps come too soon, it was lost
+        and said nothing, and the next bare Enter was a yes to what they had just refused."""
+        now = time.monotonic()
+        with self._enters_lock:
+            enters = list(self._enters)
+            looked = now if self._looked is None else self._looked
+        for n, enter in enumerate(enters):
+            came = enter.at if enter.text else enter.earliest
+            if not enter.answers or came < since:
+                continue
+            after = enters[n + 1].earliest if n + 1 < len(enters) else looked
+            alone = enter.quiet >= ENTER_QUIET_S and after - enter.at >= ENTER_ALONE_S
+            if enter.text or alone:
+                return enter.text
+        return None
+
+    def _passed_by(self, asked_at: float) -> bool:
+        """Whether a bare Enter read since the question was put at `asked_at` has been passed by
+        for good: too soon after the question or too close behind another, which is also how one
+        with another close behind it is found. One still waiting to be sure of is not."""
+        with self._enters_lock:
+            enters = list(self._enters)
+        for enter in enters:
+            if not enter.answers or enter.text or enter.at < asked_at:
+                continue
+            if enter.earliest < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
+                return True
+        return False
+
+    def _fire(self, why: str) -> None:
+        # the stop first and the words after: a line that cannot get out must not hold up the stop,
+        # nor raise into what the signal interrupted, as a write to stderr it landed inside does
+        self.presses += 1
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self.abort.set)
+            self._loop.call_soon_threadsafe(self.pressed.set)
+        with contextlib.suppress(Exception):
+            self.log(f"kill switch: {why} — cancelling the verb and stopping the robot")
+
+    def _on_sigint(self, _signum: int, _frame: Any) -> None:
+        # The first Ctrl-C is the orderly one: it aborts, which cancels the running verb and
+        # sends a stop. Handing the signal back means a second one is a plain KeyboardInterrupt
+        # again, so a human who is not convinced the first worked is never stuck holding a key
+        # that Roboglot has quietly swallowed.
+        self._restore()
+        self._fire("Ctrl-C")
+
+    def _press_and_stay(self, _signum: int, _frame: Any) -> None:
+        self._fire("Ctrl-C")
+
+    def stay_to_the_close(self) -> None:
+        """From here to `uninstall` a Ctrl-C does what `q` does and nothing else.
+
+        For a run that has somebody at the arm: all of a `--by-hand` run, and any other from the
+        question about a fold that missed on to the close. A hand near the jaws presses again and
+        again, and a press past the first used to raise through whatever it landed on, past the
+        close, `run_end` and the summary, and left an energised arm with no record of what became
+        of it. Everything from here ends on a press or has a deadline of its own.
+        `Ctrl-\\` where there is one, or closing the window, is what is left for somebody who has
+        to kill it, and the power switch for the arm."""
+        with contextlib.suppress(ValueError):  # not the main thread, so nothing to catch it on
+            before = signal.signal(signal.SIGINT, self._press_and_stay)
+            if self._previous is None:
+                self._previous = before
+
+    def _watch_keys(self) -> None:
+        """Read stdin until it ends, whatever the run is doing.
+
+        It used to stop at the first `q` and at the abort flag, which was enough when the only
+        keystroke that meant anything was the one that ended the run. A run that hands the arm
+        to a person waits for Enter after the abort may already be set, and again in its own
+        teardown, so the reader has to outlive both.
+
+        Every Enter is recorded with what was typed on its line (`_heard_enter`), because a
+        question that drops an arm takes only a bare one, and a terminal that ends its lines
+        with `\\r\\n` sends one Enter, not two.
+
+        At a console it reads keys as they are pressed (`roboglot.keys`), so `q` fires the switch
+        with no Enter behind it, which is what every line that names it has always promised. It
+        is no part of the line then, or the Enter that answers a question a minute later would
+        read as a line with something typed on it. An Enter close behind it is the old habit of
+        finishing the line, and is passed by (`ENTER_BEHIND_Q_S`), or the question the press
+        brought on would be answered yes by the hand still finishing it. Where it reads a stream
+        and not a console, `q` comes with the rest of its line and is part of it, and a wait never
+        takes that line's Enter for an answer (`wait_for_enter`).
+
+        A console says when it has no key waiting (`_nothing_waiting`), which is what a deliberate
+        question's yes is measured by. Until it first has, nothing read is known to have come in
+        after anything: what was in it as the thread started may have been typed long before."""
+        keys = self._keys
+        read: Callable[[], str]
+        if keys is not None:
+            with self._enters_lock:
+                self._looked = -math.inf
+            read = functools.partial(keys.read, self._nothing_waiting)
+        else:
+            read = functools.partial(sys.stdin.read, 1)
+        typed: list[str] = []
+        line = self._line
+        previous = ""
+        q_at = -math.inf
+        try:
+            while True:
+                ch = read()
+                if not ch:
+                    if not self._uninstalled:
+                        self._announce(self.keys_ended)
+                    return
+                if keys is not None:
+                    if ch in ("\b", "\x7f"):
+                        with self._enters_lock:
+                            edited = typed if self._line_wanted.is_set() else line
+                            took = bool(edited)
+                            if took:
+                                edited.pop()
+                        if took:
+                            keys.erase()
+                        continue
+                    if ch == "\x03":  # Ctrl-C, should it land while the console is being read
+                        self._fire("Ctrl-C")
+                        continue
+                if self._line_wanted.is_set():
+                    # Somebody is being asked a question, so every key belongs to the answer.
+                    # This reader cannot stand aside while a prompt runs its own `input()`: it
+                    # is already blocked inside `read(1)` and would take the first character of
+                    # the reply, and the prompt would then wait for a newline this thread had
+                    # already swallowed. So it collects the line and hands it over instead.
+                    if ch in ("\r", "\n"):
+                        self._heard_enter("", answers=False)
+                        self._lines.put("".join(typed))
+                        typed.clear()
+                    else:
+                        typed.append(ch)
+                    continue
+                typed.clear()
+                if ch in ("\r", "\n"):
+                    with self._enters_lock:
+                        text = "".join(line)
+                        line.clear()
+                        # behind the `q` unless it cannot have come in that soon after it: read
+                        # late, the habit went to the question the `q` had brought on. A line with
+                        # something on it goes by when it was read, as it does at the question
+                        came = time.monotonic() if text or self._looked is None else self._looked
+                    behind_a_q = keys is not None and came - q_at < ENTER_BEHIND_Q_S
+                    if not (ch == "\n" and previous == "\r"):
+                        self._heard_enter(text, answers=not behind_a_q)
+                    previous = ch
+                    continue
+                previous = ch
+                pressed_q = ch.strip().lower() == "q"
+                with self._enters_lock:
+                    self._last_key = time.monotonic()
+                    if keys is None or not pressed_q:
+                        line.append(ch)
+                if pressed_q:
+                    q_at = time.monotonic()
+                    self._fire("'q' pressed")
+                    if keys is not None:
+                        keys.newline()
+        except Exception:
+            self._announce(self.keys_ended)
+            return
+
+    def ask(self, prompt: str) -> str:
+        """Put a question to the person at the terminal and return the line they typed.
+
+        Every prompt a run makes goes through here rather than through `input()`, because the
+        key thread is reading the same terminal and whichever of the two took a character
+        first kept it. A confirmation gate asked on a real terminal therefore waited for a
+        newline the key thread had already swallowed, which is a hang with a robot mid-verb.
+
+        Falls back to `input()` wherever no key thread is running, which is every caller with
+        no terminal and every test, so nothing that was not already racing changes.
+
+        A press answers no, and so does the key thread ending under the question. An untimed wait
+        here sat on the loop's thread with nothing to wake it once the thread had gone, and on
+        Windows it could not even be interrupted, so a question nobody could answer ended only
+        when somebody killed the process. A process in the terminal's background answers no as
+        well, since reading the terminal from there stops the whole process."""
+        self.unanswered = None
+        if in_the_background(sys.stdin):
+            self.unanswered = "(this process is in the terminal's background: no)"
+            return ""
+        thread = self._thread
+        if thread is None or not thread.is_alive():
+            if self._keys is not None and not self._uninstalled:
+                # a console the key thread had out of its line mode, and nothing reading it now
+                self.unanswered = "(no key could be read: no)"
+                return ""
+            return input(prompt)
+        with self._asking:
+            while not self._lines.empty():  # anything typed before the question was asked
+                self._lines.get_nowait()
+            presses = self.presses
+            self._line_wanted.set()
+            try:
+                sys.stderr.write(prompt)
+                sys.stderr.flush()
+                while True:
+                    try:
+                        return self._lines.get(timeout=ASK_POLL_S)
+                    except queue.Empty:
+                        if self.presses != presses:
+                            self.unanswered = "(the kill switch ended the question: no)"
+                            return ""
+                        if not thread.is_alive():
+                            self.unanswered = "(no key could be read: no)"
+                            return ""
+            finally:
+                self._line_wanted.clear()
+
+    def _announce(self, event: asyncio.Event) -> None:
+        """Set an event from the key thread, which is not the loop's thread."""
+        if self._loop is not None:
+            with contextlib.suppress(RuntimeError):  # the loop has already closed
+                self._loop.call_soon_threadsafe(event.set)
+
+    async def wait_for_enter(
+        self,
+        *,
+        timeout_s: float | None = None,
+        until_abort: bool = True,
+        deliberate: bool = False,
+        said: Callable[[str], None] | None = None,
+    ) -> bool:
+        """Wait for Enter. True if it came, False if anything else ended the wait.
+
+        `until_abort` is the difference between the two waits one run can make. Before the
+        first turn the abort flag is clear, so watching it is how Ctrl-C gets out of a wait for
+        somebody who has walked away. In a teardown it is already set on every run a person
+        ended, and watching it there would skip the wait on exactly the runs most likely to
+        have something still in the gripper. That one watches `pressed` instead, which a
+        waiter clears on the way in, so a fresh Ctrl-C ends it and the stale flag does not.
+
+        Nothing here reads stdin: the key thread is the only reader, and this waits on what it
+        sets. A wait on a machine with no key thread (no terminal) ends on its timeout, which
+        is why a caller who needs an answer checks for a terminal before asking for one, and on
+        `keys_ended` where the thread ran and stdin then finished under it.
+
+        A press of the kill switch during the wait is never an Enter, whatever came with it. A
+        stream that is no console hands `q` to the key thread with the Enter that ends its line,
+        so the press and the Enter arrive together, and the wait used to answer True when both
+        were in by the time it looked: `q`, the key that stops the run, taken for yes.
+
+        `deliberate` is for a question whose Enter moves an arm or drops it (`roboglot.release`).
+        Only a bare Enter answers it. A line with anything typed on it, `n` the commonest, is a
+        no, and the wait ends saying so (`declined`), though not a key from before the question,
+        which may be a stray press from minutes ago; an Enter read within `TYPED_AHEAD_S` of the
+        question being put was typed before anybody could have read it, so the wait goes on past
+        it; and so it does past one that does not stand alone (`ENTER_ALONE_S`) or that comes close
+        behind another (`ENTER_QUIET_S`), a key held down or pressed twice. `said` is told of the
+        first it passes by (`ENTER_TOO_SOON`)."""
+        loop = asyncio.get_running_loop()
+        asked_at = time.monotonic()
+        presses = self.presses
+        self.declined = False
+        if deliberate:
+            with self._enters_lock:
+                if asked_at - self._last_key >= TYPED_AHEAD_S:
+                    self._line.clear()
+        self.entered.clear()
+        self.pressed.clear()
+        self._alone.clear()
+        deadline = None if timeout_s is None else loop.time() + timeout_s
+        while True:
+            if deliberate and (answer := self._line_since(asked_at + TYPED_AHEAD_S)) is not None:
+                if self.presses > presses:
+                    return False
+                if answer:
+                    self.declined = True
+                    return False
+                return True
+            if deliberate and said is not None and self._passed_by(asked_at):
+                said(ENTER_TOO_SOON)
+                said = None
+            left = None if deadline is None else deadline - loop.time()
+            if left is not None and left <= 0:
+                return False
+            # a deliberate wait comes back to see whether an Enter has stood alone for long enough
+            wake = left
+            if deliberate:
+                wake = ENTER_ALONE_S if left is None else min(left, ENTER_ALONE_S)
+            others = [
+                asyncio.ensure_future((self.abort if until_abort else self.pressed).wait()),
+                # nobody is going to press anything, so the caller is owed that answer rather
+                # than a wait that never returns
+                asyncio.ensure_future(self.keys_ended.wait()),
+            ]
+            watched = [asyncio.ensure_future(self.entered.wait()), *others]
+            if deliberate:
+                watched.append(asyncio.ensure_future(self._alone.wait()))
+            try:
+                await asyncio.wait(watched, timeout=wake, return_when=asyncio.FIRST_COMPLETED)
+                ended = any(task.done() for task in others)
+            finally:
+                for task in watched:
+                    task.cancel()
+                    # awaited, so a cancelled task is never left for the loop to complain about
+                    with contextlib.suppress(asyncio.CancelledError, Exception):
+                        await task
+            if self.presses > presses:
+                return False
+            if not deliberate:
+                return self.entered.is_set()
+            # the keys ending takes nothing back from a yes a look has just made sure of
+            aborted = until_abort and self.abort.is_set()
+            sure = self._alone.is_set() and self.keys_ended.is_set() and not aborted
+            if ended and not self.entered.is_set() and not sure:
+                return False
+            # An Enter was read, one has stood alone, or the time came to look again. Whether one
+            # answers is the check at the top: one read too soon after the question was put, or
+            # that does not stand alone, is passed by, and the wait goes on for the next.
+            self.entered.clear()
+            self._alone.clear()
+
+    def _look_for_a_signal(self) -> None:
+        """Nothing to do but wake: Python runs a signal's handler on the way back to sleep."""
+        if self._loop is not None and not self._uninstalled:
+            self._looking = self._loop.call_later(SIGNAL_LOOK_S, self._look_for_a_signal)
+
+    def install(self, *, keys: bool = True) -> None:
+        self._loop = asyncio.get_running_loop()
+        with contextlib.suppress(ValueError):  # not the main thread
+            self._previous = signal.signal(signal.SIGINT, self._on_sigint)
+        self._look_for_a_signal()
+        if (
+            keys
+            and sys.stdin is not None
+            and sys.stdin.isatty()
+            and not in_the_background(sys.stdin)
+        ):
+            self._keys = console_keys(sys.stdin)
+            self._thread = threading.Thread(
+                target=self._watch_keys, name="roboglot-keys", daemon=True
+            )
+            self._thread.start()
+        else:
+            # Nobody is reading the keyboard, so no keystroke is ever coming, and a wait for
+            # one has to know that rather than sit there. The caller that waits checks for a
+            # terminal first, but the two checks are made at different moments and by different
+            # code, and the cost of them disagreeing is a run stopped for ever with an arm limp
+            # in somebody's hands.
+            self.keys_ended.set()
+
+    def _restore(self, *, nothing_left_to_stop: bool = False) -> None:
+        if self._previous is not None:
+            with contextlib.suppress(ValueError):
+                signal.signal(
+                    signal.SIGINT, AfterTheClose() if nothing_left_to_stop else self._previous
+                )
+            self._previous = None
+
+    def uninstall(self, *, nothing_left_to_stop: bool = False) -> None:
+        """`nothing_left_to_stop` is for a command with nothing after its body but saying how it
+        went: `AfterTheClose` takes the signal from here, in one step, with no moment for a press
+        to land in."""
+        self._restore(nothing_left_to_stop=nothing_left_to_stop)
+        self._uninstalled = True
+        if self._looking is not None:
+            self._looking.cancel()
+        if self._keys is not None:
+            self._keys.close()

@@ -7,8 +7,8 @@ is refused by name. Switches make it a robotd of another release: another API ve
 does not have, a `robot.move` it does not take, no pick-up detector, no `frames`. `FakeShim` is
 the same fake with what a Huebot's shim does not answer taken away.
 
-`tests/test_jsonrpc.py` and `tests/test_huebot.py` drive quackd against these, and what they
-prove is quackd's framing, handshake, deadman feeding and error handling against what upstream's
+`tests/test_jsonrpc.py` and `tests/test_huebot.py` drive Roboglot against these, and what they
+prove is Roboglot's framing, handshake, deadman feeding and error handling against what upstream's
 source says, not that a real duck or a real Huebot agrees.
 """
 
@@ -23,12 +23,12 @@ import time
 from collections.abc import Iterator
 from typing import Any, NamedTuple
 
-from quackd_huebot import HuebotAdapter
-from quackd_huebot.body import HUEBOT, SKILLS_OF
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck import upstream_api as up
-from quackd_microduck.body import MICRODUCK, Body
-from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+from roboglot_huebot import HuebotAdapter
+from roboglot_huebot.body import HUEBOT, SKILLS_OF
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck import upstream_api as up
+from roboglot_microduck.body import MICRODUCK, Body
+from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
 
 #: The skills a stock robot answers `robot.subscribe` with.
 STOCK_SKILLS = ["roulade", "kick_left", "kick_right"]
@@ -60,7 +60,7 @@ JOINTS = (
 )
 #: `HeadParams` and `LookResult.head`, in the order `robot.state.head` carries them.
 HEAD = ("neck_pitch", "head_pitch", "head_yaw", "head_roll")
-#: Each call quackd makes that takes params, with every member its params type declares at the
+#: Each call Roboglot makes that takes params, with every member its params type declares at the
 #: pin and the ones that have no default. Every one of those types denies unknown fields, so a
 #: member robotd does not know is INVALID_PARAMS naming it (the doc above `API_VERSION` in
 #: lib.rs says why).
@@ -75,7 +75,7 @@ PARAMS: dict[str, tuple[frozenset[str], frozenset[str]]] = {
     "robot.sound": (frozenset({"tag", "hold"}), frozenset({"tag"})),
     "robot.subscribe": (frozenset({"hz"}), frozenset()),
 }
-#: The calls quackd makes that take no params, which robotd answers whatever arrives with them.
+#: The calls Roboglot makes that take no params, which robotd answers whatever arrives with them.
 NO_PARAMS = frozenset({"robot.stop", "robot.health"})
 
 
@@ -120,7 +120,7 @@ def _then(a: Quat, b: Quat) -> Quat:
 def camera_pose(yaw: float, pitch: float = 0.0) -> dict[str, list[float]]:
     """`frames.camera` for a camera turned `yaw` radians to the left of straight ahead and tilted
     `pitch` radians up: `AHEAD`, tilted up about the trunk's +y, which takes a negative angle,
-    then turned about the trunk's +z. Built from the turns rather than from the angles quackd
+    then turned about the trunk's +z. Built from the turns rather than from the angles Roboglot
     reads back, so that reading them back is something the test checks."""
     quat = _then(_turned((0.0, 0.0, 1.0), yaw), _then(_turned((0.0, 1.0, 0.0), -pitch), AHEAD))
     return {"pos": [0.05, 0.0, 0.1], "quat": list(quat)}
@@ -145,10 +145,10 @@ class FakeRobotd:
         self.api_version = api_version
         """What `hello` answers in `api_version`, NO_VERSION to leave it out."""
         self.daemon_version: Any = up.RELEASE.removeprefix("daemon-v")
-        """What `hello` answers in `daemon_version`: the release quackd read, as robotd names
+        """What `hello` answers in `daemon_version`: the release Roboglot read, as robotd names
         it, by default."""
         self.revision: Any = up.PIN[:7]
-        """What `hello` answers in `revision`: the commit quackd read, by default."""
+        """What `hello` answers in `revision`: the commit Roboglot read, by default."""
         self.healthy = healthy
         # The duck as the next state frame will describe it. Each frame is built from these when
         # it is sent, so a test can pick the duck up, lay it down or start a skill mid-verb.
@@ -240,7 +240,7 @@ class FakeRobotd:
         is the only place a refused `robot.move` shows up at all."""
         self.link = asyncio.Event()
         self.link.set()
-        """Cleared, the link holds quackd's lines back, as one lost segment on an ssh tunnel does
+        """Cleared, the link holds Roboglot's lines back, as one lost segment on an ssh tunnel does
         until it is sent again: the fake reads nothing more, while its state stream goes on, and
         once it is set again takes every line it was sent, in the order sent."""
         self.junk: list[str] = []
@@ -250,7 +250,7 @@ class FakeRobotd:
         an answer whose shape moved."""
         self.unanswered: set[str] = set()
         """Calls the fake carries out and then never answers, by method, as a robotd whose
-        answer a link lost after it had read the call would look from quackd's end."""
+        answer a link lost after it had read the call would look from Roboglot's end."""
         self.writers: list[asyncio.StreamWriter] = []
         self.server: asyncio.AbstractServer | None = None
         self.port = 0
@@ -271,7 +271,7 @@ class FakeRobotd:
                 await stream
         self._stream = None
         # From Python 3.12.1 `wait_closed` also waits for every connection the server took to
-        # close, and a test that fails before it closes its transport leaves quackd's open, so
+        # close, and a test that fails before it closes its transport leaves Roboglot's open, so
         # teardown waited until CI's job limit cancelled it, and the failure was never printed.
         # Hanging up first is what a robotd that exits does, and the bound is the backstop for a
         # connection that does not close when told, as `_DelayingLink.stop` has.
@@ -499,7 +499,7 @@ class FakeRobotd:
                 self._stream = asyncio.create_task(self._publish(writer, params.get("hz") or 10))
                 self._streams.append(self._stream)
             else:
-                # A continuous intent sent with an id, which quackd never does. robotd takes it
+                # A continuous intent sent with an id, which Roboglot never does. robotd takes it
                 # the same as the notification and answers it, rather than ignoring a call for
                 # its framing (`apply_intent` in robotd/src/main.rs).
                 self._take(method, params)
@@ -521,7 +521,7 @@ _NOT_ON_THE_SHIM = frozenset({up.ROBOT_LOOK.name, up.ROBOT_HEAD.name, up.ROBOT_P
 class FakeShim(FakeRobotd):
     """Huebot's shim as its maker is asked to build it, over TCP loopback: the robotd above with
     less of it. It answers what docs/adapters/huebot/README.md asks the shim to answer, as robotd
-    does at the pin quackd read it at, and nothing else: `robot.look`, `robot.head` and
+    does at the pin Roboglot read it at, and nothing else: `robot.look`, `robot.head` and
     `robot.pose` are `METHOD_NOT_FOUND` until the shim has them. Its state has no `frames` and no
     odometry, its `skills` are every skill Huebot's verbs send, `sit_toggle` among them, and it
     keeps a deadman of its own (`driving`), which is what the shim is asked to keep."""

@@ -1,4 +1,4 @@
-"""The fast lane's question, and how its answer is read (`quackd.agent.decision.commands`)."""
+"""The fast lane's question, and how its answer is read (`roboglot.agent.decision.commands`)."""
 
 from __future__ import annotations
 
@@ -8,22 +8,22 @@ from typing import Any
 
 import pytest
 
-import quackd_microduck
-from quackd.adapters.factory import RobotSpec, describe
-from quackd.agent.decision import commands
-from quackd.agent.decision.catalogue import PRESETS
-from quackd.agent.decision.commands import PILOT, UNCLEAR, CommandChooser, offers_for
-from quackd.agent.decision.decisions_api import to_questions
-from quackd.agent.decision.factory import make_decision_llm
-from quackd.agent.decision.stepper import FLOORS
-from quackd.drive.presets import presets_for
-from quackd.verbs.registry import NoParams, Verb, VerbResult, registry_from_manifest
+import roboglot_microduck
+from roboglot.adapters.factory import RobotSpec, describe
+from roboglot.agent.decision import commands
+from roboglot.agent.decision.catalogue import PRESETS
+from roboglot.agent.decision.commands import PILOT, UNCLEAR, CommandChooser, offers_for
+from roboglot.agent.decision.decisions_api import to_questions
+from roboglot.agent.decision.factory import make_decision_llm
+from roboglot.agent.decision.stepper import FLOORS
+from roboglot.drive.presets import presets_for
+from roboglot.verbs.registry import NoParams, Verb, VerbResult, registry_from_manifest
 from tests import fake_laya
 
 
 def _verbs(extra: list[Verb] | None = None) -> tuple[dict[str, Verb], dict[str, Any]]:
     manifest = describe(RobotSpec("microduck", "mock"))
-    adapter = quackd_microduck.MicroduckAdapter.__new__(quackd_microduck.MicroduckAdapter)
+    adapter = roboglot_microduck.MicroduckAdapter.__new__(roboglot_microduck.MicroduckAdapter)
     registry = registry_from_manifest(manifest, adapter)
     for verb in extra or ():
         registry.register(verb, replace=True)

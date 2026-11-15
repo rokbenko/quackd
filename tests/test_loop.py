@@ -18,13 +18,13 @@ from typing import Any
 import pytest
 from PIL import Image
 
-import quackd.agent.loop as loop_module
-from quackd.adapters.base import AdapterError, RestResult
-from quackd.agent.images import load_task_images
-from quackd.agent.loop import KILL_SWITCH, STOP_BUTTON, AgentLoop, RunConfig, run_duck
-from quackd.agent.prompts import NOTHING_DETECTED_BEFORE_VERDICT
-from quackd.agent.providers import pricing
-from quackd.agent.providers.base import (
+import roboglot.agent.loop as loop_module
+from roboglot.adapters.base import AdapterError, RestResult
+from roboglot.agent.images import load_task_images
+from roboglot.agent.loop import KILL_SWITCH, STOP_BUTTON, AgentLoop, RunConfig, run_glot
+from roboglot.agent.prompts import NOTHING_DETECTED_BEFORE_VERDICT
+from roboglot.agent.providers import pricing
+from roboglot.agent.providers.base import (
     Exchange,
     Observation,
     ProviderError,
@@ -32,14 +32,14 @@ from quackd.agent.providers.base import (
     ToolCall,
     Usage,
 )
-from quackd.agent.providers.catalogue import Price, find_llm
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.providers.openai import render_messages
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.schema import Budgets, DuckFile
-from quackd.front import PAGE_GONE
-from quackd.perception.base import Detection
-from quackd.release import (
+from roboglot.agent.providers.catalogue import Price, find_llm
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.providers.openai import render_messages
+from roboglot.agent.transcript import Transcript
+from roboglot.front import PAGE_GONE
+from roboglot.glotfile.schema import Budgets, GlotFile
+from roboglot.perception.base import Detection
+from roboglot.release import (
     CLEAR_THE_WAY,
     CLEAR_THE_WAY_S,
     CLOSING_THE_GRIPPER,
@@ -54,12 +54,12 @@ from quackd.release import (
     RELEASE_INTERRUPTED,
     RELEASE_NOT_SENT,
 )
-from quackd.safety import Aborted
-from quackd.transport.base import CameraFrame, DuckState, TransportError
-from quackd.transport.mock import MockTransport
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
-from quackd_lerobot.verbs import (
+from roboglot.safety import Aborted
+from roboglot.transport.base import CameraFrame, DuckState, TransportError
+from roboglot.transport.mock import MockTransport
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
+from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     GRIPPER_TOL,
@@ -73,9 +73,9 @@ from quackd_lerobot.verbs import (
     at_rest,
     rest_goal,
 )
-from quackd_microduck import MicroduckAdapter
-from quackd_open_duck import OpenDuckAdapter
-from quackd_open_duck.mock import OpenDuckMock
+from roboglot_microduck import MicroduckAdapter
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.mock import OpenDuckMock
 from tests import sdk_errors as sdk
 
 # the verdict comes first on every run now: the scripted pilot answers it as a rule, and the
@@ -83,24 +83,24 @@ from tests import sdk_errors as sdk
 GOLDEN_HELLO = ["assess_task", "quack", "walk", "quack", "declare_success"]
 
 
-async def test_run_start_records_the_extra_body(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_run_start_records_the_extra_body(hello_glot: GlotFile, tmp_path: Path) -> None:
     """A run whose LLM was told not to think reads nothing like one that was, and the
     transcript is the only place a reader can tell which of the two they are holding. The
     emit is a `getattr`, which would record None for ever if the attribute were renamed."""
     body = {"chat_template_kwargs": {"enable_thinking": False}}
-    provider = FakeProvider.for_duck(hello_duck.name)
+    provider = FakeProvider.for_glot(hello_glot.name)
     provider.extra_body = body  # type: ignore[attr-defined]
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["kind"] == "run_start" and start["extra_body"] == body
 
     # a provider with no such attribute records None rather than raising
-    plain = await run_duck(
+    plain = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck(hello_duck.name),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path / "plain",
         )
@@ -109,22 +109,22 @@ async def test_run_start_records_the_extra_body(hello_duck: DuckFile, tmp_path: 
 
 
 async def test_the_extra_body_reaches_the_record_with_no_credential_in_it(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """`--extra-body` is a JSON object a vendor asked for and quackd never reads, which makes
+    """`--extra-body` is a JSON object a vendor asked for and Roboglot never reads, which makes
     it exactly where an `authorization` header ends up. It also arrives from
-    `QUACKD_EXTRA_BODY`, so no amount of argv redaction reaches it, and a run directory is
+    `ROBOGLOT_EXTRA_BODY`, so no amount of argv redaction reaches it, and a run directory is
     pasted into issues and copied off a bench machine.
 
     The shape survives, because the thing a reader came for is which fields the LLM was
     sent; only the values that would have to be rotated go."""
-    provider = FakeProvider.for_duck(hello_duck.name)
+    provider = FakeProvider.for_glot(hello_glot.name)
     provider.extra_body = {  # type: ignore[attr-defined]
         "authorization": "Bearer sk-live-X",
         "chat_template_kwargs": {"enable_thinking": False, "api_key": "sk-live-Y"},
     }
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["extra_body"] == {
@@ -135,12 +135,12 @@ async def test_the_extra_body_reaches_the_record_with_no_credential_in_it(
     assert "sk-live" not in whole, "and the key is nowhere else in the record either"
 
 
-async def test_hello_world_golden(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_hello_world_golden(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=transport,
             runs_dir=tmp_path,
         )
@@ -196,11 +196,11 @@ class ClockAdvancingProvider:
 
 
 async def test_no_tool_call_is_reprompted_once_then_failure(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck, provider=NoToolProvider(), transport=MockTransport(), runs_dir=tmp_path
+            duck=hello_glot, provider=NoToolProvider(), transport=MockTransport(), runs_dir=tmp_path
         )
     )
     assert result.outcome == "failure" and "no tool call" in result.reason
@@ -209,13 +209,13 @@ async def test_no_tool_call_is_reprompted_once_then_failure(
 
 @pytest.mark.parametrize("declaration", ["declare_success", "declare_failure"])
 async def test_time_budget_wins_over_late_declaration(
-    hello_duck: DuckFile, tmp_path: Path, declaration: str
+    hello_glot: GlotFile, tmp_path: Path, declaration: str
 ) -> None:
-    hello_duck.frontmatter.budgets = Budgets(max_minutes=0.1)
+    hello_glot.frontmatter.budgets = Budgets(max_minutes=0.1)
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=ClockAdvancingProvider(transport, 7, declaration),
             transport=transport,
             runs_dir=tmp_path,
@@ -231,13 +231,13 @@ async def test_time_budget_wins_over_late_declaration(
 
 
 async def test_provider_response_before_time_budget_is_processed(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    hello_duck.frontmatter.budgets = Budgets(max_minutes=0.1, max_llm_calls=1)
+    hello_glot.frontmatter.budgets = Budgets(max_minutes=0.1, max_llm_calls=1)
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=ClockAdvancingProvider(transport, 5),
             transport=transport,
             runs_dir=tmp_path,
@@ -278,7 +278,7 @@ class HangsPastTheMinutes:
 
 
 async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budget(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`max_minutes` was read only once an answer came back, so a call that hung held the robot
     past the task's whole budget for as long as the vendor's own clock allowed. The call is raced
@@ -286,13 +286,13 @@ async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budg
     as the call that failed, never asked again, and the run ends on its budget in the budget's
     own words, as it would have for an answer that came back late. Bounded by `wait_for` only so
     that the code before this, which waits for ever, fails rather than hangs."""
-    hello_duck.frontmatter.budgets = Budgets(max_minutes=0.1)
+    hello_glot.frontmatter.budgets = Budgets(max_minutes=0.1)
     transport = MockTransport()
     provider = HangsPastTheMinutes(transport, 0.1 * 60 + 1)
     result = await asyncio.wait_for(
-        run_duck(
+        run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=provider,
                 transport=transport,
                 runs_dir=tmp_path,
@@ -309,11 +309,11 @@ async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budg
     assert "BudgetExceeded" in call["error"] and "retry_in_s" not in call, call
 
 
-async def test_budget_ends_the_run(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_budget_ends_the_run(hello_glot: GlotFile, tmp_path: Path) -> None:
     forever = FakeProvider(script=[ToolCall(name="quack", arguments={})])
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=forever,
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -325,7 +325,7 @@ async def test_budget_ends_the_run(hello_duck: DuckFile, tmp_path: Path) -> None
 
 
 async def test_a_max_steps_override_reaches_the_prompt_as_well_as_the_observation_header(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`--max-steps` changed the budget and not the sentence about it.
 
@@ -334,10 +334,10 @@ async def test_a_max_steps_override_reaches_the_prompt_as_well_as_the_observatio
     copied into the contract the executor enforces and the prompt was built from the task
     file's own. A pilot told it has four times the budget it has plans differently, and it
     cannot tell which number is real. All three readings of it have to agree."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,  # its own file says five
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,  # its own file says five
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             max_steps=7,
@@ -353,14 +353,14 @@ async def test_a_max_steps_override_reaches_the_prompt_as_well_as_the_observatio
     assert header.startswith("[step 0/7 "), header
 
 
-async def test_every_observation_says_its_step_once(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_every_observation_says_its_step_once(hello_glot: GlotFile, tmp_path: Path) -> None:
     """The header puts the step in front of the budget's own line, which starts with the same
     step, so every observation a pilot was handed read `[step 3/40 · step 3/40, LLM calls ...]`.
     It says it once, and the rest of the budget line is still there."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -374,7 +374,7 @@ async def test_every_observation_says_its_step_once(hello_duck: DuckFile, tmp_pa
         assert " · LLM calls " in header, header
 
 
-async def test_disallowed_verb_is_feedback(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_disallowed_verb_is_feedback(hello_glot: GlotFile, tmp_path: Path) -> None:
     naughty = FakeProvider(
         script=[
             ToolCall(name="kick", arguments={}),
@@ -382,8 +382,8 @@ async def test_disallowed_verb_is_feedback(hello_duck: DuckFile, tmp_path: Path)
         ]
     )
     transport = MockTransport()
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=naughty, transport=transport, runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=naughty, transport=transport, runs_dir=tmp_path)
     )
     assert result.outcome == "failure"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -393,12 +393,12 @@ async def test_disallowed_verb_is_feedback(hello_duck: DuckFile, tmp_path: Path)
     assert transport.intents_of("do") == []
 
 
-async def test_heartbeat_failure_aborts_the_run(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_heartbeat_failure_aborts_the_run(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport(fail_heartbeat_after=0)
     forever = FakeProvider(script=[ToolCall(name="walk", arguments={"duration_s": 2.0})])
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=forever,
             transport=transport,
             runs_dir=tmp_path,
@@ -410,12 +410,12 @@ async def test_heartbeat_failure_aborts_the_run(hello_duck: DuckFile, tmp_path: 
     assert transport.stops >= 1
 
 
-async def test_dry_run_touches_nothing(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_dry_run_touches_nothing(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=transport,
             runs_dir=tmp_path,
             dry_run=True,
@@ -454,13 +454,13 @@ class ThinkingProvider:
 
 
 async def test_the_transcript_carries_the_whole_conversation(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Every step the run takes on the LLM's behalf is a line: what was asked, what it
     thought, what it answered, what the executor decided, what went to the robot."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=ThinkingProvider(
                 ToolCall(name="quack", arguments={"text": "hi"}),
                 ToolCall(name="declare_success", arguments={"reason": "quacked"}),
@@ -495,13 +495,13 @@ async def test_the_transcript_carries_the_whole_conversation(
 
 
 async def test_the_final_safety_stop_is_in_the_log_too(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The intents that matter most are the ones sent because something went wrong."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -512,7 +512,7 @@ async def test_the_final_safety_stop_is_in_the_log_too(
 
 
 async def test_a_provider_that_fails_says_so_instead_of_exiting_unexpectedly(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A bad key, a 429 or a dropped connection is what a first real run hits. The run used
     to end with `loop exited unexpectedly` and no record of the call that failed."""
@@ -526,9 +526,9 @@ async def test_a_provider_that_fails_says_so_instead_of_exiting_unexpectedly(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     with pytest.raises(ProviderError):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=Failing(),
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -543,7 +543,7 @@ async def test_a_provider_that_fails_says_so_instead_of_exiting_unexpectedly(
 
 
 async def test_a_cancelled_run_ends_as_an_abort_that_still_stops_and_records(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`KeyboardInterrupt` and `CancelledError` are not `Exception`, so neither reached the
     error branch and `run_end` kept its default, `loop exited unexpectedly` — the very string
@@ -560,9 +560,9 @@ async def test_a_cancelled_run_ends_as_an_abort_that_still_stops_and_records(
     run_dir.mkdir()
     transport = MockTransport()
     task = asyncio.create_task(
-        run_duck(
+        run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=Stalling(),
                 transport=transport,
                 run_dir=run_dir,
@@ -584,18 +584,18 @@ async def test_a_cancelled_run_ends_as_an_abort_that_still_stops_and_records(
 
 
 async def test_a_record_that_fails_at_run_end_still_gets_its_summary_and_is_closed(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A disk that fills at the last line used to skip summary.json, leak the handle and
     replace the run's own outcome with an OSError."""
-    from quackd.agent.loop import AgentLoop
+    from roboglot.agent.loop import AgentLoop
 
     run_dir = tmp_path / "full"
     run_dir.mkdir()
     loop = AgentLoop(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             run_dir=run_dir,
             runs_dir=tmp_path,
@@ -618,7 +618,7 @@ async def test_a_record_that_fails_at_run_end_still_gets_its_summary_and_is_clos
 def test_writing_to_a_closed_transcript_is_a_no_op(tmp_path: Path) -> None:
     """A verb task cancelled during teardown narrates its last intent after the record has
     closed; that must not raise inside a task nobody awaits."""
-    from quackd.log import LogEvent
+    from roboglot.log import LogEvent
 
     t = Transcript(tmp_path)
     t.close()
@@ -627,12 +627,12 @@ def test_writing_to_a_closed_transcript_is_a_no_op(tmp_path: Path) -> None:
     assert t.events == 0
 
 
-async def test_a_console_sees_the_run_as_it_happens(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_console_sees_the_run_as_it_happens(hello_glot: GlotFile, tmp_path: Path) -> None:
     seen: list[str] = []
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             view=lambda event: seen.append(event.kind),
@@ -642,16 +642,16 @@ async def test_a_console_sees_the_run_as_it_happens(hello_duck: DuckFile, tmp_pa
     assert {"observation", "llm", "verb_start", "intent", "verb_end", "declare"} <= set(seen)
 
 
-async def test_a_broken_console_never_ends_a_run(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_broken_console_never_ends_a_run(hello_glot: GlotFile, tmp_path: Path) -> None:
     """A terminal that cannot print is not a reason to stop a robot mid-task."""
 
     def broken(_event: Any) -> None:
         raise RuntimeError("the terminal went away")
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             view=broken,
@@ -662,7 +662,7 @@ async def test_a_broken_console_never_ends_a_run(hello_duck: DuckFile, tmp_path:
 
 
 async def test_the_summary_counts_the_events_a_broken_console_dropped(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A console that raises on every event produced a silent log, an unchanged exit code
     and no line anywhere saying events had been dropped."""
@@ -670,10 +670,10 @@ async def test_the_summary_counts_the_events_a_broken_console_dropped(
     def broken(_event: Any) -> None:
         raise RuntimeError("the terminal went away")
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             view=broken,
@@ -691,7 +691,7 @@ async def test_the_summary_counts_the_events_a_broken_console_dropped(
 
 
 async def test_thinking_on_the_reprompt_turn_is_recorded(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The re-prompt is a second call to the LLM in the same step, and nothing asserted
     that the request was marked as one or that its answer's reasoning was kept."""
@@ -711,9 +711,9 @@ async def test_thinking_on_the_reprompt_turn_is_recorded(
                 thinking="turn 2: it wants exactly one tool",
             )
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=Dithering(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -731,7 +731,7 @@ async def test_thinking_on_the_reprompt_turn_is_recorded(
 
 
 async def test_a_turn_a_fallback_answered_is_recorded_with_the_llm_that_answered(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A server-side refusal fallback re-runs a declined turn on another LLM and the provider
     says which. The record keeps it on that turn and only that turn, so every other `llm` line,
@@ -754,9 +754,9 @@ async def test_a_turn_a_fallback_answered_is_recorded_with_the_llm_that_answered
                 tool_calls=[ToolCall(name="declare_success", arguments={"reason": "quacked"})]
             )
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck, provider=FellBack(), transport=MockTransport(), runs_dir=tmp_path
+            duck=hello_glot, provider=FellBack(), transport=MockTransport(), runs_dir=tmp_path
         )
     )
     assert result.outcome == "success"
@@ -766,18 +766,18 @@ async def test_a_turn_a_fallback_answered_is_recorded_with_the_llm_that_answered
 
 
 async def test_a_composite_is_logged_as_nested_pairs_with_the_parents_tally(
-    kick_duck: DuckFile, tmp_path: Path
+    kick_duck: GlotFile, tmp_path: Path
 ) -> None:
     """A composite sends nothing itself: every intent `approach_and` reports came from the
     `go_to` and the `kick` it ran. The tally is a chain of `ContextVar` frames, so a
     regression there is silent — the parent would keep reporting a number, just a smaller
     one, and a reader would believe it."""
-    from quackd.perception.color_blob import ColorBlobDetector
-    from quackd.transport.sim2d import Sim2DTransport
+    from roboglot.perception.color_blob import ColorBlobDetector
+    from roboglot.transport.sim2d import Sim2DTransport
 
     kick_duck.frontmatter.verbs.allow = [*kick_duck.frontmatter.verbs.allow, "approach_and"]
     seen: list[Any] = []
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=kick_duck,
             provider=FakeProvider(
@@ -817,21 +817,21 @@ async def test_a_composite_is_logged_as_nested_pairs_with_the_parents_tally(
 
 
 async def test_the_log_callback_still_gets_the_lines_that_only_it_had(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """`log` is a contract other callers rely on: the flock's member records, the MCP
+    """`log` is a contract other callers rely on: the team's member records, the MCP
     logger, and tests that assert on what a run said. The log observes it, never replaces
     it."""
     # a v1 task may allow more than it needs; a verb this body lacks is dropped with a line
-    hello_duck.frontmatter.duck = 1
-    hello_duck.frontmatter.requires = ["quack"]
-    hello_duck.frontmatter.verbs.allow = ["quack", "walk", "stop", "fly"]
+    hello_glot.frontmatter.glot = 1
+    hello_glot.frontmatter.requires = ["quack"]
+    hello_glot.frontmatter.verbs.allow = ["quack", "walk", "stop", "fly"]
     lines: list[str] = []
     seen: list[Any] = []
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             log=lines.append,
@@ -880,14 +880,14 @@ class CapturingProvider:
 
 
 async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """`extras.assumptions` is what a backend says quackd is standing in for. It reached the
+    """`extras.assumptions` is what a backend says Roboglot is standing in for. It reached the
     transcript and `FakeProvider`, and no further: every real provider sends `obs.text`, which
     is built from `state.summary()`, and neither had a branch for it. So the docs said a
     transcript never implies more than happened while the LLM was told nothing at all.
     """
-    from quackd.transport.base import DuckState
+    from roboglot.transport.base import DuckState
 
     stand_ins = [
         "kick is a scripted impulse, not the robot's own kick policy",
@@ -897,8 +897,8 @@ async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
         states=[DuckState(policy="mock", posture="standing", extras={"assumptions": stand_ins})]
     )
     provider = CapturingProvider()
-    await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=transport, runs_dir=tmp_path)
+    await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=transport, runs_dir=tmp_path)
     )
     system = provider.systems[0]
     assert "## What is a stand-in on this robot" in system
@@ -909,11 +909,11 @@ async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
 
 
 async def test_a_robot_that_claims_no_stand_ins_gets_no_such_section(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     provider = CapturingProvider()
-    await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert "stand-in" not in provider.systems[0]
     assert "stand-ins=" not in provider.observations[0]
@@ -921,7 +921,7 @@ async def test_a_robot_that_claims_no_stand_ins_gets_no_such_section(
 
 ARM_DUCK = """\
 ---
-duck: {version}
+glot: {version}
 name: lift-the-mug
 description: Pick up the mug.
 verbs:
@@ -939,14 +939,14 @@ _OVERRIDE = """datasheet:
 async def test_a_task_files_datasheet_reaches_the_prompt_the_executor_and_the_record(
     tmp_path: Path,
 ) -> None:
-    from quackd.adapters.factory import make_adapter
-    from quackd.duckfile.parser import parse_duck_text
+    from roboglot.adapters.factory import make_adapter
+    from roboglot.glotfile.parser import parse_glot_text
 
     provider = CapturingProvider()
     adapter = make_adapter("lerobot:mock")
     loop = AgentLoop(
         RunConfig(
-            duck=parse_duck_text(ARM_DUCK.format(version=2, block=_OVERRIDE)),
+            duck=parse_glot_text(ARM_DUCK.format(version=2, block=_OVERRIDE)),
             provider=provider,
             transport=adapter,
             runs_dir=tmp_path,
@@ -966,13 +966,13 @@ async def test_a_task_files_datasheet_reaches_the_prompt_the_executor_and_the_re
 
 
 async def test_without_a_correction_the_body_speaks_for_itself(tmp_path: Path) -> None:
-    from quackd.adapters.factory import make_adapter
-    from quackd.duckfile.parser import parse_duck_text
+    from roboglot.adapters.factory import make_adapter
+    from roboglot.glotfile.parser import parse_glot_text
 
     provider = CapturingProvider()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=parse_duck_text(ARM_DUCK.format(version=1, block="")),
+            duck=parse_glot_text(ARM_DUCK.format(version=1, block="")),
             provider=provider,
             transport=make_adapter("lerobot:mock"),
             runs_dir=tmp_path,
@@ -988,14 +988,14 @@ def _verdict_call(word: str, reason: str, **extra: Any) -> ToolCall:
 
 
 async def test_the_rule_answers_the_gate_before_its_own_first_verb(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The scripted pilot has no judgement of a body, so it says so and goes on. Without
     that, every keyless run in the README would stop at the gate."""
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 1.0}),
@@ -1017,7 +1017,7 @@ async def test_the_rule_answers_the_gate_before_its_own_first_verb(
 
 
 async def test_a_verb_before_any_verdict_is_refused_and_the_pilot_is_told_why(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     class Impatient:
         """A pilot that reaches for a leg before it has judged the task."""
@@ -1041,8 +1041,8 @@ async def test_a_verb_before_any_verdict_is_refused_and_the_pilot_is_told_why(
             return ProviderTurn(tool_calls=[call])
 
     transport = MockTransport()
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=Impatient(), transport=transport, runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=Impatient(), transport=transport, runs_dir=tmp_path)
     )
     assert result.outcome == "failure"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -1073,17 +1073,17 @@ def _observed(run_dir: Path) -> list[str]:
 
 
 async def test_until_a_verdict_an_empty_frame_says_it_is_not_by_itself_a_reason_for_uncertain(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """#25: a pilot that had read in `assess_task` that an unfound target is not by itself a
     reason for `uncertain` still answered `uncertain` because the camera had found nothing, on
     the README's own goal, most of the time. The line saying so goes under the observation it
     decides from, and only until a verdict is recorded: once the pilot has answered, an empty
     frame is the task going on and nobody needs telling."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             detector=_Finds(),
             runs_dir=tmp_path,
@@ -1098,15 +1098,15 @@ async def test_until_a_verdict_an_empty_frame_says_it_is_not_by_itself_a_reason_
 
 
 async def test_a_frame_that_found_something_gets_no_such_line(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The line is for an empty frame. Where the camera found something the pilot has a thing
     to judge, and the line would be telling it about a frame it is not looking at."""
     ball = Detection(label="ball", cx=0.5, cy=0.5, area=0.05)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             detector=_Finds(ball),
             runs_dir=tmp_path,
@@ -1119,14 +1119,14 @@ async def test_a_frame_that_found_something_gets_no_such_line(
 
 
 async def test_a_run_no_detector_looks_for_is_never_told_nothing_was_detected_yet(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A body with no camera, or a run with no detector, detects nothing on every turn, and a
     line saying "yet" on each of them would be false. It goes only where a detector looked."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -1137,15 +1137,15 @@ async def test_a_run_no_detector_looks_for_is_never_told_nothing_was_detected_ye
 
 
 async def test_an_uncertain_nobody_can_answer_is_not_followed_by_the_line(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """With nobody to ask, an `uncertain` is told to decide again, feasible or infeasible
     (`NOBODY_TO_ASK`). A line under the next frame naming `uncertain` as an answer would pull
     the other way, so it stops at the first verdict recorded rather than at the first that
     clears the gate."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(
@@ -1173,14 +1173,14 @@ async def test_an_uncertain_nobody_can_answer_is_not_followed_by_the_line(
 
 
 async def test_a_feasible_its_own_sheet_refuses_brings_the_line_back(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A `feasible` naming a figure the body's datasheet does not publish is refused, and no
     verdict stands after it, so the next frame is where the first one was: the line comes
     back, and with it the half that sends an unpublished figure to `uncertain`."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(
@@ -1208,12 +1208,12 @@ async def test_a_feasible_its_own_sheet_refuses_brings_the_line_back(
 
 
 async def test_an_infeasible_verdict_ends_the_run_before_anything_moves(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1256,7 +1256,7 @@ async def test_an_infeasible_verdict_ends_the_run_before_anything_moves(
 
 
 async def test_an_uncertain_verdict_asks_the_person_in_the_room(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     asked: list[str] = []
 
@@ -1267,9 +1267,9 @@ async def test_an_uncertain_verdict_asks_the_person_in_the_room(
     no.asks_a_person = True  # type: ignore[attr-defined]
 
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1296,11 +1296,11 @@ async def test_an_uncertain_verdict_asks_the_person_in_the_room(
     assert assessed["human"] == "no_go" and assessed["answered_by"] == "a person", assessed
 
 
-async def test_a_person_who_says_go_clears_the_gate(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_person_who_says_go_clears_the_gate(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -1320,7 +1320,7 @@ async def test_a_person_who_says_go_clears_the_gate(hello_duck: DuckFile, tmp_pa
 
 
 async def test_a_pilot_hears_that_a_person_cleared_its_doubt(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """On the 2026-09-23 bench a pilot answered `uncertain`, a person at the terminal said go,
     and all it heard back was "recorded uncertain: ...; verbs that move the body now run",
@@ -1336,9 +1336,9 @@ async def test_a_pilot_hears_that_a_person_cleared_its_doubt(
     says_go.asks_a_person = True  # type: ignore[attr-defined]
 
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see how heavy the thing is"),
@@ -1369,33 +1369,33 @@ async def test_a_pilot_hears_that_a_person_cleared_its_doubt(
     assert own["summary"].endswith("verbs that move the body now run")
 
 
-@pytest.mark.parametrize("standing", ["--yes", "a flock's standing answer", "a pipe"])
+@pytest.mark.parametrize("standing", ["--yes", "a team's standing answer", "a pipe"])
 async def test_a_pilot_cleared_without_asking_anybody_is_not_told_a_person_did(
-    hello_duck: DuckFile, tmp_path: Path, standing: str, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, standing: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`_assess` chose the "a person read that and said go" sentence on the answer alone, so a
-    run started with `--yes` (which `quackd record` always passes) or a flock's standing
+    run started with `--yes` (which `roboglot record` always passes) or a team's standing
     answer told the pilot, and wrote into the assess event's summary, that a person had read its
     doubt, while the same run rightly wrote no `prompt` row because nobody was asked. A record
     that invents a witness is the one safety.md says is worse than none. The pilot is told the
     run was started to go ahead without asking, and still not to raise the same doubt again.
 
-    And the sentence named `--yes` or a flock's standing answer as the cause whatever it was,
-    so a run whose question a pipe answered (`yes | quackd run`, the CLI's own prompt with no
+    And the sentence named `--yes` or a team's standing answer as the cause whatever it was,
+    so a run whose question a pipe answered (`yes | roboglot run`, the CLI's own prompt with no
     terminal under it) was told of two things that had not happened. It names all three now."""
-    from quackd import cli
+    from roboglot import cli
 
     if standing == "a pipe":
         monkeypatch.setattr(cli, "_can_prompt", lambda: False)  # stdin is not a terminal
         monkeypatch.setattr(cli, "_ask", lambda _question: True)  # and the pipe says y
     decide = {
         "--yes": cli._yes_to_go,
-        "a flock's standing answer": lambda _q: True,
+        "a team's standing answer": lambda _q: True,
         "a pipe": cli._decide_prompt,
     }[standing]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see how heavy the thing is"),
@@ -1416,7 +1416,7 @@ async def test_a_pilot_cleared_without_asking_anybody_is_not_told_a_person_did(
     assert "a person" not in cleared["summary"], cleared["summary"]
     for said in (
         "cannot see how heavy the thing is",
-        "this run was started to go ahead without asking anybody (--yes, a flock's standing "
+        "this run was started to go ahead without asking anybody (--yes, a team's standing "
         "answer or a pipe)",
         "verbs that move the body now run",
         "Do not assess again on the same doubt, only on something new you see",
@@ -1428,12 +1428,12 @@ async def test_a_pilot_cleared_without_asking_anybody_is_not_told_a_person_did(
 
 
 async def test_with_nobody_to_ask_the_pilot_is_told_to_decide_itself(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -1457,11 +1457,11 @@ async def test_with_nobody_to_ask_the_pilot_is_told_to_decide_itself(
     assert [e["human"] for e in events if e["kind"] == "assess"] == [None, None]
 
 
-async def test_a_later_verdict_can_still_end_the_run(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_later_verdict_can_still_end_the_run(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "looks light from here"),
@@ -1483,7 +1483,7 @@ async def test_a_later_verdict_can_still_end_the_run(hello_duck: DuckFile, tmp_p
 
 
 async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A pilot may not move its body on a need its own sheet does not meet.
 
@@ -1495,9 +1495,9 @@ async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
     told which need is unmet and can assess again, the same way a verdict carrying `human`
     is refused rather than quietly stripped.
     """
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it can patrol", needs={"endurance_min": 45}),
@@ -1518,16 +1518,16 @@ async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
     assert "endurance is not published" in assessed[1]["summary"]
 
 
-async def test_a_need_this_body_meets_still_passes(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_need_this_body_meets_still_passes(hello_glot: GlotFile, tmp_path: Path) -> None:
     """The check refuses what the sheet does not cover, and nothing else.
 
     Without this, a check that refused every `needs` would pass the test above and break
     every run that fills the field in honestly. The Microduck is legged and rated for a flat
     indoor floor, so a verdict asking for exactly that is the sheet agreeing with itself.
     """
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1549,7 +1549,7 @@ async def test_a_need_this_body_meets_still_passes(hello_duck: DuckFile, tmp_pat
 
 
 async def test_a_refused_verdict_shuts_the_gate_an_earlier_one_opened(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A refusal that left an earlier `feasible` standing refused the words and not the motion.
 
@@ -1559,9 +1559,9 @@ async def test_a_refused_verdict_shuts_the_gate_an_earlier_one_opened(
     thrown away. That is the exact failure #24 exists to stop, one re-assessment later. So the
     refusal withdraws what was standing: nothing moves until the pilot answers again.
     """
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it walks", needs={"mobility": "legged"}),
@@ -1595,7 +1595,7 @@ async def test_a_refused_verdict_shuts_the_gate_an_earlier_one_opened(
 
 
 async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_verdict(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Every refusal in `_assess` returns before recording, and the transcript row was built
     from whatever verdict happened to be standing, so a refused re-assessment was written down
@@ -1603,9 +1603,9 @@ async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_ve
     earlier verdict had been refused, which is a different and false story. The row describes
     the call now.
     """
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it walks"),
@@ -1629,7 +1629,7 @@ async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_ve
 
 
 async def test_yes_clears_the_doubt_a_refused_feasible_became(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """What the check costs and does not cost under `--yes`, because docs/concepts/safety.md says
     so.
@@ -1641,9 +1641,9 @@ async def test_yes_clears_the_doubt_a_refused_feasible_became(
     flag. What the check buys here is the record. The refusal and the doubt it became are both
     in the transcript, where a silent `feasible` left nothing at all.
     """
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it can patrol", needs={"endurance_min": 45}),
@@ -1669,11 +1669,11 @@ async def test_yes_clears_the_doubt_a_refused_feasible_became(
 
 
 async def test_an_invalid_verdict_is_refused_and_the_run_goes_on(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="assess_task", arguments={"verdict": "maybe", "reason": "hm"}),
@@ -1698,11 +1698,11 @@ async def test_an_invalid_verdict_is_refused_and_the_run_goes_on(
 
 
 async def test_the_prompt_offers_the_tool_and_states_the_rule(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     provider = CapturingProvider()
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert "assess_task" in events[0]["tools"]
@@ -1721,9 +1721,9 @@ def test_the_rule_line_names_a_bodys_own_read_only_verb() -> None:
     runs before the verdict has to be read off the body. A third-party `locate` that only
     looks belongs in it, the `reach` beside it does not, and `stop` is there whether or not
     the contract listed it."""
-    from quackd.agent.prompts import before_verdict_clause, build_system_prompt
-    from quackd.duckfile.parser import parse_duck_text
-    from quackd.verbs.registry import NoParams, Verb, VerbResult
+    from roboglot.agent.prompts import before_verdict_clause, build_system_prompt
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.verbs.registry import NoParams, Verb, VerbResult
 
     async def noop(_ctx: object, _p: object) -> VerbResult:
         return VerbResult.success("ok")
@@ -1735,9 +1735,9 @@ def test_the_rule_line_names_a_bodys_own_read_only_verb() -> None:
     assert before_verdict_clause(verbs) == "only `locate` and `stop` run"
     assert before_verdict_clause([]) == "only `stop` runs", "the brake is never gated"
 
-    duck = parse_duck_text(
+    duck = parse_glot_text(
         """---
-duck: 0
+glot: 0
 name: t
 description: d
 verbs:
@@ -1798,11 +1798,11 @@ def _sends_to_open(mock: LeRobotMock, start: float) -> int:
     return max(1, math.ceil((GRIPPER_OPEN - GRIPPER_TOL - start) / step))
 
 
-def _arm_duck() -> DuckFile:
+def _arm_glot() -> GlotFile:
     """A task an arm can run: it looks, it reads its own state, it stops."""
-    from quackd.duckfile.parser import parse_duck_text
+    from roboglot.glotfile.parser import parse_glot_text
 
-    return parse_duck_text(ARM_DUCK.format(version=1, block=""))
+    return parse_glot_text(ARM_DUCK.format(version=1, block=""))
 
 
 async def test_a_task_the_arm_cannot_run_still_puts_the_arm_down_before_letting_go(
@@ -1818,17 +1818,17 @@ async def test_a_task_the_arm_cannot_run_still_puts_the_arm_down_before_letting_
 
     Nothing is asked of the pilot: this is refused before the first call, so a run that could
     never have worked also costs nothing."""
-    duck = _arm_duck()
-    duck.frontmatter.duck = 1
+    duck = _arm_glot()
+    duck.frontmatter.glot = 1
     duck.frontmatter.requires = ["fly"]
     mock = LeRobotMock(rest_pose=ARM_REST)
     mock.joints["shoulder_pan"] = ARM_REST["shoulder_pan"] + 70.0  # nowhere anybody chose
-    provider = FakeProvider.for_duck("hello-world")
+    provider = FakeProvider.for_glot("hello-world")
     run_dir = tmp_path / "run"
     run_dir.mkdir()
 
     with pytest.raises(AdapterError, match="fly"):
-        await run_duck(
+        await run_glot(
             RunConfig(
                 duck=duck,
                 provider=provider,
@@ -1933,7 +1933,7 @@ async def test_every_way_a_run_ends_returns_the_arm_to_rest(ending: str, tmp_pat
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     cfg = RunConfig(
-        duck=_arm_duck(),
+        duck=_arm_glot(),
         provider=provider,
         transport=LeRobotAdapter(mock),
         run_dir=run_dir,
@@ -1941,16 +1941,16 @@ async def test_every_way_a_run_ends_returns_the_arm_to_rest(ending: str, tmp_pat
         **extra,
     )
     if ending == "cancelled":
-        task = asyncio.create_task(run_duck(cfg))
+        task = asyncio.create_task(run_glot(cfg))
         await asyncio.wait_for(provider.asked.wait(), 30.0)  # cancelled while the pilot waits
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
     elif (error := RAISES.get(ending)) is not None:
         with pytest.raises(error):
-            await run_duck(cfg)
+            await run_glot(cfg)
     else:
-        await run_duck(cfg)
+        await run_glot(cfg)
 
     events = Transcript.read(run_dir / "transcript.jsonl")
     end = next(e for e in events if e["kind"] == "run_end")
@@ -1970,13 +1970,13 @@ async def test_an_arm_the_run_left_elsewhere_is_driven_home_before_the_torque_dr
     stop holds the arm where it is and the close releases it, so the move between them is the
     only thing standing between the arm and the desk."""
     mock = LeRobotMock(rest_pose=ARM_REST)
-    duck = _arm_duck()
+    duck = _arm_glot()
     duck.frontmatter.verbs.allow = [*duck.frontmatter.verbs.allow, "move_joints"]
     script = [
         ToolCall(name="move_joints", arguments={"positions": {"shoulder_pan": -20.0}}),
         ToolCall(name="declare_success", arguments={"reason": "moved and stopped"}),
     ]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(script=script),
@@ -2001,15 +2001,15 @@ async def test_a_rest_pose_past_the_travel_is_explained_once_and_the_old_notes_s
     numbers. Not at both ends: the pose did not change during the run. And the three notes the
     rest move has always said are said exactly as before, because scripts and people read
     them."""
-    from quackd_lerobot.mock import MOCK_RANGES
+    from roboglot_lerobot.mock import MOCK_RANGES
 
     floor = MOCK_RANGES["shoulder_lift"][0]
     pose = dict(ARM_REST) | {"shoulder_lift": floor - 2 * TOL_DEG - 3.0}
     mock = LeRobotMock(rest_pose=pose)
     script = [ToolCall(name="declare_success", arguments={"reason": "parked twice"})]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2069,9 +2069,9 @@ async def test_a_connect_the_body_had_to_make_again_is_in_the_run_s_record(
     ]
     mock = _ConnectedOnRetry(said, rest_pose=ARM_REST)
     script = [ToolCall(name="declare_success", arguments={"reason": "connected on a retry"})]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2097,9 +2097,9 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(tmp_path: Path) ->
     about the run, which is exactly why it is not suppressed here."""
     mock = LeRobotMock(rest_pose=ARM_REST)
     script = [ToolCall(name="declare_success", arguments={"reason": "pretended"})]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2126,9 +2126,9 @@ async def test_a_run_whose_first_rest_move_fails_never_asks_the_llm_anything(
     stalled = "shoulder_lift is at -90 with a goal of -40"
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=stalled)
     script = [ToolCall(name="declare_success", arguments={"reason": "never asked"})]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2145,16 +2145,16 @@ async def test_a_run_whose_first_rest_move_fails_never_asks_the_llm_anything(
 
 
 async def test_the_note_about_torque_left_on_reaches_the_transcript(tmp_path: Path) -> None:
-    """An arm that is not at its rest pose keeps torque when quackd closes it, or it drops on
+    """An arm that is not at its rest pose keeps torque when Roboglot closes it, or it drops on
     the desk. That leaves a robot holding itself up after the run is over, and the person in
     the room has to be told so they can hold it and cut the power by hand. The transport
     records the sentence and prints nothing itself; the run is what says it out loud."""
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails="the elbow is against the table")
     lines: list[str] = []
     script = [ToolCall(name="declare_success", arguments={"reason": "never asked"})]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2171,15 +2171,15 @@ async def test_the_note_about_torque_left_on_reaches_the_transcript(tmp_path: Pa
 
 
 async def test_a_body_with_no_rest_pose_says_nothing_about_one(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """Most bodies quackd drives have no arm to put down, and their runs have to read exactly
+    """Most bodies Roboglot drives have no arm to put down, and their runs have to read exactly
     as they did before there was a rest pose at all. Every golden in this suite is one of
     them."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -2216,10 +2216,10 @@ def test_a_body_with_one_camera_is_never_told_its_view_has_a_name() -> None:
     adapter's: the LeRobot arm withholds it for a single camera, and another body's adapter
     may not. A pilot told `This body has 1 cameras: forward` and that its frames are labelled
     would be reading a sentence the wire never honours, and would have no way to know."""
-    from quackd.agent.prompts import build_system_prompt
-    from quackd_lerobot import lerobot_manifest
+    from roboglot.agent.prompts import build_system_prompt
+    from roboglot_lerobot import lerobot_manifest
 
-    duck, one = _arm_duck(), lerobot_manifest("mock", camera_names=("forward",))
+    duck, one = _arm_glot(), lerobot_manifest("mock", camera_names=("forward",))
     one.extras["cameras"] = ["forward"]  # an adapter that publishes it for its only camera
     said = build_system_prompt(duck, [], "mock", manifest=one)
     assert "1 cameras" not in said, said[said.find("camera") - 80 :][:240]
@@ -2243,7 +2243,7 @@ class OneCameraLeft(MockTransport):
 
 
 async def test_the_one_lens_left_on_a_two_camera_body_still_says_which_one_it_is(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The dangerous case, and the one that is easy to write wrong: count the pictures that
     arrived and a two-camera arm down to one lens looks exactly like a one-camera arm, so the
@@ -2254,8 +2254,8 @@ async def test_the_one_lens_left_on_a_two_camera_body_still_says_which_one_it_is
     The body's own camera list is what decides, and that list does not shrink when a lens
     stalls."""
     provider = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=OneCameraLeft(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=OneCameraLeft(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
 
@@ -2326,7 +2326,7 @@ class SeeingProvider:
 
 
 async def test_every_camera_frame_reaches_the_provider_and_the_transcript(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Two unlabelled pictures in one request are two views of a room with nothing to say which
     is which, and two frames written to one `0000.png` are one view lost. So the camera's name
@@ -2336,9 +2336,9 @@ async def test_every_camera_frame_reaches_the_provider_and_the_transcript(
         ToolCall(name="quack", arguments={"text": "hi"}),
         ToolCall(name="declare_success", arguments={"reason": "seen"}),
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2365,7 +2365,7 @@ async def test_every_camera_frame_reaches_the_provider_and_the_transcript(
 
 
 async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Encoding a frame to PNG holds whichever thread does it, and a body's heartbeat waits on
     the event loop's for an answer: a second of encoding there was a heartbeat reported as not
@@ -2387,8 +2387,8 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
         ToolCall(name="quack", arguments={"text": "hi"}),
         ToolCall(name="declare_success", arguments={"reason": "seen"}),
     )
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert encoded_on and loop_thread not in encoded_on, "a picture was encoded on the loop"
@@ -2406,7 +2406,7 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
 
 
 async def test_each_picture_is_encoded_once_and_the_llm_is_sent_the_file(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A turn's picture used to be encoded twice, once for `frames/` and once more for the
     request: the same pixels through the same encoder, a second time, on a worker thread a
@@ -2426,8 +2426,8 @@ async def test_each_picture_is_encoded_once_and_the_llm_is_sent_the_file(
         ToolCall(name="quack", arguments={"text": "hi"}),
         ToolCall(name="declare_success", arguments={"reason": "seen"}),
     )
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     frames = result.run_dir / "frames"
@@ -2441,13 +2441,13 @@ async def test_each_picture_is_encoded_once_and_the_llm_is_sent_the_file(
 
 
 async def test_only_the_last_n_exchanges_keep_their_images(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`keep_images_for_last_n` is the only thing bounding what a run costs in pictures: every
     turn adds one per camera, and a run of twenty that sent them all would send forty. N counts
     exchanges rather than images, so a second camera doubles the bill and the bound still
     holds. The trim is a copy, so the run's own history keeps every picture it was shown."""
-    hello_duck.frontmatter.budgets = Budgets()
+    hello_glot.frontmatter.budgets = Budgets()
     keep = 3
     provider = SeeingProvider(
         *[ToolCall(name="quack", arguments={"text": "hi"})] * 4,
@@ -2455,7 +2455,7 @@ async def test_only_the_last_n_exchanges_keep_their_images(
     )
     loop = AgentLoop(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2479,7 +2479,7 @@ async def test_only_the_last_n_exchanges_keep_their_images(
 
 
 async def test_a_provider_that_binds_its_thinking_is_trimmed_in_steps_not_every_call(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Claude Opus 5.5 and Fable 5.1 refuse a replayed thinking block once any message before it
     has changed, and trimming an old frame is exactly such a change. For a provider with a trim
@@ -2491,14 +2491,14 @@ async def test_a_provider_that_binds_its_thinking_is_trimmed_in_steps_not_every_
     class Binding(SeeingProvider):
         frame_trim_period = period
 
-    hello_duck.frontmatter.budgets = Budgets()
+    hello_glot.frontmatter.budgets = Budgets()
     provider = Binding(
         *[ToolCall(name="quack", arguments={"text": "hi"})] * (calls - 1),
         ToolCall(name="declare_success", arguments={"reason": "done"}),
     )
     result = await AgentLoop(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2539,7 +2539,7 @@ class DarkeningDuck(TwoCameraDuck):
 
 @pytest.mark.parametrize("body", ["two-cameras", "no-vision", "goes-dark", "lit-prose-turn"])
 async def test_a_binding_llm_is_never_sent_a_thinking_block_a_trim_invalidated(
-    body: str, hello_duck: DuckFile, tmp_path: Path
+    body: str, hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Through the real Claude provider. A block is bound to every message before it, so it is
     valid exactly while those messages are sent as they were on the call that produced it, and
@@ -2552,7 +2552,7 @@ async def test_a_binding_llm_is_never_sent_a_thinking_block_a_trim_invalidated(
     arrives on a turn the LLM answers in prose, trimmed on the very call that re-prompts it:
     a prose turn has no block of its own, no block was ever bound to that frame, and nothing
     may be left out for it."""
-    from quackd.agent.providers.anthropic import AnthropicProvider
+    from roboglot.agent.providers.anthropic import AnthropicProvider
 
     calls, keep, period = (12, 1, 2) if body == "lit-prose-turn" else (12, 2, 4)
     sent: list[list[dict[str, Any]]] = []
@@ -2599,10 +2599,10 @@ async def test_a_binding_llm_is_never_sent_a_thinking_block_a_trim_invalidated(
         "goes-dark": lambda: DarkeningDuck(),
         "lit-prose-turn": lambda: DarkeningDuck(lit=frozenset({2})),
     }.get(body, TwoCameraDuck)()
-    hello_duck.frontmatter.budgets = Budgets()
+    hello_glot.frontmatter.budgets = Budgets()
     result = await AgentLoop(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -2695,9 +2695,9 @@ def _positions(flat: list[tuple[int, str, Any]], start: int, end: int) -> int:
 @pytest.mark.parametrize("keep", [1, 2, 3])
 @pytest.mark.parametrize("body", ["two-cameras", "no-vision", "goes-dark", "lit-prose-turn"])
 async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_it(
-    body: str, keep: int, period: int, hello_duck: DuckFile, tmp_path: Path
+    body: str, keep: int, period: int, hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """A prompt cache is read only as far as a request matches one it has seen, and quackd's own
+    """A prompt cache is read only as far as a request matches one it has seen, and Roboglot's own
     trim edits older messages, so a marker at the end of every request would sit past that edit
     on the calls that trim and the next would read nothing back. Through the real loop and the
     real Claude provider, over the trim's every period, keep and kind of body: the system prompt
@@ -2710,7 +2710,7 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
     exchanges where the guess counted one and the trim's cut can move by both. The comparisons
     drop the markers, as the API does, and binding validity under them is
     `test_a_binding_model_is_never_sent_...`'s."""
-    from quackd.agent.providers.anthropic import AnthropicProvider
+    from roboglot.agent.providers.anthropic import AnthropicProvider
 
     calls = keep + 2 * period + 4
     sent: list[dict[str, Any]] = []
@@ -2752,15 +2752,15 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
     llm_id = "claude-opus-5-5" if period > 1 else "claude-sonnet-5"
     provider = AnthropicProvider(llm_id=llm_id, client=client, vision=body != "no-vision")
     provider.frame_trim_period = period
-    assert provider.caches, "QUACKD_ANTHROPIC_CACHE switched it off in this environment"
+    assert provider.caches, "ROBOGLOT_ANTHROPIC_CACHE switched it off in this environment"
     transport = {
         "goes-dark": lambda: DarkeningDuck(),
         "lit-prose-turn": lambda: DarkeningDuck(lit=frozenset({2})),
     }.get(body, TwoCameraDuck)()
-    hello_duck.frontmatter.budgets = Budgets()
+    hello_glot.frontmatter.budgets = Budgets()
     result = await AgentLoop(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -2808,7 +2808,7 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
 
 # ── the pictures that came with the task ────────────────────────────────────────────────
 #
-# `quackd run --image sketch.png` hands a file to the *task* rather than to the robot, and
+# `roboglot run --image sketch.png` hands a file to the *task* rather than to the robot, and
 # everything below turns on that difference. A camera frame is perception: it arrives every
 # step, it ages, and the trim above drops it. One of these is none of those things. It is
 # fixed for the whole run, it is what the task is about, and no lens on the body can answer
@@ -2829,7 +2829,7 @@ def _picture_file(tmp_path: Path, name: str, colour: tuple[int, int, int]) -> st
 
 
 async def test_the_task_pictures_ride_the_first_turn_and_no_later_one(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Sent once, because they never change. Repeating them every step would pay for the same
     picture on every request of a forty turn run, and the first turn is the one that most
@@ -2849,9 +2849,9 @@ async def test_the_task_pictures_ride_the_first_turn_and_no_later_one(
         ToolCall(name="quack", arguments={"text": "a circle"}),
         ToolCall(name="declare_success", arguments={"reason": "said what is in it"}),
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -2868,7 +2868,7 @@ async def test_the_task_pictures_ride_the_first_turn_and_no_later_one(
 
 
 async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The trim is what bounds a run's picture cost, and it counts exchanges: keep the last N
     and strip the rest. A task picture lives on the oldest exchange there is, so a trim that
@@ -2877,7 +2877,7 @@ async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
 
     Both lists are read off the same five requests, because the point is that they diverge:
     the camera frames thin out as they age and the sketch does not move."""
-    hello_duck.frontmatter.budgets = Budgets()
+    hello_glot.frontmatter.budgets = Budgets()
     pictures = load_task_images([_picture_file(tmp_path, "sketch.png", (220, 40, 40))])
     keep = 2
     provider = SeeingProvider(
@@ -2885,9 +2885,9 @@ async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
         *[ToolCall(name="quack", arguments={"text": "still here"})] * 3,
         ToolCall(name="declare_success", arguments={"reason": "said what is in it"}),
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path / "runs",
@@ -2912,7 +2912,7 @@ async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
 
 
 async def test_a_task_picture_is_written_beside_the_transcript_as_the_llm_got_it(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """They go in their own directory rather than among the frames: `frames/` is numbered by
     step and is what the robot saw, and one of these belongs to no step at all. The bytes on
@@ -2928,10 +2928,10 @@ async def test_a_task_picture_is_written_beside_the_transcript_as_the_llm_got_it
             _picture_file(tmp_path, "plan.png", (40, 220, 40)),
         ]
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world", vision=True),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world", vision=True),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
             task_images=pictures,
@@ -2956,7 +2956,7 @@ async def test_a_task_picture_is_written_beside_the_transcript_as_the_llm_got_it
 
 
 async def test_the_record_says_which_pictures_the_run_was_given_and_how_often(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Two numbers, in the two places a reader looks. `run_start` names what the command line
     handed this run, once, at the top where the LLM and the robot are named. Every
@@ -2969,10 +2969,10 @@ async def test_the_record_says_which_pictures_the_run_was_given_and_how_often(
             _picture_file(tmp_path, "plan.png", (40, 220, 40)),
         ]
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world", vision=True),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world", vision=True),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
             task_images=pictures,
@@ -2989,7 +2989,7 @@ async def test_the_record_says_which_pictures_the_run_was_given_and_how_often(
 
 
 async def test_the_prompt_names_every_picture_that_came_with_the_task(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A picture arrives in the same message as a photograph of the room, so the pilot is told
     in words which is which and what each one is called. The names are the ones the person
@@ -3005,9 +3005,9 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
         ]
     )
     provider = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -3025,9 +3025,9 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
     # and the singular, which is the ordinary `--image sketch.png` and was never asserted: a
     # section that said "1 pictures were handed" would have passed every check above
     one = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=one,
             transport=MockTransport(),
             runs_dir=tmp_path / "one",
@@ -3043,9 +3043,9 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
     )
 
     bare = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
-    await run_duck(
+    await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=bare,
             transport=MockTransport(),
             runs_dir=tmp_path / "bare",
@@ -3055,10 +3055,10 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
 
 
 async def test_a_pilot_that_cannot_see_is_sent_no_picture_and_the_run_says_so(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The CLI refuses `--image` for a pilot with no vision before a run directory exists, so
-    this is the loop being asked directly: MCP, a flock, a test, anything that builds a
+    this is the loop being asked directly: MCP, a team, a test, anything that builds a
     `RunConfig` itself. Dropping the pictures silently would leave a run whose transcript says
     it was given a sketch and whose requests never carried one, and the argument afterwards
     would be unresolvable.
@@ -3072,9 +3072,9 @@ async def test_a_pilot_that_cannot_see_is_sent_no_picture_and_the_run_says_so(
         ToolCall(name="declare_success", arguments={"reason": "worked from the words"}),
         vision=False,
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -3101,9 +3101,9 @@ async def test_a_pilot_that_cannot_see_is_sent_no_picture_and_the_run_says_so(
 
 # ── the arm a person places by hand ─────────────────────────────────────────────────────
 #
-# `quackd run --by-hand` is the rest pose above, inverted for one run: instead of starting
+# `roboglot run --by-hand` is the rest pose above, inverted for one run: instead of starting
 # from the fold, the arm is released AT the fold, a person lifts it, puts whatever the task
-# needs in the gripper and presses Enter, and quackd holds whatever pose they left. Every
+# needs in the gripper and presses Enter, and Roboglot holds whatever pose they left. Every
 # test below is about a seam in that hand-off, because each of them ends with a person's
 # fingers on an arm: torque going off somewhere it should not, torque coming back on while a
 # hand is still there, a run that walks away from an arm nobody caught, and the hand-back at
@@ -3189,7 +3189,7 @@ def _by_hand(mock: LeRobotMock, person: ScriptedPerson, runs: Path, **extra: Any
     calls: several of these tests are about a run that must never reach the LLM at all."""
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
-        duck=_arm_duck(),
+        duck=_arm_glot(),
         provider=FakeProvider(script=[declare]),
         transport=LeRobotAdapter(mock),
         hand_off=person,
@@ -3215,7 +3215,7 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
     jaws drives that pencil into the bench, and it closes AFTER it, with the hands long gone."""
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert mock.sequence == ["rest", "let_go", "take_hold", "stop", "rest", "gripper", "close"]
 
@@ -3284,7 +3284,7 @@ async def test_nobody_places_the_arm_so_nothing_is_ever_asked_of_the_llm(
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, answers=[False])
     cfg = _by_hand(mock, person, tmp_path)
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
     assert result.outcome == "aborted"
     assert result.reason == AgentLoop.NOBODY_PLACED_IT
     assert cfg.provider.calls == 0, "the LLM was never asked anything"  # type: ignore[attr-defined]
@@ -3306,7 +3306,7 @@ async def test_a_ctrl_c_during_the_wait_ends_the_run_as_the_kill_switch(tmp_path
     apart, and the record has to say the one that is true.
 
     `_hand_over` asks the loop for its own reason rather than guessing at one, which is the
-    same reason the main loop does: a heartbeat that died and a flock member that broke both
+    same reason the main loop does: a heartbeat that died and a team member that broke both
     set this flag too, and neither is a kill switch nobody pressed."""
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, answers=[False])
@@ -3328,17 +3328,17 @@ async def test_an_arm_with_no_recorded_rest_pose_is_never_handed_over(tmp_path: 
     an arm that has never had its pose recorded is refused the hand-off rather than released
     somewhere hopeful.
 
-    The CLI refuses this before connecting, with `quackd robot rest-pose NAME` as the fix.
+    The CLI refuses this before connecting, with `roboglot robot rest-pose NAME` as the fix.
     This is the same refusal reached through the loop, which is where an MCP session or a test
     arrives, and the run ends before the LLM is asked anything."""
     mock = LeRobotMock()  # no rest pose recorded for this arm
     person = ScriptedPerson(mock, places=PLACED)
     cfg = _by_hand(mock, person, tmp_path)
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
     assert result.outcome == "aborted"
     assert "the arm was not handed over" in result.reason
     assert "no rest pose is recorded for this arm" in result.reason
-    assert "quackd robot rest-pose" in result.reason, "and the words say how to fix it"
+    assert "roboglot robot rest-pose" in result.reason, "and the words say how to fix it"
     assert cfg.provider.calls == 0  # type: ignore[attr-defined]
     assert person.asked == [], "nobody was asked to place an arm that was never released"
 
@@ -3366,7 +3366,7 @@ async def test_an_arm_that_slipped_as_torque_came_on_is_not_run_from(tmp_path: P
     mock = LeRobotMock(rest_pose=REST)
     mock.hold_slips = {"elbow_flex": TOL_DEG * 2}
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "aborted"
     assert "the arm is not holding the pose you set" in result.reason
     assert "moved as torque came on" in result.reason
@@ -3396,7 +3396,7 @@ async def test_nobody_answers_the_hand_back_so_the_gripper_stays_shut(tmp_path: 
     the thing, and folding with it held does not."""
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=[True, False])
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3426,7 +3426,7 @@ async def test_a_cancellation_in_the_hand_back_still_finishes_the_teardown(
             raise asyncio.CancelledError
 
     person = ScriptedPerson(mock, places=PLACED, on_wait=interrupt)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3479,7 +3479,7 @@ async def test_the_hand_back_records_why_its_wait_ended(
             person.ended = ended  # type: ignore[attr-defined]
 
     person = ScriptedPerson(mock, places=PLACED, answers=[True, False], on_wait=says_why)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3502,7 +3502,7 @@ async def test_a_dry_run_never_takes_torque_off_an_arm(tmp_path: Path) -> None:
     for Enter would be asking a person to act on a robot that is not going to move."""
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path, dry_run=True))
+    result = await run_glot(_by_hand(mock, person, tmp_path, dry_run=True))
     assert result.outcome == "success", result.reason
     assert "let_go" not in mock.sequence and "take_hold" not in mock.sequence, mock.sequence
     assert "rest" not in mock.sequence, "the rest move is a real motion too"
@@ -3524,7 +3524,7 @@ async def test_a_run_already_ending_never_releases_the_arm_to_nobody(tmp_path: P
     """Ctrl-C between the connect and the first turn, which is a window wide enough to hit on
     purpose: the opening rest move is inside it.
 
-    The abort flag was not read until after the release, so quackd took torque off the arm,
+    The abort flag was not read until after the release, so Roboglot took torque off the arm,
     printed "the arm is yours: torque is off at its rest pose ... hold it where you want the
     run to start", and then ended the run in the same breath. Whoever read that line was being
     invited to place an arm for a run that was already over."""
@@ -3547,7 +3547,7 @@ async def test_a_gripper_that_will_not_open_is_said_out_loud(tmp_path: Path) -> 
     the pencil still clamped in it while somebody stood there with their hand out."""
     mock = LeRobotMock(rest_pose=REST, refuse_kinds={"gripper"})
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -3568,7 +3568,7 @@ async def test_a_gripper_an_arm_that_stopped_answering_did_not_open_says_cut_its
     tmp_path: Path, refused: bool, why: str
 ) -> None:
     """A gripper that refused is on an arm that answered, which holds where it stopped. An arm that
-    went silent as the jaws were asked to open could be holding or limp, and quackd cannot say. So
+    went silent as the jaws were asked to open could be holding or limp, and Roboglot cannot say. So
     "take what is in it by hand" and "the arm is holding" were one invitation to put fingers into
     jaws that may be energised and one claim nothing read, to somebody standing there. The backend
     answers a send that met the silence as a refusal, so why it failed does not tell them apart."""
@@ -3591,7 +3591,7 @@ async def test_a_gripper_an_arm_that_stopped_answering_did_not_open_says_cut_its
 
     mock = GoesSilent(rest_pose=REST)
     person = AtTheJaws(mock, places=PLACED)
-    await run_duck(_by_hand(mock, person, tmp_path))
+    await run_glot(_by_hand(mock, person, tmp_path))
     said = [s for s in person.said if s.startswith("the gripper did not open")]
     assert said, person.said
     assert why in said[0]
@@ -3606,7 +3606,7 @@ async def test_a_gripper_that_will_not_open_leaves_the_arm_where_it_is(tmp_path:
     says what the arm is doing and how to put it down."""
     mock = LeRobotMock(rest_pose=REST, refuse_kinds={"gripper"})
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
     assert mock.sequence[-1] == "close" and mock.torque is True, "not let go of, away from rest"
@@ -3677,7 +3677,7 @@ async def test_a_press_stops_the_fold_a_by_hand_run_starts_with(tmp_path: Path) 
     mock = LeRobotMock(rest_pose=REST)
     person = Presser(mock, places=PLACED)
     ended = _a_fold_that_presses(mock, person, on=1)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert ended == ["stopped"], "the fold was cancelled, and waited for"
     assert result.outcome == "aborted", result.reason
     assert mock.sequence == ["rest", "stop", "close"], "nothing folds it afterwards, or lets it go"
@@ -3691,7 +3691,7 @@ async def test_a_press_before_a_by_hand_runs_first_fold_keeps_it_from_starting(
     tmp_path: Path,
 ) -> None:
     """A press while the arm connected, with somebody supporting it as the line says to: nothing
-    moves after one, as in `quackd doctor`. The arm started moving all the same."""
+    moves after one, as in `roboglot doctor`. The arm started moving all the same."""
     mock = LeRobotMock(rest_pose=REST)
     person = Presser(mock, places=PLACED)
     loop = AgentLoop(_by_hand(mock, person, tmp_path))
@@ -3725,7 +3725,7 @@ async def test_a_press_the_loop_has_not_heard_of_yet_keeps_the_first_fold_from_s
         return connected
 
     mock.connect = pressed_while_connecting  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "aborted", result.reason
     assert "rest" not in mock.sequence and "let_go" not in mock.sequence, mock.sequence
 
@@ -3756,7 +3756,7 @@ async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=[declare]),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -3792,7 +3792,7 @@ class _NoConnect(LeRobotMock):
 def _a_run_on(body: Any, tmp_path: Path) -> AgentLoop:
     return AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=[]),
             transport=LeRobotAdapter(body),
             runs_dir=tmp_path,
@@ -3948,7 +3948,7 @@ async def test_a_press_from_before_the_question_does_not_spoil_its_enter(tmp_pat
         await stop()
 
     mock.stop = pressed_on_the_first_stop  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert "unloaded" in _stages(events), "the Enter opened nothing"
@@ -3960,7 +3960,7 @@ async def test_a_stepper_that_will_not_go_does_not_replace_how_the_run_ended(
 ) -> None:
     """The wait for one is bounded (`cancel_and_wait`), so it can come back with the task running,
     and reading its exception then raised over the run's real ending."""
-    monkeypatch.setattr("quackd.release.STOPPED_FOLD_S", 0.05)
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
     release = asyncio.Event()
 
     async def stubborn() -> Any:
@@ -4013,7 +4013,7 @@ async def test_a_second_press_cannot_take_the_close_or_the_record_with_it(
         return await real(*args, **kwargs)
 
     setattr(mock, where, pressed_on)
-    running = asyncio.create_task(run_duck(_by_hand(mock, person, tmp_path)))
+    running = asyncio.create_task(run_glot(_by_hand(mock, person, tmp_path)))
     result = await running
     assert pressed == [where] == finished, "it landed there, and that went on to its end"
     assert result.outcome == "success", result.reason
@@ -4125,7 +4125,7 @@ async def test_the_hands_get_their_seconds_before_the_fold_however_the_question_
 ) -> None:
     """The fold started in the same breath as the Enter, under the hand that had just taken the
     pencil, and at the end of a wait that ran out with nobody told it was coming. It is announced
-    and counted now on every way out of the question, as `quackd robot release` counts."""
+    and counted now on every way out of the question, as `roboglot robot release` counts."""
 
     def interrupted(asked: ScriptedPerson) -> None:
         if ending == "second ctrl-c" and asked.waits == 2:
@@ -4146,7 +4146,7 @@ async def test_the_hands_get_their_seconds_before_the_fold_however_the_question_
         return await real()
 
     mock.go_to_rest = clocked  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     said_at = next(at for text, at in person.stamps if text == COUNT)
@@ -4190,7 +4190,7 @@ async def test_a_press_during_the_hand_back_holds_the_arm_where_it_is(
         _presses_while_opening(mock, person)
     else:
         person = PressesAtTheCount(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
@@ -4213,9 +4213,9 @@ async def test_declaring_with_arguments_that_are_no_object_declares_nothing(
         ToolCall(name="declare_success", arguments={"_unparsed": "[1, 2]"}),
         ToolCall(name="declare_failure", arguments={"reason": "it could not"}),
     ]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FakeProvider(script=calls),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -4230,7 +4230,7 @@ async def test_a_press_after_a_question_nobody_answered_still_holds_the_arm(
     mock = LeRobotMock(rest_pose=REST)
     _takes_a_moment(mock)
     person = PressesAtTheCount(mock, places=PLACED, answers=[True, False])
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
     assert mock.joints["gripper"] == PLACED["gripper"], "and the jaws were never touched"
@@ -4286,7 +4286,7 @@ async def test_the_gripper_opens_before_the_arm_folds_and_not_after(tmp_path: Pa
         return await real()
 
     mock.go_to_rest = noting_the_jaws  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -4320,7 +4320,7 @@ async def test_the_jaws_the_hand_back_opened_close_once_the_arm_is_down(tmp_path
         return await close()
 
     mock.close_gripper = noting_what_came_before  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert at_the_close[-2:] == ["stop", "rest"], "the jaws must close after the fold"
     assert mock.joints["gripper"] == GRIPPER_CLOSED, mock.joints
@@ -4350,7 +4350,7 @@ async def test_a_gripper_nothing_opened_is_left_as_it_is(
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=answers)
     before = mock.joints["gripper"] if stage is None else PLACED["gripper"]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert "gripper" not in mock.sequence, mock.sequence
     assert mock.joints["gripper"] == before, mock.joints
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -4363,7 +4363,7 @@ async def test_a_gripper_that_would_not_open_is_not_sent_to_close(tmp_path: Path
     start closing there are jaws closing on that hand."""
     mock = LeRobotMock(rest_pose=REST, refuse_kinds={"gripper"})
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert "gripper" not in mock.sequence, mock.sequence
     assert mock.joints["gripper"] == PLACED["gripper"], mock.joints
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -4384,7 +4384,7 @@ async def test_a_gripper_that_stops_short_of_closed_is_said_and_the_arm_still_le
         return await close()
 
     mock.close_gripper = something_in_the_way  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     said = [s for s in person.said if "short of closed" in s]
     assert len(said) == 1, person.said
@@ -4413,7 +4413,7 @@ async def test_a_press_stops_the_gripper_closing_and_the_run_still_closes(tmp_pa
     mock.close_gripper = endless  # type: ignore[method-assign]
     clock = asyncio.get_running_loop()
     started = clock.time()
-    result = await asyncio.wait_for(run_duck(_by_hand(mock, person, tmp_path)), 30.0)
+    result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
     assert clock.time() - started < 20.0, "only this test's own timeout ended the closing"
     assert result.outcome == "success", result.reason
     assert ended == ["the closing finished"], "the closing was not cancelled and waited for"
@@ -4443,7 +4443,7 @@ async def test_a_press_as_the_fold_arrives_keeps_the_gripper_from_starting(tmp_p
         return parked
 
     mock.go_to_rest = pressed_as_it_arrives  # type: ignore[method-assign]
-    result = await asyncio.wait_for(run_duck(_by_hand(mock, person, tmp_path)), 30.0)
+    result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
     assert result.outcome == "success", result.reason
     assert "gripper" not in mock.sequence, mock.sequence
     assert GRIPPER_STOPPED in person.said, person.said
@@ -4466,7 +4466,7 @@ async def test_the_jaws_close_after_the_second_fold_when_the_first_one_missed(
     person = ScriptedPerson(mock, places=PLACED, answers=[True], on_wait=the_fold_misses_once)
     cfg = _by_hand(mock, person, tmp_path)
     cfg.person = person  # the one terminal, as the CLI wires it
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
     assert [ask[0] for ask in person.asked] == [
         AgentLoop.PLACE_IT,
         AgentLoop.HAND_IT_BACK,
@@ -4512,7 +4512,7 @@ async def test_a_press_as_the_second_fold_arrives_keeps_the_gripper_from_startin
     )
     cfg = _by_hand(mock, person, tmp_path)
     cfg.person = person  # the one terminal, as the CLI wires it
-    await asyncio.wait_for(run_duck(cfg), 30.0)
+    await asyncio.wait_for(run_glot(cfg), 30.0)
     assert REFOLDED in person.said, person.said
     assert {"gripper": GRIPPER_CLOSED} not in mock.actions, "the jaws were sent shut after a press"
     assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, mock.joints
@@ -4543,7 +4543,7 @@ async def test_a_press_while_the_gripper_closes_after_a_second_fold_stops_it(
     cfg.person = person  # the one terminal, as the CLI wires it
     clock = asyncio.get_running_loop()
     started = clock.time()
-    await asyncio.wait_for(run_duck(cfg), 30.0)
+    await asyncio.wait_for(run_glot(cfg), 30.0)
     assert clock.time() - started < 20.0, "only this test's own timeout ended the closing"
     assert ended == ["the closing finished"], "the closing was not cancelled and waited for"
     assert person.said.index(CLOSING_THE_GRIPPER) < person.said.index(GRIPPER_STOPPED), person.said
@@ -4571,7 +4571,7 @@ async def test_an_arm_whose_folds_both_missed_does_not_have_its_jaws_closed(
     tmp_path: Path,
 ) -> None:
     """Over an arm that never got down, or was dropped into a person's hands, nothing is sent to
-    the gripper: it is the same rule as `quackd robot release`."""
+    the gripper: it is the same rule as `roboglot robot release`."""
     why = MISSES[1]
     mock = LeRobotMock(rest_pose=REST)
 
@@ -4582,7 +4582,7 @@ async def test_an_arm_whose_folds_both_missed_does_not_have_its_jaws_closed(
     person = ScriptedPerson(mock, places=PLACED, answers=[True], on_wait=the_fold_misses)
     cfg = _by_hand(mock, person, tmp_path)
     cfg.person = person  # the one terminal, as the CLI wires it
-    await run_duck(cfg)
+    await run_glot(cfg)
     assert "gripper" not in mock.sequence, mock.sequence
     assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL, mock.joints
 
@@ -4594,7 +4594,7 @@ async def test_a_body_with_nothing_to_close_says_nothing_of_closing(
     monkeypatch.delattr(LeRobotAdapter, "close_gripper")
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED)
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
     assert "gripper" not in mock.sequence, mock.sequence
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -4616,7 +4616,7 @@ async def test_a_terminal_that_goes_away_mid_wait_ends_the_run_instead_of_hangin
     end the run in the words for nobody having placed the arm and still put the arm down."""
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=[False])
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
 
     assert result.outcome == "aborted"
     assert "nobody placed the arm" in result.reason
@@ -4645,7 +4645,7 @@ def _missing_run(mock: LeRobotMock, runs: Path, **extra: Any) -> RunConfig:
     the pilot, and the offer is the teardown's."""
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
-        duck=_arm_duck(),
+        duck=_arm_glot(),
         provider=FakeProvider(script=[declare]),
         transport=LeRobotAdapter(mock),
         runs_dir=runs,
@@ -4691,7 +4691,7 @@ async def test_enter_at_both_questions_folds_once_more_then_drops_the_arm_into_y
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=why)
     person = ScriptedPerson(mock, answers=[True])
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
     assert result.outcome == "aborted", result.reason
 
     assert person.asked == [
@@ -4732,7 +4732,7 @@ async def test_enter_with_the_way_cleared_folds_the_arm_and_the_close_lets_go_at
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=why)
     person = ScriptedPerson(mock, answers=[True], on_wait=_clears_the_way(mock))
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert person.asked == [(_clear(why), CLEAR_THE_WAY_S, False)], "one question, no drop"
     assert mock.sequence == ["rest", "stop", "rest", "rest", "close"], mock.sequence
@@ -4755,7 +4755,7 @@ async def test_a_first_question_nobody_answers_leaves_torque_on_exactly_as_befor
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=why)
     person = ScriptedPerson(mock, answers=[False])
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert person.waits == 1
     assert mock.sequence == ["rest", "stop", "rest", "close"], "no second fold, no release"
@@ -4780,7 +4780,7 @@ async def test_a_second_question_nobody_answers_keeps_torque_and_never_drops_the
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=why)
     person = ScriptedPerson(mock, answers=[True, False])
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert [ask[0] for ask in person.asked] == [_clear(why), _drop(why)]
     assert mock.sequence == ["rest", "stop", "rest", "rest", "close"], mock.sequence
@@ -4810,7 +4810,7 @@ async def test_a_ctrl_c_at_either_question_keeps_torque_and_the_record_still_end
             raise press
 
     person = ScriptedPerson(mock, answers=[True], on_wait=interrupt)
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert "let_go" not in mock.sequence and mock.torque is True
     assert mock.sequence.count("rest") == 1 + at, "a second fold only after Enter at the first"
@@ -4849,7 +4849,7 @@ async def test_each_question_records_why_its_wait_ended(
 
     person = ScriptedPerson(mock, answers=[True] * (at - 1) + [False], on_wait=says_why)
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert "let_go" not in mock.sequence and mock.torque is True
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -4876,7 +4876,7 @@ async def test_the_questions_are_put_only_over_an_arm_that_answered(
     mock.go_to_rest = refused  # type: ignore[method-assign]
     person = ScriptedPerson(mock, answers=[False])
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     if answered:
@@ -4892,7 +4892,7 @@ async def test_a_second_fold_the_arm_did_not_answer_asks_nothing_more(tmp_path: 
     """The arm answered while its first fold missed, so the person was asked to clear its way,
     and then it went silent during the second: the servo supply cut, or the cable pulled. Nothing
     it says about itself can be believed from there, so there is no second question, nothing is
-    released, and the person is told quackd cannot tell and to cut its power."""
+    released, and the person is told Roboglot cannot tell and to cut its power."""
     why, silent = MISSES[0], "the arm did not answer: a reason made up for this test"
     mock = LeRobotMock(rest_pose=ARM_REST)
     folds = 0
@@ -4908,7 +4908,7 @@ async def test_a_second_fold_the_arm_did_not_answer_asks_nothing_more(tmp_path: 
     mock.go_to_rest = goes_silent  # type: ignore[method-assign]
     person = ScriptedPerson(mock, answers=[True])
     person.asks_a_person = True
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert person.asked == [(_clear(why), CLEAR_THE_WAY_S, False)], "no second question"
     assert person.said == [REFOLD_UNANSWERED.format(why=silent)]
@@ -4961,7 +4961,7 @@ async def test_a_ctrl_c_during_the_second_fold_stops_it_keeps_torque_and_the_rec
 
     mock.go_to_rest = endless  # type: ignore[method-assign]
     person = (StoppingPerson if press == "kill switch" else ScriptedPerson)(mock, answers=[True])
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     if press == "kill switch":
         assert ended == ["the fold task finished"], "the fold was cancelled, and waited for"
@@ -4983,7 +4983,7 @@ async def test_a_ctrl_c_during_the_second_fold_stops_it_keeps_torque_and_the_rec
     [
         (
             None,
-            "quackd cannot tell whether torque is on: keep holding the arm, and cut its power",
+            "Roboglot cannot tell whether torque is on: keep holding the arm, and cut its power",
             "holding itself up",
         ),
         (
@@ -5001,8 +5001,8 @@ async def test_a_refused_release_at_the_second_question_says_only_what_was_read(
     to be told to the person holding the arm as "the arm is still holding itself up", which
     nobody had read: a bus that went quiet between the question and the release, the switch
     included. Only a refusal that read every motor on says the arm holds itself up; one that
-    read nothing says quackd cannot tell, and both say what to do, which is to cut the power."""
-    from quackd.adapters.base import HandResult
+    read nothing says Roboglot cannot tell, and both say what to do, which is to cut the power."""
+    from roboglot.adapters.base import HandResult
 
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
 
@@ -5012,7 +5012,7 @@ async def test_a_refused_release_at_the_second_question_says_only_what_was_read(
 
     mock.let_go = let_go  # type: ignore[method-assign]
     person = ScriptedPerson(mock, answers=[True])
-    await run_duck(_missing_run(mock, tmp_path, person=person))
+    await run_glot(_missing_run(mock, tmp_path, person=person))
     assert len(person.said) == 1, person.said
     assert said in person.said[0], person.said
     assert never not in person.said[0], person.said
@@ -5037,7 +5037,7 @@ async def test_a_ctrl_c_on_the_release_itself_still_ends_the_record(
 
     mock.let_go = interrupted  # type: ignore[method-assign]
     person = ScriptedPerson(mock, answers=[True])
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert person.said == [RELEASE_INTERRUPTED], person.said
     assert mock.sequence[-1] == "close", "the close was skipped"
@@ -5065,7 +5065,7 @@ async def test_a_ctrl_c_before_the_release_went_out_says_nothing_was_sent(
 
     The line says that and no more. It used to go on "and the arm still holds itself up", which
     no read after the interrupt had said: on the arm the interrupted read can still be out when
-    the close comes, and then the close cannot read and says quackd cannot tell, the line after
+    the close comes, and then the close cannot read and says Roboglot cannot tell, the line after
     this one. Whether the arm holds itself up is the close's to say."""
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
 
@@ -5075,7 +5075,7 @@ async def test_a_ctrl_c_before_the_release_went_out_says_nothing_was_sent(
 
     mock.let_go = interrupted  # type: ignore[method-assign]
     person = ScriptedPerson(mock, answers=[True])
-    result = await run_duck(_missing_run(mock, tmp_path, person=person))
+    result = await run_glot(_missing_run(mock, tmp_path, person=person))
 
     assert person.said == [RELEASE_NOT_SENT], person.said
     said = RELEASE_NOT_SENT
@@ -5112,7 +5112,7 @@ async def test_the_second_fold_waits_out_no_pause_and_both_questions_take_a_bare
     monkeypatch.setattr(AgentLoop, "_rest", recording)
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
     person = ScriptedPerson(mock, answers=[True, False])
-    await run_duck(_missing_run(mock, tmp_path, person=person))
+    await run_glot(_missing_run(mock, tmp_path, person=person))
     # the start of the run waits out a pause before its fold; the teardown waits out every
     # pause itself, just before its folds, and the folds race a press, which that wait would
     # swallow, so neither of the teardown's folds waits again (`_teardown_fold`)
@@ -5135,19 +5135,19 @@ def test_each_question_says_what_enter_does() -> None:
 
 
 async def test_no_offer_is_made_without_a_person_or_to_the_by_hand_asker(tmp_path: Path) -> None:
-    """Nobody at a terminal: an MCP session, a flock member, a test, a piped run. The arm keeps
+    """Nobody at a terminal: an MCP session, a team member, a test, a piped run. The arm keeps
     torque as it always has, and nothing waits. And `hand_off` is not a person for this: the
     loop reads it as "this run was handed over", so the questions ask `person` and nothing
     else."""
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
-    result = await run_duck(_missing_run(mock, tmp_path / "nobody"))
+    result = await run_glot(_missing_run(mock, tmp_path / "nobody"))
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert not _offered(events) and "let_go" not in mock.sequence
     assert mock.torque is True
 
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[1])
     hand = ScriptedPerson(mock, answers=[True])
-    result = await run_duck(_by_hand(mock, hand, tmp_path / "by-hand"))
+    result = await run_glot(_by_hand(mock, hand, tmp_path / "by-hand"))
     assert hand.asked == [], "the by-hand asker was put a question it was never given"
     assert not _offered(Transcript.read(result.run_dir / "transcript.jsonl"))
     assert "let_go" not in mock.sequence and mock.torque is True
@@ -5161,7 +5161,7 @@ async def test_no_offer_is_made_on_a_dry_run_or_after_a_rest_move_that_arrived(
     would be asking a person to act on an arm that needs nothing."""
     mock = LeRobotMock(rest_pose=ARM_REST, rest_fails=MISSES[0])
     person = ScriptedPerson(mock, answers=[True])
-    await run_duck(_missing_run(mock, tmp_path / "dry", person=person, dry_run=True))
+    await run_glot(_missing_run(mock, tmp_path / "dry", person=person, dry_run=True))
     assert person.asked == [] and "let_go" not in mock.sequence and "rest" not in mock.sequence
     # and the questions hold the line themselves, not only because a dry run's rest move never
     # ran: handed a miss on a dry run, they still ask nobody and release nothing
@@ -5172,7 +5172,7 @@ async def test_no_offer_is_made_on_a_dry_run_or_after_a_rest_move_that_arrived(
 
     mock = LeRobotMock(rest_pose=ARM_REST)
     person = ScriptedPerson(mock, answers=[True])
-    result = await run_duck(_missing_run(mock, tmp_path / "folded", person=person))
+    result = await run_glot(_missing_run(mock, tmp_path / "folded", person=person))
     assert result.outcome == "success", result.reason
     assert person.asked == [] and "let_go" not in mock.sequence
     assert mock.torque is False and mock.close_note is None, "folded and let go, as always"
@@ -5193,7 +5193,7 @@ async def test_a_by_hand_run_is_asked_its_two_questions_and_the_fold_s_only_afte
 
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=[True, False])
-    folded = await run_duck(both(mock, person, tmp_path / "folds"))
+    folded = await run_glot(both(mock, person, tmp_path / "folds"))
     assert folded.outcome == "success", folded.reason
     assert [ask[0] for ask in person.asked] == [AgentLoop.PLACE_IT, AgentLoop.HAND_IT_BACK]
     assert not _offered(Transcript.read(folded.run_dir / "transcript.jsonl"))
@@ -5206,7 +5206,7 @@ async def test_a_by_hand_run_is_asked_its_two_questions_and_the_fold_s_only_afte
             mock.rest_fails = why
 
     person = ScriptedPerson(mock, places=PLACED, answers=[True], on_wait=the_fold_misses)
-    missed = await run_duck(both(mock, person, tmp_path / "misses"))
+    missed = await run_glot(both(mock, person, tmp_path / "misses"))
     assert [ask[0] for ask in person.asked] == [
         AgentLoop.PLACE_IT,
         AgentLoop.HAND_IT_BACK,
@@ -5253,7 +5253,7 @@ async def test_an_arm_placed_past_its_travel_stays_in_your_hands_and_every_line_
     person = ScriptedPerson(mock, places=PLACED | {"wrist_flex": placed}, answers=[True])
     cfg = _by_hand(mock, person, tmp_path)
     cfg.person = person  # the one terminal, as the CLI wires it, so the offer could be made
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
 
     assert result.outcome == "aborted"
     assert result.reason.startswith(f"{AgentLoop.NOT_TAKEN_HOLD}: wrist_flex reads"), result.reason
@@ -5283,13 +5283,13 @@ async def test_a_hold_nothing_read_back_is_never_called_limp_and_the_arm_is_left
     tmp_path: Path,
 ) -> None:
     """The take-hold at Enter sent its torque write and the torque register did not answer, so
-    the arm may be energised, all of it or part of it. It was told to the person as quackd
+    the arm may be energised, all of it or part of it. It was told to the person as Roboglot
     never having taken hold and the arm "still in your hands", the teardown's stop sent the
     torque write again, the hand-back told them to take out whatever was in the gripper by
     hand, and the rest move then folded the arm with nobody asked, under the hands it had just
     told to keep hold of it.
 
-    Now they are told quackd cannot say whether the arm has torque, to hold it as though it may
+    Now they are told Roboglot cannot say whether the arm has torque, to hold it as though it may
     move or drop, and to cut its power; nothing takes hold again, nothing is written, nothing
     folds, and the close says the same. The mock's arm takes the write, as a servo that
     answered nothing may have, and keeps it past the close."""
@@ -5299,10 +5299,10 @@ async def test_a_hold_nothing_read_back_is_never_called_limp_and_the_arm_is_left
     person = ScriptedPerson(mock, places=PLACED, answers=[True])
     cfg = _by_hand(mock, person, tmp_path)
     cfg.person = person
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
 
     assert result.outcome == "aborted"
-    assert result.reason.startswith("quackd could not confirm whether the arm has torque ("), (
+    assert result.reason.startswith("Roboglot could not confirm whether the arm has torque ("), (
         result.reason
     )
     assert why in result.reason, result.reason
@@ -5330,7 +5330,7 @@ async def test_a_joint_moved_back_inside_after_a_refused_hold_is_not_taken_hold_
     """The refusal tells the person which joint is past its travel, and a person who then
     moves it back inside is doing the obvious thing. The teardown's stop took hold of the arm
     again as soon as they had: torque came on under their hand with nothing said, straight
-    after they were told quackd had not taken hold and the arm was still theirs. Nothing takes
+    after they were told Roboglot had not taken hold and the arm was still theirs. Nothing takes
     hold after a refusal now, whatever the joints do, until the arm is released again: not
     the stop, when the joint is back inside before the teardown begins, and not the rest move,
     when it comes back inside after the stop and before the fold that no longer happens."""
@@ -5350,7 +5350,7 @@ async def test_a_joint_moved_back_inside_after_a_refused_hold_is_not_taken_hold_
             mock.joints["wrist_flex"] = inside
 
     person.say = moves_it_back  # type: ignore[method-assign]
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
 
     assert result.reason.startswith(AgentLoop.NOT_TAKEN_HOLD), result.reason
     assert person.said == [result.reason, AgentLoop.STILL_IN_YOUR_HANDS], person.said
@@ -5415,7 +5415,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_fold_past_the_travel_leaves
     notes = [e["text"] for e in events if e["kind"] == "note"]
     assert notes[-1] == LIMP_AT_REST and AgentLoop.NOT_FOLDED not in notes, notes
     # the stop's refusal is said once, as the arm it is about: lying at its rest pose
-    stopped = "quackd did not take hold of the arm when the run stopped and the arm is still limp"
+    stopped = "Roboglot did not take hold of the arm when the run stopped and the arm is still limp"
     assert len(person.said) == 1 and person.said[0].startswith(stopped), person.said
 
 
@@ -5433,7 +5433,7 @@ async def test_enter_over_a_fold_nobody_lifted_is_told_as_an_arm_still_at_its_re
     mock = LeRobotMock(rest_pose=pose)
     mock.joints.update(pose)
     person = ScriptedPerson(mock, places={"gripper": PLACED["gripper"]}, answers=[True])
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
 
     assert result.reason.startswith(f"{AgentLoop.NOT_TAKEN_AT_REST}: {joint} reads"), result.reason
     back = AgentLoop.STILL_AT_REST.format(joints=joint, are="is", its="its")
@@ -5467,7 +5467,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_joint_past_its_travel_is_sa
     result = await loop.run()
 
     assert result.reason == "kill switch"
-    stopped = "quackd did not take hold of the arm when the run stopped and the arm is still in"
+    stopped = "Roboglot did not take hold of the arm when the run stopped and the arm is still in"
     assert len(person.said) == 1, person.said
     assert person.said[0].startswith(f"{stopped} your hands: {joint} reads"), person.said
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -5485,7 +5485,7 @@ async def test_a_ctrl_c_in_the_placement_wait_over_a_joint_past_its_travel_is_sa
 # fall warning said nothing whatsoever. None of them held the exchange.
 #
 # The rule that makes the kind worth having is that it is written only where somebody was
-# really asked. `--yes`, an MCP session and every flock member answer these themselves, so
+# really asked. `--yes`, an MCP session and every team member answer these themselves, so
 # the emitter reads `asks_a_person` off the asker and the CLI is the only thing that sets it.
 # Every test here has its twin in the last one, which is the one that keeps the record from
 # claiming a witness.
@@ -5510,10 +5510,10 @@ def _fall_blind(
     """A run that reaches the fall warning: a task that can make this body walk is the whole
     of what turns it on. `run_dir` is for the ending that raises, where there is no
     `RunResult` to read the directory off afterwards."""
-    from quackd.duckfile.parser import parse_duck_text
+    from roboglot.glotfile.parser import parse_glot_text
 
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: blind\ndescription: d\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: blind\ndescription: d\nverbs:\n"
         "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
     )
     return RunConfig(
@@ -5536,7 +5536,7 @@ def _prompts(events: list[dict[str, Any]]) -> list[tuple[str, str, bool]]:
 
 
 async def test_a_verdict_a_person_cleared_records_the_question_they_answered(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`assess.human` says the verdict came back `go`. It does not say what was put to
     whoever made that call, and the pilot's own reason for being unsure is the entire case
@@ -5547,9 +5547,9 @@ async def test_a_verdict_a_person_cleared_records_the_question_they_answered(
 
     says_go.asks_a_person = True  # type: ignore[attr-defined]
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5575,14 +5575,14 @@ async def test_the_fall_warning_is_the_answer_that_used_to_be_recorded_nowhere(
 ) -> None:
     """A yes here left nothing at all behind, so a run on a robot that cannot see a fall read
     exactly like one nobody was watching. A no is already an abort with a reason, but the
-    reason is quackd's words for it; this is the person's."""
+    reason is Roboglot's words for it; this is the person's."""
 
     def watching(_why: str) -> bool:
         return True
 
     watching.asks_a_person = True  # type: ignore[attr-defined]
 
-    watched = await run_duck(_fall_blind(tmp_path / "yes", watching))
+    watched = await run_glot(_fall_blind(tmp_path / "yes", watching))
     assert watched.outcome == "success", watched.reason
 
     events = Transcript.read(watched.run_dir / "transcript.jsonl")
@@ -5598,7 +5598,7 @@ async def test_the_fall_warning_is_the_answer_that_used_to_be_recorded_nowhere(
     run_dir = tmp_path / "no"
     run_dir.mkdir()
     with pytest.raises(Aborted, match="watching"):
-        await run_duck(_fall_blind(tmp_path / "no", not_watching, run_dir=run_dir))
+        await run_glot(_fall_blind(tmp_path / "no", not_watching, run_dir=run_dir))
     refused = _prompts(Transcript.read(run_dir / "transcript.jsonl"))
     assert [(what, answer) for what, _question, answer in refused] == [("acknowledge", False)]
 
@@ -5616,14 +5616,14 @@ def _later(answer: bool) -> Callable[[str], Awaitable[bool]]:
 
 
 async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A coroutine is truthy: read without waiting, a no given later was a go nobody gave, and
     the body moved. Both questions wait for the answer, and a no stays a no."""
     transport = MockTransport()
-    refused = await run_duck(
+    refused = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5639,9 +5639,9 @@ async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
     assert "and a person said no" in refused.reason
     assert [i.kind for i in transport.intents if i.kind != "stop"] == [], "nothing moved"
 
-    cleared = await run_duck(
+    cleared = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5657,12 +5657,12 @@ async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
     rows = _prompts(Transcript.read(cleared.run_dir / "transcript.jsonl"))
     assert [(what, answer) for what, _question, answer in rows] == [("decide", True)]
 
-    watched = await run_duck(_fall_blind(tmp_path / "yes", _later(True)))
+    watched = await run_glot(_fall_blind(tmp_path / "yes", _later(True)))
     assert watched.outcome == "success", watched.reason
     run_dir = tmp_path / "no"
     run_dir.mkdir()
     with pytest.raises(Aborted, match="watching"):
-        await run_duck(_fall_blind(tmp_path / "no", _later(False), run_dir=run_dir))
+        await run_glot(_fall_blind(tmp_path / "no", _later(False), run_dir=run_dir))
 
 
 async def test_both_waits_of_a_hand_off_record_what_the_person_said(tmp_path: Path) -> None:
@@ -5673,7 +5673,7 @@ async def test_both_waits_of_a_hand_off_record_what_the_person_said(tmp_path: Pa
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=[True, False])
     person.asks_a_person = True
-    result = await run_duck(_by_hand(mock, person, tmp_path))
+    result = await run_glot(_by_hand(mock, person, tmp_path))
     assert result.outcome == "success", result.reason
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -5685,15 +5685,15 @@ async def test_both_waits_of_a_hand_off_record_what_the_person_said(tmp_path: Pa
 
 
 async def test_an_asker_nobody_marked_writes_no_prompt_row(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The twin of the three above, and the reason the mark exists at all. What `--yes`
-    passes, what a flock wires into its members and what a test passes are all callables that
+    passes, what a team wires into its members and what a test passes are all callables that
     answer at once, and a row saying a person was asked is worse than no row: it is the record
     inventing somebody who was in the room."""
-    cleared = await run_duck(
+    cleared = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5715,24 +5715,24 @@ async def test_an_asker_nobody_marked_writes_no_prompt_row(
         asked.append(why)
         return True
 
-    watched = await run_duck(_fall_blind(tmp_path / "acknowledge", unmarked_watcher))
+    watched = await run_glot(_fall_blind(tmp_path / "acknowledge", unmarked_watcher))
     events = Transcript.read(watched.run_dir / "transcript.jsonl")
     assert asked, "the warning really was put to this one"
     assert not _prompts(events), "the fall warning"
 
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED)
-    handed = await run_duck(_by_hand(mock, person, tmp_path / "hand-off"))
+    handed = await run_glot(_by_hand(mock, person, tmp_path / "hand-off"))
     events = Transcript.read(handed.run_dir / "transcript.jsonl")
     assert person.waits == 2, "both waits really happened"
     assert not _prompts(events), "the hand-off"
 
 
 async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The mark the CLI sets is a callable, and a callable that answers no is the case it
-    exists for: `yes | quackd run` and `quackd run < answers.txt` reach the same three
+    exists for: `yes | roboglot run` and `roboglot run < answers.txt` reach the same three
     askers a person reaches, and `input()` reads a pipe as happily as it reads a person.
 
     Every question is still put and every answer still has its consequence. All that is
@@ -5747,9 +5747,9 @@ async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
 
     says_go.asks_a_person = nobody_is_there  # type: ignore[attr-defined]
 
-    cleared = await run_duck(
+    cleared = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5774,7 +5774,7 @@ async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
 
     watching.asks_a_person = nobody_is_there  # type: ignore[attr-defined]
 
-    watched = await run_duck(_fall_blind(tmp_path / "acknowledge", watching))
+    watched = await run_glot(_fall_blind(tmp_path / "acknowledge", watching))
     assert watched.outcome == "success", watched.reason
     assert warned, "the warning really was put to somebody"
     assert not _prompts(Transcript.read(watched.run_dir / "transcript.jsonl")), "the warning"
@@ -5782,7 +5782,7 @@ async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED, answers=[True, False])
     person.asks_a_person = nobody_is_there  # type: ignore[assignment]
-    handed = await run_duck(_by_hand(mock, person, tmp_path / "hand-off"))
+    handed = await run_glot(_by_hand(mock, person, tmp_path / "hand-off"))
     assert handed.outcome == "success", handed.reason
     events = Transcript.read(handed.run_dir / "transcript.jsonl")
     assert person.waits == 2, "both waits really happened"
@@ -5791,7 +5791,7 @@ async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
 
 
 async def test_the_mark_is_asked_at_the_time_of_asking_and_not_at_import(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """One asker, two runs, two different answers about who was in the room.
 
@@ -5810,9 +5810,9 @@ async def test_the_mark_is_asked_at_the_time_of_asking_and_not_at_import(
     says_go.asks_a_person = anybody_there  # type: ignore[attr-defined]
 
     async def decide_in(runs: Path) -> list[dict[str, Any]]:
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=FakeProvider(
                     script=[
                         _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5852,7 +5852,7 @@ async def test_a_callable_mark_that_says_yes_records_as_much_as_a_flat_one(
 
     watching.asks_a_person = somebody_is_there  # type: ignore[attr-defined]
 
-    watched = await run_duck(_fall_blind(tmp_path / "acknowledge", watching))
+    watched = await run_glot(_fall_blind(tmp_path / "acknowledge", watching))
     assert watched.outcome == "success", watched.reason
     rows = _prompts(Transcript.read(watched.run_dir / "transcript.jsonl"))
     assert [(what, answer) for what, _question, answer in rows] == [("acknowledge", True)]
@@ -5860,7 +5860,7 @@ async def test_a_callable_mark_that_says_yes_records_as_much_as_a_flat_one(
     mock = LeRobotMock(rest_pose=REST)
     person = ScriptedPerson(mock, places=PLACED)
     person.asks_a_person = somebody_is_there  # type: ignore[assignment]
-    handed = await run_duck(_by_hand(mock, person, tmp_path / "hand-off"))
+    handed = await run_glot(_by_hand(mock, person, tmp_path / "hand-off"))
     assert handed.outcome == "success", handed.reason
     assert _prompts(Transcript.read(handed.run_dir / "transcript.jsonl")) == [
         ("hand_off", AgentLoop.PLACE_IT, True),
@@ -5889,15 +5889,15 @@ def _a_person() -> Callable[[str], bool]:
 
 def test_what_answered_is_named_by_the_mark_it_carries(monkeypatch: pytest.MonkeyPatch) -> None:
     """A person only where one was really asked, as a `prompt` row is written, and otherwise
-    what said it: `--yes`, a flock's standing answer, a pipe on the CLI's own question, or a
+    what said it: `--yes`, a team's standing answer, a pipe on the CLI's own question, or a
     standing answer that names nothing more. The CLI's question is a person or a pipe by
     whether a terminal is there when it is put."""
-    from quackd import cli
-    from quackd.flock.pilots import _standing_go
-    from quackd.log import who_answered
+    from roboglot import cli
+    from roboglot.log import who_answered
+    from roboglot.team.pilots import _standing_go
 
     assert who_answered(cli._yes_to_go) == "--yes"
-    assert who_answered(_standing_go) == "a flock's standing answer"
+    assert who_answered(_standing_go) == "a team's standing answer"
     assert who_answered(lambda _why: True) == "a standing answer"
     assert who_answered(_a_pipe()) == "a pipe" and who_answered(_a_person()) == "a person"
     for there, named in ((True, "a person"), (False, "a pipe")):
@@ -5910,25 +5910,25 @@ def test_what_answered_is_named_by_the_mark_it_carries(monkeypatch: pytest.Monke
     [
         ("a person", _a_person()),
         ("--yes", None),
-        ("a flock's standing answer", None),
+        ("a team's standing answer", None),
         ("a pipe", _a_pipe()),
     ],
 )
 async def test_the_record_and_the_line_name_what_said_go(
-    who: str, decide: Callable[[str], bool] | None, hello_duck: DuckFile, tmp_path: Path
+    who: str, decide: Callable[[str], bool] | None, hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`assess.human` is the gate's state, `go` whoever said it, and it is still that. Beside
     it the event names what said it, `answered_by`, and the line drawn from the event says
     that and never a person nobody asked: only a person's go leaves a `prompt` row too."""
-    from quackd import cli
-    from quackd.flock.pilots import _standing_go
-    from quackd.log import LogEvent, render_lines
+    from roboglot import cli
+    from roboglot.log import LogEvent, render_lines
+    from roboglot.team.pilots import _standing_go
 
     if decide is None:
         decide = cli._yes_to_go if who == "--yes" else _standing_go
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5951,11 +5951,11 @@ async def test_the_record_and_the_line_name_what_said_go(
     assert bool(_prompts(events)) == (who == "a person"), _prompts(events)
 
 
-async def test_a_feasible_verdict_names_nobody(hello_duck: DuckFile, tmp_path: Path) -> None:
+async def test_a_feasible_verdict_names_nobody(hello_glot: GlotFile, tmp_path: Path) -> None:
     """Nobody is asked about a verdict the pilot was sure of, and its event names nobody."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "a short walk"),
@@ -5975,7 +5975,7 @@ async def test_a_feasible_verdict_names_nobody(hello_duck: DuckFile, tmp_path: P
 @pytest.mark.parametrize("raised", ["EOFError", "Abort"])
 @pytest.mark.parametrize("marked", ["a person", "a pipe"])
 async def test_a_doubt_whose_prompt_raised_went_unanswered(
-    raised: str, marked: str, hello_duck: DuckFile, tmp_path: Path
+    raised: str, marked: str, hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A prompt that read the end of its input, or that click turned into its `Abort`, said
     neither go nor no. The gate reads it as no and the run ends before any motion, as it always
@@ -5983,7 +5983,7 @@ async def test_a_doubt_whose_prompt_raised_went_unanswered(
     it, a person or a pipe, as having said no. No `prompt` row says anybody answered."""
     import click
 
-    from quackd.log import LogEvent, render_lines
+    from roboglot.log import LogEvent, render_lines
 
     error = EOFError() if raised == "EOFError" else click.exceptions.Abort()
 
@@ -5992,9 +5992,9 @@ async def test_a_doubt_whose_prompt_raised_went_unanswered(
 
     says_nothing.asks_a_person = lambda: marked == "a person"  # type: ignore[attr-defined]
     transport = MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -6027,7 +6027,7 @@ async def test_a_doubt_whose_prompt_raised_went_unanswered(
 # run by somebody who was not in the room, which is why they go in the record rather than on
 # the terminal: `run_start` carries the rate and the wall clock, `summary.json` carries what
 # the run spent of both, and `RunResult.summary` hands the CLI the same dict so the live
-# verdict and `quackd log` cannot drift apart.
+# verdict and `roboglot log` cannot drift apart.
 
 
 class FailsAfterOneAnswer(ThinkingProvider):
@@ -6073,7 +6073,7 @@ def _quack_then_done() -> ThinkingProvider:
 
 
 async def test_the_record_says_in_absolute_time_when_the_run_began(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Every record carries `t`, seconds on a monotonic clock, and nothing said what second
     zero was. The directory name was the only answer, and it is the local clock at second
@@ -6081,10 +6081,10 @@ async def test_the_record_says_in_absolute_time_when_the_run_began(
 
     It is aware and it is UTC because a bench in one timezone and a CI job in another compare
     their runs by subtracting these."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6102,10 +6102,10 @@ async def test_the_record_says_in_absolute_time_when_the_run_began(
 
 
 async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`ended_at` is derived from `started_at` and `wall_s` rather than read off the clock a
-    second time, so `ended_at - started_at == wall_s` is true of every record quackd writes,
+    second time, so `ended_at - started_at == wall_s` is true of every record Roboglot writes,
     including on a laptop that synced its clock or slept through part of a run.
 
     Nothing here compares `wall_s` with `elapsed_s`, and nothing should. `elapsed_s` is the
@@ -6113,10 +6113,10 @@ async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
     simulator's: a real sim2d run recorded `elapsed_s` 7.8 against a `wall_s` of 0.172. They
     are two different questions rather than two readings of one, and an assertion ordering
     them would fail on the first simulator run to reach it."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6138,7 +6138,7 @@ async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
 
 
 async def test_the_seconds_spent_waiting_on_the_llm_count_the_call_that_raised(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`llm_latency_s` is the largest number in most runs, and a reader used to have to add it
     up by hand out of the `llm` records to say so. A provider that hangs until it times out is
@@ -6149,7 +6149,7 @@ async def test_the_seconds_spent_waiting_on_the_llm_count_the_call_that_raised(
     run_dir.mkdir()
     loop = AgentLoop(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=FailsAfterOneAnswer(ToolCall(name="quack", arguments={"text": "hi"})),
             transport=MockTransport(),
             run_dir=run_dir,
@@ -6178,7 +6178,7 @@ async def test_the_seconds_spent_waiting_on_the_llm_count_the_call_that_raised(
 
 
 async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_moved(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A total says where a run's time went and nothing about the calls that spent it, and the
     question a person standing by the robot asks first is how long it took to do anything. So
@@ -6187,12 +6187,12 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
     over, on the record's own clock and after how many LLM calls. Read off the run's own
     records rather than off a clock the test keeps, so no figure here is a timing guess. A dry
     run hands nothing over, so nothing in it moved."""
-    from quackd.latency import nearest_rank
+    from roboglot.latency import nearest_rank
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck(hello_duck.name),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6212,10 +6212,10 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
     ended = next(e for e in events if e["kind"] == "verb_end" and e.get("name") == "walk")
     assert llm[walked]["t"] <= summary["first_motion_s"] <= ended["t"] <= summary["wall_s"]
 
-    dry = await run_duck(
+    dry = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck(hello_duck.name),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path / "dry",
             dry_run=True,
@@ -6226,7 +6226,7 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
 
 
 async def test_every_call_is_costed_at_the_rate_the_environment_named(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The arithmetic a reader of a transcript used to do by hand against a rate card they had
     to go and find, done once per call and accumulated as the run goes, so a run killed
@@ -6234,10 +6234,10 @@ async def test_every_call_is_costed_at_the_rate_the_environment_named(
 
     The rate is checked against a `Price` built here rather than against the one the run
     parsed, because a parser agreeing with itself about the wrong rate would pass."""
-    monkeypatch.setenv("QUACKD_PRICE", "in=3,out=15,cache_read=0.3,cache_write=3.75")
-    result = await run_duck(
+    monkeypatch.setenv("ROBOGLOT_PRICE", "in=3,out=15,cache_read=0.3,cache_write=3.75")
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6246,13 +6246,13 @@ async def test_every_call_is_costed_at_the_rate_the_environment_named(
     assert result.outcome == "success", result.reason
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     rate = events[0]["price"]
-    assert rate["source"] == "QUACKD_PRICE", "and the record says which of the three it was"
+    assert rate["source"] == "ROBOGLOT_PRICE", "and the record says which of the three it was"
     assert (rate["input"], rate["output"]) == (3.0, 15.0)
     assert (rate["cache_read"], rate["cache_write"]) == (0.3, 3.75)
     assert rate["unit"] == "USD per million tokens"
     assert rate["checked"] is None, "only a catalogue rate carries the date it was read"
 
-    price = Price(input=3.0, output=15.0, cache_read=0.3, cache_write=3.75, source="QUACKD_PRICE")
+    price = Price(input=3.0, output=15.0, cache_read=0.3, cache_write=3.75, source="ROBOGLOT_PRICE")
     calls = [e for e in events if e["kind"] == "llm"]
     assert len(calls) == 2
     running = 0.0
@@ -6266,16 +6266,16 @@ async def test_every_call_is_costed_at_the_rate_the_environment_named(
 
 
 async def test_a_price_on_the_run_beats_one_in_the_environment(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`--price` is somebody typing the rate they negotiated at the moment they start the run;
-    `QUACKD_PRICE` is whatever a `.env` three directories up happens to say. The flag wins,
+    `ROBOGLOT_PRICE` is whatever a `.env` three directories up happens to say. The flag wins,
     and the record names which of the two it was, because months later that is the only way to
     tell a deliberate rate from an inherited one."""
-    monkeypatch.setenv("QUACKD_PRICE", "in=99,out=99")
-    result = await run_duck(
+    monkeypatch.setenv("ROBOGLOT_PRICE", "in=99,out=99")
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6292,8 +6292,8 @@ async def test_a_price_on_the_run_beats_one_in_the_environment(
     )
 
 
-async def test_an_llm_quackd_has_no_rate_for_records_null_and_never_zero(
-    hello_duck: DuckFile, tmp_path: Path
+async def test_an_llm_roboglot_has_no_rate_for_records_null_and_never_zero(
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The expensive kind of wrong. `$0.00` beside a frontier LLM reads as a free run, and
     somebody adding up a week of them believes it and goes on running them; `null` reads as a
@@ -6302,9 +6302,9 @@ async def test_an_llm_quackd_has_no_rate_for_records_null_and_never_zero(
 
     The tokens are still counted. It is only the money that is unknown, and the record says
     exactly that much and no more."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=UnlistedLLM(
                 ToolCall(name="quack", arguments={"text": "hi"}),
                 ToolCall(name="declare_success", arguments={"reason": "quacked"}),
@@ -6324,15 +6324,15 @@ async def test_an_llm_quackd_has_no_rate_for_records_null_and_never_zero(
 
 
 async def test_the_scripted_pilot_is_free_rather_than_unpriced(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`fake` calls nothing and bills nothing, so `$0` is the truth about it rather than an
     absence of one, and it is the one shape of run where a zero is the right answer. It is
     also what makes the whole cost path testable with no key and no bill."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6378,14 +6378,14 @@ def _billed(bills: list[float | None], **kw: Any) -> BillingProvider:
 
 
 async def test_a_turn_the_vendor_billed_is_recorded_at_what_it_was_billed(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Rather than at the catalogue's rate times its tokens: the bill already knows which
     endpoint served the call and what the cache saved. The rate stays in the record beside it,
     and every call it did not decide says so."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=_billed([0.0011, 0.0025]),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6407,13 +6407,13 @@ async def test_a_turn_the_vendor_billed_is_recorded_at_what_it_was_billed(
 
 
 async def test_a_price_on_the_run_beats_what_the_vendor_billed(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """`--price` is a person saying what this costs them, a negotiated rate or a key quackd
+    """`--price` is a person saying what this costs them, a negotiated rate or a key Roboglot
     cannot see, and it is obeyed over the bill as it is over the catalogue."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=_billed([0.0011, 0.0025]),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6429,15 +6429,15 @@ async def test_a_price_on_the_run_beats_what_the_vendor_billed(
 
 
 async def test_a_listed_rate_prices_an_llm_the_catalogue_does_not_carry(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """An OpenRouter id quackd does not carry is priced at the rate OpenRouter's list gave it,
+    """An OpenRouter id Roboglot does not carry is priced at the rate OpenRouter's list gave it,
     and the record says so and when it was read."""
     listed = Price(0.15, 0.47, source="openrouter", checked="2026-10-06")
     provider = _billed([None, None], listed_price=listed)
     provider.llm_id = "qwen/qwen3.8-flash"
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     rate = events[0]["price"]
@@ -6449,15 +6449,15 @@ async def test_a_listed_rate_prices_an_llm_the_catalogue_does_not_carry(
 
 
 async def test_one_call_nobody_could_price_leaves_the_run_unpriced(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """With no rate, a run on a vendor that bills per call starts at $0, because a bill can come
     with every turn. The first call that brings neither a bill nor a rate makes the total
     unknown from then on: a total that skipped it would be believed as the whole bill."""
     provider = _billed([0.001, None])
     provider.llm_id = "qwen/qwen3.8-flash"
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert events[0]["price"] is None
@@ -6489,7 +6489,7 @@ class FailsBilled(BillingProvider):
 
 
 async def _run_that_fails(
-    duck: DuckFile, tmp_path: Path, provider: Any
+    duck: GlotFile, tmp_path: Path, provider: Any
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A run whose pilot raises, read back off what it wrote: the summary and the transcript."""
     run_dir = tmp_path / "run"
@@ -6510,14 +6510,14 @@ async def _run_that_fails(
 
 
 async def test_a_call_that_failed_after_it_was_billed_is_in_the_total(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The bill came with the error, so it is the run's like any other call's. A total that
     left it out would be believed as the whole bill, which is the wrong this guards against."""
     raised = ProviderError("openrouter: the provider failed partway through the answer")
     raised.billed_usd = 0.25
     raised.usage = Usage(input_tokens=40, output_tokens=3)
-    summary, events = await _run_that_fails(hello_duck, tmp_path, FailsBilled(raised))
+    summary, events = await _run_that_fails(hello_glot, tmp_path, FailsBilled(raised))
     assert summary["outcome"] == "error"
     (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
     assert failed["cost_usd"] == 0.25 and failed["billed"] is True
@@ -6528,7 +6528,7 @@ async def test_a_call_that_failed_after_it_was_billed_is_in_the_total(
 
 
 async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run_unpriced(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The other side of a billed failure: tokens reported and no bill, on an LLM with no rate.
     That call cannot be priced, so the total is unknown from then on, as it is for a turn, and
@@ -6537,7 +6537,7 @@ async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run
     raised.usage = Usage(input_tokens=40, output_tokens=3)
     provider = FailsBilled(raised)
     provider.llm_id = "qwen/qwen3.8-flash"  # no catalogue rate, and the list gave none
-    summary, events = await _run_that_fails(hello_duck, tmp_path, provider)
+    summary, events = await _run_that_fails(hello_glot, tmp_path, provider)
     (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
     assert failed["cost_usd"] is None and failed["cost_usd_total"] is None
     assert "billed" not in failed, "only a call costed at the vendor's own bill says billed"
@@ -6546,11 +6546,11 @@ async def test_a_failed_call_that_used_tokens_and_brought_no_bill_leaves_the_run
 
 
 async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """The real `OpenRouterProvider`, not a double: an id whose list entry gives no usable rate
     still totals what each call was billed, because the provider says it bills per call."""
-    from quackd.agent.providers.openrouter import Listed, OpenRouterProvider
+    from roboglot.agent.providers.openrouter import Listed, OpenRouterProvider
 
     def answer(name: str, arguments: str, cost: float) -> Any:
         call = NS(id=f"call-{name}", function=NS(name=name, arguments=arguments))
@@ -6568,14 +6568,14 @@ async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
     async def create(**kwargs: Any) -> Any:
         return next(answers)
 
-    unpriced = Listed("quackd-stub/variable", vision=False, tool_choice=True, price=None)
+    unpriced = Listed("roboglot-stub/variable", vision=False, tool_choice=True, price=None)
     provider = OpenRouterProvider(
-        llm_id="quackd-stub/variable",
+        llm_id="roboglot-stub/variable",
         listed=unpriced,
         client=NS(chat=NS(completions=NS(create=create))),
     )
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert result.summary["price"] is None
@@ -6583,12 +6583,12 @@ async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
 
 
 async def test_a_failed_call_with_no_bill_is_recorded_exactly_as_it_was(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """Every failure but that one costs nothing quackd can see, and its record keeps the shape
+    """Every failure but that one costs nothing Roboglot can see, and its record keeps the shape
     it always had: an error, a latency, and no cost fields at all."""
     summary, events = await _run_that_fails(
-        hello_duck, tmp_path, FailsBilled(ProviderError("rate limited"))
+        hello_glot, tmp_path, FailsBilled(ProviderError("rate limited"))
     )
     (failed,) = [e for e in events if e["kind"] == "llm" and "error" in e]
     assert set(failed) >= {"error", "latency_s"}
@@ -6597,12 +6597,12 @@ async def test_a_failed_call_with_no_bill_is_recorded_exactly_as_it_was(
 
 
 async def test_a_run_nobody_billed_reads_exactly_as_it_did(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Every vendor but one reports tokens and no bill, and its records must not grow a field."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6617,17 +6617,17 @@ async def test_a_run_nobody_billed_reads_exactly_as_it_did(
 
 
 async def test_the_result_hands_back_the_summary_that_was_written_to_disk(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """One dict, written once, read three ways. The CLI prints the same counters from a run
     that has just finished and from a transcript replayed a month later, and those used to be
     two hand-kept lists that drifted: a counter added to one was missing from the other until
     somebody noticed. `RunResult.summary`, `summary.json` and the `run_end` record are the
     same mapping now, so a number that is right in one of them is right in all three."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6641,20 +6641,20 @@ async def test_the_result_hands_back_the_summary_that_was_written_to_disk(
 
 
 async def test_a_named_run_is_called_that_on_disk_and_quoted_as_typed_in_the_record(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A bench afternoon is a hundred runs on one arm, and a hundred directories that differ
     only in a timestamp nobody wrote down.
 
     The slug goes in the directory name, because a run directory is typed back into
-    `quackd log` and pasted into a shell, and a space in one is a quoting problem on two
+    `roboglot log` and pasted into a shell, and a space in one is a quoting problem on two
     operating systems. The record keeps the words that were typed, because `example-1` is not
-    what the person called it. The label lands after the duck name and before any collision
-    counter, so both the timestamp prefix and the duck name still resolve."""
-    result = await run_duck(
+    what the person called it. The label lands after the task name and before any collision
+    counter, so both the timestamp prefix and the task name still resolve."""
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
             run_name="Example 1",
@@ -6669,15 +6669,15 @@ async def test_a_named_run_is_called_that_on_disk_and_quoted_as_typed_in_the_rec
 
 
 async def test_a_run_nobody_named_is_called_exactly_what_it_always_was(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """Every run in the README, and every run recorded before there was a flag for this, is
     one of these. The name gains nothing at all, and the field is null rather than absent so a
     reader never has to guess which kind of record they are holding."""
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
         )
@@ -6688,7 +6688,7 @@ async def test_a_run_nobody_named_is_called_exactly_what_it_always_was(
 
 
 async def test_a_name_with_nothing_to_slug_is_refused_before_a_directory_exists(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`--run-name "!!!"` has nothing in it to name a directory after. Falling back to a
     default the way `memory.robot_slug` does would give that bench afternoon a hundred folders
@@ -6699,10 +6699,10 @@ async def test_a_name_with_nothing_to_slug_is_refused_before_a_directory_exists(
     run, and leaves nothing behind to clean up."""
     runs = tmp_path / "runs"
     with pytest.raises(ValueError, match="has no ASCII letters or digits"):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=hello_duck,
-                provider=FakeProvider.for_duck("hello-world"),
+                duck=hello_glot,
+                provider=FakeProvider.for_glot("hello-world"),
                 transport=MockTransport(),
                 runs_dir=runs,
                 run_name="!!!",
@@ -6723,7 +6723,7 @@ class FlakyProvider:
 
     def __init__(self, plan: Sequence[BaseException | None], duck: str = "hello-world") -> None:
         self.plan = list(plan)
-        self.answers = FakeProvider.for_duck(duck)
+        self.answers = FakeProvider.for_glot(duck)
         self.name, self.llm_id, self.supports_vision = "flaky", "test", False
         self.sent: list[list[dict[str, Any]]] = []
         self.on_failure: Callable[[], None] | None = None
@@ -6766,23 +6766,23 @@ def _events(run_dir: Path, kind: str) -> list[dict[str, Any]]:
 
 
 async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_request(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """A 429 used to end the run: the SDK's two quick retries, then `error` and the fold. Now
     the loop waits and asks the same turn again, and the try sends exactly what the failed one
     did, since an LLM that binds its replayed thinking to the history refuses any other. The
     turn is charged once, and every try is on the record."""
-    clean = await run_duck(
+    clean = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck("hello-world"),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "clean",
         )
     )
     provider = FlakyProvider([None, _rate_limited()])
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [loop_module.ASK_AGAIN_AFTER_S[0]]
@@ -6802,14 +6802,14 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
 
 
 async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """With `max_llm_calls` at exactly the turns the task takes, three tries asked again
     still finish it: a busy minute at the vendor does not spend the task's turns."""
-    duck = copy.deepcopy(hello_duck)
+    duck = copy.deepcopy(hello_glot)
     duck.frontmatter.budgets.max_llm_calls = len(GOLDEN_HELLO)
     provider = FlakyProvider([_overloaded(), _overloaded(), None, _rate_limited()])
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(duck=duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
@@ -6828,7 +6828,7 @@ async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(
 async def test_the_wait_an_api_asks_for_is_kept_where_it_is_the_longer(
     headers: dict[str, str],
     waits: list[float],
-    hello_duck: DuckFile,
+    hello_glot: GlotFile,
     tmp_path: Path,
     instant_waits: list[float],
 ) -> None:
@@ -6836,14 +6836,14 @@ async def test_the_wait_an_api_asks_for_is_kept_where_it_is_the_longer(
     schedule's, and the schedule's is a floor under it, so a vendor saying `retry-after: 1`
     after the SDK has already spent its quick retries is not asked again within the second."""
     provider = FlakyProvider([_rate_limited(headers)])
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success" and instant_waits == waits
 
 
 async def test_an_api_that_asks_to_be_left_too_long_ends_the_run_at_once(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """Past `LONGEST_ASKED_WAIT_S` the loop does not sit with a robot connected on the API's
     word: the run ends `error` at once, saying how long it was asked to wait."""
@@ -6852,9 +6852,9 @@ async def test_an_api_that_asks_to_be_left_too_long_ends_the_run_at_once(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     with pytest.raises(ProviderError, match=f"asked to be left {asked:.0f} s"):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=provider,
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -6882,16 +6882,16 @@ async def test_an_api_that_asks_to_be_left_too_long_ends_the_run_at_once(
     ids=["bare", "400", "401", "should-retry-false", "local-protocol"],
 )
 async def test_a_failure_not_worth_asking_again_ends_the_run_at_once(
-    failure: ProviderError, hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    failure: ProviderError, hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
-    """A request the API said no to, or one quackd built wrong, is the same request the next
-    time, and so is a `ProviderError` quackd raised itself, whatever its words say: each
+    """A request the API said no to, or one Roboglot built wrong, is the same request the next
+    time, and so is a `ProviderError` Roboglot raised itself, whatever its words say: each
     ends the run as it always did, with no wait and one try."""
     provider = FlakyProvider([None, failure])
     with pytest.raises(ProviderError):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path
+                duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path
             )
         )
     assert instant_waits == [] and len(provider.sent) == 2
@@ -6908,9 +6908,9 @@ async def test_out_of_tries_the_run_ends_in_error_and_the_arm_is_put_down(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     with pytest.raises(ProviderError, match=f"in {tries} tries"):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=_arm_duck(),
+                duck=_arm_glot(),
                 provider=FlakyProvider([_overloaded()] * tries, duck="lerobot-lookout"),
                 transport=LeRobotAdapter(mock),
                 run_dir=run_dir,
@@ -6938,9 +6938,9 @@ async def test_a_stop_while_the_loop_waits_ends_the_run_aborted_and_puts_the_arm
 
     monkeypatch.setattr(loop_module, "_wait_or_abort", pressed)
     mock = LeRobotMock(rest_pose=ARM_REST)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=FlakyProvider([_overloaded()], duck="lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -6954,7 +6954,7 @@ async def test_a_stop_while_the_loop_waits_ends_the_run_aborted_and_puts_the_arm
 
 
 async def test_a_stop_in_the_tick_the_wait_ran_out_sends_no_further_try(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The wait can run out in the very tick the kill switch fires, and then it says it ran
     out. The flag is read again after it, so no try goes out once a stop has been pressed."""
@@ -6966,8 +6966,8 @@ async def test_a_stop_in_the_tick_the_wait_ran_out_sends_no_further_try(
 
     monkeypatch.setattr(loop_module, "_wait_or_abort", ran_out_as_it_was_pressed)
     provider = FlakyProvider([None, _overloaded()])
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
     assert len(provider.sent) == 2, "a try went out after the stop"
@@ -6975,13 +6975,13 @@ async def test_a_stop_in_the_tick_the_wait_ran_out_sends_no_further_try(
 
 
 async def test_a_stop_pressed_while_the_call_was_out_is_not_overruled_by_a_retry(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """The first Ctrl-C does not cancel a call already out. When that call then fails for a
     reason worth asking again, the stop wins: the run ends `aborted`, with no wait."""
     provider = FlakyProvider([None, _overloaded()])
     loop = AgentLoop(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     provider.on_failure = loop.executor.abort.set
     result = await loop.run()
@@ -6989,7 +6989,7 @@ async def test_a_stop_pressed_while_the_call_was_out_is_not_overruled_by_a_retry
 
 
 async def test_the_heartbeat_watches_the_robot_while_the_loop_waits(
-    hello_duck: DuckFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The wait is a real one here. The robot stops answering once the call has failed, and
     the heartbeat, still pinging it, ends the wait long before the half minute it was set for:
@@ -7000,9 +7000,9 @@ async def test_the_heartbeat_watches_the_robot_while_the_loop_waits(
     provider = FlakyProvider([None, _overloaded()])
     provider.on_failure = lambda: setattr(transport, "_fail_after", transport.heartbeats)
     started = asyncio.get_running_loop().time()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
+            duck=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -7018,14 +7018,14 @@ async def test_the_heartbeat_watches_the_robot_while_the_loop_waits(
 
 
 async def test_a_wait_past_the_task_s_minutes_ends_the_run_without_waiting(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """`max_minutes` is checked between turns, so a wait that would outlast it would hold the
     robot after the task's time was up. The run ends instead, saying so."""
-    duck = copy.deepcopy(hello_duck)
+    duck = copy.deepcopy(hello_glot)
     duck.frontmatter.budgets.max_minutes = 0.05  # 3 s, under the first wait's 5
     with pytest.raises(ProviderError, match="would run past the task's max_minutes"):
-        await run_duck(
+        await run_glot(
             RunConfig(
                 duck=duck,
                 provider=FlakyProvider([_rate_limited()]),
@@ -7037,7 +7037,7 @@ async def test_a_wait_past_the_task_s_minutes_ends_the_run_without_waiting(
 
 
 async def test_a_connection_that_never_answered_is_not_asked_again(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """A connection that failed before the LLM answered once is as often a wrong address or
     a server that is not running as a dropped one, and two minutes of asking again help
@@ -7049,9 +7049,9 @@ async def test_a_connection_that_never_answered_is_not_asked_again(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     with pytest.raises(ProviderError, match="the provider's own words"):
-        await run_duck(
+        await run_glot(
             RunConfig(
-                duck=hello_duck,
+                duck=hello_glot,
                 provider=provider,
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -7067,13 +7067,13 @@ async def test_a_connection_that_never_answered_is_not_asked_again(
 
 
 async def test_a_first_connection_that_comes_back_on_a_quick_try_runs_on(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """The SDKs no longer retry a call of their own (`NO_SDK_RETRIES`), so the quick try they
     gave a dropped first connection is the loop's: half a second, and the run goes on."""
     provider = FlakyProvider([sdk.wrapped(sdk.APIConnectionError("Connection error."))])
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [loop_module.FIRST_CONNECTION_TRIES_S[0]]
@@ -7086,27 +7086,27 @@ async def test_a_first_connection_that_comes_back_on_a_quick_try_runs_on(
     ids=["connection", "timeout"],
 )
 async def test_a_connection_that_drops_after_the_llm_has_answered_is_asked_again(
-    dropped: BaseException, hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    dropped: BaseException, hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """Once the LLM has answered, the address was right, and a connection that drops or a
     call that times out is the network or the vendor having a moment: asked again."""
     provider = FlakyProvider([None, sdk.wrapped(dropped)])
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success" and instant_waits == [5.0]
 
 
 async def test_a_connection_dropped_after_the_api_answered_with_a_status_is_asked_again(
-    hello_duck: DuckFile, tmp_path: Path, instant_waits: list[float]
+    hello_glot: GlotFile, tmp_path: Path, instant_waits: list[float]
 ) -> None:
     """A 529 on the first call is the server answering, so a connection that drops on the try
     after it is an overload, not a wrong address: asked again, and the run goes on."""
     provider = FlakyProvider(
         [_overloaded(), sdk.wrapped(sdk.APIConnectionError("Connection error."))]
     )
-    result = await run_duck(
-        RunConfig(duck=hello_duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+    result = await run_glot(
+        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [5.0, 15.0]
@@ -7137,7 +7137,7 @@ async def test_a_press_while_the_llm_is_thinking_ends_the_run_without_waiting_fo
     provider = StallingProvider()
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
+            duck=_arm_glot(),
             provider=provider,
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -7195,8 +7195,8 @@ async def test_a_press_during_the_fold_of_a_run_that_ended_by_itself_stops_the_f
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
-            provider=FakeProvider.for_duck("lerobot-lookout"),
+            duck=_arm_glot(),
+            provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
         )
@@ -7219,29 +7219,29 @@ async def test_a_press_during_the_fold_of_a_run_that_ended_by_itself_stops_the_f
     assert mock.sequence[-2:] == ["stop", "close"], mock.sequence
 
 
-async def test_a_flock_stopping_its_members_does_not_stop_a_members_fold(
+async def test_a_team_stopping_its_members_does_not_stop_a_members_fold(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A flock stops its members through the same flag, and that is no reason to leave an arm
+    """A team stops its members through the same flag, and that is no reason to leave an arm
     unfolded: only the kill switch's stop ends the fold a run that ended by itself makes. The
     fold goes on to the pose, and the close lets go of the arm there."""
     began, _folds = _slow_teardown_fold(monkeypatch, 0.2)
-    monkeypatch.setattr(AgentLoop, "_abort_reason", lambda self: "the flock stopped: duck failed")
+    monkeypatch.setattr(AgentLoop, "_abort_reason", lambda self: "the team stopped: duck failed")
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
-            provider=FakeProvider.for_duck("lerobot-lookout"),
+            duck=_arm_glot(),
+            provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
         )
     )
 
-    async def stop_the_flock() -> None:
+    async def stop_the_team() -> None:
         await began.wait()
         loop.executor.abort.set()
 
-    stopping = asyncio.ensure_future(stop_the_flock())
+    stopping = asyncio.ensure_future(stop_the_team())
     result = await loop.run()
     await stopping
     notes = [e["text"] for e in _events(result.run_dir, "note")]
@@ -7251,22 +7251,22 @@ async def test_a_flock_stopping_its_members_does_not_stop_a_members_fold(
 
 
 async def test_a_run_shows_the_pilot_the_places_its_body_knows(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A body that says where it is lists the places it knows in every observation, read
     against where it stands, and the features carry them for the stepper; a body that does not
     say reads exactly as before (`test_hello_world_golden`)."""
-    from quackd.memory import RobotMemory
-    from quackd.space.places import Place, PlaceStore
+    from roboglot.memory import RobotMemory
+    from roboglot.space.places import Place, PlaceStore
 
     home = tmp_path / "memory"
     PlaceStore("microduck:mock", home).mark(
         Place("dock", 0.0, 0.0, 0.0, "odom:mock", "odometry", 1.0)
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=hello_duck,
-            provider=FakeProvider.for_duck(hello_duck.name),
+            duck=hello_glot,
+            provider=FakeProvider.for_glot(hello_glot.name),
             transport=MicroduckAdapter(MockTransport(spatial=True)),
             runs_dir=tmp_path,
             memory=RobotMemory("microduck:mock", home),
@@ -7287,7 +7287,7 @@ async def test_a_fall_warning_nobody_answers_ends_the_run_as_a_no_and_records_no
     """A question taken back, the page gone or a stop while it waited, has not said anybody
     is watching, and nobody said they were not: the run ends as a no ends it, and no `prompt`
     row names an answer nobody gave."""
-    from quackd.front import QuestionWithdrawn
+    from roboglot.front import QuestionWithdrawn
 
     def withdrawn(_why: str) -> bool:
         raise QuestionWithdrawn("the page went away")
@@ -7296,7 +7296,7 @@ async def test_a_fall_warning_nobody_answers_ends_the_run_as_a_no_and_records_no
     run_dir = tmp_path / "gone"
     run_dir.mkdir()
     with pytest.raises(Aborted, match=r"the question went unanswered \(QuestionWithdrawn\)"):
-        await run_duck(_fall_blind(tmp_path / "gone", withdrawn, run_dir=run_dir))
+        await run_glot(_fall_blind(tmp_path / "gone", withdrawn, run_dir=run_dir))
     assert _prompts(Transcript.read(run_dir / "transcript.jsonl")) == [], "nobody said no"
 
 
@@ -7306,12 +7306,12 @@ async def test_a_fall_warning_a_stop_takes_back_ends_the_run_for_the_stop(
     """The page's Stop pressed while the run asks whether anybody is watching: the question is
     taken back, and the run ends for the Stop, which is what happened, rather than for a
     question nobody answered."""
-    from quackd.front import QuestionWithdrawn
+    from roboglot.front import QuestionWithdrawn
 
     loops: list[AgentLoop] = []
 
     def stopped(_why: str) -> bool:
-        loops[0].stop_reason = STOP_BUTTON  # as `quackd.front` names its stop, then sets the flag
+        loops[0].stop_reason = STOP_BUTTON  # as `roboglot.front` names its stop, then sets the flag
         loops[0].executor.abort.set()
         raise QuestionWithdrawn("the run was stopped")
 
@@ -7334,13 +7334,13 @@ async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_d
 ) -> None:
     """The page's Stop is a person's press, as the kill switch's is, so it stops the fold a run
     that ended by itself makes. A page that went away is nobody pressing anything, and like a
-    flock stopping its members it leaves the fold to go on to the pose."""
+    team stopping its members it leaves the fold to go on to the pose."""
     began, _folds = _slow_teardown_fold(monkeypatch, 30.0 if stops_the_fold else 0.2)
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_duck(),
-            provider=FakeProvider.for_duck("lerobot-lookout"),
+            duck=_arm_glot(),
+            provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
         )
@@ -7348,7 +7348,7 @@ async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_d
 
     async def stop() -> None:
         await began.wait()
-        loop.stop_reason = reason  # as `quackd.front` names its stop, then sets the flag
+        loop.stop_reason = reason  # as `roboglot.front` names its stop, then sets the flag
         loop.executor.abort.set()
 
     stopping = asyncio.ensure_future(stop())

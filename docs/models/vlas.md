@@ -3,13 +3,13 @@
 A learned policy is the third model a run can have, and only the SO-101 arm takes one. When the
 pilot calls `manipulate` or `pick`, the arm is handed to the policy for one short segment: the
 policy reads the arm and its cameras many times a second and answers with a goal for every
-motor, and quackd paces those goals on the arm's clock and holds each one to the arm's rules
+motor, and Roboglot paces those goals on the arm's clock and holds each one to the arm's rules
 before it is sent. A VLA, a vision-language-action model, is a policy told the subtask in words,
 which is what `manipulate` hands it. ACT is a policy that is told nothing: it learns one task
 from your own demonstrations.
 
 > [!WARNING]
-> **No learned policy has driven a real arm through quackd.** As of 2026-10-25 every segment has
+> **No learned policy has driven a real arm through Roboglot.** As of 2026-10-25 every segment has
 > run against the test suite's fake arm and on the arm's simulator. A trained ACT from the Hub
 > drove a twin of the lab's arm on 2026-09-28 and 2026-09-29, SmolVLA loaded and never answered a
 > step in time on a laptop's CPU, and no other family has run at all. Rehearse on the simulator
@@ -23,19 +23,19 @@ robotics model at all, NVIDIA hosted no inference API for GR00T, Physical Intell
 was a beta behind a waitlist with no public protocol, and the Gemini Robotics VLA was offered to
 partners only. What does play that part for open VLAs is Hugging Face's LeRobot and its Hub: one
 library and one checkpoint format for many policy families, NVIDIA's GR00T and Physical
-Intelligence's pi0 among them, and hundreds of fine-tunes for the SO-101 on the Hub. quackd's
-policy server is LeRobot behind quackd's own checks, so a family it has read is served from any
+Intelligence's pi0 among them, and hundreds of fine-tunes for the SO-101 on the Hub. Roboglot's
+policy server is LeRobot behind Roboglot's own checks, so a family it has read is served from any
 Hub repository at a revision, and a Hugging Face Inference Endpoint can run that server on a GPU
 Hugging Face rents by the hour. Why it is shaped this way is
 [ADR-0060](../adr/0060-hugging-face-serves-many-vlas.md) and
-[ADR-0061](../adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md).
+[ADR-0061](../adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-roboglot-starts.md).
 
-## The families quackd serves
+## The families Roboglot serves
 
-`quackd list-models --kind policy` prints these rows on a terminal, as `quackd policy list` does,
+`roboglot list-models --kind policy` prints these rows on a terminal, as `roboglot policy list` does,
 and `--json` for a script.
 
-<!-- generated: policy-served, by scripts/models_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
+<!-- generated: policy-served, by scripts/models_docs.py from roboglot/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Type | Family | Maker | Told the subtask in words | Needs besides the extra | GPU | Licence | How far it has got |
 |---|---|---|---|---|---|---|---|
@@ -48,11 +48,11 @@ and `--json` for a script.
 
 <!-- end generated: policy-served -->
 
-Each is a LeRobot policy type, read at LeRobot 0.7.0 before quackd serves it: its processors,
+Each is a LeRobot policy type, read at LeRobot 0.7.0 before Roboglot serves it: its processors,
 its loader, how it pads a camera it is not given and how it turns its answer into goals for the
 arm's joints. A checkpoint of any other type is refused before a byte of its weights is fetched,
 and so is one of these types whose own settings would not answer in the arm's joints, such as an
-X-VLA in an end-effector mode or a GR00T that decodes an end effector's pose. No quackd command
+X-VLA in an end-effector mode or a GR00T that decodes an end effector's pose. No Roboglot command
 loads a checkpoint in the process that owns the arm's serial bus: the server runs in a process of
 its own, and the arm checks at connect that the policy fits it before any motor is energised.
 What each family needs, what it refuses and why, and its licence in full are in
@@ -65,24 +65,24 @@ What each family needs, what it refuses and why, and its licence in full are in
    `--accept-other-frame` says the frames match, and its goals are clipped to your arm's travel
    either way. Record with LeRobot and push the checkpoint to a Hub repository of your own, or
    start from a fine-tune somebody has published.
-2. **Check it, then bench it:** `quackd policy check --policy OWNER/NAME@REVISION --bench` reads
+2. **Check it, then bench it:** `roboglot policy check --policy OWNER/NAME@REVISION --bench` reads
    its files before any weight is fetched, says what it needs, and times it through the real
    client.
 3. **Serve it** where it answers in time, below.
-4. **Point a run at it:** `quackd run task.duck --robot arm-01-sim --policy-url ...`, on the arm's
+4. **Point a run at it:** `roboglot run task.glot --robot arm-01-sim --policy-url ...`, on the arm's
    simulator first.
 
 ## Where it runs
 
 | Where | Start it with | Reach it with | What it costs | How far it has got |
 |---|---|---|---|---|
-| The laptop beside the arm | `quackd policy serve --policy OWNER/NAME@REVISION` | `--policy-url http://127.0.0.1:9875` | nothing | an ACT drove the arm's twin from a laptop's CPU |
+| The laptop beside the arm | `roboglot policy serve --policy OWNER/NAME@REVISION` | `--policy-url http://127.0.0.1:9875` | nothing | an ACT drove the arm's twin from a laptop's CPU |
 | A GPU you rent anywhere | the same command there, and `ssh -L 9875:127.0.0.1:9875` from the laptop | `--policy-url http://127.0.0.1:9875` | that GPU's rate | no round trip through one has been timed |
-| A Hugging Face Inference Endpoint | `quackd policy endpoint up NAME --policy OWNER/NAME@REVISION` | `--policy-url hf:NAME` | from $0.80 an hour on an L4 in us-east-1, Hugging Face's price on 2026-10-25, and nothing while paused | quackd has never created one: it has run against stand-ins only |
+| A Hugging Face Inference Endpoint | `roboglot policy endpoint up NAME --policy OWNER/NAME@REVISION` | `--policy-url hf:NAME` | from $0.80 an hour on an L4 in us-east-1, Hugging Face's price on 2026-10-25, and nothing while paused | Roboglot has never created one: it has run against stand-ins only |
 
 The endpoint is the closest thing there is to a vendor serving the policy for you: one command
-starts quackd's own server on a GPU Hugging Face runs, asks before it bills, waits until it
-serves and pauses it if it fails, and `quackd policy endpoint pause NAME` stops the bill. Your
+starts Roboglot's own server on a GPU Hugging Face runs, asks before it bills, waits until it
+serves and pauses it if it fails, and `roboglot policy endpoint pause NAME` stops the bill. Your
 Hugging Face token goes to Hugging Face's own API and to the endpoint's own address and nowhere
 else, and the server's own token goes to Hugging Face once, as the endpoint's secret, and
 otherwise stays on this machine. How each is set up is in
@@ -90,20 +90,20 @@ otherwise stays on this machine. How each is set up is in
 
 ## Not served, and why
 
-<!-- generated: policy-refused, by scripts/models_docs.py from quackd/adapters/policies.py. Change a row there and run the script, not this table. -->
+<!-- generated: policy-refused, by scripts/models_docs.py from roboglot/adapters/policies.py. Change a row there and run the script, not this table. -->
 
 | Not served | Maker | LeRobot type | Why not | What would change that |
 |---|---|---|---|---|
-| FLUX 3 Action | Black Forest Labs | `flux3` | it is a LeRobot policy type since 0.7.0 that quackd has not read, and it needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine, which publishes no wheel yet for the torch 2.15 LeRobot 0.7.0 installs; its weights are gated under the FLUX Kommunity License | a spike on a rented Linux GPU showing that `quackd policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives the simulator end to end |
+| FLUX 3 Action | Black Forest Labs | `flux3` | it is a LeRobot policy type since 0.7.0 that Roboglot has not read, and it needs Linux, an NVIDIA GPU with about 32 GB in BF16 by its makers' report, and a NATTEN built for that machine, which publishes no wheel yet for the torch 2.15 LeRobot 0.7.0 installs; its weights are gated under the FLUX Kommunity License | a spike on a rented Linux GPU showing that `roboglot policy check --bench` holds its rate, that its delta actions stay anchored when a goal is clipped, and that the official SO-101 checkpoint drives the simulator end to end |
 | Pi0-FAST | Physical Intelligence | `pi0_fast` | its policy loads the FAST action tokenizer with trust_remote_code=True, hard-wired, so serving it runs Python code the tokenizer's repository brings with it | LeRobot loading the FAST tokenizer without the repository's own code |
-| MolmoAct2 | Ai2 | `molmoact2` | its base model maps its classes to code of its own (auto_map), which quackd refuses in every model it loads | a decision to accept the auto_map of a checkpoint whose LeRobot loader ignores it, as LeRobot 0.7.0's MolmoAct2 loader does, fetching none of the repository's Python and building LeRobot's own copy of its code, which quackd would read first |
+| MolmoAct2 | Ai2 | `molmoact2` | its base model maps its classes to code of its own (auto_map), which Roboglot refuses in every model it loads | a decision to accept the auto_map of a checkpoint whose LeRobot loader ignores it, as LeRobot 0.7.0's MolmoAct2 loader does, fetching none of the repository's Python and building LeRobot's own copy of its code, which Roboglot would read first |
 | OpenVLA | the OpenVLA team (Stanford and partners) | none | it is not a LeRobot policy type at 0.7.0, and it loads through transformers with its repository's own code (auto_map) | a LeRobot port of it |
 | the Pi API | Physical Intelligence | none | it is a hosted beta, from 2026-10-13, behind a waitlist, with no public protocol to speak | a public protocol, and access to it |
-| the Gemini Robotics VLA | Google DeepMind | none | it is offered to partners only: Gemini Robotics 2.5, its newest, has been rolling out to robotics partners since 2026-11-10, with a waitlist for early access. Gemini Robotics-ER 2, which is public, is a planner, and quackd already carries it as a pilot row (gemini-robotics-er-2-preview), which nothing on record has flown | public access to the VLA itself |
-| GR00T 2 | NVIDIA | none | it was announced on 2026-11-09 with no weights to fetch: NVIDIA's page says its code comes in December, no licence has been named for it, and it is no LeRobot policy type at 0.7.0 | NVIDIA publishing its weights under a licence that allows it, a LeRobot port in a release quackd pins, and quackd reading that port's processors there; GR00T N1.7 is the GR00T quackd serves until then |
-| Praxis-1 | Runway | `praxis` | its open weights came on 2026-11-11, and it is a LeRobot policy type only on LeRobot's main branch since that day, in no release quackd can pin; it needs one GPU with 80 GB by LeRobot's own page, and its SO-101 checkpoint is in Runway's own format, not LeRobot's | a LeRobot release that carries it, quackd's pin moving to that release and reading its processors there, and an SO-101 checkpoint in LeRobot's format |
-| the Cosmos 3 policies | NVIDIA | `cosmos3_edge` | Cosmos3 Edge and Nano (`cosmos3_edge`, `cosmos3_nano`) are LeRobot policy types since 0.7.0 that quackd has not read, and LeRobot's own page says the base checkpoints' action modules are not trained for a robot yet | quackd reading their processors at the pin, and a checkpoint of them trained on an arm |
-| vLLM-Omni and the OpenPI wire | the vLLM project | none | it serves several VLAs over OpenPI's WebSocket protocol, but it is a server you run and not a vendor, and its wire is not the checked JSON quackd's client speaks | a client for that wire that keeps every check quackd's own protocol makes |
+| the Gemini Robotics VLA | Google DeepMind | none | it is offered to partners only: Gemini Robotics 2.5, its newest, has been rolling out to robotics partners since 2026-11-10, with a waitlist for early access. Gemini Robotics-ER 2, which is public, is a planner, and Roboglot already carries it as a pilot row (gemini-robotics-er-2-preview), which nothing on record has flown | public access to the VLA itself |
+| GR00T 2 | NVIDIA | none | it was announced on 2026-11-09 with no weights to fetch: NVIDIA's page says its code comes in December, no licence has been named for it, and it is no LeRobot policy type at 0.7.0 | NVIDIA publishing its weights under a licence that allows it, a LeRobot port in a release Roboglot pins, and Roboglot reading that port's processors there; GR00T N1.7 is the GR00T Roboglot serves until then |
+| Praxis-1 | Runway | `praxis` | its open weights came on 2026-11-11, and it is a LeRobot policy type only on LeRobot's main branch since that day, in no release Roboglot can pin; it needs one GPU with 80 GB by LeRobot's own page, and its SO-101 checkpoint is in Runway's own format, not LeRobot's | a LeRobot release that carries it, Roboglot's pin moving to that release and reading its processors there, and an SO-101 checkpoint in LeRobot's format |
+| the Cosmos 3 policies | NVIDIA | `cosmos3_edge` | Cosmos3 Edge and Nano (`cosmos3_edge`, `cosmos3_nano`) are LeRobot policy types since 0.7.0 that Roboglot has not read, and LeRobot's own page says the base checkpoints' action modules are not trained for a robot yet | Roboglot reading their processors at the pin, and a checkpoint of them trained on an arm |
+| vLLM-Omni and the OpenPI wire | the vLLM project | none | it serves several VLAs over OpenPI's WebSocket protocol, but it is a server you run and not a vendor, and its wire is not the checked JSON Roboglot's client speaks | a client for that wire that keeps every check Roboglot's own protocol makes |
 | Isaac-GR00T N1.6 checkpoints | NVIDIA | none | they are in Isaac-GR00T's own format and not LeRobot checkpoints, and LeRobot 0.7.0 serves GR00T N1.7 alone | LeRobot reading them, or the same task fine-tuned on N1.7 through LeRobot |
 
 <!-- end generated: policy-refused -->
@@ -112,8 +112,8 @@ otherwise stays on this machine. How each is set up is in
 
 A tiny random ACT and a tiny random X-VLA run through the real server and client in CI, offline.
 A trained ACT from the Hub, `natsuki0000/act-so101-bluecap`, drove a twin of the lab's arm on
-the simulator from a laptop's CPU on 2026-09-28 over `quackd serve-mcp`, and on 2026-09-29 under
-OpenAI's `gpt-6-sol` in a `quackd run --goal`. `lerobot/smolvla_base` loaded on that laptop and
+the simulator from a laptop's CPU on 2026-09-28 over `roboglot serve-mcp`, and on 2026-09-29 under
+OpenAI's `gpt-6-sol` in a `roboglot run --goal`. `lerobot/smolvla_base` loaded on that laptop and
 took minutes a chunk. No trained pi05, pi0, X-VLA or GR00T checkpoint has been loaded, benched
 or served, no round trip through a rented GPU has been timed, no Hugging Face Endpoint has been
 created, and no policy has driven the real arm. The run that would settle the arm's part is an

@@ -1,5 +1,5 @@
 """The page's job table: children started, watched and stopped, one robot at a time
-(`quackd.webui.jobs`). Plain Python: runs without Streamlit, on every operating system."""
+(`roboglot.webui.jobs`). Plain Python: runs without Streamlit, on every operating system."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ from typing import Any
 
 import pytest
 
-from quackd.front import PROTOCOL
-from quackd.webui import jobs as jobs_mod
-from quackd.webui.jobs import Job, Jobs, _child_environment
+from roboglot.front import PROTOCOL
+from roboglot.webui import jobs as jobs_mod
+from roboglot.webui.jobs import Job, Jobs, _child_environment
 from tests.test_front_run import _gated_duck
 
 FAKE_CHILD = textwrap.dedent(
@@ -53,7 +53,7 @@ FAKE_CHILD = textwrap.dedent(
 
 
 def _fake(tmp_path: Path, mode: str) -> Callable[..., Any]:
-    """A spawn that starts the scripted child instead of quackd, with the env and cwd it gets."""
+    """A spawn that starts the scripted child instead of Roboglot, with the env and cwd it gets."""
     script = tmp_path / "fake_child.py"
     script.write_text(FAKE_CHILD, encoding="utf-8")
 
@@ -222,7 +222,7 @@ def test_the_child_gets_the_page_environment_with_utf8_no_colour_and_the_session
 def test_a_real_run_through_the_table_answers_in_the_page_and_holds_its_robot(
     tmp_path: Path,
 ) -> None:
-    """The table starting quackd itself: a run waiting on a question holds its robot, and the
+    """The table starting Roboglot itself: a run waiting on a question holds its robot, and the
     page's answer lets it finish."""
     jobs = Jobs(cwd=tmp_path)
     args = ["run", str(_gated_duck(tmp_path)), "--robot", "microduck:mock", "--llm", "fake"]
@@ -238,7 +238,7 @@ def test_a_real_run_through_the_table_answers_in_the_page_and_holds_its_robot(
     view = job.snapshot()
     assert (view["end"]["outcome"], view["returncode"]) == ("success", 0)
     assert view["run_dir"] and Path(view["run_dir"]).is_dir()
-    assert job.argv[1:4] == ["-P", "-m", "quackd"] and job.argv[-2:] == ["--front", "jsonl"]
+    assert job.argv[1:4] == ["-P", "-m", "roboglot"] and job.argv[-2:] == ["--front", "jsonl"]
 
 
 def test_two_presses_at_once_start_one_job_on_a_robot(tmp_path: Path) -> None:

@@ -2,13 +2,13 @@
 
 An adapter's module may declare `DEPRECATED_BACKENDS`, a backend's name mapped to the one line
 that says what to use instead and the release it goes in, and
-`quackd.adapters.factory.deprecated_backend` reads it. `quackd run`, `quackd doctor`,
-`quackd serve-mcp` and `quackd robot list --probe` print that line on stderr just before they
+`roboglot.adapters.factory.deprecated_backend` reads it. `roboglot run`, `roboglot doctor`,
+`roboglot serve-mcp` and `roboglot robot list --probe` print that line on stderr just before they
 connect through the backend, once however many of their robots are on it, and never for a robot
 they do not connect.
 
-No adapter quackd publishes declares one, so these tests install one that does: `retiring`, a
-third party's adapter as far as quackd can tell, which is the Microduck's body under another
+No adapter Roboglot publishes declares one, so these tests install one that does: `retiring`, a
+third party's adapter as far as Roboglot can tell, which is the Microduck's body under another
 name and is retiring its backend `old` for `new`. `old` refuses every connect unless a test says
 otherwise, so each command's line can be read against the refusal it has to come before.
 """
@@ -24,16 +24,16 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-import quackd_microduck
-from quackd import cli, doctor
-from quackd.adapters import factory
-from quackd.adapters.base import AdapterNotInstalled
-from quackd.adapters.manifest import RobotManifest
-from quackd.cli import app
-from quackd.registry import Registry, RobotEntry, StoredFlock
-from quackd.transport.base import TransportError
-from quackd.transport.mock import MockTransport
-from quackd_microduck import MicroduckAdapter, microduck_manifest
+import roboglot_microduck
+from roboglot import cli, doctor
+from roboglot.adapters import factory
+from roboglot.adapters.base import AdapterNotInstalled
+from roboglot.adapters.manifest import RobotManifest
+from roboglot.cli import app
+from roboglot.registry import Registry, RobotEntry, StoredTeam
+from roboglot.transport.base import TransportError
+from roboglot.transport.mock import MockTransport
+from roboglot_microduck import MicroduckAdapter, microduck_manifest
 
 RETIRING_LINE = "retiring:old is deprecated and is removed in X.Y.0: use --robot retiring:new"
 """The one line the adapter below declares for the backend it is retiring."""
@@ -72,7 +72,7 @@ def retiring(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
     third party's: a module in `sys.modules`, and a row in the factory's `_installed`. The module
     is new each test, and a test that changes its `DEPRECATED_BACKENDS`, or `REFUSING`, the
     backends whose connect is refused, changes it for that test alone."""
-    module = ModuleType("quackd_retiring")
+    module = ModuleType("roboglot_retiring")
 
     def make(backend: str, *, robot_id: str | None = None, **_: Any) -> MicroduckAdapter:
         transport = _Body(backend, refuses=backend in vars(module)["REFUSING"])
@@ -83,12 +83,12 @@ def retiring(monkeypatch: pytest.MonkeyPatch) -> ModuleType:
         DEPRECATED_BACKENDS={"old": RETIRING_LINE},
         REFUSING={"old"},
         describe=_describe,
-        implementations=quackd_microduck.implementations,
-        conditions=quackd_microduck.conditions,
+        implementations=roboglot_microduck.implementations,
+        conditions=roboglot_microduck.conditions,
         make=make,
     )
-    monkeypatch.setitem(sys.modules, "quackd_retiring", module)
-    installed = {**factory._installed(), "retiring": "quackd_retiring"}
+    monkeypatch.setitem(sys.modules, "roboglot_retiring", module)
+    installed = {**factory._installed(), "retiring": "roboglot_retiring"}
     monkeypatch.setattr(factory, "_installed", lambda: installed)
     return module
 
@@ -100,7 +100,7 @@ def _announced(stderr: str) -> list[str]:
 
 
 def _run_fake(*argv: str, runs: Path) -> Any:
-    """`quackd run` on the scripted pilot, with nothing remembered and nothing drawn."""
+    """`roboglot run` on the scripted pilot, with nothing remembered and nothing drawn."""
     return CliRunner().invoke(
         app, ["run", *argv, "--llm", "fake", "--no-gif", "--no-memory", "--runs-dir", str(runs)]
     )
@@ -114,7 +114,7 @@ def test_only_a_backend_its_adapter_declares_is_announced(
 ) -> None:
     """`deprecated_backend` reads each adapter module's own `DEPRECATED_BACKENDS`. `retiring:old`
     has the line, and `retiring:new` beside it has none. Every backend of the ten adapters
-    quackd publishes has none either, since none of them declares one. An adapter that is not
+    Roboglot publishes has none either, since none of them declares one. An adapter that is not
     installed has nothing: a command asks only about a body it has built, and refuses one that
     is not installed before that, in its own words."""
     assert factory.deprecated_backend("retiring:old") == RETIRING_LINE
@@ -123,7 +123,7 @@ def test_only_a_backend_its_adapter_declares_is_announced(
     assert published and [s for s in published if factory.deprecated_backend(s)] == []
 
     def absent(adapter: str) -> object:
-        raise AdapterNotInstalled(adapter, "quackd[retiring]")
+        raise AdapterNotInstalled(adapter, "roboglot[retiring]")
 
     monkeypatch.setattr(factory, "_module", absent)
     assert factory.deprecated_backend(factory.RobotSpec("retiring", "old")) is None
@@ -133,10 +133,10 @@ def test_only_a_backend_its_adapter_declares_is_announced(
 @pytest.mark.parametrize(
     ("module", "raised"),
     [
-        ("quackd_broken_import", "ImportError('no module named quackd_sdk')"),
-        ("quackd_broken_missing", "ModuleNotFoundError('no module named quackd_sdk')"),
-        ("quackd_broken_runtime", "RuntimeError('the SDK does not run on this Python')"),
-        ("quackd_broken_dll", "OSError('DLL load failed while importing _native')"),
+        ("roboglot_broken_import", "ImportError('no module named roboglot_sdk')"),
+        ("roboglot_broken_missing", "ModuleNotFoundError('no module named roboglot_sdk')"),
+        ("roboglot_broken_runtime", "RuntimeError('the SDK does not run on this Python')"),
+        ("roboglot_broken_dll", "OSError('DLL load failed while importing _native')"),
     ],
 )
 def test_an_adapter_that_fails_to_import_has_no_line_whatever_it_raises(
@@ -179,7 +179,7 @@ def test_a_declaration_is_a_mapping_of_a_backend_to_its_line(
     "declared",
     [("old",), ["old"], "old", {"old": 42}, {"old": ("use", "x")}],
 )
-def test_a_declaration_quackd_cannot_read_is_refused_naming_the_module(
+def test_a_declaration_roboglot_cannot_read_is_refused_naming_the_module(
     declared: Any, retiring: ModuleType
 ) -> None:
     """`SIMULATOR_BACKENDS` is a tuple, so a tuple is the shape an adapter's author is likeliest
@@ -187,7 +187,7 @@ def test_a_declaration_quackd_cannot_read_is_refused_naming_the_module(
     connected through with no word said. So it is refused, as is a line that is not a string,
     with the module's name and the shape that is read."""
     vars(retiring)["DEPRECATED_BACKENDS"] = declared
-    with pytest.raises(TypeError, match=r"quackd_retiring\.DEPRECATED_BACKENDS"):
+    with pytest.raises(TypeError, match=r"roboglot_retiring\.DEPRECATED_BACKENDS"):
         factory.deprecated_backend("retiring:old")
 
 
@@ -227,7 +227,7 @@ def test_run_says_the_line_before_it_connects(tmp_path: Path) -> None:
 def test_run_says_nothing_for_a_robot_it_never_connects(tmp_path: Path) -> None:
     """The line tells a reader the run is connecting through the backend, so a run says it only
     for the robot it drives, and only once nothing is left that can refuse the run. A task with
-    no flock drives the first of its `--robots` and never the second, here the retiring backend,
+    no team drives the first of its `--robots` and never the second, here the retiring backend,
     and a task the validator refuses connects nothing at all."""
     solo = _run_fake("hello-world", "--robots", "a=microduck:sim2d,b=retiring:old", runs=tmp_path)
     assert solo.exit_code == 0, solo.output
@@ -238,38 +238,38 @@ def test_run_says_nothing_for_a_robot_it_never_connects(tmp_path: Path) -> None:
     assert _announced(refused.stderr) == []
 
 
-def test_a_pilot_flock_says_the_line_for_a_member_on_the_backend_wherever_it_comes(
+def test_a_pilot_team_says_the_line_for_a_member_on_the_backend_wherever_it_comes(
     tmp_path: Path,
 ) -> None:
-    """A pilot flock connects all its members at once, so the line is said for the member on the
-    retiring backend, second in a task's `--robots` or third in a stored flock, once every body
-    is built, which is after the flock's header and before that member refuses its connect."""
+    """A pilot team connects all its members at once, so the line is said for the member on the
+    retiring backend, second in a task's `--robots` or third in a stored team, once every body
+    is built, which is after the team's header and before that member refuses its connect."""
     second = _run_fake(
-        "flock-hello", "--robots", "duck=microduck:mock,arm=retiring:old", runs=tmp_path
+        "team-hello", "--robots", "duck=microduck:mock,arm=retiring:old", runs=tmp_path
     )
     stored = tmp_path / "registry"
     registry = Registry(stored)
     for name, spec in (("a", "microduck:mock"), ("b", "microduck:sim2d"), ("c", "retiring:old")):
         registry.add_robot(RobotEntry(name=name, spec=spec))
-    registry.add_flock(StoredFlock(name="trio", members=["a", "b", "c"]))
-    trio = ("--flock", "trio", "--registry-dir", str(stored))
-    third = _run_fake("flock-hello", *trio, runs=tmp_path)
+    registry.add_team(StoredTeam(name="trio", members=["a", "b", "c"]))
+    trio = ("--team", "trio", "--registry-dir", str(stored))
+    third = _run_fake("team-hello", *trio, runs=tmp_path)
     for result in (second, third):
         assert result.exit_code == 1, result.output
         assert _announced(result.stderr) == [RETIRING_LINE]
         # `output` is stdout and stderr as a terminal shows them, and the refusal is in the
-        # flock's outcome on stdout
+        # team's outcome on stdout
         assert result.output.index(RETIRING_LINE) < result.output.index(REFUSAL)
 
 
-def test_a_pilot_flock_refused_before_its_members_connect_says_nothing(
+def test_a_pilot_team_refused_before_its_members_connect_says_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The member on the retiring backend is built first and the body after it cannot be, which
-    refuses the flock after its header with nothing connected. Nothing connected through the
-    backend, so nothing is said: a flock says the line once every body is built, and not as
+    refuses the team after its header with nothing connected. Nothing connected through the
+    backend, so nothing is said: a team says the line once every body is built, and not as
     soon as it knows its members."""
-    from quackd.flock import pilots
+    from roboglot.team import pilots
 
     real = pilots.make_adapter
 
@@ -280,7 +280,7 @@ def test_a_pilot_flock_refused_before_its_members_connect_says_nothing(
 
     monkeypatch.setattr(pilots, "make_adapter", build)
     result = _run_fake(
-        "flock-hello", "--robots", "duck=retiring:old,arm=microduck:mock", runs=tmp_path
+        "team-hello", "--robots", "duck=retiring:old,arm=microduck:mock", runs=tmp_path
     )
     assert result.exit_code == 1, result.output
     assert "the arm's camera will not open" in result.stderr
@@ -360,12 +360,12 @@ def test_a_server_started_without_the_cli_logs_the_line(caplog: pytest.LogCaptur
     level, said as the start connects the robot. Building the plan connects nothing, so
     `fleet_from_flags` on its own says nothing. The runner's isolation stands in for the stdio
     the server reads and writes, as it does for the CLI's own tests."""
-    from quackd.mcp_server import fleet_from_flags, serve
+    from roboglot.mcp_server import fleet_from_flags, serve
 
     def said() -> list[str]:
-        return [r.getMessage() for r in caplog.records if r.name == "quackd.mcp"]
+        return [r.getMessage() for r in caplog.records if r.name == "roboglot.mcp"]
 
-    with caplog.at_level("WARNING", logger="quackd.mcp"):
+    with caplog.at_level("WARNING", logger="roboglot.mcp"):
         fleet_from_flags(robot="retiring:old")
         assert said() == []
         with CliRunner().isolation(), pytest.raises((TransportError, BaseExceptionGroup)):
@@ -382,7 +382,9 @@ def test_robot_list_probe_says_the_line_for_the_robots_it_connects(
     physics backend, which the probe skips rather than load a model, is retired here for this
     test alone, and comes first."""
     retired = "microduck:mujoco is deprecated in this test alone"
-    monkeypatch.setattr(quackd_microduck, "DEPRECATED_BACKENDS", {"mujoco": retired}, raising=False)
+    monkeypatch.setattr(
+        roboglot_microduck, "DEPRECATED_BACKENDS", {"mujoco": retired}, raising=False
+    )
     registry = Registry(tmp_path)
     for name, spec in (
         ("a", "microduck:mujoco"),

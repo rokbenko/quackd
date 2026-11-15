@@ -11,12 +11,12 @@ from collections.abc import Iterator
 
 import pytest
 
-from quackd import doctor
+from roboglot import doctor
 
 
 @pytest.fixture
 def _no_board(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("QUACKD_BASE_URL", raising=False)
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
     monkeypatch.setattr(doctor, "_probe_placement", lambda root, timeout_s=1.5: ([], "not asked"))
 
 

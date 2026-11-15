@@ -9,14 +9,14 @@ from collections.abc import Callable
 import pytest
 from PIL import Image
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception.base import Detection
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor
-from quackd.transport.base import Ack, Intent
-from quackd.transport.mock import MockTransport
-from quackd.transport.sim2d import Sim2DTransport
-from quackd.verbs.core import (
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception.base import Detection
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor
+from roboglot.transport.base import Ack, Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.transport.sim2d import Sim2DTransport
+from roboglot.verbs.core import (
     LOST_TICKS,
     LOST_WZ,
     MAX_SCAN_STEPS,
@@ -25,11 +25,11 @@ from quackd.verbs.core import (
     SearchScanParams,
     scan_steps,
 )
-from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
+from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
 
-DUCK = parse_duck_text(
+DUCK = parse_glot_text(
     """---
-duck: 0
+glot: 0
 name: t
 description: d
 verbs:

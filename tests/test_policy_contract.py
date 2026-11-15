@@ -1,7 +1,7 @@
 """The two halves of the policy protocol, talking to each other, and the arm's loop behind one.
 
-The server here is the real one (`quackd_lerobot.policy.server`), in-process on port 0 on
-loopback, serving a scripted policy by the name `quackd policy serve --policy scripted:NAME`
+The server here is the real one (`roboglot_lerobot.policy.server`), in-process on port 0 on
+loopback, serving a scripted policy by the name `roboglot policy serve --policy scripted:NAME`
 takes, and the client is the real `RemoteRunner`. So a field renamed on one side, a shape one
 side sends and the other refuses, or a bound one side moved is caught here, and the segments
 below run the real policy loop over the backend and the test suite's `FakeArm`, through HTTP,
@@ -37,24 +37,24 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
-from quackd import host
-from quackd.cli import app
-from quackd.command import HIDDEN
-from quackd.safety import Executor, allow_all
-from quackd.transport.base import TransportError
-from quackd.verbs.registry import registry_from_manifest
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.policy import protocol as wire
-from quackd_lerobot.policy import server as S
-from quackd_lerobot.policy.client import (
+from roboglot import host
+from roboglot.cli import app
+from roboglot.command import HIDDEN
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.base import TransportError
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.policy import protocol as wire
+from roboglot_lerobot.policy import server as S
+from roboglot_lerobot.policy.client import (
     STEP_TIMEOUT_S,
     PolicyServerError,
     RemoteRunner,
     client_token,
     policy_address,
 )
-from quackd_lerobot.policy.fit import PolicyMisfit, fit
-from quackd_lerobot.policy.loop import (
+from roboglot_lerobot.policy.fit import PolicyMisfit, fit
+from roboglot_lerobot.policy.loop import (
     FIRST_CHUNK_S,
     STARVE_S,
     Plan,
@@ -63,27 +63,27 @@ from quackd_lerobot.policy.loop import (
     refill_at,
     starved_each_chunk,
 )
-from quackd_lerobot.policy.runner import Chunk, Observation
-from quackd_lerobot.policy.scripted import (
+from roboglot_lerobot.policy.runner import Chunk, Observation
+from roboglot_lerobot.policy.scripted import (
     SCRIPTED_HZ,
     SCRIPTS,
     SWEEP_DEG,
     SWEEP_JOINT,
     ScriptedRunner,
 )
-from quackd_lerobot.real import (
+from roboglot_lerobot.real import (
     CAMERA_ROTATIONS,
     OUT_OF_RANGE_DEG,
     LeRobotReal,
     joint_ranges,
     parse_camera_url,
 )
-from quackd_lerobot.verbs import JOINTS, MANIPULATE_S
+from roboglot_lerobot.verbs import JOINTS, MANIPULATE_S
 from tests.test_lerobot_adapter import FakeArm, FakeCamera, SteppedClock, _segment_arm
 from tests.test_policy_loop import STEP, AnsweredClock, LockstepClock, _segment_end
 
 REPO = Path(__file__).resolve().parents[1]
-HOSTD = REPO / "bridge" / "jetson" / "quackd_jetson_hostd.py"
+HOSTD = REPO / "bridge" / "jetson" / "roboglot_jetson_hostd.py"
 TOKEN = "5f0c2a8e9d7b41c3a6e8f0d2b4c6a8e0f1d3b5c7a9e1f3d5b7c9a1e3f5d7b9c1"
 """Shaped like `secrets.token_hex(32)`, which is what the server writes."""
 FRAME = wire.CameraInfo(name="front", height=24, width=32)
@@ -142,7 +142,7 @@ def _serving(options: S.ServeOptions, runner: Any = None, token: str = TOKEN) ->
 
 @pytest.fixture
 def served() -> Iterator[Serving]:
-    """`quackd policy serve --policy scripted:sweep`, on loopback, with a token."""
+    """`roboglot policy serve --policy scripted:sweep`, on loopback, with a token."""
     serving = _serving(S.ServeOptions(policy="scripted:sweep"))
     try:
         yield serving
@@ -176,7 +176,7 @@ async def _arm_on(
 
 
 def _hostd() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("quackd_jetson_hostd_policy", HOSTD)
+    spec = importlib.util.spec_from_file_location("roboglot_jetson_hostd_policy", HOSTD)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -189,7 +189,7 @@ def _hostd() -> ModuleType:
 
 def test_the_port_sits_next_to_the_daemons_and_every_page_that_lists_ports_has_it() -> None:
     """9871 and 9872 are the Open Duck Mini's, 9873 the ToddlerBot daemon's and 9874 the Jetson
-    host daemon's, and SECURITY.md tells people which ports quackd opens."""
+    host daemon's, and SECURITY.md tells people which ports Roboglot opens."""
     assert wire.DEFAULT_PORT == host.DEFAULT_PORT + 1
     assert str(wire.DEFAULT_PORT) in (REPO / "SECURITY.md").read_text(encoding="utf-8")
     result = CliRunner().invoke(app, ["policy", "serve", "--help"])
@@ -197,7 +197,7 @@ def test_the_port_sits_next_to_the_daemons_and_every_page_that_lists_ports_has_i
 
 
 def test_the_servers_bounds_are_the_jetson_daemons() -> None:
-    """Copied as named constants, because a daemon under `bridge/` never imports quackd, so a
+    """Copied as named constants, because a daemon under `bridge/` never imports Roboglot, so a
     change to one has to be a change to the other, and this is where it shows."""
     hostd = _hostd()
     for name in (
@@ -744,7 +744,7 @@ def test_the_token_is_scrubbed_from_what_the_server_says(
 def test_the_token_file_is_written_once_readable_by_its_owner_and_read_by_the_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = tmp_path / "home" / ".quackd" / "policy.token"
+    path = tmp_path / "home" / ".roboglot" / "policy.token"
     monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(path))
     monkeypatch.delenv(wire.TOKEN_ENV, raising=False)
     token, where, written = S.server_token(None)
@@ -831,7 +831,7 @@ def test_a_client_with_no_token_anywhere_says_where_to_put_one(
 def test_serve_writes_a_token_and_says_where(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = tmp_path / ".quackd" / "policy.token"
+    path = tmp_path / ".roboglot" / "policy.token"
     monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(path))
     monkeypatch.setattr(S.Served, "wait", lambda self: None)
     result = CliRunner().invoke(
@@ -843,7 +843,7 @@ def test_serve_writes_a_token_and_says_where(
     assert "scripted:hold at http://127.0.0.1:" in flat
 
 
-TOKEN_VAR = "QUACKD_TEST_SERVE_TOKEN"
+TOKEN_VAR = "ROBOGLOT_TEST_SERVE_TOKEN"
 """A variable `--token-env` is pointed at, which no developer's `.env` holds."""
 
 
@@ -853,7 +853,7 @@ def test_serve_reads_its_token_from_the_variable_token_env_names_and_never_says_
     """How a platform that keeps a container's secrets hands the server its token: the token is
     read from the variable, stripped as a file's is, and the serving rows name the variable and
     never what it holds. No token file is read or written beside it."""
-    default = tmp_path / ".quackd" / "policy.token"
+    default = tmp_path / ".roboglot" / "policy.token"
     monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(default))
     monkeypatch.setenv(TOKEN_VAR, f"  {TOKEN}\n")
     assert S.server_token(None, TOKEN_VAR) == (TOKEN, None, False)
@@ -880,7 +880,7 @@ def test_a_token_env_that_holds_no_token_a_short_one_or_one_no_header_carries_re
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, value: str | None, needle: str
 ) -> None:
     # a server that ignored the variable would write its default file, and never the real one
-    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".roboglot" / "policy.token"))
     if value is None:
         monkeypatch.delenv(TOKEN_VAR, raising=False)
     else:
@@ -906,7 +906,7 @@ def test_token_env_beside_token_file_and_a_value_where_its_name_belongs_are_refu
     quoted back."""
     named = tmp_path / "policy.token"
     named.write_text(TOKEN + "\n", encoding="utf-8")
-    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".quackd" / "policy.token"))
+    monkeypatch.setattr(wire, "DEFAULT_TOKEN_FILE", str(tmp_path / ".roboglot" / "policy.token"))
     with pytest.raises(S.ServeRefused, match="give one of them"):
         S.server_token(str(named), TOKEN_VAR)
     both = S.ServeOptions(policy="scripted:hold", port=0, token_file=str(named), token_env="X")
@@ -965,12 +965,12 @@ def test_a_request_carrying_authorization_is_said_once_and_its_value_never(
     served: Serving, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The bearer a Hugging Face Endpoint wants is for the proxy in front of the server, and
-    quackd's client never sends one to the server itself. So the first request that arrives
+    Roboglot's client never sends one to the server itself. So the first request that arrives
     carrying an `Authorization` header says, as a warning and once, that the proxy passes a
     client's credentials on, whatever route it asked and whether or not it held the token, and
     nothing the server logs has the header's value in it."""
     secret = "hf_" + "Q" * 34
-    caplog.set_level(logging.DEBUG, logger="quackd.policy")
+    caplog.set_level(logging.DEBUG, logger="roboglot.policy")
 
     def warned() -> list[logging.LogRecord]:
         return [
@@ -1057,7 +1057,7 @@ def test_the_schema_refuses_what_neither_side_ever_sends() -> None:
 def test_a_server_that_describes_itself_in_anything_but_printable_ascii_is_refused(
     monkeypatch: pytest.MonkeyPatch, field: str, said: str
 ) -> None:
-    """`quackd policy check` prints what a server says it serves, and a refusal of its rate
+    """`roboglot policy check` prints what a server says it serves, and a refusal of its rate
     quotes where the rate came from, so an escape in either would reach the user's terminal:
     both ends refuse the message instead."""
     _, info = S.served_policy(S.ServeOptions(policy="scripted:hold"))
@@ -1065,7 +1065,7 @@ def test_a_server_that_describes_itself_in_anything_but_printable_ascii_is_refus
     runner = RemoteRunner("http://127.0.0.1:9", token=TOKEN, motors=JOINTS)
     monkeypatch.setattr(runner, "_exchange", lambda *a: raw)
     if field == "protocol":
-        match = "not as quackd-policy"  # the client knows its own protocol by name first
+        match = "not as roboglot-policy"  # the client knows its own protocol by name first
     else:
         match = f"reply the protocol refuses: {field}"
     with pytest.raises(PolicyServerError, match=match) as refused:
@@ -1444,7 +1444,7 @@ def test_every_flag_a_server_refuses_is_refused_before_anything_is_built(
     monkeypatch: pytest.MonkeyPatch, options: S.ServeOptions, needle: str
 ) -> None:
     """`check_options` is every refusal of a flag that needs no policy built, so a caller can
-    refuse bad flags before it starts anything: `quackd policy endpoint up` refuses them before
+    refuse bad flags before it starts anything: `roboglot policy endpoint up` refuses them before
     an endpoint exists. Neither a scripted policy nor a checkpoint is built for any of them, and
     a token typed where its variable's name belongs is not quoted back."""
 
@@ -1490,13 +1490,13 @@ def test_good_flags_for_a_checkpoint_are_checked_with_nothing_fetched(
 def test_the_serve_commands_arguments_build_the_options_it_serves_with(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`cli._serve_options` is where `quackd policy serve`'s flags become `ServeOptions`, and the
+    """`cli._serve_options` is where `roboglot policy serve`'s flags become `ServeOptions`, and the
     stand-in for an endpoint's container builds its own there, from the arguments it is given,
     parsed by this command's own parser. So the options the command serves with and the ones
     its parser and `_serve_options` make of the same arguments are one value."""
     import typer.main
 
-    from quackd import cli
+    from roboglot import cli
 
     args = [
         "--policy",
@@ -1608,7 +1608,7 @@ def test_check_says_a_server_declares_a_latency_no_segment_could_play() -> None:
     old = wire.validate(wire.PolicyInfo, {**info.model_dump(), "latency_s": over})
     row = dict(S.describe(old))["latency"]
     assert f"nothing to play for {starved} ticks of every chunk" in row, row
-    assert "quackd policy serve refuses it" in row, row
+    assert "roboglot policy serve refuses it" in row, row
     fine = dict(S.describe(info))["latency"]
     assert fine == f"{info.latency_s:g} s declared", fine
     quick = 1 / rate  # synthetic: every step timed at a tick
@@ -1668,7 +1668,7 @@ async def test_the_longest_latency_the_server_takes_still_plays_on_the_simulator
         serving.http.server_close()
 
 
-# ── quackd policy check ─────────────────────────────────────────────────────────────────
+# ── roboglot policy check ─────────────────────────────────────────────────────────────────
 
 
 def test_the_bench_streams_through_the_real_client(served: Serving) -> None:
@@ -1874,7 +1874,7 @@ def test_a_bench_suggests_no_latency_the_server_would_refuse() -> None:
     """A step slower than a segment waits for its first chunk, or than half a chunk takes to
     play, still completes a bench, since the client waits longer for a step than either. The
     bench then says the policy answers too slowly to serve from this machine, and never
-    suggests a --latency-s that `quackd policy serve` refuses. One inside every bound it
+    suggests a --latency-s that `roboglot policy serve` refuses. One inside every bound it
     suggests, and the server takes."""
     _, info = S.served_policy(S.ServeOptions(policy="scripted:hold"))
     rate, chunk = float(info.rate_hz), info.n_action_steps
@@ -1953,14 +1953,14 @@ def test_check_reaches_a_running_server_with_its_token(served: Serving) -> None:
 def test_the_policy_commands_name_the_extra_when_the_adapter_is_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import quackd_lerobot.policy
+    import roboglot_lerobot.policy
 
     # the package keeps its imported submodule as an attribute, which `from ... import` finds
     # before it looks in sys.modules, so both go
-    monkeypatch.delattr(quackd_lerobot.policy, "server")
-    monkeypatch.setitem(sys.modules, "quackd_lerobot.policy.server", None)
+    monkeypatch.delattr(roboglot_lerobot.policy, "server")
+    monkeypatch.setitem(sys.modules, "roboglot_lerobot.policy.server", None)
     result = CliRunner().invoke(app, ["policy", "check", "--policy", "scripted:hold"])
-    assert result.exit_code == 1 and "quackd[lerobot]" in result.output
+    assert result.exit_code == 1 and "roboglot[lerobot]" in result.output
 
 
 def test_every_scripted_policy_runs_a_chunk_in_process() -> None:
@@ -2022,7 +2022,7 @@ def _as_checkpoint(**said: Any) -> Serving:
 
 def _camera_arm(runner: RemoteRunner) -> tuple[FakeArm, FakeCamera, LeRobotReal]:
     """The fake arm on the synthetic calibration and the rewired bus, with a front camera of
-    quackd's own, and the policy behind `runner`."""
+    Roboglot's own, and the policy behind `runner`."""
     arm, camera = _segment_arm(), FakeCamera()
     transport = LeRobotReal(
         "COM5",
@@ -2157,7 +2157,7 @@ async def test_a_policy_the_server_swaps_in_after_the_connect_starts_no_segment(
 
 
 async def test_a_latency_no_chunk_can_carry_refuses_the_connect_before_torque() -> None:
-    """`quackd policy serve` refuses a latency past half a chunk, and a server an earlier quackd
+    """`roboglot policy serve` refuses a latency past half a chunk, and a server an earlier Roboglot
     started with one still declares it. The arm's connect refuses such a server before any
     torque, with the ticks of every chunk the arm would have nothing to play for, the loop's own
     count, and the longest latency that fits. That latency connects, and a server started again
@@ -2305,7 +2305,7 @@ async def test_a_policy_server_that_is_not_there_refuses_the_connect_before_torq
     arm, camera, transport = _camera_arm(RemoteRunner(url, token=TOKEN, motors=JOINTS))
     # refused at once where a closed port says so, and after the connect timeout on Windows,
     # which tries a refused port again before it gives up: either way the sentence names it
-    with pytest.raises(TransportError, match="quackd policy serve") as refused:
+    with pytest.raises(TransportError, match="roboglot policy serve") as refused:
         await transport.connect()
     assert "The arm was not touched" in str(refused.value)
     assert not arm.connected and not camera.connected

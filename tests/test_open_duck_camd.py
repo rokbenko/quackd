@@ -1,7 +1,7 @@
 """The camera server that runs on the duck's Pi, exercised with no Pi and no camera.
 
 The last test is the one that matters: it stands up the real camera server, tells the real
-bridge daemon where it is, and has the real quackd client fetch a frame through the whole
+bridge daemon where it is, and has the real Roboglot client fetch a frame through the whole
 chain. That is what turns `observe` from a promise into a picture.
 """
 
@@ -21,12 +21,12 @@ from types import ModuleType
 import pytest
 from PIL import Image
 
-from quackd_open_duck import OpenDuckAdapter
-from quackd_open_duck.bridge import OpenDuckBridge
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.bridge import OpenDuckBridge
 
 REPO = Path(__file__).resolve().parents[1]
-CAMD = REPO / "bridge" / "open_duck" / "quackd_duck_camd.py"
-DAEMON = REPO / "bridge" / "open_duck" / "quackd_duck_bridge.py"
+CAMD = REPO / "bridge" / "open_duck" / "roboglot_duck_camd.py"
+DAEMON = REPO / "bridge" / "open_duck" / "roboglot_duck_bridge.py"
 
 
 def _load(path: Path, name: str) -> ModuleType:
@@ -40,12 +40,12 @@ def _load(path: Path, name: str) -> ModuleType:
 
 @pytest.fixture(scope="module")
 def camd() -> ModuleType:
-    return _load(CAMD, "quackd_duck_camd")
+    return _load(CAMD, "roboglot_duck_camd")
 
 
 @pytest.fixture(scope="module")
 def daemon() -> ModuleType:
-    return _load(DAEMON, "quackd_duck_bridge")
+    return _load(DAEMON, "roboglot_duck_bridge")
 
 
 def get(url: str, timeout: float = 3.0) -> tuple[int, bytes, str]:
@@ -151,7 +151,7 @@ def test_nothing_in_this_server_can_move_the_robot(camd: ModuleType) -> None:
 def test_the_camera_flag_warns_rather_than_refusing(camd: ModuleType, tmp_path, caplog) -> None:
     """It used to `return 2` on `expression_features.camera`, to avoid fighting the robot's
     own runtime for the device. Reading upstream at the pin on 2026-09-05 settled it: the
-    walk loop the bridge runs references no camera at all, so the process quackd starts
+    walk loop the bridge runs references no camera at all, so the process Roboglot starts
     cannot be the other owner. Refusing was avoiding a collision that could not happen — and
     it was the flag the docs tell owners to leave true if they want the runtime's own eyes.
 
@@ -161,7 +161,7 @@ def test_the_camera_flag_warns_rather_than_refusing(camd: ModuleType, tmp_path, 
     config.write_text('{"expression_features": {"camera": true}}')
     assert camd.runtime_owns_the_camera(str(config)) is True
 
-    with caplog.at_level(logging.WARNING, logger="quackd-duck-camd"):
+    with caplog.at_level(logging.WARNING, logger="roboglot-duck-camd"):
         code = camd.main(["--duck-config", str(config), "--seconds", "0.1"])
     warned = " ".join(r.message for r in caplog.records)
     assert "walk loop opens the camera" in warned or "no camera" in warned.lower()
@@ -186,8 +186,10 @@ def test_fake_mode_runs_even_where_the_runtime_owns_the_camera(camd: ModuleType,
 # ── the whole chain ─────────────────────────────────────────────────────────────────────
 
 
-async def test_quackd_sees_through_the_camera_server(camd: ModuleType, daemon: ModuleType) -> None:
-    """camd serves a frame, the bridge advertises where, and quackd fetches a real image.
+async def test_roboglot_sees_through_the_camera_server(
+    camd: ModuleType, daemon: ModuleType
+) -> None:
+    """camd serves a frame, the bridge advertises where, and Roboglot fetches a real image.
 
     Without this the duck can walk and chirp but not see, and `observe`, `go_to`,
     `search_scan` and `approach_and` do not exist for it at all."""
@@ -243,9 +245,9 @@ async def test_a_narrowed_robot_refuses_the_run_instead_of_crashing(
     """`validate` checks the STATIC manifest, which describes a fully built duck. A duck
     that reports no camera at connect has a narrower vocabulary, and the agent loop used to
     reach tool_schemas and raise a bare VerbNotFound with the robot already connected."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.duckfile.parser import load_duck
-    from quackd.transport.base import TransportError
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.transport.base import TransportError
 
     core = daemon.BridgeCore(capabilities={"camera": False, "speaker": True})
     server = daemon.Server(core, "127.0.0.1", 0)
@@ -254,7 +256,7 @@ async def test_a_narrowed_robot_refuses_the_run_instead_of_crashing(
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         loop = AgentLoop(
             RunConfig(
-                duck=load_duck("open-duck-scout"),  # needs search_scan, which needs a camera
+                duck=load_glot("open-duck-scout"),  # needs search_scan, which needs a camera
                 provider=None,  # never reached: we refuse before the first turn
                 transport=adapter,
                 runs_dir=tmp_path,
@@ -277,9 +279,9 @@ async def test_a_verb_a_task_merely_allows_is_dropped_not_fatal(
 ) -> None:
     """A v1 task may allow more than it needs. `open-duck-scout` allows gaze, but head
     control is off by default, and a duck with no head should still do the task."""
-    from quackd.agent.loop import AgentLoop, RunConfig
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd.duckfile.parser import load_duck
+    from roboglot.agent.loop import AgentLoop, RunConfig
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.glotfile.parser import load_glot
 
     core = daemon.BridgeCore(
         capabilities={"camera": True, "speaker": True, "antennas": False, "microphone": False},
@@ -314,8 +316,8 @@ async def test_a_verb_a_task_merely_allows_is_dropped_not_fatal(
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         loop = AgentLoop(
             RunConfig(
-                duck=load_duck("open-duck-scout"),
-                provider=FakeProvider.for_duck("open-duck-scout"),
+                duck=load_glot("open-duck-scout"),
+                provider=FakeProvider.for_glot("open-duck-scout"),
                 transport=adapter,
                 runs_dir=tmp_path,
                 log=lines.append,
@@ -337,7 +339,9 @@ def test_the_camera_binds_loopback_by_default(camd: ModuleType) -> None:
     """It serves a live view of wherever the robot is, with no authentication, so the
     default must not be the LAN. The shipped systemd unit has to agree."""
     assert camd.parser().parse_args([]).bind == "127.0.0.1"
-    unit = (REPO / "bridge" / "open_duck" / "quackd-duck-camd.service").read_text(encoding="utf-8")
+    unit = (REPO / "bridge" / "open_duck" / "roboglot-duck-camd.service").read_text(
+        encoding="utf-8"
+    )
     assert "--bind 127.0.0.1" in unit and "--bind 0.0.0.0" not in unit
 
 
@@ -349,13 +353,13 @@ def test_the_chain_test_now_actually_looks_at_the_frame(camd: ModuleType) -> Non
     detector, so `--fake` would have passed unchanged with the colours inverted, the
     rotation wrong and the field of view wrong — while checklist step 4 told the operator
     "everything except the robot itself works"."""
-    from quackd.perception.color_blob import ColorBlobDetector
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     jpeg, size = camd.FakeCamera(96).jpeg()
     frame = Image.open(io.BytesIO(jpeg)).convert("RGB")
     assert size == (96, 96)
     balls = [d for d in ColorBlobDetector().detect(frame) if d.label == "ball"]
-    assert balls, "the synthetic scene has to be one quackd's own detector can see"
+    assert balls, "the synthetic scene has to be one Roboglot's own detector can see"
     assert balls[0].est_distance_m is not None
 
 
@@ -367,7 +371,7 @@ def test_the_colour_order_the_real_camera_path_applies(camd: ModuleType) -> None
     cv2.resize, cvtColor, rotate or imencode run under --fake, so nothing caught it."""
     import numpy as np
 
-    from quackd.perception.color_blob import ColorBlobDetector
+    from roboglot.perception.color_blob import ColorBlobDetector
 
     # a bright orange disc on a pale floor, in the RGB order picamzero returns
     frame = np.full((240, 320, 3), (236, 229, 212), dtype=np.uint8)
@@ -430,11 +434,11 @@ def test_a_served_frame_says_how_old_it_is(camd: ModuleType) -> None:
         server.shutdown()
 
 
-async def test_quackd_refuses_a_frozen_frame_and_says_why(camd: ModuleType) -> None:
+async def test_roboglot_refuses_a_frozen_frame_and_says_why(camd: ModuleType) -> None:
     """The client half. camd expires the frame; the bridge client must not then treat the
     503 as a hard error that ends the session — `jsonrpc`'s own docstring records that one
     dropped HTTP response did exactly that once — nor walk on regardless."""
-    from quackd_open_duck.bridge import OpenDuckBridge
+    from roboglot_open_duck.bridge import OpenDuckBridge
 
     store = camd.FrameStore()
     store.put(camd.FakeCamera(96).jpeg()[0], (96, 96), now=time.monotonic())
@@ -459,7 +463,7 @@ async def test_doctor_can_finally_probe_this_robots_camera(camd: ModuleType) -> 
     """`doctor` gates its frame probe on a `camera_health` method that only the Microduck
     transport had, so `--camera-url` was accepted here, never checked, and a typo passed the
     checklist's go/no-go step to fail at the first observe with the duck on the floor."""
-    from quackd_open_duck.bridge import OpenDuckBridge
+    from roboglot_open_duck.bridge import OpenDuckBridge
 
     assert callable(getattr(OpenDuckBridge(), "camera_health", None))
     unreachable = OpenDuckBridge(camera_url="http://127.0.0.1:1/snapshot.jpg")

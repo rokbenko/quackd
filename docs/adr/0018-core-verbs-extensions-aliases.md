@@ -15,7 +15,7 @@ are budgeted, one runs at a time, and a list of instructions refuses `pick` besi
 The 0.3 vocabulary is duck-shaped: `walk`, `walk_to`, `get_frame`, `quack`. A stationary
 head cannot walk and an arm cannot quack, yet the composite verbs (`search_scan`,
 `approach_and`) and the safety layer should work on any body. Renaming verbs is cheap in
-code and expensive for users: every shipped and community `.duck` spells the old names,
+code and expensive for users: every shipped and community `.glot` spells the old names,
 the fake pilot emits them, and `tests/test_docs.py` requires every registry name to be
 backticked in the README.
 
@@ -25,7 +25,7 @@ backticked in the README.
   `observe` (camera), `report_state` (nothing), `stop` (nothing), `say(text)` (intent
   `sound`), `move(twist)` (intent `twist` and mobility not `none`), `go_to(target)`
   (observe plus move), `search_scan(target)` (observe plus move or gaze), `approach_and`
-  (go_to). Requirements live in `REQUIREMENTS` in `quackd/verbs/core.py` and are validated
+  (go_to). Requirements live in `REQUIREMENTS` in `roboglot/verbs/core.py` and are validated
   on the manifest itself, so a manifest that declares `go_to` on a robot with
   `mobility: none` is rejected before any registry or run exists.
 - **Extensions** are declared per adapter: Microduck `sit stand stand_up kick grab gaze
@@ -42,16 +42,16 @@ backticked in the README.
   `limits["gaze_yaw_deg"]`, leaves the head on the target, and reports `gaze_yaw_deg`
   because bearings stay camera-relative on every robot.
 - **Renames with permanent aliases:** `get_frame` to `observe`, `walk_to` to `go_to`,
-  `walk` to `move`. All aliases live in exactly one file, `quackd/verbs/aliases.py`, and
-  nothing else in quackd may spell an alias mapping.
+  `walk` to `move`. All aliases live in exactly one file, `roboglot/verbs/aliases.py`, and
+  nothing else in Roboglot may spell an alias mapping.
 - **Registries store canonical names only.** `get()`, `__contains__()` and `unknown()`
   resolve aliases; `view(name)` returns the verb *as the caller named it*, so tool schemas
-  and the system prompt show the spelling the `.duck` used. `Executor.allowed` returns the
-  contract's list verbatim and `is_allowed` compares canonically. A `.duck` that lists both
+  and the system prompt show the spelling the `.glot` used. `Executor.allowed` returns the
+  contract's list verbatim and `is_allowed` compares canonically. A `.glot` that lists both
   `walk` and `move` is a schema error. Transcript `verb` events keep `name` as called and
-  gain `canonical`, so replays and the flock one-claimant check key on a stable name.
-- **The bundled starter ducks stay on the old spellings** (they are also still `duck: 0`),
-  so `uvx quackd run find-and-kick --provider fake`, the fake pilot, the hello-world golden
+  gain `canonical`, so replays and the team one-claimant check key on a stable name.
+- **The bundled starter tasks stay on the old spellings** (they are also still `glot: 0`),
+  so `uvx roboglot run find-and-kick --provider fake`, the fake pilot, the hello-world golden
   transcript and the tool names cloud LLMs see are unchanged in 0.4.
 
 ## Consequences
@@ -60,7 +60,7 @@ backticked in the README.
   search_scan approach_and sit stand stand_up kick grab gaze quack`); the README backticks
   the new names next to the old ones.
 - A manifest never lists aliases; discovery and MCP advertise canonical names, and any
-  spelling in a `.duck` still validates.
+  spelling in a `.glot` still validates.
 - `approach_and`'s nested result key becomes `go_to` (was `walk_to`); no test read it.
 - The only way to add a verb to a robot is through its manifest and adapter, which is what
   keeps "a verb not in the manifest does not exist" true.

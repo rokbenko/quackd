@@ -1,6 +1,6 @@
 """The owner key sealed with a passphrase, the robot key in the clear, and the robot's directory.
 
-Every test but one seals at a cost a test can afford (`cheap`): scrypt at quackd's real cost asks
+Every test but one seals at a cost a test can afford (`cheap`): scrypt at Roboglot's real cost asks
 128 MiB and a second or more for every derivation, and the changed-blob cases alone seal or open
 dozens of times. `test_the_real_cost_seals_and_opens` proves the real cost once, and pins it.
 """
@@ -21,10 +21,10 @@ import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 
-from quackd import dotenv_names
-from quackd.onboard import keys, store
-from quackd.passport.jws import b64url, b64url_decode
-from quackd.passport.keys import SEED_BYTES, SigningKey
+from roboglot import dotenv_names
+from roboglot.onboard import keys, store
+from roboglot.passport.jws import b64url, b64url_decode
+from roboglot.passport.keys import SEED_BYTES, SigningKey
 
 PASSPHRASE = "correct horse battery staple"
 CHEAP_N = 2**4
@@ -82,7 +82,7 @@ def test_a_sealed_key_opens_with_its_passphrase_and_holds_no_seed_in_the_clear(
 
 def test_the_real_cost_seals_and_opens() -> None:
     """The cost the plan gives, pinned, since a cheaper one would pass every other test here, and
-    inside the most a sealed key may ask, so a key this quackd seals it can open. This runs the
+    inside the most a sealed key may ask, so a key this Roboglot seals it can open. This runs the
     `cryptography` the lock file pins; the floor pyproject allows, 42.0.0, was checked by hand to
     derive at this cost as well."""
     assert (keys.SCRYPT_N, keys.SCRYPT_R, keys.SCRYPT_P) == (2**17, 8, 1)
@@ -227,7 +227,7 @@ def test_a_changed_blob_never_opens_even_with_the_right_passphrase(
 
 
 def test_a_blob_whose_seed_makes_another_did_is_refused(cheap: None) -> None:
-    """Sealed here the way quackd seals, independently of `keys`, but with one key's seed under
+    """Sealed here the way Roboglot seals, independently of `keys`, but with one key's seed under
     another key's did, which only somebody holding the passphrase could do. It opens, so this
     also pins the format: scrypt over the passphrase's UTF-8, AES-256-GCM, the did as associated
     data."""
@@ -380,7 +380,7 @@ _DIGITS = SigningKey(bytes.fromhex("1" * 2 * SEED_BYTES))
             _robot_file(_KEY, seed=" ".join(_KEY.seed.hex()[i : i + 2] for i in range(0, 64, 2))),
             "no readable seed",
         ),
-        (_robot_file(_KEY, version=keys.VERSION + 1), "newer than this quackd"),
+        (_robot_file(_KEY, version=keys.VERSION + 1), "newer than this Roboglot"),
         (_robot_file(_KEY, version=DROP), "no version"),
         ("[]", "expected an object"),
         ("{not json", "not valid JSON"),
@@ -398,7 +398,7 @@ _DIGITS = SigningKey(bytes.fromhex("1" * 2 * SEED_BYTES))
         "not-json",
     ],
 )
-def test_a_robot_key_file_quackd_cannot_trust_is_refused(
+def test_a_robot_key_file_roboglot_cannot_trust_is_refused(
     tmp_path: Path, content: str, said: str
 ) -> None:
     path = tmp_path / "robot.json"
@@ -542,7 +542,7 @@ _PATHS = (
     "cache",
     "lock",
 )
-"""What the rest of `quackd onboard` reads off an `OnboardDir`."""
+"""What the rest of `roboglot onboard` reads off an `OnboardDir`."""
 
 
 def test_every_path_is_its_own_inside_the_directory_and_nothing_is_made_until_asked(

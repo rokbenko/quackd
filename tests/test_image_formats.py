@@ -1,11 +1,11 @@
-"""Every picture quackd decodes names the formats it takes.
+"""Every picture Roboglot decodes names the formats it takes.
 
 `Image.open` with no `formats=` tries dozens of decoders, one of which starts Ghostscript, on the
 strength of the first bytes, so whoever answers a camera request chooses which decoder runs: a
 robot that has been taken over, or anything else on its network, since most of these wires are
 plain HTTP or ZeroMQ. Pillow's own advisories are mostly about decoders no camera here needs, and
 the extras that bring LeRobot hold Pillow under the release that fixes them. A wire takes what it
-carries, as `bridge/jetson/quackd_jetson_hostd.py` always has.
+carries, as `bridge/jetson/roboglot_jetson_hostd.py` always has.
 """
 
 from __future__ import annotations
@@ -22,9 +22,9 @@ from typing import Any, ClassVar
 import pytest
 from PIL import Image, ImageFile
 
-from quackd.agent.images import FORMATS, TaskImageError, load_task_images
-from quackd.host import HostClient, HostError
-from quackd.transport.base import camera_url_frame
+from roboglot.agent.images import FORMATS, TaskImageError, load_task_images
+from roboglot.host import HostClient, HostError
+from roboglot.transport.base import camera_url_frame
 
 REPO = Path(__file__).resolve().parent.parent
 SIZE = (16, 16)
@@ -76,7 +76,7 @@ async def _host(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
 
 
 async def _policy(raw: bytes, _: pytest.MonkeyPatch, __: Path) -> Any:
-    from quackd_lerobot.policy.protocol import CameraInfo, Frame, ProtocolError, decode_frame
+    from roboglot_lerobot.policy.protocol import CameraInfo, Frame, ProtocolError, decode_frame
 
     frame = Frame(
         name="front",
@@ -92,7 +92,7 @@ async def _policy(raw: bytes, _: pytest.MonkeyPatch, __: Path) -> Any:
 
 
 async def _alohamini(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_alohamini.zmq_host import AlohaMiniZmq
+    from roboglot_alohamini.zmq_host import AlohaMiniZmq
 
     link = AlohaMiniZmq()
     monkeypatch.setattr(link, "_pump", _nothing_to_pump)
@@ -102,7 +102,7 @@ async def _alohamini(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> An
 
 
 async def _xlerobot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_xlerobot.zmq_host import XLerobotZmq
+    from roboglot_xlerobot.zmq_host import XLerobotZmq
 
     link = XLerobotZmq()
     monkeypatch.setattr(link, "_pump", _nothing_to_pump)
@@ -111,7 +111,7 @@ async def _xlerobot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any
 
 
 async def _toddlerbot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_toddlerbot.bridge import ToddlerBotBridge
+    from roboglot_toddlerbot.bridge import ToddlerBotBridge
 
     async def request(*_: Any) -> dict[str, str]:
         return {"jpeg": base64.b64encode(raw).decode("ascii")}
@@ -123,20 +123,20 @@ async def _toddlerbot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> A
 
 
 async def _moss(raw: bytes, _: pytest.MonkeyPatch, __: Path) -> Any:
-    from quackd_moss.cockpit import _decode
+    from roboglot_moss.cockpit import _decode
 
     return _decode(raw)
 
 
 async def _open_duck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_open_duck.bridge import OpenDuckBridge
+    from roboglot_open_duck.bridge import OpenDuckBridge
 
     _answers_with(raw, monkeypatch)
     return await OpenDuckBridge(camera_url="http://127.0.0.1:9/snapshot.jpg").get_frame()
 
 
 async def _microduck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_microduck.transports import jsonrpc_unix
+    from roboglot_microduck.transports import jsonrpc_unix
 
     monkeypatch.setattr(jsonrpc_unix, "fetch_still", lambda *a, **k: raw)
     link = jsonrpc_unix.JsonRpcUnixTransport(
@@ -149,8 +149,8 @@ async def _microduck(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> An
 
 
 async def _huebot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
-    from quackd_huebot.body import HUEBOT
-    from quackd_microduck.transports import jsonrpc_unix
+    from roboglot_huebot.body import HUEBOT
+    from roboglot_microduck.transports import jsonrpc_unix
 
     monkeypatch.setattr(jsonrpc_unix, "fetch_still", lambda *a, **k: raw)
     link = jsonrpc_unix.JsonRpcUnixTransport(
@@ -163,7 +163,7 @@ async def _huebot(raw: bytes, monkeypatch: pytest.MonkeyPatch, _: Path) -> Any:
 
 
 async def _rosbridge(raw: bytes, _: pytest.MonkeyPatch, __: Path) -> Any:
-    from quackd_rosbridge.ws import RosbridgeWs
+    from roboglot_rosbridge.ws import RosbridgeWs
 
     link = RosbridgeWs("ws://127.0.0.1:9")
     link._image = object()  # type: ignore[assignment]
@@ -215,9 +215,9 @@ class _Probe(ImageFile.ImageFile):
     Refusing a picture proves little where a site reads the format back after opening it: by
     then a decoder has already run, and most of Pillow's advisories fire right there."""
 
-    format = "QUACKDPROBE"
+    format = "ROBOGLOTPROBE"
     format_description = "a decoder no wire names"
-    magic: ClassVar[bytes] = b"QUACKD-PROBE"
+    magic: ClassVar[bytes] = b"ROBOGLOT-PROBE"
     opened: ClassVar[int] = 0
 
     def _open(self) -> None:
@@ -291,7 +291,7 @@ def test_a_camera_url_that_serves_anything_else_is_told_what_to_serve() -> None:
 async def test_the_refusal_is_what_a_person_reads_in_camera_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from quackd_open_duck.bridge import OpenDuckBridge
+    from roboglot_open_duck.bridge import OpenDuckBridge
 
     _answers_with(_picture("BMP"), monkeypatch)
     link = OpenDuckBridge(camera_url="http://127.0.0.1:9/snapshot.jpg")
@@ -314,12 +314,14 @@ def test_every_image_open_that_ships_names_its_formats() -> None:
     """What a wheel or a robot runs. `docs/assets`, `web/` and `docs/examples` open a file the
     person running them chose, and no install runs them."""
     shipped = [
-        *REPO.glob("quackd/**/*.py"),
+        *REPO.glob("roboglot/**/*.py"),
         *REPO.glob("adapters/*/src/**/*.py"),
         *REPO.glob("bridge/**/*.py"),
     ]
     found = {path: list(_opens(path)) for path in shipped}
-    assert found[REPO / "quackd" / "host.py"], "the walk no longer sees the call it is looking for"
+    assert found[REPO / "roboglot" / "host.py"], (
+        "the walk no longer sees the call it is looking for"
+    )
     bare = [
         f"{path.relative_to(REPO)}:{call.lineno}"
         for path, calls in found.items()

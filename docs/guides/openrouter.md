@@ -2,27 +2,27 @@
 
 OpenRouter is a router rather than a lab. One key and one bill reach LLMs made by many vendors,
 under ids that name the vendor (`anthropic/claude-opus-5.5`), and OpenRouter decides which
-provider serves each call. quackd reaches it as `--llm openrouter`, at `https://openrouter.ai/api/v1`
+provider serves each call. Roboglot reaches it as `--llm openrouter`, at `https://openrouter.ai/api/v1`
 with `OPENROUTER_API_KEY`, over the same OpenAI-compatible client most of the other vendors use:
-`quackd[openrouter]` installs the `openai` package and nothing else. Everything here about
+`roboglot[openrouter]` installs the `openai` package and nothing else. Everything here about
 OpenRouter was read off its own documentation on 2026-10-06, and the code is
-[`openrouter.py`](../../quackd/agent/providers/openrouter.py).
+[`openrouter.py`](../../roboglot/agent/providers/openrouter.py).
 
-**No OpenRouter LLM has answered a real quackd request.**
+**No OpenRouter LLM has answered a real Roboglot request.**
 
 **Nothing here has ever answered a real robot.**
 
 ```bash
-uv pip install "quackd[openrouter]"                    # not run here
+uv pip install "roboglot[openrouter]"                    # not run here
 export OPENROUTER_API_KEY=...                           # not run here: no OpenRouter key on this machine
-quackd run find-and-kick --llm openrouter --robot microduck:sim2d    # not run here against OpenRouter
+roboglot run find-and-kick --llm openrouter --robot microduck:sim2d    # not run here against OpenRouter
 ```
 
-## The rows quackd carries
+## The rows Roboglot carries
 
 ```
-$ quackd list-models --llm openrouter
-LLMs (--llm VENDOR:LLM, QUACKD_LLM)
+$ roboglot list-models --llm openrouter
+LLMs (--llm VENDOR:LLM, ROBOGLOT_LLM)
 ┌────────────┬─────────────────────────────┬────────────────────────────────────┬─────────┬─────────┐
 │ provider   │ id                          │ label                              │ status  │ notes   │
 ├────────────┼─────────────────────────────┼────────────────────────────────────┼─────────┼─────────┤
@@ -34,10 +34,10 @@ LLMs (--llm VENDOR:LLM, QUACKD_LLM)
 │            │ google/gemini-4-hydrogen    │ Gemini 4 Hydrogen (via OpenRouter) │ current │         │
 │            │ x-ai/grok-4.7               │ Grok 4.7 (via OpenRouter)          │ current │         │
 └────────────┴─────────────────────────────┴────────────────────────────────────┴─────────┴─────────┘
-openrouter: the rows above are a selection. An id quackd does not carry can be named as --llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public LLM list when a run starts. That list has to carry the id with tool calling, and one quackd takes is priced from it.
+openrouter: the rows above are a selection. An id Roboglot does not carry can be named as --llm openrouter:AUTHOR/LLM (or AUTHOR/LLM:free). A few shapes of id are refused on their spelling alone. Any other is checked against OpenRouter's public LLM list when a run starts. That list has to carry the id with tool calling, and one Roboglot takes is priced from it.
 ```
 
-A row is an LLM from a vendor quackd already drives on its own API, served by its own maker,
+A row is an LLM from a vendor Roboglot already drives on its own API, served by its own maker,
 whose entry in OpenRouter's LLM list on 2026-11-14 named `tools` and `tool_choice` among its
 supported parameters, took `image` input and carried no `expiration_date`. The first row is the
 default, so `--llm openrouter` runs `openai/gpt-6-sol`. Rates are dollars per million tokens,
@@ -60,14 +60,14 @@ provider's 400", Anthropic's own sentence, and Anthropic lists Fable 5.2 beside 
 forced tool use. A turn answered in prose is the loop's to handle: it asks once more, then ends
 the run.
 
-## Ids quackd does not carry
+## Ids Roboglot does not carry
 
-An id quackd does not carry is checked in two steps, and taken only when it passes both.
+An id Roboglot does not carry is checked in two steps, and taken only when it passes both.
 
 1. **Its spelling, offline and before a key is read.** An OpenRouter id is `AUTHOR/LLM`, with
-   `:free` the only suffix quackd takes, and a few shapes are refused on their spelling whatever
+   `:free` the only suffix Roboglot takes, and a few shapes are refused on their spelling whatever
    the list says, several of them ids OpenRouter does list, for the reasons below.
-2. **OpenRouter's public LLM list, before the first paid call.** quackd reads
+2. **OpenRouter's public LLM list, before the first paid call.** Roboglot reads
    `GET https://openrouter.ai/api/v1/models` once per process, with no key and with its own
    `User-Agent`, and refuses the run if the list does not carry the id (naming the nearest ids it
    does carry, when any come close), carries it without tool calling, or says it expired on or
@@ -76,25 +76,25 @@ An id quackd does not carry is checked in two steps, and taken only when it pass
    moves the list along with the requests.
 
 An id taken that way is asked with `tool_choice: "auto"`, or sent no `tool_choice` at all where
-its entry names none, which is the bargain quackd strikes with local LLMs: nobody here has seen
+its entry names none, which is the bargain Roboglot strikes with local LLMs: nobody here has seen
 how each provider behind OpenRouter words a refusal of a forced call. It gets the camera frame
 when its entry names `image` among its input modalities, and the detections as text when it does
 not. It is priced at its entry's base rates, recorded with `source: openrouter` and the day of the
 run, for any turn OpenRouter does not bill (below).
 
 ```
-$ quackd run hello-world --llm openrouter:qwen/qwen3.8-flsh --robot microduck:mock
+$ roboglot run hello-world --llm openrouter:qwen/qwen3.8-flsh --robot microduck:mock
 ✗ error: openrouter: 'qwen/qwen3.8-flsh' from --llm is not on OpenRouter's LLM list. Nearest on
-the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `quackd list-models --llm
-openrouter` for the ids quackd carries.
+the list: qwen/qwen3.8-flash, qwen/qwen3.7-flash, qwen/qwen3.6-flash. See `roboglot list-models --llm
+openrouter` for the ids Roboglot carries.
 ```
 
 That one ran against OpenRouter's real list, with no key, on 2026-10-06. An id with a suffix needs
-`openrouter:` in front of it, because `--llm` splits at the first colon, and quackd says so when
+`openrouter:` in front of it, because `--llm` splits at the first colon, and Roboglot says so when
 the vendor is left off:
 
 ```
-$ quackd run hello-world --llm google/gemma-4-31b-it:free --robot microduck:mock
+$ roboglot run hello-world --llm google/gemma-4-31b-it:free --robot microduck:mock
 ✗ error: unknown provider 'google/gemma-4-31b-it' in 'google/gemma-4-31b-it:free' from --llm. It
 reads as an OpenRouter id: --llm openrouter:google/gemma-4-31b-it:free. Pass a vendor, or a vendor
 and an LLM: --llm anthropic, --llm anthropic:claude-opus-5-5. Vendors: fake, anthropic, openai,
@@ -119,21 +119,21 @@ Each of these is refused on its spelling alone, with the reason below:
 | `:online` | OpenRouter says to use its `openrouter:web_search` server tool instead |
 
 ```
-$ quackd run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot microduck:mock
+$ roboglot run hello-world --llm openrouter:~anthropic/claude-opus-latest --robot microduck:mock
 ✗ error: openrouter: '~anthropic/claude-opus-latest' from --llm is refused: a `~` alias always
 resolves to the newest LLM of its family, so the LLM that answers could change under a run that
-names it. quackd lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
+names it. Roboglot lists openai/gpt-6-sol, openai/gpt-6-luna, anthropic/claude-sonnet-5.5,
 anthropic/claude-opus-5.5, anthropic/claude-fable-5.2, google/gemini-4-hydrogen, x-ai/grok-4.7. See
-`quackd list-models --llm openrouter`.
+`roboglot list-models --llm openrouter`.
 ```
 
 ### Free LLMs
 
 An id ending `:free` is its own entry on OpenRouter's list, with its own providers and its own
-limits, so it is checked like any other id quackd does not carry and has no row of its own.
+limits, so it is checked like any other id Roboglot does not carry and has no row of its own.
 OpenRouter's limits page, read 2026-10-06, allows 20 requests a minute on them, and 50 a day until
 10 credits have been bought, 1,000 a day after. A run that goes past either is refused by
-OpenRouter with an HTTP 429. quackd waits and asks the same turn again, up to four times, after
+OpenRouter with an HTTP 429. Roboglot waits and asks the same turn again, up to four times, after
 waits that grow from 5 seconds to a minute, so a minute's limit can be waited out inside the task's
 `max_minutes` and a day's still ends the run
 ([concepts/safety.md](../concepts/safety.md#when-the-llms-api-fails)). An error OpenRouter sends
@@ -152,8 +152,8 @@ the model training toggle is switched on in the privacy settings tab." `--extra-
 providers for one run, with `{"provider": {"data_collection": "deny"}}` or
 `{"provider": {"zdr": true}}` for zero data retention.
 
-Every request, the LLM list's included, also carries two headers naming quackd:
-`HTTP-Referer: https://github.com/rokbenko/quackd` and `X-OpenRouter-Title: quackd`. OpenRouter
+Every request, the LLM list's included, also carries two headers naming Roboglot:
+`HTTP-Referer: https://github.com/rokbenko/quackd` and `X-OpenRouter-Title: roboglot`. OpenRouter
 credits an app on its public rankings by them. They say nothing about you, your robot or your
 key, and nothing else is added to what a request would carry without them.
 
@@ -171,7 +171,7 @@ A turn OpenRouter answers with a redirect fails, because the client follows none
 Every request carries `{"provider": {"require_parameters": true}}`. OpenRouter's provider routing
 page: providers "that don't support all the LLM parameters specified in your request can still
 receive the request, but will ignore unknown parameters. When you set `require_parameters` to
-`true`, the request won't even be routed to that provider." So a `tool_choice` quackd sends is a
+`true`, the request won't even be routed to that provider." So a `tool_choice` Roboglot sends is a
 `tool_choice` the serving provider honours. `parallel_tool_calls` is never sent: 13 of the 465
 LLMs on the list when it was first read on 2026-10-06 named it, and with `require_parameters` a request carrying it
 would have reached almost none of them. The loop takes the first call when an LLM sends several.
@@ -180,7 +180,7 @@ Anything else goes through `--extra-body`, and a `provider` object there is merg
 `require_parameters` rather than replacing it, so `--extra-body '{"provider": {"sort": "price"}}'`
 sorts the providers by price and still insists on the parameters.
 `{"provider": {"require_parameters": false}}` turns the insisting off. Reasoning settings go the
-same way (`--extra-body '{"reasoning": {"effort": "low"}}'`): `QUACKD_OPENAI_REASONING_EFFORT` is
+same way (`--extra-body '{"reasoning": {"effort": "low"}}'`): `ROBOGLOT_OPENAI_REASONING_EFFORT` is
 OpenAI's and is not read here, because with `require_parameters` a parameter nobody asked for
 can leave an LLM with no provider at all. One key is refused: `models`, OpenRouter's fallback
 list, would let it answer with an LLM `run_start` does not name, priced as that LLM.
@@ -190,15 +190,15 @@ list, would let it answer with an LLM `run_start` does not name, priced as that 
 What OpenRouter says it billed. Its usage accounting page, read 2026-10-06: "Full usage details
 are now always included automatically in every response", including `usage.cost`, and its FAQ
 says "the base currency is US dollars". That figure already knows which provider served the call,
-at which tier and with what cache, so quackd records it as the turn's `cost_usd` and marks that
+at which tier and with what cache, so Roboglot records it as the turn's `cost_usd` and marks that
 `llm` record `billed: true`, and `summary.json` counts such calls in `billed_calls`.
 
 On a bring-your-own-key call `usage.cost` is only OpenRouter's fee, and the provider bills your
 own key for the rest, which OpenRouter reports as `cost_details.upstream_inference_cost`, so the
 two are added. A BYOK call that reports no upstream figure is not billed at the fee alone, which
 would understate it by the whole of the LLM's charge: it is costed at the rate instead, as is
-any call that comes back with no `cost`. That rate is the row's, or for an id quackd does not
-carry, the one the list gave it. `--price` and `QUACKD_PRICE` beat the bill as they beat the
+any call that comes back with no `cost`. That rate is the row's, or for an id Roboglot does not
+carry, the one the list gave it. `--price` and `ROBOGLOT_PRICE` beat the bill as they beat the
 catalogue. A call that ends in an error is costed the same way when OpenRouter reports what it
 billed or used. A call that came back with neither a bill nor a rate makes the run's total
 unknown from then on, `cost_usd_total: null` on each later `llm` record and a null `cost_usd` in
@@ -208,7 +208,7 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
 ## What to know before you point a robot at it
 
 - **Chat Completions only.** OpenRouter has a Responses API too, but everything above is
-  chat-shaped. `QUACKD_OPENAI_API` is not read, and if OpenRouter relays OpenAI's refusal of
+  chat-shaped. `ROBOGLOT_OPENAI_API` is not read, and if OpenRouter relays OpenAI's refusal of
   function tools on Chat Completions for an LLM, the run ends and says to pick another LLM
   rather than moving.
 - **Reasoning goes back as it came.** An LLM's `reasoning_details`, which carry Claude's signed
@@ -217,7 +217,7 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
   subject to" Anthropic's thinking-binding enforcement, so the Claude rows have their old camera
   frames trimmed on every call, where `--llm anthropic` trims Opus 5.5 in steps of eight.
 - **An error is an error.** OpenRouter can answer `200` with an `error` and no choices, and its
-  errors page says to "Check the body for an `error` field even on a `200`". quackd ends the turn
+  errors page says to "Check the body for an `error` field even on a `200`". Roboglot ends the turn
   with OpenRouter's code and message, the provider it came from and the start of what that
   provider said, rather than reading it as an LLM that declined to call a tool.
 - **The LLM in the record is the one asked for.** Which provider served each turn is not
@@ -226,7 +226,7 @@ credits, 5.5% with a $0.80 minimum by card and 5% in crypto by its FAQ, is outsi
 ## Not the decision LLMs OpenRouter also serves
 
 OpenRouter also serves decision LLMs such as Jev, which answer typed questions about a state
-rather than pilot anything. Those are the other side of quackd entirely, `--decision-llm`
+rather than pilot anything. Those are the other side of Roboglot entirely, `--decision-llm`
 ([decision-llms/README.md](decision-llms/README.md)), and reaching one of them through OpenRouter
 from there has never been tried here. Why neither of OpenRouter's two decision endpoints is a row
 of its own is in [What is not covered](decision-llms/README.md#what-is-not-covered-and-why).
@@ -235,10 +235,10 @@ stepper.
 
 ## VERIFIED (read from OpenRouter's documentation on 2026-10-06, and measured the same day; the LLM list and the Claude guide read again on 2026-11-14)
 
-| Thing | Value | What quackd does with it |
+| Thing | Value | What Roboglot does with it |
 |---|---|---|
-| LLM list | `GET /api/v1/models` answered with no key: 471 entries on 2026-11-14, 407 naming `tools`, 401 `tool_choice` and 19 `parallel_tool_calls`, against 465, 397, 390 and 13 when it was first read on 2026-10-06, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with quackd's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
-| Attribution | "Site URL for rankings on openrouter.ai" and "Site title for rankings", for `HTTP-Referer` and `X-OpenRouter-Title`; `X-Title` "is still supported for backwards compatibility" | both sent on every request, naming quackd |
+| LLM list | `GET /api/v1/models` answered with no key: 471 entries on 2026-11-14, 407 naming `tools`, 401 `tool_choice` and 19 `parallel_tool_calls`, against 465, 397, 390 and 13 when it was first read on 2026-10-06, every entry carrying `supported_parameters`, `pricing` and `architecture`. A request sending `anthropic-version` got a list in Anthropic's shape instead, with no `supported_parameters` in it | read once per process, keyless, before the first paid call, with Roboglot's own `User-Agent`; a list in which no entry names `supported_parameters` is refused as not OpenRouter's. A typo'd id was refused against the real list with its nearest real ids, and a listed one passed the check and stopped at the missing key |
+| Attribution | "Site URL for rankings on openrouter.ai" and "Site title for rankings", for `HTTP-Referer` and `X-OpenRouter-Title`; `X-Title` "is still supported for backwards compatibility" | both sent on every request, naming Roboglot |
 | A forced call on Claude | its Claude 5.5 migration guide on 2026-11-14: Opus 5.5 rejects a forced `tool_choice` "with the provider's 400", and so does Sonnet 5.5; on 2026-10-06 its Opus 5.5 guide said such a call "fails at routing with no compatible endpoint rather than reaching the provider" | the Claude rows are asked with `auto` |
 | `require_parameters` | routes only to providers that support every parameter in the request | sent on every request, under `--extra-body` |
 | Thinking binding | requests through OpenRouter "are not subject to this enforcement" | frames trimmed on every call |
@@ -252,11 +252,11 @@ stepper.
 | From a browser | the preflight on `/api/v1/chat/completions` answered `204` with `Access-Control-Allow-Origin: *` from both of the demo page's origins, allowing `HTTP-Referer` and `X-OpenRouter-Title` | the browser demo offers the seven rows |
 | No key | a keyless POST answered `401` | none: a run with no key stops before it posts |
 
-## UNVERIFIED, and what quackd does about each
+## UNVERIFIED, and what Roboglot does about each
 
-| Name | The assumption | What quackd does |
+| Name | The assumption | What Roboglot does |
 |---|---|---|
-| `DEFAULT_ON_CHAT` | that `openai/gpt-6-sol` takes function tools through OpenRouter's Chat Completions. quackd's catalogue starts the same LLM on OpenAI's Responses API under `--llm openai`, the mark it gives LLMs that will not take function tools on Chat Completions | nothing it can test; if OpenRouter relays such a refusal, the run ends on the first call and says to pick another LLM |
+| `DEFAULT_ON_CHAT` | that `openai/gpt-6-sol` takes function tools through OpenRouter's Chat Completions. Roboglot's catalogue starts the same LLM on OpenAI's Responses API under `--llm openai`, the mark it gives LLMs that will not take function tools on Chat Completions | nothing it can test; if OpenRouter relays such a refusal, the run ends on the first call and says to pick another LLM |
 | `TOOLS_HONOURED` | that `require_parameters` leaves a provider that honours `tool_choice` for every row | an LLM with no such provider is refused by OpenRouter, in its words |
 | `AUTO_CALLS_A_TOOL` | that an LLM asked with `auto` calls a tool | the loop asks once more, then ends the run |
 | `REPLAY_ACCEPTED` | that each provider takes its `reasoning_details` back as sent | they are sent verbatim; nothing reads a refusal of them |
@@ -264,7 +264,7 @@ stepper.
 | `COST_IS_THE_BILL` | that `usage.cost`, with the upstream figure on BYOK, is what your key is charged | recorded as billed; `--price` overrides it |
 | `LIST_PRICE_MATCHES_BILL` | that a row's rate, or the list's, is near what a turn costs | used only for a turn that came back with no bill |
 | `NO_MAX_TOKENS` | how OpenRouter treats a request that names no `max_tokens` against a small balance | nothing; a 402 ends the run in OpenRouter's words |
-| `FREE_LIMITS` | that the limits above still hold | a 429 is asked again up to four times, by quackd alone since the SDK retries nothing of its own, then ends the run |
+| `FREE_LIMITS` | that the limits above still hold | a 429 is asked again up to four times, by Roboglot alone since the SDK retries nothing of its own, then ends the run |
 | `ROUTED_PROVIDER_VARIES` | which provider served a turn | not recorded |
 
 ## Status
@@ -272,14 +272,14 @@ stepper.
 It has never answered a real robot, and this page says so until somebody reports that it has. The
 LLM list check ran against OpenRouter itself, keyless. Everything after it ran against a stand-in:
 `tests/fake_openrouter.py` answers on 127.0.0.1, and `tests/test_openrouter_wire.py` drives a real
-`quackd run` through the real `openai` SDK at it, checking the headers, the body, the replay, the
+`roboglot run` through the real `openai` SDK at it, checking the headers, the body, the replay, the
 cost of every turn and every refusal. The browser demo's client sent its request to the same
 stand-in under Node. None of that proves OpenRouter answers.
 
 ## How to help
 
 Run it on your own key and report what came back: the transcript, the LLM id, and the charge
-OpenRouter's activity page shows for the run beside the `cost_usd` quackd recorded. A bare
+OpenRouter's activity page shows for the run beside the `cost_usd` Roboglot recorded. A bare
 `--llm openrouter` first, because the default is the row that rests on the most. Then a Claude
-row past eight exchanges with frames, a Gemini row, and an id quackd does not carry, `:free` or
+row past eight exchanges with frames, a Gemini row, and an id Roboglot does not carry, `:free` or
 otherwise.

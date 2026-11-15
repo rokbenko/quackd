@@ -1,4 +1,4 @@
-"""A real arm with no rest pose is refused a run, a dry run, an MCP session and a flock.
+"""A real arm with no rest pose is refused a run, a dry run, an MCP session and a team.
 
 With no pose there is nothing to fold the arm to at the end, and its close keeps its torque rather
 than let it fall where it stands, so each would leave the arm holding itself up wherever it
@@ -17,12 +17,12 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.factory import RobotSpec, needs_rest_pose
-from quackd.agent.providers.fake import FakeProvider
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck
-from quackd.flock.pilots import roster_from_specs, run_pilot_flock
-from quackd.registry import Registry, Resolved, StoredFlock, no_rest_pose_refusal
+from roboglot.adapters.factory import RobotSpec, needs_rest_pose
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot
+from roboglot.registry import Registry, Resolved, StoredTeam, no_rest_pose_refusal
+from roboglot.team.pilots import roster_from_specs, run_pilot_team
 
 runner = CliRunner()
 
@@ -39,10 +39,10 @@ def _add(tmp_path: Path, name: str, spec: str, *extra: str) -> None:
 @pytest.fixture
 def never_built(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """The arm's builder, made to fail the test if it is asked for a real arm at all."""
-    import quackd_lerobot
+    import roboglot_lerobot
 
     built: list[str] = []
-    make = quackd_lerobot.make
+    make = roboglot_lerobot.make
 
     def recording(backend: str, **kwargs: Any) -> Any:
         built.append(backend)
@@ -50,7 +50,7 @@ def never_built(monkeypatch: pytest.MonkeyPatch) -> list[str]:
             raise AssertionError("a real arm with no rest pose was built")
         return make(backend, **kwargs)
 
-    monkeypatch.setattr(quackd_lerobot, "make", recording)
+    monkeypatch.setattr(roboglot_lerobot, "make", recording)
     return built
 
 
@@ -87,14 +87,14 @@ def test_the_refusal_names_the_arm_and_the_way_out(tmp_path: Path) -> None:
     assert message.startswith("arm-r (lerobot:real) has no rest pose recorded"), message
     assert "so at the end of a run, there is nothing to fold it to" in message, message
     assert message.endswith("would be left holding itself up wherever it stopped"), message
-    assert hint == "quackd robot rest-pose arm-r"
+    assert hint == "roboglot robot rest-pose arm-r"
 
     bare = Resolved(RobotSpec("lerobot", "real"))
     message, hint = no_rest_pose_refusal(bare, what="a run", address="COM7") or ("", "")
     assert message.startswith("lerobot:real names no registered arm, so it has no rest pose")
     assert (
         hint
-        == "quackd robot add NAME lerobot:real --address COM7, then quackd robot rest-pose NAME"
+        == "roboglot robot add NAME lerobot:real --address COM7, then roboglot robot rest-pose NAME"
     )
 
     registry.update_robot("arm-r", {"rest_pose": {"shoulder_pan": 0.0, "shoulder_lift": -90.0}})
@@ -105,7 +105,7 @@ def test_the_refusal_names_the_arm_and_the_way_out(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "how",
-    ["registered", "bare", "dry run", "robots", "stored flock"],
+    ["registered", "bare", "dry run", "robots", "stored team"],
 )
 def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_built(
     tmp_path: Path, never_built: list[str], how: str
@@ -122,20 +122,20 @@ def test_a_run_on_a_real_arm_with_no_rest_pose_is_refused_before_anything_is_bui
         args = ["run", "lerobot-lookout", "--robot", "arm-r", "--dry-run", *common]
     elif how == "robots":
         # the file's own members, so a run that got past the refusal would build the arm
-        args = ["run", "flock-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
+        args = ["run", "team-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
     else:
-        Registry(tmp_path / "registry").add_flock(
-            StoredFlock(name="pair", members=["arm-r", "arm-m"])
+        Registry(tmp_path / "registry").add_team(
+            StoredTeam(name="pair", members=["arm-r", "arm-m"])
         )
-        args = ["run", "flock-hello", "--flock", "pair", *common]
+        args = ["run", "team-hello", "--team", "pair", *common]
     result = runner.invoke(app, args)
     flat = " ".join(result.output.split())
     assert result.exit_code == 1, result.output
     assert "no rest pose" in flat and "holding itself up wherever it stopped" in flat, flat
-    assert "quackd robot rest-pose" in flat, "the refusal names no way out"
+    assert "roboglot robot rest-pose" in flat, "the refusal names no way out"
     assert "real" not in never_built, never_built
     assert not runs.exists() or not any(runs.iterdir()), "a run directory was made"
-    # refused by the run itself, before a header or a provider: a flock's own backstop would
+    # refused by the run itself, before a header or a provider: a team's own backstop would
     # refuse it too, but only once the header was printed and every pilot built
     assert flat.startswith(("x error", "✗ error")), flat[:300]
 
@@ -162,11 +162,11 @@ def test_a_mock_arm_with_no_rest_pose_still_runs(tmp_path: Path) -> None:
     assert any(runs.rglob("summary.json")), result.output
 
 
-@pytest.mark.parametrize("how", ["robot", "robots", "flock"])
+@pytest.mark.parametrize("how", ["robot", "robots", "team"])
 def test_an_mcp_session_on_a_real_arm_with_no_rest_pose_is_refused(
     tmp_path: Path, never_built: list[str], how: str
 ) -> None:
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
     _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
     _add(tmp_path, "arm-m", "lerobot:mock")
@@ -176,18 +176,18 @@ def test_an_mcp_session_on_a_real_arm_with_no_rest_pose_is_refused(
     elif how == "robots":
         kwargs = {"robots": "a=lerobot:real,b=lerobot:mock"}
     else:
-        Registry(reg).add_flock(StoredFlock(name="pair", members=["arm-r", "arm-m"]))
-        kwargs = {"flock": "pair"}
+        Registry(reg).add_team(StoredTeam(name="pair", members=["arm-r", "arm-m"]))
+        kwargs = {"team": "pair"}
     with pytest.raises(SystemExit) as refused:
         fleet_from_flags(registry_dir=reg, **kwargs)
     said = str(refused.value)
     assert "no rest pose" in said and "at the end of an MCP session" in said, said
-    assert "quackd robot rest-pose" in said
+    assert "roboglot robot rest-pose" in said
     assert "real" not in never_built, never_built
 
 
 def test_an_mcp_session_on_a_mock_arm_with_no_rest_pose_is_served(tmp_path: Path) -> None:
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
     _add(tmp_path, "arm-m", "lerobot:mock")
     plan = fleet_from_flags(robot="arm-m", registry_dir=str(tmp_path / "registry"))
@@ -198,14 +198,14 @@ def test_an_mcp_session_on_a_mock_arm_with_no_rest_pose_is_served(tmp_path: Path
     ("registered", "said"),
     [
         (False, r"arm \(lerobot:real\) names no registered arm, so it has no rest pose"),
-        (True, r"arm \(lerobot:real\) has no rest pose recorded.*quackd robot rest-pose arm$"),
+        (True, r"arm \(lerobot:real\) has no rest pose recorded.*roboglot robot rest-pose arm$"),
     ],
     ids=["spec", "registered"],
 )
-async def test_a_flock_reached_without_the_cli_refuses_the_arm_too(
+async def test_a_team_reached_without_the_cli_refuses_the_arm_too(
     tmp_path: Path, never_built: list[str], registered: bool, said: str
 ) -> None:
-    """`run_pilot_flock` is a library call as well as the CLI's, so it holds the same rule
+    """`run_pilot_team` is a library call as well as the CLI's, so it holds the same rule
     itself: a member that is a real arm with no rest pose is refused before any body is built.
     A member from a spec is worded as one, since recording a pose for its name would change
     nothing, and a registered member is sent to record its pose."""
@@ -215,11 +215,11 @@ async def test_a_flock_reached_without_the_cli_refuses_the_arm_too(
     if registered:
         _add(tmp_path, "arm", "lerobot:real", "--address", "COM99")
         roster["arm"] = Registry(tmp_path / "registry").robot("arm")
-    providers = {name: FakeProvider.for_duck("flock-hello") for name in roster}
+    providers = {name: FakeProvider.for_glot("team-hello") for name in roster}
     runs = tmp_path / "runs"
     with pytest.raises(ValueError, match=said):
         await asyncio.wait_for(
-            run_pilot_flock(load_duck("flock-hello"), roster, providers=providers, runs_dir=runs),
+            run_pilot_team(load_glot("team-hello"), roster, providers=providers, runs_dir=runs),
             timeout=60,
         )
     assert "real" not in never_built, never_built
@@ -240,7 +240,7 @@ def test_clearing_a_real_arm_s_pose_says_its_runs_are_refused_now(tmp_path: Path
     assert real.exit_code == 0, real.output
     flat = " ".join(real.output.split())
     assert "a run, a dry run or an MCP session of arm-r is now refused until a pose is" in flat
-    assert "quackd robot rest-pose arm-r" in flat and "torque drops there" not in flat, flat
+    assert "roboglot robot rest-pose arm-r" in flat and "torque drops there" not in flat, flat
     mock = runner.invoke(app, ["robot", "rest-pose", "arm-m", "--clear", *_reg(tmp_path)])
     assert "a run now leaves the arm where it stands, and torque drops there" in mock.output
 
@@ -255,20 +255,20 @@ FULL_POSE = {
 }
 
 
-def test_a_registered_arm_named_in_a_pilot_flock_is_built_with_its_pose_and_address(
+def test_a_registered_arm_named_in_a_pilot_team_is_built_with_its_pose_and_address(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--robot NAME` on a pilot flock file names the member called NAME, and that member is
+    """`--robot NAME` on a pilot team file names the member called NAME, and that member is
     the registered robot: built with its address and its rest pose. It used to be built as a
     bare spec of its kind with neither, which the refusal then took for an arm with no pose,
     and which its close would otherwise have let go of wherever it stood."""
-    import quackd_lerobot
-    from quackd.adapters.base import AdapterError
+    import roboglot_lerobot
+    from roboglot.adapters.base import AdapterError
 
     _add(tmp_path, "arm", "lerobot:real", "--address", "COM99")
     Registry(tmp_path / "registry").update_robot("arm", {"rest_pose": FULL_POSE})
     built: dict[str, Any] = {}
-    make = quackd_lerobot.make
+    make = roboglot_lerobot.make
 
     def stop_at_the_arm(backend: str, **kwargs: Any) -> Any:
         if backend == "real":
@@ -276,12 +276,12 @@ def test_a_registered_arm_named_in_a_pilot_flock_is_built_with_its_pose_and_addr
             raise AdapterError("stopped where the arm is built")
         return make(backend, **kwargs)
 
-    monkeypatch.setattr(quackd_lerobot, "make", stop_at_the_arm)
+    monkeypatch.setattr(roboglot_lerobot, "make", stop_at_the_arm)
     result = runner.invoke(
         app,
         [
             "run",
-            "flock-hello",
+            "team-hello",
             "--robot",
             "arm",
             "--llm",
@@ -298,20 +298,20 @@ def test_a_registered_arm_named_in_a_pilot_flock_is_built_with_its_pose_and_addr
     assert built.get("address") == "COM99" and built.get("rest_pose") == FULL_POSE, built
 
 
-def test_a_spec_in_a_fleet_is_sent_to_a_stored_flock_and_a_solo_one_keeps_its_cameras(
+def test_a_spec_in_a_fleet_is_sent_to_a_stored_team_and_a_solo_one_keeps_its_cameras(
     tmp_path: Path, never_built: list[str]
 ) -> None:
     """`--robots` and a task file's `robots:` never read the registry, so registering the arm
     and recording its pose would change nothing those spellings run: the way out goes on to a
-    stored flock. A solo spec's way out keeps the cameras it was given, so the command it
+    stored team. A solo spec's way out keeps the cameras it was given, so the command it
     prints registers the arm the run was asked for."""
     common = ["--llm", "fake", "--no-gif", "--runs-dir", str(tmp_path / "runs"), *_reg(tmp_path)]
     fleet = runner.invoke(
-        app, ["run", "flock-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
+        app, ["run", "team-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
     )
     flat = " ".join(fleet.output.split())
     assert fleet.exit_code == 1, fleet.output
-    assert "quackd flock create FLOCK --robot NAME" in flat and "--flock FLOCK" in flat, flat
+    assert "roboglot team create TEAM --robot NAME" in flat and "--team TEAM" in flat, flat
     solo = runner.invoke(
         app,
         [
@@ -327,8 +327,8 @@ def test_a_spec_in_a_fleet_is_sent_to_a_stored_flock_and_a_solo_one_keeps_its_ca
         ],
     )
     flat = " ".join(solo.output.split())
-    hint = 'quackd robot add NAME lerobot:real --address COM99 --camera-url "opencv://2"'
-    assert hint in flat and "flock create" not in flat, flat
+    hint = 'roboglot robot add NAME lerobot:real --address COM99 --camera-url "opencv://2"'
+    assert hint in flat and "team create" not in flat, flat
     assert "real" not in never_built, never_built
 
 
@@ -381,17 +381,17 @@ def test_an_adapter_from_another_release_is_refused_before_it_is_described(
 ) -> None:
     """A core beside an adapter from an older release reads every declaration the older one
     does not make as none, so the rest-pose refusal read `lerobot:real` as needing no pose and
-    the run went ahead. quackd's own adapters are released with the core, so another major or
+    the run went ahead. Roboglot's own adapters are released with the core, so another major or
     minor is refused wherever a body is described or built, with what to reinstall. A patch
     of the same minor is the same release, and a third party's adapter is never asked."""
     import types
 
-    import quackd_lerobot
-    from quackd.adapters import factory
-    from quackd.adapters.base import AdapterError
+    import roboglot_lerobot
+    from roboglot.adapters import factory
+    from roboglot.adapters.base import AdapterError
 
-    major, minor, *_ = quackd_lerobot.__version__.split(".")
-    monkeypatch.setattr(quackd_lerobot, "__version__", f"{major}.{int(minor) - 1}.0")
+    major, minor, *_ = roboglot_lerobot.__version__.split(".")
+    monkeypatch.setattr(roboglot_lerobot, "__version__", f"{major}.{int(minor) - 1}.0")
     with pytest.raises(AdapterError, match=r"reinstall them together: uv pip install -U"):
         factory.describe(factory.parse_robot_spec("lerobot:mock"))
     _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
@@ -409,9 +409,9 @@ def test_an_adapter_from_another_release_is_refused_before_it_is_described(
         ],
     )
     flat = " ".join(result.output.split())
-    assert result.exit_code == 1 and "is from another release than quackd" in flat, flat
+    assert result.exit_code == 1 and "is from another release than Roboglot" in flat, flat
     assert "real" not in never_built, never_built
-    monkeypatch.setattr(quackd_lerobot, "__version__", f"{major}.{minor}.99")
+    monkeypatch.setattr(roboglot_lerobot, "__version__", f"{major}.{minor}.99")
     factory.describe(factory.parse_robot_spec("lerobot:mock"))
     stranger = types.SimpleNamespace(__version__="9.9.9")
     factory._same_release("a-third-partys-arm", stranger)
@@ -423,17 +423,19 @@ def test_an_adapter_built_on_another_is_refused_over_a_base_from_another_release
     """Huebot's package is built on the Microduck's, and rosarm's on rosbridge's, so each runs the
     other's code as its own. Its own version matching the core said nothing of the package under
     it, which an install that upgraded one package alone leaves behind."""
-    import quackd
-    import quackd_microduck
-    from quackd.adapters import factory
-    from quackd.adapters.base import AdapterError
+    import roboglot
+    import roboglot_microduck
+    from roboglot.adapters import factory
+    from roboglot.adapters.base import AdapterError
 
     assert factory._built_on("huebot") == ("microduck",)
     assert factory._built_on("rosarm") == ("rosbridge",)
     assert factory._built_on("microduck") == ()
-    major, minor, *_ = quackd.__version__.split(".")
-    monkeypatch.setattr(quackd_microduck, "__version__", f"{major}.{int(minor) - 1}.0")
-    with pytest.raises(AdapterError, match=r"built on quackd-microduck .* reinstall them together"):
+    major, minor, *_ = roboglot.__version__.split(".")
+    monkeypatch.setattr(roboglot_microduck, "__version__", f"{major}.{int(minor) - 1}.0")
+    with pytest.raises(
+        AdapterError, match=r"built on roboglot-microduck .* reinstall them together"
+    ):
         factory.describe(factory.parse_robot_spec("huebot:mock"))
 
 
@@ -443,13 +445,13 @@ def test_a_workspace_moved_to_the_next_minor_is_one_release_whatever_its_metadat
     """RELEASING.md moves every version with set_version.py and runs the gates before anything is
     reinstalled, so an editable install's metadata still names the release before. The base was
     read from that metadata, and Huebot and rosarm were refused in the release's own gates."""
-    import quackd
-    import quackd_huebot
-    import quackd_microduck
-    from quackd.adapters import factory
+    import roboglot
+    import roboglot_huebot
+    import roboglot_microduck
+    from roboglot.adapters import factory
 
-    major, minor, *_ = quackd.__version__.split(".")
+    major, minor, *_ = roboglot.__version__.split(".")
     bumped = f"{major}.{int(minor) + 1}.0"
-    for module in (quackd, quackd_huebot, quackd_microduck):
+    for module in (roboglot, roboglot_huebot, roboglot_microduck):
         monkeypatch.setattr(module, "__version__", bumped)
     factory.describe(factory.parse_robot_spec("huebot:mock"))

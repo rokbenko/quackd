@@ -1,6 +1,6 @@
 name: rosarm contract
 
-# quackd's industrial arm transport against a real rosbridge and a real action server, in the
+# Roboglot's industrial arm transport against a real rosbridge and a real action server, in the
 # official ROS 2 images of Jazzy and Humble (tests/test_rosarm_contract.py).
 #
 # rosarm:mock rehearses every task against a fake bridge written from reading. This job holds the
@@ -44,7 +44,7 @@ concurrency:
 
 jobs:
   contract:
-    name: quackd ⇄ rosbridge ⇄ an arm in rclpy (${{ matrix.distro }})
+    name: Roboglot ⇄ rosbridge ⇄ an arm in rclpy (${{ matrix.distro }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:

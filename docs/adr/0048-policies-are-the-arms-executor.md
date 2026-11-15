@@ -1,6 +1,6 @@
-# ADR-0048: Policies are the arm's executor, and quackd owns the bus
+# ADR-0048: Policies are the arm's executor, and Roboglot owns the bus
 
-**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in quackd's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/quackd_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `quackd/duckfile/narrow.py`, `quackd/agent/providers/vla.py` and `quackd policy` in `quackd/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
+**Status:** accepted · **Date:** 2026-09-28 · Amends [ADR-0003](0003-three-loops.md) (the arm's policy loop runs in the steering tier, in Roboglot's process, at the policy's own rate), [ADR-0004](0004-verb-registry.md) and [learned-verbs.md](../concepts/learned-verbs.md) (a learned policy on the arm is one of the arm's own verbs, not a learned verb), [ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0018](0018-core-verbs-extensions-aliases.md) (a v3 task file narrows one verb's parameter schema to its own instructions, and the core knows two verb names on any body), [ADR-0036](0036-what-the-arm-does-not-say.md) (a policy's step cap is the verbs' speed at the policy's rate, and a joint past its travel is outside what it covers) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper is shown `manipulate` and never takes it) · Implemented in `adapters/lerobot/src/roboglot_lerobot/policy/`, the arm's `verbs.py` and `real.py`, `roboglot/glotfile/narrow.py`, `roboglot/agent/providers/vla.py` and `roboglot policy` in `roboglot/cli.py` ([page](../guides/policies.md), [the arm's page](../adapters/lerobot/README.md#manipulate-and-the-loop-a-policy-runs-in))
 
 **Amended 2026-10-25:** [ADR-0060](0060-hugging-face-serves-many-vlas.md) extends what the server
 serves past the three types named below, ACT, SmolVLA and pi05, one family at a time and each
@@ -8,12 +8,12 @@ read before it is served. A step is now allowed by the type that names it rather
 of every served type's steps, and a model a processor step names is fetched as a tokenizer,
 without its weights.
 
-**Amended 2026-10-25 by [ADR-0061](0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md):**
-quackd may now start the policy server for you, on a GPU rented from Hugging Face as an
-Inference Endpoint (`quackd policy endpoint up`), still in a process of its own and never the
+**Amended 2026-10-25 by [ADR-0061](0061-a-hugging-face-endpoint-is-a-rented-gpu-roboglot-starts.md):**
+Roboglot may now start the policy server for you, on a GPU rented from Hugging Face as an
+Inference Endpoint (`roboglot policy endpoint up`), still in a process of its own and never the
 arm's, and a run reaches it with `--policy-url hf:NAME`, which is still typed on the flag and
 named nowhere else. The user still starts any other server, and a child process spawned by
-`quackd run`, below, is still not how a server is started.
+`roboglot run`, below, is still not how a server is started.
 
 **Amended 2026-11-09:** `load_policy()`, the known gap Consequences names, is gone from
 `real.py`, at Rok's word and with no deprecation a release ahead of it. It loaded a checkpoint in
@@ -84,7 +84,7 @@ the verb's ok. `manipulate` is not one of the verbs that run before a verdict
 the verbs that move the body (`verdict.MOVES_THE_BODY`), which the gate never reads and a test
 holds every shipped verb to.
 
-**The loop is quackd's, in the arm's process, at the policy's rate.** A segment is the backend's
+**The loop is Roboglot's, in the arm's process, at the policy's rate.** A segment is the backend's
 policy task, and its body is `PolicyLoop` (`policy/loop.py`). Every stop path cancels that task
 first, and the verb waits on it with `asyncio.wait`, so a stop from the heartbeat, from MCP or
 from a verb refused meanwhile ends the verb as `stopped:` and says which. The rate is the
@@ -109,7 +109,7 @@ past the travel is clipped and counted, as [ADR-0036](0036-what-the-arm-does-not
 decided, where a verb's is refused.
 
 **A policy moves the arm no faster than a verb may.** The cap is the verbs' own speed,
-`max_step_deg / TICK_S` degrees a second, 50 at the default, so `QUACKD_LEROBOT_MAX_STEP_DEG`
+`max_step_deg / TICK_S` degrees a second, 50 at the default, so `ROBOGLOT_LEROBOT_MAX_STEP_DEG`
 governs both. Per send it is that speed over the policy's rate, and never more than one verb
 step, so a policy at 30 Hz is capped at about 1.7 degrees a send where a per-tick cap would
 have let it move three times as fast. It is written on the follower's config for the length of
@@ -121,8 +121,8 @@ still past it, so the servo clamps it to the limit and drives there at its own s
 why such a joint is left out of every action: a policy never starts that rise. It cannot halt
 one a move had already started, and the power switch is still the only stop for that stretch.
 
-**No quackd command loads a checkpoint in the process that owns the serial bus.** A checkpoint
-is code, so the policy runs in a server of its own, `quackd policy serve`, which the user
+**No Roboglot command loads a checkpoint in the process that owns the serial bus.** A checkpoint
+is code, so the policy runs in a server of its own, `roboglot policy serve`, which the user
 starts in a terminal of its own, on the laptop beside the arm or on a rented GPU reached through
 `ssh -L`, the way the Jetson's daemon is started
 ([ADR-0046](0046-the-jetson-is-reached-not-run-on.md)). The arm's process reaches it with
@@ -138,13 +138,13 @@ config that maps a class to code. Every weight is loaded strictly, since LeRobot
 logs a missing one and pi05's returns a random network when its weights do not load. The rate
 is `--fps`, or the fps of the dataset the checkpoint's `train_config.json` names, taken only at
 a whole commit or a tag the Hub says is one, or the server refuses to start. The one path in
-quackd past all of this is `load_policy()`, still in `real.py`, which no command reaches, and
+Roboglot past all of this is `load_policy()`, still in `real.py`, which no command reaches, and
 Consequences says what that gap is.
 
-**The server is quackd's, not a daemon under `bridge/`.** It shares the pipeline and the
-protocol with `quackd policy check`, which serves a policy for the length of a check and
+**The server is Roboglot's, not a daemon under `bridge/`.** It shares the pipeline and the
+protocol with `roboglot policy check`, which serves a policy for the length of a check and
 streams synthetic observations through the real client, and a daemon under `bridge/` imports
-nothing of quackd's. It is in the arm's package, behind its own extra, `quackd[lerobot-vla]`,
+nothing of Roboglot's. It is in the arm's package, behind its own extra, `roboglot[lerobot-vla]`,
 which is LeRobot with torch and transformers on Python 3.12 and no `[feetech]`, since the
 server never opens a serial port.
 
@@ -157,7 +157,7 @@ and each camera's name and size. `POST /v1/step` carries the session, a sequence
 tick, the state, a frame per camera and the command the arm last sent, and answers a chunk or
 nothing, with the session and sequence echoed. `POST /v1/end` ends a session. The server listens
 on 9875, the port after the Jetson daemon's. A token is always required, read from one header
-and compared in constant time, and the server writes one to `~/.quackd/policy.token` when it is
+and compared in constant time, and the server writes one to `~/.roboglot/policy.token` when it is
 given none. It binds `127.0.0.1` or `::1` unless `--behind-tls` says a proxy stands in front,
 and the client sends plain HTTP to those two addresses and nowhere else, refuses `localhost`,
 follows no proxy and no redirect, and keeps the token out of every error. JSON's `NaN` and
@@ -179,39 +179,39 @@ is clipped to this arm's calibrated travel as any policy's is, so it changes wha
 and never where the arm may go, and the run's record says it was given.
 
 **Only the flag names a server.** `--policy-url` and `--policy-token` are on `run`, `preflight`
-and `serve-mcp`. The token has a variable, `QUACKD_POLICY_TOKEN`, and the address has none and
+and `serve-mcp`. The token has a variable, `ROBOGLOT_POLICY_TOKEN`, and the address has none and
 no registry field, because one line in a `.env` would otherwise put a policy in charge of every
 run. `make_adapter` and `describe` pass `policy=` only when one is given, and refuse, naming
 the arm, an adapter whose `make()` or `describe()` has no such parameter, which is every body
 but the arm. Of the arm's backends `lerobot:real` and `lerobot:mujoco` take one, the mock,
-which scripts its own, refuses it, and a flock refuses one, since one server drives one arm.
+which scripts its own, refuses it, and a team refuses one, since one server drives one arm.
 `describe(policy=...)` puts `pick` and `manipulate` in the static manifest, so a task that
 allows them is judged before anything connects. Over MCP both need `serve-mcp --yes`.
 
 **A goal run given a policy allows `manipulate`, behind a confirm.** A goal's contract allows
-the safe verbs and nothing else (`duck_from_goal`), and `manipulate` is not safe, so a goal
-could never have used a policy. With `--policy-url` the goal duck allows it and lists it under
+the safe verbs and nothing else (`glot_from_goal`), and `manipulate` is not safe, so a goal
+could never have used a policy. With `--policy-url` the goal task allows it and lists it under
 `confirm`, so a person at a terminal is asked before each segment unless `--yes`, or a pipe or
 file on stdin, answers for them. Without a policy server a goal is what it was.
 
-**`--yes`, or a pipe on stdin, takes the person out of a policy run.** `quackd run --yes` builds
+**`--yes`, or a pipe on stdin, takes the person out of a policy run.** `roboglot run --yes` builds
 the executor with `allow_all` as its confirm, as it always has. Without `--yes` the confirm is a
-y/N question read from stdin, so `yes | quackd run` and `quackd run < answers.txt` answer it
+y/N question read from stdin, so `yes | roboglot run` and `roboglot run < answers.txt` answer it
 too, as they always have ([safety.md](../concepts/safety.md#who-the-record-says-was-asked)). Either way
 nobody is asked before a `pick` or a `manipulate` the pilot calls, a goal run's included, and
 the pilot's word and a yes nobody said are all that start a learned policy driving the arm. The
 record says so: the gate's reason is `the confirm gate was allowed`, and no `prompt` event names
-a person. Over MCP both verbs need `serve-mcp --yes`, so there quackd asks nobody before any
-segment, and `quackd preflight` clears every segment the same way, on the simulator alone.
+a person. Over MCP both verbs need `serve-mcp --yes`, so there Roboglot asks nobody before any
+segment, and `roboglot preflight` clears every segment the same way, on the simulator alone.
 `--controller vla` refuses `--yes`, and a run with no terminal to ask on, since its verdict is a
 person's. What such a run keeps is every rule that asks nobody: the allowlist, the narrowed
 instruction, the segment gate, `policy.total_s`, the step cap, the guards each tick and every
 stop.
 
-**A task file holds `manipulate` to its own words and seconds.** A `duck: 3` file's `policy`
+**A task file holds `manipulate` to its own words and seconds.** A `glot: 3` file's `policy`
 section lists the instructions the policy may be told, at most 12 lines of at most 200
 characters, how long each segment runs, at most 60 s, and how long they run in all, at most an
-hour. One helper, `quackd.duckfile.narrow`, rebuilds `manipulate` from the verb the body
+hour. One helper, `roboglot.glotfile.narrow`, rebuilds `manipulate` from the verb the body
 registered every time the verbs a run offers become final: its `instruction` becomes an inline
 enum of the list, its timeout the segment plus 10 s, and on the simulator the wall time the
 clock stands still while the policy thinks, and the segment reaches the backend through
@@ -260,10 +260,10 @@ answer, never the simulator's truth.
 Linux, an NVIDIA GPU, a NATTEN built for the machine's torch and CUDA, and about 32 GB of GPU
 memory in BF16 by its makers' own report. Its official SO-101 checkpoint predicts actions as
 deltas, integrated against the last command every tick, so it is a policy asked every tick with
-the command sent fed back. quackd's server serves ACT, SmolVLA and pi05 and refuses any other
+the command sent fed back. Roboglot's server serves ACT, SmolVLA and pi05 and refuses any other
 policy type, FLUX's included. What would change that is a spike on a rented Linux GPU, which
-has not run, that shows three things: that `quackd policy check --bench` holds the checkpoint's
-rate through the tunnel, that its delta integration stays anchored when quackd clips a goal,
+has not run, that shows three things: that `roboglot policy check --bench` holds the checkpoint's
+rate through the tunnel, that its delta integration stays anchored when Roboglot clips a goal,
 and that the official SO-101 checkpoint at a pinned revision drives the simulator end to end.
 Its refs would get a table of their own, pinned at the LeRobot commit that added it.
 
@@ -283,7 +283,7 @@ Its refs would get a table of their own, pinned at the LeRobot commit that added
   `shoulder_lift`, whose recorded travel there does not reach the arm's fold
   ([ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md)). The first stays a keyword,
   `accept_frame_size`, and its refusal says to give the camera the checkpoint's size with
-  `--camera-url`'s `width=` and `height=`, which every camera quackd opens takes. The record
+  `--camera-url`'s `width=` and `height=`, which every camera Roboglot opens takes. The record
   says when either was taken.
 - The plan had frames go as JPEG on every remote link. The server says how it wants them: raw,
   or JPEG at `--jpeg-quality`, and 90 when it is behind TLS and told nothing. A tunnel looks
@@ -316,11 +316,11 @@ need both. `load_policy()` was that path, and nothing ever called it.
 **LeRobot's own gRPC policy server.** It unpickles every observation and every chunk over
 `add_insecure_port`, so anything that reaches the port runs code on the other side
 (`ASYNC_PICKLE`). Its client imports torch (`ASYNC_CLIENT_NEEDS_TORCH`), which is the process
-quackd keeps free of it. It skips an observation whose joint state is near the last one it ran
+Roboglot keeps free of it. It skips an observation whose joint state is near the last one it ran
 (`ASYNC_SKIPS_SIMILAR`), which is how a policy stops seeing an arm that is barely moving. And
 its list of policies has no FLUX 3 Action (`ASYNC_SUPPORTED_POLICIES`).
 
-**A child process spawned by `quackd run`.** One command instead of two terminals is the
+**A child process spawned by `roboglot run`.** One command instead of two terminals is the
 better experience, and on Windows it is five problems v1 does not need: delivering Ctrl-C to
 the child, an orphan left serving when the parent dies, a port already taken by the last one,
 the child's output interleaved with the run's, and which environment the child runs in, since
@@ -341,7 +341,7 @@ always was.
   and on the simulator. CI loads a tiny random ACT, and on 2026-09-28 a trained ACT from the Hub,
   `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, was
   served on a laptop's CPU and drove a twin of the lab's arm on the simulator over
-  `serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that twin with `quackd run --goal` and
+  `serve-mcp`. On 2026-09-29 OpenAI's `gpt-6-sol` flew that twin with `roboglot run --goal` and
   `--policy-url`, handed the same ACT two `manipulate` segments and declared failure on seeing
   no blue cap, since the simulator's table holds a red cube and a pen. That run proves the
   plumbing and nothing about the task. SmolVLA loaded on that laptop and took minutes a chunk on
@@ -357,17 +357,17 @@ always was.
   policy.
 - **Only the bench can say how fast the loop runs on the real bus with a server inferring on the
   same laptop.** Torch's threads and the bus's worker share one CPU there, and nothing timed on
-  the simulator's lockstep clock is a rate. `quackd policy check --bench` measures the server
+  the simulator's lockstep clock is a rate. `roboglot policy check --bench` measures the server
   and the wire without an arm, and the policy block of a run's `summary.json` says what the
   loop achieved. PLAN.md carries it as an open item.
 - **What a policy does on the simulator is not evidence about the arm.** The simulator's frames
-  are renders of quackd's own scene from default mounts, and a policy trained on a real
+  are renders of Roboglot's own scene from default mounts, and a policy trained on a real
   camera's frames sees a picture it never saw, so it can fail there and work on the arm, or the
   other way round. The simulator proves the plumbing, the clips, the stops, the guards and the
   budgets, and never a rate or a grasp.
 - **The stepper only shadows `manipulate`**, in both modes, until a measured agreement rate and
   an ADR of its own promote it.
-- **A policy's weights are the user's download, under their own licence,** and quackd ships
+- **A policy's weights are the user's download, under their own licence,** and Roboglot ships
   none. FLUX 3 Action's is the FLUX Kommunity License, which grants robot control, a Robotics
   Use in its words, for non-commercial purposes, and whose commercial carve-out for Qualifying
   Users covers the model's Outputs on conditions and does not say it reaches a Robotics Use.
@@ -377,7 +377,7 @@ always was.
 - **`load_policy()` is a known gap.** It is a Python helper in `real.py` from before this
   decision, and it still builds a LeRobot policy in the arm's own process, beside the serial
   bus, with none of the server's reading before it builds and no check at connect that the
-  policy fits the arm. Nothing in quackd calls it and no command reaches it, so only somebody's
+  policy fits the arm. Nothing in Roboglot calls it and no command reaches it, so only somebody's
   own Python can, and the `LOAD_POLICY` row on
   [the arm's page](../adapters/lerobot/README.md#the-policies-upstream-lerobot-070) says so. Whether it
   goes, with its test and its row, is not decided, and PLAN.md carries it as an open item.

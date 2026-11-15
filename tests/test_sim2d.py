@@ -7,10 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.sim2d.recorder import FrameRecorder
-from quackd.sim2d.render import render_duckcam, render_topdown
-from quackd.sim2d.world import DEADMAN_S, DT, World
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.sim2d.recorder import FrameRecorder
+from roboglot.sim2d.render import render_duckcam, render_topdown
+from roboglot.sim2d.world import DEADMAN_S, DT, World
 
 
 def _run(world: World, seconds: float) -> None:

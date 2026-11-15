@@ -1,6 +1,6 @@
-"""`quackd robot add|list|show|edit|remove`, and what a registered name means elsewhere.
+"""`roboglot robot add|list|show|edit|remove`, and what a registered name means elsewhere.
 
-The group is modelled on `quackd memory`, so this file is modelled on `test_cli_memory.py`:
+The group is modelled on `roboglot memory`, so this file is modelled on `test_cli_memory.py`:
 every refusal is one line and never a traceback, `--json` is one object per line and never
 prints a token, and a destructive command asks unless it is told not to.
 """
@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.registry import Registry, RobotEntry, StoredFlock
-from quackd_lerobot.mock import REST
+from roboglot.cli import app
+from roboglot.registry import Registry, RobotEntry, StoredTeam
+from roboglot_lerobot.mock import REST
 
 runner = CliRunner()
 
@@ -36,7 +36,7 @@ def _seed(tmp_path: Path, **kw: object) -> Registry:
 
 
 def _seed_arm(tmp_path: Path, **kw: object) -> Registry:
-    """An arm on its own: `lerobot` is the one body quackd drives to a rest pose."""
+    """An arm on its own: `lerobot` is the one body Roboglot drives to a rest pose."""
     registry = Registry(tmp_path)
     registry.add_robot(RobotEntry(name="arm-01", spec="lerobot:mock", **kw))  # type: ignore[arg-type]
     return registry
@@ -77,7 +77,7 @@ def test_add_list_show_edit_remove(tmp_path: Path) -> None:
 def test_an_empty_registry_says_how_to_fill_it(tmp_path: Path) -> None:
     result = runner.invoke(app, ["robot", "list", *_reg(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert "quackd robot add" in result.output
+    assert "roboglot robot add" in result.output
 
 
 def test_the_list_says_each_robot_s_type_when_one_was_registered_with_one(tmp_path: Path) -> None:
@@ -193,7 +193,7 @@ def test_rest_pose_warns_about_a_fold_past_the_travel_and_still_records_it(
     are the fold: one past its floor and one past its ceiling, on spans of nobody's arm. Each
     span is the same either side of zero, as LeRobot's degrees formula centres every travel a
     calibration records, which the mock's is now."""
-    from quackd_lerobot import mock as lerobot_mock
+    from roboglot_lerobot import mock as lerobot_mock
 
     narrowed = dict(lerobot_mock.MOCK_RANGES)
     lift, elbow = -(REST["shoulder_lift"] + 23.0), REST["elbow_flex"] - 17.0
@@ -211,7 +211,7 @@ def test_rest_pose_warns_about_a_fold_past_the_travel_and_still_records_it(
     assert f"driven to {floor:.0f} and {ceiling:.0f} and no further" in said, said
     # the name just typed, not NAME: the clip note spells its command the way the hint under
     # it and the torque note do, and used to say NAME one line above a hint that had the name
-    assert "lerobot-calibrate" in said and "quackd robot rest-pose arm-01)" in said, said
+    assert "lerobot-calibrate" in said and "roboglot robot rest-pose arm-01)" in said, said
     assert "rest-pose NAME" not in said, said
     assert said.index("lerobot-calibrate") < said.index("recorded arm-01's rest pose")
     assert Registry(tmp_path).robot("arm-01").rest_pose == {
@@ -221,7 +221,7 @@ def test_rest_pose_warns_about_a_fold_past_the_travel_and_still_records_it(
 
 def test_rest_pose_asks_unless_yes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _seed_arm(tmp_path)
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: True)
     said_no = runner.invoke(app, ["robot", "rest-pose", "arm-01", *_reg(tmp_path)], input="n\n")
     assert said_no.exit_code == 0, said_no.output
     assert Registry(tmp_path).robot("arm-01").rest_pose is None, "answering no records nothing"
@@ -238,7 +238,7 @@ def test_rest_pose_refuses_a_body_with_no_joints(tmp_path: Path) -> None:
     assert "Traceback" not in result.output
 
 
-def test_rest_pose_refuses_a_body_with_joints_quackd_does_not_park(tmp_path: Path) -> None:
+def test_rest_pose_refuses_a_body_with_joints_roboglot_does_not_park(tmp_path: Path) -> None:
     """The XLeRobot lists a `joint` intent, so the joints gate lets it straight through. The
     second gate, on the adapter itself, is what stops a pose being recorded for a body no code
     would ever drive back to it, which would be a promise the arm keeps and this one does not."""
@@ -253,10 +253,10 @@ def test_rest_pose_refuses_a_body_with_joints_quackd_does_not_park(tmp_path: Pat
 
 
 def test_rest_pose_refuses_an_industrial_arm_in_its_own_words(tmp_path: Path) -> None:
-    """quackd parks no industrial arm, ever (ADR-0078): its controller and its brakes hold it where
-    it stops. So the refusal is the one its `go_to_rest()` answers with, and not the not yet that
-    a body quackd may park some day is told."""
-    from quackd_rosarm import NO_REST_POSE
+    """Roboglot parks no industrial arm, ever (ADR-0078): its controller and its brakes hold it
+    where it stops. So the refusal is the one its `go_to_rest()` answers with, and not the not yet
+    that a body Roboglot may park some day is told."""
+    from roboglot_rosarm import NO_REST_POSE
 
     registry = Registry(tmp_path)
     registry.add_robot(RobotEntry(name="cell", spec="rosarm:mock", robot_type="yaskawa-motomini"))
@@ -297,7 +297,7 @@ def test_rest_pose_with_no_terminal_to_ask_on_refuses_rather_than_recording(
     whatever the pipe happened to hold, and recording the wrong pose is how an arm is driven
     into the table on the next run. The refusal names `--yes`, which is the real answer."""
     _seed_arm(tmp_path)
-    monkeypatch.setattr("quackd.cli._can_prompt", lambda: False)
+    monkeypatch.setattr("roboglot.cli._can_prompt", lambda: False)
     result = runner.invoke(app, ["robot", "rest-pose", "arm-01", *_reg(tmp_path)], input="y\n")
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
@@ -405,12 +405,12 @@ def test_a_body_that_reads_one_camera_refuses_a_second(tmp_path: Path) -> None:
     assert Registry(tmp_path).get_robot("duck-a") is None
 
 
-# ── flocks hold on to their robots ──────────────────────────────────────────────────────
+# ── teams hold on to their robots ──────────────────────────────────────────────────────
 
 
-def test_remove_refuses_a_robot_a_flock_names_and_force_drops_it(tmp_path: Path) -> None:
+def test_remove_refuses_a_robot_a_team_names_and_force_drops_it(tmp_path: Path) -> None:
     registry = _seed(tmp_path)
-    registry.add_flock(StoredFlock(name="kitchen", members=["duck-a", "arm"]))
+    registry.add_team(StoredTeam(name="kitchen", members=["duck-a", "arm"]))
     refused = runner.invoke(app, ["robot", "remove", "duck-a", "--yes", *_reg(tmp_path)])
     assert refused.exit_code == 1
     assert "kitchen" in refused.output and "--force" in refused.output
@@ -419,7 +419,7 @@ def test_remove_refuses_a_robot_a_flock_names_and_force_drops_it(tmp_path: Path)
     forced = runner.invoke(app, ["robot", "remove", "duck-a", "--yes", "--force", *_reg(tmp_path)])
     assert forced.exit_code == 0, forced.output
     assert "dropped from kitchen" in forced.output
-    assert Registry(tmp_path).flock("kitchen").members == ["arm"]
+    assert Registry(tmp_path).team("kitchen").members == ["arm"]
 
 
 def test_remove_asks_unless_yes(tmp_path: Path) -> None:
@@ -438,7 +438,7 @@ def test_remove_asks_unless_yes(tmp_path: Path) -> None:
 def test_add_and_edit_read_a_token_from_the_variable_named_and_never_print_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """How the page `quackd ui` saves a robot: the token is in its child's environment, and
+    """How the page `roboglot ui` saves a robot: the token is in its child's environment, and
     only the variable's name is on the command line."""
     monkeypatch.setenv("DUCK_TOKEN", " br1dge-s3cret \n")
     monkeypatch.setenv("BOARD_TOKEN", "hostd-s3cret")
@@ -740,7 +740,7 @@ def test_list_is_static_unless_asked_to_probe(
     def boom(*_a: object, **_k: object) -> None:
         raise AssertionError("robot list must not connect")
 
-    monkeypatch.setattr("quackd.registry.probe_all", boom)
+    monkeypatch.setattr("roboglot.registry.probe_all", boom)
     assert runner.invoke(app, ["robot", "list", *_reg(tmp_path)]).exit_code == 0
 
 
@@ -798,13 +798,13 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     """
     _seed(tmp_path, llm="openai:gpt-5.4-mini")
     seen: list[tuple[str, str | None]] = []
-    real = __import__("quackd.agent.providers.factory", fromlist=["make_provider"]).make_provider
+    real = __import__("roboglot.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
     def recorder(name: str, **kw: object) -> object:
         seen.append((name, kw.get("llm_id")))  # type: ignore[arg-type]
         return real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
 
-    monkeypatch.setattr("quackd.agent.providers.factory.make_provider", recorder)
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     common = [
         "run",
         "hello-world",
@@ -817,7 +817,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
         str(tmp_path / "m"),
         *_reg(tmp_path),
     ]
-    monkeypatch.delenv("QUACKD_LLM", raising=False)
+    monkeypatch.delenv("ROBOGLOT_LLM", raising=False)
     assert runner.invoke(app, common).exit_code == 0
     assert seen[-1] == ("openai", "gpt-5.4-mini")
     assert runner.invoke(app, [*common, "--llm", "gemini"]).exit_code == 0
@@ -825,7 +825,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
     assert runner.invoke(app, [*common, "--llm", "claude-opus-5"]).exit_code == 0
     assert seen[-1] == ("anthropic", "claude-opus-5"), "a bare id brings its own vendor"
     # the robot was registered by a person who meant it; a variable in their shell was not
-    monkeypatch.setenv("QUACKD_LLM", "gemini")
+    monkeypatch.setenv("ROBOGLOT_LLM", "gemini")
     assert runner.invoke(app, common).exit_code == 0
     assert seen[-1] == ("openai", "gpt-5.4-mini"), "the environment does not beat the robot"
 
@@ -836,7 +836,7 @@ def test_a_run_by_name_is_refused_when_the_robots_own_llm_is_no_longer_listed(
     """The other half of "strict at the door, lenient on the shelf".
 
     `robots.json` still loads with a retired id, because refusing the read would take
-    `quackd robot edit` down with it. The run is where it stops, and the refusal has to say
+    `roboglot robot edit` down with it. The run is where it stops, and the refusal has to say
     which robot and which file: nothing on the command line is wrong, so a reader told only
     "unknown LLM" would search the line they just typed and find nothing to fix.
 
@@ -878,7 +878,7 @@ def test_a_run_by_name_is_refused_when_the_robots_own_llm_is_no_longer_listed(
 def test_a_pilot_the_catalogue_would_refuse_is_not_registered_at_all(tmp_path: Path) -> None:
     """The shelf is lenient about LLM ids and `robot add` is not, because the door is where
     the typo is actually made. A robot registered against `openai:grok-4.6` would look fine in
-    `quackd robot list` and fail only on the day somebody ran it."""
+    `roboglot robot list` and fail only on the day somebody ran it."""
     result = runner.invoke(
         app,
         ["robot", "add", "duck-a", "microduck:mock", "--llm", "openai:grok-4.6", *_reg(tmp_path)],
@@ -896,13 +896,13 @@ def test_a_run_by_name_reaches_the_address_it_was_registered_with(
     _seed(tmp_path)
     Registry(tmp_path).update_robot("duck-a", {"address": "tcp://10.0.0.5:9871", "token": "s3cret"})
     seen: dict[str, object] = {}
-    real = __import__("quackd.adapters.factory", fromlist=["make_adapter"]).make_adapter
+    real = __import__("roboglot.adapters.factory", fromlist=["make_adapter"]).make_adapter
 
     def recorder(spec: object, **kw: object) -> object:
         seen.update(kw)
         return real(spec, seed=kw.get("seed"))  # type: ignore[arg-type]
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", recorder)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", recorder)
     result = runner.invoke(
         app,
         [
@@ -931,13 +931,13 @@ def test_a_flag_on_the_line_beats_the_stored_address(
     _seed(tmp_path)
     Registry(tmp_path).update_robot("duck-a", {"address": "tcp://stored:1", "token": "stored"})
     seen: dict[str, object] = {}
-    real = __import__("quackd.adapters.factory", fromlist=["make_adapter"]).make_adapter
+    real = __import__("roboglot.adapters.factory", fromlist=["make_adapter"]).make_adapter
 
     def recorder(spec: object, **kw: object) -> object:
         seen.update(kw)
         return real(spec, seed=kw.get("seed"))  # type: ignore[arg-type]
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", recorder)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", recorder)
     result = runner.invoke(
         app,
         [
@@ -994,7 +994,7 @@ def test_validate_takes_a_registered_name(tmp_path: Path) -> None:
     assert "duck-a" in result.output, "the manifest id is the name you registered"
 
 
-def test_a_robot_this_quackd_cannot_build_is_listed_and_refused_by_name(tmp_path: Path) -> None:
+def test_a_robot_this_roboglot_cannot_build_is_listed_and_refused_by_name(tmp_path: Path) -> None:
     """A robot on a backend its adapter has dropped used to make every command that reads the
     registry refuse, `robot list` and `robot remove` among them. It is listed and marked with
     the fix, shown, and refused by name by the run and the doctor that use it, while the robot
@@ -1004,8 +1004,8 @@ def test_a_robot_this_quackd_cannot_build_is_listed_and_refused_by_name(tmp_path
     stored = json.loads(path.read_text(encoding="utf-8"))
     stored["robots"]["kitchen"] = {"spec": "microduck:websocket"}
     path.write_text(json.dumps(stored), encoding="utf-8")
-    refusal = "kitchen is registered as microduck:websocket, which this quackd cannot build"
-    fix = "quackd robot edit kitchen --spec microduck:<backend>, or quackd robot remove kitchen"
+    refusal = "kitchen is registered as microduck:websocket, which this Roboglot cannot build"
+    fix = "roboglot robot edit kitchen --spec microduck:<backend>, or roboglot robot remove kitchen"
 
     listed = runner.invoke(app, ["robot", "list", *_reg(tmp_path)])
     flat = " ".join(listed.output.split())

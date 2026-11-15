@@ -1,4 +1,4 @@
-"""`quackd/registry.py`: the robots you have named and the flocks you made of them.
+"""`roboglot/registry.py`: the robots you have named and the teams you made of them.
 
 Not `tests/test_registry.py`, which is the verb registry. The two share a word and nothing
 else.
@@ -13,17 +13,17 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from quackd.adapters.base import AdapterError
-from quackd.host import resolve_host
-from quackd.registry import (
-    FlockNotRunnable,
+from roboglot.adapters.base import AdapterError
+from roboglot.host import resolve_host
+from roboglot.registry import (
     Registry,
     RegistryError,
     RobotEntry,
     RobotInUse,
-    StoredFlock,
-    UnknownFlock,
+    StoredTeam,
+    TeamNotRunnable,
     UnknownRobot,
+    UnknownTeam,
     check_name,
     probe_all,
     probe_entry,
@@ -72,11 +72,11 @@ def test_a_write_leaves_no_temporary_file_behind(tmp_path: Path) -> None:
 def test_the_directory_is_the_flag_then_the_env_then_the_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(tmp_path / "from-env"))
+    monkeypatch.setenv("ROBOGLOT_REGISTRY_DIR", str(tmp_path / "from-env"))
     assert registry_dir(tmp_path / "from-flag") == tmp_path / "from-flag"
     assert registry_dir() == tmp_path / "from-env"
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
-    assert registry_dir() == Path("~/.quackd").expanduser()
+    monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
+    assert registry_dir() == Path("~/.roboglot").expanduser()
 
 
 def test_broken_json_is_one_line_and_the_file_is_never_overwritten(tmp_path: Path) -> None:
@@ -100,11 +100,9 @@ def test_a_hand_edited_typo_names_its_own_field(tmp_path: Path) -> None:
 
 
 def test_a_newer_file_is_refused_rather_than_half_read(tmp_path: Path) -> None:
-    (tmp_path / "flocks.json").write_text(
-        json.dumps({"version": 99, "flocks": {}}), encoding="utf-8"
-    )
+    (tmp_path / "teams.json").write_text(json.dumps({"version": 99, "teams": {}}), encoding="utf-8")
     with pytest.raises(RegistryError, match="version 99"):
-        Registry(tmp_path).flocks()
+        Registry(tmp_path).teams()
 
 
 # ── names ───────────────────────────────────────────────────────────────────────────────
@@ -119,7 +117,7 @@ def test_a_newer_file_is_refused_rather_than_half_read(tmp_path: Path) -> None:
         ("3", "simulated ducks"),
         ("microduck", "is an adapter"),
         ("microduck-sim2d", "memory file name"),
-        ("described", "the row of bodies quackd only describes"),
+        ("described", "the row of bodies Roboglot only describes"),
         ("described-unitree-b2", "memory file name"),
     ],
 )
@@ -128,10 +126,10 @@ def test_a_name_may_not_be_something_else_it_could_be_mistaken_for(name: str, wh
         check_name(name)
 
 
-def test_a_flock_may_be_called_after_an_adapter_but_not_after_a_number() -> None:
-    assert check_name("microduck", kind="flock") == "microduck"
+def test_a_team_may_be_called_after_an_adapter_but_not_after_a_number() -> None:
+    assert check_name("microduck", kind="team") == "microduck"
     with pytest.raises(RegistryError, match="simulated ducks"):
-        check_name("4", kind="flock")
+        check_name("4", kind="team")
 
 
 def test_the_spec_is_normalised_and_a_bad_one_keeps_the_adapters_own_words() -> None:
@@ -161,7 +159,7 @@ def test_the_door_still_refuses_a_spec_that_does_not_parse(tmp_path: Path) -> No
 
 
 def _shelve(tmp_path: Path, name: str, spec: str, **fields: object) -> None:
-    """A robot written to the file as an older quackd, a hand or a lost adapter left it."""
+    """A robot written to the file as an older Roboglot, a hand or a lost adapter left it."""
     path = tmp_path / "robots.json"
     stored = json.loads(path.read_text(encoding="utf-8"))
     stored["robots"][name] = {"spec": spec, **fields}
@@ -175,16 +173,16 @@ def _shelve(tmp_path: Path, name: str, spec: str, **fields: object) -> None:
         (
             "microduck:websocket",
             "unknown backend 'websocket' for microduck",
-            "quackd robot edit kitchen --spec microduck:<backend>",
+            "roboglot robot edit kitchen --spec microduck:<backend>",
         ),
-        # an adapter not installed here: a third party's, or one a newer quackd publishes
-        ("acme:arm", "unknown adapter 'acme'", "install the package that provides acme, quackd"),
+        # an adapter not installed here: a third party's, or one a newer Roboglot publishes
+        ("acme:arm", "unknown adapter 'acme'", "install the package that provides acme, roboglot"),
     ],
 )
-def test_a_robot_this_quackd_cannot_build_no_longer_locks_the_file(
+def test_a_robot_this_roboglot_cannot_build_no_longer_locks_the_file(
     tmp_path: Path, spec: str, why: str, fix: str
 ) -> None:
-    """One such robot used to make every read of the file refuse, `quackd robot remove` among
+    """One such robot used to make every read of the file refuse, `roboglot robot remove` among
     them, until its entry was deleted by hand. It reads, edits and removes like any other, the
     robot beside it resolves, and using it is refused by its name, with the fix."""
     reg = Registry(tmp_path)
@@ -200,10 +198,10 @@ def test_a_robot_this_quackd_cannot_build_no_longer_locks_the_file(
     with pytest.raises(AdapterError) as refused:
         resolve_robot_ref("kitchen", reg)
     said = str(refused.value)
-    assert said.startswith(f"kitchen is registered as {spec}, which this quackd cannot build ("), (
-        said
-    )
-    assert why in said and fix in said and said.endswith(", or quackd robot remove kitchen"), said
+    assert said.startswith(
+        f"kitchen is registered as {spec}, which this Roboglot cannot build ("
+    ), said
+    assert why in said and fix in said and said.endswith(", or roboglot robot remove kitchen"), said
 
     # an edit that leaves the spec alone keeps it as written, and remove forgets it
     assert reg.update_robot("kitchen", {"note": "still the old one"}).spec == spec
@@ -211,7 +209,7 @@ def test_a_robot_this_quackd_cannot_build_no_longer_locks_the_file(
     assert list(reg.robots()) == ["duck-a"]
 
 
-def test_an_edit_of_the_spec_mends_a_robot_this_quackd_cannot_build(tmp_path: Path) -> None:
+def test_an_edit_of_the_spec_mends_a_robot_this_roboglot_cannot_build(tmp_path: Path) -> None:
     reg = Registry(tmp_path)
     reg.add_robot(_entry())
     _shelve(tmp_path, "kitchen", "microduck:websocket", address="tcp://127.0.0.1:9870")
@@ -224,9 +222,9 @@ def test_a_pilot_the_shelf_cannot_resolve_is_kept_rather_than_refused() -> None:
     """The door refuses one of these and reading one never does.
 
     `update_robot` reads every entry before it writes one, so an entry refused on the way in
-    would be refused by `quackd robot list`, `show`, `remove` and by the `quackd robot edit`
+    would be refused by `roboglot robot list`, `show`, `remove` and by the `roboglot robot edit`
     that would mend it: one bad line would take the file down and leave no command able to fix
-    it. A vendor quackd drops, or an LLM id a catalogue retires, both arrive that way."""
+    it. A vendor Roboglot drops, or an LLM id a catalogue retires, both arrive that way."""
     assert _entry(llm="hal9000").llm == "hal9000"
 
 
@@ -287,7 +285,7 @@ def test_a_file_written_before_the_two_flags_became_one_still_reads(
 
 def test_the_old_keys_are_gone_from_the_file_after_the_next_write(tmp_path: Path) -> None:
     """Reading the old shape is a kindness; writing it back would keep the file in two minds.
-    One `quackd robot edit` -- or anything else that saves -- and the entry is the new shape."""
+    One `roboglot robot edit` -- or anything else that saves -- and the entry is the new shape."""
     (tmp_path / "robots.json").write_text(
         json.dumps(
             {
@@ -347,8 +345,8 @@ def test_an_llm_the_catalogue_no_longer_lists_still_comes_off_the_shelf(tmp_path
     """Strict at the door, lenient on the shelf, and this is the lenient half.
 
     The catalogue moves under a file that does not: a vendor retires an id and every entry
-    naming it is suddenly invalid. A strict read here would make every `quackd robot` command
-    refuse, including the `quackd robot edit` that would fix the entry, because `update_robot`
+    naming it is suddenly invalid. A strict read here would make every `roboglot robot` command
+    refuse, including the `roboglot robot edit` that would fix the entry, because `update_robot`
     reads every robot in the file before it writes one. So the shelf keeps loading. It is the
     run naming that robot that stops, and `test_cli_robot.py` is where that half is held.
     """
@@ -423,7 +421,7 @@ def test_a_rest_pose_survives_the_file_and_a_file_written_without_one_still_load
     tmp_path: Path,
 ) -> None:
     """A robots.json written before arms were parked has no `rest_pose` key at all, and
-    upgrading quackd must not mean editing it: the field is absent rather than null, and
+    upgrading Roboglot must not mean editing it: the field is absent rather than null, and
     every robot in that file has to keep loading, with no pose recorded for it."""
     reg = Registry(tmp_path)
     reg.add_robot(_entry("arm", "lerobot:real", rest_pose=_FOLDED))
@@ -636,7 +634,7 @@ _RELEASED_0_13 = {
 def test_a_robot_that_names_no_board_is_written_the_way_0_13_can_still_read(
     tmp_path: Path,
 ) -> None:
-    """Two installs on one machine share one ~/.quackd, and every write saves every robot. A
+    """Two installs on one machine share one ~/.roboglot, and every write saves every robot. A
     registry that never named a board must not become a file 0.13 refuses because this version
     wrote `"host": null` into each entry, by an add, an edit of a note, or a board forgotten."""
     reg = Registry(tmp_path)
@@ -695,14 +693,14 @@ _SIDE = "http://arm:9873/side.jpg"
 
 def test_one_camera_is_stored_as_a_string_and_several_as_a_list(tmp_path: Path) -> None:
     """The string form is not a leftover: a robot with one camera has to write a file an
-    older quackd can still read, so the list shape appears only when there is a second."""
+    older Roboglot can still read, so the list shape appears only when there is a second."""
     reg = Registry(tmp_path)
     reg.add_robot(_entry("arm", "lerobot:real", camera_url=_TOP))
     one = Registry(tmp_path).robot("arm")
     assert one.camera_url == _TOP
     assert one.camera_urls == (_TOP,), "everything reads camera_urls, which is always a tuple"
     stored = json.loads((tmp_path / "robots.json").read_text(encoding="utf-8"))
-    assert stored["robots"]["arm"]["camera_url"] == _TOP, "an older quackd reads this file too"
+    assert stored["robots"]["arm"]["camera_url"] == _TOP, "an older Roboglot reads this file too"
 
     reg.update_robot("arm", {"camera_url": [_TOP, _SIDE]})
     both = Registry(tmp_path).robot("arm")
@@ -749,7 +747,7 @@ def test_a_second_camera_is_refused_on_a_body_that_reads_one(tmp_path: Path) -> 
             "microduck:mock takes one camera url; only lerobot:real and lerobot:mujoco take several"
         ),
     ):
-        _entry("duck-a", "microduck:mock", camera_url=["http://duck:1", "http://duck:2"])
+        _entry("duck-a", "microduck:mock", camera_url=["http://glot:1", "http://glot:2"])
     (tmp_path / "robots.json").write_text(
         json.dumps(
             {
@@ -757,7 +755,7 @@ def test_a_second_camera_is_refused_on_a_body_that_reads_one(tmp_path: Path) -> 
                 "robots": {
                     "duck-a": {
                         "spec": "microduck:mock",
-                        "camera_url": ["http://duck:1", "http://duck:2"],
+                        "camera_url": ["http://glot:1", "http://glot:2"],
                     }
                 },
             }
@@ -786,7 +784,7 @@ def test_adapter_kwargs_carries_every_camera_and_a_flag_replaces_the_whole_set(
     assert resolve_robot_ref("lerobot:real", reg).adapter_kwargs()["camera_url"] == ()
 
 
-# ── flocks ──────────────────────────────────────────────────────────────────────────────
+# ── teams ──────────────────────────────────────────────────────────────────────────────
 
 
 def _pair(tmp_path: Path) -> Registry:
@@ -797,103 +795,103 @@ def _pair(tmp_path: Path) -> Registry:
     return reg
 
 
-def test_a_flock_keeps_the_order_you_listed_its_robots_in(tmp_path: Path) -> None:
+def test_a_team_keeps_the_order_you_listed_its_robots_in(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["arm", "duck-a"]))
+    reg.add_team(StoredTeam(name="kitchen", members=["arm", "duck-a"]))
     assert list(Registry(tmp_path).roster("kitchen")) == ["arm", "duck-a"]
 
 
-def test_a_flock_may_only_name_robots_that_are_registered(tmp_path: Path) -> None:
+def test_a_team_may_only_name_robots_that_are_registered(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
     with pytest.raises(UnknownRobot, match="ghost"):
-        reg.add_flock(StoredFlock(name="kitchen", members=["duck-a", "ghost"]))
+        reg.add_team(StoredTeam(name="kitchen", members=["duck-a", "ghost"]))
 
 
-def test_a_flock_may_not_list_one_robot_twice_or_hold_nine(tmp_path: Path) -> None:
+def test_a_team_may_not_list_one_robot_twice_or_hold_nine(tmp_path: Path) -> None:
     with pytest.raises(ValidationError, match="listed twice"):
-        StoredFlock(name="k", members=["duck-a", "duck-a"])
+        StoredTeam(name="k", members=["duck-a", "duck-a"])
     with pytest.raises(ValidationError, match="at most 8"):
-        StoredFlock(name="k", members=[f"duck-{i}" for i in range(9)])
+        StoredTeam(name="k", members=[f"duck-{i}" for i in range(9)])
 
 
-def test_two_flocks_may_not_share_a_name(tmp_path: Path) -> None:
+def test_two_teams_may_not_share_a_name(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a"]))
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a"]))
     with pytest.raises(RegistryError, match="already exists"):
-        reg.add_flock(StoredFlock(name="kitchen", members=["duck-b"]))
+        reg.add_team(StoredTeam(name="kitchen", members=["duck-b"]))
 
 
-def test_an_unknown_flock_is_one_line(tmp_path: Path) -> None:
-    with pytest.raises(UnknownFlock, match="no flock called 'nope'"):
-        Registry(tmp_path).flock("nope")
+def test_an_unknown_team_is_one_line(tmp_path: Path) -> None:
+    with pytest.raises(UnknownTeam, match="no team called 'nope'"):
+        Registry(tmp_path).team("nope")
 
 
 def test_edit_adds_removes_describes_and_renames(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a"]))
-    reg.update_flock("kitchen", add=["arm"], description="the two by the sink")
-    assert reg.flock("kitchen").members == ["duck-a", "arm"]
-    reg.update_flock("kitchen", remove=["duck-a"])
-    assert reg.flock("kitchen").members == ["arm"]
-    reg.update_flock("kitchen", rename="sink")
-    assert reg.get_flock("kitchen") is None
-    assert reg.flock("sink").members == ["arm"]
-    assert reg.update_flock("sink", description="").description is None
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a"]))
+    reg.update_team("kitchen", add=["arm"], description="the two by the sink")
+    assert reg.team("kitchen").members == ["duck-a", "arm"]
+    reg.update_team("kitchen", remove=["duck-a"])
+    assert reg.team("kitchen").members == ["arm"]
+    reg.update_team("kitchen", rename="sink")
+    assert reg.get_team("kitchen") is None
+    assert reg.team("sink").members == ["arm"]
+    assert reg.update_team("sink", description="").description is None
 
 
 def test_edit_refuses_a_member_it_already_has_or_never_had(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a"]))
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a"]))
     with pytest.raises(RegistryError, match="already in kitchen"):
-        reg.update_flock("kitchen", add=["duck-a"])
+        reg.update_team("kitchen", add=["duck-a"])
     with pytest.raises(RegistryError, match="not in kitchen"):
-        reg.update_flock("kitchen", remove=["arm"])
+        reg.update_team("kitchen", remove=["arm"])
 
 
-def test_deleting_a_flock_leaves_its_robots_registered(tmp_path: Path) -> None:
+def test_deleting_a_team_leaves_its_robots_registered(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a", "arm"]))
-    reg.delete_flock("kitchen")
-    assert reg.get_flock("kitchen") is None
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a", "arm"]))
+    reg.delete_team("kitchen")
+    assert reg.get_team("kitchen") is None
     assert set(reg.robots()) == {"duck-a", "duck-b", "arm"}
 
 
 # ── the one broken state ────────────────────────────────────────────────────────────────
 
 
-def test_removing_a_robot_a_flock_names_is_refused_and_force_drops_it(tmp_path: Path) -> None:
+def test_removing_a_robot_a_team_names_is_refused_and_force_drops_it(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a", "arm"]))
-    reg.add_flock(StoredFlock(name="garage", members=["duck-a"]))
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a", "arm"]))
+    reg.add_team(StoredTeam(name="garage", members=["duck-a"]))
     with pytest.raises(RobotInUse, match="garage, kitchen"):
         reg.remove_robot("duck-a")
     assert reg.get_robot("duck-a") is not None, "a refused remove removes nothing"
     assert reg.remove_robot("duck-a", force=True) == ["garage", "kitchen"]
     assert reg.get_robot("duck-a") is None
-    assert reg.flock("kitchen").members == ["arm"]
-    assert reg.flock("garage").members == []
+    assert reg.team("kitchen").members == ["arm"]
+    assert reg.team("garage").members == []
 
 
 def test_a_dangling_member_is_reported_and_refuses_to_run(tmp_path: Path) -> None:
-    """A hand-edited file is the only way in, and it must not turn into a smaller flock."""
+    """A hand-edited file is the only way in, and it must not turn into a smaller team."""
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen", members=["duck-a", "arm"]))
+    reg.add_team(StoredTeam(name="kitchen", members=["duck-a", "arm"]))
     (tmp_path / "robots.json").write_text(
         json.dumps({"version": 1, "robots": {"arm": {"spec": "lerobot:mock"}}}), encoding="utf-8"
     )
-    flock = reg.flock("kitchen")
-    assert reg.missing_members(flock) == ["duck-a"]
-    assert flock.public(["duck-a"])["runnable"] is False
-    with pytest.raises(FlockNotRunnable, match="no longer registered"):
+    team = reg.team("kitchen")
+    assert reg.missing_members(team) == ["duck-a"]
+    assert team.public(["duck-a"])["runnable"] is False
+    with pytest.raises(TeamNotRunnable, match="no longer registered"):
         reg.roster("kitchen")
-    reg.update_flock("kitchen", remove=["duck-a"])
+    reg.update_team("kitchen", remove=["duck-a"])
     assert list(reg.roster("kitchen")) == ["arm"], "removing a dangling member is the repair"
 
 
-def test_an_empty_flock_says_how_to_fill_it(tmp_path: Path) -> None:
+def test_an_empty_team_says_how_to_fill_it(tmp_path: Path) -> None:
     reg = _pair(tmp_path)
-    reg.add_flock(StoredFlock(name="kitchen"))
-    with pytest.raises(FlockNotRunnable, match="has no robots"):
+    reg.add_team(StoredTeam(name="kitchen"))
+    with pytest.raises(TeamNotRunnable, match="has no robots"):
         reg.roster("kitchen")
 
 
@@ -915,9 +913,9 @@ def test_a_reference_is_the_registry_then_a_spec_then_one_line(tmp_path: Path) -
         resolve_robot_ref("ghost:nope", reg)
 
 
-async def test_a_probe_fails_a_robot_this_quackd_cannot_build_before_its_backend() -> None:
+async def test_a_probe_fails_a_robot_this_roboglot_cannot_build_before_its_backend() -> None:
     """Ahead of the backends a probe declines, which are read off the stored spec's text:
-    `acme:mujoco` is not a physics model to skip, it is a body this quackd does not have."""
+    `acme:mujoco` is not a physics model to skip, it is a body this Roboglot does not have."""
     result = await probe_entry(_entry("kitchen", "acme:mujoco"))
     assert result.reachable is False and "unknown adapter 'acme'" in result.detail, result
 
@@ -959,7 +957,7 @@ async def test_a_probe_times_out_rather_than_hanging(monkeypatch: pytest.MonkeyP
         async def close(self) -> None:
             return None
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", lambda *a, **k: Slow())
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *a, **k: Slow())
     result = await probe_entry(_entry(), timeout_s=0.05)
     assert result.reachable is False and "timed out" in result.detail
 
@@ -975,7 +973,7 @@ def _hand_back(monkeypatch: pytest.MonkeyPatch, arm: Any, seen: dict[str, Any]) 
 
     `probe_entry` imports `make_adapter` inside the call, so the factory's module attribute
     is the seam: there is no other way to hand a probe a body it did not make itself."""
-    from quackd_lerobot import LeRobotAdapter
+    from roboglot_lerobot import LeRobotAdapter
 
     def fake_make_adapter(spec: Any, **kwargs: Any) -> Any:
         seen.clear()
@@ -983,20 +981,20 @@ def _hand_back(monkeypatch: pytest.MonkeyPatch, arm: Any, seen: dict[str, Any]) 
         seen.update(kwargs)
         return LeRobotAdapter(arm)
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", fake_make_adapter)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", fake_make_adapter)
 
 
 async def test_a_probe_hands_the_rest_pose_over_and_drives_the_arm_nowhere(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A probe reads and lets go, so it must never move the arm: `quackd robot list --probe`
+    """A probe reads and lets go, so it must never move the arm: `roboglot robot list --probe`
     is something you type while the arm is holding something, and a probe that parked it
     would put whatever it held on the floor.
 
     The pose still has to reach the adapter, because it is what decides whether torque may
     drop when the probe disconnects. An arm away from it keeps torque, and the row says so on
     the same line that says the arm answered: somebody has to hold it before the power goes."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     seen: dict[str, Any] = {}
     arm = LeRobotMock(rest_pose=_FOLDED)
@@ -1024,15 +1022,15 @@ async def test_a_probe_that_fails_still_says_the_arm_was_left_holding_itself_up(
     line the reader sees.
 
     And the direction has to survive: there are two notes, one saying the arm is being held
-    and one saying quackd could not hold it and let go. Printing the first for the second
+    and one saying Roboglot could not hold it and let go. Printing the first for the second
     tells somebody an arm is safe at the moment it is not."""
-    from quackd_lerobot.mock import LeRobotMock
+    from roboglot_lerobot.mock import LeRobotMock
 
     arm = LeRobotMock(rest_pose=_FOLDED)
 
     def build(spec: Any, **kwargs: Any) -> Any:
         """The probe's own seam, with a health call that never answers."""
-        from quackd_lerobot import LeRobotAdapter
+        from roboglot_lerobot import LeRobotAdapter
 
         class Wedged(LeRobotAdapter):
             async def health(self) -> Any:
@@ -1040,7 +1038,7 @@ async def test_a_probe_that_fails_still_says_the_arm_was_left_holding_itself_up(
 
         return Wedged(arm)
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", build)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", build)
     result = await probe_entry(_entry("arm", "lerobot:real", rest_pose=_FOLDED))
 
     assert result.reachable is False
@@ -1051,7 +1049,7 @@ async def test_a_probe_that_fails_still_says_the_arm_was_left_holding_itself_up(
     arm2 = LeRobotMock(rest_pose=_FOLDED)
     seen2: dict[str, Any] = {}
     _hand_back(monkeypatch, arm2, seen2)
-    released = "quackd could not keep torque on, so the arm was released where it stood"
+    released = "Roboglot could not keep torque on, so the arm was released where it stood"
 
     async def close_and_say() -> None:
         arm2.close_note = released
@@ -1069,7 +1067,7 @@ async def test_a_probe_on_an_arm_already_at_its_pose_says_nothing_about_torque(
 ) -> None:
     """The other half of the same rule: the torque line is news, and an arm that is where it
     rests is let go of the way it always was, with nothing added to the row."""
-    from quackd_lerobot.mock import REST, LeRobotMock
+    from roboglot_lerobot.mock import REST, LeRobotMock
 
     seen: dict[str, Any] = {}
     arm = LeRobotMock(rest_pose=dict(REST))
@@ -1099,8 +1097,8 @@ async def test_a_probe_whose_close_could_not_finish_its_release_says_it_was_lett
     other way round from what the close was doing. It says the close was letting go now. The
     motors stop answering torque writes once the connect is done, as a supply that browns out
     under the release would leave them."""
-    from quackd_lerobot.mock import REST, LeRobotMock
-    from quackd_lerobot.verbs import JOINTS
+    from roboglot_lerobot.mock import REST, LeRobotMock
+    from roboglot_lerobot.verbs import JOINTS
 
     seen: dict[str, Any] = {}
     arm = LeRobotMock(rest_pose=dict(REST))

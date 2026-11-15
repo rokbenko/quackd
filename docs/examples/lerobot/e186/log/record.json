@@ -1,6 +1,6 @@
 {
   "command": [
-    "quackd",
+    "roboglot",
     "drive",
     "--robot",
     "arm-01",

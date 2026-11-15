@@ -1,4 +1,4 @@
-"""`quackd memory show|add|clear` and the memory flags on `run`.
+"""`roboglot memory show|add|clear` and the memory flags on `run`.
 
 The command group shipped with no test of its own, and two of its three subcommands were
 wrong in ways only a person running them would see: a bad `--robot` printed a traceback
@@ -15,9 +15,9 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.agent.transcript import Transcript
-from quackd.cli import app
-from quackd.memory import RobotMemory
+from roboglot.agent.transcript import Transcript
+from roboglot.cli import app
+from roboglot.memory import RobotMemory
 
 runner = CliRunner()
 
@@ -111,7 +111,7 @@ def test_no_memory_writes_nothing_at_all(tmp_path: Path) -> None:
 
 
 def _run_start(tmp_path: Path, *argv: str) -> dict[str, Any]:
-    """What the pilot of one `quackd run` on the mock duck was sent, from its transcript."""
+    """What the pilot of one `roboglot run` on the mock duck was sent, from its transcript."""
     runs = tmp_path / "runs"
     common = ["--llm", "fake", "--robot", "microduck:mock", "--runs-dir", str(runs)]
     result = runner.invoke(app, ["run", *argv, *common, *_mem(tmp_path)])
@@ -126,7 +126,7 @@ def _run_start(tmp_path: Path, *argv: str) -> dict[str, Any]:
 def test_a_run_with_memory_off_says_nothing_about_remember(tmp_path: Path, task: list[str]) -> None:
     """`--no-memory` offers no `remember`, and a `--goal` run's own task still told the pilot to
     call it twice: in the last step of its strategy and in a Memory section under it. A task
-    file is its author's words and keeps whatever it asks for (ADR-0025). What quackd writes
+    file is its author's words and keeps whatever it asks for (ADR-0025). What Roboglot writes
     itself says nothing about a tool the run does not have, for a goal and a file alike."""
     start = _run_start(tmp_path, *task, "--no-memory")
     assert start["memory"] is None and "remember" not in start["tools"]

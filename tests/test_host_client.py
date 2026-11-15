@@ -1,4 +1,4 @@
-"""quackd's client for the Jetson host daemon, driven against a fake of the protocol on loopback.
+"""Roboglot's client for the Jetson host daemon, driven against a fake of the protocol on loopback.
 
 Every test here talks real HTTP to `tests/fake_jetson_hostd.py` on 127.0.0.1, because the
 things most worth proving are on the wire: which header the token rides in, what a 503 body
@@ -19,8 +19,8 @@ from typing import Any
 
 import pytest
 
-from quackd import host as host_module
-from quackd.host import (
+from roboglot import host as host_module
+from roboglot.host import (
     BOARD_TIMEOUT_S,
     DEFAULT_PORT,
     DETECT_TIMEOUT_S,
@@ -95,8 +95,8 @@ def _longest_piece_of(secret: str, text: str) -> int:
 def test_the_constants_are_the_ones_the_protocol_names() -> None:
     """The daemon spells these too, and a drift on either side is a board that cannot be
     reached, so they are pinned here to the protocol's own values."""
-    assert (PROTOCOL, PROTOCOL_VERSION, DEFAULT_PORT) == ("quackd-jetson-hostd", 1, 9874)
-    assert (TOKEN_ENV, TOKEN_HEADER) == ("QUACKD_HOST_TOKEN", "X-Quackd-Token")
+    assert (PROTOCOL, PROTOCOL_VERSION, DEFAULT_PORT) == ("roboglot-jetson-hostd", 1, 9874)
+    assert (TOKEN_ENV, TOKEN_HEADER) == ("ROBOGLOT_HOST_TOKEN", "X-Roboglot-Token")
     assert (HELLO_TIMEOUT_S, SNAPSHOT_TIMEOUT_S, DETECT_TIMEOUT_S, BOARD_TIMEOUT_S) == (
         2.0,
         1.0,
@@ -128,7 +128,7 @@ def test_the_module_imports_nothing_heavier_than_pil() -> None:
         "ipaddress",
         "json",
         "math",
-        "os",  # `resolve_host` reads QUACKD_HOST and QUACKD_HOST_TOKEN
+        "os",  # `resolve_host` reads ROBOGLOT_HOST and ROBOGLOT_HOST_TOKEN
         "socket",
         "threading",
         "typing",
@@ -277,7 +277,7 @@ def test_a_laptop_running_the_daemon_is_not_a_tegra(hostd: FakeHostd) -> None:
     assert not hello.is_tegra and hello.board_model is None
 
 
-@pytest.mark.parametrize("protocol", ["quackd-open-duck-bridge", None, 7])
+@pytest.mark.parametrize("protocol", ["roboglot-open-duck-bridge", None, 7])
 def test_a_different_protocol_is_refused_as_the_wrong_port(
     hostd: FakeHostd, protocol: object
 ) -> None:
@@ -287,13 +287,13 @@ def test_a_different_protocol_is_refused_as_the_wrong_port(
         hostd.hello["protocol"] = protocol
     error = _raises(HostClient(hostd.address).hello)
     message = str(error)
-    assert f"{hostd.address} is not quackd-jetson-hostd" in message
-    assert "--host" in message and "quackd_jetson_hostd.py" in message
+    assert f"{hostd.address} is not roboglot-jetson-hostd" in message
+    assert "--host" in message and "roboglot_jetson_hostd.py" in message
 
 
 @pytest.mark.parametrize(
     ("version", "update"),
-    [(2, "update quackd on this machine"), (0, "update the daemon on the board")],
+    [(2, "update Roboglot on this machine"), (0, "update the daemon on the board")],
 )
 def test_a_protocol_version_mismatch_says_which_side_to_update(
     hostd: FakeHostd, version: int, update: str
@@ -364,7 +364,7 @@ def test_a_hello_of_the_wrong_shape_is_a_host_error_naming_the_host_and_the_fiel
 def test_something_else_on_the_port_is_named_as_not_the_daemon(hostd: FakeHostd) -> None:
     hostd.replies["/hello"] = CannedReply(404, b'{"ok": false, "reason": "nothing at /hello"}')
     error = _raises(HostClient(hostd.address).hello)
-    assert f"{hostd.address} is not quackd-jetson-hostd" in str(error)
+    assert f"{hostd.address} is not roboglot-jetson-hostd" in str(error)
     assert error.status == 404
 
 
@@ -554,7 +554,7 @@ def test_a_frame_without_an_age_stamp_is_taken_with_no_age(hostd: FakeHostd) -> 
 
 
 def test_camera_health_has_the_shape_doctor_renders_for_the_open_duck() -> None:
-    from quackd_open_duck.bridge import OpenDuckBridge
+    from roboglot_open_duck.bridge import OpenDuckBridge
 
     duck = OpenDuckBridge(camera_url="http://duck.local:8081/snapshot.jpg").camera_health()
     assert set(HostClient("jetson.local").camera_health()) == set(duck)
@@ -746,7 +746,7 @@ def test_the_board_texts_read_through_doctors_own_parsers(hostd: FakeHostd) -> N
     """The daemon parses nothing so that one set of parsers reads every board. These are the
     assertions `doctor` makes of a board built from files, made of the same texts arriving over
     the network instead."""
-    from quackd import doctor
+    from roboglot import doctor
 
     board = HostClient(hostd.address).board()
     release = board.files["/etc/nv_tegra_release"]

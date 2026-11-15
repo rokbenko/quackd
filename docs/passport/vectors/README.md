@@ -2,11 +2,11 @@
 
 These files are the conformance suite of [the specification](../spec.md), version 1.0:
 passports, passports their owners signed, and talk messages, each with the result a reader must
-reach. A reader that gets every row right reads passports the way quackd does, whatever language
+reach. A reader that gets every row right reads passports the way Roboglot does, whatever language
 it is written in.
 
 `scripts/passport_vectors.py` writes them from the five test keys below, and it signs with the
-`cryptography` library directly rather than through quackd's own passport module, so quackd is
+`cryptography` library directly rather than through Roboglot's own passport module, so Roboglot is
 checked against a second implementation of the same rules. Ed25519 signatures are deterministic,
 so running it again writes the same bytes, and `--check` fails when a file would change.
 

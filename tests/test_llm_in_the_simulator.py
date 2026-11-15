@@ -5,9 +5,9 @@ loop, the executor and the world. Nothing proved that an actual LLM can be hande
 and get anywhere in it, which is the one claim the README makes that had no test under it.
 
 The tests marked `live_llm` cost money and need `OPENAI_API_KEY`, so they are opt-in twice over:
-the marker and `QUACKD_LIVE_LLM=1`. CI sets neither. Run them with
+the marker and `ROBOGLOT_LIVE_LLM=1`. CI sets neither. Run them with
 
-    QUACKD_LIVE_LLM=1 uv run pytest tests/test_llm_in_the_simulator.py -m live_llm
+    ROBOGLOT_LIVE_LLM=1 uv run pytest tests/test_llm_in_the_simulator.py -m live_llm
 
 and keep them cheap: the budgets here are four steps, which is a handful of calls, not a sweep.
 The first test needs no key and no network and runs everywhere, because the thing most likely
@@ -31,15 +31,15 @@ import pytest
 
 pytest.importorskip("mujoco")
 
-from quackd.adapters.factory import RobotSpec, registry_for
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.prompts import build_system_prompt
-from quackd.duckfile.parser import duck_from_goal, load_duck
-from quackd.duckfile.schema import Budgets
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd_microduck import MicroduckAdapter
-from quackd_microduck.sim3d.world import MujocoWorld
-from quackd_microduck.transports.mujoco import MujocoTransport
+from roboglot.adapters.factory import RobotSpec, registry_for
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.prompts import build_system_prompt
+from roboglot.glotfile.parser import glot_from_goal, load_glot
+from roboglot.glotfile.schema import Budgets
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot_microduck import MicroduckAdapter
+from roboglot_microduck.sim3d.world import MujocoWorld
+from roboglot_microduck.transports.mujoco import MujocoTransport
 from tests.gl import require_render
 
 #: The stand-in body: no download, no ONNX, and the gait is not what is under test here.
@@ -50,12 +50,12 @@ MAX_STEPS = 4
 
 
 def _live_or_skip() -> None:
-    if os.environ.get("QUACKD_LIVE_LLM") != "1":
-        pytest.skip("live LLM tests are opt-in: set QUACKD_LIVE_LLM=1")
+    if os.environ.get("ROBOGLOT_LIVE_LLM") != "1":
+        pytest.skip("live LLM tests are opt-in: set ROBOGLOT_LIVE_LLM=1")
     # The CLI loads `.env` at startup (cli.py) and a developer's key usually lives there
     # rather than in the shell, so look there too before deciding there is no key. Both
     # places the CLI looks, in the CLI's own order: the folder the command was typed in
-    # first, then the walk up from quackd's own directory.
+    # first, then the walk up from Roboglot's own directory.
     try:
         from dotenv import load_dotenv
 
@@ -69,7 +69,7 @@ def _live_or_skip() -> None:
 
 
 def _provider(goal: str | None = None):
-    """`QUACKD_LIVE_LLM_MODEL` points these at another LLM.
+    """`ROBOGLOT_LIVE_LLM_MODEL` points these at another LLM.
 
     Worth doing at least once per LLM family, because the wire is not the same for all of
     them: `gpt-6-astra` refuses function tools on Chat Completions and the provider moves the
@@ -77,9 +77,9 @@ def _provider(goal: str | None = None):
     different shape of history. These tests are what proves that path carries a real run and
     not just a first call.
     """
-    from quackd.agent.providers.factory import make_provider
+    from roboglot.agent.providers.factory import make_provider
 
-    return make_provider("openai", llm_id=os.environ.get("QUACKD_LIVE_LLM_MODEL"), goal=goal)
+    return make_provider("openai", llm_id=os.environ.get("ROBOGLOT_LIVE_LLM_MODEL"), goal=goal)
 
 
 # ── the prompt, which needs no key ──────────────────────────────────────────────────────
@@ -94,7 +94,7 @@ def test_the_physics_prompt_tells_the_llm_the_arena_is_empty() -> None:
     vocabulary would reasonably scan for somebody and never stop, so the backend's own note is
     the only place that can say otherwise, and this pins that it does.
     """
-    duck = load_duck("find-and-kick")
+    duck = load_glot("find-and-kick")
     prompt = build_system_prompt(duck, [], "mujoco", adapter="microduck")
     assert "Nobody is in the arena with you" in prompt
     assert "no person here to find" in prompt
@@ -110,9 +110,9 @@ def test_the_arm_simulator_is_not_told_about_the_ducks_arena() -> None:
     ball and a person band to be warned off. The arm's simulator gets its own note instead:
     a table, cameras that are rendered views, and physics nobody measured on an SO-101, so a
     grasp that works there is not read as proof that the arm can make it."""
-    from quackd_lerobot import lerobot_manifest
+    from roboglot_lerobot import lerobot_manifest
 
-    duck = load_duck("find-and-kick")
+    duck = load_glot("find-and-kick")
     seeing = lerobot_manifest("mujoco", camera=True)
     arm = build_system_prompt(duck, [], "mujoco", seeing, adapter="lerobot")
     assert "arena" not in arm
@@ -152,9 +152,9 @@ async def test_a_real_llm_drives_the_physics_simulator(tmp_path: Path) -> None:
     """
     _live_or_skip()
     transport = MujocoTransport(seed=0, body=BODY)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=load_duck("hello-world"),
+            duck=load_glot("hello-world"),
             provider=_provider(),
             transport=MicroduckAdapter(transport),
             detector=ColorBlobDetector(),
@@ -187,12 +187,12 @@ async def test_a_real_llm_gives_up_on_a_person_who_is_not_there(tmp_path: Path) 
         probe.close()
     transport = MujocoTransport(seed=0, body=BODY)
     goal = "find the person in the arena and walk up to them"
-    # As `quackd run --goal` does it (cli.py): the goal becomes the duck. Handing a real duck
+    # As `roboglot run --goal` does it (cli.py): the goal becomes the duck. Handing a real duck
     # a `goal=` does nothing, because only the FakeProvider reads that argument.
     safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=duck_from_goal(goal, safe),
+            duck=glot_from_goal(goal, safe),
             provider=_provider(goal=goal),
             transport=MicroduckAdapter(transport),
             detector=ColorBlobDetector(),
@@ -232,7 +232,7 @@ async def test_a_real_llm_refuses_what_this_body_cannot_carry(tmp_path: Path) ->
     transport = MujocoTransport(seed=0, body=BODY)
     goal = "pick up the laundry basket by the wall and carry it to the door"
     safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
-    duck = duck_from_goal(goal, safe)
+    duck = glot_from_goal(goal, safe)
     duck = duck.model_copy(
         update={
             "frontmatter": duck.frontmatter.model_copy(
@@ -241,7 +241,7 @@ async def test_a_real_llm_refuses_what_this_body_cannot_carry(tmp_path: Path) ->
             )
         }
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=_provider(goal=goal),
@@ -262,7 +262,7 @@ async def test_a_real_llm_refuses_what_this_body_cannot_carry(tmp_path: Path) ->
 
 @pytest.mark.live_llm
 async def test_a_real_llm_gets_past_the_gate_on_the_readmes_own_goal(tmp_path: Path) -> None:
-    """`quackd run --goal "find the ball and kick it"` is the goal the README's opening
+    """`roboglot run --goal "find the ball and kick it"` is the goal the README's opening
     paragraph names and the first one it shows for a duck, and #25 measured a local LLM
     answering `uncertain` to it five times in six while the shipped `find-and-kick` file
     passed six in six. Same body, same words, same
@@ -286,9 +286,9 @@ async def test_a_real_llm_gets_past_the_gate_on_the_readmes_own_goal(tmp_path: P
     finally:
         probe.close()
     goal = "find the ball and kick it"
-    # exactly as `quackd run --goal` builds it (cli.py): every safe verb this body has
+    # exactly as `roboglot run --goal` builds it (cli.py): every safe verb this body has
     safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
-    duck = duck_from_goal(goal, safe)
+    duck = glot_from_goal(goal, safe)
     duck = duck.model_copy(
         update={
             "frontmatter": duck.frontmatter.model_copy(
@@ -296,7 +296,7 @@ async def test_a_real_llm_gets_past_the_gate_on_the_readmes_own_goal(tmp_path: P
             )
         }
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=_provider(goal=goal),
@@ -318,8 +318,8 @@ async def test_a_real_llm_gets_past_the_gate_on_the_readmes_own_goal(tmp_path: P
 def _moved(run_dir: Path) -> list[str]:
     """Every verb that moved the body and was carried out, as the record has them. A sound is
     not one: a played Microduck may quack in character and still have moved nothing."""
-    from quackd.agent.transcript import Transcript
-    from quackd.verdict import MOVES_THE_BODY
+    from roboglot.agent.transcript import Transcript
+    from roboglot.verdict import MOVES_THE_BODY
 
     events = Transcript.read(run_dir / "transcript.jsonl")
     return [
@@ -354,7 +354,7 @@ async def test_a_played_task_whose_real_result_the_body_cannot_make_stays_infeas
     finally:
         probe.close()
     safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
-    duck = duck_from_goal(goal, safe)
+    duck = glot_from_goal(goal, safe)
     duck = duck.model_copy(
         update={
             "frontmatter": duck.frontmatter.model_copy(
@@ -362,7 +362,7 @@ async def test_a_played_task_whose_real_result_the_body_cannot_make_stays_infeas
             )
         }
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=_provider(goal=goal),
@@ -390,7 +390,7 @@ async def test_a_played_part_moves_the_body(tmp_path: Path) -> None:
         probe.close()
     goal = "You are a cat. Show me."
     safe = [v.name for v in registry_for(SPEC).verbs() if v.safety_class == "safe"]
-    duck = duck_from_goal(goal, safe)
+    duck = glot_from_goal(goal, safe)
     duck = duck.model_copy(
         update={
             "frontmatter": duck.frontmatter.model_copy(
@@ -398,7 +398,7 @@ async def test_a_played_part_moves_the_body(tmp_path: Path) -> None:
             )
         }
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=_provider(goal=goal),

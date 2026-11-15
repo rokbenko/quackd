@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), with two
 headings of its own, Documentation and Known limitations, and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). What a patch, a minor and a major
-mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
+mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](RELEASING.md).
 
 ## [Unreleased]
 
@@ -18,17 +18,39 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Wonder, which Meta calls a preview, and through OpenRouter Claude Fable 5.2 and Gemini 4 Hydrogen.
   Fable 5.2 and Sonnet 5.5 refuse a forced tool call, so they are asked with `auto`, and all three
   new Claude LLMs bind their thinking, so their old frames are trimmed every eight exchanges, as
-  Opus 5.5's are. `quackd list-models` prints them all.
-- **`quackd policy list` names three more policies people ask about, and why none is served.**
+  Opus 5.5's are. `roboglot list-models` prints them all.
+- **`roboglot policy list` names three more policies people ask about, and why none is served.**
   NVIDIA announced GR00T 2 on 2026-11-09 with its code due in December and no weights yet, Runway's
   Praxis-1 is a LeRobot type only on LeRobot's main branch, and NVIDIA's Cosmos 3 policies are
   LeRobot types since 0.7.0 whose base checkpoints' action modules, by LeRobot's own page,
-  "are not trained for a robot yet". GR00T N1.7 is still the GR00T quackd serves.
+  "are not trained for a robot yet". GR00T N1.7 is still the GR00T Roboglot serves.
 
 ### Changed
 
-- **`quackd list-models --kind policy` lists the policy types again, and `--kind all` lists all three
-  kinds.** These are the rows and the `--json` that `quackd policy list` prints, and it still prints
+- **The project is now Roboglot, the communication layer between people and robots, and between
+  robots.** The old one-liner described the first way in rather than what the project is: there
+  are five ways in now, part of it runs on the robot, and Robot Passport is about robots that are
+  not yours. The README opens with *Talk to your robots. Let them talk to each other.*, and PyPI,
+  the `--help` banner and the package docstring carry the short form
+  ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)). The name is Roboglot in prose and
+  `roboglot` wherever it is typed or imported. The command is `roboglot`, `uv pip install roboglot`
+  installs it, and the adapters are `roboglot-microduck` to `roboglot-rosarm`, with extras that
+  keep their names, such as `roboglot[lerobot]`. Imports are `roboglot` and `roboglot_<adapter>`,
+  adapters register under the `roboglot.adapters` entry point, environment variables are
+  `ROBOGLOT_*`, Roboglot keeps what it remembers in `~/.roboglot`, the MCP server is named
+  `roboglot` and the policy server checks `X-Roboglot-Token`. Nothing reads the earlier names, so a
+  home directory, `.env` variables and an MCP configuration from before need renaming to match,
+  and what older entries below say about files in the home directory, the keys 0.23 to 0.28 left
+  there among them, means the renamed one. A robot on an earlier release does not discover one on
+  this release. The browser simulator moves to roboglot.org.
+- **A task file is a `.glot` file, and a group of robots is a team.** A task file ends in `.glot`,
+  and `.task` and `.brief` are read the same way. Its first key, the version of the format, is
+  `glot:`, the bundled tasks live in `tasks/`, and the MCP tool that loads one is
+  `robot_load_glotfile`. A group of robots is a team: `roboglot team` names one, `--team` runs one,
+  a `team:` block shares a task out, `~/.roboglot/teams.json` keeps them, and a team run keeps each
+  robot's record under `robots/` ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)).
+- **`roboglot list-models --kind policy` lists the policy types again, and `--kind all` lists all three
+  kinds.** These are the rows and the `--json` that `roboglot policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
   now follow them, so a script that reads `--kind all --json` gets rows of a third `kind`, `policy`.
 - **Four vendors' defaults moved to a newer LLM, and Jev's pin moved with them.** A bare
@@ -38,7 +60,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   deprecated on 2026-10-31) and `--llm kimi` is `kimi-k3.1-pro` (it was `kimi-k3`). A bare
   `--decision-llm jev` asks `jev-1.14.0`, TypeSafe's newest, where it asked `jev-1.13.0`. The older
   ids that are still served still work by name, and the OpenRouter default stays `openai/gpt-6-sol`.
-  What changes for you: a robot or a `QUACKD_LLM` that names only a vendor now gets the newer LLM,
+  What changes for you: a robot or a `ROBOGLOT_LLM` that names only a vendor now gets the newer LLM,
   at its rate.
 - **The `kev` and `openjev` install lines get Kev 1.0 and OpenJev 0.7.0.** Kev's clones its
   `kev-1.0` tag rather than `main` and asks for `jaredpalmer/kev-4b@v1.0`, the weights Kev 1.0 fixed
@@ -49,7 +71,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   TypeSafe's reference adapter does; OpenJev takes up to 255 options a choice, rides upstream vLLM
   rather than a fork, bills one read where it re-reads an uncertain answer, and answers OpenAI's
   Decisions API as well. The addresses and the LLM ids are unchanged. What changes for you: the
-  install lines the pages print get you those versions. quackd sends these rows what it always has,
+  install lines the pages print get you those versions. Roboglot sends these rows what it always has,
   `local` as their key, which the pages now say a Kev or an OpenJev started with a key of its own
   refuses.
 - **Seventeen ids are refused now, each one deprecated, retired or closing.** `claude-sonnet-4-5`
@@ -59,31 +81,47 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   `mistral-medium-3-5` and `mistral-large-2512` and retired `zai-glm-5-2` and `labs-leanstral-1-5`.
   Kimi closed `kimi-k2.6`, `kimi-k2.7-code` and `kimi-k2.7-code-highspeed` to new users on
   2026-10-31. What changes for you: a run that names one is refused before it connects, with the ids
-  that vendor does take, as an id quackd never carried always was.
+  that vendor does take, as an id Roboglot never carried always was.
 - **`google/gemini-4-hydrogen` takes `google/gemini-3.8-flash`'s place among OpenRouter's rows.**
   The old id still runs, checked against OpenRouter's own LLM list when a run starts, as any
-  OpenRouter id the catalogue does not carry is. What changes for you: `quackd list-models`, TAB
+  OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models`, TAB
   completion and the browser demo no longer offer it, and a run on it asks for its call with `auto`
   rather than insisting on one with `required`.
 
 ### Removed
 
-- **`quackd list-models` is the command again, and `quackd list-llms` is gone.** It lists every kind of
+- **`roboglot list-models` is the command again, and `roboglot list-llms` is gone.** It lists every kind of
   model a run can have, the pilot LLMs, the decision LLMs and with `--kind policy` the policy types,
   which a name for LLMs leaves out. There is no alias, so a script that still types `list-llms` stops
   with `No such command`, which suggests `list-models`, and has to change it. Like 0.32.0's rename, this
   had no release of warning, at the project's owner's word.
 - **The `von` decision LLM.** Its README has said "Von is no longer maintained and these weights
   will not be updated" since 2026-10-17, and its repository is archived now, so its row, its page
-  and its line in `quackd doctor` are gone. What changes for you: `--decision-llm von` is refused as
+  and its line in `roboglot doctor` are gone. What changes for you: `--decision-llm von` is refused as
   an unknown name, and a Von server you still run is reached as
   `--decision-llm local --decision-url http://127.0.0.1:8000`.
 
 ### Fixed
 
+- **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
+  went straight on to the next leg before the walker looked at the shape, so a square was judged
+  from the end of a fifth leg, a whole side from where it began, and passed or failed by a few
+  centimetres either side of the half-metre bound: a body that walks exactly what it is told
+  passed by a fraction of a millimetre, and the README's simulator figure failed at 0.59 m.
+  `tests/test_fake_provider.py` walks a true one now and counts four legs, and the closure the
+  bound's comment quotes is measured again: on seed 0 the trained gait closes 0.09 m from its
+  start and the kinematic stand-in 0.25 m.
+- **`docs/assets/hero3d.py` runs again, and the README's simulator figure is a square.** The
+  script allowed every safe verb, `watch` among them, which a goal may only allow on a run with a
+  decision LLM that can see, so the run was refused before it began; it allows what
+  `roboglot run --goal` does now. The figure 0.8.0 shipped on 2026-09-09 was not a square: by the
+  path it drew its corners turned about 75 degrees, and the fifth leg the walker should never
+  have taken closed the shape as a pentagon, 0.14 m from its start. Recorded again at the same
+  seed, 6, it walks four legs and four right-angle corners and closes 0.11 m from its start, and
+  its caption says Roboglot.
 - **A Mistral LLM with its reasoning on no longer ends a run on its first turn.** Mistral answers
   with `message.content` as a list of chunks then, a thinking chunk and the text, and always so on
-  Z.ai's GLM 5.3, which quackd has carried since 0.13.0. quackd joined that content as a string,
+  Z.ai's GLM 5.3, which Roboglot has carried since 0.13.0. Roboglot joined that content as a string,
   which raised, so the run ended at its first call. The chunks are now read as the turn's text and
   its thinking.
 - **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
@@ -125,28 +163,28 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   Opus 5.5 failed at routing. The pages that said only Opus 5.5 and Fable 5.1 keep up to nine
   exchanges' frames now name all five Claude LLMs that bind their thinking. SECURITY.md and Kev's
   page say what Kev's README now does: `--host 0.0.0.0` moves it off `127.0.0.1`, and `KEV_API_KEY`
-  makes it ask for a key quackd has no way to send.
+  makes it ask for a key Roboglot has no way to send.
 - **The decision LLM pages name the stand-in their tests use.** Each said
   `tests/stub_decision_llm.py` stood in for the server, and that is the example plugin: the client
   is tested against `tests/fake_systemone.py`, installed in place of `typesafe_sdk`, or
   `tests/fake_laya.py` in place of `laya`, and no request crosses a wire.
-- **E210's card no longer says `quackd run` tells you to support the arm while it connects.** It
+- **E210's card no longer says `roboglot run` tells you to support the arm while it connects.** It
   prints no such line. Connecting takes torque off every motor for a moment, so the LeRobot guide
-  says to support the arm when a session starts, and `quackd robot release` and `quackd doctor` say
+  says to support the arm when a session starts, and `roboglot robot release` and `roboglot doctor` say
   so before they connect.
 - **E211 has a log in two parts: with the arm's power supply off, a connect left alone ended in an
   error and one stopped with Ctrl-C ended aborted, and each run folder says how it ended.** A run
   whose connect failed has no robot in its summary, so its log names the robot from the command and
   says its connect failed, rather than printing `None`.
-- **E171 has a log: after a hard kill left the arm holding itself up, `quackd robot release` folded
-  it to its rest pose and let go of it there.** A killed run of a task that ships with quackd now
+- **E171 has a log: after a hard kill left the arm holding itself up, `roboglot robot release` folded
+  it to its rest pose and let go of it there.** A killed run of a task that ships with Roboglot now
   names that task in its log, and a run flown by `--llm fake` is tried with `--llm fake` and says
   that this needs no key and costs nothing, since its pilot is a script and no LLM is asked. The
   arm's page and the examples page no longer say the release has never run on an arm: it has, in
   E117 and E171, while the two questions after a fold that misses have not.
-- **E186 has a log: an empty Enter in `quackd drive` braked the arm partway through a move, 20.4 ms
+- **E186 has a log: an empty Enter in `roboglot drive` braked the arm partway through a move, 20.4 ms
   from the press to the stop.** A session had no way into a log, so `scripts/example_log.py add` now takes a
-  `quackd drive` folder with `--terminal`, what its terminal printed as somebody saved it, since a
+  `roboglot drive` folder with `--terminal`, what its terminal printed as somebody saved it, since a
   session writes none. Its version comes from the session's start and its command from its goals,
   every line typed at its prompt shows under The exact command, and its cost and wait are its goals'
   added up.
@@ -155,12 +193,12 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
   an error when the move gives up first, because the run's own next read of the arm then meets the
   silence. On the arm both took about 1.6 to 1.7 s from the last goal the arm answered.
 - **E117 has a log in two parts: Ctrl-C folded the arm away, and a hard kill left it holding under
-  torque until `quackd robot release` put it down.** A run whose process was killed writes no
+  torque until `roboglot robot release` put it down.** A run whose process was killed writes no
   `summary.json`, so `scripts/example_log.py add` now reads what its `transcript.jsonl` recorded up
   to the kill, and its log says it never ended. The lines typed after a run, saved with `--after`,
-  now follow the run's own line under The exact command, which adds `quackd robot release` to
+  now follow the run's own line under The exact command, which adds `roboglot robot release` to
   E116's log and the monkey's count to E126's.
-- **E126 has a log: a monkey fired 999 random commands at quackd on the mock arm, and none ran
+- **E126 has a log: a monkey fired 999 random commands at Roboglot on the mock arm, and none ran
   outside the contract.** A run on `lerobot:mock` had no arm to film, so `scripts/example_log.py add` takes
   no `--video`, `--gif` or `--speed` for one, and its log says it was not filmed where the GIF would
   be. Its Try it yourself section is the lines that ran, with their paths from a checkout, because
@@ -171,7 +209,7 @@ mean while quackd is 0.x, and which headings make which, is in [RELEASING.md](RE
 
 0.34.0 moves the arm to LeRobot 0.7.0 and adds a family of industrial arms. LeRobot 0.7.0 replaced
 the motor library under the SO-101 with rustypot, one bus for every Feetech and Dynamixel servo, so
-what quackd reads off the arm's bus was read again at the new tag: the words a fault names its joint
+what Roboglot reads off the arm's bus was read again at the new tag: the words a fault names its joint
 in, how long a release over motors that do not answer takes, what a panic in the bus looks like, and
 a second program on the arm's port refused as it opens it, on Linux and macOS too. The policy server
 reads LeRobot 0.7.0 as well, and refuses more of what a checkpoint can ask of the machine it loads on:
@@ -181,7 +219,7 @@ commit. No arm has run any of it, and Known limitations lists what the arm owes.
 An industrial arm on ROS 2 joins as the tenth adapter, `rosarm`, in a package of its own: a UR5e, a
 KUKA LBR iisy or iiwa, or a Yaskawa MotoMini, moved through its own driver and rosbridge one confirmed
 goal at a time
-([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). quackd never
+([ADR-0078](docs/adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). Roboglot never
 powers, enables or un-brakes one, and on a real arm a person answers each move, which `--yes` does
 not. It is rehearsed only: a job in CI runs its transport against a real rosbridge on Jazzy and Humble
 with a stand-in arm, and no controller and no arm have met it.
@@ -191,20 +229,20 @@ to a question that drops an arm, and can no longer. A run on Python 3.11 could h
 heartbeat's cancel was lost. A body can say what it carries on its back, and a task can ask for it
 ([ADR-0079](docs/adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)).
 
-What changes for you: `quackd[lerobot]` installs LeRobot 0.7.0 and rustypot, which Python 3.14 on
+What changes for you: `roboglot[lerobot]` installs LeRobot 0.7.0 and rustypot, which Python 3.14 on
 Linux builds from source, and a second program on the arm's port is refused on Linux and macOS too,
-so close whatever holds it before a run. `quackd robot release`, and a `--by-hand` run that opened
-the gripper, close the gripper before they let go of the arm. `quackd_lerobot.real.load_policy()` is
+so close whatever holds it before a run. `roboglot robot release`, and a `--by-hand` run that opened
+the gripper, close the gripper before they let go of the arm. `roboglot_lerobot.real.load_policy()` is
 gone. `list-adapters --json` and `doctor --json` say `"extra": null` for a row no package installs,
-where they said `"built-in"`. Pillow 13 is quackd's own floor. And `lerobot:mock` is the real
+where they said `"built-in"`. Pillow 13 is Roboglot's own floor. And `lerobot:mock` is the real
 backend over an arm in memory, so a rehearsal on it says what the arm would. The policy server loads
 nothing where the `kernels` package is installed, and refuses a SmolVLA, pi05, pi0 or X-VLA
 checkpoint that LeRobot 0.7.0 saved, for now.
 
 ### Added
 
-- **An industrial arm on ROS 2, the tenth adapter, rehearsed only.** `quackd[rosarm]` installs
-  `quackd-rosarm`, a family over the rosbridge adapter's binding for four arms quackd already
+- **An industrial arm on ROS 2, the tenth adapter, rehearsed only.** `roboglot[rosarm]` installs
+  `roboglot-rosarm`, a family over the rosbridge adapter's binding for four arms Roboglot already
   described from their makers' figures: a Universal Robots UR5e, a KUKA LBR iisy 3 R760, a KUKA LBR
   iiwa 7 R800 and a Yaskawa MotoMini, each behind a ROS 2 driver, its maker's for three of them and
   the LBR-Stack for the iiwa ([docs/adapters/rosarm/README.md](docs/adapters/rosarm/README.md)).
@@ -219,9 +257,9 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   the robot's own description gives and at most a tenth of each joint's rated speed at its fastest,
   never sent over a running one, and every move asks a person first, on the mock as on `ws`. On the
   mock `--yes` and a script on stdin answer it, as they answer any confirm. On `ws` a person answers
-  each move: a standing answer, `--yes`, a flock's or an MCP session's, is refused before the
+  each move: a standing answer, `--yes`, a team's or an MCP session's, is refused before the
   question is put, in words that say to run it from a terminal and answer it, and a script answering
-  `quackd run` on stdin still does. It has arrived only when every joint reads within half a degree
+  `roboglot run` on stdin still does. It has arrived only when every joint reads within half a degree
   of its goal on `/joint_states`, whatever the controller answered. A move is timed from its first
   feedback, because a bridge that has just started holds its first goal back for seconds, and a goal
   that shows no start within 8 s is cancelled as unanswered. No goal goes to an arm whose driver has
@@ -230,24 +268,24 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   refused, since its cancel would land after the move, in words that name rosbridge_suite issue #909
   and the flag that fixes it, and so are a description that gives a joint no finite travel or no
   rated speed above zero, and an action whose own status, which the controller latches on three of
-  the arms, says a goal sent before quackd connected still runs, another client's or one a run that
+  the arms, says a goal sent before Roboglot connected still runs, another client's or one a run that
   went quiet left going. A move is refused too while another is still being watched, and while any
   joint reads past its travel, and a socket that drops is let go of for good, since roslibpy would
   send what it held back once it reconnected by itself, by closing this client's socket and never
   the event loop every roslibpy client in the process shares. The transport keeps the ceiling too,
   for any intent it is handed, and never takes a rated speed above the stock description's. The
-  UR5e's, the iisy's and the MotoMini's body files no longer say that quackd clamps nothing on them
-  because it drives nothing. quackd never powers, enables, un-brakes or un-stops an arm, parks none
+  UR5e's, the iisy's and the MotoMini's body files no longer say that Roboglot clamps nothing on them
+  because it drives nothing. Roboglot never powers, enables, un-brakes or un-stops an arm, parks none
   and drives no tool, so `gripper`, `place`, `pick` and `manipulate` are withheld with why. CI's
   packaging job installs the wheel beside rosbridge's and lists its verbs. What changes for you:
-  `quackd robot add cell-1 rosarm:mock --robot-type ur5e` registers one,
-  `quackd robot rest-pose cell-1` refuses it, since quackd parks an industrial arm nowhere,
-  `quackd list-adapters --json` has eleven rows, the industrial arm's before the described one, and
+  `roboglot robot add cell-1 rosarm:mock --robot-type ur5e` registers one,
+  `roboglot robot rest-pose cell-1` refuses it, since Roboglot parks an industrial arm nowhere,
+  `roboglot list-adapters --json` has eleven rows, the industrial arm's before the described one, and
   the hint after an infeasible verdict names `rosarm` for a payload up to 5 kg, the UR5e's figure,
-  though quackd drives nothing on its flange.
-- **`quackd robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
+  though Roboglot drives nothing on its flange.
+- **`roboglot robot add` and `robot edit` refuse a robot its adapter would refuse to build,** before
   anything is written and in the words `make()` refuses it with, so no `robots.json` holds a robot
-  that cannot run. `quackd robot add cell-2 rosarm:ws --robot-type ur5e --address
+  that cannot run. `roboglot robot add cell-2 rosarm:ws --robot-type ur5e --address
   ws://127.0.0.1:9090` exits 1 with `rosarm:ws on a ur5e is described and not driven: bound code
   needs a named owner and a date for its first hardware run (docs/adr/0076), and nobody has named
   either for this arm; rosarm:mock rehearses it (docs/adapters/rosarm/README.md#status)`. An adapter
@@ -257,23 +295,23 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   release itself, as before. `--robot-type`'s help names every adapter that takes one and its types,
   and a robot type given to an adapter that takes none is refused as it was in 0.33.0, in words that
   now say `which only lerobot and rosarm have`.
-- **What an adapter over another's package can build on.** `quackd.adapters.described.body_data`
+- **What an adapter over another's package can build on.** `roboglot.adapters.described.body_data`
   hands a package a copy of a body file's figures, which the arms' manifests take theirs from, so
   `described:ur5e` and `rosarm:mock` on a UR5e carry the same figures. `published_travel` and
-  `said_past` moved from the SO-101's verbs to `quackd.adapters.base`, where any arm's verbs can use
-  them, and `quackd_lerobot.verbs` still has them. `quackd_rosbridge.ws.build_roslibpy` builds
+  `said_past` moved from the SO-101's verbs to `roboglot.adapters.base`, where any arm's verbs can use
+  them, and `roboglot_lerobot.verbs` still has them. `roboglot_rosbridge.ws.build_roslibpy` builds
   roslibpy's client and its topic, service and action clients for any transport over rosbridge, and
   `param_text` reads a parameter rosapi returns. The rosbridge base describes itself as it did,
   which `tests/test_rosbridge_adapter.py` pins by the digests of its manifests from before the move.
-- **`quackd robot list` shows the type a robot was registered with.** An SO-100 and an SO-101 are
+- **`roboglot robot list` shows the type a robot was registered with.** An SO-100 and an SO-101 are
   both `lerobot:real`, and the four industrial arms are all `rosarm:mock` until one is driven, so a
   list of specs alone read them alike. A `type` column shows each robot's `--robot-type` when any
   robot has one, and is empty for a robot on its adapter's default, which is stored as none, and a
   registry where nobody gave one prints the table it did. `--json` carried the type already.
-- **`quackd ui` shows a robot's type and asks for one where the adapter drives several arms.** The
+- **`roboglot ui` shows a robot's type and asks for one where the adapter drives several arms.** The
   robots page could neither show which arm a registered robot is nor register one as an SO-100,
-  since `quackd robot add --robot-type` had no field there. The table has a `robot_type` column,
-  empty for a robot on its adapter's default type, as in `quackd robot list`, and the form offers
+  since `roboglot robot add --robot-type` had no field there. The table has a `robot_type` column,
+  empty for a robot on its adapter's default type, as in `roboglot robot list`, and the form offers
   the adapter's types, its default first, for the arm and the industrial arms alone.
 - **A Universal Robots UR7e, described beside the UR5e.** People own arms sold as UR5e and buy arms
   sold as UR7e, with different figures published for each, so `described:ur7e` is a body of its own,
@@ -284,12 +322,12 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   UR7e-920 on the CB7 control box, the arm mechanically unchanged, and the 920 mm comes from a
   revised measurement method where the datasheet gives 850. They also say that a launch page of UR's
   calls the UR7e the UR5e's upgraded version, and that UR's page for the UR7e on CB5 heads it 7 kg
-  of payload where its specifications say 7.5. quackd drives no part of it, and `rosarm` takes no
-  UR7e as a robot type. What changes for you: `quackd robot add cell-7 described:ur7e` registers
+  of payload where its specifications say 7.5. Roboglot drives no part of it, and `rosarm` takes no
+  UR7e as a robot type. What changes for you: `roboglot robot add cell-7 described:ur7e` registers
   one, the README's badge counts 12 described bodies, and a run that ends infeasible for want of 6
   kg of payload names it last, beside the LBR iiwa. Its figures have had one reader.
 - **`make_for`, for a package built on the Microduck's.**
-  `quackd_microduck.make_for(body, backend, adapter)` builds the transport and the adapter for one
+  `roboglot_microduck.make_for(body, backend, adapter)` builds the transport and the adapter for one
   body, which is what the Microduck's `make` and Huebot's come to once each has refused what its
   body does not take.
 - **A body can say what rides on its back, and a task can ask for it.** The datasheet has a new
@@ -306,38 +344,38 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   on the B2, with 120 kg or more standing in the note, and 8 kg on the Go2 EDU, with 12 kg at most
   in the note, and `docs/adapters/status.md`'s table has a Back load column. What changes for
   you: a body that says nothing about its back serialises exactly as before, so its digest, its
-  flock bid and its `robot_list` row carry no new key, a task file that does not say it dumps as
+  team bid and its `robot_list` row carry no new key, a task file that does not say it dumps as
   it did, and a peer on an older release sees what it saw; the B2's and the Go2 EDU's digests
   change, as any edit of a sheet changes one. A passport does not carry the figure and a
   `robot.yaml` refuses it, until the passport specification names such a member. A task file or a
-  flock role that names `carries_kg` is refused by an older quackd, at load or as a TASK message
+  team role that names `carries_kg` is refused by an older Roboglot, at load or as a TASK message
   it cannot read.
 
 ### Changed
 
-- **quackd reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** quackd
+- **Roboglot reads robotd at daemon-v0.18.8, and `microduck:jsonrpc`'s `hello` names API 50.** Roboglot
   read the Microduck's robotd on 2026-10-08 at daemon-v0.16.1, on API 41, and so warned about every
   release from daemon-v0.17.3 on, the newest on API 50. It reads robotd at daemon-v0.18.8
   (`4a763dd`) now, every reference in `upstream_api.py` is anchored there, and a robotd on API 50
   connects with no warning, where one on API 41, which connected with none, is now warned about, as
-  every version but the one read is. The nine bumps add or remove only calls quackd does not make,
-  but for API 48's change to what `robot.health` says of a servo that goes quiet, and nothing quackd
+  every version but the one read is. The nine bumps add or remove only calls Roboglot does not make,
+  but for API 48's change to what `robot.health` says of a servo that goes quiet, and nothing Roboglot
   sends or reads changed shape. What robotd does changed more than what it says, and the Microduck
-  page and the refs say what each change does to quackd: `limp_fall` is on by default, the idle
+  page and the refs say what each change does to Roboglot: `limp_fall` is on by default, the idle
   look-around takes the head over rather than adding to it, a stock pad's Y and bumpers play
   emotions, and while an emotion plays robotd holds the twist at zero and reports it so, which ends
-  a quackd walk saying robotd did not take its twist. Every `GET /frame` quackd pulls counts as a
-  photo in the robot's vet book, and the beta's camera has a calibration, which quackd's WebRTC
+  a Roboglot walk saying robotd did not take its twist. Every `GET /frame` Roboglot pulls counts as a
+  photo in the robot's vet book, and the beta's camera has a calibration, which Roboglot's WebRTC
   camera reads and its `/frame` camera now takes the focal length of, as below. Huebot's protocol
   refs, imported from the Microduck's, move with them. `tests/test_jsonrpc.py` names API 50, and the
   guard in `tests/test_docs.py` that holds the ADRs written since the daemon-v0.16.1 re-read names
   that day, which used to be the newest read's.
 - **`lerobot:mock` runs the real backend's own code, over an arm in memory.** The mock was a
   hand-written copy of `lerobot:real`'s hand-off, kept in step with the arm's by hand, and it had
-  drifted: an arm `quackd robot release` let go of at its rest pose with a motor still on was told
+  drifted: an arm `roboglot robot release` let go of at its rest pose with a motor still on was told
   to be put down, and one whose release nothing read back was called in your hands, where the arm's
   own close says it lies in its fold, and its close never said why a rest move had missed. It is
-  `LeRobotReal` now over a follower and a camera in memory (`quackd_lerobot/fake_follower.py`), a
+  `LeRobotReal` now over a follower and a camera in memory (`roboglot_lerobot/fake_follower.py`), a
   clock that moves only when something sleeps on it and a scripted policy, as `lerobot:mujoco` is
   that backend over the simulated SO-101
   ([ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)), so what it says
@@ -347,7 +385,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   and says so, and a rest move a test tells it to fail (`rest_fails`) sends no hold, where the arm's
   holds where it stalled. Its description hashes as it did, `a72c88eaaa121ec6`. What changes on
   `lerobot:mock`: a goal moves a joint one step of the arm's cap a send, 5 degrees or what
-  `QUACKD_LEROBOT_MAX_STEP_DEG` sets, which the mock now reads as the arm does, so one `joint`
+  `ROBOGLOT_LEROBOT_MAX_STEP_DEG` sets, which the mock now reads as the arm does, so one `joint`
   intent moves a joint one step, a move faster than the cap takes the time the cap needs on the
   mock's clock, the rest move and the gripper verb end inside their tolerance of the goal rather
   than on it (`gripper closed on nothing (stopped at 5/100)`), and the manifest it connects with
@@ -359,11 +397,11 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   `camera`, and loses `near_object` and `segment`. `assumptions` lists the arm's three stand-ins, so
   the prompt gains its `## What is a stand-in on this robot` section and each observation's state
   line carries `stand-ins=3-listed-in-extras.assumptions`. Its calls to the follower run on threads
-  of their own, as an arm's do, so `timing` differs from run to run, and in a flock the others'
+  of their own, as an arm's do, so `timing` differs from run to run, and in a team the others'
   first messages reach the arm's pilot before its first turn on some runs and after it on others.
   The close names why the rest move missed after the shortfall, or that nothing moved the arm there.
   Its camera is named `front`, as the arm's is, which shows beside a board's camera under `--host`,
-  and a `quackd doctor` that connects to it with a `--camera-url` gives it a camera row with the
+  and a `roboglot doctor` that connects to it with a `--camera-url` gives it a camera row with the
   size of the frame it draws, and under that the url doctor was given, which the mock never opens. A
   `move` intent is refused as `an arm cannot move`, an unknown policy as `unknown skill`, and
   anything but a stop after the close as `the arm's transport is closed`, and a `joint` intent sent
@@ -375,9 +413,9 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   `mock.follower`, a travel narrowed in `MOCK_RANGES` has to be the same either side of zero, as a
   calibrated one is, and the knobs that make a read fail now give its error's type,
   `(ConnectionError: ...)`, as a register on the arm does.
-- **The arm's extras take LeRobot 0.7, whose motor bus is new.** `quackd[lerobot]`,
-  `quackd[lerobot-vla]` and `quackd[robots]` ask for LeRobot 0.7.0, below 0.7.1, where they stopped
-  below 0.6.2, and `quackd[lerobot]` and `quackd[robots]` hold rustypot below 1.14, since the arm's
+- **The arm's extras take LeRobot 0.7, whose motor bus is new.** `roboglot[lerobot]`,
+  `roboglot[lerobot-vla]` and `roboglot[robots]` ask for LeRobot 0.7.0, below 0.7.1, where they stopped
+  below 0.6.2, and `roboglot[lerobot]` and `roboglot[robots]` hold rustypot below 1.14, since the arm's
   stop, release and close lean on the bus as it reads at 0.7.0 and a patch may move it. 0.7.0
   replaced `feetech-servo-sdk`, the library under the SO-101's bus, with rustypot, under one
   `SerialMotorsBus` for every Feetech and Dynamixel servo, so every LeRobot name the arm relies on
@@ -385,36 +423,36 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   What changes for you: `doctor`'s `lerobot (feetech bus)` row shows rustypot's version, 1.13.1
   today, and a servo answering with an overload or an overheat no longer reads as missing at
   connect, because LeRobot 0.7.0 reports neither, as Known limitations says. Calibration files are
-  unchanged, by LeRobot's release notes. No arm has run quackd on 0.7.0, and Known limitations lists
+  unchanged, by LeRobot's release notes. No arm has run Roboglot on 0.7.0, and Known limitations lists
   what the arm owes, step by step.
 - **A second program on the arm's port is refused as it opens it, on Linux and macOS too.** rustypot
   opens the port for one program at a time on every system. The old SDK's pyserial did that on Windows
-  alone, so on Linux and macOS a teleoperation, a recording, a serial monitor or a second quackd could
+  alone, so on Linux and macOS a teleoperation, a recording, a serial monitor or a second Roboglot could
   open the arm's port beside a run and talk over it on one bus. Now the second one fails as it opens,
-  unless it runs as root and takes no lock. A quackd that comes second fails in LeRobot's words,
+  unless it runs as root and takes no lock. A Roboglot that comes second fails in LeRobot's words,
   `Could not connect on port ...`, its notes say the port never opened, so nothing reached a motor,
   and its refusal says to check that nothing else has the port open. On Linux and macOS that takes a
   first program that locked the port, as LeRobot 0.7.0's own tools do: one that opened it with no
-  lock, as pyserial does unless asked, still does not stop quackd. What changes for you: close
+  lock, as pyserial does unless asked, still does not stop Roboglot. What changes for you: close
   whatever holds the port before a run, as on Windows already.
-- **Pillow 13 is quackd's own floor, and `pyproject.toml` has no `override-dependencies`.** LeRobot
+- **Pillow 13 is Roboglot's own floor, and `pyproject.toml` has no `override-dependencies`.** LeRobot
   0.7.0 allows Pillow 13, so the override that lifted 0.6.1's `Pillow<13` for a checkout and for CI is
-  gone, and quackd asks for `pillow>=13`, the first release with the fixes for the advisories 0.31.3
-  named. What changes for you: installing quackd beside a Pillow 12 or older upgrades it, and
-  `quackd[lerobot]`, `quackd[lerobot-vla]` and `quackd[robots]` on Python 3.12 or later no longer
+  gone, and Roboglot asks for `pillow>=13`, the first release with the fixes for the advisories 0.31.3
+  named. What changes for you: installing Roboglot beside a Pillow 12 or older upgrades it, and
+  `roboglot[lerobot]`, `roboglot[lerobot-vla]` and `roboglot[robots]` on Python 3.12 or later no longer
   install Pillow 12.3.0, which was 0.31.3's first Known limitation. CI's policy job no longer runs the
   picture tests on a Pillow under 13, since no install takes one now.
-- **The policy server reads LeRobot 0.7.0.** Every LeRobot name `quackd policy serve` and its client
+- **The policy server reads LeRobot 0.7.0.** Every LeRobot name `roboglot policy serve` and its client
   rely on was read again at the `v0.7.0` tag, the commit the arm's are read at too: 61 rows, five of
   them new, 59 VERIFIED and 2 UNVERIFIED, and the installed wheel matched the tag in every file they
   cite that it carries. A policy that answers 0.7.0's `PolicyOutput` in place of a tensor is served
-  its action, though none of the six types quackd serves answers one. A pi05 or a pi0 saved before
+  its action, though none of the six types Roboglot serves answers one. A pi05 or a pi0 saved before
   transformers 5.6 loads its vision tower through 0.7.0's rename of its `vision_tower.vision_model.`
-  keys, and the server's load is still strict. LeRobot 0.7.0 removed its async inference, which quackd
+  keys, and the server's load is still strict. LeRobot 0.7.0 removed its async inference, which Roboglot
   never ran because it unpickled what it was sent, so the four rows about it say what 0.6.1 did and
-  what 0.7.0's remote inference does instead, and quackd runs neither. What changes for you: a
+  what 0.7.0's remote inference does instead, and Roboglot runs neither. What changes for you: a
   processor step that keeps its tokenizer or its model inside the checkpoint, 0.7.0's `artifacts`, is
-  refused before a pin or a weight, because quackd fetches and checks no such directory, so a SmolVLA,
+  refused before a pin or a weight, because Roboglot fetches and checks no such directory, so a SmolVLA,
   pi05, pi0 or X-VLA that LeRobot 0.7.0 saved is refused, as Known limitations says. And a pi05 with
   0.7.0's memory, `use_visual_memory` or `use_proprioceptive_memory`, is refused on its `config.json`:
   the server asks it once a chunk, and its memory looks back a stride it learned in frames.
@@ -423,10 +461,10 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   `"extra": "built-in"`, so a script that installs the extra of every row not installed went after a
   package that does not exist. A third party's adapter that names no extra said `"built-in"` too,
   which it is not. `null` says there is nothing to install. The tables print `built-in` as they did,
-  and `quackd ui`'s setup page says to install such an adapter as its maker says, where it said
+  and `roboglot ui`'s setup page says to install such an adapter as its maker says, where it said
   `uv pip install "built-in"`. What changes for you: a script that read `"built-in"` reads `null`.
 - **A beta Microduck's `/frame` is measured through the focal length of upstream's own solve of
-  its lens.** quackd takes the lens of `mediad`'s `/frame` from the first frame's shape, since the
+  its lens.** Roboglot takes the lens of `mediad`'s `/frame` from the first frame's shape, since the
   PNG carries none, and a wide frame, which on a stock robot only a beta's upright GC2093 gives,
   got none: the colour detector fell back on 90°, the YOLO and board detectors on 62°, and `watch`
   on an assumed 40°. Upstream has solved the beta's lens since daemon-v0.18.0, and the field its
@@ -437,13 +475,13 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   it rests on, "a 16:9 /frame wider than tall is assumed to be a beta's GC2093, measured through
   its solve's focal length, 85.2 degrees across" (a new UNVERIFIED ref, `BETA_UPRIGHT_FOV`), which
   every state lists in `extras.assumptions` and `extras.camera` gives as `fov_assumed`.
-  `--fov-deg` overrides it on `quackd run` as it does an alpha's. The solve's principal point and
-  its distortion, which quackd's detectors correct for no more than an alpha's, leave a bearing
+  `--fov-deg` overrides it on `roboglot run` as it does an alpha's. The solve's principal point and
+  its distortion, which Roboglot's detectors correct for no more than an alpha's, leave a bearing
   short of the solve's by up to about 14° near the picture's edges. What changes for you: on a
   beta's `/frame`, detections measure through 85.2° where they measured through the detector's own
   90° or 62°, uncalibrated as before, the log's line about the lens names the assumption, `watch`
   turns the head by what 85.2° calls for rather than 40°, and the digest an MCP client's
-  `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which quackd
+  `robot_list` gives for the robot moves. A camera of your own served at `/frame`, which Roboglot
   reads as `mediad`'s, gets the same 85.2° now when its picture is 16:9 and wider than tall, and
   still gets no lens when it is wide in any other shape, such as a 4:3 webcam's, or square.
 - **A close whose own release raised names the joints that may still hold.** The close lets go of an
@@ -470,33 +508,33 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   port without a word. So after its close a stop says
   `the hold did not reach the arm: DeviceNotConnectedError: ...` and a read says
   `the arm did not answer: DeviceNotConnectedError: ...`, as on the arm. What changes for you:
-  nothing for quackd's own commands, which connect the mock before they drive it. Code, or a test,
+  nothing for Roboglot's own commands, which connect the mock before they drive it. Code, or a test,
   that skipped the connect is refused.
-- **`quackd robot release` closes the arm's gripper before it lets go, and so does a `--by-hand`
+- **`roboglot robot release` closes the arm's gripper before it lets go, and so does a `--by-hand`
   run that opened it.** A fold never touches the gripper, so an arm came back to its rest pose with
   its jaws however they were left, and a `--by-hand` run that ended on Enter had just opened them
-  all the way. Once a fold has arrived, the first or the second, `quackd robot release` now sends
+  all the way. Once a fold has arrived, the first or the second, `roboglot robot release` now sends
   the gripper shut until it reads the end of its range or stops moving, and lets go at the pose as
   before. Its warning, its question and the line before the fold say so:
   `fold arm-01 to its rest pose, close its gripper and release torque there?`. A `--by-hand` run
   does the same to the gripper its hand-back opened, after the fold and before its close, and the
   question at the end says so: `the gripper opens all the way, and 3 s later the arm folds up and
   the gripper closes again`. It says `closing the gripper: keep your hands out of its jaws` as they
-  start, as `quackd robot release` does after a second fold, the log has
+  start, as `roboglot robot release` does after a second fold, the log has
   `closed: the gripper is closed`, and the transcript's `hand_off` a stage `closed`. Stopped within
   8 of shut on its 0 to 100 range, which is what the arm's `holding` calls empty, the gripper is
   closed. Stopped further out it has met something, which is said
   (`the gripper stopped at 30/100, short of closed: something may be in its jaws`), and the arm is
-  let go of all the same, because it is down: `quackd robot release` exits 0. Ctrl-C or `q` stops
-  the gripper as it stops a fold, and `quackd robot release` exits 1. Nothing else moves the jaws: a
-  run's fold that no hand-back came before and `quackd doctor`'s leave them as they are, as does a
+  let go of all the same, because it is down: `roboglot robot release` exits 0. Ctrl-C or `q` stops
+  the gripper as it stops a fold, and `roboglot robot release` exits 1. Nothing else moves the jaws: a
+  run's fold that no hand-back came before and `roboglot doctor`'s leave them as they are, as does a
   `--by-hand` run whose question ended without an Enter, an arm whose fold missed is sent nothing
   for them, and an arm released where it stands, or with no rest pose, keeps its gripper as it was.
 - **A failed torque call names every joint it could not switch, and a failed read of several motors
   names the first that did not answer.** On LeRobot 0.6.1's bus a torque call stopped at the first
-  motor whose write failed, so quackd named that joint alone, and a read of several motors at once
+  motor whose write failed, so Roboglot named that joint alone, and a read of several motors at once
   named none. LeRobot 0.7.0's torque call tries every motor and names each one it could not switch,
-  and quackd names them all:
+  and Roboglot names them all:
   `connect attempt 1 of 3 failed on elbow_flex (id 3) and gripper (id 6): ...` sends you to both
   cables, and a release you asked for that raised names the joints that may still hold, every other
   one having let go. The close's own release names them too. A read of several motors at once names
@@ -509,7 +547,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   that raises it, and `tests/test_lerobot_real_bus.py`, in CI's policy job, drives the real backend
   over LeRobot 0.7.0's own follower and `SerialMotorsBus`, with rustypot's `Bus`, the part that
   talks to the port, replaced by a fake that answers in rustypot's words. The mock's follower,
-  `quackd_lerobot/fake_follower.py`, speaks 0.7.0's bus too: a torque call tries every motor and
+  `roboglot_lerobot/fake_follower.py`, speaks 0.7.0's bus too: a torque call tries every motor and
   names each that did not answer (`unanswered`, a turn for tests), and a port already shut is passed
   over without a word, so a rehearsal names a joint as the arm would.
 - **A release or a take-hold over motors that do not answer gets the time LeRobot 0.7.0 takes.**
@@ -521,7 +559,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   no reply, and a second on top.
 - **A panic in rustypot is met as a failed bus call.** pyo3 hands a panic in rustypot's Rust code to
   Python as `PanicException`, which derives from `BaseException` and not from `Exception`, so it
-  would pass every handler quackd has for a failed call. The arm's backend, which the simulator and
+  would pass every handler Roboglot has for a failed call. The arm's backend, which the simulator and
   the mock run too, turns anything a LeRobot call raises that is not an `Exception`, other than a
   Ctrl-C, an exit, a cancellation or a generator's close, into the `ConnectionError` LeRobot raises
   for a failed call, naming what it raised:
@@ -533,13 +571,13 @@ checkpoint that LeRobot 0.7.0 saved, for now.
 
 ### Removed
 
-- **`quackd_lerobot.real.load_policy()` is gone.** It was an older Python helper in the arm's
+- **`roboglot_lerobot.real.load_policy()` is gone.** It was an older Python helper in the arm's
   backend that loaded a LeRobot checkpoint in the arm's own process, beside the serial bus, with
-  none of the policy server's pin checks. Nothing in quackd called it and no command reached it,
+  none of the policy server's pin checks. Nothing in Roboglot called it and no command reached it,
   and [ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md) makes the policy server the only
   path a checkpoint has to the arm, so it goes with its `LOAD_POLICY` row. It was never part of the
   surface [RELEASING.md](RELEASING.md) promises, so it had no release of warning. What changes for
-  you: code that imported it should run `quackd policy serve` instead, and reach the server through
+  you: code that imported it should run `roboglot policy serve` instead, and reach the server through
   `--policy-url` or a `RemoteRunner`.
 
 ### Fixed
@@ -549,7 +587,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   `so the verdict is the pilot's judgement rather than a limit`. Those needs cover payload, the load
   on its back or deck, reach, endurance, working height, arms, the manipulator, mobility and
   terrain, and a joint's travel is none of them, so when E170's LLM refused 170 degrees on a joint
-  that stops at 119.6, quackd's closing line said no limit was involved. The reason now ends
+  that stops at 119.6, Roboglot's closing line said no limit was involved. The reason now ends
   `so the verdict rests on something they do not cover`.
 - **After an abort or a timeout, the executor's own stop says when it did not land.** A verb the
   executor ends, by an abort, a timeout, a verb that raised, a preemption or a pause, is followed by a
@@ -564,18 +602,18 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   model files are licensed under Creative Commons BY-SA-NC.", with no version and nothing to say
   whether `robot_walk.xml` was one of them. Upstream's `7cc1961` of 2026-10-09 named CC BY-NC-SA 4.0
   for the `.stl` meshes alone and added a `LICENSE-MODELS.md`, which puts the MJCF robot
-  descriptions under the Apache License 2.0 with the code. quackd now fetches at `bae39f5` of
+  descriptions under the Apache License 2.0 with the code. Roboglot now fetches at `bae39f5` of
   2026-10-27, `develop`'s head when it was read on 2026-11-08, where `robot_walk.xml` and its 38
   meshes are the same bytes, so the simulator walks exactly as it did, and the notice written beside
   them quotes the README and `LICENSE-MODELS.md` there. The cache is named after the commit, so the
   first `microduck:mujoco` run after upgrading fetches the model again, about 9 MB, without being
-  asked, and leaves the old commit's directory under `~/.quackd/cache/microduck_rl`, which can be
+  asked, and leaves the old commit's directory under `~/.roboglot/cache/microduck_rl`, which can be
   deleted. The browser demo fetches from the same commit. In `sim3d/upstream_api.py`, `MESH_LICENSE`
   cites the README's new line, and a new ref, `MJCF_LICENSE`, cites the line of `LICENSE-MODELS.md`
   that names the XML, so the nightly drift job reads both. The eleven refs that cite
   `scripts/infer_policy.py` and `export.py` whole read as they did: the first only gained lines, an
   odometry overlay behind two flags that are off unless given, and the second also loads a
-  checkpoint from a training bundle and writes the export's provenance beside the metadata quackd
+  checkpoint from a training bundle and writes the export's provenance beside the metadata Roboglot
   reads. The licences page, NOTICE, the FAQ, the Microduck page, the browser demo's footer and two
   comments named no version, spelled the licence as the old sentence did, or put `robot_walk.xml`
   under it, and say what upstream says now.
@@ -591,7 +629,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   robot_state_publisher again settled what had been left open: a node started with
   `use_robot_description_topic` declares no `robot_description` parameter and subscribes to the
   topic instead, which `RSP_NODE` and `DESCRIPTION_NAMES` now say. What changes for you: nothing
-  quackd does, and `quackd doctor` and the rosbridge page link to the lines meant.
+  Roboglot does, and `roboglot doctor` and the rosbridge page link to the lines meant.
 - **The LBR iisy's body file said what its driver does not do.** Its note said KUKA's ROS 2 drivers
   end the connection on a missed packet. Read in `kuka_drivers` at its pin, the RSI driver ends
   external control after a second with no state from the controller, and its RSI configuration
@@ -599,13 +637,13 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   pendant's stop as the brake. A pilot handed `described:kuka-lbr-iisy-3-r760` reads the corrected
   note. No generated table shows it, so `scripts/bodies_docs.py` changed nothing.
 - **A rosbridge base's close ends its own socket and no other.** It ended roslibpy's event loop,
-  which every roslibpy client in the process runs on, so in a flock a base whose run ended first
+  which every roslibpy client in the process runs on, so in a team a base whose run ended first
   took every other base's link down with it, and would have taken the industrial arm's, with its
   readings and its cancel. It closes its own client now, as the arm's transport does, and the loop
   runs on for the rest, on the daemon thread it has always run on.
 - **A file nested too deep for Python to parse is refused, where it stopped the policy server.** A
   checkpoint's `config.json` or a pinned model's JSON nested deeper than Python will follow raised a
-  `RecursionError` nothing caught, so `quackd policy serve` ended on a traceback. It is refused now in
+  `RecursionError` nothing caught, so `roboglot policy serve` ended on a traceback. It is refused now in
   the sentence any file that is not JSON gets. The refusals that name a file in a pinned model's
   directory now quote it, as the one for an unknown file always did, since a name there can hold
   anything. What changes for you: nothing to do. `tests/test_policy_pipeline.py` fails without this.
@@ -615,14 +653,14 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   another commit's training run, and the checkpoint would be served at that run's rate. It is refused
   now, before the weights are fetched, with a sentence saying to give `--fps`. What changes for you:
   nothing to do. `tests/test_policy_pipeline.py` fails without this.
-- **An Open Duck's link outlives a line quackd cannot read, as ToddlerBot's has since 0.32.0.** The
+- **An Open Duck's link outlives a line Roboglot cannot read, as ToddlerBot's has since 0.32.0.** The
   bridge client's read loop skipped broken JSON and nothing else, so a line over asyncio's 64 KiB,
   an answer that was no JSON object, an id that was no number, an error that was no object, or a
   reset socket raised out of it, and it died without a word. Every request after it waited out its
   timeout, while the commands that feed the daemon's deadman, which are writes, went on: the duck
   walked on for about two seconds, until a heartbeat gave up, and a stop sent then could reach the
   duck with nobody to read its reply, and be reported as not delivered. Now a line over the limit,
-  or one quackd cannot read, is skipped with a warning, broken JSON and an answer that is no object
+  or one Roboglot cannot read, is skipped with a warning, broken JSON and an answer that is no object
   are skipped as broken JSON always was, an answer whose id is no number is dropped, an error that
   is no object answers its request, and the link goes on. A line may be 1 MiB, and a link that fails
   tells whatever is waiting at once and refuses every write after it. Nothing the bridge sends today
@@ -639,22 +677,22 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   it again. Such a stop still does not reach the arm, as 0.31.3's Known limitations says, and the
   power switch is still what stops it; now the line says so. What changes for you: the line a run
   ends on, and a chat's answer, can be longer.
-- **`quackd doctor` prints a camera's address and a long assumption whole.** A camera that names no
+- **`roboglot doctor` prints a camera's address and a long assumption whole.** A camera that names no
   address of its own printed the one it was given, and `--camera-url`, which may be given more than
   once, arrives as a list even when given once, so the row read `url ['opencv://0']`. It reads
   `opencv://0` now, or the addresses joined by commas. And the assumptions table cut a long ref's
   name in its `what` column with an ellipsis at a hundred columns or fewer, where its note column
   folded. Both columns fold now. What changes for you: nothing to do.
-- **Huebot is refused over a Microduck package from another release.** quackd refuses one of its
+- **Huebot is refused over a Microduck package from another release.** Roboglot refuses one of its
   adapters that is from another release than the core, and Huebot's package runs the Microduck's
   code as its own, but only Huebot's own version was asked. So an install that upgraded one package
   alone could run Huebot over an older Microduck's transport. The Microduck's package under it is
   held to the core's release now, by its module's own version as the adapter's is, with the same
   words to reinstall them together, and `rosarm` holds the rosbridge package under it the same way.
   What changes for you: nothing, on an install that keeps the packages together.
-- **The AlohaMini's setup names the commit quackd read, `ab4462b`.** `quackd ui`'s setup page, from
+- **The AlohaMini's setup names the commit Roboglot read, `ab4462b`.** `roboglot ui`'s setup page, from
   the catalogue, told an AlohaMini owner to install upstream on the robot and named no commit, while
-  upstream's newer main refuses the stop quackd sends, so a robot set up by that line was one quackd
+  upstream's newer main refuses the stop Roboglot sends, so a robot set up by that line was one Roboglot
   could not stop. It names `ab4462b` now, as the AlohaMini page does, and a test holds it to the
   adapter's pin. What changes for you: set the robot up at that commit, as the page says.
 - **The described bodies had a second reader, and every one of the eleven files but the KUKA LBR
@@ -702,7 +740,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   robotd plays an emotion for a `robot.do`, a stock pad's Y and bumpers play three, and while one
   plays robotd reports a zero twist in place of the one it was asked for, with nothing in
   `robot.state` to say an emotion is playing. A `microduck:jsonrpc` walk under way then stops, as it
-  should, since the duck is not doing what quackd asked, and the verb fails with `robotd has not
+  should, since the duck is not doing what Roboglot asked, and the verb fails with `robotd has not
   taken robot.move`. Its words named two causes, a twist robotd could not parse and another
   client's twist, so whoever read them went looking for a bug or a second program. When the frame
   the failure quotes said a zero twist, the only one an emotion leaves, the failure names an emotion
@@ -727,7 +765,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   so each of those is quoted in its own words too. What changes for you: a fold, a release and a
   take-hold that failed, and a `pick` or a `manipulate` refused at its start or ended by a read or
   sends that failed, say what failed this time.
-- **`quackd robot list --probe` says a close's unfinished release was letting go of the arm.** A
+- **`roboglot robot list --probe` says a close's unfinished release was letting go of the arm.** A
   probe lets go of an arm at its rest pose through the close's disconnect, and when that release
   raised or did not come back the row said `torque left on: not at its rest pose`, the line for an
   arm held up away from its pose, where the close had been letting go of an arm lying in its fold.
@@ -736,10 +774,10 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   the row says the close was letting go of the arm, where it said the arm was holding itself up away
   from its pose.
 - **A second close of the arm keeps what the first one said.** A close after a close, over a port
-  the first one shut, read the arm, was refused on the shut port and ended on `quackd cannot tell
+  the first one shut, read the arm, was refused on the shut port and ended on `roboglot cannot tell
   whether the arm is holding itself up (...)`, over an arm the first close may have let go of at its
   rest pose. It keeps the first close's line now, and one whose port is still open closes as any
-  close does. No quackd command prints a second close's line: a flock member whose run raised can be
+  close does. No Roboglot command prints a second close's line: a team member whose run raised can be
   closed a second time, and code of your own may close the transport twice. What changes for you:
   `close_note` after a second close is the first close's.
 - **A key held down answers no question that drops an arm on a busy machine either.** A bare Enter
@@ -752,7 +790,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   first and stamped the next repeat, which had come in 33 ms behind, with the moment it read it. At a
   console the key thread now says each time it looks and finds no key waiting, an Enter stands alone
   only once a look has found nothing behind it 0.45 s after it was read, and the Enter after it counts
-  from the last look before it. Where quackd reads a stream rather than a console, a terminal whose
+  from the last look before it. Where Roboglot reads a stream rather than a console, a terminal whose
   mode it could not change, it still goes by the clock. What changes for you: one press after 2 s of
   quiet is a yes about half a second after it is read, as before, and on Windows no longer sometimes
   nearly a second.
@@ -834,7 +872,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   flash attention under any key whose name holds `attn_implementation`, names experts or carries a
   `quantization_config`, and a GR00T whose `use_flash_attention` is true. What changes for you:
   uninstall `kernels` from the server's environment if it is there, `uv pip uninstall kernels`,
-  since nothing quackd serves needs it. A pinned backbone or base whose config names
+  since nothing Roboglot serves needs it. A pinned backbone or base whose config names
   `flash_attention_2`, or that was saved quantized, is refused, so pin a revision that names `sdpa`
   or `eager`, or none. A GR00T fine-tune saved with `use_flash_attention: true` is refused until a
   copy of it says false. `tests/test_policy_pipeline.py` fails without this.
@@ -852,7 +890,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
 
 - **The run sheet's cards say what the runs and the code say.** E169's no longer says the LLM
   thinks it is driving: a dry run tells it each move was not sent, and on the arm it stopped after
-  one. E170's no longer calls quackd's refusal the only thing between a number and the servo, which
+  one. E170's no longer calls Roboglot's refusal the only thing between a number and the servo, which
   clamps a goal past its travel silently. E187's no longer says a running move can overshoot the time
   budget: `move_joints` ends at its next tick once the minutes are spent. E120 says `--no-memory`,
   as it was run, so E110 asks for the failed take before it to run with `--memory`.
@@ -862,9 +900,9 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   the command, and the log names the LLM and the task file the command gave. Its Try it yourself
   section prints the refused line, with `--dry-run`, in place of a run on the mock, and a log of a
   dry run keeps that flag when it is tried on the mock.
-- **The Microduck page warns that every `/frame` quackd pulls is a photo in the robot's vet book.**
+- **The Microduck page warns that every `/frame` Roboglot pulls is a photo in the robot's vet book.**
   From `daemon-v0.17.3` `mediad` counts each `GET /frame` it serves as a photo in the vet book, the
-  record an owner can share, and quackd asks for two a second for as long as it is connected, so a
+  record an owner can share, and Roboglot asks for two a second for as long as it is connected, so a
   note under "Getting a picture off a real Microduck" says so before anyone shares one.
 - **`uv.lock` takes `openai` 3.46.0, `laya` 0.4.26 and eight more of Dependabot's updates, from #74
   and #106.** A refresh of the lock changes no requirement a user installs against. #74 took
@@ -873,10 +911,10 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   1.67.0, `ruff` 0.17.4, `pyzmq` 27.3.0 and `aiortc` 1.16.0, with `aioice` 0.13.0, `pydantic-core`
   2.50.4 and a new `vegaml` 0.16.1 behind them. CI installs no provider SDK, so its checks say the
   lock resolves, and the rest was checked by hand. Through a stub of OpenAI's two APIs,
-  `quackd run hello-world` sent the same four requests from 3.42.1 as from 3.43.0, and 3.46.0 sent
-  eight request bodies identical to 3.43.0's. Every name quackd takes from laya answers as it did,
+  `roboglot run hello-world` sent the same four requests from 3.42.1 as from 3.43.0, and 3.46.0 sent
+  eight request bodies identical to 3.43.0's. Every name Roboglot takes from laya answers as it did,
   every aiortc name the Microduck client uses is on 1.16.0 and a loopback of them opened its channel
-  and decoded video, the paho-mqtt 2.2.0 client has what quackd calls, and every option typer draws
+  and decoded video, the paho-mqtt 2.2.0 client has what Roboglot calls, and every option typer draws
   is the same.
 - **Seven more SO-101 examples lift the forearm instead of raising the shoulder alone.** E125, E142,
   E157, E166, E176, E179 and E182 raised the shoulder lift alone from the rest pose, which swings the
@@ -885,7 +923,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   bar is the forearm, and E157's detailed wave lifts the forearm and straightens the wrist in one move.
   E200's card says to clear about 40 cm for its second line, which runs E116's reach.
 - **MOSS is read again, at upstream's `d1cbe1f`.** The nightly drift job found that MOSS's main had
-  moved lines quackd cites, and they had moved without changing: every line a ref cites, and every
+  moved lines Roboglot cites, and they had moved without changing: every line a ref cites, and every
   line its note names, reads the same at `d1cbe1f` (2026-11-07) as at `d288647`, so neither
   `moss:cockpit` nor the bridge changes. Three refs that sat on an `@rpc` line, which reads like
   others in its file, sit on the `def` under it now, which the job can follow. dimOS stays at
@@ -901,16 +939,16 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   run again and pasted as it reads: the close's lines in the release and hand-off sections of
   [adapters/lerobot/README.md](docs/adapters/lerobot/README.md), the gripper's stop and the first
   `report_state` after an MCP session's park in [first-run.md](docs/adapters/lerobot/first-run.md),
-  a `--by-hand` run's gripper opening, a panel's policy line, and the count a flock of three ends on
-  in [guides/flock.md](docs/guides/flock.md), which now says why that count is not the same on every
+  a `--by-hand` run's gripper opening, a panel's policy line, and the count a team of three ends on
+  in [guides/team.md](docs/guides/team.md), which now says why that count is not the same on every
   run. The token figures quoted from the mock in first-run.md and
   [guides/decision-llms](docs/guides/decision-llms/README.md) had drifted from what the mock printed
   before this change as well, and say what it prints now. In first-run.md the MCP server's
   `server up` line carries the `detector=color_blob` it printed before this change too, and the time
   a move on the mock shows is said to be the wall's. `.env.example` says the mock reads
-  `QUACKD_LEROBOT_MAX_STEP_DEG` as the arm and its simulator do.
+  `ROBOGLOT_LEROBOT_MAX_STEP_DEG` as the arm and its simulator do.
 - **ADR-0078, an industrial arm is moved one confirmed goal at a time, and never brought up by
-  quackd.** The industrial arm family's own calls, which no earlier record covers: quackd sends a
+  Roboglot.** The industrial arm family's own calls, which no earlier record covers: Roboglot sends a
   goal and its cancel and nothing that powers, enables, un-brakes or un-stops an arm, parks none,
   asks a person before every move, refuses a bridge that cannot cancel in time, and says that when
   it goes quiet one move runs on, at most 12 s long
@@ -919,7 +957,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   a dated note: bound code may also enter with no owner when its backend is tiered described and its
   `make()` refuses it in that record's words until somebody names a date, which a test holds, and
   `rosarm:ws` is the first.
-- **The industrial arm's page, and ten adapters wherever quackd counts them.**
+- **The industrial arm's page, and ten adapters wherever Roboglot counts them.**
   [docs/adapters/rosarm/README.md](docs/adapters/rosarm/README.md) says what is rehearsed and what
   is owed, what the bridge has to run, the address and its keys, the four arms' drivers side by
   side, the verbs offered and withheld, what stops an arm, its units and limits, and every ref it
@@ -957,7 +995,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   both, 13 of them at other line numbers. The seventeenth is gone: 2.4.0 dropped the `protected`
   endpoint type, which 1.33.0 kept as a deprecated name for `authenticated`, and its
   `create_inference_endpoint` now refuses it, which is all that changed in the code around the
-  lines the rows cited. quackd creates `authenticated` endpoints and never sends that type, and
+  lines the rows cited. Roboglot creates `authenticated` endpoints and never sends that type, and
   its endpoint code imports no huggingface_hub, so nothing it does changes. The rows cite 19
   lines now, all at 2.4.0 but for the one that named `protected`, the module names 1.33.0 as the
   lock's (`LOCK_HUB_VERSION`), and `tests/test_upstream_api.py` holds every `huggingface-hub` in
@@ -965,7 +1003,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   matched its tag in every file cited.
 - **E116 has a log: the USB cable pulled mid-reach.** The run ended under half a second after the
   arm's last answer, said it could not tell whether the arm was holding itself up, and the arm stayed
-  where it was until `quackd robot release` put it down. A log can now carry what a command run after
+  where it was until `roboglot robot release` put it down. A log can now carry what a command run after
   the run printed, such as that release, which writes no run folder: `scripts/example_log.py add`
   takes it as a saved text file with `--after`, and a video kept outside the run folder with `--video`.
 - **`uv.lock` takes LeRobot 0.7.0, rustypot 1.13.1, one huggingface_hub, 1.33.0, and torch 2.15.0.**
@@ -990,11 +1028,11 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   be checked, so an adapter that did not import, or a night something did not answer, closes none of
   them. An issue a person opened is left alone, whatever its title.
 - **The drift nightly no longer calls a night clean when it could not read an adapter.** Its walk,
-  the one `quackd doctor` makes, passes over an adapter that is not installed, or whose module or
+  the one `roboglot doctor` makes, passes over an adapter that is not installed, or whose module or
   `UPSTREAMS` raises, and its upstreams with it, so a night with nothing else wrong exited 0.
   `scripts/upstream_drift.py` now names who it did not read at the top of its report and in
   `drift.json` under `unread`, and exits 2, as could not check. A run of one upstream with `--only`
-  walks no adapter and is as it was. `quackd doctor` does not change.
+  walks no adapter and is as it was. `roboglot doctor` does not change.
 - **The nightly drift job lists a VERIFIED ref whose line names nothing of it.** Fourteen of the
   rosbridge adapter's refs cited lines that held something else, and the job read them as the same,
   since those lines had not moved. Now a VERIFIED ref whose cited line, at the pin, holds no word of
@@ -1014,12 +1052,12 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   under the meshes' terms, and whether a render of them is an adaptation is unchanged.
 - **Huebot's page says what the maker's code is.** It called walking-robot-kit the servo bus alone,
   where NOTICE, from the maker's README, says it is the kit's electronics, firmware and control
-  software. The page and `quackd_huebot.upstream_api` say that now.
+  software. The page and `roboglot_huebot.upstream_api` say that now.
 - **E119 has a log, in three parts: the rest pose, the hand-off and recording a new rest pose.** One
   README covers all three. `scripts/example_log.py add` now keeps an example run in parts with
-  `--part`, and takes a command with no run folder, such as `quackd robot rest-pose`, as saved text
+  `--part`, and takes a command with no run folder, such as `roboglot robot rest-pose`, as saved text
   with `--text`.
-- **Seven of the SO-101's examples have new logs, all run on 2026-11-06 under quackd 0.31.3.**
+- **Seven of the SO-101's examples have new logs, all run on 2026-11-06 under Roboglot 0.31.3.**
   E114's replaces its run of 2026-11-04: the LLM asked for about 1,190°/s, and the arm ran at 30°/s.
   The other six had none. In E118's the LLM, asked to stop halfway, could only stop an arm that had
   already stopped; in E120's it read its budget and never moved the arm; in E121's it was not sure
@@ -1041,65 +1079,65 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   `lerobot:real`, so neither reads as the SO-101 that ran. CONTRIBUTING also names the drift script's
   `--offline`, and the Microduck's page says Huebot reads its protocol refs through its own module.
 - **How a Dynamixel bus fails has been read, at LeRobot 0.7.0 and rustypot 1.13.1.** A Koch's bus
-  errors come from the same `SerialMotorsBus` as an SO arm's, so the sentences quackd reads to name
-  a joint or place a failed connect hold on one, and new rows in `quackd_lerobot/upstream_api.py`
+  errors come from the same `SerialMotorsBus` as an SO arm's, so the sentences Roboglot reads to name
+  a joint or place a failed connect hold on one, and new rows in `roboglot_lerobot/upstream_api.py`
   and on the arm's page say so, with what differs: a handshake that reads no firmware registers,
   servos that answer no ping at LeRobot's 1 Mbps until they are set up from the factory's 57600, an
   error number that makes LeRobot raise where an sts3215 never does, a torque call with no `Lock`,
   `is_calibrated` comparing `Drive_Mode` too (`BUS_IS_CALIBRATED_DYNAMIXEL`), body joints that
   ignore the position limits, and reads with no retries. A Koch stays described and refused at
-  `make()`, and quackd drives none. The Koch's own datasheet now says how that bus fails has been
-  read, where it said quackd had not read it.
+  `make()`, and Roboglot drives none. The Koch's own datasheet now says how that bus fails has been
+  read, where it said Roboglot had not read it.
 - **E038 counts the tenth adapter, and E189 says what rustypot does on Linux and macOS.** The run
   sheet's E038 asked the arm to wave to eight siblings, and its task file named eight, where 0.34.0
-  ships ten adapters: it waves to nine, `rosarm` among them. E189 said nothing refuses a second quackd
+  ships ten adapters: it waves to nine, `rosarm` among them. E189 said nothing refuses a second Roboglot
   on Linux, which rustypot's lock on the port makes untrue there and on macOS. The file names and the
   commands are as they were.
 
 ### Known limitations
 
-- **quackd's AlohaMini adapter does not stop a host from upstream's current main.** Since `9e5eb5a`
+- **Roboglot's AlohaMini adapter does not stop a host from upstream's current main.** Since `9e5eb5a`
   (2026-09-11) upstream's host refuses any command that carries a key outside the robot's
-  `action_features`, and `lift_axis.vel`, the zero every payload quackd sends carries when it is not
-  driving the lift, is not one. So such a host drops whole every payload quackd sends without a lift
+  `action_features`, and `lift_axis.vel`, the zero every payload Roboglot sends carries when it is not
+  driving the lift, is not one. So such a host drops whole every payload Roboglot sends without a lift
   height, `stop` among them, and only its own watchdog stops the base and the lift, a second after
-  the last command it took. quackd read main again on 2026-11-08, at `ec65318`, and stays at
+  the last command it took. Roboglot read main again on 2026-11-08, at `ec65318`, and stays at
   `ab4462b`, the commit its code was written against.
   [docs/adapters/alohamini/README.md](docs/adapters/alohamini/README.md), its hardware checklist
   and [bridge/alohamini/README.md](bridge/alohamini/README.md) say to check that commit out on the
   robot, and `upstream_api.py` lists what else a port to main would meet. How a stop should reach
   the lift on the newer host is not settled.
-- **When quackd goes quiet in the middle of a move, the arm finishes that move.** rosbridge cancels
+- **When Roboglot goes quiet in the middle of a move, the arm finishes that move.** rosbridge cancels
   nothing for a client that has gone, the JointTrajectoryController's own timeout is off by default,
   and MotoROS2 is read to watch only its own agent, so the bound is one move, at most 12 s at the
-  speed asked, after which the arm holds. The heartbeat cancels what it can reach while quackd runs,
+  speed asked, after which the arm holds. The heartbeat cancels what it can reach while Roboglot runs,
   and the pendant's stop is the brake.
 - **A goal handed to roslibpy in the instant its socket drops can still be held and sent when it
-  reconnects by itself.** quackd checks the socket just before it hands a goal over, and no test can
+  reconnects by itself.** Roboglot checks the socket just before it hands a goal over, and no test can
   hold the instant between. A socket that is already down is never handed one.
 - **Two arms answer less than the rest.** On the iiwa the LBR-Stack's stock open loop, in its
-  position mode, reports what was sent rather than where the arm is, so quackd's own arrival check
-  there proves only that the goal was played, and nothing quackd reads says whether that arm can
+  position mode, reports what was sent rather than where the arm is, so Roboglot's own arrival check
+  there proves only that the goal was played, and nothing Roboglot reads says whether that arm can
   move. On the MotoMini, a goal that reaches an arm whose energy saving function has turned its
-  servos off makes MotoROS2 turn them on itself, which nothing quackd sends can rule out.
-- **The gripper closing in `quackd robot release` and at the end of a `--by-hand` run has met no
+  servos off makes MotoROS2 turn them on itself, which nothing Roboglot sends can rule out.
+- **The gripper closing in `roboglot robot release` and at the end of a `--by-hand` run has met no
   arm.** It has run on `lerobot:mock`, a fake arm and the simulator's stand-in model. Owed on an
-  SO-101: `quackd robot release arm-01` with the jaws open at the rest pose closes them and leaves
+  SO-101: `roboglot robot release arm-01` with the jaws open at the rest pose closes them and leaves
   the arm limp there, E119's by-hand line ends with them shut, and jaws that meet with nothing
   between them are called closed rather than stopped short, which is the line at 8 meeting a real
-  pair. Which end of the 0 to 100 range is shut is still quackd's assumption
+  pair. Which end of the 0 to 100 range is shut is still Roboglot's assumption
   (`GRIPPER_OPEN_VALUE`), which E136 confirms by hand on each arm.
-- **No arm has run quackd on LeRobot 0.7.0.** One SO-101 ran it on 0.6.1, on 2026-09-15 and
-  2026-09-23, and again in November under quackd 0.31.1 and 0.31.3, last on 2026-11-06 for the logs
+- **No arm has run Roboglot on LeRobot 0.7.0.** One SO-101 ran it on 0.6.1, on 2026-09-15 and
+  2026-09-23, and again in November under Roboglot 0.31.1 and 0.31.3, last on 2026-11-06 for the logs
   of E114, E116, E118 to E121, E169, E170 and E187. What is here about 0.7.0's bus was read from
   LeRobot's, rustypot's and serialport-rs's source, and run over LeRobot's own follower and bus with
   a fake in place of rustypot's `Bus`, which answers in rustypot's words but is not its code. Owed
   on the arm, in order: a fresh install whose `doctor` shows rustypot; a connect with the arm's
   calibration file from 0.6.1, reading as calibrated with every joint's travel as it was; readings
   at a fixed pose within a tick of 0.6.1's; plausible torque and temperature reads; a small move,
-  the step cap, the goal clamp, the rest move and a hold; `quackd robot release` and the take-hold,
+  the step cap, the goal clamp, the rest move and a hold; `roboglot robot release` and the take-hold,
   with torque read back on all six motors; a close at rest that goes limp, and one away from it that
-  keeps holding and frees the port; a second quackd or `doctor` on the port while a run holds it,
+  keeps holding and frees the port; a second Roboglot or `doctor` on the port while a run holds it,
   refused as it opens; the USB cable pulled mid-session, its heartbeat, its words and its 50 ms
   waits, with no wedge; the servo supply off, every motor missing and the arm's cables and power;
   one servo cable out, naming that joint; Ctrl-C during a release and during a take-hold, now that
@@ -1108,52 +1146,52 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   0.7.0. And a release over motors that stopped answering, timed against the 5.68 s it gets. What
   rustypot says for a reply that comes back short, and what each system says for a port another
   program holds, nobody has seen.
-- **LeRobot 0.7.0 reports no overload and no overheat, so quackd's temperature read is the only heat
+- **LeRobot 0.7.0 reports no overload and no overheat, so Roboglot's temperature read is the only heat
   guard.** An sts3215's status byte is alarms only, so a servo whose overload or overheat protection
   has tripped answers every read and write as any other, and LeRobot drops the byte, while its own
   protection may cap or cut its torque with the torque register still reading on, which nobody here
-  has measured. quackd does not read the servo's `Status` register. What is left is its refusal to
+  has measured. Roboglot does not read the servo's `Status` register. What is left is its refusal to
   move a joint at 60 °C, below the servo's own 70 °C cut-off, both Feetech's numbers and neither
   measured, and its stall check on a move.
 - **Opening the arm's port holds up every Python thread until the open returns.** rustypot opens the
   port without letting go of Python's lock, where pyserial let go of it, so an open that blocks, as a
-  Bluetooth port's can, stops quackd's own deadlines and its Ctrl-C until it returns. A USB adapter's
+  Bluetooth port's can, stops Roboglot's own deadlines and its Ctrl-C until it returns. A USB adapter's
   port does not normally block as it opens.
 - **On Linux, Python 3.14 builds rustypot from source.** rustypot 1.13.1, the only release so far in
   the range LeRobot 0.7.0 allows, from 1.13.1 and below 2, has no Linux wheel for CPython 3.14, so
-  `quackd[lerobot]` there needs a Rust toolchain. Windows on x86-64 and macOS have wheels for it.
+  `roboglot[lerobot]` there needs a Rust toolchain. Windows on x86-64 and macOS have wheels for it.
 - **A policy server on a Hugging Face Endpoint may find no GPU.** Its container installs torch from
   PyPI, which on Linux is a CUDA 13 build needing NVIDIA driver 580.65 or newer, by LeRobot 0.7.0's
   release notes. Which driver the endpoints' GPUs run has not been read. On an older one torch finds
-  no GPU, and `quackd policy endpoint up` pauses the endpoint and quotes its log, as it does for any
+  no GPU, and `roboglot policy endpoint up` pauses the endpoint and quotes its log, as it does for any
   server with none.
-- **`quackd[laya]` beside the policy server's extra runs on transformers 5.22, which nobody has
+- **`roboglot[laya]` beside the policy server's extra runs on transformers 5.22, which nobody has
   checked.** laya asks for any transformers from 4.48, and LeRobot 0.7.0's policy extras, which
-  `quackd[lerobot-vla]` installs, pin 5.22, so on Python 3.12 or later the lock and an install of both
+  `roboglot[lerobot-vla]` installs, pin 5.22, so on Python 3.12 or later the lock and an install of both
   put laya on 5.22, which is also the newest transformers on PyPI today.
 - **A SmolVLA, pi05, pi0 or X-VLA checkpoint that LeRobot 0.7.0 saved is refused by the policy
   server.** LeRobot 0.7.0's `save_pretrained` writes each `tokenizer_processor` step, which those four
   types' pre-processors all have, with `"tokenizer_name": "tokenizer"` and, beside it,
   `"artifacts": {"tokenizer_name": "tokenizer"}`, and saves the tokenizer's files in the checkpoint's
-  `tokenizer/` directory, and the server refuses any step that carries `artifacts` until quackd fetches
+  `tokenizer/` directory, and the server refuses any step that carries `artifacts` until Roboglot fetches
   and checks a checkpoint's own artifact directories. A checkpoint LeRobot 0.6.1 saved, or a 0.7.0 save
   whose step names the tokenizer's Hub repository and carries no `artifacts`, serves as before with
   `--pin`. An ACT or a GR00T N1.7 that 0.7.0 saved carries none: ACT has no tokenizer step, and no
   GR00T step saves artifacts.
-- **quackd times its gaze hold and its fade wait by robotd's default idle settings, since no call
+- **Roboglot times its gaze hold and its fade wait by robotd's default idle settings, since no call
   reports them.** The idle look-around's timings and its switch are `[idle]` settings in
   `robotd.toml`, `after_s`, `fade_s` and `enabled`, and nothing robotd answers says what they are.
-  So on every robotd from API 41 up quackd takes the defaults at daemon-v0.18.8: robotd counts the
+  So on every robotd from API 41 up Roboglot takes the defaults at daemon-v0.18.8: robotd counts the
   duck still once nothing asks it to move and nobody has steered its head for 2 s, glances once it
   has counted it still for 2 s more, and fades the look-around in, and out again, over 1.5 s. On
   those numbers a held gaze goes out again every second, and `go_to` and `search_scan` wait 1.5 s
   after centring the head, whether or not the robot glances at all. On a robot retuned to glance
   sooner or to fade for longer, the gaze hold can let go, taking robotd's glance for another
   client's head, and `go_to` and `search_scan` can steer on a frame a glance is still fading out
-  of. On one that glances no sooner and fades no longer, or with the look-around off, quackd only
-  waits longer than it needs. What changes for you: nothing quackd does. On a robot whose `[idle]`
+  of. On one that glances no sooner and fades no longer, or with the look-around off, Roboglot only
+  waits longer than it needs. What changes for you: nothing Roboglot does. On a robot whose `[idle]`
   you have changed, keep `after_s` at 2 s or more and `fade_s` at 1.5 s or less, or set
-  `enabled = false`, and quackd holds a gaze and waits out a glance there as it does on a stock
+  `enabled = false`, and Roboglot holds a gaze and waits out a glance there as it does on a stock
   robot.
 - **The industrial arm has met a real rosbridge, and no controller and no arm.** A workflow of its
   own in CI, `rosarm contract`, runs the transport over roslibpy against rosbridge_server and rosapi
@@ -1167,14 +1205,14 @@ checkpoint that LeRobot 0.7.0 saved, for now.
   bringup's defaults. The address sets the action, the readings topic and a prefix for the joints,
   and the connect checks the action and the joints against what the bridge lists; a status topic a
   cell names otherwise is never read, and then `can_move` believes the driver.
-- **quackd looks for a goal still running only at connect, and only in the action's own status.**
-  MotoROS2 is read to publish no goal status, so on the MotoMini nothing is checked, and quackd's
+- **Roboglot looks for a goal still running only at connect, and only in the action's own status.**
+  MotoROS2 is read to publish no goal status, so on the MotoMini nothing is checked, and Roboglot's
   first goal there waits behind one still running, unanswered until that one ends. On the other
   three a status the bridge has not handed over within a second reads as nothing running, and
   neither a goal another client sends after the check nor a trajectory published on the controller's
-  own topic, which has no goal and so no status, is seen: quackd's next goal would replace either.
+  own topic, which has no goal and so no status, is seen: Roboglot's next goal would replace either.
 - **An industrial arm's move smaller than half a degree is called arrived whether or not the arm
-  moved.** quackd's arrival is every joint reading within half a degree of its goal, so a goal that
+  moved.** Roboglot's arrival is every joint reading within half a degree of its goal, so a goal that
   near where each joint already reads passes it at once, and a controller that said it succeeded
   without moving the arm would go unnoticed. The verb's own description tells the pilot so. A goal
   within a twentieth of a degree of every reading sends nothing, and says the arm is already there.
@@ -1192,7 +1230,7 @@ checkpoint that LeRobot 0.7.0 saved, for now.
 
 0.33.0 says what an adapter is made of. An adapter carried three things in one package: the body,
 which is data and differs from one robot to the next; what every body of its kind does alike; and the
-binding quackd reaches it by, an SDK it imports, a wire it speaks or a bridge it ships. Only the body
+binding Roboglot reaches it by, an SDK it imports, a wire it speaks or a bridge it ships. Only the body
 is one per robot, so a robot that speaks a protocol a package already speaks is a record in that
 package now, and not a copy of it
 ([ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). Huebot is the first.
@@ -1206,45 +1244,45 @@ Code that reaches a real robot names who answers for its first run on one, and w
 ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)), and the eight
 bound backends that were here before the rule say they are grandfathered. Eleven robots join as
 described bodies, one YAML each of what their makers publish with a source beside every figure
-([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)): each registers,
-is judged against a task and joins a flock like any other body, and quackd drives no part of it. An
+([ADR-0077](docs/adr/0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)): each registers,
+is judged against a task and joins a team like any other body, and Roboglot drives no part of it. An
 arm's LeRobot robot type is data, so an SO-100 registers as one and runs on the code that drove the
 SO-101. The README draws these layers from the catalogue, and a test fails until an adapter added
 there is in the picture.
 
-What changes for you: `quackd[huebot]` installs `quackd-microduck` beside `quackd-huebot`, and code
-that imported `quackd_huebot.transports` imports the Microduck's transport and hands it the Huebot's
+What changes for you: `roboglot[huebot]` installs `roboglot-microduck` beside `roboglot-huebot`, and code
+that imported `roboglot_huebot.transports` imports the Microduck's transport and hands it the Huebot's
 record. `list-adapters --json` has a tenth row, of kind `described`, whose `extra` is `built-in` and
 names nothing to install, and a script that matched the words of a row's `status` reads `tiers`
-instead. Once a robot is registered with a robot type, quackd 0.32.0 refuses the whole of
+instead. Once a robot is registered with a robot type, Roboglot 0.32.0 refuses the whole of
 `robots.json`. A Microduck camera URL that redirects, or whose picture is over 8 MB, is no camera now,
 and the connect says why.
 
 A nightly now reads every file the adapters cite on GitHub, at its pin and where the pin tracks, and
-keeps an issue open for each upstream that has moved or carries a ref quackd cannot follow. Run by
+keeps an issue open for each upstream that has moved or carries a ref Roboglot cannot follow. Run by
 hand on 2026-11-05 it found six upstreams moved, and on 2026-11-07 seven, LeRobot having published
 0.7.0 in between. None of what this release changes in the code has run on a robot. The SO-101's real
 backend builds its follower from the registered type now and checks the bus's joints before anything
-is energised, which only a fake arm has seen. No SO-100 has run quackd, and no described body has been
+is energised, which only a fake arm has seen. No SO-100 has run Roboglot, and no described body has been
 compared with its robot.
 
 ### Added
 
 - **A robot that answers `robotd`'s calls is one record over the Microduck's package.**
-  `quackd_microduck.body.Body` holds what differs between two such robots: the description, the verbs
-  it has, what quackd's sentences call it and what answers for it, and whether it has a `mediad`, a map
+  `roboglot_microduck.body.Body` holds what differs between two such robots: the description, the verbs
+  it has, what Roboglot's sentences call it and what answers for it, and whether it has a `mediad`, a map
   and a head. `manifest_for`, `verbs_for`, `conditions_for` and `make_transport(body=...)` take one, and
   a package over the family subclasses `MicroduckAdapter` and names its own. Huebot is the first, and
   [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) has the four files it
   takes.
-- **Every backend says how far it has got, in one of four words.** `quackd list-adapters` and
-  `quackd doctor` print a tier for each backend: 📄 described, a body quackd only describes; ✅ rehearsed,
+- **Every backend says how far it has got, in one of four words.** `roboglot list-adapters` and
+  `roboglot doctor` print a tier for each backend: 📄 described, a body Roboglot only describes; ✅ rehearsed,
   a simulator or a mock that runs whole tasks in CI; 🧪 bound, code that reaches a real robot and has never
-  met one; and 🤖 verified, a robot that has moved under quackd, with who ran it and the first day it did.
+  met one; and 🤖 verified, a robot that has moved under Roboglot, with who ran it and the first day it did.
   The table's `status` column is now `tier`, one tier to a line, and on a console that cannot carry the
   marks, such as a redirected Windows pipe, the two new ones read `[hw]` and `[desc]`. In `--json` each
   row gains `kind`, `tiers`, `family` and `route`: the tier, owner, date and note of every backend, the
-  kind of body, and whether quackd reaches it through an SDK, a wire or a bridge of its own. The `status`
+  kind of body, and whether Roboglot reaches it through an SDK, a wire or a bridge of its own. The `status`
   key stays and its text is now built from the tiers, so a script that matched its old wording should
   read `tiers` instead. An adapter published from somewhere else may declare `TIERS`, `FAMILY` and
   `ROUTE` and is printed the same way. What changes for you: a script that counts the rows of `--json`
@@ -1258,70 +1296,70 @@ compared with its robot.
   The eight bound backends that were here before the rule say `grandfathered 0.33.0`, and their date
   in `--json` is the day it was adopted, 2026-11-05, which says that nobody has named a date for any
   of them. `lerobot:real` is the one verified backend, first run on 2026-09-15.
-- **Eleven robots quackd describes and drives no part of.** `--robot described:<name>` reaches a
+- **Eleven robots Roboglot describes and drives no part of.** `--robot described:<name>` reaches a
   Unitree B2, Go2 EDU and G1 EDU, a Franka Research 3, a Universal Robots UR5e, a KUKA LBR iisy 3 R760
   and LBR iiwa 7 R800, a Yaskawa MotoMini, a Menlo Asimov-1, a Noetix Bumi and a Rhoban Microban
-  ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). Each is one
-  YAML in the core, `quackd/adapters/bodies/<name>.yaml`, holding what its maker publishes, with a
-  source and the day it was read beside every figure, so `uv pip install quackd` alone has them. A
-  described body registers (`quackd robot add b2 described:unitree-b2`), lists its verbs, shows a
-  pilot its datasheet, takes a feasibility verdict and joins a pilot flock like any other body. It has
+  ([ADR-0077](docs/adr/0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)). Each is one
+  YAML in the core, `roboglot/adapters/bodies/<name>.yaml`, holding what its maker publishes, with a
+  source and the day it was read beside every figure, so `uv pip install roboglot` alone has them. A
+  described body registers (`roboglot robot add b2 described:unitree-b2`), lists its verbs, shows a
+  pilot its datasheet, takes a feasibility verdict and joins a pilot team like any other body. It has
   two verbs, `report_state` and `stop`, and its pilot is told before any figure that the body moves
-  only if someone else moves it. It lists no sensors, since quackd reads none of the robot's: what the
+  only if someone else moves it. It lists no sensors, since Roboglot reads none of the robot's: what the
   robot carries is a note in its datasheet, and a board with a camera beside it (`--host`) gives it
   `observe`, as it gives any body. Its posture reads `unknown` and nothing reports its falls, and its
-  `stop` says there is nothing to stop. An address, a camera and a token are refused at `quackd robot
-  add` and `robot edit` as at a run, and a rest pose by `quackd robot rest-pose` and at a run, since
-  there is no robot to reach. `quackd robot list --probe` says `described: nothing to reach` with
-  neither a tick nor a cross, and `quackd announce` refuses one. `--robot described` with no body
+  `stop` says there is nothing to stop. An address, a camera and a token are refused at `roboglot robot
+  add` and `robot edit` as at a run, and a rest pose by `roboglot robot rest-pose` and at a run, since
+  there is no robot to reach. `roboglot robot list --probe` says `described: nothing to reach` with
+  neither a tick nor a cross, and `roboglot announce` refuses one. `--robot described` with no body
   after it is refused with the list. A described body is never the robot a command with no `--robot`
-  falls back to, never counted as an adapter (`quackd doctor` says `11 described bodies` beside its
-  count of adapters installed), and never offered a connect block in `quackd ui`. Nothing that names a
+  falls back to, never counted as an adapter (`roboglot doctor` says `11 described bodies` beside its
+  count of adapters installed), and never offered a connect block in `roboglot ui`. Nothing that names a
   body to hand a task to names one: not the `could` list an MCP client is given, and not a hint, which
   ends with a sentence of its own, `By their makers' figures alone, described:franka-research-3 could
-  too, and quackd drives no part of it: each is a described body.` `tests/test_described.py` holds
-  these, and a pilot flock of a duck and a described B2 runs to the end in it, but for two:
+  too, and Roboglot drives no part of it: each is a described body.` `tests/test_described.py` holds
+  these, and a pilot team of a duck and a described B2 runs to the end in it, but for two:
   `tests/test_mcp_fleet.py` holds the `could` list, and no test gives a described body a board's
   camera.
-- **An SO-100 is registered as one, and runs on the code that drove the SO-101.** `quackd robot add
+- **An SO-100 is registered as one, and runs on the code that drove the SO-101.** `roboglot robot add
   desk-arm lerobot:real --address COM5 --robot-type so100_follower` registers an arm under LeRobot's
-  `so100_follower`, which at the commit quackd read is the same class as `so101_follower`, so it
+  `so100_follower`, which at the commit Roboglot read is the same class as `so101_follower`, so it
   drives on the same code, and its manifest calls it `lerobot-so100` and carries its own figures.
   `--robot-type` is on `robot add` and `robot edit`, `--clear robot-type` forgets it, `robot show`
   prints it, and `list-adapters --json` rows gain `robot_types`. `robots.json` gains a `robot_type`
-  key that is left out when there is none, so a file that names no type is one an older quackd still
-  reads. One that names a type is not: quackd 0.32.0 refuses the whole file, every robot in it, with
+  key that is left out when there is none, so a file that names no type is one an older Roboglot still
+  reads. One that names a type is not: Roboglot 0.32.0 refuses the whole file, every robot in it, with
   `robots.json: desk-arm: robot_type: Extra inputs are not permitted`. A registered robot's type
   reaches everything that describes or builds it, `doctor` included. A type the adapter does not build
   is refused at `robot add`, and so is any type but the SO-101 on `lerobot:mujoco`, which is a model
   of an SO-101, and `robot twin` refuses an arm of another type for the same reason. The SO-101, the
   default, is stored as no type at all. `lerobot:real` builds its follower from the type, and before
   anything is energised it refuses an arm whose bus names other joints than the six every verb moves.
-  A Koch v1.1 is described in `quackd_lerobot/arms.py` and registered by nothing until somebody names
+  A Koch v1.1 is described in `roboglot_lerobot/arms.py` and registered by nothing until somebody names
   a date to run one ([docs/adapters/lerobot/README.md](docs/adapters/lerobot/README.md#which-arms)).
 
 ### Changed
 
-- **`quackd-huebot` is a body over `quackd-microduck`, and installs it.** The Huebot package was the
+- **`roboglot-huebot` is a body over `roboglot-microduck`, and installs it.** The Huebot package was the
   Microduck's copied and renamed on 2026-10-20, and three fixes since had to land in both by hand:
   `stand_up` hearing a stop in 0.30.2, `kick`, `sit` and `stand` hearing one in 0.30.3, and a camera's
-  picture read only as a JPEG or a PNG in 0.31.3. It is one record now, `quackd_huebot/body.py`, over
+  picture read only as a JPEG or a PNG in 0.31.3. It is one record now, `roboglot_huebot/body.py`, over
   one set of verbs and one transport, as
   [ADR-0075](docs/adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md) says.
-  `quackd[huebot]`, `--robot huebot:jsonrpc` and a registered Huebot read as they did, and the move
+  `roboglot[huebot]`, `--robot huebot:jsonrpc` and a registered Huebot read as they did, and the move
   itself left every description either robot can give hashing as it did.
   `tests/golden/manifest_digests.json` holds those digests from here on, the Microduck's as 0.32.0
   gave them and the Huebot's as the next entry changes them. A Huebot's state gains the three lens
   keys a Microduck's camera record has, and `--fov-deg` reaches its transport as it does a
   Microduck's. What changes for you: nothing to do, one more package in the install, and
-  `quackd_huebot.transports` is gone, so code importing that module imports
-  `quackd_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`. A logging setup that named
-  `quackd.transport.huebot` names `quackd.transport.jsonrpc`, whose lines are the same.
+  `roboglot_huebot.transports` is gone, so code importing that module imports
+  `roboglot_microduck.transports.jsonrpc_unix` and passes `body=HUEBOT`. A logging setup that named
+  `roboglot.transport.huebot` names `roboglot.transport.jsonrpc`, whose lines are the same.
 - **A Huebot says which of the family's verbs it has not got, and why.** `gaze`, `watch` and `grab`
   were left out with the reasons in the code's comments, and `explore` and `find`, which the Microduck
   gained after the copy was made, with no word at all, so a pilot on a Huebot, and a task file asking
   for one, heard only that the verb was not there. They are in `extras.not_offered` now, as a
-  Microduck's missing verbs have been, so the pilot reads them beside the body and `quackd validate`
+  Microduck's missing verbs have been, so the pilot reads them beside the body and `roboglot validate`
   quotes them. That changes a Huebot's digest, the fingerprint a LAN announce carries, as any new line
   on a body's description does.
 - **A Microduck's camera that redirects, or sends a picture over 8 MB, is no camera.** In 0.32.0 a
@@ -1329,8 +1367,8 @@ compared with its robot.
   redirect is named and refused now, so a `--camera-url` that redirects has to name where it redirects
   to, and a picture over 8 MB is refused, which no robot's camera here sends. Either leaves the run
   with no camera, and the connect says why.
-- **`described` is no robot's name.** `quackd robot add described ...` is refused, since `--robot
-  described:<body>` reaches the bodies quackd only describes. A robot registered under that name
+- **`described` is no robot's name.** `roboglot robot add described ...` is refused, since `--robot
+  described:<body>` reaches the bodies Roboglot only describes. A robot registered under that name
   before still loads and runs.
 
 ### Fixed
@@ -1363,8 +1401,8 @@ compared with its robot.
   standing is called upright only where nothing says it has fallen, and an unreadable safety flag ends
   the wait.
 - **The setup page names the extra to install as it is.** For an adapter not installed here it said
-  `uv pip install "quackd[quackd[lerobot]]"`, putting a second `quackd[...]` round the catalogue's
-  extra, which names the package already. It says `uv pip install "quackd[lerobot]"` now.
+  `uv pip install "roboglot[roboglot[lerobot]]"`, putting a second `roboglot[...]` round the catalogue's
+  extra, which names the package already. It says `uv pip install "roboglot[lerobot]"` now.
 - **Five rosbridge refs into urdfdom cited lines that say something else.** At the commit they
   pin, `URDF_JOINT_LIMIT` cited line 127 of `joint.cpp`, a `catch` inside the parsing of `upper`,
   for the four limit attributes, which that file reads on lines 102, 118, 134 and 150.
@@ -1374,7 +1412,7 @@ compared with its robot.
   are on 406 to 416. And `URDF_MASS`'s note sent a reader to line 356 of `link.cpp` for the
   optional inertial element, which is on 429. Each now cites the line that says it, at the same
   pin, and each reads as moved on `rolling`, urdfdom's default branch, which the nightly compares
-  it with. What quackd reads from a URDF did not change: the attribute names were right and
+  it with. What Roboglot reads from a URDF did not change: the attribute names were right and
   their line numbers were not. Found by reading the file at its pin while the drift job was
   under review. The job cannot tell a wrong line from a right one, since it compares a line with
   itself over time: a line that is the only one of its kind reads as `same` or `moved` whatever
@@ -1387,13 +1425,13 @@ compared with its robot.
   780 of a 597-line protocol page, and `SVC_GET_PARAM` cited a `)`. The drift script's first run, by
   hand before the nightly existed, found them; each now cites the line that names the thing, at the
   same pin.
-- **`quackd doctor` no longer cuts a long note with an ellipsis.** On a console 80 columns wide the
+- **`roboglot doctor` no longer cuts a long note with an ellipsis.** On a console 80 columns wide the
   upstream assumptions table cut the source paths and line ranges its notes quote, so the command that
   is pasted into issues lost the one thing the row was there to say, and the endpoint module's notes,
   walked from this release, quote URLs too long for the column even at 200. The column folds long
   words now. `tests/test_doctor.py`'s codepage tests fail without this once the endpoint row is
   walked, since they hold the table to ASCII and an ellipsis is not.
-- **`quackd doctor`'s pins table shows the endpoint module.** The arm's `UPSTREAMS` left out
+- **`roboglot doctor`'s pins table shows the endpoint module.** The arm's `UPSTREAMS` left out
   `policy/endpoint_upstream_api.py`, the module its Hugging Face Endpoints are read from, so the table
   showed 13 rows for 14 modules. It shows 14.
 
@@ -1412,7 +1450,7 @@ compared with its robot.
   record in that package plus a thin distribution of its own. ADR-0076 gives every backend one of four
   tiers, described, rehearsed, bound and verified, and the rule that bound code enters this repository
   only with a named owner and a date for its first hardware run, the eight bound backends of 0.32.0
-  grandfathered. ADR-0077 makes a body quackd only describes one YAML in the core, read from its
+  grandfathered. ADR-0077 makes a body Roboglot only describes one YAML in the core, read from its
   maker's figures with a source each. The amendment notes on ADR-0017, ADR-0022 and ADR-0037, a
   section on [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) and a
   paragraph in [CONTRIBUTING.md](CONTRIBUTING.md) say what each asks of a contributor. The code the
@@ -1435,7 +1473,7 @@ compared with its robot.
   [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) names the `TIERS`, `FAMILY`
   and `ROUTE` a module may declare and what a catalogue row now carries, and
   [docs/concepts/safety.md](docs/concepts/safety.md) says what stops a described body: nothing of
-  quackd's, since nothing of quackd's moves it.
+  Roboglot's, since nothing of Roboglot's moves it.
 - **The adapter guide counts nine adapters where `uv sync --extra dev` installs them.** It said
   all eight, a count from before MOSS, in a shape the count guard did not read. The guard reads
   `all N editable` and `all N of them` now, on CONTRIBUTING.md as well as the guide.
@@ -1448,7 +1486,7 @@ compared with its robot.
   file, a directory, a branch, a release tag or a repository that is gone, and a newer version than
   the one a module read, on PyPI, in upstream's `pyproject.toml` or in an API's own document. A line
   that moved within its file is reported and is not drift, and neither is a page that changed. A
-  broken ref is one of quackd's own that cannot be followed: a blank or bracket-only line, a line past
+  broken ref is one of Roboglot's own that cannot be followed: a blank or bracket-only line, a line past
   the end of its file, or a path with nothing at the pin, asked of the API as well as the raw host.
   And a night something did not answer as it should is unchecked. It exits 0, 1 for drift or a broken
   ref, which is work for somebody here, or 2 when nothing drifted and something could not be checked,
@@ -1466,7 +1504,7 @@ compared with its robot.
   minutes and found six upstreams moved, none broken and none unchecked. LeRobot's `feetech/tables.py`
   was gone from its main branch, as the motor-library change says, with 16 more cited lines changed.
   robotd was at `daemon-v0.18.5`, and its API version line no longer read 41. huggingface_hub was at
-  2.4.0 on PyPI where quackd read 1.29.0. `microduck_rl` had changed the two files eleven of its refs
+  2.4.0 on PyPI where Roboglot read 1.29.0. `microduck_rl` had changed the two files eleven of its refs
   cite whole, and its README named a licence version and a `LICENSE-MODELS.md` for its models where it
   had had one sentence. And AlohaMini's and MOSS's main branches had each changed cited lines. None of
   these is re-read here: each is an issue the first scheduled run opens. Run again on 2026-11-07 it
@@ -1475,10 +1513,10 @@ compared with its robot.
 
 ### Known limitations
 
-- **No SO-100 has run quackd.** It is bound with the SO-101's owner and first-run date, rok and
+- **No SO-100 has run Roboglot.** It is bound with the SO-101's owner and first-run date, rok and
   2026-09-15, at the project's owner's word, because it runs the same LeRobot class. Its figures were
   read from its maker's robot description by one reader: a reach to the jaw's pivot, and no payload,
-  since nobody publishes one. `quackd ui` neither sets nor shows a robot type, and a passport made on
+  since nobody publishes one. `roboglot ui` neither sets nor shows a robot type, and a passport made on
   the robot carries the SO-101's figures whichever arm it is.
 - **No described body's figures have been checked by a second reader, and none against a robot.** Each
   was read from the source it names on the day it says, 2026-11-05, and the Unitree G1's on
@@ -1489,59 +1527,59 @@ compared with its robot.
   manipulator at all, because Noetix publishes nothing on what its arms can hold. Where a maker gives
   a range, the lower end is the figure. And two figures are marked `estimate` because the maker's own
   page does not give them: the Unitree B2's joint count, from a dealer's listing, and the KUKA LBR
-  iiwa's weight, from a 2016 KUKA presentation. quackd drives none of these bodies, so nothing here
+  iiwa's weight, from a 2016 KUKA presentation. Roboglot drives none of these bodies, so nothing here
   has been compared with one.
 
 ## [0.32.0] — 2026-11-07
 
-0.32.0 calls an LLM an LLM, everywhere quackd says anything, and calls a policy a policy. What quackd
+0.32.0 calls an LLM an LLM, everywhere Roboglot says anything, and calls a policy a policy. What Roboglot
 prints, what it sends the pilot, its help, its names, its records and its pages said `model` where
 they meant an LLM, and a word that also covers a servo, a simulator's MuJoCo file and a learned policy told
 a reader nothing. Now the counters read `LLM calls 6` and `time 49.5 s (LLM 20.4 s)`, the command is
-`quackd list-llms`, and `tests/test_llm_wording.py` fails if the word comes back in a sentence, outside
+`roboglot list-llms`, and `tests/test_llm_wording.py` fails if the word comes back in a sentence, outside
 what it lists with a reason.
 
 The other half of that is what is not an LLM. A run flown by `--controller vla` asks none, so it counts
-`turns` and no line of it says one was asked. The policy types moved from `quackd list-models --kind policy`
-to `quackd policy list`, and their page is `docs/guides/vlas.md`. The `--help` panel that holds `--llm` and
+`turns` and no line of it says one was asked. The policy types moved from `roboglot list-models --kind policy`
+to `roboglot policy list`, and their page is `docs/guides/vlas.md`. The `--help` panel that holds `--llm` and
 `--controller` is `Pilot`, because those flags decide who flies the run.
 
 What changes for you: this breaks scripts, and it comes with no minor of warning, at the project's owner's
 word. A script that reads `model` from `summary.json`, a transcript or `--json` has to read `llm_id`. One that
-types `quackd list-models` has to type `quackd list-llms`, one that types `--kind policy` has to type `quackd
+types `roboglot list-models` has to type `roboglot list-llms`, one that types `--kind policy` has to type `roboglot
 policy list`, and one that matches a printed line has to change its words. A decision LLM you wrote yourself
-has to rename three things. A run recorded earlier still replays, because `quackd log` reads either key. What
+has to rename three things. A run recorded earlier still replays, because `roboglot log` reads either key. What
 keeps its word is what belongs to somebody else or is no LLM: what a vendor's API takes, the `model` field of a
 robot's manifest and passport, MuJoCo, policies and detectors.
 
-Beside that, a ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot, and `quackd
+Beside that, a ToddlerBot camera frame over about 48 KB no longer cuts Roboglot off from the robot, and `roboglot
 log` on a chat session says what its goals' pilot spent. None of this has met an arm or a ToddlerBot.
 
 ### Added
 
-- **`quackd policy list` lists the policy types.** These are the rows `quackd list-models --kind policy`
-  printed, the types `quackd policy serve` serves and the ones it refuses with why, with their `--json`
+- **`roboglot policy list` lists the policy types.** These are the rows `roboglot list-models --kind policy`
+  printed, the types `roboglot policy serve` serves and the ones it refuses with why, with their `--json`
   as it was and still on a machine with no LeRobot. They sit beside `serve`, `check` and `endpoint`
   now.
 
 ### Changed
 
-- **quackd says LLM wherever it means one.** What it prints, what it sends to the pilot and what its
+- **Roboglot says LLM wherever it means one.** What it prints, what it sends to the pilot and what its
   help says all use the word now. The counters under a run's verdict read `LLM calls 6`,
   `time 49.5 s (LLM 20.4 s)`, `LLM calls p50 2.6 s, p90 7.7 s, max 7.7 s` and `after 3 LLM calls`, the
   run line reads `provider=openai LLM=gpt-6-sol`, the budget line `step 3/40, LLM calls 3/40`, and the
   stepper's lines `to the pilot LLM` and `vs pilot LLM`. `--help`'s panel `Model` is `Pilot`, because
-  those flags decide who flies the run, and the page `quackd ui` draws already called them that. `--llm`
+  those flags decide who flies the run, and the page `roboglot ui` draws already called them that. `--llm`
   shows `VENDOR[:LLM]`, `--decision-llm` `NAME[:LLM]` and an OpenRouter id `AUTHOR/LLM`. The pilot reads
   the word as well: the play section's `product or LLM`, and the task files of E016, E156 and E187. A
   script that matches a printed line has to change its words.
 - **Run records and `--json` say `llm_id` where they said `model`, and a script that reads them has to
   change.** That is the LLM's id in `summary.json`, in `run_start`, `llm_request` and `llm`, in the
-  `decision` block, `decision_llm` and `watch`, in a flock's records and in `quackd list-llms --json`
-  and `quackd doctor --json`, whose `refused_model` is `refused_llm`. `decision_shadow`'s `model_verb`
-  is `llm_verb` and its `model_arguments` is `llm_arguments`. A run recorded earlier keeps what it wrote, and `quackd log` reads either, so an old
-  run replays as it did. An older quackd replaying a newer run does not stop, and finds no LLM's id to print. The
-  LLMs the page `quackd ui` saved in `ui-setup.json` carry over, and 0.31.3 reading a setup this version
+  `decision` block, `decision_llm` and `watch`, in a team's records and in `roboglot list-llms --json`
+  and `roboglot doctor --json`, whose `refused_model` is `refused_llm`. `decision_shadow`'s `model_verb`
+  is `llm_verb` and its `model_arguments` is `llm_arguments`. A run recorded earlier keeps what it wrote, and `roboglot log` reads either, so an old
+  run replays as it did. An older Roboglot replaying a newer run does not stop, and finds no LLM's id to print. The
+  LLMs the page `roboglot ui` saved in `ui-setup.json` carry over, and 0.31.3 reading a setup this version
   saved forgets them. This did not go through a release with both keys, which `RELEASING.md` asks of
   a rename, because the project's owner chose to take the break at once. What keeps its name is what
   belongs to somebody else: the `model` a vendor's API takes and returns, `/v1/models`, and the
@@ -1552,8 +1590,8 @@ log` on a chat session says what its goals' pilot spent. None of this has met an
   spread, and the line at the top of each step says `turns 2/40`. The rest of its record is told the
   same way: the run line reads `provider=vla pilot=scripted:stack`, the log's tags are `pilot>` and
   `pilot<`, the live line says `the pilot chose`, the prompt's budget says `turns`, History in
-  `quackd ui` shows `turns` for `llm_calls`, and a budget it runs out of says `max_llm_calls (3) reached,
-  which counts turns here`. The record's own keys keep their names. On a VLA run recorded earlier, `quackd
+  `roboglot ui` shows `turns` for `llm_calls`, and a budget it runs out of says `max_llm_calls (3) reached,
+  which counts turns here`. The record's own keys keep their names. On a VLA run recorded earlier, `roboglot
   log` tells it in these words, and leaves the steps and the prompt it recorded as they were. `--llm fake`
   keeps `LLM calls`, because it is chosen through `--llm` and stands in for an LLM.
 - **A decision LLM you wrote yourself has to rename three things.** The module's `make(spec, *, url,
@@ -1562,22 +1600,22 @@ log` on a chat session says what its goals' pilot spent. None of this has met an
 
 ### Removed
 
-- **`quackd list-models` is gone: the command is `quackd list-llms`.** There is no alias, so a script
+- **`roboglot list-models` is gone: the command is `roboglot list-llms`.** There is no alias, so a script
   that still types the old name stops with `No such command` and has to change it. Like the keys above,
   it had no release of warning, at the project's owner's word.
 - **`--kind policy` is gone as well, and `--kind all` is now the pilots and the decision LLMs.** A policy
-  is no LLM, so `quackd list-llms --kind policy` is refused and names `quackd policy list`.
+  is no LLM, so `roboglot list-llms --kind policy` is refused and names `roboglot policy list`.
 
 ### Fixed
 
-- **`quackd log` on a chat session says what its goals' pilot spent.** It said `llm calls 0` and
+- **`roboglot log` on a chat session says what its goals' pilot spent.** It said `llm calls 0` and
   `tokens 0+0` under any session, whatever its goals had spent, because a session's `summary.json` wrote
   neither. It writes `provider`, `llm_calls` and `usage` now, the pilot's calls and tokens added up over its
-  goals, and `quackd log` prints them. A session recorded earlier names no calls and no tokens, rather
+  goals, and `roboglot log` prints them. A session recorded earlier names no calls and no tokens, rather
   than a zero nobody counted. A session's record has no cost of its own, because a decision LLM in its
   fast lane or a goal's stepper can bill as well and is not added in, and each goal's cost stays in that
   goal's record. `tests/test_drive_cli.py` holds a session's record to its goals' records.
-- **A ToddlerBot camera frame over about 48 KB no longer cuts quackd off from the robot.** A frame comes
+- **A ToddlerBot camera frame over about 48 KB no longer cuts Roboglot off from the robot.** A frame comes
   from the daemon as one line of base64, and the client read with asyncio's 64 KiB limit, so a longer line
   raised out of its read loop, which died without a word. Every request after it waited out its timeout,
   the heartbeat's among them, while the keepalive went on telling the daemon all was well. The camera's
@@ -1598,13 +1636,13 @@ log` on a chat session says what its goals' pilot spent. None of this has met an
   and so do proper names such as the Model Context Protocol. `tests/test_llm_wording.py` fails if the
   word comes back, and lists what may keep it and why. The run logs under `docs/examples/lerobot/` stay
   as their runs printed them, and so do the recorded transcripts under `docs/assets/`.
-- **Three pages quoted output quackd no longer prints.** The token counts in the README and in
-  `docs/guides/flock.md` had moved with the prompt, and `docs/concepts/safety.md` quoted a 529's error in
+- **Three pages quoted output Roboglot no longer prints.** The token counts in the README and in
+  `docs/guides/team.md` had moved with the prompt, and `docs/concepts/safety.md` quoted a 529's error in
   an older shape. The pages that quote the counters of a run anybody can repeat were captured again by
-  running their commands. Those from an arm, a Jetson or a stand-in were checked against quackd's strings.
+  running their commands. Those from an arm, a Jetson or a stand-in were checked against Roboglot's strings.
 - **A run log can be written for a VLA run and for a `--goal` line.** `scripts/example_log.py` would
   have written `LLM calls`, `Waiting for the LLM` and a `--llm` line on a VLA run such as E197's or
-  E198's, and `quackd run --goal --robot lerobot:mock`, which quackd refuses, for any run with a goal. A
+  E198's, and `roboglot run --goal --robot lerobot:mock`, which Roboglot refuses, for any run with a goal. A
   VLA run's log says `Pilot` and `Turns`, and is tried on `lerobot:mujoco` against a policy server. It
   stops with a sentence, not a `KeyError`, on a chat session's record, since it writes the log of a run,
   so E145, E185, E186 and E203 wait until it can write one of those. No log already written changes.
@@ -1623,7 +1661,7 @@ next release, and fixes how a run ends when the arm stops answering, which is wh
 does. What changes for you: nothing to do, unless a `--camera-url` serves something other than a JPEG or
 a PNG. A run that loses the arm ends on one line and no longer in a Python traceback, at the end of a
 by-hand run nobody is told to reach into its jaws, and a chat is told why. On Python 3.12 or later
-`quackd[lerobot]` still installs Pillow 12.3.0 until quackd moves to LeRobot's next release, as Known
+`roboglot[lerobot]` still installs Pillow 12.3.0 until Roboglot moves to LeRobot's next release, as Known
 limitations says. None of this has met an arm.
 
 ### Fixed
@@ -1634,12 +1672,12 @@ limitations says. None of this has met an arm.
   the stop, the close and the record had all run. A port that went with the supply and a read past its
   deadline did the same. A read that fails now says `the arm did not answer: ` and what LeRobot raised,
   as the heartbeat always has, and the run ends on that line, with the same exit code, 1, and the same
-  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `quackd run`,
+  outcome in its record, `error`. `tests/test_lerobot_sim.py` cuts a run's reads through `roboglot run`,
   and `tests/test_lerobot_adapter.py` tries each kind of failure. Each failed before this change. It has
   run against the simulator's lost reads, and not on an arm.
 - **A by-hand run no longer tells somebody to reach into the jaws of an arm that stopped answering.** If
   the arm went silent as Enter opened the gripper, the line said to take what is in it by hand and that
-  the arm was holding where it stopped, which nothing had read. It now says quackd could not confirm
+  the arm was holding where it stopped, which nothing had read. It now says Roboglot could not confirm
   whether the arm has torque, and to cut its power first. A gripper that refused on an arm that answered
   says what it said. `tests/test_loop.py` loses the arm at that question. It failed before this change.
 - **A chat is told why when the arm stops answering.** The read a verb's gates begin with failed with no
@@ -1647,11 +1685,11 @@ limitations says. None of this has met an arm.
   `the arm did not answer: ` and what LeRobot raised. The stop is still tried and ends a running policy
   segment, but on an arm that does not answer a read it writes no goal, so the power switch is what stops
   that arm. `tests/test_mcp_server.py` tries it. It failed before this change.
-- **`quackd[lerobot]` and `quackd[lerobot-vla]` stop below LeRobot's new motor library.** The first
+- **`roboglot[lerobot]` and `roboglot[lerobot-vla]` stop below LeRobot's new motor library.** The first
   asked for `lerobot[feetech]>=0.6` with no ceiling and the second stopped only at 0.7, so a fresh install
   would have taken LeRobot's next release the day it appeared. LeRobot's main branch calls itself 0.6.2 and
   has replaced `feetech-servo-sdk`, the library that talks to the arm's motors, with `rustypot`
-  ([huggingface/lerobot#4672](https://github.com/huggingface/lerobot/pull/4672)), and nothing in quackd has
+  ([huggingface/lerobot#4672](https://github.com/huggingface/lerobot/pull/4672)), and nothing in Roboglot has
   been read or run against that. Both extras now stop below 0.6.2. What changes for you: nothing, since
   0.6.1 is what they install today. A wheel already on PyPI keeps the requirement it shipped with.
   `tests/test_workspace.py` fails if a ceiling goes, or if the version `upstream_api.py` was read at moves
@@ -1671,7 +1709,7 @@ limitations says. None of this has met an arm.
   can carry an EXIF block that is no TIFF, and Pillow raises `SyntaxError` for that from
   `exif_transpose`, which nothing caught. The refusal says to save a copy without it.
   `tests/test_images.py` fails without this.
-- **`quackd[dev]` no longer brings `pre-commit`.** It brings `virtualenv`, and every `virtualenv` with
+- **`roboglot[dev]` no longer brings `pre-commit`.** It brings `virtualenv`, and every `virtualenv` with
   the fixes for its 12 advisories needs a `packaging` LeRobot 0.6.1 caps, so the lock could not take
   one. No CI job ran it. What changes for a contributor: `uv tool install pre-commit`, and
   `pre-commit install` again if a hook is already installed, since an older hook stops every commit
@@ -1702,16 +1740,16 @@ limitations says. None of this has met an arm.
   nightly already ran the whole suite on 13. The other 12 were in `virtualenv`, which leaves with
   `pre-commit` and six other packages (under Fixed). The last five, in `transformers`, `setuptools` and
   `torch`, stay in the lock until LeRobot's next release, and their alerts are dismissed on GitHub as not
-  used, since nothing in quackd reaches them. Forcing `transformers` is worse than having it: LeRobot's own
+  used, since nothing in Roboglot reaches them. Forcing `transformers` is worse than having it: LeRobot's own
   [huggingface/lerobot#5220](https://github.com/huggingface/lerobot/pull/5220) says a newer one loads pi0
   and pi05 checkpoints with a random vision tower and only a warning. LeRobot 0.6.1 caps the other two as
   well, and `torch` 2.11 caps `setuptools`. `.github/dependabot.yml` no longer ignores Pillow, ignores
   LeRobot from 0.6.2, and ignores `dm-tree` from 0.1.10, whose numpy floor on Python 3.14 LeRobot's cap
-  rules out and which had failed the `uv` job on every run since 30 October. Apart from `quackd[dev]`, a
+  rules out and which had failed the `uv` job on every run since 30 October. Apart from `roboglot[dev]`, a
   wheel asks for none of this, as Known limitations says.
 - **An SO-101 example can now carry a log of how its run really went.** Its folder gets a README
   with a GIF of the video, why the example and its result matter, the goal, what the run showed and
-  did not show, the exact command, the quackd version and the full terminal trace, and
+  did not show, the exact command, the roboglot version and the full terminal trace, and
   `docs/examples/lerobot/README.md` gets one table of every experiment, ticked once it has a log.
   `scripts/example_log.py` writes all of it, so every log has the same headings and sentences, and
   a test fails when one says anything else. The same page says how to write one.
@@ -1722,23 +1760,23 @@ limitations says. None of this has met an arm.
   next and what people forget. It replaces the page's short Start here, the page's first block of
   commands moved under Backends, and the upstream pin moved under Upstream API. `tests/test_docs.py`
   checks that the contents list every section, that the steps agree with the task files they quote,
-  and that every `quackd` line in them parses.
+  and that every `roboglot` line in them parses.
 - **The SO-101's run sheet is on the pages.**
   [docs/examples/lerobot/run-sheet.md](docs/examples/lerobot/run-sheet.md) has a card for each of the 220
   experiments, 34 of which have no folder, so their lines were written down nowhere a reader could find
   them. `tests/test_docs.py` checks that every experiment has a card, that every task file's first command is
-  on the sheet, and that every `quackd` line on the page parses.
+  on the sheet, and that every `roboglot` line on the page parses.
 
 ### Known limitations
 
-- **`quackd[lerobot]`, `quackd[lerobot-vla]` and `quackd[robots]` on Python 3.12 or later still install
+- **`roboglot[lerobot]`, `roboglot[lerobot-vla]` and `roboglot[robots]` on Python 3.12 or later still install
   Pillow 12.3.0.** LeRobot 0.6.1 asks for a Pillow under 13, and the override in `pyproject.toml` is a
-  checkout's alone, so these installs keep the advisories that release carries until quackd moves to
+  checkout's alone, so these installs keep the advisories that release carries until Roboglot moves to
   LeRobot's next release, which takes a run on an arm ([PLAN.md](PLAN.md)). With the format lists above,
   what can still reach them is a crafted TIFF, GIF, BMP, PNG or WEBP handed to `--image`, and, where
-  Microduck, Huebot, Open Duck or rosbridge is installed beside LeRobot, as `quackd[robots]` does, a crafted
+  Microduck, Huebot, Open Duck or rosbridge is installed beside LeRobot, as `roboglot[robots]` does, a crafted
   animated PNG from that robot's camera. They keep `setuptools` 81 and `torch` 2.11 as well, and
-  `[lerobot-vla]` keeps `transformers` 5.5.4, and nothing in quackd reaches the advisories on those three.
+  `[lerobot-vla]` keeps `transformers` 5.5.4, and nothing in Roboglot reaches the advisories on those three.
   A fresh install with no LeRobot in it gets Pillow 13.
 - **A `stop` does not reach an arm that has stopped answering.** It ends a running policy segment and writes
   no goal, because a stop reads the arm before it writes to it, and a chat is told only that the arm did not
@@ -1788,7 +1826,7 @@ and why, is under Known limitations. None of this has met a real radio.
   `tests/test_onboard_service.py` and `tests/test_radio_meeting.py` try each half. They failed before this
   change.
 - **A robot grants only what its passport offers.** The signed `courtesy` list was never read, so a robot
-  whose passport lists none, as a robot quackd only talks for does, still granted a pause during a run.
+  whose passport lists none, as a robot Roboglot only talks for does, still granted a pause during a run.
   `tests/test_passport_courtesy.py` and `tests/test_onboard_service.py` ask. They failed before this
   change.
 - **A robot that answers under another beacon id no longer logs a meeting.** The check came after the
@@ -1805,7 +1843,7 @@ and why, is under Known limitations. None of this has met a real radio.
   that had been dialled after a link dropped, and both robots after a close that was no loss. They now
   end with the link, and robots that stay near meet again. `tests/test_passport_nearby.py` and
   `tests/test_onboard_service.py` close one. They failed before this change.
-- **`quackd onboard sign` says when the running service will not take the new passport.** It said `the
+- **`roboglot onboard sign` says when the running service will not take the new passport.** It said `the
   running service serves it from now on` whatever the service made of it, so a passport signed for
   another board read as served. It now says the service keeps the passport it had, and why, and so does
   the wizard. `tests/test_onboard_cli.py` tries both answers. It failed before this change.
@@ -1845,15 +1883,15 @@ and why, is under Known limitations. None of this has met a real radio.
 
 ## [0.31.1] — 2026-11-03
 
-0.31.1 fixes older faults in `quackd onboard`, found while the generic board was being written
+0.31.1 fixes older faults in `roboglot onboard`, found while the generic board was being written
 and while this release was reviewed, and one in the sim radio, which CI met on this release's
 branch. What changes for you: a flag before a subcommand, which never reached it, now stops and
 says what to do with it. One the subcommand takes goes after it, and one it does not take is for
-the wizard, `quackd onboard` with nothing after it.
+the wizard, `roboglot onboard` with nothing after it.
 
 ### Fixed
 
-- **The radio opens the adapter preflight checked.** It always opened `hci0`, while `quackd onboard
+- **The radio opens the adapter preflight checked.** It always opened `hci0`, while `roboglot onboard
   preflight` checked the first adapter the kernel lists, so a computer whose only adapter came up as
   `hci1` passed preflight and got no radio. The service now opens the one the board finds as the radio
   opens, so an adapter that comes up later under another name needs the service started again.
@@ -1869,20 +1907,20 @@ the wizard, `quackd onboard` with nothing after it.
 - **Preflight no longer ends in a traceback on a file a passport refuses.** A figure's source longer
   than a passport allows passed `robot.yaml`'s own check and stopped preflight. It now says no passport
   can be built from the file. `tests/test_onboard_cli.py` tries it. It failed before this change.
-- **The wizard says why it cannot sign for a body it cannot read.** `quackd onboard` with a file naming
-  such a body ended in a traceback. It now stops with what is wrong, in the words `quackd onboard sign`
+- **The wizard says why it cannot sign for a body it cannot read.** `roboglot onboard` with a file naming
+  such a body ended in a traceback. It now stops with what is wrong, in the words `roboglot onboard sign`
   uses. `tests/test_onboard_cli.py` runs both. It failed before this change.
 - **A flag before a subcommand is refused, not dropped.** The wizard's flags parsed before a subcommand
-  and reached nothing, so `quackd onboard --dir ~/two sign` signed the robot in the default folder.
-  Such a flag now stops. One the subcommand takes says `--dir goes after the command: quackd onboard
-  sign --dir ...`, so put it there. One it does not take says it is for the wizard, `quackd onboard`
+  and reached nothing, so `roboglot onboard --dir ~/two sign` signed the robot in the default folder.
+  Such a flag now stops. One the subcommand takes says `--dir goes after the command: roboglot onboard
+  sign --dir ...`, so put it there. One it does not take says it is for the wizard, `roboglot onboard`
   with nothing after it. `tests/test_onboard_cli.py` tries each kind, and that nothing was signed. It
   failed before this change.
-- **A passport file that is not text reads as one that does not check out.** `quackd onboard
+- **A passport file that is not text reads as one that does not check out.** `roboglot onboard
   preflight`, `show` and the service ended in a traceback on a `passport.jws` holding bytes that are not
   UTF-8. Each now says it does not check out, and the wizard signs it again.
   `tests/test_onboard_cli.py` tries each. It failed before this change.
-- **The example adapter in `robot.yaml` is one quackd has.** The comment in the file the wizard writes,
+- **The example adapter in `robot.yaml` is one Roboglot has.** The comment in the file the wizard writes,
   and the refusal of an adapter with no backend, named `toddlerbot:real`, a backend ToddlerBot does not
   have, so uncommenting it was refused at signing. Both name `toddlerbot:bridge` now.
   `tests/test_onboard_config.py` parses it. It failed before this change.
@@ -1895,7 +1933,7 @@ the wizard, `quackd onboard` with nothing after it.
 
 ## [0.31.0] — 2026-11-03
 
-0.31.0 lets Robot Passport run on a robot's own computer that is not a Jetson. `quackd onboard
+0.31.0 lets Robot Passport run on a robot's own computer that is not a Jetson. `roboglot onboard
 --board generic` takes any other Linux computer's word for its name, from its device tree or DMI,
 and its passport says kind `other`, so the specification, its schema and its vectors do not move.
 Nothing can tell a robot's computer from a desk's, so it matches no string and is never found by
@@ -1903,9 +1941,9 @@ itself. It refuses a computer whose firmware says it is a laptop or the like, an
 to the Jetson board. Named once, the name is kept in the robot's folder, so nothing later needs the
 flag.
 
-`quackd onboard preflight` now says when nothing keeps the clock right, checks that the adapter can
+`roboglot onboard preflight` now says when nothing keeps the clock right, checks that the adapter can
 be a central, and no longer tells a clock behind a passport to sign again, and signing refuses a
-clock before any passport quackd signs. A wrong clock refuses good passports, which matters more on
+clock before any passport Roboglot signs. A wrong clock refuses good passports, which matters more on
 a computer with no clock battery.
 
 It is written from the kernel's and systemd's sources. It has run in a stock Ubuntu 24.04 container,
@@ -1913,7 +1951,7 @@ which has no device tree, no DMI and no Bluetooth, and on no robot's computer an
 
 ### Added
 
-- **`quackd onboard --board generic` puts a passport on any other robot's Linux computer.** It
+- **`roboglot onboard --board generic` puts a passport on any other robot's Linux computer.** It
   matches nothing, because nothing can tell a robot's computer from a desk's: `qcom,qcm6490` is a
   RUBIK Pi 3 and a Fairphone 5, and an x86 module and a laptop read alike. So it is never found by
   itself. It takes the computer's word for its name, from `/proc/device-tree/model` or from the
@@ -1923,28 +1961,28 @@ which has no device tree, no DMI and no Bluetooth, and on no robot's computer an
   it is a laptop, a tablet or the like, pointing at `--board sim`, and leaves a Jetson to the Jetson
   board, so a Xavier stays refused. A desktop still passes, with its real name in its passport.
   Named once, it is kept in `board` in the robot's folder, so `sign`, `serve` and the systemd unit
-  need no flag, and `sim` is never kept. On Linux the sentence for a computer quackd does not know
+  need no flag, and `sim` is never kept. On Linux the sentence for a computer Roboglot does not know
   names it too. It is written from the kernel's and systemd's sources and has run on no robot's
   computer, and
-  [ADR-0074](docs/adr/0074-a-computer-quackd-cannot-recognise-is-named-and-says-what-it-calls-itself.md)
+  [ADR-0074](docs/adr/0074-a-computer-roboglot-cannot-recognise-is-named-and-says-what-it-calls-itself.md)
   says why. `tests/test_boards_generic.py` reads it from files, the kernel's own strings among them,
   and `tests/test_onboard_cli.py` runs the wizard, `sign`, `preflight` and `serve` through it.
 
 ### Fixed
 
-- **`quackd onboard preflight` says when nothing keeps the clock right.** Its `clock` row checked
+- **`roboglot onboard preflight` says when nothing keeps the clock right.** Its `clock` row checked
   only that the year was 2026 or later, so a board with no clock battery showed `ok` on a clock
   stuck anywhere in 2026, though a clock more than 300 seconds behind a passport's `issued` refuses
   it. The row warns now when `timedatectl` says nothing has set the clock from a network, and when
   `/sys/class/rtc` lists no clock that survives a reboot. Where it cannot tell, it says what it said
   before. `tests/test_onboard_cli.py` reads each case. It failed before this change.
 - **A clock behind a passport is told to set the time, and a clock before any passport cannot
-  sign.** The `passport` row said to run `quackd onboard sign`, which would write the wrong date
+  sign.** The `passport` row said to run `roboglot onboard sign`, which would write the wrong date
   down, and signing took whatever the clock said, so a board that woke up long ago signed a passport
   already run out. The row says `timedatectl set-ntp true` now, and signing on a clock before 2026
   refuses before it makes a key. `tests/test_onboard_wizard.py` runs both. It failed before this
   change.
-- **`quackd onboard preflight` checks that the adapter can be a central.** A robot has to scan and
+- **`roboglot onboard preflight` checks that the adapter can be a central.** A robot has to scan and
   dial, and only the peripheral role was checked. A controller that says it cannot is a `central
   role` row that fails. `tests/test_onboard_preflight_rows.py` has the case. It failed before this
   change.
@@ -1997,9 +2035,9 @@ none of it has met a robot.
   and `robot` is null where the connect never answered.
 - **A press after a run has closed loses nothing.** One could lose the verdict, 1 time in 6 with somebody
   still pressing, though the record was written, and on Windows 6 times in 6 it ended the process with
-  `0xC000013A`. From the close to the end of the process a press changes nothing now, in `quackd robot
-  release` and `quackd doctor` as well, and what they print comes. It is still somebody saying stop, so a
-  success comes out as exit 130, and `quackd run a && quackd run b` does not go on to move an arm. A
+  `0xC000013A`. From the close to the end of the process a press changes nothing now, in `roboglot robot
+  release` and `roboglot doctor` as well, and what they print comes. It is still somebody saying stop, so a
+  success comes out as exit 130, and `roboglot run a && roboglot run b` does not go on to move an arm. A
   process still there 5 s after its close is stuck on something, and the next press ends it and says so.
   A press also leaves out a `run.gif` being made, which can take minutes on a long run.
 - **The guard on a terminal is up before the terminal changes.** A SIGKILL in a run's first moments under
@@ -2020,7 +2058,7 @@ none of it has met a robot.
   and the arm steps back by what it travelled since. Nobody has measured a real host's stalls.
 - **On Windows an exit stuck on a thread still takes closing the window,** since a thread's join hears no
   signal there. The SO-101's bus and camera calls no longer wait there, and a press gets out of
-  asyncio's wait, so it takes a call on a pool of quackd's own that never comes back, a policy's worker
+  asyncio's wait, so it takes a call on a pool of Roboglot's own that never comes back, a policy's worker
   above all.
 - **A guard can still come second often enough to be seen, with the run pinned to one busy CPU.** With
   six busy loops on that CPU, the first command after a kill ran broken 14 times in 32, against 21 before,
@@ -2034,7 +2072,7 @@ none of it has met a robot.
 - **Thirteen new experiments on the SO-101's run sheet, `e208` to `e220`,** for what 0.30.1, 0.30.2 and this
   release changed between a person and a moving arm, with what each should print quoted from a rehearsal:
   Ctrl-C through the end of a by-hand run and through its first fold, during a connect, with the arm in your
-  hands, in `quackd robot release` and in `quackd doctor`, Enter held down and a word typed at the question
+  hands, in `roboglot robot release` and in `roboglot doctor`, Enter held down and a word typed at the question
   that opens the jaws, a stand-in model that sends `gripper` with nothing, a `stop` over MCP on a clock,
   keys that mean nothing, and, on Linux or macOS with no arm, a terminal after a SIGKILL.
 
@@ -2050,9 +2088,9 @@ and says so. None of it has met a robot.
 - **Somebody at the arm no longer quits past its close by pressing again.** A second Ctrl-C landing
   on the first stop of a `--by-hand` run's teardown went past the question, the fold, the close,
   `run_end` and the summary, with the arm energised and nothing said of it, and so did a third at the
-  questions over a fold that missed, or a second past the stop in `quackd robot release`. In all of a
+  questions over a fold that missed, or a second past the stop in `roboglot robot release`. In all of a
   `--by-hand` run, whose panel now says so, from the first of those questions in any other, from the
-  moment `quackd robot release` has connected the arm, and from where `quackd doctor` would fold it,
+  moment `roboglot robot release` has connected the arm, and from where `roboglot doctor` would fold it,
   a Ctrl-C does what `q` does and no more, however often it comes. Whatever moves the arm there ends
   on a press, a drop asked for up to its torque write, and on a `--by-hand` run that takes in the fold
   it starts with and the one after a press at the placement wait, which a further press used to end
@@ -2113,7 +2151,7 @@ and says so. None of it has met a robot.
   on Linux under a real `bash`. The SO-101 still owes what 0.30.1 lists, and now also a few presses
   in a row during its close.
 - **A key set to repeat slower than once every 2 s still cannot be told from somebody pressing it.**
-  Nothing quackd reads from a terminal says a key has come up, so timing is all there is. Windows'
+  Nothing Roboglot reads from a terminal says a key has come up, so timing is all there is. Windows'
   keyboard settings go no slower than 2.5 a second, and its accessibility settings can go far slower.
 - **A guard can lose a race.** A SIGKILL in the first moments of a run, while the guard is still
   starting, or on a machine with no CPU to spare, where a shell can get to the terminal first, still
@@ -2151,15 +2189,15 @@ now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None o
   the step cap held to a few units of the hundred, and the fold began in the same breath, with the
   pencil still in the jaws and a hand on the pencil. A mock whose goals land at once could never show
   it. A bare Enter now drives the gripper until it reads open, and a line with anything typed on it is
-  a no, since this Enter opens the jaws on what is in them. Then, however the question ended, quackd
-  says it is about to fold and waits 3 seconds, in the words `quackd robot release` uses. A Ctrl-C or
+  a no, since this Enter opens the jaws on what is in them. Then, however the question ended, Roboglot
+  says it is about to fold and waits 3 seconds, in the words `roboglot robot release` uses. A Ctrl-C or
   `q` during the opening, the count or the fold holds the arm where it is with nothing released, on a
   run a press ended as well, and a second press there no longer costs the close, the end record and
   the summary. A gripper that cannot open is said to the person as well as to the log, and the arm no
   longer folds over the hand it has just told to reach in.
 - **`q` stops a run with no Enter behind it.** Every line that names it says so, and a terminal reading
   lines handed it over only with the Enter that sent the line, so somebody standing at a moving arm
-  pressed a key that did nothing. At a console quackd now reads keys as they are pressed, and leaves
+  pressed a key that did nothing. At a console Roboglot now reads keys as they are pressed, and leaves
   Ctrl-C the signal it was. An Enter close behind the `q` is taken for the old habit and answers
   nothing, and Backspace still edits what you type at a question. Arrow and function keys are no
   keys, and neither are Ctrl-D and Ctrl-Z. Those two used to end the keys, so a stray one took `q` away
@@ -2187,20 +2225,20 @@ now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None o
 - **A press with a call on the bus gets its stop to the arm.** Ctrl-C or `q` cancels a move or a fold
   wherever it is, and a read or a send can be out on the bus when it does. The stop behind it was
   refused on that call while the abort said one was sent, and the close in the same breath told
-  somebody who had just stopped the arm that quackd could not tell whether it was holding itself up,
+  somebody who had just stopped the arm that Roboglot could not tell whether it was holding itself up,
   and to cut its power. The arm's twin did it often. What lands behind a cancelled call now waits
   for it, no longer than that call's own deadline, as it always did behind a policy segment.
 - **`stop` is never refused for what came with it.** It takes no arguments, and a call with any was
   refused at the `params` gate with nothing sent to the body. They are ignored now, and the record says
   so. A third party's `stop` that cannot run without its own arguments is still refused.
-- **`gripper` and `place` get the time a lowered step cap needs.** At `QUACKD_LEROBOT_MAX_STEP_DEG=1` a
+- **`gripper` and `place` get the time a lowered step cap needs.** At `ROBOGLOT_LEROBOT_MAX_STEP_DEG=1` a
   full open is a hundred sends and the bus's time besides, and a gripper in good order stopped part of
   the way saying it had run out of time.
 - **A process in a terminal's background no longer reads it.** A read there stops the whole process,
   robot and all, until somebody brings it back. The kill switch reads nothing there and says so to
   whatever waits for a key, and a `[y/N]` there answers no.
 - **A tool call whose arguments are no object is the pilot's to correct.** A list, a number or a string
-  there failed quackd's own model of the call, and the run ended on a validation error over one odd
+  there failed Roboglot's own model of the call, and the run ended on a validation error over one odd
   turn, where text that is not JSON was already refused at the `params` gate and tried again. It goes
   the same way now on every vendor, a `null` too, and what goes back to the vendor next turn is an
   object. A local model's unreadable arguments no longer run the verb with its defaults, which on the
@@ -2209,7 +2247,7 @@ now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None o
 - **A verb that refused itself is no first motion.** The record gave a first motion when the arm's
   `move_joints` answered a goal off its travel with the range and sent nothing. It now counts a verb
   that worked or one whose intent the body accepted, as of when it was handed over.
-- **`quackd drive` reads a dict in a call written out.** `move_joints(positions={"shoulder_pan": 20},
+- **`roboglot drive` reads a dict in a call written out.** `move_joints(positions={"shoulder_pan": 20},
   duration_s=2)` went to the pilot as a goal, on the one verb people type numbers into. It is the exact
   lane's now, with the keys written or bare, and is still read as literals and never evaluated.
 
@@ -2223,9 +2261,9 @@ now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None o
 ### Documentation
 
 - **The SO-101's task files are revised against 0.30.0, and there are more of them, most of them
-  about safety.** None of the 223 files or the 356 quackd lines on the run sheet is refused by
+  about safety.** None of the 223 files or the 356 Roboglot lines on the run sheet is refused by
   0.30.0, so what changed around them is what they say, and they no longer name a shoot day. `e038`
-  waves to eight siblings, not six, and is `e038/eight-siblings.duck`, and `e066` counts from the
+  waves to eight siblings, not six, and is `e038/eight-siblings.glot`, and `e066` counts from the
   arm's own date. `e125` runs twice, because a dropped connection is asked again since 0.24.0, and
   `e150` adds GPT-6.1 Sol, Claude Fable 5.1 and Gemini Robotics ER 2. `e166` to `e207` are new,
   and `e126` has a command at last: `e126/monkey.py`, a stand-in for a model that fires random and
@@ -2236,27 +2274,27 @@ now, and Ctrl-Z, Ctrl-D and the arrow keys do nothing at a run's console. None o
   each block is and how it was checked. None of them has run on an arm.
 - **A different arm is a different calibration.** The hardware checklist and the first run say what
   Enter at `lerobot-calibrate`'s first prompt does on an arm the file did not come from: it writes the
-  other arm's travel into this arm's servos, and quackd then reads the arm as calibrated.
+  other arm's travel into this arm's servos, and Roboglot then reads the arm as calibrated.
 - **Clamp the base.** The hardware checklist and the first run say so before anything moves, and the
   checklist's row for a stalled camera says what `report_state` and `doctor` each print.
 
 ## [0.30.0] — 2026-11-02
 
-0.30.0 is a cleanup. A default install is half the size, `quackd doctor` and `quackd --help` answer
+0.30.0 is a cleanup. A default install is half the size, `roboglot doctor` and `roboglot --help` answer
 sooner, CI's test jobs take 5 to 11 minutes where Windows on 3.12 took 52, and four ways a stranger
-could stop, drive or exhaust a robot's daemon are closed. Nothing quackd's commands, verbs or MCP
+could stop, drive or exhaust a robot's daemon are closed. Nothing Roboglot's commands, verbs or MCP
 tools could do in 0.29.1 has gone.
 
 Run side by side with 0.29.1 on Windows, the help of every command, the MCP tools, every verb and
-duck, the detector's answers, `quackd doctor --json` and the events of scripted runs on seven bodies
-differ in two places: `quackd serve-mcp` has a new flag, `--lock-duckfile`, off by default, and
+duck, the detector's answers, `roboglot doctor --json` and the events of scripted runs on seven bodies
+differ in two places: `roboglot serve-mcp` has a new flag, `--lock-glotfile`, off by default, and
 doctor has one row fewer, the `opencv` a default install no longer has. Two warnings can also print:
 one on stderr, when a project's `.env` chose where a key from your shell would go, and one beside
-`quackd ui`'s address, off loopback.
+`roboglot ui`'s address, off loopback.
 
 The one answer that can differ is on Apple Silicon and Linux on Arm. OpenCV there reads a few
-colours' saturation a step off from OpenCV on x86, and quackd now reads them the x86 way everywhere.
-No colour crosses the threshold of any target quackd ships, so only a target tuned by hand can see
+colours' saturation a step off from OpenCV on x86, and Roboglot now reads them the x86 way everywhere.
+No colour crosses the threshold of any target Roboglot ships, so only a target tuned by hand can see
 it, as Changed says.
 
 Some frames are slower. On one laptop at 640x480 a clean frame takes 7.8 ms where OpenCV took 5.0,
@@ -2269,45 +2307,45 @@ They have run in the real daemons against fake bodies, and on no robot.
 
 ### Added
 
-- **`quackd serve-mcp --lock-duckfile`.** By default a contract the client loads replaces the one
+- **`roboglot serve-mcp --lock-glotfile`.** By default a contract the client loads replaces the one
   the server started with, which is how a client moves on to its next task. An operator who started
-  the server to hold the model to one file can now say so, and `robot_load_duckfile` then refuses a
+  the server to hold the model to one file can now say so, and `robot_load_glotfile` then refuses a
   file that asks for more: a verb outside the allowlist, a confirm dropped, a budget raised, an
   abort loosened, longer policy segments, wider instructions or a changed datasheet, each named in
-  the refusal. A file asking for no more still loads. It needs `--duckfile`, and it is for one
-  robot, so `--robots` and `--flock` refuse it. Off, nothing about a server has changed.
-- **quackd says so when a project's `.env` chose where your key goes.** A cloned project brings its
-  `.env`, and running quackd there loads it. Where such a file sets `ANTHROPIC_BASE_URL`,
-  `OPENAI_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `TYPESAFE_BASE_URL`, `HF_ENDPOINT`, `QUACKD_BASE_URL`
-  or `QUACKD_HOST` to another machine and the key for it came from your shell, one line on stderr
+  the refusal. A file asking for no more still loads. It needs `--glotfile`, and it is for one
+  robot, so `--robots` and `--team` refuse it. Off, nothing about a server has changed.
+- **Roboglot says so when a project's `.env` chose where your key goes.** A cloned project brings its
+  `.env`, and running Roboglot there loads it. Where such a file sets `ANTHROPIC_BASE_URL`,
+  `OPENAI_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`, `TYPESAFE_BASE_URL`, `HF_ENDPOINT`, `ROBOGLOT_BASE_URL`
+  or `ROBOGLOT_HOST` to another machine and the key for it came from your shell, one line on stderr
   names the variable and the host. Nothing is refused, stdout, `--json` and a run's saved terminal
   are as they were, and a gateway set that way on purpose works as it did. Exporting the address in
   your shell ends the line.
-- **`quackd ui` off loopback says the page is plain HTTP.** Anyone who can read that network's
+- **`roboglot ui` off loopback says the page is plain HTTP.** Anyone who can read that network's
   traffic can read the token, so the line says to use a network you trust and `--new-token` if it
   was not. Nothing about the page or a phone reaching it has changed.
 
 ### Changed
 
-- **A default install is half the size, because OpenCV has left it.** `uv pip install quackd` went
+- **A default install is half the size, because OpenCV has left it.** `uv pip install roboglot` went
   from 230 MB to 118 MB on disk and from 30 s to 22.5 s on an empty cache on Windows, and the
   download fell by 50 to 69% by platform, about 92 MB to 37 MB on Linux x86-64. Two things in the
   core used it, and both are still here. The default detector does the same arithmetic with numpy
-  (`quackd/perception/blobs.py`), and `quackd ui`'s QR code for a phone comes from `segno`, pure
+  (`roboglot/perception/blobs.py`), and `roboglot ui`'s QR code for a phone comes from `segno`, pure
   Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. A detection on every target
-  quackd ships is the same to the last bit: `tests/test_color_blob_parity.py` holds every colour
+  Roboglot ships is the same to the last bit: `tests/test_color_blob_parity.py` holds every colour
   there is, every mask of a small size, 1,500 awkward masks and every field of `detect()` on
   simulator, noisy and saturated frames against OpenCV itself, on 4.13 and on 5.0 and at the floors
   `pyproject.toml` allows. OpenCV on Apple Silicon and Linux on Arm does not read every colour as it
-  does on x86: 6,582 of the 16,777,216 come out a saturation step lower, and quackd now gives the
+  does on x86: 6,582 of the 16,777,216 come out a saturation step lower, and Roboglot now gives the
   x86 answer on every machine. No colour crosses a shipped target's threshold that way. A target
   tuned by hand on those machines can gain up to 1,158 colours if its saturation floor is one of 11
   values, and can gain or lose more in the last few columns of a frame whose width 8 does not
-  divide. `quackd doctor` has one row fewer, `opencv`, in its table and in `--json`. `quackd[yolo]`
+  divide. `roboglot doctor` has one row fewer, `opencv`, in its table and in `--json`. `roboglot[yolo]`
   brings the headless wheel itself, because ultralytics brings the build that wants a display's
   libraries. LeRobot's `opencv://` cameras get OpenCV from LeRobot as they always did, and the
   daemons under `bridge/` use the robot's own. A script of your own that imports `cv2` only because
-  quackd brought it has to install it now.
+  Roboglot brought it has to install it now.
 - **What a frame costs has moved both ways.** On one Windows laptop, with seven targets, a clean
   frame takes 0.9 ms where OpenCV took 1.1 at 256 pixels and 7.8 ms where it took 5.0 at 640x480,
   and one with camera noise 8.6 where it took 5.7. A frame of about 20,000 tiny blobs or more is
@@ -2319,7 +2357,7 @@ They have run in the real daemons against fake bodies, and on no robot.
   speckled over 60% of the frame takes 58 ms where it took 9, a checkerboard 73 where it took 9, a
   fence of one pixel stripes 177 where it took 14, and two colours of such stripes 366 where they
   took 24, the slowest found here.
-- **`quackd doctor` asks its model servers all at once.** It asked them one after another, and on
+- **`roboglot doctor` asks its model servers all at once.** It asked them one after another, and on
   Windows a closed port takes its whole timeout to say so, for each address `localhost` has, so four
   presets held the report for twelve seconds to learn that nothing was running. It also read every
   installed package's file list up to four times, and now reads it once, only for an import name
@@ -2328,8 +2366,8 @@ They have run in the real daemons against fake bodies, and on no robot.
   Ctrl-C does not wait for a probe. Linux refuses a closed port immediately, so expect less there.
   `tests/test_doctor_probes.py` holds every probe to starting before any finishes, and failed before
   this change.
-- **`quackd --help` waits for less.** `--help`, `-h`, `--version` or `-V` anywhere on the line, a
-  bare `quackd` and the shell completing a word no longer load numpy, asyncio, pydantic or YAML,
+- **`roboglot --help` waits for less.** `--help`, `-h`, `--version` or `-V` anywhere on the line, a
+  bare `roboglot` and the shell completing a word no longer load numpy, asyncio, pydantic or YAML,
   which were over a third of what they waited for: `--help` from 1.44 s to 0.82 s, `run --help` from
   1.72 s to 1.12 s and `--version` from 1.17 s to 0.62 s, on the same machine. Any other command
   line loads them before it starts, as it always has, which matters beyond speed: on Windows a DLL
@@ -2351,7 +2389,7 @@ They have run in the real daemons against fake bodies, and on no robot.
   skipped, and the body's line was then read as a command. A MOSS bridge with no token took `/twist`
   and `/arm/cycle` the same way. The two line daemons now close a connection that opens with an HTTP
   request or an oversized line, which no client of theirs does, and the three HTTP daemons refuse a
-  request carrying `Origin`. No client quackd ships sends either, and a person opening a frame in a
+  request carrying `Origin`. No client Roboglot ships sends either, and a person opening a frame in a
   browser tab still gets it. A token was always the fuller answer where a daemon has one, and still
   is: `SECURITY.md` says what a page can still do to a daemon without one.
 - **ToddlerBot's daemon read a line of any length.** A peer that never sent a newline could fill the
@@ -2366,7 +2404,7 @@ These are files you copy to the robot, so a robot has them once you copy them ag
   opened by saying not to publish it. Nothing read it at run time, and the release steps no longer
   mention it.
 - **A nightly job runs the suite on what a fresh install gets.** The lock's numpy and Pillow stay
-  old because LeRobot pins them, and a fresh `uv pip install quackd` has no LeRobot in it, so it
+  old because LeRobot pins them, and a fresh `uv pip install roboglot` has no LeRobot in it, so it
   resolves past both: numpy 2.5, 2.4 on Python 3.11, and Pillow 13, where CI runs numpy 2.2 and
   Pillow 12. No job ran the suite on that combination, and `.github/workflows/fresh-install.yml`
   does now, with built wheels in a clean environment beside it. It keeps a schedule of its own so
@@ -2375,8 +2413,8 @@ These are files you copy to the robot, so a robot has them once you copy them ag
   to 7,857 tests, and none failed.
 - **`uv.lock` is refreshed, from 112 known advisories to 52.** It ships to nobody, since a fresh
   install resolves for itself, so this is for a checkout and for CI. 39 of the 52 are Pillow, which
-  LeRobot holds under 13, so `quackd[lerobot]` gets them too, and the rest are in `virtualenv`,
-  `transformers`, `setuptools` and `torch`. A fresh `uv pip install quackd` with no extras had no
+  LeRobot holds under 13, so `roboglot[lerobot]` gets them too, and the rest are in `virtualenv`,
+  `transformers`, `setuptools` and `torch`. A fresh `uv pip install roboglot` with no extras had no
   known advisory when audited on 1 November. CI installs no provider SDK, so the new `openai` and
   `google-genai` were run for real against a stand-in for each vendor's API, with `anthropic` beside
   them, and the paths and bodies of all eight requests they sent were identical to the old
@@ -2395,15 +2433,15 @@ These are files you copy to the robot, so a robot has them once you copy them ag
   Six tests that hold a margin on a wall clock, each of which has gone red under load and passed
   alone, run after the rest on their own (`-m serial`). The jobs' limit is back down from 60 minutes
   to 30, so a hang is called sooner. Three smaller things came with it: a test that merely runs
-  `quackd doctor` no longer waits on closed ports, the two-minute exit timer stays out of xdist's
+  `roboglot doctor` no longer waits on closed ports, the two-minute exit timer stays out of xdist's
   workers, where it fired in any that finished before the last, and on Windows the suite's event
   loops can no longer hang in CPython's `socket.socketpair`, whose `accept` has no timeout and held
-  a whole run once as the ephemeral ports wrapped round. This part changes no quackd code, and the
+  a whole run once as the ephemeral ports wrapped round. This part changes no Roboglot code, and the
   one assertion it touches is xlerobot's turn rate, which now waits for the observation it reads.
 
 ## [0.29.1] — 2026-11-01
 
-0.29.1 fixes three things in `quackd onboard` that an install rehearsal of 0.29.0 led to. Its
+0.29.1 fixes three things in `roboglot onboard` that an install rehearsal of 0.29.0 led to. Its
 preflight and its demo take a brain on a model server of your own with no key, which the wizard
 sets up on purpose, and preflight says where a missing brain goes and sends nobody to a service
 that cannot start. A hosted brain still needs its key, and nothing a robot advertises, signs or
@@ -2411,7 +2449,7 @@ says is different.
 
 ### Fixed
 
-- **`quackd onboard preflight` passes a brain on a model server of your own that takes no key.**
+- **`roboglot onboard preflight` passes a brain on a model server of your own that takes no key.**
   The wizard asks for a local brain's key with `nothing, for a server needing none`, and writes no
   `robot.env` when the answer is nothing, and a local preset sends the word `not-needed` when
   `LOCAL_API_KEY` is unset. Preflight failed that brain all the same,
@@ -2420,27 +2458,27 @@ says is different.
   key fails as before. `tests/test_onboard_cli.py` runs preflight on a robot set up with
   `ollama:qwen3:8b` and no key, and on the same robot given a Gemini brain. It failed before this
   change.
-- **`quackd onboard demo --llm` takes a local model with no key.** The quickstart says `--llm` and
-  `--base-url` choose the demo's brain as they do for `quackd run`, which runs a local model with no
+- **`roboglot onboard demo --llm` takes a local model with no key.** The quickstart says `--llm` and
+  `--base-url` choose the demo's brain as they do for `roboglot run`, which runs a local model with no
   key, yet the demo refused one: `ollama:qwen3:8b needs LOCAL_API_KEY in the environment, and it is
   not set`. A local preset starts with no key now, and its key is passed on only when it is set. A
   hosted brain still needs its own. The same test asks the demo for both, and failed before this
   change.
-- **`quackd onboard preflight` says where a brain goes, and sends nobody to a service that cannot
+- **`roboglot onboard preflight` says where a brain goes, and sends nobody to a service that cannot
   start.** A robot with no brain was told only `brain.llm`, and is told `set brain.llm in` and the
   path of its `robot.yaml` now. On a computer no board knows, the service's row said to run
-  `quackd onboard serve`, which refuses there just as the board's row says. That row names no
+  `roboglot onboard serve`, which refuses there just as the board's row says. That row names no
   command now, so in `--json` it has no `hint`, like every other row with nothing to do, and the
   board's row, which names `--board sim`, is the one to follow. On a Jetson the row offered only
-  `sudo systemctl start quackd-onboard`, and a robot set up with `--no-service` has no unit to
-  start, so it offers `quackd onboard serve` beside it now, as `status` and `goal` do.
+  `sudo systemctl start roboglot-onboard`, and a robot set up with `--no-service` has no unit to
+  start, so it offers `roboglot onboard serve` beside it now, as `status` and `goal` do.
   `tests/test_onboard_cli.py` runs preflight with no board on a robot with no brain, and on a
   made up Jetson. Both failed before this change.
 
 ### Documentation
 
-- **docs/passport/quackd.md says what JetPack 6 needs.** Its three commands showed
-  `uv tool install "quackd[onboard]"` without the `--python 3.12` JetPack 6 needs, which the README,
+- **docs/passport/roboglot.md says what JetPack 6 needs.** Its three commands showed
+  `uv tool install "roboglot[onboard]"` without the `--python 3.12` JetPack 6 needs, which the README,
   the quickstart and the Jetson guide say. It says so now, and it and the quickstart quote what uv
   prints without it: `the current Python version (3.10.12) does not satisfy Python>=3.11`. The
   README's install block says it beside the line too.
@@ -2453,7 +2491,7 @@ says is different.
 
 ## [0.29.0] — 2026-10-31
 
-0.29.0 moves Robot Passport onto the robot it introduces. `quackd onboard` runs on the robot's own
+0.29.0 moves Robot Passport onto the robot it introduces. `roboglot onboard` runs on the robot's own
 computer, an NVIDIA Jetson first, and sets the robot up once: a wizard asks what only the owner
 knows, writes `robot.yaml`, the one file a robot is set up from, makes the robot's keys, has its
 owner sign its passport and installs a systemd unit that keeps the service running. Robots that come
@@ -2469,9 +2507,9 @@ free talk needs a pin. An idle robot meets a robot that comes close by running a
 task from its file, and a robot busy with a goal sees the newcomer under Robots nearby.
 
 Passports served from a laptop are gone, and with them QR stickers, owner stamps, the MQTT and
-ROS 2 bindings, `quackd meet`, and talk in `quackd run` and `quackd serve-mcp`. Arms and toys carry
+ROS 2 bindings, `roboglot meet`, and talk in `roboglot run` and `roboglot serve-mcp`. Arms and toys carry
 no passport now: an arm is fixed in place and will rarely meet another robot, and a toy-sized
-robot has no computer on board that can run quackd. The robots that will meet strangers are bigger
+robot has no computer on board that can run Roboglot. The robots that will meet strangers are bigger
 mobile ones, humanoids and robots on four legs, and nearly all of them carry an NVIDIA Jetson that
 can.
 
@@ -2481,12 +2519,12 @@ their makers' published figures, are what has run.
 
 ### Added
 
-- **`quackd onboard`, Robot Passport on the robot itself.** Run bare, it is the wizard: it checks
+- **`roboglot onboard`, Robot Passport on the robot itself.** Run bare, it is the wizard: it checks
   the board and what the robot can reach, asks what only the owner knows (the robot's name, what it
   is and who made it, who owns it and how to reach them, how a person stops it, its brain, and how
   close another robot comes before they meet), then writes `robot.yaml` and `robot.env`, makes the
   keys, asks for the owner's passphrase twice and signs. On a Jetson it then offers to switch on BlueZ's address privacy, which restarts
-  bluetoothd, and prints the sudo lines that install and start `quackd-onboard.service` before it
+  bluetoothd, and prints the sudo lines that install and start `roboglot-onboard.service` before it
   runs them. `--board jetson|sim`, `--dir`, `--file` (a robot file that answers the questions),
   `--owner-key`, `--passphrase-file`, `--days`, `--no-service` and `--yes` shape it, and it refuses
   to run as root. Its subcommands: `sign` signs the passport section again after an edit or before
@@ -2497,25 +2535,25 @@ their makers' published figures, are what has run.
   `forget WHICH` trust a robot or stop trusting it (`--owner` trusts every robot its owner signed),
   `serve` runs the service in the terminal the way systemd runs it, `demo` runs two simulated
   robots, and `uninstall` takes the service away
-  ([docs/passport/quackd.md](docs/passport/quackd.md),
+  ([docs/passport/roboglot.md](docs/passport/roboglot.md),
   [ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
-- **`quackd[onboard]`, the extra that goes on the robot:** `uv tool install "quackd[onboard]"`.
+- **`roboglot[onboard]`, the extra that goes on the robot:** `uv tool install "roboglot[onboard]"`.
   It brings zeroconf for the LAN, an OpenAI-compatible client for the robot's brain, and bleak and
   dbus-fast for Bluetooth, which install on Linux alone. It is in neither `dev` nor `all`, and CI
   runs it in a job of its own.
-- **Boards.** `quackd onboard` recognises an NVIDIA Jetson from its device tree and its release
+- **Boards.** `roboglot onboard` recognises an NVIDIA Jetson from its device tree and its release
   file, an Orin on JetPack 6 or 7.2 or a Thor on JetPack 7, and refuses a Xavier and JetPack 5
   with the reason.
   On any other computer it refuses and names `--board sim`, which stands in for a robot's computer
   on a laptop, and a passport signed there says so in its new `board` member. Other boards come in
-  through the `quackd.boards` entry point group, the way adapters come in through
-  `quackd.adapters`, and a plugin may not take the names `jetson` or `sim`.
+  through the `roboglot.boards` entry point group, the way adapters come in through
+  `roboglot.adapters`, and a plugin may not take the names `jetson` or `sim`.
 - **One file for a robot.** `robot.yaml` holds the passport section the owner signs, the body
-  quackd drives if there is one (`robot:` with an adapter and an address, and without it the
+  Roboglot drives if there is one (`robot:` with an adapter and an address, and without it the
   robot only talks), its brain, its meeting task, the robots and owners it trusts, its radio and
   its LAN port. It is checked field by field, an error names the line's path in the file, and an
   `arm` embodiment is refused. The brain's key goes in `robot.env`, never in `robot.yaml`. Both
-  sit in the robot's directory, `--dir`, then `QUACKD_ONBOARD_DIR`, then `~/.quackd/onboard/`,
+  sit in the robot's directory, `--dir`, then `ROBOGLOT_ONBOARD_DIR`, then `~/.roboglot/onboard/`,
   beside the keys, the signed `passport.jws`, what it met, its status, its runs (the newest 200),
   its memory and its cache.
 - **The owner key, sealed on the robot.** It is sealed with a passphrase of at least 12 characters,
@@ -2525,7 +2563,7 @@ their makers' published figures, are what has run.
   A second robot of the same owner is signed by the same key, given with `--owner-key`. The robot's
   own key is a plain file readable by its owner alone, because the service reads it when the robot
   boots and nobody is there to type.
-- **Bluetooth LE, judged by signal strength.** The advert quackd builds is 31 bytes with no name in
+- **Bluetooth LE, judged by signal strength.** The advert Roboglot builds is 31 bytes with no name in
   it: a version, three flags and an 8-byte beacon id drawn at random, derived from no key, and
   replaced every 15 minutes, never while a link, a session or a meeting is open, which is designed
   and untested on a radio. A robot is near when the median of what was heard of it over three
@@ -2547,7 +2585,7 @@ their makers' published figures, are what has run.
   seconds after its robots leave. A goal stops a meeting and takes its place. A robot that comes
   close during a goal joins that run's Robots nearby, and a run is told that robots nearby may
   speak to it and that it never moves because one asked.
-- **`quackd onboard demo`.** Two simulated robots on this computer, a mock Unitree G1 EDU with a
+- **`roboglot onboard demo`.** Two simulated robots on this computer, a mock Unitree G1 EDU with a
   courier company's passport and a mock Agile ONE SN with a household's, each its own service on
   the `sim` board. The courier walks up to the household's robot as a stranger with no network in
   common, so they meet over the Bluetooth link and each brain is told only the other's closed
@@ -2566,12 +2604,12 @@ their makers' published figures, are what has run.
 
 - **Breaking. A passport is signed by its owner's key.** The JWS's `kid` is `owner.id`, and `id`
   is the robot's own key. `owner` is required, with an `id`, and so are `issued` and `expires`,
-  at most 400 days apart and 365 unless `--days` says otherwise. `board` is new and quackd writes
-  it, never the robot's file. `stamps`, `talk`, `software` and `ttl_s` are gone, quackd writes no
-  `ext.org.quackd`, and a host serves one robot's passport and no index of several. A reader
+  at most 400 days apart and 365 unless `--days` says otherwise. `board` is new and Roboglot writes
+  it, never the robot's file. `stamps`, `talk`, `software` and `ttl_s` are gone, Roboglot writes no
+  `ext.org.roboglot`, and a host serves one robot's passport and no index of several. A reader
   refuses a passport signed by its own robot, by a key `owner.id` does not name, or by an owner
   key that is its robot key, and one read outside its `issued` and `expires`. The specification is
-  1.0, so a 0.x reader refuses these passports at its version rule, and quackd refuses a 0.1
+  1.0, so a 0.x reader refuses these passports at its version rule, and Roboglot refuses a 0.1
   passport, naming the releases that wrote one, 0.23 to 0.28. A 0.1 talk message is answered `no`
   with `versions: ["1.0"]`, in plain text over the LAN, and a DNS-SD record at `v=1` is passed
   over.
@@ -2581,42 +2619,42 @@ their makers' published figures, are what has run.
   advertises and the port it answers on. A receiver checks, in order, the size, the signature, the
   JSON, the version, that the sender is the key it claims, that it was heard by radio, that its
   passport passes every reading rule and is its own, and that it is not this robot, and refuses at
-  the first that fails, keeping why among what `quackd onboard met` lists. A reply goes back only
+  the first that fails, keeping why among what `roboglot onboard met` lists. A reply goes back only
   the way the hello came.
 - **Three tiers: a stranger, known and the same owner.** A robot is known when a person pinned it,
   as the owner it had then signed it, or pinned an owner who signed it, and the same owner when
   this robot's own owner key signed it. A change to the pins reaches every open session.
-  The flock tier is gone, since one quackd is one robot here. What a pilot is shown of a robot
+  The team tier is gone, since one Roboglot is one robot here. What a pilot is shown of a robot
   nearby names its board's kind, so a brain knows when the robot it meets is simulated.
-- **`quackd passport check` also takes a robot's address,** as `HOST:PORT` or an IP address, as
-  `quackd meet` did, beside a passport file, `-` for stdin and a URL, and reads what it finds the
+- **`roboglot passport check` also takes a robot's address,** as `HOST:PORT` or an IP address, as
+  `roboglot meet` did, beside a passport file, `-` for stdin and a URL, and reads what it finds the
   way a robot does.
-- **`quackd discover` reads the new DNS-SD record,** `v=2`, and passes over the `v=1` ones.
-- **`robot_list` no longer carries a `passport` field**, since `quackd serve-mcp` keeps no robot's
+- **`roboglot discover` reads the new DNS-SD record,** `v=2`, and passes over the `v=1` ones.
+- **`robot_list` no longer carries a `passport` field**, since `roboglot serve-mcp` keeps no robot's
   passport.
 
 ### Removed
 
-- **Breaking. Passports served from a laptop.** `quackd passport show`, `set`, `owner`, `stamp`,
-  `known`, `forget` and `serve`, `quackd meet`, `quackd run --talk`, `--talk-port` and `--meet`,
-  `quackd serve-mcp --talk` and `--talk-port`, the `robot_nearby` tool, and the `nearby-hello`
+- **Breaking. Passports served from a laptop.** `roboglot passport show`, `set`, `owner`, `stamp`,
+  `known`, `forget` and `serve`, `roboglot meet`, `roboglot run --talk`, `--talk-port` and `--meet`,
+  `roboglot serve-mcp --talk` and `--talk-port`, the `robot_nearby` tool, and the `nearby-hello`
   starter, whose part the meeting task plays now. Where each one went: `passport show` is
-  `quackd onboard show`, `passport set` and `owner` are an edit of `robot.yaml` and then
-  `quackd onboard sign`, `passport stamp` is `--owner-key` on a second robot, `meet` is
-  `quackd passport check`, `meet --pin` and `--pin-owner` are `quackd onboard pin` and its
-  `--owner`, and `run --talk` is `quackd onboard goal`. `meet --as`, `--say`, `--ask` and `--share`
+  `roboglot onboard show`, `passport set` and `owner` are an edit of `robot.yaml` and then
+  `roboglot onboard sign`, `passport stamp` is `--owner-key` on a second robot, `meet` is
+  `roboglot passport check`, `meet --pin` and `--pin-owner` are `roboglot onboard pin` and its
+  `--owner`, and `run --talk` is `roboglot onboard goal`. `meet --as`, `--say`, `--ask` and `--share`
   have no successor, because robots talk by themselves now. The keys 0.23 to 0.28 made under
-  `~/.quackd/keys/` and the pins in `~/.quackd/known_robots.json` stay on disk and nothing reads
+  `~/.roboglot/keys/` and the pins in `~/.roboglot/known_robots.json` stay on disk and nothing reads
   them. They hold private keys, so delete them yourself once you are done with them, with
-  `rm -r ~/.quackd/keys ~/.quackd/known_robots.json` or the same paths under the folder
-  `--registry-dir` or `QUACKD_REGISTRY_DIR` named. The commands and what they wrote are at
-  [docs/passport/quackd.md as of v0.28.0](https://github.com/rokbenko/quackd/blob/v0.28.0/docs/passport/quackd.md).
-- **Breaking. QR stickers.** `quackd passport qr`, `quackd meet` on a picture, and the `#rp=` short
-  id after a passport's URL. `quackd ui` still prints a QR code for a phone to open the page.
+  `rm -r ~/.roboglot/keys ~/.roboglot/known_robots.json` or the same paths under the folder
+  `--registry-dir` or `ROBOGLOT_REGISTRY_DIR` named. The commands and what they wrote are at
+  [docs/passport/ as of v0.28.0](https://github.com/rokbenko/quackd/tree/v0.28.0/docs/passport).
+- **Breaking. QR stickers.** `roboglot passport qr`, `roboglot meet` on a picture, and the `#rp=` short
+  id after a passport's URL. `roboglot ui` still prints a QR code for a phone to open the page.
 - **Breaking. The MQTT and ROS 2 bindings.** A passport retained on a broker, `meet mqtt://`, the
   latched `robot_passport` topic, `meet ros://` and the rosbridge adapter's passport reader. The
-  flock's MQTT bus is a different thing and stays.
-- **Breaking. Owner stamps,** with `quackd passport stamp`, the stamp schema, the stamp vectors and
+  team's MQTT bus is a different thing and stays.
+- **Breaking. Owner stamps,** with `roboglot passport stamp`, the stamp schema, the stamp vectors and
   the `robot-passport-stamp+jwt` type, and the index of several passports behind one host, with
   its schema. The owner's signature on the passport itself does what a stamp was for.
 
@@ -2637,7 +2675,7 @@ their makers' published figures, are what has run.
 - SECURITY.md describes the onboard service as a surface of its own: the radio, the link and the
   LAN port, the sealed owner key, the robot key's file, the systemd user, the brain's key in
   `robot.env`, and what would be a security issue in each. CONTRIBUTING.md says how to work on
-  `quackd/onboard/`, `quackd/boards/` and `quackd/radio/`, and docs/guides/mcp.md,
+  `roboglot/onboard/`, `roboglot/boards/` and `roboglot/radio/`, and docs/guides/mcp.md,
   docs/guides/lan.md, docs/concepts/architecture.md and docs/faq.md follow the removals.
 
 ### Known limitations
@@ -2656,21 +2694,21 @@ their makers' published figures, are what has run.
 - **The systemd install has never run on a board,** nor has a reboot bringing the service back,
   and no combination of JetPack, BlueZ and the Python uv installs on the board has been tried.
 - **A board with no clock that survives a reboot and no network time refuses every passport,** its
-  own included, and `quackd onboard status` names it.
+  own included, and `roboglot onboard status` names it.
 - **There is no revocation.** A stolen robot's key speaks until its passport expires, and a thief
   can guess the owner's passphrase offline against scrypt, so a shorter `--days` is the lever.
 - **Talk is signed and not encrypted,** over the LAN and over a Bluetooth link alike.
-- **On Windows and macOS `quackd onboard` runs the `sim` board alone,** with no service and no
+- **On Windows and macOS `roboglot onboard` runs the `sim` board alone,** with no service and no
   Bluetooth, which needs Linux.
 
 ## [0.28.0] — 2026-10-28
 
-0.28.0 adds `quackd ui`, a page in the browser for what `quackd run` and `quackd drive` do, and
+0.28.0 adds `roboglot ui`, a page in the browser for what `roboglot run` and `roboglot drive` do, and
 places: a robot that says where it is names the spots it stood on and walks back to them, and in
-the Microduck's 2D simulator it maps a room it has never seen and looks for the ball in it. `quackd
-drive` flies its goals as `quackd run` flies one, and a goal asks the person driving.
+the Microduck's 2D simulator it maps a room it has never seen and looks for the ball in it. `roboglot
+drive` flies its goals as `roboglot run` flies one, and a goal asks the person driving.
 
-`quackd ui` sets a robot and its pilot up, then runs one goal or task file to its end, or chats
+`roboglot ui` sets a robot and its pilot up, then runs one goal or task file to its end, or chats
 with the robot goal after goal while it stays connected, from a browser on the computer the robot
 is connected to or from a phone on the same Wi-Fi. Each goal and chat is the CLI's own command in a
 process of its own, driven over a hidden `--front jsonl`. A stop is a message, so it reaches a run
@@ -2678,7 +2716,7 @@ on Windows too, a Yes clicked in the page is recorded as a person's answer, on t
 a question taken back is recorded as unanswered, never as a no. The page listens on `127.0.0.1`
 unless `--bind` names another address, and asks every visitor for its token.
 
-`quackd drive` takes run's flags for its goals, given once for the session: the pilot's model
+`roboglot drive` takes run's flags for its goals, given once for the session: the pilot's model
 settings, `--max-steps`, `--play`, memory, `--fov-deg`, the arm's policy server, `--controller vla`
 and a goal's stepper. A goal's confirm gate and the pilot's doubt are put to the person driving, at
 the keyboard or in the page, where the gate was answered no unless `--yes` was given, and a brake
@@ -2687,7 +2725,7 @@ takes the question back.
 Places work on a Microduck by its own odometry, in its two simulators laid out in a room with
 `--room`, on MOSS and on a rosbridge base, and on a real Microduck by `mapd`, its onboard mapper,
 which no robotd release carries yet (UNVERIFIED). `mark_place`, `map` and `forget_place` name, list
-and drop places without moving, `go_to_place` walks back to one, and `quackd map` and `quackd
+and drop places without moving, `go_to_place` walks back to one, and `roboglot map` and `roboglot
 places` read and mark them from a terminal. A place belongs to the frame it was marked in, and is
 never walked to from another. In a simulator given a room, `explore` walks the duck to the floor
 its map has not seen, and `find` does it while it looks for something with its camera, which the
@@ -2698,20 +2736,20 @@ duck walks and turns again after it has stood still, and a confirm nobody answer
 unanswered rather than as a no.
 
 None of it has moved a real robot. The page has not been tried from a phone, and a VLA session in
-`quackd drive` has flown only the LeRobot mock's scripted policy. What that leaves owed is under
+`roboglot drive` has flown only the LeRobot mock's scripted policy. What that leaves owed is under
 Known limitations.
 
 ### Added
 
 - **A Microduck says where it is by its own odometry.** robotd has sent contact odometry on
-  every state frame since before the release quackd reads, and quackd passed it through raw and
+  every state frame since before the release Roboglot reads, and Roboglot passed it through raw and
   read none of it. The state now carries it as a reading, `extras.where`, and the line a pilot
   reads says `where=odometry(x, y, yaw rad, walked N m)`. Its frame lasts one connection and
   begins again whenever the duck is picked up, falls or rides a fall down, its clock goes back,
   or it makes a step longer than its walking policy could, since contact odometry follows feet on
   the floor and nothing else. A robotd from before the estimator, and one whose odometry stays at
   zero through a walk, give no reading. `x`, `y` and `theta` stay empty on the real duck, as the
-  flock reads them as one arena every member shares
+  team reads them as one arena every member shares
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
 - **Places: a robot that says where it is can name the spots it stood on.** Three core verbs that
   move nothing: `mark_place` names the spot the robot stands on now, from its own reading and never
@@ -2725,7 +2763,7 @@ Known limitations.
   nothing is written with `--no-memory` or on a dry run. A Microduck on `jsonrpc` or `mock` has
   them, and so do its simulator in a room, MOSS and a rosbridge base (below)
   ([docs/concepts/places.md](docs/concepts/places.md),
-  [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md)).
+  [ADR-0068](docs/adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md)).
 - **A room for the duck's simulator, and a map of it kept as the duck's own would keep one.**
   `--room` on `run`, `record`, `drive` and `serve-mcp` lays out walls and furniture in
   `microduck:sim2d` or `microduck:mujoco`: `two-rooms`, `hall`, `arena`, `sofa-gap`, or a file of
@@ -2733,7 +2771,7 @@ Known limitations.
   `two-rooms` and `sofa-gap` do. A wall holds a walking duck where it is and counts the bump, the
   ball rolls back off it, and the duck's camera sees the walls and nothing behind them. On `mujoco`
   they are solid, and the walking duck meets them with its own feet. The duck keeps a map of the
-  room, a stand-in for `mapd`, its own mapper, kept to the numbers quackd read of that: it looks
+  room, a stand-in for `mapd`, its own mapper, kept to the numbers Roboglot read of that: it looks
   only from a stop, after 0.4 s of standing still, as far as the head's ToF sees, and is lost at the
   start and after a bump or a fall until two stops agree. `map` draws it, the place verbs mark
   places in it, and a recorded GIF of the cartoon shades the floor it has not seen. Without `--room`
@@ -2749,7 +2787,7 @@ Known limitations.
   before anything moves ([docs/concepts/places.md](docs/concepts/places.md#walking-to-a-place)).
 - **A real Microduck walks by its own map, where `mapd` answers beside its robotd
   (UNVERIFIED).** `mapd`, the duck's onboard mapper, is on an upstream branch and in no robotd
-  release yet. quackd reaches it at `--map-address`, which `run`, `drive`, `serve-mcp`, `doctor`
+  release yet. Roboglot reaches it at `--map-address`, which `run`, `drive`, `serve-mcp`, `doctor`
   and `robot add` and `edit` take, or at its own socket beside robotd's, and its places are then
   in the map, known again in a later session by the map's first stops that stand apart, where
   they were in one connection's odometry; a map replaced or wiped is never taken for the one it
@@ -2757,7 +2795,7 @@ Known limitations.
   robotd's odometry since, so it moves at robot.state's rate; a stream gone quiet, a word for not
   knowing or the link gone makes the duck lost, never odometry, and the link is tried again in the
   background. `mapd` is asked on links of its own and never said `hello` to, and nothing answering
-  leaves the odometry as before, with a warning when you named the address. `quackd doctor
+  leaves the odometry as before, with a warning when you named the address. `roboglot doctor
   --map-address` adds a `mapd` row, and fails when nothing answers at an address you named
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
 - **MOSS and a rosbridge base keep places too.** MOSS reads its cockpit's pose as where the
@@ -2777,7 +2815,7 @@ Known limitations.
   marks `start` where it began, and it asks first. A real duck is not offered it yet, and says
   why: on odometry alone it keeps no map, and beside `mapd` nothing publishes its body radius.
   The pilot reads why beside the body, and a task that needs `explore` is refused in those words
-  by `quackd run`, `quackd validate` and MCP alike
+  by `roboglot run`, `roboglot validate` and MCP alike
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md#explore-walking-to-what-its-map-has-not-seen),
   [ADR-0071](docs/adr/0071-a-duck-explores-what-its-map-has-not-seen-and-stops-so-the-map-can-look.md)).
 - **`find`: a Microduck explores until it sees what it was asked for.** `find(target,
@@ -2792,20 +2830,20 @@ Known limitations.
 - **Two starters that explore: `find-the-ball` and `favourite-spot`.** `find-the-ball` finds the
   ball hidden in the room the duck does not start in, walks up to it, says where it was and walks
   back to `start`. `favourite-spot` marks where the duck stands, explores, and walks back to it.
-  Both run in the duck's simulator given a room, `quackd run find-the-ball --room two-rooms --yes`,
+  Both run in the duck's simulator given a room, `roboglot run find-the-ball --room two-rooms --yes`,
   and the scripted pilot completes each on 10 of 10 seeds, judged by the simulator's own truth
   ([docs/guides/explore.md](docs/guides/explore.md)).
-- **`quackd validate --room`.** Checks a task against the robot's simulator laid out in a room,
+- **`roboglot validate --room`.** Checks a task against the robot's simulator laid out in a room,
   which offers the place verbs, `explore` and `find`. A task that names no robot is checked
   against every verb something installed here offers, now a simulator in a room among them.
-- **`quackd map` and `quackd places`.** `quackd map` says where a robot is, its places with how
+- **`roboglot map` and `roboglot places`.** `roboglot map` says where a robot is, its places with how
   far and which way, and draws its map as the `map` verb does, with `--watch` to draw it again
-  every second. `quackd places add NAME` marks the spot the robot stands on, and `list` and `rm`
-  read and change the place file with nothing connected. `quackd map --wipe` forgets a robot's
-  map, the only way quackd ever wipes one: it asks the person at the terminal, naming the places it
+  every second. `roboglot places add NAME` marks the spot the robot stands on, and `list` and `rm`
+  read and change the place file with nothing connected. `roboglot map --wipe` forgets a robot's
+  map, the only way Roboglot ever wipes one: it asks the person at the terminal, naming the places it
   orphans, and refuses without one. A simulator's map wiped in one session stays wiped in every
   session after ([docs/guides/places.md](docs/guides/places.md)).
-- **`quackd ui`, a page in your browser for what `quackd run` and `quackd drive` do.** Setup
+- **`roboglot ui`, a page in your browser for what `roboglot run` and `roboglot drive` do.** Setup
   chooses the robot, with the adapter's own word on connecting it and a check that drives it
   nowhere, and the pilot: an LLM with its key's status, a VLA policy for the arm, and a decision
   LLM, with the two commands' other options under the panels their `--help` shows, all but a few
@@ -2815,13 +2853,13 @@ Known limitations.
   registry, each robot's memory and the policy servers. Each goal and chat is the CLI's own command
   in a process of its own, driven over `--front jsonl`, and Setup shows the command to type at a
   terminal for the same run. The page listens on `127.0.0.1` unless `--bind` names another address,
-  and asks every visitor for its token, kept in the quackd home and printed with each address, and
+  and asks every visitor for its token, kept in the Roboglot home and printed with each address, and
   off loopback with a QR code for a phone on the same Wi-Fi. The settings that decide who reaches
-  the page are set by `quackd ui` itself, over any config file or `.env` a project brings. A key
+  the page are set by `roboglot ui` itself, over any config file or `.env` a project brings. A key
   typed into the page lives in the page's process alone and reaches a run through its environment.
-  Streamlit comes with the new `ui` extra, its usage statistics off, and `quackd doctor` checks for
+  Streamlit comes with the new `ui` extra, its usage statistics off, and `roboglot doctor` checks for
   it ([ADR-0070](docs/adr/0070-the-page-is-reachable-by-its-own-user-alone.md)).
-- **`quackd robot add` and `robot edit` take `--token-env` and `--host-token-env`**, the name of a
+- **`roboglot robot add` and `robot edit` take `--token-env` and `--host-token-env`**, the name of a
   variable holding the robot's or the board's token, so a program, the page among them, can save
   a robot without putting a token on a command line. No refusal quotes what was typed where the
   name goes.
@@ -2831,8 +2869,8 @@ Known limitations.
   and for the LeRobot arm that a connect takes torque off every motor for a moment. A third
   party's adapter may say the same in a `CONNECT` mapping. A test holds each default address and
   token variable to the transport's own constant.
-- **`quackd run` and `quackd drive` can be driven by a program over JSON lines.** Both take a
-  hidden `--front jsonl`, which is how the page `quackd ui` drives them, each from a child
+- **`roboglot run` and `roboglot drive` can be driven by a program over JSON lines.** Both take a
+  hidden `--front jsonl`, which is how the page `roboglot ui` drives them, each from a child
   process: JSON lines on stdout, `hello` first and `end` last with the outcome and the exit code,
   and the page's `stop`, `answer`, `line` and `quit` on stdin. Everything a terminal would show
   still goes to stderr. A stop is a message, so it reaches a run on Windows too, where no signal a
@@ -2841,14 +2879,14 @@ Known limitations.
   connects ends the run before the pilot's first step. A page's answer is recorded as a person's,
   with `channel: web` beside it in the `prompt` row, and a question taken back is recorded as
   unanswered, never as a no. `run_start` gains `front: jsonl` on such a run, and the command it
-  names leaves `--front` out. `--by-hand`, `--flock`, `--robots` and a task file with a `flock:`
+  names leaves `--front` out. `--by-hand`, `--team`, `--robots` and a task file with a `team:`
   block are refused under it
-  ([ADR-0069](docs/adr/0069-a-page-drives-quackds-own-commands-over-json-lines.md)).
-- **`quackd drive` flies its goals as `quackd run` flies one.** It takes run's flags for them,
+  ([ADR-0069](docs/adr/0069-a-page-drives-roboglots-own-commands-over-json-lines.md)).
+- **`roboglot drive` flies its goals as `roboglot run` flies one.** It takes run's flags for them,
   given once for the whole session. `--base-url`, `--api-key`, `--vision`, `--extra-body`,
   `--effort` and `--price` reach the pilot's model, so `--llm local` can name its server.
   `--max-steps` is each goal's, within what the session has left, and `--play`, `--memory` and
-  `--memory-dir` reach every goal, memory staying off in drive unless asked for, where `quackd run`
+  `--memory-dir` reach every goal, memory staying off in drive unless asked for, where `roboglot run`
   keeps it on. `--fov-deg` is told to the body once, as the session connects. `--policy-url`,
   `--policy-token`, `--accept-other-frame` and `--async-chunks` give the arm its policy server,
   whose `manipulate` a goal may then use behind the confirm gate, and the session's `run_start`
@@ -2856,26 +2894,26 @@ Known limitations.
   arm's learned policy, and only the person driving can say the arm did it. `--decision-mode` and
   `--decision-frames` give a goal a stepper, which asks the fast lane's own decision LLM, while
   `--decision-llm` alone is still the fast lane and nothing more: drive reads neither
-  `QUACKD_DECISION_MODE` nor `QUACKD_DECISION_FRAMES`, so a goal gets a stepper only when the
+  `ROBOGLOT_DECISION_MODE` nor `ROBOGLOT_DECISION_FRAMES`, so a goal gets a stepper only when the
   session names one. Each is refused in run's words where run refuses it. A session's goals read
-  its places, keeping what they mark only under `--memory`, hold `manipulate` to its `.duck`'s
-  policy section, and spend its policy seconds, an hour of them for a session without a `.duck`
+  its places, keeping what they mark only under `--memory`, hold `manipulate` to its `.glot`'s
+  policy section, and spend its policy seconds, an hour of them for a session without a `.glot`
   ([docs/guides/drive.md](docs/guides/drive.md#a-goal-flies-as-a-run-does),
   [ADR-0072](docs/adr/0072-a-drive-sessions-goals-fly-as-a-run-does-and-ask-the-person-driving.md)).
-- **`python -m quackd` runs the same command as `quackd`.**
+- **`python -m roboglot` runs the same command as `roboglot`.**
 
 ### Changed
 
-- **A goal in `quackd drive` asks the person driving.** Its confirm gate was answered by the
+- **A goal in `roboglot drive` asks the person driving.** Its confirm gate was answered by the
   standing rule, a no without `--yes`, and the pilot's doubt was left to the pilot, while the
   person who typed the goal sat at the keyboard. Both are now put to that person, at the keyboard
   or in the page, in a run's words, and the goal waits for the answer while the session goes on
   reading lines. The keyboard shows one question at a time, and a `y` answers the one on the
   screen. A brake, or a newer line that moves the body, takes the question back, and the goal's
   record says nobody answered it. Under `--yes` the pilot's doubt is answered go, as
-  `quackd run --yes` answers it, where the pilot used to be told to decide for itself. A pipe's
+  `roboglot run --yes` answers it, where the pilot used to be told to decide for itself. A pipe's
   goal asks nobody, as before.
-- **A goal's local pilot in `quackd drive` asks the board `--host` names**, or the robot's own
+- **A goal's local pilot in `roboglot drive` asks the board `--host` names**, or the robot's own
   host, as a run's does: `--llm ollama` on a robot with a host reaches the board's Ollama, where it
   reached this computer's.
 
@@ -2898,7 +2936,7 @@ Known limitations.
   `stopped` gate; one that only looks or speaks still runs. `approach_and` carries its `then`
   verb's `ended_by`, so a kick the brake kept from starting is not a failure in a row
   ([docs/concepts/safety.md](docs/concepts/safety.md)).
-- **`quackd drive` runs `approach_and kick` as the call it spells.** The words after a verb's name
+- **`roboglot drive` runs `approach_and kick` as the call it spells.** The words after a verb's name
   were counted at the spaces, while the name itself was read with its `_` as a space, so a verb
   spelled with an underscore and given words to take was handed to the pilot as a goal, and only
   `approach and kick` ran. Both spellings are the call now, as they are for `mark_place` and
@@ -2908,7 +2946,7 @@ Known limitations.
   3.16 the lock now carries, once the stand policy had held the duck still for two seconds, as it
   does after a stop, it stepped at the forward floor, 0.23 m/s, on none of six seeds, so a `move`
   at its default speed said it walked for six seconds and covered nothing; and turning in place
-  at the turning floor, 1.0 rad/s, which is also quackd's turn clamp, it turned right no more
+  at the turning floor, 1.0 rad/s, which is also Roboglot's turn clamp, it turned right no more
   than sixteen degrees in five seconds, from a stand or a reset, so a `turn` right barely turned.
   The floors are 0.24 m/s and 1.2 rad/s now, where a duck that stood one, five or ten seconds
   starts walking within 1.5 s and turns both ways at once. The browser's simulator takes the
@@ -2926,22 +2964,22 @@ Known limitations.
 
 ### Documentation
 
-- **The Microduck's page says what quackd read of `mapd`, the duck's own map.** `mapd` is on the
+- **The Microduck's page says what Roboglot read of `mapd`, the duck's own map.** `mapd` is on the
   upstream branch `maploc-v2`, read at `7e0be18`, and in no robotd release, so its socket, its
   five calls and the numbers it keeps to are listed as assumptions, in their own file
-  (`mapd_upstream_api.py`) and as a third row of `quackd doctor`'s pins. One of them differs from
+  (`mapd_upstream_api.py`) and as a third row of `roboglot doctor`'s pins. One of them differs from
   Pollen's post: a keyframe is taken after 0.4 s of stillness in the code, where the post says half
   a second
   ([docs/adapters/microduck/README.md](docs/adapters/microduck/README.md)).
-- `docs/concepts/architecture.md` describes `quackd/front.py`, and its `prompt` and `run_start`
+- `docs/concepts/architecture.md` describes `roboglot/front.py`, and its `prompt` and `run_start`
   rows say what the page adds to them: `channel` and `front`.
 - `docs/guides/web-ui.md` is the page from its install to a first goal with no key, then chat,
   the pilot, every option, connecting a robot, a phone on the same Wi-Fi, what a Stop and a page
   going away do, troubleshooting and what the page does not do yet, with screenshots of real runs.
   Its table of what connecting each robot takes is rendered from the catalogue by
   `scripts/connect_docs.py`, and a test holds it there.
-- The README has a section on the page and a row for `quackd ui`, `architecture.md` describes
-  `quackd/webui/`, and `writing-an-adapter.md` says how an adapter declares `CONNECT`.
+- The README has a section on the page and a row for `roboglot ui`, `architecture.md` describes
+  `roboglot/webui/`, and `writing-an-adapter.md` says how an adapter declares `CONNECT`.
 - `docs/guides/drive.md` says what each of run's flags does in a session, how a goal's questions
   come to you and how a VLA pilot flies a line, and drops the two limits this release lifts.
 
@@ -2949,7 +2987,7 @@ Known limitations.
 
 - **Nothing in this release has moved a real robot.** Places have run in the Microduck's two
   simulators and against its mock, `explore` and `find` in `microduck:sim2d` alone, and MOSS's and
-  a rosbridge base's poses against stand-ins for their links. quackd's `mapd` client has met a
+  a rosbridge base's poses against stand-ins for their links. Roboglot's `mapd` client has met a
   stand-in alone, since `mapd` is on an upstream branch and in no robotd release (UNVERIFIED). A
   real duck is offered neither `explore` nor `find` until somebody cites its body radius and a
   robotd release carries `mapd`, and whether `mapd` takes a keyframe when only the head turns is a
@@ -2960,27 +2998,27 @@ Known limitations.
   test. It is plain HTTP, so a key typed into it on a phone crosses the Wi-Fi unencrypted, and it
   holds no lock on a robot across processes: a run started at a terminal beside one the page
   started is not seen.
-- **A VLA session in `quackd drive` has flown only the LeRobot mock's scripted policy**, never
+- **A VLA session in `roboglot drive` has flown only the LeRobot mock's scripted policy**, never
   `lerobot:mujoco` or the arm, and PLAN.md lists the run that is owed.
 - **The page leaves some runs to the terminal:** `--by-hand` and the questions at the end of a run
-  about an arm, which wait for somebody at the arm, flocks, `--live`, and in a chat a GIF, a
-  picture or talk with robots nearby, which `quackd drive` does not take
+  about an arm, which wait for somebody at the arm, teams, `--live`, and in a chat a GIF, a
+  picture or talk with robots nearby, which `roboglot drive` does not take
   ([docs/guides/web-ui.md](docs/guides/web-ui.md#what-the-page-does-not-do-yet)).
 
 ## [0.27.0] — 2026-10-26
 
-0.27.0 adds `quackd drive`, which drives one robot a command at a time, and makes `quackd run`
+0.27.0 adds `roboglot drive`, which drives one robot a command at a time, and makes `roboglot run`
 wait for less. A command that names one of the body's calls needs no model to choose it, and in
 the README's run on the arm, 62.1 of its 78.8 seconds went to waiting on the model.
 
-`quackd drive` reads a line at a time from the keyboard or a pipe. A line that names a call runs
+`roboglot drive` reads a line at a time from the keyboard or a pipe. A line that names a call runs
 with no model asked, and on the mock Microduck it reaches the executor in under a millisecond. An
 empty Enter brakes at once, and a newer command that moves the body ends the one moving it. With
 `--decision-llm`, a line no verb names is put to that decision LLM as one closed question first.
 What is left is a goal, which the pilot flies inside the session's contract. A person's own
 command is the verdict for its own call, and a line from a pipe is never recorded as a person's.
 
-`quackd run` marks Claude's requests for Anthropic's prompt cache, warms a pilot's Anthropic or
+`roboglot run` marks Claude's requests for Anthropic's prompt cache, warms a pilot's Anthropic or
 OpenAI client while the robot connects, takes `--effort low|medium|high`, ends a pilot's call on
 a real robot once the task's minutes are spent, and asks the stepper in shadow mode beside the
 model's call rather than before it. Its summary says how the model's calls spread and when the
@@ -2988,8 +3026,8 @@ body first moved.
 
 Drive's review found three faults older than drive. A stop asked for over MCP while `watch` or a
 MOSS verb was still reading the body's state was missed, and the verb ran on. An abort that came
-during that read, such as the kill switch in `quackd run` or a failed heartbeat, let the verb
-send its first twist after it. And a battery below a `.duck`'s rule refused `stop` as it refused
+during that read, such as the kill switch in `roboglot run` or a failed heartbeat, let the verb
+send its first twist after it. And a battery below a `.glot`'s rule refused `stop` as it refused
 every other verb. A `stop` asked for over MCP beside a `move`, a `go_to`, the core's
 `search_scan` or an `approach_and` ends it before its next twist now, where a walk ran its whole
 length, and a MOSS verb a stop ended no longer counts toward `abort_when`'s failures in a row.
@@ -3003,7 +3041,7 @@ limitations.
 - **`--effort low|medium|high` says how hard the pilot's model reasons, on `run` and
   `preflight`.** It reaches Anthropic's `output_config.effort`, OpenAI's reasoning effort on
   either API and a model server of your own, which speaks OpenAI's API, and it beats
-  `QUACKD_EFFORT` and `QUACKD_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
+  `ROBOGLOT_EFFORT` and `ROBOGLOT_OPENAI_REASONING_EFFORT`, which still stand where it is not given.
   Three levels, the ones both vendors have. It is refused before the robot connects where it
   cannot reach: the scripted pilot, `--controller vla`, a Claude model Anthropic's effort page
   does not list, OpenAI's GPT-4.1, GPT-4o, their minis and ChatGPT Instant, which take no
@@ -3026,7 +3064,7 @@ limitations.
   read off OpenAI's pages on 2026-10-26 and dated so on its row, and on the Responses API as the
   other GPT-6 rows are. `--llm openai` still means `gpt-6-sol`, which OpenAI still serves with no
   shutdown date.
-- **`quackd drive` drives one robot, one command at a time.** A line that names a call runs it
+- **`roboglot drive` drives one robot, one command at a time.** A line that names a call runs it
   with no model asked: a verb of the body's own (`kick left`, `say good morning`, or
   `move(vx=0.2, duration_s=2)`, whose values are read as literals and never evaluated), or a
   preset walk, `forward`, `back`, `turn left` or `right` and `step left` or `right`, each derived
@@ -3035,17 +3073,17 @@ limitations.
   on nothing, and a newer command that moves the body ends whatever is moving it and waits for
   its stop before it sends anything. With `--decision-llm`, a line no verb names is put to that
   decision LLM as one closed question, held to the stepper's floors and its one second and to the
-  `.duck`'s confirm gates, and below a floor drive asks `did you mean kick(leg=left)? [y/N]`. A
+  `.glot`'s confirm gates, and below a floor drive asks `did you mean kick(leg=left)? [y/N]`. A
   line it hands on, or any line no verb names without one, is a goal, which the pilot (`--llm`,
   or a registered robot's own) flies as a whole run of its own on the body the session holds,
   inside the session's contract, its `--dry-run` and what is left of its budgets. A person's own
   command is the verdict for its own call, lines piped in are recorded as a pipe's, never a
   person's, and a call the fast lane took unasked as the decision LLM's reading. A body that
   cannot see a fall is driven only once somebody says they are watching it. Without a
-  `--duckfile`, a session allows every verb that is not dangerous, keeps the battery rule a goal
+  `--glotfile`, a session allows every verb that is not dangerous, keeps the battery rule a goal
   is held to, and runs on the schema's own ceilings for its budgets. The keyboard goes through
   prompt_toolkit, and a pipe is read a line at a time, each waited for. The session's record is a
-  run directory `quackd log` replays, with each goal's own run under `goals/`, and its summary
+  run directory `roboglot log` replays, with each goal's own run under `goals/`, and its summary
   gives the waits from a line to its call starting and to the body's first motion for it, by
   lane, and from a brake to its stop ([docs/guides/drive.md](docs/guides/drive.md),
   [ADR-0065](docs/adr/0065-a-person-drives-one-robot-a-command-at-a-time.md),
@@ -3065,7 +3103,7 @@ limitations.
   Claude models, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, after one write at a
   quarter more. A model that answers in prose costs a write or two that nothing reads, and
   never a wrong request.
-  `QUACKD_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
+  `ROBOGLOT_ANTHROPIC_CACHE=0` sends every request unmarked. A request-level oracle runs the real
   loop and the real Claude provider over four bodies and twelve trim settings: all 48 cases fail
   with no marker in the history, and 32 of them with one at the end of each request
   ([ADR-0063](docs/adr/0063-the-pilots-prompt-is-cached-up-to-where-the-next-request-still-matches.md)).
@@ -3091,7 +3129,7 @@ limitations.
 - **A turn's picture is encoded to PNG once.** Every frame was encoded to PNG twice, once for
   `frames/` and once more for the request. The save hands back the bytes it wrote and the model
   is sent those, so the file a reader opens is the picture the pilot was shown.
-- **prompt_toolkit is a core dependency.** `quackd drive`'s keyboard reads a line while a verb
+- **prompt_toolkit is a core dependency.** `roboglot drive`'s keyboard reads a line while a verb
   runs, which `input()` cannot, through prompt_toolkit 3.0.42 or later. Only that front end
   imports it, so no other command pays for it, and the lock gains prompt-toolkit and wcwidth.
 
@@ -3100,7 +3138,7 @@ limitations.
 - **A pilot call that hangs ends the run when the task's minutes are spent.** `max_minutes` was
   read only once an answer came back, so a call that hung held the robot past the task's whole
   budget for as long as its SDK allowed, ten minutes on Anthropic's and OpenAI's, and only the
-  kill switch, a failed heartbeat or a flock's stop ended it sooner. The call is raced against
+  kill switch, a failed heartbeat or a team's stop ended it sooner. The call is raced against
   the task's minutes as it is against the stop, and once they are spent it is cancelled, its
   `llm` record says so, and the run ends on its budget. On a simulator or a mock the budget's
   clock is the body's own and stands still while a model thinks, so a run on either is never cut
@@ -3122,11 +3160,11 @@ limitations.
   after the state, as a granted pause already was.
 - **A braked MOSS verb no longer counts toward `abort_when`.** MOSS's `drive_to`, `explore` and
   arm cycles end on a `stop` asked for beside them, and came back failed with no mark of the
-  brake, so over MCP, under a `.duck` whose rule is that the same verb failing three times in a
+  brake, so over MCP, under a `.glot` whose rule is that the same verb failing three times in a
   row aborts, three stops beside a `drive_to` ended the session. Each is marked `ended_by: stop`
   now, as the core verbs are, so `abort_when` passes over it, and only a stop marks one: a run
   whose budget ran out still counts.
-- **A battery below a `.duck`'s rule no longer refuses `stop`.** The rule refused the stop as it
+- **A battery below a `.glot`'s rule no longer refuses `stop`.** The rule refused the stop as it
   refused every other verb, so the brake reached for once the battery read low was a stop never
   sent. It still ends every other call after it.
 
@@ -3134,7 +3172,7 @@ limitations.
 
 - **The README says where a run's seconds go and what shortens them.** Its Performance section
   quotes the new counters from a real scripted run and names the four changes above that shorten
-  a turn, and its configuration table gains `--effort` and `QUACKD_ANTHROPIC_CACHE`, as
+  a turn, and its configuration table gains `--effort` and `ROBOGLOT_ANTHROPIC_CACHE`, as
   `.env.example` does. architecture.md describes the new record fields, safety.md the minutes
   bound, and the decision guide what shadow costs a turn now. The FAQ's two refusals of an
   unknown model, and the counters lines the FAQ and safety.md quote, were captured again.
@@ -3147,19 +3185,19 @@ limitations.
 - **None of the seconds or dollars this release saves has been measured on a real model.** The
   cache's reads, the warm-up's seconds, what `--effort low` takes off a turn and what shadow no
   longer costs one were checked against stand-ins alone. The check is one paid run per vendor with
-  the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd` and
+  the cache on and with `ROBOGLOT_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd` and
   `latency_s` per call, and timed requests to each keyed decision LLM.
 - **The cache markers and `drop_block` have not met.** On Opus 5.5 and Fable 5.1 the loop leaves
   out the thinking a trim invalidates and has the API drop the one block it may not leave out.
   That markers can move around it freely comes from Anthropic's guidance, and no paid request has
   proved it.
-- **`quackd drive` has driven no real robot.** It has run with the scripted pilot against the
+- **`roboglot drive` has driven no real robot.** It has run with the scripted pilot against the
   mock Microduck, and once through a pipe on `microduck:sim2d`, and its keyboard against
   prompt_toolkit's own pipe input. Its prompt is untried in PowerShell under conhost, in Windows
   Terminal and in VS Code's terminal, and how long a real robot takes from a line to its first
   motion is unmeasured. The fast lane's floors are the stepper's, unmeasured on its question.
-  `quackd log` does not yet draw drive's own lines. A goal's pilot takes `--llm` alone, without
-  the vendor flags `quackd run` takes, and a session keeps no memory. A verb that needs a yes,
+  `roboglot log` does not yet draw drive's own lines. A goal's pilot takes `--llm` alone, without
+  the vendor flags `roboglot run` takes, and a session keeps no memory. A verb that needs a yes,
   run inside a call a person named, is answered by `--yes` alone. Over MCP, a verb an adapter
   brings may not read a stop asked for beside it, the ToddlerBot's own `search_scan` and the
   arm's joint moves among them. Drive's brake and a newer command end any of them.
@@ -3170,9 +3208,9 @@ limitations.
 starts that server on a GPU Hugging Face rents by the hour. No service on 2026-10-25 hosted many
 VLAs behind one API the way OpenRouter hosts many LLMs, and what comes closest is Hugging Face's
 two halves: the policy families LeRobot loads from the Hub, where the server's checkpoints already
-came from, and Inference Endpoints, on which `quackd policy endpoint` starts the server.
+came from, and Inference Endpoints, on which `roboglot policy endpoint` starts the server.
 
-`quackd policy serve` serves Physical Intelligence's pi0, X-VLA in its `auto` action mode and
+`roboglot policy serve` serves Physical Intelligence's pi0, X-VLA in its `auto` action mode and
 NVIDIA's GR00T N1.7 whose every action group is joints, beside ACT, SmolVLA and pi05. A pi0-FAST
 is refused in a sentence, since loading its tokenizer would run the Python the tokenizer's
 repository brings, and so is a GR00T N1.5, which LeRobot 0.6.1 no longer serves. Each policy type
@@ -3180,34 +3218,34 @@ now allows LeRobot's default steps and its own family's, and none that only anot
 and a pi05 fetches PaliGemma's tokenizer files, 21.9 MB, rather than 11.69 GB of weights nothing
 loads.
 
-`quackd policy endpoint up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
+`roboglot policy endpoint up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
 that runs the server, on AWS's L4 in us-east-1 unless told otherwise, asks with the day's price
 before anything bills, scales it to zero when it idles, and pauses one that fails, times out or
-has no GPU while it waits. `--policy-url hf:NAME` reaches it from `quackd run` and every other
+has no GPU while it waits. `--policy-url hf:NAME` reaches it from `roboglot run` and every other
 command that takes `--policy-url`, and sends the account's token as the bearer only to an address
 Hugging Face's API confirms is that endpoint's.
 
 A new section of the README, Which models work, right after Which robots work, says which pilot
-LLMs, decision LLMs and VLAs quackd takes and how far each has got. `docs/models/` gives each of
+LLMs, decision LLMs and VLAs Roboglot takes and how far each has got. `docs/models/` gives each of
 the three a page, and the companies behind them one more, every table of models there rendered
-from the catalogues, and `quackd list-models --kind decision`, `--kind policy` and `--kind all`
+from the catalogues, and `roboglot list-models --kind decision`, `--kind policy` and `--kind all`
 print the same lists.
 
-No pi0, GR00T or trained X-VLA has run, and quackd has never created a Hugging Face Endpoint:
-`quackd policy endpoint` and `hf:NAME` have run against the test suite's stand-ins for Hugging
+No pi0, GR00T or trained X-VLA has run, and Roboglot has never created a Hugging Face Endpoint:
+`roboglot policy endpoint` and `hf:NAME` have run against the test suite's stand-ins for Hugging
 Face alone. What that leaves owed is under Known limitations.
 
 ### Added
 
-- **`quackd list-models --kind` lists the decision LLMs and the learned policies too.** `--kind
-  decision` prints the eight decision LLMs quackd names, in the order `quackd doctor` lists them.
-  `--kind policy` prints the policy types `quackd policy serve` serves, what each needs and how
+- **`roboglot list-models --kind` lists the decision LLMs and the learned policies too.** `--kind
+  decision` prints the eight decision LLMs Roboglot names, in the order `roboglot doctor` lists them.
+  `--kind policy` prints the policy types `roboglot policy serve` serves, what each needs and how
   far it has got, and the ones people ask about that it does not serve, with why, read from data
   in the core so that a machine with no LeRobot can be told. `--kind all` prints the three, and
   `--kind pilot`, the default, prints what the command always has, byte for byte. Every `--json`
   row now says which kind it is, and `--llm`, which narrows the pilot rows to one vendor, is
   refused beside another kind rather than ignored.
-- **`quackd policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
+- **`roboglot policy serve` serves a pi0, and refuses a pi0-FAST in a sentence of its own.** A pi0
   is Physical Intelligence's flow-matching VLA from before pi05, and to the server it is a pi05
   with one step changed: its processors end the task with a newline for PaliGemma's tokenizer
   where pi05's write the state into the prompt, and that step, its tokenizer and the relative and
@@ -3222,7 +3260,7 @@ Face alone. What that leaves owed is under Known limitations.
   SO-101 fine-tunes on the Hub to every check, a pi0-FAST to being refused with nothing but its
   config fetched, and a lenient pi0 loader to raising on a weight it lacks
   ([docs/guides/policies.md](docs/guides/policies.md#pi0-and-why-not-pi0-fast)).
-- **`quackd policy serve` serves an X-VLA in its `auto` action mode.** X-VLA's answer means
+- **`roboglot policy serve` serves an X-VLA in its `auto` action mode.** X-VLA's answer means
   what `action_mode` in its config says, and `auto` is the dataset's own action, which for an
   SO-101's data is the arm's own joints. Every other mode, an end effector's pose (`ee6d`, the
   default, and `agibot_ee6d`) or another robot's joints (`joint`, `franka_joint7`,
@@ -3237,7 +3275,7 @@ Face alone. What that leaves owed is under Known limitations.
   random X-VLA beside the tiny ACT, offline, through the real server and client, its tokenizer a
   few words pinned at a commit in a Hub cache of its own
   ([docs/guides/policies.md](docs/guides/policies.md#x-vla)).
-- **`quackd policy serve` serves a GR00T N1.7 whose every action group is joints.** A GR00T names
+- **`roboglot policy serve` serves a GR00T N1.7 whose every action group is joints.** A GR00T names
   two models inside itself, the base it was fine-tuned from, `nvidia/GR00T-N1.7-3B`, and its
   backbone's tokenizer, `nvidia/Cosmos-Reason2-2B`, which is gated, and both are pinned with
   `--pin`, the base fetched with its weights and the tokenizer without. A config that names no
@@ -3260,21 +3298,21 @@ Face alone. What that leaves owed is under Known limitations.
   extra again. Tests hold stand-ins of both kinds of SO-101 fine-tune on the Hub to every check,
   the reported percentiles to the grouped q01 and q99 and not their min and max, and each refusal
   to fetching no weight ([docs/guides/policies.md](docs/guides/policies.md#gr00t-n17)).
-- **`quackd policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
+- **`roboglot policy endpoint up|list|pause|delete` starts the arm's policy server on a GPU rented
   from Hugging Face.** `up NAME --policy REPO@REVISION` creates a Hugging Face Inference Endpoint
-  that runs the same `quackd policy serve`, behind Hugging Face's TLS, and waits until it serves,
+  that runs the same `roboglot policy serve`, behind Hugging Face's TLS, and waits until it serves,
   saying each state as it passes. It rents AWS's `nvidia-l4` in `us-east-1` unless `--instance`,
   `--vendor` and `--region` say otherwise (`--region eu-west-1 --instance nvidia-a10g` in
   Europe), takes the serve flags a checkpoint needs and passes them on unchanged, and scales the
   endpoint to zero after `--idle-minutes`, 15 to 720 and never none. Before anything bills it
-  checks that this quackd is a release on PyPI, the instance, its price on the day, the quota,
+  checks that this Roboglot is a release on PyPI, the instance, its price on the day, the quota,
   that the checkpoint and its pins are neither gated nor private without `--hub-token-from`, and
   the checkpoint's `config.json`, then asks with the price, as it does before it resumes or wakes
   one, and refuses with no terminal and no `--yes`. An endpoint that fails, does not serve in
   time, has no GPU or meets any other error while `up` waits is paused, its log quoted with every
   token taken out. The container installs this release from PyPI with `uvx` in uv's own image,
   pinned by digest, with nothing uploaded after an hour past the release, and the endpoint is
-  `authenticated`, on one replica, with a token of quackd's own as its one secret. The account's
+  `authenticated`, on one replica, with a token of Roboglot's own as its one secret. The account's
   token goes to huggingface.co and the API, and as the bearer to the one endpoint address `up`
   recorded, and nowhere else. `list` merges this machine's records with what the API says, `pause`
   stops the bill and `delete` removes one. `up`, `pause` and `delete` read the endpoint first, and
@@ -3282,29 +3320,29 @@ Face alone. What that leaves owed is under Known limitations.
   record, as one made on huggingface.co or by another machine's `up` does not, and
   `delete --forget` forgets such a record and asks Hugging Face nothing
   ([docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint),
-  [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-quackd-starts.md)).
-- **`--policy-url hf:NAME`** on `quackd run`, `quackd preflight`, `quackd serve-mcp` and
-  `quackd policy check` reaches an endpoint this machine started, as the record `up` kept says:
+  [ADR-0061](docs/adr/0061-a-hugging-face-endpoint-is-a-rented-gpu-roboglot-starts.md)).
+- **`--policy-url hf:NAME`** on `roboglot run`, `roboglot preflight`, `roboglot serve-mcp` and
+  `roboglot policy check` reaches an endpoint this machine started, as the record `up` kept says:
   its address, its own token unless `--policy-token` is typed, and the account's token as the
   bearer. It reads the endpoint from Hugging Face's API first, one request with the account's
   token, and goes on only when it carries the tags `up` gave it at the recorded address, so a
   record left behind by an endpoint deleted on huggingface.co sends the account's token to no
   address the API does not confirm. A project's `.env` cannot name the registry it reads: a
-  `QUACKD_REGISTRY_DIR` that came from one is refused before anything is asked, and the shell's
-  own, or `--registry-dir`, is read. `QUACKD_POLICY_TOKEN` and `~/.quackd/policy.token` are never
+  `ROBOGLOT_REGISTRY_DIR` that came from one is refused before anything is asked, and the shell's
+  own, or `--registry-dir`, is read. `ROBOGLOT_POLICY_TOKEN` and `~/.roboglot/policy.token` are never
   read for one. The run's `policy` block keeps the address as `server` and adds `endpoint`.
 - **`GET /v1/health` on the policy server**, answered with no token, says whether it serves,
   `{"ready": true}`, or is stopping, a 503, and nothing else, for a platform's readiness probe. It
   reads no body and touches no session. The protocol stays version 1. The server also logs once,
   as a warning, the first request that arrives carrying an `Authorization` header, and never
   the header's value.
-- **`quackd policy serve --token-env NAME`** reads the token from the variable `NAME`, instead of
+- **`roboglot policy serve --token-env NAME`** reads the token from the variable `NAME`, instead of
   a file, and the serving rows name the variable and never what it holds. It is refused beside
   `--token-file`, and with a variable that is unset, empty, short or holds a space.
 
 ### Changed
 
-- **A processor step is allowed by the type that names it.** `quackd policy serve` and `quackd
+- **A processor step is allowed by the type that names it.** `roboglot policy serve` and `roboglot
   policy check` allowed a checkpoint any step that ACT's, SmolVLA's or pi05's processors used,
   whatever its own type, so an ACT could name pi05's tokenizer, which nobody had read for an ACT.
   Each type now allows LeRobot's default steps and its own family's, read at LeRobot 0.6.1, and a
@@ -3312,7 +3350,7 @@ Face alone. What that leaves owed is under Known limitations.
   that type does allow. The action tokenizer, which no type may name, is refused in a sentence of
   its own, saying that it trusts its repository's code unless told not to and turns actions into
   tokens for training, which a server never does. No checkpoint LeRobot's own processor factories
-  write names another type's step. `quackd.adapters.policies` says which policy types the server
+  write names another type's step. `roboglot.adapters.policies` says which policy types the server
   serves and which it does not, and why, as data the core prints with no LeRobot installed, and a
   test ties its rows to the server's types
   ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
@@ -3327,7 +3365,7 @@ Face alone. What that leaves owed is under Known limitations.
 
 ### Fixed
 
-- **The policy server's extra brings LeRobot's `[pi]`.** `quackd[lerobot-vla]` was LeRobot's
+- **The policy server's extra brings LeRobot's `[pi]`.** `roboglot[lerobot-vla]` was LeRobot's
   `[smolvla]` alone, so serving a pi05 took `lerobot[pi]` installed by hand besides it, which the
   guide said. It brings `[pi]` as well now, which adds SciPy, and a pi05 or a pi0 needs nothing
   more than the extra and a Hub token granted its gated tokenizer.
@@ -3347,7 +3385,7 @@ Face alone. What that leaves owed is under Known limitations.
   the policy is built from as SmolVLA's is, with its safetensors as before. Tests hold a step's
   pin to no `*.safetensors` and a backbone's to its weights. No pi05 has been fetched through it
   against the Hub, which takes the gated tokenizer's grant.
-- **`quackd doctor` said a vendor's key was unset when only its second name was exported.**
+- **`roboglot doctor` said a vendor's key was unset when only its second name was exported.**
   Cohere's provider reads `CO_API_KEY` when `COHERE_API_KEY` is empty, Meta's reads
   `MODEL_API_KEY` after `META_API_KEY` and Gemini's `GOOGLE_API_KEY` after `GEMINI_API_KEY`, so
   a run with only the second one exported worked while doctor's row said `COHERE_API_KEY unset`.
@@ -3368,7 +3406,7 @@ Face alone. What that leaves owed is under Known limitations.
   ([ADR-0062](docs/adr/0062-model-tables-are-rendered-from-the-catalogues.md)).
 - **The README says which models work, right after which robots work.** One table of the three
   roles, then the pilots, the decision LLMs and the learned policies each in a few lines, and
-  the Usage section's vendor table moved into it whole rather than copied. Why quackd's answer
+  the Usage section's vendor table moved into it whole rather than copied. Why Roboglot's answer
   to many VLAs is Hugging Face is said there in one paragraph, with the commands that serve a
   policy on the laptop, on a rented GPU and on a Hugging Face Endpoint.
 - **The counts that are still typed by hand are held by tests.** The catalogue's 123 ids, the
@@ -3382,16 +3420,16 @@ Face alone. What that leaves owed is under Known limitations.
 
 ### Known limitations
 
-- **No pi0 has run.** quackd has not loaded, benched or served one, on a laptop or on a GPU, and
+- **No pi0 has run.** Roboglot has not loaded, benched or served one, on a laptop or on a GPU, and
   its checks rest on stand-ins of the SO-101 fine-tunes read on the Hub on 2026-10-25. Each of
   those fine-tunes is 8.89 GB of weights, and the server fetches PaliGemma's tokenizer files,
   21.9 MB, beside it.
-- **No trained X-VLA has run.** quackd has not loaded, benched or served one, and its checks
+- **No trained X-VLA has run.** Roboglot has not loaded, benched or served one, and its checks
   rest on a stand-in of `mertkirgil/xvla-so101-renkli-kalem`, read on the Hub on 2026-10-25,
   whose weights are 1.76 GB, and on the tiny random one CI serves. Several SO-101 X-VLAs there
   keep the eight-number state of the base they were fine-tuned from, and the server serves one,
   which the arm's connect then refuses on its count.
-- **No GR00T has run, and serving one fetches about 16 to 20 GB.** quackd has not loaded,
+- **No GR00T has run, and serving one fetches about 16 to 20 GB.** Roboglot has not loaded,
   benched or served a GR00T N1.7, and its checks rest on stand-ins of
   `jammyyang/groot17_so101_pick_place` and `haydendoo/so101_pickup_groot_medium_new_v1`, read on
   the Hub on 2026-10-25. Their weights were 9.34 GB and 12.58 GB, and the base's 6.91 GB more.
@@ -3404,7 +3442,7 @@ Face alone. What that leaves owed is under Known limitations.
   which the server refuses in every model it loads, and serving it would take the first exemption
   from that rule, which was deferred rather than written
   ([ADR-0060](docs/adr/0060-hugging-face-serves-many-vlas.md)).
-- **quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
+- **Roboglot has never created a Hugging Face Endpoint.** `roboglot policy endpoint` and
   `--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and
   the container on 127.0.0.1, the container serving `scripted:sweep`, and nothing was paid for.
   What Hugging Face's pages leave out is designed for at its worst and recorded as UNVERIFIED:
@@ -3418,7 +3456,7 @@ Face alone. What that leaves owed is under Known limitations.
   checkpoint each time it starts, and a run that reaches an endpoint at zero is told it is not
   serving rather than held. Start it with `up` before a run.
 - **A laptop closed while `up` waits leaves the endpoint starting**, and billing until it idles
-  to zero, `--idle-minutes` later. Ctrl-C says so, and `quackd policy endpoint pause` stops the
+  to zero, `--idle-minutes` later. Ctrl-C says so, and `roboglot policy endpoint pause` stops the
   bill at once.
 - **A CUDA build of torch newer than the endpoint's driver would run on the CPU.** `up` asks the
   server whether it has a GPU once it serves, and pauses one that says it has none.
@@ -3426,15 +3464,15 @@ Face alone. What that leaves owed is under Known limitations.
 ## [0.25.0] — 2026-10-25
 
 0.25.0 keeps the SO-101 playing while a policy's next chunk is on its way. A policy served with
-no `--latency-s`, which is how `quackd policy serve` starts one unless told otherwise and how the
+no `--latency-s`, which is how `roboglot policy serve` starts one unless told otherwise and how the
 guide serves SmolVLA and pi05 on a rented GPU, had the arm hold still through every round trip,
 once every half chunk. A segment now waits in a tick only for a chunk it has nothing left to
 play from, a first chunk among them, and the guide's ACT, benched on this project's laptop with
 no `--latency-s`, went from 22.6 Hz of 30 to 29.3.
 
 `--async-chunks/--no-async-chunks` says which way a run plays a policy server's chunks, beside
-`--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`, and with `--bench` on
-`quackd policy check`. `--async-chunks` is the default. `--no-async-chunks` plays each chunk out
+`--policy-url` on `roboglot run`, `roboglot preflight` and `roboglot serve-mcp`, and with `--bench` on
+`roboglot policy check`. `--async-chunks` is the default. `--no-async-chunks` plays each chunk out
 before it asks for the next, as LeRobot's own loop does, and holds the arm still while the next
 is on its way, every tick of the wait still reading and judging the arm. The same ACT benched
 26.2 Hz with it.
@@ -3451,8 +3489,8 @@ timed. What that leaves owed is under Known limitations.
 ### Added
 
 - **`--async-chunks/--no-async-chunks` says how the arm plays a policy server's chunks.** It
-  goes beside `--policy-url` on `quackd run`, `quackd preflight` and `quackd serve-mcp`, and
-  beside `--bench` on `quackd policy check`, and `--no-async-chunks` is refused without the flag
+  goes beside `--policy-url` on `roboglot run`, `roboglot preflight` and `roboglot serve-mcp`, and
+  beside `--bench` on `roboglot policy check`, and `--no-async-chunks` is refused without the flag
   it goes beside. `--async-chunks`, the default, asks for each chunk while the arm still plays
   the last (below). `--no-async-chunks` plays each chunk out before it asks for the next, holds
   the arm still while that one is on its way and plays it from its first action as it lands,
@@ -3472,7 +3510,7 @@ timed. What that leaves owed is under Known limitations.
 ### Changed
 
 - **A policy served with no `--latency-s` no longer holds the arm still through every round
-  trip.** `quackd policy serve` declares no latency unless it is given one, and a segment
+  trip.** `roboglot policy serve` declares no latency unless it is given one, and a segment
   waited for each chunk of such a policy in the tick that asked for it, with half the last
   chunk still queued, so the arm held its last goal for the whole round trip, once every half
   chunk. The guide's rented GPU, where SmolVLA and pi05 run, served with no `--latency-s`, and
@@ -3493,7 +3531,7 @@ timed. What that leaves owed is under Known limitations.
   answers within a tick still plays what the arm would, seam for seam. `--latency-s` still
   sets how long the simulator holds each chunk back, how early a segment asks for the next
   once twice the latency is more than half a chunk, and the refusal past half a chunk.
-  `quackd policy check --bench` paces by the same rule, so a first bench of a policy served
+  `roboglot policy check --bench` paces by the same rule, so a first bench of a policy served
   with no latency waits out its first chunk alone, and its skipped row says which ticks passed
   in that wait and which a pacer woke too late for. The guide's benches are from 2026-10-25
   ([docs/guides/policies.md](docs/guides/policies.md#on-the-laptop-alone)). Tests hold a chunk
@@ -3523,7 +3561,7 @@ timed. What that leaves owed is under Known limitations.
 - **A bench of a policy asked every tick played none of its answers once it declared a
   latency.** A policy in tick mode, as an ACT trained with temporal ensembling is served, is
   asked every tick, and a segment plays each answer on the tick it takes it in, the tick after
-  it was asked where the server declares a tick to answer. `quackd policy check --bench` kept
+  it was asked where the server declares a tick to answer. `roboglot policy check --bench` kept
   each answer for the tick it was asked at instead, so it was a tick stale when it was taken in
   and thrown away. A scripted server in tick mode that answered in about a millisecond,
   declaring a tick at 10 Hz, benched 0 of 100 ticks over 10 s, said all 100 starved ticks came
@@ -3534,7 +3572,7 @@ timed. What that leaves owed is under Known limitations.
 - **An empty frame before the verdict comes with the rule beside it.** 0.10.0 reworded
   `assess_task` so that a target the pilot has not found yet is not by itself a reason for
   `uncertain`, and on Qwen3-32B-AWQ that did not move the verdicts: on 0.10.0,
-  `quackd run --goal "Find the ball and kick it."`, the README's own goal, was `feasible` 5
+  `roboglot run --goal "Find the ball and kick it."`, the README's own goal, was `feasible` 5
   times in 30, and 23 of its 25 `uncertain` reasons, coded blind, were about where the ball
   was. Until a verdict is recorded, when a detector looks at the frame and finds nothing, the
   observation now ends with a line saying that is not by itself a reason for `uncertain`, and
@@ -3562,7 +3600,7 @@ timed. What that leaves owed is under Known limitations.
   python-dotenv 1.2.4, mcp 2.3.0, cryptography 50.0.2, anthropic 1.17.0, openai 3.35.1,
   google-genai 2.32.0, typesafe-sdk 0.7.5, laya 0.4.12, ruff 0.17.1, mypy 2.4.0, pre-commit
   4.7.0, mujoco 3.16.0 and onnxruntime 1.31.0. ruff and pydantic each found one line on main,
-  changed there before the merge without changing what quackd does. ruff 0.17's new RUF071 flags
+  changed there before the merge without changing what Roboglot does. ruff 0.17's new RUF071 flags
   `os.path.commonprefix`, which Python 3.15 deprecates, so MOSS works out what its blueprints'
   names start with by a helper of its own, and pydantic 2.14 types `create_model`'s fields as a
   `TypeForm`, so ToddlerBot's narrowed `perform` hands it the motions' `Literal` as `Any`. Every
@@ -3572,15 +3610,15 @@ timed. What that leaves owed is under Known limitations.
   Completions, and on google-genai, each against a stand-in for its API on 127.0.0.1, sent the
   same request bodies as anthropic 1.9.0, openai 3.22.1 and google-genai 2.25.0 had, camera
   frames aside, and read its tool calls back to the run's success. anthropic's went to the beta
-  endpoint with both of quackd's betas, `fallbacks` and `block_binding`. typesafe-sdk 0.7.5
+  endpoint with both of Roboglot's betas, `fallbacks` and `block_binding`. typesafe-sdk 0.7.5
   reworks its transport and adds images, multipart bodies and compression, and a shadow run
   against a System One server on 127.0.0.1 sent the same requests as 0.7.2 and recorded a
   decision on every turn. It compresses a body of 1024 bytes or more with zstd wherever it can,
   which is Python 3.14 and later or with the `typesafe-sdk[zstd]` extra, and hello-world's
   requests were over 2 KB. On 3.12 without that extra it sent plain JSON, as 0.7.2 did. laya's
-  `Router` and `predict` take quackd's arguments as before, `typed-decisions` is still one of its
+  `Router` and `predict` take Roboglot's arguments as before, `typed-decisions` is still one of its
   checkpoints, and its answers carry the same `choice`, `confidence` and `noul`. Its own default
-  checkpoint is now `multilingual`, which quackd does not use, since it names the one it loads.
+  checkpoint is now `multilingual`, which Roboglot does not use, since it names the one it loads.
   Its weights were not loaded. mujoco 3.16.0 and onnxruntime 1.31.0 passed the physics job, and
   the nightly jobs that load the Microduck's real model and the arm's run on them from the night
   after the merge. No requirement a user installs against moved.
@@ -3608,23 +3646,23 @@ timed. What that leaves owed is under Known limitations.
 - **A bench of a policy asked every tick says less than a segment would.** A segment ends on
   the first tick such a policy has not answered by, and the bench counts that tick as starved
   or skipped and goes on. It also suggests a `--latency-s` past a tick for one whose steps take
-  that long, which `quackd policy serve` takes and every segment then refuses, since a policy
+  that long, which `roboglot policy serve` takes and every segment then refuses, since a policy
   asked every tick has to answer within one. Tick mode has not run with a real policy: the one
-  quackd serves in it, an ACT trained with temporal ensembling, is refused without a GPU.
+  Roboglot serves in it, an ACT trained with temporal ensembling, is refused without a GPU.
 
 ## [0.24.0] — 2026-10-23
 
-0.24.0 makes letting go of the SO-101 mean putting it down first. `quackd robot release` folds the
+0.24.0 makes letting go of the SO-101 mean putting it down first. `roboglot robot release` folds the
 arm to its recorded rest pose and lets go of it there, where 0.14.0's command took torque off
 wherever the arm stood and let it fall. A fold that misses, there or at the end of a run, asks
 twice before anything drops: first to clear the arm's way and fold once more, and only if that
 fold misses too, whether to take torque off where the arm stands, saying that it will drop.
 Anything but Enter keeps torque on.
 
-A real arm with no rest pose recorded is refused a run, a dry run, an MCP session and a flock,
+A real arm with no rest pose recorded is refused a run, a dry run, an MCP session and a team,
 and its close no longer lets go of it wherever it stands: `doctor` and `robot list --probe` keep
 it powered and say so, at a terminal `doctor` asks before it drops it into your hands, and
-`quackd robot rest-pose` lets go of the arm only once its pose is confirmed. A first Ctrl-C or
+`roboglot robot rest-pose` lets go of the arm only once its pose is confirmed. A first Ctrl-C or
 `q` now ends a model call that is still out, and stops the fold at the end of a run that ended by
 itself.
 
@@ -3644,68 +3682,68 @@ bench steps that would settle the arm's part are under Known limitations.
   used to end the run `error` after the SDK's own retries. The loop now waits 5, 15, 30 and then
   60 seconds, or as long as a `retry-after` asked where that is longer, and asks the same turn again, sending the
   same request byte for byte, with the robot holding still and the heartbeat watching it.
-  Ctrl-C, `q`, a heartbeat that fails or a flock's stop ends the wait as an abort, and the arm
+  Ctrl-C, `q`, a heartbeat that fails or a team's stop ends the wait as an abort, and the arm
   folds as at any end. What decides is the SDK's own exception, read under the provider's
-  (`quackd.agent.providers.base.transient_failure`), never its message, so a bad key, a refused
-  request or anything quackd raised itself still ends the run at once. A connection that never
+  (`roboglot.agent.providers.base.transient_failure`), never its message, so a bad key, a refused
+  request or anything Roboglot raised itself still ends the run at once. A connection that never
   answered at all is tried twice more, half a second and then a second later, and then ends the
   run, being as often a wrong address as a dropped line. A run out of tries, out of `max_minutes`, or asked by the API to
   wait longer than 120 s ends `error` saying which. A turn asked again is not charged to
   `max_llm_calls`.
   [ADR-0059](docs/adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md).
-- **Every try is on the record.** A failed `llm` record gains `retry_in_s` where quackd will ask
+- **Every try is on the record.** A failed `llm` record gains `retry_in_s` where Roboglot will ask
   again, and `llm_request` and `llm` gain `attempt` from a turn's second try; the summary gains
   `llm_retries` and `llm_retry_wait_s` only where a run asked again, so older summaries read as
-  they did. The log shows a failure quackd will ask again as a yellow warning rather than a red
+  they did. The log shows a failure Roboglot will ask again as a yellow warning rather than a red
   error, the live status line says how long it waits, and the counters under the verdict read
   `llm calls 5 (+1 asked again)` and add `waits` to the time's split, as they do under the line a
   run that gave up ends on.
   `tests/fake_openrouter.py --fail N:STATUS` answers the first N chat requests with STATUS.
-- **`quackd doctor` gives the hands time to come away before it folds the arm.** It says
+- **`roboglot doctor` gives the hands time to come away before it folds the arm.** It says
   `folding NAME to its rest pose in 3 s: take your hands away from it now` and waits those
-  seconds, as `quackd robot release` does, terminal or not, `--json` on stderr, and Ctrl-C or `q`
+  seconds, as `roboglot robot release` does, terminal or not, `--json` on stderr, and Ctrl-C or `q`
   while the arm connects, in those seconds or during the fold stops it with the arm held where it
   is. Its warning before the connect asked for the arm to be supported until doctor had finished,
   which kept a hand under the fold, and now says to take the hands away when doctor says so.
 
 ### Changed
 
-- **Releasing the SO-101 means folding it first.** `quackd robot release NAME` folds the arm to
+- **Releasing the SO-101 means folding it first.** `roboglot robot release NAME` folds the arm to
   its recorded rest pose and lets go of it there, through the door that refuses anywhere but that
   pose, where 0.14.0's command took torque off wherever the arm stood and let it fall into
   whoever was holding it. Its warning, printed before it connects, says to support the arm while
   it connects and then to take your hands away when it says so, and once connected it says it
-  folds in 3 seconds (`quackd.release.HANDS_AWAY_S`), which is when the hands come away; the
+  folds in 3 seconds (`roboglot.release.HANDS_AWAY_S`), which is when the hands come away; the
   close ends on
   `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`.
   Ctrl-C or `q` during those seconds, or during the fold, stops it where it is and keeps torque
   on.
   [ADR-0058](docs/adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md).
-- **A fold that misses asks twice before anything drops**, in `quackd robot release` and at the
+- **A fold that misses asks twice before anything drops**, in `roboglot robot release` and at the
   end of a run, where the run used to offer one Enter that released the arm where it stood. The
   first question asks you to clear whatever is in the arm's way and press Enter, and it folds once
   more; only if that fold misses too does the second say that Enter now takes torque off where it
   stands and that the arm will drop, so hold it first. Anything but Enter, at either, keeps torque
   on: a wait that runs out (60 s each), a Ctrl-C, a `q`, a terminal with nothing to read. Neither
   is put over an arm that stopped answering. `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are
-  gone (`quackd.release`), and the record's `release` events gain the stages `refold` and
+  gone (`roboglot.release`), and the record's `release` events gain the stages `refold` and
   `folded` and the `kept` reasons `interrupted during the fold` and
   `the arm did not answer the second fold`.
-- **`quackd robot release --yes` skips only the question before the connect.** The two
+- **`roboglot robot release --yes` skips only the question before the connect.** The two
   questions are still put wherever a terminal can prompt. With none, a fold that arrives lets go
   at the pose, and one that misses keeps torque on and exits 1.
-- **An arm with no rest pose is asked about before `quackd robot release` connects to it**,
+- **An arm with no rest pose is asked about before `roboglot robot release` connects to it**,
   because letting go of it where it stands is all the command can do, and connecting is where the
   arm first goes limp: Enter connects and drops it into your hands, anything else connects
   nothing. With no terminal the command refuses, `--yes` or not.
 - **A real SO-101 with no rest pose is kept powered by its close**, where 0.23.0 and before let go
-  of it wherever it stood and it fell. `quackd doctor` and `quackd robot list --probe` read such an
+  of it wherever it stood and it fell. `roboglot doctor` and `roboglot robot list --probe` read such an
   arm and keep it powered, saying so (`torque left on: no rest pose recorded` on the probe's line),
   with the ways to put it down and to give it a pose. At a terminal `doctor` first asks whether to
   drop it into your hands, the way to get a first arm limp for folding by hand: Enter, with a hand
   under it, drops it, and anything else keeps it powered. The mock and the simulator let go as
   before.
-- **`quackd robot rest-pose` lets go of the arm only once the pose is answered for.** Its close
+- **`roboglot robot rest-pose` lets go of the arm only once the pose is answered for.** Its close
   let go of the arm before the question was answered, so a no left it let go of anyway, and an arm
   read standing rather than folded fell. A yes, or `--yes`, records the pose and lets go of the
   arm where it lies; a no, or a read that fails, keeps a real arm powered in its fold, and the
@@ -3716,41 +3754,41 @@ bench steps that would settle the arm's part are under Known limitations.
   is put down at once. The press used to be noticed only once the call returned.
 - **A first Ctrl-C or `q` stops the fold at the end of a run that ended by itself**, a success, a
   failure or a spent budget, holding the arm where it is with torque on, where the fold used to
-  finish first. A flock stopping its members, or a heartbeat that fails, does not stop it.
+  finish first. A team stopping its members, or a heartbeat that fails, does not stop it.
 - **The SDKs retry nothing of their own.** Every anthropic and openai client is built with
-  `max_retries=0` (`quackd.agent.providers.base.NO_SDK_RETRIES`), where each made two tries inside
+  `max_retries=0` (`roboglot.agent.providers.base.NO_SDK_RETRIES`), where each made two tries inside
   the call that a first Ctrl-C could not reach and that a `retry-after` could hold for minutes, so
   every try is now the loop's, on the record and under the stop. A server that answers
   `x-should-retry: true` is asked again at any status.
-- **One of quackd's own adapters from another release than the core is refused**, wherever a
+- **One of Roboglot's own adapters from another release than the core is refused**, wherever a
   body is described or built, with the command that reinstalls the two together. pip lets that
   mix happen with a warning, and a core reads every declaration an older adapter does not make as
   none, `REST_POSE_BACKENDS` among them, which would let a run of a real arm with no rest pose go
   ahead. A third party's adapter is not asked.
 - **The close's line for an arm left holding itself up names one way out**: clear its way and run
-  `quackd robot release NAME`, which folds it and lets go at the pose, supporting the arm while
-  that connects, or cut its power. It no longer names `quackd doctor --robot NAME` to park it.
-- **A real SO-101 with no rest pose is refused a run.** `quackd run`, a dry run included,
-  `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no recorded rest pose before
+  `roboglot robot release NAME`, which folds it and lets go at the pose, supporting the arm while
+  that connects, or cut its power. It no longer names `roboglot doctor --robot NAME` to park it.
+- **A real SO-101 with no rest pose is refused a run.** `roboglot run`, a dry run included,
+  `roboglot serve-mcp` and a team refuse a `lerobot:real` arm with no recorded rest pose before
   anything connects, because there would be nothing to fold it to at the end, and its close, which
   keeps such an arm powered rather than let it fall, as it fell at the end of every run on
   2026-09-15, would leave it holding itself up wherever it stopped. A spec on its own,
   `--robot lerobot:real --address PORT`, has no name to keep a pose under and is refused the same
-  way, with `quackd robot add NAME lerobot:real --address PORT, then quackd robot rest-pose NAME`
-  as the way back, and for a spec in `--robots` or a task file's `robots:`, running the flock
+  way, with `roboglot robot add NAME lerobot:real --address PORT, then roboglot robot rest-pose NAME`
+  as the way back, and for a spec in `--robots` or a task file's `robots:`, running the team
   from a stored one after that, since neither reads the registry. A run is refused once its
   task file has been judged against the arm, so a task that could never run there says so
   first. `doctor`, `robot list --probe`, `rest-pose`, `robot release`, the mock and the
-  simulator are unaffected, and `run_pilot_flock` refuses such an arm too, for a library caller.
+  simulator are unaffected, and `run_pilot_team` refuses such an arm too, for a library caller.
   An adapter declares the backends this applies to in `REST_POSE_BACKENDS`, which
-  `quackd.adapters.factory.needs_rest_pose` reads before anything is built, and
-  `quackd robot rest-pose NAME --clear` on a real arm now says its runs are refused until a pose
+  `roboglot.adapters.factory.needs_rest_pose` reads before anything is built, and
+  `roboglot robot rest-pose NAME --clear` on a real arm now says its runs are refused until a pose
   is recorded again.
 
 ### Fixed
 
-- **A pilot flock's member named with `--robot NAME` was built without its registered address,
-  cameras and rest pose.** The flock took only the spec of the robot it named, so a registered arm
+- **A pilot team's member named with `--robot NAME` was built without its registered address,
+  cameras and rest pose.** The team took only the spec of the robot it named, so a registered arm
   ran as a bare `lerobot:real`, whose close would have let go of it wherever it stood. The member is
   the registered robot now, built from its own entry.
 - **A fold that missed over servos that browned out was said to be holding the arm up.** A servo
@@ -3769,7 +3807,7 @@ bench steps that would settle the arm's part are under Known limitations.
 - **An Enter typed before a question answered it.** The key thread reads whatever is already in
   the terminal as it starts, so an Enter pressed while a command was starting answered the first
   question it put. A question that moves or drops an arm passes by an Enter read within half a
-  second of being put (`quackd.safety.TYPED_AHEAD_S`).
+  second of being put (`roboglot.safety.TYPED_AHEAD_S`).
 
 ### Documentation
 
@@ -3783,7 +3821,7 @@ bench steps that would settle the arm's part are under Known limitations.
   checklist run `arm-01` where they ran a bare `lerobot:real`, say that a run of a real arm with
   no rest pose is refused and why, and quote the refusal, captured on a scratch registry. Safety,
   the registry and MCP guides, the README and the adapter guide say the same, the adapter guide
-  documents `REST_POSE_BACKENDS`, and it no longer says that `quackd robot release` lets go of
+  documents `REST_POSE_BACKENDS`, and it no longer says that `roboglot robot release` lets go of
   the arm wherever it stands.
 - **Robot Passport's phase 7, planned in the repository.**
   [docs/design/robot-passport-phase-7.md](docs/design/robot-passport-phase-7.md) says what each of
@@ -3792,13 +3830,13 @@ bench steps that would settle the arm's part are under Known limitations.
   and PLAN.md points to it. `scripts/passport_readme_ratio.py` measures the README's Robot
   Passport section against the pages it summarises.
 - **The arm's first-run guide shows the task file it has you load, and says which policy
-  latencies are refused.** M09 had the reader load `arm-look.duck` over MCP and quoted what
+  latencies are refused.** M09 had the reader load `arm-look.glot` over MCP and quoted what
   loading it answers, and the file was nowhere. It is on the page now, and loaded through
-  `robot_load_duckfile` on `lerobot:mock` it answers the quoted note word for word. Section 17,
-  and Part 2's note on it, now say what 0.16.1 made `quackd policy serve` and `check` refuse, a
+  `robot_load_glotfile` on `lerobot:mock` it answers the quoted note word for word. Section 17,
+  and Part 2's note on it, now say what 0.16.1 made `roboglot policy serve` and `check` refuse, a
   latency of 5 s or more or one longer than half a chunk's actions take to play, and that the
-  arm refuses to connect to a server an earlier quackd started with such a latency, before any
-  motor is energised. The README counted fifteen bundled starters, nine of them `duck: 1`, where
+  arm refuses to connect to a server an earlier Roboglot started with such a latency, before any
+  motor is energised. The README counted fifteen bundled starters, nine of them `glot: 1`, where
   eighteen ship and twelve are. Two tests in `tests/test_docs.py` hold the guide's file to the
   budget it quotes and every page's starter counts to the starters that ship.
 - **When the model's API fails**, a section of its own in
@@ -3810,16 +3848,16 @@ bench steps that would settle the arm's part are under Known limitations.
   guide and the README say what `doctor`, `robot list --probe` and `rest-pose` do with such an arm
   and why a run of one is refused, with the refusals captured again on a scratch registry and
   doctor's question captured over the real backend with a stand-in for the arm's bus. ADR-0058 and
-  ADR-0059 carry dated amendments, and the adapter guide says why quackd's own adapters must come
+  ADR-0059 carry dated amendments, and the adapter guide says why Roboglot's own adapters must come
   from the core's release.
 
 ### Known limitations
 
-- **None of the folding release has run on an arm.** The fold before `quackd robot release`
+- **None of the folding release has run on an arm.** The fold before `roboglot robot release`
   lets go, both questions, a Ctrl-C during a fold and the release where the arm stands are
   exercised against `lerobot:mock`, a fake arm and the simulator. The bench steps that would
   settle them, in order, with a hand on the power switch throughout:
-  1. `quackd robot release arm-01` on an arm a run left holding itself up away from its pose:
+  1. `roboglot robot release arm-01` on an arm a run left holding itself up away from its pose:
      support it through the connect, take your hands away, and say whether it folds and is let
      go of at the pose, and whether it then rests there limp.
   2. Something soft in the fold's path: the stall, the first question, Enter once it is cleared,
@@ -3831,9 +3869,9 @@ bench steps that would settle the arm's part are under Known limitations.
      the press.
   6. A run whose teardown fold is held back by a hand: the first question, the hand taken away,
      Enter, and the close letting go at the pose.
-  7. `quackd doctor --robot arm-01` with its rest pose cleared: the arm stays powered at the end;
+  7. `roboglot doctor --robot arm-01` with its rest pose cleared: the arm stays powered at the end;
      at the question, a hand under the arm and Enter, and whether it drops into the hand.
-  8. `quackd doctor --robot arm-01` with its pose recorded: the 3 s count, the hands away, the
+  8. `roboglot doctor --robot arm-01` with its pose recorded: the 3 s count, the hands away, the
      fold, and a `q` during the count holding the arm where it is.
   9. A run that ends by itself, and Ctrl-C during its fold: the arm stops and holds there.
 - **Nothing has been asked again after a real 429 or 529.** The retry has run against stand-ins
@@ -3847,11 +3885,11 @@ bench steps that would settle the arm's part are under Known limitations.
 never met: who it is, who vouches for it, what it can and cannot do, how a person stops it and how
 to reach it. A passport is one small JSON document, signed by a robot that holds an Ed25519 key,
 and found at `/.well-known/robot-passport.json`, over DNS-SD, on an MQTT broker, on a ROS 2 topic
-or on a QR sticker. quackd is its first implementation. It builds a signed passport for every
+or on a QR sticker. Roboglot is its first implementation. It builds a signed passport for every
 robot it drives from the robot's own manifest, checks anybody's the way a reader would, pins a
 robot or its owner once a person says yes, and talks for its robots.
 
-Two robots that have met talk in six small signed messages, and a robot met may ask one of quackd's
+Two robots that have met talk in six small signed messages, and a robot met may ask one of Roboglot's
 robots for a short pause or to identify itself. Fixed code decides, never the pilot, out of one
 budget every peer shares, and what it grants runs through the executor under two new gates: a peer
 reaches only the `stop` a pause begins with and the `say` an identify is, and a granted pause holds
@@ -3874,13 +3912,13 @@ And `stop` is never refused now for want of budget.
   `/.well-known/robot-passport.json`, over DNS-SD as `_robot-passport._tcp`, retained on an MQTT
   broker, on a ROS 2 topic or on a QR sticker, and two robots that have met talk in six small signed
   messages. The specification is draft 0.1, with four JSON Schemas and test vectors signed by a
-  second implementation of its rules, and quackd is its first implementation
+  second implementation of its rules, and Roboglot is its first implementation
   ([docs/passport/](docs/passport/README.md),
   [ADR-0057](docs/adr/0057-a-robot-can-introduce-itself-to-one-it-does-not-know.md)). It asks nobody
   to install anything: `cryptography`, which every install already had through `mcp`, is now a
-  dependency of quackd's own.
-- **`quackd passport`, a passport for every robot quackd drives.** `show --robot NAME` builds it
-  from the robot's manifest and signs it with a key quackd makes for the robot the first time it
+  dependency of Roboglot's own.
+- **`roboglot passport`, a passport for every robot Roboglot drives.** `show --robot NAME` builds it
+  from the robot's manifest and signs it with a key Roboglot makes for the robot the first time it
   is asked, and `--json`, `--jws` and `--out FILE` print or write it. `check` reads anybody's
   passport from a file, from stdin or from a URL the way a reader would, says what it proves and
   what it only claims, and names the rule of the specification a refusal broke. `set --robot NAME`
@@ -3888,29 +3926,29 @@ And `stop` is never refused now for want of budget.
   may ask them for, and `stamp` stamps a robot with your owner key, or with `--did` one whose key
   lives on the robot. `known` and `forget` list and remove pins. `serve` serves passports at the
   well-known URL, one or several with an index, advertises them over DNS-SD with `--announce` and
-  keeps them retained on a broker with `--mqtt HOST`, both with `quackd[lan]`. `qr --robot NAME
+  keeps them retained on a broker with `--mqtt HOST`, both with `roboglot[lan]`. `qr --robot NAME
   --url URL` writes the robot's QR sticker, read back before it is saved
-  ([docs/passport/quackd.md](docs/passport/quackd.md)).
-- **`quackd meet SOURCE`**, which finds a robot's passport from a URL, a `HOST[:PORT]`, a picture of
+  ([docs/passport/roboglot.md](docs/passport/roboglot.md)).
+- **`roboglot meet SOURCE`**, which finds a robot's passport from a URL, a `HOST[:PORT]`, a picture of
   its sticker, a passport file, `mqtt://BROKER/KEY`, or `ros://HOST[:PORT]` for a ROS robot on
   rosbridge, under fetch rules that follow no redirect, read nothing past 12 KB in five seconds a
   request and contact no host but the one named. It shows the robot's tier: a stranger, known, the
-  same owner's, or one this quackd drives. `--pin` and `--pin-owner` pin its key or its owner's once
+  same owner's, or one this Roboglot drives. `--pin` and `--pin-owner` pin its key or its owner's once
   a person says yes. `--as NAME` says hello as one of your robots, each proving it holds its key,
   and then `--say TEXT` says one thing, `--ask pause:N` or `--ask identify` asks for a courtesy, and
   `--share "ABOUT: FACT"` with `--place` tells it something your robot saw.
-- **`quackd discover` lists the robot passports on the network** beside the quackd robots it
+- **`roboglot discover` lists the robot passports on the network** beside the Roboglot robots it
   always listed, a passport's `--json` object carrying `"kind": "passport"`.
-- **Talk in a run.** `quackd run --talk` serves the run's robot with a talk inbox, on port 8790
+- **Talk in a run.** `roboglot run --talk` serves the run's robot with a talk inbox, on port 8790
   unless `--talk-port` says otherwise, and `--meet HOST` says hello to a robot as the run starts. A
   robot met appears in the pilot's observation under Robots nearby, as JSON within a budget of
   characters a turn, a stranger under a name made from its key and never with its words, and the
   pilot can `tell` it something. In a dry run the pilot's `tell` sends nothing, though `--meet`
   still says hello, and the bundled `nearby-hello` task is the smallest run that does all of it.
-- **`robot_nearby`**, an MCP tool that `quackd serve-mcp --talk` adds, which shows a client the
+- **`robot_nearby`**, an MCP tool that `roboglot serve-mcp --talk` adds, which shows a client the
   robots met exactly as a pilot would see them. Every `robot_list` row names its robot's
   passport, or `null` for a robot with no key yet ([docs/guides/mcp.md](docs/guides/mcp.md)).
-- **Courtesies.** A robot met can ask one of quackd's robots for a pause, of 5 s at most for a
+- **Courtesies.** A robot met can ask one of Roboglot's robots for a pause, of 5 s at most for a
   stranger and 10 s for a known robot, or to identify itself by sound, out of one budget every peer
   shares: a pause a minute and an identify every ten seconds. Fixed code decides, never the pilot,
   and what it grants runs through the executor under a new source, `peer`, and two new gates:
@@ -3920,28 +3958,28 @@ And `stop` is never refused now for want of budget.
   ends on its own, a courtesy costs the pilot no step, a run takes courtesies only while its pilot
   has the body, and an arm in a person's hands is never paused.
   `passport owner --no-stranger-pauses` and `--courtesy` set what robots met may ask
-  ([docs/passport/talk.md](docs/passport/talk.md#what-quackd-does-with-an-ask),
+  ([docs/passport/talk.md](docs/passport/talk.md#what-roboglot-does-with-an-ask),
   [docs/concepts/safety.md](docs/concepts/safety.md)).
 - **Keys and pins on disk.** A robot's key, and what its owner said about stopping it, sit in one
-  small file per robot under `~/.quackd/keys/robots/`, the owner and the owner key in
-  `~/.quackd/keys/owner.json`, and the robots and owners a person pinned in
-  `~/.quackd/known_robots.json`, all moved by `--registry-dir` with the registry. `robots.json`
-  gains nothing, so an older quackd still reads it.
+  small file per robot under `~/.roboglot/keys/robots/`, the owner and the owner key in
+  `~/.roboglot/keys/owner.json`, and the robots and owners a person pinned in
+  `~/.roboglot/known_robots.json`, all moved by `--registry-dir` with the registry. `robots.json`
+  gains nothing, so an older Roboglot still reads it.
 
 ### Fixed
 
 - **`stop` is never refused for want of budget.** A run or an MCP session whose `max_steps` or
   `max_minutes` were spent had its brake refused with them, though no other gate refuses `stop`
-  and quackd tells every pilot it is always allowed. It is still charged a step while one is
+  and Roboglot tells every pilot it is always allowed. It is still charged a step while one is
   left.
 
 ### Documentation
 
 - **[docs/passport/](docs/passport/README.md)**, eighteen pages on every part of Robot Passport: why
   it exists and what it is not, one meeting step by step, a quickstart for any robot and for one
-  quackd drives, every member of the document, discovery and the fetch rules, keys, stamps, pins and
+  Roboglot drives, every member of the document, discovery and the fetch rules, keys, stamps, pins and
   the four tiers, talk and the courtesy handler, a threat model, privacy, compatibility from a
-  sticker to a talking robot, quackd's own commands with what they really print, the normative
+  sticker to a talking robot, Roboglot's own commands with what they really print, the normative
   specification, naming, prior art, a glossary, the questions people ask, and a roadmap that says
   part by part what is built and what has run. The README gains a section on every aspect, and
   docs/README.md lists all eighteen pages.
@@ -3960,7 +3998,7 @@ And `stop` is never refused now for want of budget.
   `meet ros://` has run only against fakes. The roadmap's status table keeps that part by part,
   until somebody runs it on two machines or a robot and writes down what happened
   ([docs/passport/roadmap.md](docs/passport/roadmap.md)).
-- **A run and `serve-mcp` talk over HTTP only**, not over a broker, and a run in a flock refuses
+- **A run and `serve-mcp` talk over HTTP only**, not over a broker, and a run in a team refuses
   `--talk`. A pilot speaks to a robot met with `tell` alone: asking one for a courtesy, or sharing
   what it saw, from a run is planned.
 - **Bluetooth LE waits for beacon ids that rotate**, and maker stamps for makers that hold keys,
@@ -3973,7 +4011,7 @@ And `stop` is never refused now for want of budget.
 ## [0.22.0] — 2026-10-21
 
 0.22.0 adds MOSS, a small tracked rover by Laurent Genoud (Show Robotics) that picks up litter,
-as the ninth robot quackd can drive. quackd speaks the rover's own cockpit for its state, its
+as the ninth robot Roboglot can drive. Roboglot speaks the rover's own cockpit for its state, its
 pose, its battery, a goal for its planner, its explorer and its soft stop, and ships a bridge that
 runs on the rover for what the cockpit has no command for: a twist with a deadman, frames that say
 when they were taken, the maker's own arm cycle, and the litter mission's own stop. `moss:cockpit`
@@ -3982,23 +4020,23 @@ reaches a real rover, and `moss:mock` runs offline.
 Nothing has run on a MOSS rover, and the bridge has never run on one. Its hardware checklist is the
 first thing to run once one is in reach, on blocks, as its maker says.
 
-A `dangerous` verb now runs only when a person answers its confirm. `--yes`, a flock's standing
+A `dangerous` verb now runs only when a person answers its confirm. `--yes`, a team's standing
 answer, the MCP server and a pipe on stdin all refuse it, and `collect_litter` is the first verb
-quackd ships in that class.
+Roboglot ships in that class.
 
 ### Added
 
-- **MOSS, a ninth robot: `quackd[moss]`.** A small tracked rover that picks up litter, by Laurent
+- **MOSS, a ninth robot: `roboglot[moss]`.** A small tracked rover that picks up litter, by Laurent
   Genoud (Show Robotics) ([github.com/metrox-eth/moss](https://github.com/metrox-eth/moss)): two
   tracks, a bin on top, and an arm derived from the SO-101 with a parallel gripper that drops what
   it picks into the bin. Its software is `moss_dimos`, a blueprint package for dimOS, read at
-  `d288647` with dimOS at `a7d19f7`, and quackd imports neither. `moss:cockpit` speaks MOSS's own
+  `d288647` with dimOS at `a7d19f7`, and Roboglot imports neither. `moss:cockpit` speaks MOSS's own
   cockpit over HTTP for the state, the pose, the battery, a goal for its planner, the explorer and
-  the soft stop, and `moss:mock` runs offline. The package is `quackd-moss`, imported as
-  `quackd_moss`, which makes quackd ten distributions
+  the soft stop, and `moss:mock` runs offline. The package is `roboglot-moss`, imported as
+  `roboglot_moss`, which makes Roboglot ten distributions
   ([docs/adapters/moss/README.md](docs/adapters/moss/README.md),
   [ADR-0056](docs/adr/0056-moss-through-its-cockpit-and-a-bridge.md)).
-- **A bridge for the rover**, `bridge/moss/quackd_moss_bridge.py`, for what MOSS's cockpit has no
+- **A bridge for the rover**, `bridge/moss/roboglot_moss_bridge.py`, for what MOSS's cockpit has no
   command for. A twist with a deadman of its own, sent again while it is fresh and then one zero and
   silence, since every message on the pad's channel cancels MOSS's navigation. A frame that says
   when it was taken. The base stack's own navigation, read off the bus, since the cockpit reads only
@@ -4007,13 +4045,13 @@ quackd ships in that class.
   hold, and a script that dies any way but its own has its trajectory cancelled and the arm read
   too. And the litter mission's own stop, the only one it listens to short of ending the whole
   stack, which comes with the end of the mission's own pick script, since the mission's stop leaves
-  that running. The bridge runs on the rover with MOSS's own interpreter, imports quackd nowhere,
-  binds loopback and takes a token. Each quackd session has an id of its own and keeps itself alive
+  that running. The bridge runs on the rover with MOSS's own interpreter, imports Roboglot nowhere,
+  binds loopback and takes a token. Each Roboglot session has an id of its own and keeps itself alive
   from its loop's own heartbeat, so a dead process, a dead link and a wedged loop all end it, and
   three missed keepalives later the bridge halts what that session started and nothing else, the
   whole stop on `moss-litter` only for a session that started the mission, and the next keepalive
-  answer says what was halted. quackd's close halts only what its own session started, its own arm
-  cycle by its id, so a `quackd doctor` stops nothing. A systemd unit and its page sit beside it
+  answer says what was halted. Roboglot's close halts only what its own session started, its own arm
+  cycle by its id, so a `roboglot doctor` stops nothing. A systemd unit and its page sit beside it
   ([bridge/moss/README.md](bridge/moss/README.md)).
 - **MOSS's own verbs.** `drive_to`, a goal at most 2 m away for MOSS's own planner. `explore`, its
   explorer for up to eight minutes. `pick_and_drop` and `stow_arm`, the maker's fixed arm cycle,
@@ -4027,35 +4065,35 @@ quackd ships in that class.
 
 ### Changed
 
-- **A `dangerous` verb runs only when a person answered its confirm.** Under `--yes`, a flock's
+- **A `dangerous` verb runs only when a person answered its confirm.** Under `--yes`, a team's
   standing answer, the MCP server or a pipe on stdin nobody is asked, so a `dangerous` verb is
   refused there before its question is put, with a `confirm` gate whose reason says to run it from
   a terminal without `--yes`. A person who answers y still runs it, and one who answers n still
-  stops it. No verb quackd shipped before `collect_litter` was `dangerous`, so none of quackd's
+  stops it. No verb Roboglot shipped before `collect_litter` was `dangerous`, so none of Roboglot's
   own refuses now where it ran before. A `dangerous` verb in anyone else's adapter is refused
   now where nobody is asked, though it ran there before
   ([docs/concepts/safety.md](docs/concepts/safety.md)).
 
 ### Known limitations
 
-- **Nothing has run on a MOSS rover**, and quackd's bridge has never run on one. The client is
+- **Nothing has run on a MOSS rover**, and Roboglot's bridge has never run on one. The client is
   exercised against a fake of the cockpit and against the bridge in its fake mode over loopback,
   and by hand against MOSS's own cockpit in its demo mode, on Windows and in a Linux container,
-  where quackd read the cockpit's own state document and refused the demo at connect by name.
+  where Roboglot read the cockpit's own state document and refused the demo at connect by name.
 - **How far one pulse of a turn on the spot turns the rover is unmeasured**, so `search_scan`'s
   angles are the ones it asked for. Step 6 of the hardware checklist measures it.
 - **A nose frame carries `frame_taken_at` only when its own stamp passes the bridge's check**
   against the bridge's own receive time, because what clock the RealSense stamps on is
   librealsense's to say and outside both pins.
-- **`collect_litter` runs once per stack start.** Every stop quackd sends on `moss-litter`, the one
+- **`collect_litter` runs once per stack start.** Every stop Roboglot sends on `moss-litter`, the one
   at the end of every run among them, ends the litter mission, and it runs again only after the
   owner restarts the stack. A session that started nothing sends none when it closes, so a
-  `quackd doctor` leaves the mission running.
+  `roboglot doctor` leaves the mission running.
 
 ## [0.21.0] — 2026-10-20
 
-0.21.0 adds Huebot, a 25 cm biped from Leif Rydenfalk, as the eighth robot quackd can drive. Its
-own API is closed, so quackd speaks to a shim its maker is writing, which is to answer the calls a
+0.21.0 adds Huebot, a 25 cm biped from Leif Rydenfalk, as the eighth robot Roboglot can drive. Its
+own API is closed, so Roboglot speaks to a shim its maker is writing, which is to answer the calls a
 Microduck's `robotd` answers, the same way. `huebot:jsonrpc` is the Microduck's transport, copied
 and renamed so that the two can diverge, and it needs `--address`, a forward to that shim, while
 `huebot:mock` runs offline. Its speed caps are 0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s
@@ -4070,12 +4108,12 @@ first thing to run once it does, and until a Huebot has passed the checklist's d
 A Microduck turns at 1.0 rad/s at most now, the turn upstream's walking policy was trained on, and
 `stand_up` waits up to ten seconds for the duck to stand rather than reading it once at three. A
 run's `search_scan` counts the turns robotd took, which 0.18.0 said it did and only the tests ever
-saw, and a registered robot this quackd cannot build no longer makes every `quackd robot` command
+saw, and a registered robot this Roboglot cannot build no longer makes every `roboglot robot` command
 refuse the whole registry.
 
 ### Added
 
-- **Huebot, an eighth robot: `quackd[huebot]`.** A 25 cm biped from Leif Rydenfalk
+- **Huebot, an eighth robot: `roboglot[huebot]`.** A 25 cm biped from Leif Rydenfalk
   ([ce-net.com/huebot](https://ce-net.com/huebot)), with behaviour code of its own (needs, an LED
   face, coming to your hand), which does not run the Microduck runtime. Its own API is closed, and
   its maker is writing a shim for the robot that is to answer the same calls the Microduck's
@@ -4084,19 +4122,19 @@ refuse the whole registry.
   and version gate, the same check that the robot took each twist, the same posture allowlist and
   hold on a walk once the robot stops standing, and the same reliance on the robot's own deadman.
   `huebot:mock` is the core's scripted body, and there is no simulator. The package is
-  `quackd-huebot`, imported as `quackd_huebot`, which makes quackd nine distributions. Nothing has
+  `roboglot-huebot`, imported as `roboglot_huebot`, which makes Roboglot nine distributions. Nothing has
   run it against a Huebot or against its shim, which nobody has seen
   ([docs/adapters/huebot/README.md](docs/adapters/huebot/README.md)).
 - **What Huebot's shim must answer**, call by call, is the centre of its page, written for its
   maker: `robot.subscribe`, without which the connect fails as not robotd, beside the calls its
   maker named, `robot.do`, `robot.sound` and `robot.enable` for the verbs, a boolean `accepted` in
-  their answers, the fields of `robot.state` quackd reads, robotd's deadman, and a socket on the
+  their answers, the fields of `robot.state` Roboglot reads, robotd's deadman, and a socket on the
   robot reached through ssh and never an open port, since the protocol has no authentication. Since
   Huebot runs behaviour code of its own, the shim is asked to report a `policy` other than `walk` or
-  `stand` while anything but quackd drives the legs, and to stop it on `robot.stop`, and the page
+  `stand` while anything but Roboglot drives the legs, and to stop it on `robot.stop`, and the page
   carries two questions for the maker on how that code is suspended and shows. Its
   [hardware checklist](docs/adapters/huebot/hardware-checklist.md) switches Huebot's own
-  behaviours off and sees that they are, tests the deadman, with quackd frozen and with the tunnel
+  behaviours off and sees that they are, tests the deadman, with Roboglot frozen and with the tunnel
   pulled, and `robot.stop` with the feet off the ground before anything walks, lifts the robot off
   its stand to see a walk refused, runs `stand_up` and each listed skill on the stand, and sends
   the first `robot.enable` to the robot on its back on a mat, before the feet go down. Until a
@@ -4105,16 +4143,16 @@ refuse the whole registry.
   without `--address` is refused as the robot is built, before anything is opened or a run directory
   written, naming `ssh -L 9870:<socket> <huebot>` and `--address tcp://127.0.0.1:9870`. The shim
   does not answer `robot.look` yet, so there is no `gaze` and no `watch`, a look is refused inside
-  quackd before anything is written, and `go_to` and `search_scan` wait for no glance to fade.
+  Roboglot before anything is written, and `go_to` and `search_scan` wait for no glance to fade.
   `sit`, `stand` and `kick` are offered only when the shim's `robot.subscribe` answer lists every
-  skill each one sends, and quackd sends no `robot.do` for any other skill. `grab` is offered on no
+  skill each one sends, and Roboglot sends no `robot.do` for any other skill. `grab` is offered on no
   Huebot until its maker says what `ground_pick` does there and how the state reports that the robot
   holds something. The camera is `--camera-url` alone, any HTTP still, and without a frame at
   connect the four verbs that need one are not offered. A `multipart/*` stream, MJPEG among them, is
   refused by its type, a redirect is refused naming where it points, and one fetch reads at most
   8 MB, within 3 s of its request. `stand_up` reads the robot every 0.25 s after `robot.enable`,
   sending nothing more, calls it upright as soon as it stands, stops waiting on a robot somebody
-  picks up, and says it may need a hand only after 10 s. The speed caps are quackd's own clamp,
+  picks up, and says it may need a hand only after 10 s. The speed caps are Roboglot's own clamp,
   0.15 m/s forward, 0.1 m/s sideways and 0.75 rad/s turning, and `search_scan` counts the turns it
   made by the ones the shim's state showed.
 - **Huebot's datasheet:** 0.25 m tall with 15 actuated joints, Feetech HD-1910 bus servos, both
@@ -4124,18 +4162,18 @@ refuse the whole registry.
   maker has not named among the shim's calls.
 - **Its upstream refs.** robotd's protocol stays VERIFIED at the Microduck's pin, `d818af5`, and
   every claim about Huebot's side is UNVERIFIED and sourced to its maker: that the shim answers the
-  calls quackd makes, that it has no `robot.look` yet, the joint order, the deadman, the skills,
+  calls Roboglot makes, that it has no `robot.look` yet, the joint order, the deadman, the skills,
   that its own behaviour code is off while the shim is driven, and what `robot.enable` does for a
   Huebot on the floor. A test holds the protocol refs to the Microduck's for as long as the two read
   one pin.
 
 ### Changed
 
-- **The Microduck turns at 1.0 rad/s at most, down from 1.5.** The cap is quackd's own, the
+- **The Microduck turns at 1.0 rad/s at most, down from 1.5.** The cap is Roboglot's own, the
   manifest's `limits` that every verb that walks is clamped to, since robotd clamps no twist.
   1.0 rad/s is the turn upstream's walking task was trained on and, from `daemon-v0.16.2`, what a
   gamepad's full stick asks for, "what that policy follows well on the robot", so a `move` that
-  asked for more was asking for a turn the policy was not trained to follow. quackd's own scans
+  asked for more was asking for a turn the policy was not trained to follow. Roboglot's own scans
   and `go_to`'s steering already turned at 1.0 at most. The datasheet's clamp line, which the pilot
   and an MCP client read, now says `1 rad/s turning`. The 3D simulator keeps its own ceiling of
   1.5, since the clamp bounds every twist it is handed.
@@ -4153,15 +4191,15 @@ refuse the whole registry.
 
 ### Fixed
 
-- **A registered robot this quackd cannot build no longer locks every `quackd robot` command.** A
+- **A registered robot this Roboglot cannot build no longer locks every `roboglot robot` command.** A
   robot on a backend its adapter has dropped, as `microduck:websocket` was in 0.19.0, or on an
   adapter not installed here made `robots.json` refuse every command that read it, until its entry
   was deleted by hand, as 0.19.0's notes said: `robot list`, `show`, `edit` and `remove`, and runs
   of every other robot in the file. Its spec is now kept as written. `robot list` marks it and says
   why, `--json` carries the reason as `spec_problem`, and `show`, `edit` and `remove` work on it.
-  A run, a flock, `doctor`, `serve-mcp` and `robot list --probe` refuse that one robot by name, as
-  `kitchen is registered as microduck:websocket, which this quackd cannot build`, the adapter's own
-  words, and then `quackd robot edit kitchen --spec microduck:<backend>, or quackd robot remove
+  A run, a team, `doctor`, `serve-mcp` and `robot list --probe` refuse that one robot by name, as
+  `kitchen is registered as microduck:websocket, which this Roboglot cannot build`, the adapter's own
+  words, and then `roboglot robot edit kitchen --spec microduck:<backend>, or roboglot robot remove
   kitchen`, with installing the package that provides it first for an adapter that is missing.
   `robot add` and `robot edit --spec` still refuse a spec that does not parse.
   `tests/test_robot_registry.py` and `tests/test_cli_robot.py` cover both kinds, and the second
@@ -4187,7 +4225,7 @@ the request that carries it is handed over.
 
 On a Microduck the same flag gives the pilot `watch(target, duration_s)`, the reflex OpenAI's launch
 video for its Decisions API shows on a Microduck. It asks where a described thing is in each frame
-and turns the head toward it by quackd's own law, at most 15° of yaw a look and never past 45°, only
+and turns the head toward it by Roboglot's own law, at most 15° of yaw a look and never past 45°, only
 while the duck reads as standing or sitting, and on a real duck only through `mediad`'s `/frame`.
 Every way a call ends is named, and none sends the head anywhere.
 
@@ -4198,7 +4236,7 @@ and the numbers the head is held to are starting values.
 ### Added
 
 - **A decision LLM that can see: `--decision-frames`.** `--decision-frames`, or
-  `QUACKD_DECISION_FRAMES=1`, shows the decision LLM the robot's primary camera beside the state on
+  `ROBOGLOT_DECISION_FRAMES=1`, shows the decision LLM the robot's primary camera beside the state on
   each turn the stepper asks it about: the picture that turn's observation read, as one JPEG no
   longer than 512 pixels on its longest side, at quality 85 and detail `low`, sent as an
   `input_image` part after the state's text and never inside it. The state gains one sentence,
@@ -4220,17 +4258,17 @@ and the numbers the head is held to are starting values.
   a connection refused or timed out first never carried. A disk that refuses the copy leaves none of
   it behind, and the record says `kept: false`. A turn asked without one says why, as
   `frame_skipped`. `run_start.decision_llm` gains `frames`, the summary's `decision` block gains
-  `frames` and `frames_sent`, and `quackd log` says `1 frame` on each turn that sent one. Whether a
+  `frames` and `frames_sent`, and `roboglot log` says `1 frame` on each turn that sent one. Whether a
   frame may go is decided apart from `--decision-mode`, so a run that asks for frames builds its
   decision LLM whatever the mode, and with the mode off one line says no frame will go; apart from
-  `--vision` too, which is the pilot's. `--decision-llm off` turns it off, and `quackd record` pins
+  `--vision` too, which is the pilot's. `--decision-llm off` turns it off, and `roboglot record` pins
   it off. A turn with a frame keeps the stepper's second. `tests/test_decision_frames.py` holds the
   encoding, the gate, every refusal, the copy written before the request, and a run cut off while a
   frame was out, and the wire tests send frames through openai 3.22.1 to the stand-in on 127.0.0.1,
   treated as OpenAI's, which checks each image part against the reference's shape.
   `tests/test_live_decision.py` gains a measurement of what a frame adds to a turn's time and to the
   tokens it bills, which needs a key and has not run. What a frame costs on `gpt-6-luna`, and how
-  much slower it makes a turn, are unmeasured, and no frame from quackd has reached OpenAI
+  much slower it makes a turn, are unmeasured, and no frame from Roboglot has reached OpenAI
   ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md),
   [ADR-0053](docs/adr/0053-a-decision-llm-may-be-shown-the-camera.md)).
 - **A head that keeps something in view: `watch` on the Microduck.** `watch(target, duration_s=15)`
@@ -4238,7 +4276,7 @@ and the numbers the head is held to are starting values.
   launch video for its Decisions API has a Microduck do it. Each look sends one frame to the one
   decision LLM `--decision-frames` may show the camera, `openai` at OpenAI's own hosts, with a
   `choice` question, where across the picture the thing is, and on a head that tilts a second, how
-  high, and quackd turns the head by a law of its own on the answer: the angle through the lens
+  high, and Roboglot turns the head by a law of its own on the answer: the angle through the lens
   times 0.6, nothing within 0.08 of the middle, at most 15° of yaw and 8° of pitch a look, and never
   past 45° either way, 14° up or 11.5° down. The answer is read by its distribution and never by
   OpenAI's `confidence`, which the record keeps. One request is out at a time, looks begin at least
@@ -4246,7 +4284,7 @@ and the numbers the head is held to are starting values.
   most, and each answer is bounded at 1.5 s. The head is claimed and given robotd's glance fade and
   a settle before the first frame, sent its target again at least every second, and claimed again
   after any gap robotd could glance in, and the duck is read before every command the head is sent,
-  which goes only to a duck that reads as standing or sitting, the allowlist quackd's own gaze hold
+  which goes only to a duck that reads as standing or sitting, the allowlist Roboglot's own gaze hold
   keeps. A frame is used only when it was taken after the head settled, and never twice, which on a
   real duck takes mediad's `/frame`: its WebRTC track carries no time a frame was taken, so a duck
   on it has `watch` withdrawn. Every way a call ends is named as its `ended`, and none sends the
@@ -4254,7 +4292,7 @@ and the numbers the head is held to are starting values.
   `camera`, `fallen`, `blind`, `held`, `look_refused`, `stopped`, `budget`, `error` for something
   raised, and `abort`, `timeout` and `cancel`. It is offered only on a run with
   `--decision-llm openai --decision-frames`, whatever `--decision-mode` says, on a duck whose camera
-  worked at connect. Every other run, `serve-mcp` and a flock have it withdrawn when the duck
+  worked at connect. Every other run, `serve-mcp` and a team have it withdrawn when the duck
   connects, by a new `VerbRegistry.remove` that never removes `stop`, and a task that requires it is
   refused before the robot connects where the run has nothing to look through, and once it has,
   before anything moves, where the camera cannot be used. It runs before a verdict, as `gaze` does,
@@ -4262,12 +4300,12 @@ and the numbers the head is held to are starting values.
   a `watch_frame` line naming it is written through to the transcript, a disk that refuses the copy
   leaves no partial file and records `kept: false`, and each look leaves a `watch_tick` row however
   it ended. `run_start.watch` says what the head was held to and through which lens, the summary's
-  `decision` block gains `watch`, whose bill is folded into that block's totals, `quackd log` prints
+  `decision` block gains `watch`, whose bill is folded into that block's totals, `roboglot log` prints
   each look, and the counters at a run's end give `watch`'s seconds a split of their own. A `stop`
   asked for from beside a running verb now reaches a verb that asks, through
-  `VerbContext.interrupted`, which carries the run's time budget too. A new starter duck,
+  `VerbContext.interrupted`, which carries the run's time budget too. A new starter task,
   `microduck-watch`, requires `watch`. In the suite the head closes on the ball on
-  `microduck:sim2d`, and in MuJoCo turning and tilting, through quackd's own client on a fake of its
+  `microduck:sim2d`, and in MuJoCo turning and tilting, through Roboglot's own client on a fake of its
   SDK that finds the ball in each JPEG it is handed. Nothing of it has run on a duck or against
   OpenAI ([microduck](docs/adapters/microduck/README.md#watch-a-head-that-keeps-something-in-view),
   [ADR-0054](docs/adr/0054-a-reflex-may-look-through-a-decision-llm.md)).
@@ -4276,13 +4314,13 @@ and the numbers the head is held to are starting values.
 
 0.19.1 fixes four small things 0.19.0 left. With `--no-memory` the MCP memory tools no longer tell a
 client to call them, a ToddlerBot with no walk checkpoint is no longer told how fast it may walk,
-and a `.duck` quackd cannot read, a UTF-16 one from Windows PowerShell 5.1 above all, is refused in
-a sentence by every command that reads it, `quackd serve-mcp --duckfile` included, rather than in a
+and a `.glot` Roboglot cannot read, a UTF-16 one from Windows PowerShell 5.1 above all, is refused in
+a sentence by every command that reads it, `roboglot serve-mcp --glotfile` included, rather than in a
 traceback. No verb sends a robot anything it did not send before.
 
 ### Fixed
 
-- **With `--no-memory`, `quackd serve-mcp` no longer tells its client to call `robot_recall`.** Both
+- **With `--no-memory`, `roboglot serve-mcp` no longer tells its client to call `robot_recall`.** Both
   memory tools stay registered under `--no-memory` and answer that memory is off, and the server's
   instructions already said nothing about them, but `robot_recall`'s own description still said to
   call it before planning, and a client reads a tool's description as an instruction like any other.
@@ -4293,37 +4331,37 @@ traceback. No verb sends a robot anything it did not send before.
 - **A ToddlerBot with no walk checkpoint is no longer told how fast it may walk.** Until its daemon
   reports a walk checkpoint that can move it, `toddlerbot:bridge` offers no verb that moves it and
   is told it does not move, yet its manifest keeps the walk's speed caps, and its prompt said
-  `quackd clamps you to 0.2 m/s forward, 0.1 m/s sideways, 1 rad/s turning` two lines under that. A
+  `roboglot clamps you to 0.2 m/s forward, 0.1 m/s sideways, 1 rad/s turning` two lines under that. A
   speed cap is a rule about a verb that moves the body, so only a body whose mobility is not `none`
   is told its caps now. The clamp itself is unchanged, and so is every other line: rendering every
   shipped body with every starter before and after the change changed the bridge's prompts alone, by
   that one line. `tests/test_datasheets.py` checks the bridge before its daemon answers and as built
   for a daemon with no checkpoint, a bridge that can walk, which is still told its caps, and that
   among the shipped bodies one is told its caps exactly when it moves. It failed before this change.
-- **A `.duck` saved as UTF-16 is refused in a sentence rather than a traceback.** Windows PowerShell
+- **A `.glot` saved as UTF-16 is refused in a sentence rather than a traceback.** Windows PowerShell
   5.1 saves UTF-16 with `>` and `Out-File`, and reading such a file as UTF-8 raised an error that
-  `quackd run`, `quackd validate`, `quackd preflight` and the MCP tool `robot_load_duckfile` let out
-  as a traceback. The one place quackd opens a `.duck` refuses it now as a file it cannot read,
+  `roboglot run`, `roboglot validate`, `roboglot preflight` and the MCP tool `robot_load_glotfile` let out
+  as a traceback. The one place Roboglot opens a `.glot` refuses it now as a file it cannot read,
   which each of them already says in a sentence:
-  `saved as UTF-16, which quackd does not read: save it as UTF-8`, and how to in PowerShell. A file
+  `saved as UTF-16, which Roboglot does not read: save it as UTF-8`, and how to in PowerShell. A file
   in any other encoding that is not UTF-8 is told so, with the byte where reading it failed, and the
-  `.duck` reference says both. `tests/test_duckfile.py` reads a starter saved as UTF-16 through the
-  loader, `quackd validate` and what `robot_load_duckfile` calls, and a Latin-1 file through the
+  `.glot` reference says both. `tests/test_glotfile.py` reads a starter saved as UTF-16 through the
+  loader, `roboglot validate` and what `robot_load_glotfile` calls, and a Latin-1 file through the
   loader. It failed before this change.
-- **`quackd serve-mcp --duckfile` refuses a task file it cannot read in a sentence.** It loaded the
+- **`roboglot serve-mcp --glotfile` refuses a task file it cannot read in a sentence.** It loaded the
   file with nothing around it, so a file it refused, a missing one or one with no frontmatter among
   them, ended the command in a traceback with the reason at its foot. It is refused now as
-  `quackd run` refuses it, before anything connects. `tests/test_cli.py` starts it on a file with no
+  `roboglot run` refuses it, before anything connects. `tests/test_cli.py` starts it on a file with no
   frontmatter and on one that does not exist, and failed before this change.
 
 ## [0.19.0] — 2026-10-19
 
 0.19.0 lets a task give its pilot a part to play, adds OpenAI's Decisions API as a decision LLM, and
-removes `microduck:websocket`, as 0.18.0 said it would. `play: true` in a `duck: 4` task file, or
+removes `microduck:websocket`, as 0.18.0 said it would. `play: true` in a `glot: 4` task file, or
 `--play`, adds one section to the pilot's prompt: the pilot acts a part out with the body it has,
 the verdict asks whether this body can act it out rather than whether it is the thing it plays, a
 real result the task asks for still has to happen, and no part brings the body into contact with a
-person or within reach of one. With play off quackd adds nothing to the prompt. 118 of the SO-101's
+person or within reach of one. With play off Roboglot adds nothing to the prompt. 118 of the SO-101's
 223 example files now play, and no played run has reached the arm yet.
 
 `--decision-llm openai` asks OpenAI's `POST /v1/decisions` the stepper's four questions and reads
@@ -4338,8 +4376,8 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
 
 ### Added
 
-- **A task can give the pilot a part to play.** `play: true` in a `duck: 4` task file, or `--play`
-  on `quackd run`, `record` and `preflight`, adds one section to the system prompt, `## Playing a
+- **A task can give the pilot a part to play.** `play: true` in a `glot: 4` task file, or `--play`
+  on `roboglot run`, `record` and `preflight`, adds one section to the system prompt, `## Playing a
   part`, directly before the task file. It tells the pilot that a part is acted out with the body
   it has, that the verdict asks whether this body can act it out rather than whether it is the
   thing it plays, and that the legs, wings or second arm of what it plays stay out of `needs`. It
@@ -4351,26 +4389,26 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   would stand, and that its verdict reason says plainly what the body will do and every other
   reason what it actually did. No gate reads any of it. `--no-play` turns a file's `play` off for
   one run, the flag wins over the file, and no variable sets either. The tools, the observations
-  and every gate are what they were, and with play off quackd adds nothing to the prompt: rendering
+  and every gate are what they were, and with play off Roboglot adds nothing to the prompt: rendering
   every shipped body with every starter, and the arm with every example file that does not play,
   before and after the change gave the same bytes. An example file that now plays reads its new
-  lines with `--no-play` as well. Each member of a pilot flock plays. A coordinator flock refuses
+  lines with `--no-play` as well. Each member of a pilot team plays. A coordinator team refuses
   either flag and a played file, since none of its members is a pilot, and `--controller vla`
   refuses `--play`, and a played file unless `--no-play` turns its part off, since its policy reads
-  no prompt. Over MCP, a played file's `robot_load_duckfile` result carries the section's
-  paragraphs, worded for a chat, as `play`. A run's header, and the one `quackd log` replays, gains
-  a `play` row when play is on or a file's play was turned off, a pilot flock member's `run` line
+  no prompt. Over MCP, a played file's `robot_load_glotfile` result carries the section's
+  paragraphs, worded for a chat, as `play`. A run's header, and the one `roboglot log` replays, gains
+  a `play` row when play is on or a file's play was turned off, a pilot team member's `run` line
   in the log says `play` after its robot, and the record gains `run_start.play`, whether the pilot
   was told it may play and whose word that was, beside `contract.play`, the file's own, and a pilot
-  flock's `flock_start` says the same. `tests/test_play.py` holds the schema's rules, a played
+  team's `team_start` says the same. `tests/test_play.py` holds the schema's rules, a played
   prompt as the plain one plus one section on every shipped body, the tools and the gate's words
-  unchanged played or not, the record of a run, a pilot flock and a rehearsal, MCP and the
-  coordinator flock's refusals, with the vla ones in `tests/test_controller_vla.py`. Four opt-in
+  unchanged played or not, the record of a run, a pilot team and a rehearsal, MCP and the
+  coordinator team's refusals, with the vla ones in `tests/test_controller_vla.py`. Four opt-in
   live runs ask a real model to end a played task whose real result the body cannot make as
   infeasible, a laundry basket on the Microduck's simulator asked for plainly and as a pack mule's,
   and to move for a played part, a cat there and a T-rex on `lerobot:mock`. The first three are in
   `tests/test_llm_in_the_simulator.py` and need MuJoCo, the last is in `tests/test_play.py`, all of
-  them need `QUACKD_LIVE_LLM=1` and an OpenAI key, and none of them has run yet
+  them need `ROBOGLOT_LIVE_LLM=1` and an OpenAI key, and none of them has run yet
   ([docs/guides/play.md](docs/guides/play.md),
   [ADR-0055](docs/adr/0055-a-pilot-can-play-a-part.md)).
 - **OpenAI's Decisions API as a decision LLM: `--decision-llm openai`.** OpenAI opened
@@ -4378,7 +4416,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   asks the kind of question a decision LLM answers in a wire format of its own: the questions go as
   a list, a yes or no question is a `predicate`, and the answers come back as a list that names each
   question. So it is a second backend rather than a row on the System One client.
-  `quackd/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
+  `roboglot/agent/decision/decisions_api.py` translates the four questions every decision LLM is asked
   out and the answers back, strictly by the name each answer carries and never by its position, and
   by its type: an answer of a type its question was not asked as, a choice with no choice in it, or
   two answers under one name answer nothing, which for a question the gates read hands the turn to
@@ -4387,16 +4425,16 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   written, and the `state_chars` every row records now counts those letters rather than JSON's
   six-character escape for each one outside ASCII. It reaches the API through the `openai` SDK's
   generic request rather than its `decisions` resource, which arrived in 3.26.0, so the 3.22.1 the
-  lock carries serves it and no floor moves, and it installs with `quackd[openai]`, the pilot's own
-  extra, which `quackd[all]` already carries.
+  lock carries serves it and no floor moves, and it installs with `roboglot[openai]`, the pilot's own
+  extra, which `roboglot[all]` already carries.
   `OPENAI_API_KEY` is sent to OpenAI's own API alone, `https://api.openai.com` or one of the
   regional hosts OpenAI's data controls page lists for it, `us.`, `eu.`, `au.`, `ca.`, `jp.`, `in.`,
   `sg.`, `kr.`, `gb.` and `ae.` in front of `api.openai.com`, over https, with nothing else in the
   address's authority but the port https uses anyway: any other `--decision-url` is a server of
   your own that answers the same format, sent the word `local` and costed at the self-hosted rate
-  unless `QUACKD_DECISION_PRICE` says otherwise. `OPENAI_BASE_URL` never moves the address, and what
+  unless `ROBOGLOT_DECISION_PRICE` says otherwise. `OPENAI_BASE_URL` never moves the address, and what
   else the SDK reads for itself goes where it goes for the pilot, by the rule
-  `providers/openai_headers.py` keeps for every client quackd builds on the SDK:
+  `providers/openai_headers.py` keeps for every client Roboglot builds on the SDK:
   `OPENAI_CUSTOM_HEADERS`, `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID` go to OpenAI's own API exactly as
   the SDK sends them, and to a server of your own none of them, an authorization line of the
   variable in any spelling carrying the word instead. That rests on the eleven releases of the SDK
@@ -4411,18 +4449,18 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   before its first request, which on a cold Windows machine means a WMI query or a subprocess, so
   that is asked while the client is built and no turn waits for it. A turn is billed at the
   published $0.10 per million input tokens, output not charged, on the count OpenAI reports, and a
-  turn whose request went out and then failed on quackd's own estimate, which wears a `~`. A
+  turn whose request went out and then failed on Roboglot's own estimate, which wears a `~`. A
   question the API declines is no answer at all, so the stepper reads that before any answer and
   hands the turn to the model on a gate of its own, `refused`, whichever of the four was declined,
   `feasible` included. The turn's record names the questions declined, the run's `decision` summary
-  counts `refusals`, and `quackd log` prints the names in yellow. Every stepper turn that sends a
+  counts `refusals`, and `roboglot log` prints the names in yellow. Every stepper turn that sends a
   request now records `idle_s` as well, the seconds since the stepper's previous request ended.
   OpenAI's SDK and TypeSafe's both drop a connection idle for five seconds, and in shadow mode the
   model's own call and a verb usually take longer than that between two of the stepper's requests,
   so `idle_s` tells a turn that paid for opening a new connection from one that reused one. It is
   null on the first turn, and on the turn after a request that failed, which may have taken its
   connection with it or never had one, so no number there claims a connection that was kept warm.
-  The catalogue gains a `sees` field, false on every row, `openai` included, because quackd sends a
+  The catalogue gains a `sees` field, false on every row, `openai` included, because Roboglot sends a
   decision LLM text and nothing else. The row has
   [a page of its own](docs/guides/decision-llms/openai.md), SECURITY.md says where each decision
   LLM's key may go, and the decision-LLM hub, the README, `.env.example`, CONTRIBUTING, the
@@ -4439,7 +4477,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   extending ADR-0040 with the new gate. `tests/test_decisions_api.py` drives the translation, the
   key, the headers and the address through a fake of the SDK, `tests/fake_decisions_api.py`, and
   `tests/test_decision.py` drives the new gate and `idle_s` through the stepper. Wherever the SDK is
-  installed, `tests/test_decisions_api_wire.py` drives a real `quackd run` through the real one
+  installed, `tests/test_decisions_api_wire.py` drives a real `roboglot run` through the real one
   against `tests/fake_openai_decisions.py`, a stand-in for the API on 127.0.0.1, and shows on the
   wire that the key goes only where it is meant to, that at a stand-in taken for OpenAI's own API
   the SDK's own variables arrive exactly as they arrive from a client the SDK built by itself, that
@@ -4465,20 +4503,20 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   message and OpenAI's the body of a 4xx or a 5xx, and a reply can quote the request it turned down,
   which is the state the record otherwise keeps as a size and a shape. So `error` now holds the type
   and the status, `RateLimitError: HTTP 429` for a rate limit at OpenAI, or the type alone where
-  there is no status, and so does the line `quackd log` prints. Two sentences are quackd's own and
+  there is no status, and so does the line `roboglot log` prints. Two sentences are Roboglot's own and
   are kept. A turn that ran out of the stepper's own second still says
   `TimeoutError: no answer within 1.0 s`, and only such a turn: a `TimeoutError` with nothing in
   it that a backend raised on a shorter clock of its own used to be given the same sentence, beside
   a `latency_s` that said otherwise, and is recorded by its type now. TypeSafe's client keeps its
   own clock above that second too, as OpenAI's does, so on every row the second is the one clock
-  that ends a turn. And a reply quackd could not read is recorded in quackd's own words, which name
+  that ends a turn. And a reply Roboglot could not read is recorded in Roboglot's own words, which name
   only the type of what came back, so a page a proxy answers with is
   `UnreadableReply: POST /v1/decisions answered str rather than a JSON object`. Laya's
   `ValueError` for options that overflow `head_max_len` is recorded by its type alone, so
   [its page](docs/guides/decision-llms/laya.md) now asks for the turn's `labels` beside it.
   `tests/test_decision.py` and `tests/test_decisions_api.py` fail when a reply that quotes the
   state, or carries a data URL, reaches the record, when a backend's own `TimeoutError` is given
-  the stepper's sentence and when quackd's words about a reply are lost, and
+  the stepper's sentence and when Roboglot's words about a reply are lost, and
   `tests/test_decision_llms.py` fails when TypeSafe's clock sits on the stepper's second.
 
 ### Removed
@@ -4490,15 +4528,15 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   `unknown backend 'websocket' for microduck; choose one of sim2d, mujoco, mock, jsonrpc`, and
   what to use instead is what 0.18.0's line named: `--robot microduck:jsonrpc`, with
   `--camera-url http://127.0.0.1:8080/frame` for mediad's camera. A robot registered on it leaves
-  `robots.json` refusing every command that reads it, `quackd robot remove` among them, with that
+  `robots.json` refusing every command that reads it, `roboglot robot remove` among them, with that
   error naming the file and the robot, until its entry is deleted from the file by hand. What
   only the stub used went with it: the Microduck's `DEPRECATED_BACKENDS`, whose one line was the
   stub's, the `WebSocket agent gateway` ref and the link to upstream's roadmap, with their row and
   link on the Microduck's page, and the README's ⏳ stub mark, which no backend carries now. The
-  `rendezvous control lane` ref stays, since it says why quackd reaches a duck elsewhere over ssh
+  `rendezvous control lane` ref stays, since it says why Roboglot reaches a duck elsewhere over ssh
   and not over that lane. So does the machinery itself: an adapter may still declare
-  `DEPRECATED_BACKENDS`, `quackd.adapters.factory.deprecated_backend` still reads it, and `run`,
-  `doctor`, `serve-mcp` and `robot list --probe` still print the line, though no adapter quackd
+  `DEPRECATED_BACKENDS`, `roboglot.adapters.factory.deprecated_backend` still reads it, and `run`,
+  `doctor`, `serve-mcp` and `robot list --probe` still print the line, though no adapter Roboglot
   publishes declares one now.
   [docs/adapters/writing-an-adapter.md](docs/adapters/writing-an-adapter.md) shows a declaration
   where it named the stub. `tests/test_doctor_and_stub.py` is `tests/test_doctor.py`, without the
@@ -4513,7 +4551,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
 
 - **An OpenAI refusal reaches the record in its own words.** An OpenAI model says no in a channel of
   its own: a refusal part on the Responses API, with its words under `refusal` and no text, and a
-  `refusal` field of the message on Chat Completions. quackd's OpenAI parser read only text, so it
+  `refusal` field of the message on Chat Completions. Roboglot's OpenAI parser read only text, so it
   dropped both, and a turn the model declined arrived as an empty one with no call: the record
   showed a pilot that said nothing. The turn's text now reads `[refusal]` and the refusal's words,
   as an Anthropic or OpenRouter refusal already did, which tells a refusal the model returned in
@@ -4527,7 +4565,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   does, and keeps only the refusal's words, where Anthropic's keeps the turn's text before them. A
   local model's turn that carries a refusal, whatever its stop reason, or that a filter cut short,
   is never read for a call written out in its text, so a call quoted in a refusal does not run,
-  while a native call runs as it always has. Every other vendor quackd reads through the Chat
+  while a native call runs as it always has. Every other vendor Roboglot reads through the Chat
   Completions parser, Grok, DeepSeek, Mistral and the local servers among them, has its `refusal`
   field read the same way where it sends one. `tests/test_providers.py` holds a Responses refusal,
   one beside a call, one cut short and one with no words, a filtered Responses answer with and
@@ -4536,7 +4574,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   Anthropic refusal, and `tests/test_local_provider.py` holds a call quoted in a refusal, whatever
   its stop reason, or cut off by a filter, that does not run.
 - **`--decision-llm jev` at a `--decision-url` no longer wants `TYPESAFE_API_KEY`, and is costed
-  as the server you run that it is.** An address typed for `jev` is a server you run, and quackd
+  as the server you run that it is.** An address typed for `jev` is a server you run, and Roboglot
   has always sent it the word `local` rather than the key. The run still asked for the key before
   it built the stepper, though, so a machine without one printed
   `running without it: --decision-llm jev needs TYPESAFE_API_KEY` and ran without a stepper that
@@ -4571,11 +4609,11 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   `tests/test_decision.py` has the model take a turn each of those three ways between two
   identical answers, and breaks a run of two with a failed turn.
 - **A run interrupted while the stepper's request was out has that request on the record.** A
-  second Ctrl-C, or a flock cancelling a member, is not an exception the stepper caught, so the
+  second Ctrl-C, or a team cancelling a member, is not an exception the stepper caught, so the
   request it cut off, already handed to the decision LLM, was missing from the stepper's count,
   its seconds and its bill, the loop wrote no `decision` record for it, and the summary written
   on the way out left it out too. The stepper now counts, times and bills that request as it
-  does one that failed, on a gate of its own, `interrupted`, which `quackd log` draws in yellow
+  does one that failed, on a gate of its own, `interrupted`, which `roboglot log` draws in yellow
   with what cut it off, and not among `errors`, because nothing failed and the run ends there.
   The loop writes the record before the interrupt goes on, as it already did for the model's own
   call. The stepper also waits for its decision LLM in its own task now, because on Python 3.11
@@ -4584,7 +4622,7 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   stepper and in a run on the mock arm, and finds one record, on `interrupted`, and a summary
   that counts it.
 - **A shadow row whose stepper chose nothing says why, rather than `None 0.00`.** The `decide=`
-  line `quackd log` prints for each shadow row gave the stepper's choice and its confidence, and
+  line `roboglot log` prints for each shadow row gave the stepper's choice and its confidence, and
   on a turn that chose nothing, a call that failed or a body with nothing on offer, that was
   `None 0.00`, which read as an answer of its own. A `next_verb` nobody answered was recorded,
   and printed, as `escalate`, which is how such a turn is routed and not anything anybody chose,
@@ -4594,13 +4632,13 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   leaves out a confidence nobody could read rather than print it as 0.00, and the shadow row of a
   turn that ended on `refused` carries the names declined, as `refused`. `tests/test_decision.py`
   and `tests/test_log.py` hold each, and the log golden gains the line.
-- **A flock's chatter reaches a decision LLM in its own letters.** The stepper wrote what the
-  flock's members had said into the state as JSON of its own, with every letter outside ASCII
+- **A team's chatter reaches a decision LLM in its own letters.** The stepper wrote what the
+  team's members had said into the state as JSON of its own, with every letter outside ASCII
   escaped, so every decision LLM was handed `\u017e` where a member had written `ž`. It also
   trimmed the state, and held it to its hard cap, on the same escaped text, six characters for
   each such letter, so a state in Slovenian was cut sooner than the same state in ASCII. The
   chatter goes in its own letters now, and the state is trimmed and capped on the letters
-  `state_chars` counts. `tests/test_decision_llms.py` finds the flock's letters in the state a
+  `state_chars` counts. `tests/test_decision_llms.py` finds the team's letters in the state a
   backend of every row is handed, and measures a goal with a letter outside ASCII the same as the
   goal spelled in ASCII.
 
@@ -4611,12 +4649,12 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   kept from striking itself or its table, speak on the arm, tell a person from something blue,
   reach a decision LLM, or stay out of memory. It warns that nothing keeps a played arm away from a
   person, since the section's care near people is a request no gate reads. The spec reference
-  describes `duck: 4` and `play` with a whole example and the `quackd validate` it passes,
+  describes `glot: 4` and `play` with a whole example and the `roboglot validate` it passes,
   [ADR-0055](docs/adr/0055-a-pilot-can-play-a-part.md) records why one named framing rather than an
   override file or a set of templates, and `docs/concepts/safety.md` says that a part unlocks
   nothing and that its rules are prose no gate reads.
 - **The shoot's task files that ask for a part now play it.** 118 of the 223 files in
-  `docs/examples/lerobot` are `duck: 4` files with `play: true`, and none of them counts saying why
+  `docs/examples/lerobot` are `glot: 4` files with `play: true`, and none of them counts saying why
   the body cannot as a success any more. They share a persona that begins
   `Game for anything: commit to the bit`, and all but `e067` and `e076` share a success line that
   asks for the act and a reason saying what the arm did, and the last step of their strategy. Their
@@ -4653,12 +4691,12 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
   reached from `--decision-llm` "has not been checked", points there now. The hub also said the
   in-process one never reports a count and that "a model running in this process reports no count
   at all", which ADR-0043 had already corrected: `laya` reports the tokens its encoder read, and
-  quackd takes that as a measurement. PLAN.md's open item on the stepper pointed at a break-even the
+  Roboglot takes that as a measurement. PLAN.md's open item on the stepper pointed at a break-even the
   hub no longer works out, and points at its speed and cost figures now.
 - **A System One address keeps its path, as it always has.** The pages for `jev` and `local`, the
   hub's table of flags and `--decision-url`'s help said a System One row's address takes a scheme,
   a host and a port and no path, because its client adds `/v1/systemone` itself. TypeSafe's client
-  puts that after whatever address it is handed, path and all, and quackd hands it the address as
+  puts that after whatever address it is handed, path and all, and Roboglot hands it the address as
   given, so a server behind a gateway that serves the format under a prefix of its own is reached
   by naming the prefix, while an address that already ends in `/v1` reaches `/v1/v1/systemone`.
   They say so now, and the `jev` page says what keeps each of OpenRouter's two decision endpoints
@@ -4696,19 +4734,19 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
      `--llm openai:gpt-6-astra --no-memory`, the model the refusals were reported on, three ways:
      the file as it read at v0.17.1, as it reads now with `--no-play`, and as it reads now. For
      the first, check v0.17.1 out beside this checkout once, with
-     `git worktree add ../quackd-v0.17.1 v0.17.1`, and run the file from there in place of the
-     path in the header, `../quackd-v0.17.1/docs/examples/lerobot/e048/be-a-cat.duck` for `e048`.
+     `git worktree add ../roboglot-v0.17.1 v0.17.1`, and run the file from there in place of the
+     path in the header, `../roboglot-v0.17.1/docs/examples/lerobot/e048/be-a-cat.glot` for `e048`.
      Give each of the three runs a `--run-name` of its own, such as `v0171`, `no-play` and
      `play`, in place of the `--run-name gpt-6-sol` in the header of `e030/as-claude`. Report for
      each run whether it moved, and whether its verdict or a reason said the body cannot be what
      the task asked, or acted the part and then said it had not.
-     `git worktree remove ../quackd-v0.17.1` takes the old checkout away again.
+     `git worktree remove ../roboglot-v0.17.1` takes the old checkout away again.
   4. The controls: `e009/raise` as written and with `--play`, which must stay still both times,
      and `e079/twist-my-arm` as written, which must move nothing toward anyone.
   5. Count a refusal where a run never moved, or moved and then disowned its part in a reason.
      Count a run with a `[refusal]` line or a `stop=refusal` turn, a refusal returned in OpenAI's
      own refusal channel, as a refusal too, and report the two kinds apart.
-     `quackd log DIR --prompt --thinking all` shows each run whole.
+     `roboglot log DIR --prompt --thinking all` shows each run whole.
 
   Optional, before step 3, and only if you want a part's fold to reach all the way back into the
   arm's rest fold: calibrate again, typing `c` at the first prompt and taking the shoulder all the
@@ -4720,15 +4758,15 @@ LLMs come with the new row, and a command that names `microduck:websocket` fails
 
 ## [0.18.1] — 2026-10-19
 
-0.18.1 makes what quackd says about a Microduck that falls true on every robotd it serves, and fixes
+0.18.1 makes what Roboglot says about a Microduck that falls true on every robotd it serves, and fixes
 three small things. robotd turned `limp_fall` back on in daemon-v0.16.2: it goes limp when it
 predicts a fall while the duck walks or stands, poses the duck and hands it back to its walking
-policy, upstream's `v8`, which upstream says gets up from a fall. quackd's datasheet, `stand_up`'s
+policy, upstream's `v8`, which upstream says gets up from a fall. Roboglot's datasheet, `stand_up`'s
 words and the Microduck's pages described only daemon-v0.16.1, where robotd did nothing about a fall
 but report it, and they say what each release does now. The datasheet no longer calls the speed caps
-a clamp in robotd, which clamps no twist at any release quackd has read: they are quackd's own. The
+a clamp in robotd, which clamps no twist at any release Roboglot has read: they are Roboglot's own. The
 Microduck page names upstream's releases to daemon-v0.17.6, which from daemon-v0.17.3 report API 44,
-which quackd serves with a warning: nothing it sends or reads changed shape. A `.duck` saved as
+which Roboglot serves with a warning: nothing it sends or reads changed shape. A `.glot` saved as
 UTF-8 with a byte-order mark is read, a ToddlerBot with no walk checkpoint is told it has legs, and
 a `--goal` run with `--no-memory` no longer tells its pilot to call `remember`. No verb sends a
 robot anything it did not send before.
@@ -4765,8 +4803,8 @@ robot anything it did not send before.
   robotd goes limp in a fall it predicts while the duck walks or stands, poses the duck and hands it
   back to its walking policy, the `velstand.onnx` of upstream's policy set `v8`, which upstream says
   gets up from a fall. It catches no fall during a skill, a ground pick or a sit, so none during
-  quackd's `kick` or `grab`. The sheet says all of that now, in two notes, and still that the duck
-  may not get up again by itself, since nobody has seen either release get one up under quackd.
+  Roboglot's `kick` or `grab`. The sheet says all of that now, in two notes, and still that the duck
+  may not get up again by itself, since nobody has seen either release get one up under Roboglot.
   `upstream_api.py` reads the sequence at the pin as `LIMP_FALL`, with daemon-v0.11.0 and
   daemon-v0.12.0, which had it on by default too, and daemon-v0.13.0, which turned it off. Its notes
   on the fall verdict, on velstand and on `stand_up`'s assumption say what daemon-v0.16.2 changed,
@@ -4778,32 +4816,32 @@ robot anything it did not send before.
 
 - **The Microduck's datasheet no longer says its speed caps are a clamp in robotd.** The note has
   said since 0.9.0 that the caps are a software clamp in robotd, and robotd clamps no twist at any
-  release quackd has read: what limits a tick in its state is the deadman, a joint target past the
+  release Roboglot has read: what limits a tick in its state is the deadman, a joint target past the
   actuator's travel or one that is not finite, and nothing caps the speed of the twist its policy is
   handed. The caps, 0.3 m/s forward, 0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's own
-  `limits`, which quackd holds every twist a verb sends to, and which the pilot's prompt already
-  called quackd's clamp above the note. The note says they are quackd's own clamp, and the numbers
+  `limits`, which Roboglot holds every twist a verb sends to, and which the pilot's prompt already
+  called Roboglot's clamp above the note. The note says they are Roboglot's own clamp, and the numbers
   are as they were. `upstream_api.py` records what was read as `NO_TWIST_CLAMP`, with what
   upstream's gamepad asks for at full stick at the pin and from daemon-v0.16.2, and the Microduck
   page has a row for it. `tests/test_datasheets.py` holds the note to it.
 
-- **A `.duck` file saved as UTF-8 with a byte-order mark is read like one saved without.** Windows
+- **A `.glot` file saved as UTF-8 with a byte-order mark is read like one saved without.** Windows
   editors can save UTF-8 with one, Notepad among them, which puts three bytes in front of the first
-  line. quackd decoded them to a character standing in front of the opening `---` fence, or in
+  line. Roboglot decoded them to a character standing in front of the opening `---` fence, or in
   front of the `#` comment lines a file may open with, so it refused a valid file as
-  `missing frontmatter: file must start with a '---' fence` wherever it read one: `quackd run`,
-  `quackd record`, `quackd validate`, `quackd preflight`, `quackd serve-mcp --duckfile` and the MCP
-  tool `robot_load_duckfile`. A mark at the very start of the file is skipped now, and the `.duck`
-  reference says so. `tests/test_duckfile.py` saves `hello-world`, which opens on its fence, and
+  `missing frontmatter: file must start with a '---' fence` wherever it read one: `roboglot run`,
+  `roboglot record`, `roboglot validate`, `roboglot preflight`, `roboglot serve-mcp --glotfile` and the MCP
+  tool `robot_load_glotfile`. A mark at the very start of the file is skipped now, and the `.glot`
+  reference says so. `tests/test_glotfile.py` saves `hello-world`, which opens on its fence, and
   `fetch`, which opens on comment lines, each with a mark in front, and reads them through the
-  parser, the loader, `quackd validate` and what `robot_load_duckfile` calls. It failed before this
+  parser, the loader, `roboglot validate` and what `robot_load_glotfile` calls. It failed before this
   change.
 
 - **A ToddlerBot with no walk checkpoint is no longer told it has no legs.** Until its daemon
   reports a walk checkpoint that can move it, which a fresh install has not got, `toddlerbot:bridge`
   has no `move`, `go_to` or `approach_and`. Its datasheet line then read
   `It does not move: no base and no legs`, in the same prompt as a blurb naming its two legs, and
-  the same words, lowercased, were in what the MCP server tells a pilot and in the roster a flock
+  the same words, lowercased, were in what the MCP server tells a pilot and in the roster a team
   of pilots shows each pilot. That line describes an arm. A body that stays put with legs reads
   `It does not move: it has legs, but no verb on this connection walks it` now, and one on wheels
   is told it has a wheeled base that no verb drives. An arm reads what it read, and so does every
@@ -4817,11 +4855,11 @@ robot anything it did not send before.
   of its strategy and again in a Memory section under it. A pilot that did as it was told was
   refused at the price of a call, and on the local JSON fallback, which drops a call to a tool it
   was not offered, two such turns in a row ended the run as a failure. With memory off that task
-  now says nothing about `remember`, and with memory on it reads as it did, byte for byte. A `.duck`
+  now says nothing about `remember`, and with memory on it reads as it did, byte for byte. A `.glot`
   file is its author's words and still asks for whatever it asks for, as ADR-0025 records, and what
-  quackd adds to its prompt already said nothing about `remember` with memory off. The memory guide
+  Roboglot adds to its prompt already said nothing about `remember` with memory off. The memory guide
   says a goal run asks for a note only while memory is on. `tests/test_cli_memory.py` runs a goal
-  and a `.duck` with `--no-memory` and finds no `remember` in the prompt or the tools either one
+  and a `.glot` with `--no-memory` and finds no `remember` in the prompt or the tools either one
   sent its pilot, and runs a goal with memory on, which still asks for one. The goal with memory
   off failed before this change.
 
@@ -4832,11 +4870,11 @@ robot anything it did not send before.
   section names daemon-v0.16.2 to daemon-v0.17.1, each on API v41, and the three defaults
   daemon-v0.16.2 changed that its rows cite. Step 9 of the hardware checklist said a robot on
   daemon-v0.16.1 does nothing about a fall but report it, and now says what one on daemon-v0.16.2 or
-  later does too, in a fall while the duck walks or stands, and that quackd sends it no walk
+  later does too, in a fall while the duck walks or stands, and that Roboglot sends it no walk
   meanwhile. Step 10 asks what robotd's answer to a fall did on a real duck, and how long the duck
   took to get up against the three seconds `stand_up` waits. ADR-0011 carries a dated amendment for
   the fall, and ADR-0032 one for the note that called the speed caps robotd's. The README's Why
-  section listed standing up after a fall among the Microduck's own skills, which quackd has never
+  section listed standing up after a fall among the Microduck's own skills, which Roboglot has never
   seen, and says now that Pollen says its newest walking policy gets the duck back up.
 
 - **SECURITY.md, the safety page and the FAQ say what robotd clamps.** SECURITY.md said robotd
@@ -4855,17 +4893,17 @@ robot anything it did not send before.
   while a client holds robotd's body-pose mode, which neither `requested` nor `applied` shows.
 
 - **The Microduck page says what upstream's daemon-v0.17.2 to daemon-v0.17.6 changed.** `v0.17.2` is
-  on API v41, and from `v0.17.3` they are on API v44, which quackd serves with a warning: the three
-  bumps add only calls quackd does not make, and nothing it sends or reads changed shape. From
+  on API v41, and from `v0.17.3` they are on API v44, which Roboglot serves with a warning: the three
+  bumps add only calls Roboglot does not make, and nothing it sends or reads changed shape. From
   `v0.17.3` robotd's idle look-around also leans the neck, opens the beak and yawns, and its 2 s and
-  1.5 s timings became `[idle]` settings. At the shipped values quackd's gaze hold and its fade wait
+  1.5 s timings became `[idle]` settings. At the shipped values Roboglot's gaze hold and its fade wait
   still hold, and the page says what a robot retuned to glance sooner or fade longer does to them.
 
 ## [0.18.0] — 2026-10-13
 
-This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. quackd had read robotd's
+This release re-reads the Microduck's robotd, at upstream's daemon-v0.16.1. Roboglot had read robotd's
 protocol on 2026-09-04, at a commit on API 23, and refused at connect every robotd whose `hello`
-named another number, which from daemon-v0.12.0 on was every release. quackd's own `hello` names
+named another number, which from daemon-v0.12.0 on was every release. Roboglot's own `hello` names
 API 41 now, and it serves any robotd from API 23 up, saying so when the version is not 41. Around
 the re-read, a duck that does not read as standing is sent no walk, every twist is checked against
 robotd's own state, a gaze holds against robotd's idle look-around, WebRTC frames come out upright
@@ -4874,17 +4912,17 @@ and are measured through the lens mediad reports, the Microduck page's camera is
 `microduck:websocket` is deprecated and goes in 0.19.0, since upstream dropped the gateway it was
 waiting for.
 
-No Microduck has run quackd yet. The last step of the Microduck's hardware checklist lists what only
+No Microduck has run Roboglot yet. The last step of the Microduck's hardware checklist lists what only
 a robot can settle, among them whether robotd's policy labels track a real duck and what pulling
 `/frame` costs one. Upstream shipped daemon-v0.16.2 to daemon-v0.17.1 on 2026-10-12, after the read.
-Each still names API 41, so quackd serves them without a warning, and a read of what they changed
-found nothing quackd sends or reads: robotd's own code is the same, and duck-ipc-proto gained only
+Each still names API 41, so Roboglot serves them without a warning, and a read of what they changed
+found nothing Roboglot sends or reads: robotd's own code is the same, and duck-ipc-proto gained only
 two constants that never go on the wire. What changed for robotd are its defaults. From
 daemon-v0.16.2 robotd goes limp when it predicts a fall, poses the duck and hands it back to the
 walking policy, now upstream's `v8`, which upstream says gets up from a fall and turns at the rate
 it is asked for, and a pad's bumpers no longer kick. daemon-v0.17.0 adds a pad over the network, off
-by default. quackd sends a duck no walk while robotd poses it, so robotd's new answer to a fall asks
-nothing of quackd, but the Microduck's pages and `stand_up`'s words about a fall still describe
+by default. Roboglot sends a duck no walk while robotd poses it, so robotd's new answer to a fall asks
+nothing of Roboglot, but the Microduck's pages and `stand_up`'s words about a fall still describe
 daemon-v0.16.1, where robotd did nothing about a fall but report it.
 
 A pilot built on OpenAI's SDK sends three variables that SDK reads for itself,
@@ -4898,11 +4936,11 @@ or the word `not-needed`, and never `OPENAI_API_KEY`.
 Some of the fixes reach every body. The executor no longer lets a stop that fails out of the
 handlers that send one, and says it failed. `go_to` and `search_scan` end at the first twist a body
 refuses, and say why, and `search_scan` left to its own step turns in steps whose views overlap
-through a lens no wider than 45°. The scripted flock pilot waits on the wall clock before each check
-for a peer, after CI's macOS runners failed two flock tests on the tags of 0.17.0 and 0.17.1. The
-Microduck's pages say what the re-read found, that a gamepad does not out-rank quackd among it, and
+through a lens no wider than 45°. The scripted team pilot waits on the wall clock before each check
+for a peer, after CI's macOS runners failed two team tests on the tags of 0.17.0 and 0.17.1. The
+Microduck's pages say what the re-read found, that a gamepad does not out-rank Roboglot among it, and
 seven table rows that lost their last cells to a `|` show them whole. Nothing in the arm's own
-backend changed, and the arm has not run quackd since 2026-09-23, so the bench steps 0.14.0 and
+backend changed, and the arm has not run Roboglot since 2026-09-23, so the bench steps 0.14.0 and
 0.15.0 owe are still owed.
 
 ### Added
@@ -4910,8 +4948,8 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 - **An adapter can announce a backend it is retiring.** An adapter's module declares
   `DEPRECATED_BACKENDS`, a mapping of a backend's name to the one line that says what to use instead
   and the release it goes in, where `SIMULATOR_BACKENDS` is a tuple, and
-  `quackd.adapters.factory.deprecated_backend(spec)` reads it. `quackd run`, `quackd doctor`,
-  `quackd serve-mcp` and `quackd robot list --probe` print that line once on stderr just before they
+  `roboglot.adapters.factory.deprecated_backend(spec)` reads it. `roboglot run`, `roboglot doctor`,
+  `roboglot serve-mcp` and `roboglot robot list --probe` print that line once on stderr just before they
   connect through the backend. A declaration in any other shape, or a line that is not a string,
   raises a TypeError naming the module rather than being read as nothing, and an adapter whose
   module fails to import has no line. `docs/adapters/writing-an-adapter.md` says how.
@@ -4920,27 +4958,27 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 
 ### Changed
 
-- **A Microduck on any robotd from API 23 up is served, and quackd says so when its version is not
+- **A Microduck on any robotd from API 23 up is served, and Roboglot says so when its version is not
   the 41 it read.** `microduck:jsonrpc` refused a robotd whose `hello` named any version but the one
-  quackd read, which is how every robotd release from daemon-v0.12.0 on came to be refused, and how
+  Roboglot read, which is how every robotd release from daemon-v0.12.0 on came to be refused, and how
   the next would have been after any re-read, since robotd ships a release every few days. No robotd
   refuses a peer over the number: upstream's rule is that a bump promises nothing, and that a call
-  whose shape moved refuses itself by name. quackd follows it now. A robotd older than API 23, the
-  oldest quackd has read end to end, is still refused at connect, and so is one whose `hello` names
+  whose shape moved refuses itself by name. Roboglot follows it now. A robotd older than API 23, the
+  oldest Roboglot has read end to end, is still refused at connect, and so is one whose `hello` names
   no version, which used to be let through. Any other is served, and when its version is not 41 the
-  log, `quackd doctor` and every state's `extras.robotd` say so, beside the release and the revision
+  log, `roboglot doctor` and every state's `extras.robotd` say so, beside the release and the revision
   the robot answered with, which `doctor` also prints as a `robotd` row. A call robotd refuses with
   `METHOD_NOT_FOUND` or `INVALID_PARAMS` fails the verb naming the call and both versions, a socket
   with no `hello` is called not robotd's, and so is one that answers `hello` but has no
   `robot.subscribe`, as updaterd's does. An answer to `robot.do`, `robot.sound` or `robot.enable`
-  that carries no `accepted` quackd can read is a refusal that names what came back, where it read
+  that carries no `accepted` Roboglot can read is a refusal that names what came back, where it read
   as a yes. `robot.move` is a notification, which robotd answers with nothing, so every twist is now
   checked against robotd's own state: one that `move.requested` has not shown three state frames
-  after robotd answered a call quackd made after it holds `robot.move` back until the verb that was
+  after robotd answered a call Roboglot made after it holds `robot.move` back until the verb that was
   walking ends, the same hold the Fixed entry on posture describes for a duck that stops standing,
   and the verb fails saying what robotd showed instead, with the verdict in `extras.move_echo`.
   Frames are counted from robotd's answer and not from the send, since robotd reads a connection in
-  order, so a link that held quackd's lines back for a while delays the verdict instead of stopping
+  order, so a link that held Roboglot's lines back for a while delays the verdict instead of stopping
   a walk robotd then took, and each walk costs a `robot.health` more than it did. They are counted
   only up to robotd's answer to the stop that ends a walk, since robotd zeroes its twist as it reads
   a stop, and the walks of the verbs still running are counted together, so the frames of every turn
@@ -4952,10 +4990,10 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   whose last turn brings it, or whose turns are too short for one, ends not finding the target and
   says how many of its turns robotd's state confirmed. A gamepad connected to the robot sends
   robotd a stop every 100 ms while nobody touches it, and robotd walks on whichever twist came last,
-  the pad's or quackd's, so with one connected a walk can now stop this way, where it used to go on
+  the pad's or Roboglot's, so with one connected a walk can now stop this way, where it used to go on
   sending twists that robotd took in turn with the pad's stops.
   `extras.pickup_detection` says whether the robot reports `safety.picked_up`, which robotd first
-  shipped in daemon-v0.15.2, and `doctor` warns when it does not, since nothing then tells quackd
+  shipped in daemon-v0.15.2, and `doctor` warns when it does not, since nothing then tells Roboglot
   that somebody is holding the duck. `extras.robotd` also says whether the state carries `frames`,
   and whether mediad's `GET /frame` answered when `--camera-url` asked it, since the floor serves
   releases with neither. [ADR-0051](docs/adr/0051-a-microduck-newer-than-the-read-is-served.md)
@@ -4963,7 +5001,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   at the floor, refuses two below it and five kinds of `hello` with no integer version, fails a verb
   whose call the robot lacks with both versions named, holds a walk back on a robotd that drops
   `robot.move` and on one that refuses its params by name until the verb that walked ends, through
-  its own stops, but not on frames read late after a stall, nor on a link that held quackd's lines
+  its own stops, but not on frames read late after a stall, nor on a link that held Roboglot's lines
   back for longer than the window, stops a `search_scan` on a robotd that takes no twist over links
   that hold every byte back one to four frame periods each way, and in fifteen-degree turns over a
   quick one, judges a verb's walks together on the frames before each stop and on none after,
@@ -4974,12 +5012,12 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   no twist, and both verbs reach their end on one that takes every twist, and a stop robotd never
   answers leaves the walk before it unjudged.
 
-- **quackd reads robotd at daemon-v0.16.1, and `microduck:jsonrpc`'s `hello` names API 41.** quackd
+- **Roboglot reads robotd at daemon-v0.16.1, and `microduck:jsonrpc`'s `hello` names API 41.** Roboglot
   read robotd's protocol on 2026-09-04, at a commit on API 23, and its handshake refused, as the
   Microduck page said, a robotd that answered with any other number. Upstream's releases reached API
   27 with daemon-v0.12.0, and every release since was refused at connect, daemon-v0.16.1 on API 41
-  among them. quackd now reads robotd at daemon-v0.16.1 (`d818af5`), every reference in
-  `upstream_api.py` is anchored there, and quackd's hello names API 41. Everything quackd sends has
+  among them. Roboglot now reads robotd at daemon-v0.16.1 (`d818af5`), every reference in
+  `upstream_api.py` is anchored there, and Roboglot's hello names API 41. Everything Roboglot sends has
   the same shape at both commits, and so does everything it reads but for fields added to
   `robot.state` and `robot.health`, so the re-read changes no shape on the wire. What this release
   sends that 0.17.1 did not, such as `robot.head` every second under a gaze, a `robot.health` more
@@ -5010,7 +5048,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   seconds and it has then stood still for two more, up to 0.6 rad of yaw, and lets go of a glance by
   fading it out over 1.5 s. On a robotd that glances, a `gaze` that is only one `robot.look` keeps
   the head there only until robotd's first glance, which can come four seconds later, and an
-  `observe` after that can report bearings off by as much as the glance. quackd 0.17.1 never reached
+  `observe` after that can report bearings off by as much as the glance. Roboglot 0.17.1 never reached
   such a robotd, since it refused every robotd release from daemon-v0.12.0 on. `microduck:jsonrpc`
   now sends the head a look answered with again as `robot.head` every second, as upstream's own doc
   for that answer says to, and the state says what is held as `extras.gaze_hold`. Nothing goes out
@@ -5057,10 +5095,10 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   IMX219's 62° running down the picture: 37.3° across the 720 by 1280 frame of the default 720p.
   That goes in the manifest as `camera_fov_deg`, beside the words of the assumption, since it is the
   module's design rather than a calibration, and wrong on a duck in upstream's own simulator, whose
-  camera is 45° wide. `quackd run` measures through it when no `--fov-deg` names a lens, and
+  camera is 45° wide. `roboglot run` measures through it when no `--fov-deg` names a lens, and
   `serve-mcp`, which has no `--fov-deg`, always does, with detections that say they are uncalibrated
-  and a word in the log to pass `--fov-deg`, which only `quackd run` takes. Every state lists the
-  assumption in `extras.assumptions` until `--fov-deg` gives `quackd run` a lens of its own, when
+  and a word in the log to pass `--fov-deg`, which only `roboglot run` takes. Every state lists the
+  assumption in `extras.assumptions` until `--fov-deg` gives `roboglot run` a lens of its own, when
   `extras.camera` says the lens was given. A wide frame and any other HTTP camera get no lens, as
   before. A WebRTC camera gets the lens mediad reports, as the Fixed entry on WebRTC frames says.
   `go_to` turns toward what it sees at a rate set by the bearing, holds that turn for a tick and
@@ -5073,7 +5111,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   it, so it closes on a target more slowly there. The simulators, WebRTC and any other HTTP camera
   say no period and are steered as before, and a target lost from view is looked for as far as on
   any other camera. On mediad's route `search_scan` looks after each turn at a frame taken once the
-  turn has settled, since mediad takes its picture after it is asked. The newest frame quackd holds
+  turn has settled, since mediad takes its picture after it is asked. The newest frame Roboglot holds
   there may have been asked for a frame period and a fetch before, and show the view from before the
   turn or from halfway through it. Any other HTTP camera may hand out a picture it took before it
   was asked, and a WebRTC frame arrives some unknown while after it was taken, so on those
@@ -5111,7 +5149,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   on, body and all, to wherever it pointed, and a server that answered that way, such as one behind
   a proxy that sends plain `http` on to `https` with a 308, was reached anyway. A turn answered with
   a redirect fails now, and so does a local preset's model discovery, and the error says where the
-  redirect pointed and, for an API that moved whole, the address to give quackd instead:
+  redirect pointed and, for an API that moved whole, the address to give Roboglot instead:
   `--base-url`, or `OPENAI_BASE_URL` for `--llm openai` without one. `tests/test_openai_headers.py`
   holds every preset's client to following none, and `tests/test_openai_headers_wire.py` finds one
   request sent through the real SDK for a turn answered with a 301, 302, 303, 307 or 308, and the
@@ -5125,15 +5163,15 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   by daemon-v0.16.1 upstream had dropped that design. A server-side agent goes over upstream's
   rendezvous control lane now, which carries no pixels and which upstream's own relay calls not a
   teleop lane: past 1200 requests a minute the service refuses the whole peer, the robot's own
-  lease included. A walk under quackd re-sends its twist at a joystick's rate, so quackd will not
-  drive over it, and nothing will come for the stub to become. `quackd run`, `quackd doctor`,
-  `quackd serve-mcp` and `quackd robot list --probe` print one line on stderr just before they
+  lease included. A walk under Roboglot re-sends its twist at a joystick's rate, so Roboglot will not
+  drive over it, and nothing will come for the stub to become. `roboglot run`, `roboglot doctor`,
+  `roboglot serve-mcp` and `roboglot robot list --probe` print one line on stderr just before they
   connect through it, naming `--robot microduck:jsonrpc`, with
   `--camera-url http://127.0.0.1:8080/frame` for mediad's camera, as what to use instead. A fleet
   with several robots on it is told once, wherever they come in it, and a command says nothing for
-  a robot it does not connect: the second of a task's `--robots` when the task has no flock, a run
+  a robot it does not connect: the second of a task's `--robots` when the task has no team, a run
   refused before it connects, or a served robot after one that failed to connect. The stub's
-  refusal ends with the same line, and `quackd list-adapters`, `doctor`'s adapters table and the
+  refusal ends with the same line, and `roboglot list-adapters`, `doctor`'s adapters table and the
   status pages call the backend deprecated. The line is the one the Microduck declares for it in
   `DEPRECATED_BACKENDS`, which is under Added. `tests/test_doctor_and_stub.py` runs all four
   commands with the stub first, second or third among their robots and finds the line once in each,
@@ -5143,16 +5181,16 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 
 ### Fixed
 
-- **The scripted flock pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
-  `flock-hello` tells the flock it is there and then checks three times for an answer. A check on a
+- **The scripted team pilot no longer gives up on a peer that is a moment slower.** `--llm fake` on
+  `team-hello` tells the team it is there and then checks three times for an answer. A check on a
   mock body takes a few milliseconds, so a member whose peer connected or stepped more slowly could
   spend all three before the peer had said anything, and end with nobody answered after 3 checks
-  while the peer was about to answer. CI's macOS runners failed two flock tests that way, on the
+  while the peer was about to answer. CI's macOS runners failed two team tests that way, on the
   release tags of 0.17.0 and 0.17.1. Each check now waits on the wall clock first, a quarter of a
-  second, then a second, then four, so a flock whose peers have already spoken pays almost nothing
+  second, then a second, then four, so a team whose peers have already spoken pays almost nothing
   and one whose peer never comes still ends. `tests/test_pilots.py` holds an arm that connects a
   tenth of a second after the duck's hello, which failed every time without the waits.
-  `test_dry_run_reaches_every_member`, a flock test that failed on macOS on 2026-09-29 and
+  `test_dry_run_reaches_every_member`, a team test that failed on macOS on 2026-09-29 and
   2026-09-30 with no reason given, now prints its reason when it fails.
 
 - **A Microduck that is not standing is no longer sent a walk, and a verb that has walked sends no
@@ -5209,15 +5247,15 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   its timeout, the heartbeat's among them, which ended the run. A state frame is a few kilobytes at
   daemon-v0.16.1, but robotd bounds nothing it writes, its state frame gained the camera's pose, an
   IMU, the whole skeleton and the joints' velocities and currents between API 24 and 36, and a
-  robotd newer than quackd's read is served now. The reader takes a line of up to a mebibyte,
+  robotd newer than Roboglot's read is served now. The reader takes a line of up to a mebibyte,
   sixteen times the most robotd takes in a line it reads, and skips a longer one rather than ending
   the link. `tests/test_jsonrpc.py` sends a frame between the two limits, which is read, and two
   past the new one, after which the link still answers. Both failed before this change.
 
-- **A Microduck link that fails, or a line from robotd that quackd cannot match, ends no more than
+- **A Microduck link that fails, or a line from robotd that Roboglot cannot match, ends no more than
   the call it meets, and says so.** Two other kinds of line ended the task that reads robotd's
   socket the way an over-long one did: an answer whose `id` is a word or a list rather than a number
-  quackd gave a call, and an answer to a waiting call whose `error` is not an object, such as the
+  Roboglot gave a call, and an answer to a waiting call whose `error` is not an object, such as the
   null a JSON-RPC 1.0 peer writes beside every result. Each is skipped now, or fails the call it
   answers. A socket that dropped let its own `ConnectionResetError` out of `microduck:jsonrpc`: out
   of the heartbeat, which promises `HeartbeatError`, out of `get_state` and `send_intent`, and out
@@ -5234,11 +5272,11 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 
 - **`microduck:jsonrpc` with no `--address` looks for robotd's socket where robotd makes it,
   whatever `DUCK_RUNTIME_DIR` says.** It looked for `$DUCK_RUNTIME_DIR/robotd.sock` whenever that
-  variable was set where quackd ran. Upstream's `DUCK_RUNTIME_DIR` moves only the directory its
+  variable was set where Roboglot ran. Upstream's `DUCK_RUNTIME_DIR` moves only the directory its
   daemons publish their identity files in, for upstream's own tests and for a daemon run by hand,
   and robotd's socket is a literal `--socket` default that no variable moves, so with the variable
   set the default named a socket no robotd creates. The default is `unix:///run/robotd.sock` now,
-  and quackd does not read the variable. A robotd anywhere else, such as each duck upstream's
+  and Roboglot does not read the variable. A robotd anywhere else, such as each duck upstream's
   `scripts/duck-sim` starts, is reached with `--address`. A test in `tests/test_jsonrpc.py` sets
   the variable and expects robotd's own socket, and it failed before this change.
 
@@ -5246,18 +5284,18 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   reports.** An alpha's camera is mounted a quarter turn off upright and nothing on the robot turns
   the pixels back, so `--camera-url webrtc://` handed `observe`, `go_to` and `search_scan` frames
   lying on their side, where how far across the picture a ball sat said how high it was in the room,
-  not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and quackd
+  not where it was. mediad says how far to turn its picture, as `media.video`'s `rotate`, and Roboglot
   never read it. It asks now, once, which is the one line it writes to the control channel, reads
   the answer or the push mediad sends when the channel opens, and turns every frame clockwise by
   that much, the way upstream's own code does. No frame goes out until mediad has said, so a mediad
   that never says leaves the run with no camera and `camera_health()` saying why, rather than one
   that steers on a picture on its side. The same answer carries the lens, for the frame as it is
   sent, and turned with the frame it goes in the manifest as `camera_fov_deg`, which is where
-  `quackd run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
+  `roboglot run` takes a lens from when `--fov-deg` names none and where `serve-mcp` always takes it:
   37.4° across an upright alpha frame by the alpha family's calibration, where both used to measure
   through the simulator's 90°. The lens is the calibration's focal length alone: its principal point
   is off the frame's centre, which on an alpha leaves every bearing taken from the centre about 6°
-  to the left, and quackd does not correct it. A mediad started with `--flip-in-pipeline` turns the
+  to the left, and Roboglot does not correct it. A mediad started with `--flip-in-pipeline` turns the
   pixels before it encodes them and still reports the mount, so a frame that comes in tall where
   `media.video` describes a wide one is handed out as it came rather than turned onto its side
   again. `camera_health()` reports the turn, the lens and the intrinsics.
@@ -5265,7 +5303,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   checks every pixel against upstream's own turn, holds frames back until the angle is known, reads
   it off the answer and off the push, takes the lens from the intrinsics at each angle, and hands
   out a frame the pipeline turned already as it came, `tests/test_adapters.py` carries the lens into
-  the manifest, and `tests/test_detector_selection.py` has the colour detector `quackd run` builds
+  the manifest, and `tests/test_detector_selection.py` has the colour detector `roboglot run` builds
   before the body connects measure through it once it has. Each failed before this change.
 
 - **A 503 at connect no longer leaves a Microduck without a camera for the whole run, and a verb
@@ -5274,10 +5312,10 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   an HTTP camera that answered its first request with a 503, or ran out of time on it, took
   `observe`, `go_to`, `search_scan` and `approach_and` away for the run. mediad's `/frame`, the
   camera the Microduck page now starts with, answers 503 while it cannot hand a frame out, and says
-  to retry. quackd now waits up to 5 s through 503s and through requests that run out of time, and
+  to retry. Roboglot now waits up to 5 s through 503s and through requests that run out of time, and
   gives up at once on anything else, such as a refused connection or the 404 of a robot older than
   the route. Whatever came last is in `camera_health()`, with mediad's own reason where it gave one,
-  and `quackd doctor` prints it under the camera's row. `observe`, `go_to` and `search_scan` quote
+  and `roboglot doctor` prints it under the camera's row. `observe`, `go_to` and `search_scan` quote
   a body's `camera_error` when no frame comes, and `microduck:jsonrpc` had none, so they said only
   that no frame came. It says now: the last failure, a frame too old to steer on, or, over WebRTC,
   a mount mediad has not said. `tests/test_jsonrpc.py` waits through two 503s to a frame, gives up
@@ -5291,7 +5329,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   `microduck:jsonrpc` started a frame's age once the last of it had arrived, while mediad takes the
   picture a `/frame` answers with when the request reaches it, then encodes it and sends it down the
   tunnel. A PNG slow to come was handed out as if it had just been taken, and one that trickled in
-  for longer than the 2 s quackd steers on was handed out all the same, since urllib's timeout
+  for longer than the 2 s Roboglot steers on was handed out all the same, since urllib's timeout
   bounds each read and not the request. A frame's age runs from its request now, on every HTTP
   camera, so one that takes longer than that to come is never handed out, and a verb that wanted it
   stops and says why. `tests/test_jsonrpc.py` serves a PNG that takes a while to come and one that
@@ -5313,18 +5351,18 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   old step left a wedge, which a scan with the old step does not.
 
 - **The physics simulator fetches its policies at upstream's `v7`, the set a robot on daemon-v0.16.1
-  is seeded with, and nothing in quackd says a robot walks on `alpha_walking.onnx` or stands on
+  is seeded with, and nothing in Roboglot says a robot walks on `alpha_walking.onnx` or stands on
   `alpha_stand.onnx` any more.** `microduck:mujoco` fetched `alpha_walking.onnx`, `alpha_stand.onnx`
   and their manifest from a revision of `pollen-robotics/microduck-policies` older than upstream's
   `v5`. `v5` added `velstand.onnx`, one network that walks and stands, which every robotd from
   daemon-v0.13.0 loads with no standing network, so the licences page's nine policies were one short
   of what a Microduck ships with, and `sim3d/upstream_api.py` said the daemon runs
-  `alpha_stand.onnx` while the twist is small. quackd now fetches at `v7`'s revision, `6677ec0`. The
+  `alpha_stand.onnx` while the twist is small. Roboglot now fetches at `v7`'s revision, `6677ec0`. The
   walking and standing files are the same bytes there, so the simulator walks exactly as it did and
   only the manifest's pinned hash moved. The cache is named after the revision, so the first
   `microduck:mujoco` run after upgrading fetches the two policies again, 1.6 MB, without being
   asked. The model stays at `2b25a48`: `microduck_rl`'s `develop` had moved 36 commits on by
-  2026-10-05, and every file quackd fetches from it is the same bytes there. The browser demo
+  2026-10-05, and every file Roboglot fetches from it is the same bytes there. The browser demo
   fetches from the same revision. The Microduck page names the new read, the licences page counts
   ten, the hardware checklist's rehearsal says a robot walks on another network than the
   simulator's, and ADR-0030 carries a dated note beside the nine it was written with. The README,
@@ -5342,7 +5380,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   `OPENAI_PROJECT_ID` only where the SDK itself would send them, to OpenAI's own API and to the
   address `OPENAI_BASE_URL` gives `--llm openai`, and everywhere else no authorization goes but its
   own key.** The `openai` package reads those three variables for itself and adds them to every
-  request wherever the client points, and quackd built its clients with no answer to any of them, so
+  request wherever the client points, and Roboglot built its clients with no answer to any of them, so
   `--llm openai` and every vendor and local preset that speaks OpenAI's API sent them to its own
   address: OpenRouter, Grok, a model server on a Jetson over plain HTTP. In 3.22.1, the release the
   lock carries, an `Authorization` line of the variable, in any spelling, replaced the vendor's key
@@ -5351,7 +5389,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   from 1.66.0, sent `OpenAI-Organization` and `OpenAI-Project` everywhere. The three variables now
   follow the SDK's own address variable. At OpenAI's own API, `api.openai.com` or one of OpenAI's
   regional hosts over https, and at the address `OPENAI_BASE_URL` gives `--llm openai` with no
-  `--base-url`, quackd hands the client no answer to any of the three, as before, so all three go
+  `--base-url`, Roboglot hands the client no answer to any of the three, as before, so all three go
   there exactly as the SDK sends them, and a gateway reached that way is sent what 0.17.1 sent it:
   its own lines, an `Authorization` line among them, and the account headers. At every other
   address, a vendor's own API, OpenRouter, a local preset's server, an address given with
@@ -5361,7 +5399,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   `User-Agent` or one of the `X-Stainless-` lines that name the SDK's release and platform leaves
   the SDK's own value in place, and one naming OpenRouter's `HTTP-Referer` or `X-OpenRouter-Title`
   leaves OpenRouter's, rather than taking it off with the line. A local preset that took its address
-  from `OPENAI_BASE_URL` is among those, since that rung is quackd's own ladder for a server you
+  from `OPENAI_BASE_URL` is among those, since that rung is Roboglot's own ladder for a server you
   run, which is sent no hosted key, and the leak this closes was found on exactly such a server, a
   board over plain HTTP. `--llm openai` still sends its key to whatever `OPENAI_BASE_URL` names, as
   the SDK always has. The address is settled before the client is built, and a blank one reads as
@@ -5369,12 +5407,12 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   `--llm openai` failed every turn, and so did a URL of spaces on a local preset's ladder, which
   already read an empty one as unset. The client follows no redirect, so a turn answered with one
   fails instead of sending the request on to wherever it points, and the error says where it pointed
-  and, for an API that moved whole, the address to give quackd instead. A client whose own headers
-  would still carry an authorization or any other line quackd answered, or whose address reads on
+  and, for an API that moved whole, the address to give Roboglot instead. A client whose own headers
+  would still carry an authorization or any other line Roboglot answered, or whose address reads on
   the other side of OpenAI's own API, is refused before the robot connects, naming the SDK's release
   and never the value, and a local preset's model discovery names its server with the password in
   the address taken out, where it printed the address whole. The rule is
-  `quackd/agent/providers/openai_headers.py`. `tests/test_openai_headers.py` holds every preset to
+  `roboglot/agent/providers/openai_headers.py`. `tests/test_openai_headers.py` holds every preset to
   it under a model of each of the four ways the releases merge headers, with the SDK's own headers
   modelled beside the variable's, and the model agreed with all eleven releases in uv's cache, from
   1.66.0 to 3.22.1. `tests/test_openai_headers_wire.py` captures what each preset sends through the
@@ -5386,7 +5424,7 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 
 - **The Microduck's pages log in as `microduck`, the account upstream's own tools use, and say it
   has to be in the robot's `robot` group.** The hardware checklist tunnelled to the duck as `radxa`,
-  which was quackd's guess. robotd's socket is `root:robot`, mode 0660, and robotd checks nothing
+  which was Roboglot's guess. robotd's socket is `root:robot`, mode 0660, and robotd checks nothing
   else about who connects. Upstream's group file creates the group with nobody in it and its
   provisioning scripts add only whoever ran them with `sudo`, which is `microduck` on a board
   provisioned the way upstream's own example does it, so the account has to be checked rather than
@@ -5398,32 +5436,32 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
   robotd, and step 10 asks for what the re-read could not settle, the policy labels on a real duck
   and what `/frame` costs it among them.
 
-- **The pages and strings that still described the Microduck at quackd's previous read describe it
-  at daemon-v0.16.1.** The FAQ and the Open Duck page said quackd reads API v23, LAUNCH.md's draft
+- **The pages and strings that still described the Microduck at Roboglot's previous read describe it
+  at daemon-v0.16.1.** The FAQ and the Open Duck page said Roboglot reads API v23, LAUNCH.md's draft
   to Pollen said so too and that there is no socket-level camera snapshot, PLAN.md that the read was
   API v23 and the camera WebRTC, and the `--camera-url` help and both `pyproject.toml` comments that
   WebRTC is the only camera upstream offers. Between them they now say what the read found: API v41,
   a robotd from API v23 up served, and `mediad`'s `GET /frame` beside its WebRTC track. The issue
   template asks about the handshake, posture, the camera and the duck detector as they work now, and
   `microduck-lookout` says a camera rather than a video. `docs/concepts/safety.md`, the hardware
-  checklist, the Microduck page, the README and the FAQ said a gamepad out-ranks quackd, that
+  checklist, the Microduck page, the README and the FAQ said a gamepad out-ranks Roboglot, that
   upstream arbitrates who drives, and that releasing the sticks stops the robot through the deadman.
   robotd keeps one twist, the newest from any client, and ranks none above another, so a pad nobody
-  touches sends a stop every 100 ms that lands between quackd's twists, letting go of sticks nobody
-  was touching changes nothing, and robotd's deadman does not fire while quackd re-sends its twist
-  every 100 ms. Each page says so now, and what does end a quackd walk: quackd's own `stop`, a stick
-  pushed until quackd gives the walk up, the pad's sit button, and `padd` sitting the duck 1 s after
+  touches sends a stop every 100 ms that lands between Roboglot's twists, letting go of sticks nobody
+  was touching changes nothing, and robotd's deadman does not fire while Roboglot re-sends its twist
+  every 100 ms. Each page says so now, and what does end a Roboglot walk: Roboglot's own `stop`, a stick
+  pushed until Roboglot gives the walk up, the pad's sit button, and `padd` sitting the duck 1 s after
   a pad drops out. The checklist's step 8 tests the deadman with the pad switched off, since a
   connected pad's stop halts the legs first and would pass the step whether or not the deadman
   works, and has `robotctl monitor` name it. Step 9 says what a pad nobody touches may do to a walk,
   which nobody has seen, and the hardware report asks for both. `docs/concepts/learned-verbs.md`
   said a policy slot robotd could swap over its socket was not designed yet, where
   `robot.loadPolicy` has done that since API v18 and `robot.setSkill` has named a policy as a skill
-  since v22, and it names the slots a robot has at daemon-v0.16.1. quackd calls neither. The Jetson
+  since v22, and it names the slots a robot has at daemon-v0.16.1. Roboglot calls neither. The Jetson
   guide no longer calls every Microduck's board a Radxa: a beta's is Seeed's RK3566 board. ADR-0011
   carries a dated note on the three rows the re-read overtook, and the 0.4 design note says its
   `GET_FRAME` ban ended with the ref. `tests/test_docs.py` fails a living page, NOTICE, a line of
-  quackd's or an adapter's source, a `pyproject.toml`, an issue template, a bundled duck or an ADR
+  Roboglot's or an adapter's source, a `pyproject.toml`, an issue template, a bundled task or an ADR
   dated since the re-read that says one of the retired things again, the pad's rank and the pad as
   the e-stop among them, and holds the pages that say what stops a walk to the deadman's 500 ms and
   `padd`'s 100 ms and 1 s as `upstream_api.py` reads them, and to a re-send shorter than the
@@ -5432,10 +5470,10 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 - **Seven table rows that lost their last cells to a `|` show them whole.** GitHub splits a table
   row on every `|` that no backslash escapes, inside code spans too, and drops the cells past the
   header's count. The Microduck page's `robot.do` and `robot.sound` rows kept two names of each
-  list, the second where what quackd uses the call for belongs, and lost the rest, and its
-  `robot.mode` row did the same with its two modes and lost the cell that says quackd does not use
+  list, the second where what Roboglot uses the call for belongs, and lost the rest, and its
+  `robot.mode` row did the same with its two modes and lost the cell that says Roboglot does not use
   it yet. The XLeRobot page's arm step clamp lost what it means, Kev's confidence row lost the
-  floors quackd compares a confidence with, the README's `quackd log` row lost everything after
+  floors Roboglot compares a confidence with, the README's `roboglot log` row lost everything after
   `--thinking all`, and ADR-0011's `gaze` row lost its note. The `robot.mode` row names its modes
   without a pipe now, every other pipe is escaped, and the guards that look for an upstream name on
   an adapter's page read an escaped pipe as the pipe it renders as. `tests/test_docs.py` counts
@@ -5445,8 +5483,8 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 ### Known limitations
 
 - **A gateway or an access proxy reached with `--base-url`, through a local preset or with `--host`
-  is sent nothing from `OPENAI_CUSTOM_HEADERS`, and quackd has no other way to add a header yet.**
-  Those are addresses quackd was told for the run, and the rule above sends them the provider's own
+  is sent nothing from `OPENAI_CUSTOM_HEADERS`, and Roboglot has no other way to add a header yet.**
+  Those are addresses Roboglot was told for the run, and the rule above sends them the provider's own
   key and nothing the SDK reads for itself. A gateway in front of OpenAI is reached with
   `--llm openai` and `OPENAI_BASE_URL`, which sends it everything the SDK would. Behind any of the
   others, a gateway that takes its token as the `Authorization` works with that token as the key,
@@ -5457,57 +5495,57 @@ backend changed, and the arm has not run quackd since 2026-09-23, so the bench s
 
 ## [0.17.1] — 2026-10-07
 
-0.17.1 corrects what quackd prints about OpenRouter ids it does not carry: `quackd list-models` and
+0.17.1 corrects what Roboglot prints about OpenRouter ids it does not carry: `roboglot list-models` and
 the refusal of an OpenRouter id on its spelling said any other id with tool calling on OpenRouter's
-own model list works, which quackd's own refusals contradict, and its help said `quackd list-models`
-holds every id. Those are corrected, with six pages and `.env.example` that overstated what quackd
-takes, and nothing quackd takes or refuses changed.
+own model list works, which Roboglot's own refusals contradict, and its help said `roboglot list-models`
+holds every id. Those are corrected, with six pages and `.env.example` that overstated what Roboglot
+takes, and nothing Roboglot takes or refuses changed.
 
 ### Fixed
 
-- **`quackd list-models` and the refusal of an OpenRouter id on its spelling no longer say every
+- **`roboglot list-models` and the refusal of an OpenRouter id on its spelling no longer say every
   listed id with tool calling works.** Both said any other id with tool calling on the vendor's own
   model list works too. That was false: OpenRouter's list carries `~` aliases, its own routers and
-  `:batch` entries with tool calling, and quackd refuses each on its spelling, and the list check
+  `:batch` entries with tool calling, and Roboglot refuses each on its spelling, and the list check
   refuses an entry whose expiry date has come. Nor had anything shown that the rest work, since no
-  OpenRouter model has answered a real quackd request. The note `quackd list-models` prints for
-  OpenRouter says an id quackd does not carry can be named, that a few shapes of id are refused on
+  OpenRouter model has answered a real Roboglot request. The note `roboglot list-models` prints for
+  OpenRouter says an id Roboglot does not carry can be named, that a few shapes of id are refused on
   their spelling alone, and that any other is checked when a run starts against OpenRouter's public
-  model list, which has to carry it with tool calling. The refusal still names the rows quackd
-  carries and points at `quackd list-models --llm openrouter`, and says nothing else about other
-  ids. The help for `quackd list-models` said the command lists the ids each cloud vendor accepts,
-  the help for `--llm` on `quackd run` and `quackd record` that `quackd list-models` prints every
-  id, and `quackd doctor` titled its providers table `providers (every model id: quackd
-  list-models)`. All three now speak of the ids quackd carries. What quackd takes and refuses is as
+  model list, which has to carry it with tool calling. The refusal still names the rows Roboglot
+  carries and points at `roboglot list-models --llm openrouter`, and says nothing else about other
+  ids. The help for `roboglot list-models` said the command lists the ids each cloud vendor accepts,
+  the help for `--llm` on `roboglot run` and `roboglot record` that `roboglot list-models` prints every
+  id, and `roboglot doctor` titled its providers table `providers (every model id: Roboglot
+  list-models)`. All three now speak of the ids Roboglot carries. What Roboglot takes and refuses is as
   it was, and `tests/test_cli.py` and `tests/test_catalogue.py` hold the note and the end of the
   refusal to their new words.
 
 ### Documentation
 
-- **Six pages and `.env.example` no longer say quackd takes or checks OpenRouter ids it refuses.**
+- **Six pages and `.env.example` no longer say Roboglot takes or checks OpenRouter ids it refuses.**
   The README, the FAQ, the OpenRouter guide, the SO-101's first run, the web demo's README and
-  `.env.example` said quackd takes any other id OpenRouter's list carries with tool calling, in
+  `.env.example` said Roboglot takes any other id OpenRouter's list carries with tool calling, in
   those words or close to them. The architecture page said any other id OpenRouter lists is checked
-  against that list, and the FAQ that a well-formed id quackd does not carry is looked up in it. The
-  shapes quackd refuses on their spelling contradict all three. Each of those sentences is
-  corrected, and the README's Model row no longer says `quackd list-models` prints them all.
+  against that list, and the FAQ that a well-formed id Roboglot does not carry is looked up in it. The
+  shapes Roboglot refuses on their spelling contradict all three. Each of those sentences is
+  corrected, and the README's Model row no longer says `roboglot list-models` prints them all.
   LAUNCH.md's 0.17 sentence makes the same claim and waits for 0.18, since a patch leaves the story
   alone. The guide quotes the note and the refusal as they read now, and the FAQ the refusal.
 
 ## [0.17.0] — 2026-10-07
 
 This release adds OpenRouter, a router that puts models made by many vendors behind one key and one
-bill, as quackd's twelfth cloud vendor. `--llm openrouter` asks `openai/gpt-6-sol`, one of six rows
-quackd carries for it. Other ids OpenRouter's public model list carries with tool calling are taken
+bill, as Roboglot's twelfth cloud vendor. `--llm openrouter` asks `openai/gpt-6-sol`, one of six rows
+Roboglot carries for it. Other ids OpenRouter's public model list carries with tool calling are taken
 too, each checked against that list before the first paid call and priced off it. A turn OpenRouter
 bills is costed at that bill, and its `llm` record says so, though a rate named with `--price` still
 wins.
 
-No OpenRouter model has answered a real quackd request. The chat requests quackd sent went only to
-stand-ins, among them one on 127.0.0.1 that the real `openai` SDK reached in a real `quackd run` and
+No OpenRouter model has answered a real Roboglot request. The chat requests Roboglot sent went only to
+stand-ins, among them one on 127.0.0.1 that the real `openai` SDK reached in a real `roboglot run` and
 the browser demo's client reached under Node. Only the model list check reached OpenRouter itself,
 with no key. Whether OpenRouter's Chat Completions gives the default row its function tools, and
-whether a provider behind it takes the reasoning quackd replays, is unproven.
+whether a provider behind it takes the reasoning Roboglot replays, is unproven.
 [docs/guides/openrouter.md](docs/guides/openrouter.md) lists what was read and what was assumed.
 
 The rest is documentation. `docs/` is sorted into guides, reference, concepts and adapters, so a
@@ -5516,19 +5554,19 @@ cloud vendors are asked to call a tool, when the catalogue's rates were checked 
 One server answers are corrected, and the two issue templates that list vendors name every one. A
 test of the arm's simulator no longer races its own pick, Dependabot leaves hatchling alone, and
 `uv.lock` takes Dependabot's updates from #32 and #33, which move no requirement a user installs
-against. No code that drives a body changed, and the arm has not run quackd since 2026-09-23, so the
+against. No code that drives a body changed, and the arm has not run Roboglot since 2026-09-23, so the
 bench steps 0.14.0 and 0.15.0 owe are still owed.
 
 ### Added
 
 - **OpenRouter, a twelfth cloud vendor: `--llm openrouter`.** OpenRouter is a router, one key and
   one bill for models made by many vendors, and it speaks OpenAI's API, so it is one more
-  `OpenAIProvider` subclass, reading `OPENROUTER_API_KEY` and installed as `quackd[openrouter]`,
+  `OpenAIProvider` subclass, reading `OPENROUTER_API_KEY` and installed as `roboglot[openrouter]`,
   the same `openai` wheel as the nine other vendors that speak OpenAI's API. Its catalogue tuple
   is six rows, the first the default: `openai/gpt-6-sol`, `openai/gpt-6-luna`,
   `anthropic/claude-sonnet-5.5`, `anthropic/claude-opus-5.5`, `google/gemini-3.8-flash` and
   `x-ai/grok-4.7`, priced off OpenRouter's own model list on 2026-10-06 and dated with that day
-  rather than the catalogue's, so `quackd list-models` prints 123 ids where it printed 117.
+  rather than the catalogue's, so `roboglot list-models` prints 123 ids where it printed 117.
   Unlike every other vendor's, that tuple is a selection. Other ids OpenRouter's public model list
   carries with tool calling are taken too, each checked against the list, which needs no key, once
   per process before the first paid call, and priced and given the camera frame or not by its entry
@@ -5543,12 +5581,12 @@ bench steps 0.14.0 and 0.15.0 owe are still owed.
   {"require_parameters": true}`, so OpenRouter routes only to a provider that honours what was sent,
   carries no `parallel_tool_calls`, and goes to Chat Completions only. The rows are told to call a
   tool, except the two Claude rows, which refuse a forced call and are asked with `auto`. Any id
-  quackd does not carry is asked with `auto` too, or sent no `tool_choice` at all where its entry on
+  Roboglot does not carry is asked with `auto` too, or sent no `tool_choice` at all where its entry on
   the list names none. A model's `reasoning_details` go back unmodified on the turn that made the
-  call. Requests also carry `HTTP-Referer` and `X-OpenRouter-Title` headers naming quackd, which
+  call. Requests also carry `HTTP-Referer` and `X-OpenRouter-Title` headers naming Roboglot, which
   credit it on OpenRouter's public app rankings and say nothing about the person running it. The
-  browser demo offers the six rows. The honest part: no OpenRouter model has answered a real quackd
-  request. What ran was `openai` 3.22.1 through a real `quackd run` against a stand-in on 127.0.0.1
+  browser demo offers the six rows. The honest part: no OpenRouter model has answered a real Roboglot
+  request. What ran was `openai` 3.22.1 through a real `roboglot run` against a stand-in on 127.0.0.1
   (`tests/fake_openrouter.py`), the browser demo's client under Node against the same stand-in, and
   the model list check against OpenRouter's real list, with no key. None of it proves that
   OpenRouter answers a turn, that a provider behind it takes the replayed reasoning, or that the
@@ -5560,7 +5598,7 @@ bench steps 0.14.0 and 0.15.0 owe are still owed.
   with what cache. That is now the turn's `cost_usd`, with the upstream charge added on a
   bring-your-own-key call, and the `llm` record says `billed: true`, written only when it is.
   `summary.json` counts such calls in `billed_calls`, written only when there are any. A rate
-  named with `--price` or `QUACKD_PRICE` still wins over the bill, a call that brings no bill is
+  named with `--price` or `ROBOGLOT_PRICE` still wins over the bill, a call that brings no bill is
   costed at the rate as before, a call that ends in an error is costed the same way when OpenRouter
   reports what it billed or used, and every other vendor's records are what they were. One thing
   changes for a run with no rate at all: on a vendor that bills, its total starts at $0 and
@@ -5575,7 +5613,7 @@ bench steps 0.14.0 and 0.15.0 owe are still owed.
   `parallel_tool_calls`. The line now says so, and how OpenRouter is asked.
 - **The architecture page dates the catalogue's rates as the code does.** It said they were
   checked on 2026-09-21. `PRICES_CHECKED` has been 2026-09-23 since 0.13.0.
-- **The bug and duck-submission issue templates name every vendor.** Their provider lists
+- **The bug and glot-submission issue templates name every vendor.** Their provider lists
   stopped at Grok, so Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta and now OpenRouter could
   not be picked.
 - **Dependabot ignores every hatchling version.** 0.16.1 ignored only hatchling 1.32.4 and
@@ -5617,32 +5655,32 @@ bench steps 0.14.0 and 0.15.0 owe are still owed.
   was stopped failed. The stop now counts from the policy's first goal, which only a running
   segment asks for. Holding the policy loop's start back half a second of the wall's
   reproduces the failure without the change, and with it the test passes five times of five.
-  Nothing quackd does changed.
+  Nothing Roboglot does changed.
 - **A System One answer names its kind, which the page for writing a server left out.**
   `docs/guides/decision-llms/local.md` sets out the response a server has to send, and gave a
   choice as `{choice, confidence}` and a noul as `{noul}`. typesafe_sdk tells the kinds of answer
   apart by a `type` field, so a server written from that row fails the SDK's validation on every
-  turn, and quackd hands each of those turns to the model. Writing a server from the row, to
+  turn, and Roboglot hands each of those turns to the model. Writing a server from the row, to
   check #33, found it. The row now gives `type` in each shape and says it is required.
 - **uv.lock takes five updates from Dependabot's #33:** anthropic 1.9.0, openai 3.22.1,
   typesafe-sdk 0.7.2, laya 0.3.22 and zeroconf 0.151.5. CI installs none of the five, so its
   green run says the lock resolves and no more, and each was run here on the lock instead. A real
-  `quackd run` drove anthropic against a stand-in for the Messages API on 127.0.0.1, which got
-  the beta endpoint, both of quackd's betas, `fallbacks` and `block_binding`, and whose tool call
+  `roboglot run` drove anthropic against a stand-in for the Messages API on 127.0.0.1, which got
+  the beta endpoint, both of Roboglot's betas, `fallbacks` and `block_binding`, and whose tool call
   came back as the run's success. A live `hello-world` on `gpt-6-sol`, held to three steps, made
   four calls on openai and read every tool call back, for $0.0157. typesafe-sdk 0.7.2's code is
   0.7.1's byte for byte, adding only an optional `http2` extra, and a shadow run against a System
   One server on 127.0.0.1 recorded a decision on every turn. laya's `Router` and `predict` take
-  quackd's arguments as before and everything new in them is optional; its weights were not
-  loaded. `quackd announce` and `quackd discover` found each other on zeroconf 0.151.5. The
+  Roboglot's arguments as before and everything new in them is optional; its weights were not
+  loaded. `roboglot announce` and `roboglot discover` found each other on zeroconf 0.151.5. The
   pull request's first CI run failed in the physics job, on the test race above, which none of
   the five reaches. No requirement a user installs against moved.
 
 ## [0.16.1] — 2026-09-29
 
-0.16.1 is quackd's first patch: it carries fixes, not yet run on the arm, for five faults that
+0.16.1 is Roboglot's first patch: it carries fixes, not yet run on the arm, for five faults that
 reruns of 0.16.0 on the arm's twin found on 2026-09-29, among them a policy latency its chunks
-cannot carry, which `quackd policy serve` and the arm's connect now refuse, and it starts every
+cannot carry, which `roboglot policy serve` and the arm's connect now refuse, and it starts every
 window between the eight packages at the release it ships in. The rest is documentation and a
 refresh of `uv.lock`: bench steps for 0.15.0's arm changes that nobody has taken yet, two grasp
 sidecars, the pages those reruns corrected, a README with no logo, and RELEASING.md, which says
@@ -5651,17 +5689,17 @@ what a version promises and how one ships.
 ### Fixed
 
 - **A policy served with a latency past half its chunk starved the arm every chunk, and
-  `quackd policy serve` took it.** A segment asks for the next chunk only once the last has
+  `roboglot policy serve` took it.** A segment asks for the next chunk only once the last has
   landed, one request out at most, so a chunk that lands some ticks after it was asked for has
   that many fewer ticks of it left to play while the next is on its way. Past half a chunk the
   arm had nothing to play for part of every chunk, twice the latency less the chunk, and no rule
   for when to ask again can close that gap with one request out. The trained ACT, 100 actions at
   30 Hz, starved 86 of 300 ticks in every 10 s segment on the arm's twin served with
   `--latency-s 1.78`, and served with 2.5 its segment ended after 4.4 s, while
-  `quackd policy check --bench` said the latency covered what it timed. `serve` and `check` now
+  `roboglot policy check --bench` said the latency covered what it timed. `serve` and `check` now
   refuse a latency past half a chunk, as they refused one as long as a chunk, with the ticks of
   every chunk it would starve and the longest latency they would take: serve the policy with
-  that or less, or where it answers faster. A server an earlier quackd started with such a
+  that or less, or where it answers faster. A server an earlier Roboglot started with such a
   latency still declares it, so `check` of one says so in its latency row, its bench says so
   rather than that the latency covers what it timed, and the arm refuses to connect to it,
   before any torque, with the same ticks and the longest latency to start it again with. Nothing
@@ -5673,10 +5711,10 @@ what a version promises and how one ships.
   the server declares covers what it timed but the slowest step took longer than half a chunk,
   it says a step that slow can leave the arm holding still.
 - **The line for a verdict nobody was asked about said `(the human said go)`.** `--yes`, a
-  flock's standing answer and a pipe on stdin answer the pilot's doubt without asking anybody,
+  team's standing answer and a pipe on stdin answer the pilot's doubt without asking anybody,
   and the `assess` line said a human had, in a run whose own observation told the pilot nobody
   was asked. The event now names what answered as `answered_by`: `a person` only where a
-  `prompt` row says one was asked, and otherwise `--yes`, `a flock's standing answer`, `a pipe`
+  `prompt` row says one was asked, and otherwise `--yes`, `a team's standing answer`, `a pipe`
   or `a standing answer`. The line says that, `(--yes said go)`, and a run recorded before reads
   `(answered go, and the record does not say by whom)`. A doubt answered no ends the run naming
   the same. A prompt that raised, at the end of its input or with click's `Abort`, answered
@@ -5700,19 +5738,19 @@ what a version promises and how one ships.
   `closing the gripper stops its moving finger 0.4 mm clear of cube, which it never touches on the way`.
   Each refusal of the arm's start for an object between the jaws now says the start that works,
   a rest pose whose open jaws point down at the table around the object.
-- **`quackd doctor`'s `joint_range_deg` row printed each joint's travel rounded to whole
+- **`roboglot doctor`'s `joint_range_deg` row printed each joint's travel rounded to whole
   degrees**, so an end could read up to half a degree wider than the travel the pilot is told
   and the arm takes a goal at. It prints the travel as the pilot is told it, to a tenth of a
   degree rounded inward. The advice after the table, for a rest pose past a joint's travel,
   still names the end that joint parks at to the nearest whole degree.
 - **An adapter from a patch would have installed beside a core from before it.** Every window
-  between the eight packages admitted its whole minor, `quackd>=0.16,<0.17`, and
-  `scripts/set_version.py` kept it for a patch, so `quackd-lerobot` 0.16.1 would have installed
-  beside `quackd` 0.16.0, without the core's half of any fix that needed both. Every window now
-  starts at the release it ships in: `quackd-lerobot` 0.16.1 needs `quackd` 0.16.1 or a later
-  0.16, and each extra of `quackd` 0.16.1 installs its adapter from 0.16.1 or a later 0.16. An
+  between the eight packages admitted its whole minor, `roboglot>=0.16,<0.17`, and
+  `scripts/set_version.py` kept it for a patch, so `roboglot-lerobot` 0.16.1 would have installed
+  beside `roboglot` 0.16.0, without the core's half of any fix that needed both. Every window now
+  starts at the release it ships in: `roboglot-lerobot` 0.16.1 needs `roboglot` 0.16.1 or a later
+  0.16, and each extra of `roboglot` 0.16.1 installs its adapter from 0.16.1 or a later 0.16. An
   installer that upgrades an adapter upgrades the core with it, so this asks nothing of you, and
-  `quackd` 0.16.1 upgraded on its own still installs beside an adapter from 0.16.0, whose window
+  `roboglot` 0.16.1 upgraded on its own still installs beside an adapter from 0.16.0, whose window
   admits it.
 
 ### Documentation
@@ -5723,7 +5761,7 @@ what a version promises and how one ships.
   file names ([ADR-0049](docs/adr/0049-a-version-says-what-changed.md)). This file's headings
   decide which: an entry under Added, Changed, Deprecated or Removed makes a minor, and Fixed,
   Security and the new Documentation heading alone make a patch. A fix may refuse what the
-  release before accepted when that never did what quackd said it would, and a fix that tightens
+  release before accepted when that never did what Roboglot said it would, and a fix that tightens
   what could move a body in a way the docs never promised ships as a patch even when a script
   relied on the looser behaviour. `tests/test_docs.py` fails when a released patch carries a
   heading that makes a minor or a minor carries none, when any section uses a heading the rule
@@ -5735,7 +5773,7 @@ what a version promises and how one ships.
   user installs against. CONTRIBUTING.md says which heading a pull request files its entry under
   and that it never bumps a version.
 - **The README opens with its name, and the duck head and the social preview card are gone.** A
-  duck's head over the title made quackd look like a toy rather than a tool that drives a real
+  duck's head over the title made Roboglot look like a toy rather than a tool that drives a real
   arm, so the README carries no logo. `docs/assets/social-preview.png` and
   `docs/assets/social_preview.py`, which built the card around the same head, are deleted rather
   than redrawn, and so are the test in `tests/test_pypi_readme.py` that held the card and the
@@ -5750,7 +5788,7 @@ what a version promises and how one ships.
   torque through an exit that skips the close. The other six are now in
   [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md), each in the step
   that meets the same moment and each saying what to do at the arm, what to watch for and what
-  to report. A connect quackd refuses letting go of the arm is step 6, on a second name that
+  to report. A connect Roboglot refuses letting go of the arm is step 6, on a second name that
   nothing was calibrated as, taken before the fold. The deadline a call spends only while the
   bus is busy is step 9's dry run, given a camera because its detector still runs on the event
   loop's thread, and the line step 13's pulled cable ends on. A connect that fails once the arm
@@ -5767,7 +5805,7 @@ what a version promises and how one ships.
   simulator counts as a lift. Setting it back down is nothing a sidecar can check, and each
   says so. `e163` starts the same way and asks only whether the gripper holds the cube, which no
   sidecar check measures, so it has none. Neither sidecar lays out on the lab arm's twin.
-  `arm-01`'s fold puts the jaws down at the table with the gripper shut, and `quackd preflight`
+  `arm-01`'s fold puts the jaws down at the table with the gripper shut, and `roboglot preflight`
   of each on `arm-01-sim`, with `--llm fake` and `--seeds 2`, was refused at every connect:
   `the scene lays cube between the jaws, and as the arm starts they are open narrower than cube`.
   The same fold with the gripper open is refused too, since a close from there never brings the
@@ -5800,13 +5838,13 @@ what a version promises and how one ships.
   so the drawing tasks found the pen lying on the table and no paper, and declared failure,
   while the switch task's pilots said they saw a switch the table does not have and looked
   until their steps ran out.
-- **What `quackd robot twin` prints for an arm with a rest pose and no pilot or camera**, as
+- **What `roboglot robot twin` prints for an arm with a rest pose and no pilot or camera**, as
   the lab's `arm-01` is, is in the first-run guide and docs/registry.md beside the example that
   copies all three.
 - **The examples README's rehearsal line rehearsed `e001/duck-picture` without its picture.**
   `--image` would go to every file the pattern matches, so the page says to rehearse that one on
   its own with the `--image` in its header.
-- **The first-run guide quoted two of the three lines `quackd doctor --robot arm-01-sim` prints
+- **The first-run guide quoted two of the three lines `roboglot doctor --robot arm-01-sim` prints
   after its table for the lab arm's twin.** The third, the advice for a fold past what the
   calibration lets `shoulder_lift` be driven to, is quoted with them.
 - **`uv.lock` takes Dependabot's grouped update, and the weekly job that made it skips what it
@@ -5830,15 +5868,15 @@ the arm one short segment at a time, from a server of its own.
 
 `manipulate(instruction)` is one segment of the arm's learned policy, and `pick` now runs its
 policy the same way ([ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md),
-[docs/policies.md](docs/guides/policies.md)). The segment's loop is quackd's: paced on the arm's clock
+[docs/policies.md](docs/guides/policies.md)). The segment's loop is Roboglot's: paced on the arm's clock
 at the policy's own rate, capped at the verbs' own speed, and judged tick by tick before each
-goal goes out. The policy is not quackd's. A checkpoint is code, so it runs in
-`quackd policy serve`, a server of its own that the arm reaches over HTTP, and no quackd
+goal goes out. The policy is not Roboglot's. A checkpoint is code, so it runs in
+`roboglot policy serve`, a server of its own that the arm reaches over HTTP, and no Roboglot
 command loads one in the process that owns the serial bus. That server loads an ACT, a SmolVLA
-or a pi05 checkpoint it has read before building, `quackd policy check` asks a server what it
+or a pi05 checkpoint it has read before building, `roboglot policy check` asks a server what it
 serves and times it, and the arm checks at connect, before any torque, that the policy fits it.
 
-`--policy-url` points `quackd run`, `preflight` and `serve-mcp` at a server. A `duck: 3` task
+`--policy-url` points `roboglot run`, `preflight` and `serve-mcp` at a server. A `glot: 3` task
 file holds `manipulate` to its own instructions and seconds, a decision LLM is shown each
 subtask and never starts one, and `--controller vla` flies the arm with no model at all and asks
 a person whether it did the task.
@@ -5848,14 +5886,14 @@ the one call the stop cut short, and no longer than that call's own deadline, wh
 the bus's stamps as every call's has been since 0.15.0. And a pick cancelled as the one before
 it ended no longer drives the arm anyway. No policy has driven the real arm. Every segment ran
 against the test suite's fake arm or on the simulator. There a trained ACT from the Hub drove a
-twin of the lab's arm through `quackd policy serve` and `quackd serve-mcp`, and again under
-`quackd run --goal`, where OpenAI's `gpt-6-sol` piloted, handed it two segments and declared
+twin of the lab's arm through `roboglot policy serve` and `roboglot serve-mcp`, and again under
+`roboglot run --goal`, where OpenAI's `gpt-6-sol` piloted, handed it two segments and declared
 failure, since the twin's table holds no blue cap. What a policy does on the simulator says
 nothing about the arm, and nothing has compared the simulator against the arm. SmolVLA took 169
 to 188 s a chunk on the laptop's CPU and never answered through the client, and pi05 has not
 run. `--controller vla` and its judge have not run with a trained checkpoint, FLUX 3 Action has
 not run anywhere, and how fast the policy loop runs on the real bus is unmeasured. And the arm
-has not run quackd since 2026-09-23, so the seven bench steps 0.14.0 owes are still owed, and so
+has not run Roboglot since 2026-09-23, so the seven bench steps 0.14.0 owes are still owed, and so
 are 0.15.0's: a second Ctrl-C during the fold back to the rest pose, and the four that would
 compare its simulator against the arm, for joint signs and zero offsets, the rest move pressing
 the gripper into the table, the gripper on a real pen, and the front and wrist cameras'
@@ -5902,8 +5940,8 @@ placement and field of view. Known limitations, below, lists what only the hardw
   out, and a pick refuses to start with one more than `OUT_OF_RANGE_DEG` outside, naming its
   reading and its travel. The loop reads the joints every tick, and torque and temperature
   every 0.5 s (`REGISTER_PERIOD_S`).
-- **`quackd policy serve` and `quackd policy check`: a policy in a process of its own.** A
-  LeRobot checkpoint's processors can import any code their JSON names, so no quackd command
+- **`roboglot policy serve` and `roboglot policy check`: a policy in a process of its own.** A
+  LeRobot checkpoint's processors can import any code their JSON names, so no Roboglot command
   runs one in the process that owns the arm's bus. It runs in a server you start, on port 9875 on
   loopback, and the arm's side reaches it with `RemoteRunner`, a client that needs no torch and
   no LeRobot, over a protocol of four calls (`GET /v1/policy`, `POST /v1/reset`,
@@ -5919,9 +5957,9 @@ placement and field of view. Known limitations, below, lists what only the hardw
   machine, with a GPU to serve it on. docs/policies.md says to bench twice,
   the second time served with that latency, and what a good second bench looks like.
 - **The policy server is hardened as the Jetson host daemon is, and more.** A token is always
-  required: with no `--token-file` it writes one to `~/.quackd/policy.token`, readable by its
+  required: with no `--token-file` it writes one to `~/.roboglot/policy.token`, readable by its
   owner alone where the OS allows, and the client reads it there, or `--policy-token`, or
-  `QUACKD_POLICY_TOKEN`. It is compared in constant time, read from a header only, and a request
+  `ROBOGLOT_POLICY_TOKEN`. It is compared in constant time, read from a header only, and a request
   without it is answered on its headers alone. Both ends refuse a token shorter than 16
   characters or with a space or a line break inside it, and never quote it. The daemon's bounds
   on connections, headers and a request's time are copied as named constants, with a cap on a
@@ -5947,7 +5985,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   runner without waiting for torch, which begins no session and answers no step after it. A
   declared `--latency-s` of 5 s or more, or as long as a chunk takes to play, is refused, since
   no chunk would ever play under it.
-- **The policy server loads a LeRobot checkpoint.** `quackd policy serve --policy
+- **The policy server loads a LeRobot checkpoint.** `roboglot policy serve --policy
   OWNER/NAME@REVISION` serves an ACT, a SmolVLA or a pi05 checkpoint through LeRobot's own
   loop (`policy/pipeline.py`): the arm's reading through `build_inference_frame` and the
   pre-processor, `predict_action_chunk` cut to `n_action_steps`, the post-processor over the
@@ -5980,7 +6018,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   ImageNet backbone is never fetched. Every weight in `model.safetensors` is loaded or the
   server refuses to start: LeRobot's loader only logs a missing one and pi05's hands back a
   random network when its weights do not load, so the one is asked to be strict and the other's
-  are loaded by quackd. Every repository loaded, with its revision, is in `/v1/policy`, which
+  are loaded by Roboglot. Every repository loaded, with its revision, is in `/v1/policy`, which
   `serve` and `check` print.
 - **The arm checks at connect that the policy fits it, before any torque.** Once its cameras
   are open and before its motors are energised, the arm asks the server what it serves and
@@ -5997,9 +6035,9 @@ placement and field of view. Known limitations, below, lists what only the hardw
   every repository the server loaded go into the run's record. The check is made again as every
   segment starts, so a server started again with another policy since the connect starts no
   segment, and says to connect again.
-- **`quackd[lerobot-vla]`, the policy server's extra.** It is `quackd-lerobot[vla]`, which is
+- **`roboglot[lerobot-vla]`, the policy server's extra.** It is `roboglot-lerobot[vla]`, which is
   `lerobot[smolvla]` on Python 3.12 and no `[feetech]`, since the server never opens a serial
-  port. `quackd doctor` has a row for it, read from the installer's metadata. On Python 3.12 the
+  port. `roboglot doctor` has a row for it, read from the installer's metadata. On Python 3.12 the
   lock now resolves transformers inside LeRobot's window for every extra that pulls it.
 - **CI's `policy` job loads a checkpoint.** On Python 3.12, with torch from its CPU wheel index
   and LeRobot 0.6.1, it builds a tiny random ACT with no pretrained backbone and saves it
@@ -6009,15 +6047,15 @@ placement and field of view. Known limitations, below, lists what only the hardw
   action of a chunk is checked, in order, against what LeRobot's own `select_action` plays
   from the same files, and the same files with weights that are not the model's are refused.
   It fails rather than skips when torch did not install.
-- **`--policy-url` and `--policy-token` point the arm at a policy server.** On `quackd run`,
-  `quackd preflight` and `quackd serve-mcp`. `lerobot:real` and `lerobot:mujoco` build the
+- **`--policy-url` and `--policy-token` point the arm at a policy server.** On `roboglot run`,
+  `roboglot preflight` and `roboglot serve-mcp`. `lerobot:real` and `lerobot:mujoco` build the
   server's client from them (`RemoteRunner`) and take it as their policy, so `pick` and
   `manipulate` are in the arm's static manifest and a task that allows them is judged before
   anything connects. Only the flag names the address: no variable and no registered robot does,
   so a policy drives the arm only on a command that says so. The token is the flag, then
-  `QUACKD_POLICY_TOKEN`, then the file the server wrote. The server is asked what it serves
+  `ROBOGLOT_POLICY_TOKEN`, then the file the server wrote. The server is asked what it serves
   before anything connects, and the run header names it, redacted, and its checkpoint. The
-  mock, which runs its own script, refuses one, and so does a flock and every other body, in
+  mock, which runs its own script, refuses one, and so does a team and every other body, in
   words naming the arm: `make_adapter` and `describe` pass `policy=` only when one was given,
   and refuse an adapter whose `make()` or `describe()` has no parameter by that name rather
   than handing it a keyword it would drop or raise on. Over MCP both verbs need `--yes`. A
@@ -6025,7 +6063,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   give the command `--policy-url`, and an address redaction cannot read is refused without
   being quoted, since it may hold a password.
 - **`--accept-other-frame` lets a policy learned on an arm calibrated another way connect.** On
-  `quackd run`, `quackd preflight` and `quackd serve-mcp`, beside `--policy-url`, and refused
+  `roboglot run`, `roboglot preflight` and `roboglot serve-mcp`, beside `--policy-url`, and refused
   without it. The connect refuses a policy whose learned state's percentiles lie outside this
   arm's calibrated travel, and on the lab arm's calibration it refused 55 of the 68 servable
   SO-100 and SO-101 ACT checkpoints on the Hub, every one on `shoulder_lift`, whose recorded
@@ -6044,15 +6082,15 @@ placement and field of view. Known limitations, below, lists what only the hardw
   each, and never success on the verb's ok alone, since it says only that the segment ran. The
   fresh look is the frame the next observation brings when the arm has a camera and the pilot
   can see, and a reading of the arm otherwise.
-- **`duck: 3`, and a `policy` section that holds `manipulate` to the task.** A task file lists
+- **`glot: 3`, and a `policy` section that holds `manipulate` to the task.** A task file lists
   the instructions the arm's learned policy may be told (at most 12, the stepper's own limit,
   each one line of at most 200 characters), how long each segment runs (`segment_s`, at most
-  60 s) and how long they may run in all (`total_s`, at most an hour). A `.duck` is untrusted
+  60 s) and how long they may run in all (`total_s`, at most an hour). A `.glot` is untrusted
   input, so every bound is checked as it is parsed, `manipulate` must be allowed beside it, a
-  flock duck cannot carry one, and a list refuses `pick` beside it, since `pick` tells the
+  team task cannot carry one, and a list refuses `pick` beside it, since `pick` tells the
   policy a target of the pilot's own. The pilot's own instruction, when a task lists none, is
   held to the same one line and the same length, and so is any target given `pick` that says
-  something. One helper (`quackd.duckfile.narrow`) rebuilds `manipulate` from the arm's own
+  something. One helper (`roboglot.glotfile.narrow`) rebuilds `manipulate` from the arm's own
   verb every time, never from the last narrowing: its instruction becomes an inline enum of the
   list, which the executor enforces and the stepper can read (an enum of one for a list of
   one, since Gemini refuses the `const` pydantic would write), its segment reaches the backend
@@ -6063,7 +6101,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   not pace, or a latency that starves every segment, adds nothing. A policy that answers more
   slowly than it declares can still run the verb out of time there, and the timeout then says
   so, with the longest a request took and the latency declared, and says to bench the policy
-  with `quackd policy check --bench`. The loop calls the helper
+  with `roboglot policy check --bench`. The loop calls the helper
   once the allowlist is final and before the tools are built, and an MCP session calls it at
   connect and on each task file it loads, before it adopts the file, so the model, the stepper
   and the executor read one verb, and a file its body's `manipulate` cannot be held to is
@@ -6088,7 +6126,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   the model takes the turn, and in `--decision-mode on` as in shadow a `decision_shadow` record
   sets the two answers side by side on every turn that offered one, which is the agreement rate
   promoting it would need.
-- **`--controller vla`, a scripted pilot whose success a person judges.** `quackd run
+- **`--controller vla`, a scripted pilot whose success a person judges.** `roboglot run
   --controller vla` flies a LeRobot arm with `--policy-url` and no model at all. It answers
   `assess_task` with `uncertain`, so a person decides whether the arm should try, hands the
   policy each of the task file's `policy.instructions` in order, or the `--goal` as the only
@@ -6131,10 +6169,10 @@ placement and field of view. Known limitations, below, lists what only the hardw
   own task learns from is LeRobot's own tools, documented and not wrapped, and a checkpoint is
   code, which the page says what to do about.
   [ADR-0048](docs/adr/0048-policies-are-the-arms-executor.md) records why a policy is the arm's
-  executor while quackd keeps the bus, and six earlier ADRs carry a note pointing to it. The
+  executor while Roboglot keeps the bus, and six earlier ADRs carry a note pointing to it. The
   arm's first-run guide gains a section on handing the arm to a policy, rehearsed on its twin,
   and step 18 of its hardware checklist is how to bring one up on the arm and the number to
-  measure there. `docs/licenses.md` and `NOTICE` say that no policy's weights ship with quackd,
+  measure there. `docs/licenses.md` and `NOTICE` say that no policy's weights ship with Roboglot,
   and `.gitignore` keeps `*.safetensors` out of a commit.
 
 ### Changed
@@ -6142,13 +6180,13 @@ placement and field of view. Known limitations, below, lists what only the hardw
 - **LeRobot's policy names have a table of their own, read at 0.6.1.** They moved out of the
   arm's own refs, which are pinned to a `main` commit, into `policy/upstream_api.py`, read
   against the `v0.6.1` tag, the version the laptop that drives the arm runs, with the async
-  inference facts that are why quackd's policy server is its own. `quackd doctor` prints its pin
+  inference facts that are why Roboglot's policy server is its own. `roboglot doctor` prints its pin
   as `LeRobot policies`, and the arm's page has the table. `POLICY_PIPELINE` is VERIFIED for
   what CI's `policy` job runs, ACT on the CPU, and `VLA_PIPELINE`, `TICK_MODE` and
   `LOAD_POLICY` say what has not run.
 - **A policy's step cap is the verbs' speed at the policy's rate.** Per send it is
   `max_step_deg / TICK_S` over the rate, and never more than one verb step, so
-  `QUACKD_LEROBOT_MAX_STEP_DEG` governs both, and a policy faster than the verbs' tick takes a
+  `ROBOGLOT_LEROBOT_MAX_STEP_DEG` governs both, and a policy faster than the verbs' tick takes a
   smaller step rather than moving faster. It is written on the follower as the segment starts
   and the verbs' step put back as it ends, however it ends, once any send still on the wire is
   back, cancelled or run out of its time, and a stop, a rest move or a verb's goal writes it
@@ -6173,30 +6211,30 @@ placement and field of view. Known limitations, below, lists what only the hardw
 
 ### Fixed
 
-- **`quackd serve-mcp` printed a traceback when the connect refused.** A refusal raised as the
+- **`roboglot serve-mcp` printed a traceback when the connect refused.** A refusal raised as the
   server starts, an arm that cannot reach its rest pose among them, arrives inside the task
   group the MCP SDK serves in, and only a bare refusal was caught, so the sentence was buried in
-  a traceback on stderr and the client saw a closed connection. It is now said as `quackd run`
+  a traceback on stderr and the client saw a closed connection. It is now said as `roboglot run`
   says it, a policy that does not fit the arm included, and the server exits 1. Anything else in
   the group is still a traceback.
-- **`quackd doctor`'s header ended in `duck-ipc-proto API v` with nothing after it** on a
+- **`roboglot doctor`'s header ended in `duck-ipc-proto API v` with nothing after it** on a
   machine without the Microduck's adapter, which is where that number comes from. The header
   leaves it out there.
-- **A plain `quackd validate` checked a task file against the Microduck's verbs.** With no
+- **A plain `roboglot validate` checked a task file against the Microduck's verbs.** With no
   robot named, a file is meant to be checked against every body installed here, and
   `installed_vocabulary()` has built that union since 0.10, but the command still passed the
   Microduck's list, so an arm's task that allows `move_joints` failed with `unknown verbs`. It
   now checks the union, which also holds what each body offers a policy server, so the
-  `duck: 3` example in duck-spec.md validates as the page quotes it. `validate --robot NAME`
+  `glot: 3` example in glot-spec.md validates as the page quotes it. `validate --robot NAME`
   checks that body as it is registered, as before.
 - **On Windows, input from NUL counted as a person at a terminal.** NUL is a character device,
   so `isatty` says yes to it, and a script started with its input from NUL, or from Git Bash's
   `/dev/null`, was put the questions meant for a person, answered them with end-of-input, and
-  had its record name a person. quackd now asks Windows whether its input is a console as
+  had its record name a person. Roboglot now asks Windows whether its input is a console as
   well, so NUL is nobody there, as a pipe already was.
 - **A stop during `pick` could refuse its own hold.** A stop cancels the policy loop first, and
   a loop cancelled in the middle of a bus call leaves that call's thread on the wire, which
-  quackd files as a wedge and refuses every call behind until it comes back. The hold the stop
+  Roboglot files as a wedge and refuses every call behind until it comes back. The hold the stop
   was about to write was the first call refused, so the stop said it could not be delivered and
   the arm kept the policy's last goal. A rest move, a release, a take-hold or a close that
   landed there was refused the same way, and a heartbeat that landed there failed and aborted
@@ -6226,7 +6264,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   by the tiny random ACT CI builds, or by one trained ACT from the Hub,
   `natsuki0000/act-so101-bluecap` at commit `82f75fe40a311026b4f7cacdea7bf14cadc44ccd`, on a
   laptop's CPU, which drove the arm's twin through two segments over `serve-mcp`. On
-  2026-09-29 OpenAI's `gpt-6-sol` flew that twin with `quackd run --goal` and `--policy-url`,
+  2026-09-29 OpenAI's `gpt-6-sol` flew that twin with `roboglot run --goal` and `--policy-url`,
   handed the same ACT two `manipulate` segments and declared failure on seeing no blue cap,
   since the simulator's table holds a red cube and a pen. That run proves the plumbing and
   nothing about the task. `--controller vla`, its judge prompt and `--decision-mode shadow`
@@ -6244,19 +6282,19 @@ placement and field of view. Known limitations, below, lists what only the hardw
   10 s the client waits for a step, so it never answered one through the client. It wants a GPU
   ([docs/policies.md](docs/guides/policies.md#smolvla-and-act)).
 - **FLUX 3 Action has not run anywhere.** The server refuses its policy type. What would change
-  that is a spike on a rented Linux GPU, which has not happened, showing that `quackd policy
+  that is a spike on a rented Linux GPU, which has not happened, showing that `roboglot policy
   check --bench` holds the checkpoint's rate through the tunnel, that its actions stay anchored
-  when quackd clips a goal, and that the official SO-101 checkpoint drives the simulator end to
+  when Roboglot clips a goal, and that the official SO-101 checkpoint drives the simulator end to
   end. It needs LeRobot's main branch, which is not on PyPI, a NATTEN built for the machine, and
   about 32 GB of GPU memory by its makers' report. PLAN.md carries it.
 - **How fast the policy loop runs on the real bus is unmeasured.** With the server inferring on
   the laptop that drives the arm, torch's threads and the bus's worker share one CPU, and only
   the bench can say what the loop achieves then. The simulator's clock is lockstep, so nothing
-  timed on it is a rate, and `quackd policy check --bench` measures the server and the wire
+  timed on it is a rate, and `roboglot policy check --bench` measures the server and the wire
   without an arm. A run's `summary.json` has the number in its `policy` block. PLAN.md carries
   it.
 - **What a policy does on the simulator says nothing about the arm.** The simulator's frames
-  are renders of quackd's own scene from default mounts, and a policy trained on a real camera's
+  are renders of Roboglot's own scene from default mounts, and a policy trained on a real camera's
   frames sees pictures it never saw, so it can fail there and work on the arm, or the other way
   round. A rehearsal proves the plumbing, the clips, the stops, the guards and the budgets, and
   never a rate or a grasp. The ticks a second a segment reports there are the simulator's.
@@ -6267,7 +6305,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   `accept_frame_size`. From the command line it refuses the connect with the size to give the
   camera.
 - **`load_policy()` still builds a policy in the arm's own process.** It is a Python helper in
-  the arm's backend from before this release, and nothing in quackd calls it, so no command
+  the arm's backend from before this release, and nothing in Roboglot calls it, so no command
   reaches it. A caller of its own would load a LeRobot checkpoint beside the serial bus, with
   none of the reading the server does before it builds, as the `LOAD_POLICY` row on
   [the arm's page](docs/adapters/lerobot/README.md#the-policies-upstream-lerobot-061) says. Whether to
@@ -6280,7 +6318,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   recover. The lasting fix is to calibrate the arm again folded
   ([docs/policies.md](docs/guides/policies.md#on-the-laptop-alone)).
 - **A policy takes a second terminal.** The server is a process you start, on the laptop or on a
-  rented GPU, and `quackd run` never spawns one. It gives torch one thread fewer than it would
+  rented GPU, and `roboglot run` never spawns one. It gives torch one thread fewer than it would
   take and does not lower its own priority, and the run's record does not keep the thread count
   `/v1/policy` reports.
 - **A `--controller vla` run counts its calls as the model's are counted.** A task file listing
@@ -6288,7 +6326,7 @@ placement and field of view. Known limitations, below, lists what only the hardw
   budget below that ends the run on its budget before the declare. While it asks whether the arm
   did it, as while any question at the terminal waits, the heartbeat does not beat. The arm
   holds where its last segment left it.
-- **The arm has not run quackd since 2026-09-23, so 0.14.0's and 0.15.0's bench steps are still
+- **The arm has not run Roboglot since 2026-09-23, so 0.14.0's and 0.15.0's bench steps are still
   owed.** Nobody has taken the seven under 0.14.0's Known limitations or any under 0.15.0's. One
   would settle 0.15.0's follower, a second Ctrl-C during the fold back to the rest pose, and
   that release names six more of its changes nobody has written a bench step for. Four would
@@ -6303,18 +6341,18 @@ placement and field of view. Known limitations, below, lists what only the hardw
 
 ## [0.15.0] — 2026-09-29
 
-This release is two pieces of work. quackd reaches an NVIDIA Jetson from the laptop, and the
+This release is two pieces of work. Roboglot reaches an NVIDIA Jetson from the laptop, and the
 SO-101 has a simulator that runs the arm's own backend, so the task files for a trip to the arm
 can be rehearsed at home first.
 
-quackd no longer runs on an NVIDIA Jetson. It runs on the laptop, and `--host` names the board.
-quackd gets four things there. The model on its GPU comes from your own model server, which a
-local preset moves to the board. The board's health in `quackd doctor`, frames from a camera on
-it and YOLO detections computed on its GPU come from `bridge/jetson/quackd_jetson_hostd.py`, one
-small daemon quackd ships for it. 0.13.0 went the other way and put quackd in a container on the
+Roboglot no longer runs on an NVIDIA Jetson. It runs on the laptop, and `--host` names the board.
+Roboglot gets four things there. The model on its GPU comes from your own model server, which a
+local preset moves to the board. The board's health in `roboglot doctor`, frames from a camera on
+it and YOLO detections computed on its GPU come from `bridge/jetson/roboglot_jetson_hostd.py`, one
+small daemon Roboglot ships for it. 0.13.0 went the other way and put Roboglot in a container on the
 board beside a model server. That was the wrong direction. The board on its own is already a
-robot's computer and GPU, and what quackd adds is using it, and its data, from the laptop. The
-arrangement the image existed for, a model server, a robot's control daemon and quackd on one
+robot's computer and GPU, and what Roboglot adds is using it, and its data, from the laptop. The
+arrangement the image existed for, a model server, a robot's control daemon and Roboglot on one
 board, was also the risky one, because a model server can starve a fifty hertz control loop. So
 the container, its workflow and doctor's reading of the machine it runs on are removed, which
 breaks anything that built the image or read doctor's top-level `jetson` key
@@ -6324,8 +6362,8 @@ breaks anything that built the image or read doctor's top-level `jetson` key
 `lerobot:mujoco`, the SO-101's simulator, is the arm's real backend, its own code from the
 connect and its retries to the close, running over a physics model of the arm in MuJoCo: the
 maker's own model from TheRobotStudio's SO-ARM100, fetched at a pinned commit and hash checked,
-and never shipped. `quackd robot twin` makes one of a registered arm, on that arm's own
-calibration, and `quackd preflight` rehearses task files on it seed after seed and refuses
+and never shipped. `roboglot robot twin` makes one of a registered arm, on that arm's own
+calibration, and `roboglot preflight` rehearses task files on it seed after seed and refuses
 anything that is not a simulator before building it. A twin whose rest pose puts the model into
 its table or into itself, as it starts or where the close parks it, is settled clear of them
 before its clock starts and says so, or is refused at connect where a settle cannot clear it,
@@ -6349,18 +6387,18 @@ detector were exercised in-process against fakes. Nothing has compared the simul
 arm, which takes a bench step each for its joint signs and zero offsets, for whether the arm's
 rest move presses the gripper into the table as its goal would in the model, for the gripper on
 a real pen, for the cameras' placement and for the policy loop's rate on the real bus. And the
-arm has not run quackd since 2026-09-23, so the seven bench steps 0.14.0 owes are still owed,
+arm has not run Roboglot since 2026-09-23, so the seven bench steps 0.14.0 owes are still owed,
 and nothing this release changes in `lerobot:real` has run on it either. Known limitations,
 below, lists what only the hardware can settle.
 
 ### Added
 
-- **`--host HOST[:PORT]` names a board quackd uses and never runs on.** `--robot` still names
-  the body, and the flag is the same whatever the body is. It is on `quackd run`, `serve-mcp`,
+- **`--host HOST[:PORT]` names a board Roboglot uses and never runs on.** `--robot` still names
+  the body, and the flag is the same whatever the body is. It is on `roboglot run`, `serve-mcp`,
   `doctor`, `robot add` and `robot edit`, with `--host-token` beside it, and its port is the
-  daemon's, 9874 unless you changed it. `QUACKD_HOST` and `QUACKD_HOST_TOKEN` are the rung
+  daemon's, 9874 unless you changed it. `ROBOGLOT_HOST` and `ROBOGLOT_HOST_TOKEN` are the rung
   below, and `.env.example` lists them. The board is settled once, the same way for every
-  command: the flag, then the host a registered robot stores, then `QUACKD_HOST`. The token
+  command: the flag, then the host a registered robot stores, then `ROBOGLOT_HOST`. The token
   climbs a ladder of its own, so `--host 127.0.0.1` through an ssh tunnel still carries a
   registered robot's token, and a robot's token is sent only when that robot stores a board.
   `--host` takes a machine and not a URL, which is `--base-url`'s job, and refuses anything with
@@ -6369,28 +6407,28 @@ below, lists what only the hardware can settle.
   the daemon for its `/hello` before anything is built, and a board that does not answer refuses
   the run while nothing is powered, with a hint that says how to run without it. A refused
   token is answered with how to change the one that was sent, which for a token the robot keeps
-  is `quackd robot edit NAME --host-token`. A `--host-token` typed where nothing names a board
-  refuses `run` and `serve-mcp` and fails `doctor`'s host section, and `QUACKD_HOST_TOKEN` with
+  is `roboglot robot edit NAME --host-token`. A `--host-token` typed where nothing names a board
+  refuses `run` and `serve-mcp` and fails `doctor`'s host section, and `ROBOGLOT_HOST_TOKEN` with
   no board to go to is left unread. `validate` and `list-verbs` ask no board, and say so for a
   body described without a camera when a board is named for it ([docs/jetson.md](docs/guides/jetson.md)).
 - **A registered robot can keep its board.** `robots.json` gains `host` and `host_token`, set
-  with `quackd robot add` and `robot edit`, and `quackd robot edit NAME --clear host` forgets
+  with `roboglot robot add` and `robot edit`, and `roboglot robot edit NAME --clear host` forgets
   both. A host token needs a host. `robot show` and its `--json` print the host and only whether
   a token is set (`host_token_set`), and `robot list` gains a `host` column when some robot has
   one. Both fields are left out of the file while they are empty, so a registry that never named
   a board stays readable by 0.12 to 0.14, which refuse unknown keys. One robot stored with a host
   makes the whole file unreadable to them, every robot in it included, until this release runs
-  `quackd robot edit NAME --clear host` on it ([docs/registry.md](docs/guides/registry.md)).
-- **The host daemon, `bridge/jetson/quackd_jetson_hostd.py`, is what answers on the board.** It
+  `roboglot robot edit NAME --clear host` on it ([docs/registry.md](docs/guides/registry.md)).
+- **The host daemon, `bridge/jetson/roboglot_jetson_hostd.py`, is what answers on the board.** It
   serves HTTP on port 9874, binds loopback by default, warns when it is bound anywhere else with
-  no token, and checks an optional token in the `X-Quackd-Token` header, in constant time, on
+  no token, and checks an optional token in the `X-Roboglot-Token` header, in constant time, on
   every path. `/hello` says what started, a camera, a detector and whether the board is a Tegra,
   and why anything did not. `/healthz` is the camera's age and the detector's last call.
   `/board` is five of the board's files, three device nodes, the output of `nvpmodel -q` and one
-  `tegrastats` line, as raw text for quackd to parse. `/snapshot.jpg` is the Open Duck camera
+  `tegrastats` line, as raw text for Roboglot to parse. `/snapshot.jpg` is the Open Duck camera
   daemon's contract, staleness and all, and `POST /detect` takes a JPEG and returns YOLO's pixel
   boxes and the device they ran on. It is written for Python 3.10, JetPack 6's system Python,
-  imports nothing from quackd and has no control path. A named token file that is missing or
+  imports nothing from Roboglot and has no control path. A named token file that is missing or
   empty refuses to start rather than running open. A request without the token is refused on
   its headers alone, and what any client can make the board hold is bounded: 16 connections,
   32 KB of headers, 10 seconds for a request to arrive whole and two `POST /detect` bodies at a
@@ -6400,8 +6438,8 @@ below, lists what only the hardware can settle.
   robot's own board it is the process to lose before the control loop or the model server. It
   ships in the sdist and the repository, never in the wheel
   ([bridge/jetson/README.md](bridge/jetson/README.md)).
-- **`quackd doctor --host` reads the board over the network.** With a host named, by the flag,
-  by the robot `--robot` names or by `QUACKD_HOST`, doctor asks the daemon for its hello, its
+- **`roboglot doctor --host` reads the board over the network.** With a host named, by the flag,
+  by the robot `--robot` names or by `ROBOGLOT_HOST`, doctor asks the daemon for its hello, its
   health and its raw board files, and shows a section for the board: the daemon, its camera, its
   detector and the device the detector runs on, its health, and, parsed with the parsers doctor
   already had, the board's model, the L4T release and which JetPack that is, the memory it
@@ -6410,7 +6448,7 @@ below, lists what only the hardware can settle.
   the host rather than on this machine. A daemon on a machine that is not a Tegra is not called
   a Jetson. A host that does not answer fails the report the way a bad `--address` does, and
   nothing the board reports ever changes the verdict.
-- **`quackd doctor` asks an Ollama that answers where its models sit.** From Ollama's own
+- **`roboglot doctor` asks an Ollama that answers where its models sit.** From Ollama's own
   `GET /api/ps`, for each loaded model: all on the GPU, a share of it, or on the CPU. On a Tegra
   a model on the CPU is the generic arm64 build's pitfall, and the row says that the official
   installer picks the JetPack build. None of it touches the verdict.
@@ -6432,7 +6470,7 @@ below, lists what only the hardware can settle.
   keep the colour detector they are tuned for. `--detector color|host|yolo` is on `run` and
   `serve-mcp`. `color` opts out. `host` asks for the board's by name, on a simulator too, and is
   refused before anything connects when no board is named or its daemon cannot detect, with what
-  the daemon said. `yolo` is YOLO in this process, which needs `quackd[yolo]` and had no flag
+  the daemon said. `yolo` is YOLO in this process, which needs `roboglot[yolo]` and had no flag
   before. A detection that fails gives that frame no detections, and the run keeps the detector
   rather than switching to the colour one, which would change what `go_to` steers at with
   nothing in the record saying so. `go_to` and `search_scan` stop the body on the first frame
@@ -6462,12 +6500,12 @@ below, lists what only the hardware can settle.
   limp joint drives to its last goal when torque returns. The model is
   `so101_new_calib_camera.xml` and its 15 meshes from SO-ARM100 at `5f6d2b8`, fetched on the
   first connect one file at a time, about 16 MB, each checked against a recorded sha256, into
-  `~/.quackd/cache`, with `QUACKD_LEROBOT_SIM_ASSETS` pointing at a checkout of your own
-  instead. The scene is quackd's: a table, lights, a cube and a pen laid out by `--seed`, and
+  `~/.roboglot/cache`, with `ROBOGLOT_LEROBOT_SIM_ASSETS` pointing at a checkout of your own
+  instead. The scene is Roboglot's: a table, lights, a cube and a pen laid out by `--seed`, and
   front, top and wrist cameras that the arm's own `opencv://` urls name with `?name=`.
   `--address` names the calibration file, a registered name reads the one LeRobot keeps under
   it, and a bare `--robot lerobot:mujoco` runs a generic arm with the model's own ranges and
-  says so, rather than reading the calibration under `arm-01`, the id quackd gives an arm nobody
+  says so, rather than reading the calibration under `arm-01`, the id Roboglot gives an arm nobody
   named. An address shaped like a serial port is refused before anything opens it. The arm
   starts at its rest pose, limited by the model's stops, and a pose that puts the model into its
   table or into itself by more than a millimetre, as it starts or where the close parks it at the
@@ -6479,12 +6517,12 @@ below, lists what only the hardware can settle.
   released arm fall for a second of sim time, since nobody places it, and then holds or refuses
   as on the desk. The pilot is told it is on a model, the run writes no GIF, and `--live` opens
   MuJoCo's viewer.
-  `quackd doctor --robot` connects a registered one with or without an address and renders once,
-  and it and `quackd robot release` say it is the simulator rather than asking anybody to hold an
+  `roboglot doctor --robot` connects a registered one with or without an address and renders once,
+  and it and `roboglot robot release` say it is the simulator rather than asking anybody to hold an
   arm. Its ✅ rests on a seeded grasp sweep on the maker's model, judged by the world's truth,
   and it never raises `lerobot:real`'s
   ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-simulator-lerobotmujoco)).
-- **`quackd robot twin SOURCE [NAME]` registers a simulator of a registered arm.** NAME is
+- **`roboglot robot twin SOURCE [NAME]` registers a simulator of a registered arm.** NAME is
   `SOURCE-sim` unless given, its address is the calibration file SOURCE's runs read, and it
   copies SOURCE's rest pose, pilot and each camera the simulator renders, naming any it leaves
   out. Its memory is its own. It refuses a NAME that is SOURCE, a source that is not a
@@ -6492,7 +6530,7 @@ below, lists what only the hardware can settle.
   `--force` over anything but a `lerobot:mujoco` robot, so no arm is ever overwritten by its own
   simulator. `--robot arm-01:mujoco` does not parse, and this is the command instead
   ([docs/registry.md](docs/guides/registry.md#a-simulator-of-an-arm)).
-- **`quackd preflight FILES --robot NAME --llm VENDOR[:MODEL]` rehearses task files on a
+- **`roboglot preflight FILES --robot NAME --llm VENDOR[:MODEL]` rehearses task files on a
   simulator.** A robot that is not a simulator is refused before it is built, with a pointer to
   `robot twin`, and so is a pilot nobody named: the scripted one runs only when typed as
   `--llm fake`. Each file is checked as `validate` checks it, the simulator is connected and
@@ -6515,9 +6553,9 @@ below, lists what only the hardware can settle.
   the teardown's stop or at its peak before then, which is kept off the state's extras, so the
   pilot and an MCP client never see it. It is never the frontmatter, which an MCP pilot is
   handed whole ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md#the-sidecar)).
-- **`quackd[lerobot-sim]` installs the simulator.** It is `quackd-lerobot[sim]`, the arm's
+- **`roboglot[lerobot-sim]` installs the simulator.** It is `roboglot-lerobot[sim]`, the arm's
   package with MuJoCo and without LeRobot, so it needs no torch and installs on Python 3.11.
-  `quackd doctor` gains a `lerobot-sim (mujoco)` row, and a row in its transports table saying
+  `roboglot doctor` gains a `lerobot-sim (mujoco)` row, and a row in its transports table saying
   whether the SO-101's model is in the cache at its pin, which it only looks at and never
   fetches.
 - **A nightly job, `lerobot-sim-assets`, fetches the SO-101's model and grasps with it.** It
@@ -6539,26 +6577,26 @@ below, lists what only the hardware can settle.
   when it is given no `--llm`. It is in the README's paragraph on rehearsing at home, the
   simulator's section of `docs/adapters/lerobot.md` and section 16 of `docs/lerobot-first-run.md`.
   It renders TheRobotStudio's model at the commit the simulator pins, Apache-2.0, and commits no
-  mesh. `quackd run` still writes no GIF on this backend.
+  mesh. `roboglot run` still writes no GIF on this backend.
 
 ### Changed
 
 - **A local preset's model server moves to the board.** `--llm ollama`, `vllm`, `llamacpp` and
   `lmstudio` keep their own port and path, and their `localhost` becomes the machine the host
   names. The port in `--host` is the daemon's, and it is dropped. The address ladder is now
-  `--base-url`, then a host named for this run or stored with the robot, then `QUACKD_BASE_URL`,
-  then `OPENAI_BASE_URL`, then `QUACKD_HOST`, then the preset's own address, where it was
+  `--base-url`, then a host named for this run or stored with the robot, then `ROBOGLOT_BASE_URL`,
+  then `OPENAI_BASE_URL`, then `ROBOGLOT_HOST`, then the preset's own address, where it was
   `--base-url`, then the two variables, then the preset. A URL is used as given wherever it
   comes from, and a host only ever moves a preset, so `--llm local` still needs `--base-url`,
-  and with a host alone it is refused with a hint naming that flag. `QUACKD_HOST` sits below the
+  and with a host alone it is refused with a hint naming that flag. `ROBOGLOT_HOST` sits below the
   two URL variables on purpose: it is the board you usually use, and a `.env` line naming a
   model server's exact address must win over it. No vendor and no decision LLM is moved, and
   `--decision-url` already reaches a server on the board
   ([docs/local-llms.md](docs/guides/local-llms.md)).
-- **Breaking. `quackd doctor --json` carries the board under `host`.** The `host` key holds the
+- **Breaking. `roboglot doctor --json` carries the board under `host`.** The `host` key holds the
   hello, the health, the presets asked at the host as `host.servers` and the parsed board as
   `host.jetson`. The top-level `jetson` key 0.13.0 added is gone, and so is its
-  `docker_default_runtime`, which means nothing from a laptop. A malformed `QUACKD_HOST` is a
+  `docker_default_runtime`, which means nothing from a laptop. A malformed `ROBOGLOT_HOST` is a
   row in the report rather than a line of prose, so `--json` still prints one document.
 - **A body that reads one camera names both that read several.** Handed a second
   `--camera-url`, it now says `only lerobot:real and lerobot:mujoco take several`, and a
@@ -6569,13 +6607,13 @@ below, lists what only the hardware can settle.
   simulator now has a backend of the same name and neither. The arm's gets a note of its own:
   a model of the arm on a table, physics nobody measured on an SO-101, and cameras that are
   rendered views, or, on a run with no camera, that whatever is on the table goes unseen.
-- **`quackd doctor`'s transports section is no longer headed as the Microduck's.** It is what
+- **`roboglot doctor`'s transports section is no longer headed as the Microduck's.** It is what
   an installed adapter checks on this machine, a row per `adapter:backend`, and the arm's
   simulator is the row there today.
 - **The arm's heartbeat no longer feeds the gripper trace `pick` watches.** Its reads go
   through a seam of their own, which the simulator's fault plan leaves alone, and a grasp is
   noticed on the verb's own reads. On an arm, `pick` can notice a grasp one poll later than it
-  did, and nothing in quackd loads a policy for `pick` yet.
+  did, and nothing in Roboglot loads a policy for `pick` yet.
 - **A refusal from the arm's backend names the backend.** The real arm's still begin
   `lerobot real:`, and the simulator's begin `lerobot mujoco:`. The `--camera-url` parser takes
   the same label and says, on the simulator, that a camera there is one of the scene's mounts
@@ -6583,21 +6621,21 @@ below, lists what only the hardware can settle.
 - **An MCP session's minutes count from its connect.** `serve-mcp` started the clock
   `max_minutes` reads when it built the server, before the body connected, so the connect's own
   seconds, an arm's retries among them, came out of the minutes the client was given. It starts
-  again once the body has connected, as a `quackd run`'s does. On `lerobot:mujoco`, whose clock
+  again once the body has connected, as a `roboglot run`'s does. On `lerobot:mujoco`, whose clock
   is the wall's until it connects and its world's from then on, that is what lets the minutes
   reach `max_minutes` at all ([docs/mcp.md](docs/guides/mcp.md)).
 
 ### Fixed
 
-- **An exit that skipped the close could drop a LeRobot arm.** quackd built the SO-101 follower
+- **An exit that skipped the close could drop a LeRobot arm.** Roboglot built the SO-101 follower
   with LeRobot's `disable_torque_on_disconnect` at upstream's True, and only `close()` wrote it.
   LeRobot disconnects a robot that is still connected when it is garbage collected, so a second
   Ctrl-C during the end-of-run rest move, or a crash, could end in that disconnect with torque
   off, and the arm fall wherever it stood, while `docs/safety.md` said it was left holding.
   Nobody saw it on an arm: it was found by reading upstream. The follower is now built with the
-  flag False, and every connect asks for False again, so a disconnect quackd did not ask for
+  flag False, and every connect asks for False again, so a disconnect Roboglot did not ask for
   keeps torque. `close()` still writes the flag just before its own disconnect, True at the rest
-  pose or with none recorded and False away from it, and a connect quackd refuses because the
+  pose or with none recorded and False away from it, and a connect Roboglot refuses because the
   arm is not calibrated, has no calibration file or has no motors bus writes True before it
   lets go. Every clean ending lets go where it did, but for one refusal that lets go where it
   used to hold: on a transport connected again after a close that kept torque, a refusal carried
@@ -6615,11 +6653,11 @@ below, lists what only the hardware can settle.
   task's cleanup then cleared the second one's wait rather than its own, so its call never
   returned. The cartoon's transport and microduck's MuJoCo one sleep every task under the
   body's one id, so two MCP calls in flight could reach it. A sleep now clears only its own
-  wait on the way out ([ADR-0016](docs/adr/0016-flock-lockstep-clock.md)).
+  wait on the way out ([ADR-0016](docs/adr/0016-team-lockstep-clock.md)).
 - **A LeRobot arm's heartbeat could stop a run over an answer that had come in time.** Every call
   to the arm has a deadline, and it fired on whatever the event loop's thread found when it got
   round to looking. That thread can be busy for a second or more while a call is out: a pilot's
-  SDK parsing its first response, or quackd encoding a frame. The worker had the arm's answer
+  SDK parsing its first response, or Roboglot encoding a frame. The worker had the arm's answer
   in well under a millisecond, the deadline fired first when the loop resumed, and the answer
   was dropped: `heartbeat failed: the arm did not answer: TimeoutError:`, with nothing after it,
   and the run stopped. Each call is now stamped as it is handed to a worker thread and as it
@@ -6639,15 +6677,15 @@ below, lists what only the hardware can settle.
   to the rest move's reason, which begins with the same words. It says it once.
 - **Every observation a pilot was handed said its step twice**, as `[step 3/40 · step 3/40, llm
   calls 3/40, 0.1/5 min]`, on every body. It reads `[step 3/40 · llm calls 3/40, 0.1/5 min]`,
-  and `quackd log` reads both.
-- **`quackd validate` on Windows listed files in two slash styles.** A pattern written with
+  and `roboglot log` reads both.
+- **`roboglot validate` on Windows listed files in two slash styles.** A pattern written with
   forward slashes, as Git Bash writes one, came back with a backslash wherever the wildcard
-  matched: `docs/examples/lerobot/e00[1-5]/*.duck` listed `docs/examples/lerobot\e001\circle.duck`.
-  Its matches now come back written the way the pattern was, and so do `quackd preflight`'s.
+  matched: `docs/examples/lerobot/e00[1-5]/*.glot` listed `docs/examples/lerobot\e001\circle.glot`.
+  Its matches now come back written the way the pattern was, and so do `roboglot preflight`'s.
 
 ### Removed
 
-- **Breaking. quackd's Jetson container, the workflow that built it and its `.dockerignore`.**
+- **Breaking. Roboglot's Jetson container, the workflow that built it and its `.dockerignore`.**
   The Dockerfile, the compose file and their README went with their directory,
   [`deploy/jetson/`](https://github.com/rokbenko/quackd/tree/v0.13.0/deploy/jetson), linked here
   at the `v0.13.0` tag, where the files still are. The arm64 image workflow,
@@ -6655,7 +6693,7 @@ below, lists what only the hardware can settle.
   consumer was that Dockerfile. `tests/test_deploy_jetson.py` is removed too, and its two tests
   about the page rather than the image, the JetPack table held equal to the one doctor reads and
   the sentence saying no Jetson has run this, moved to `tests/test_docs.py`.
-- **Breaking. `quackd doctor`'s reading of the board it runs on.** It read `/proc/device-tree`,
+- **Breaking. `roboglot doctor`'s reading of the board it runs on.** It read `/proc/device-tree`,
   `/etc/nv_tegra_release`, `/proc/meminfo` and `/proc/swaps` on its own machine, ran `nvpmodel`
   and asked Docker for its default runtime. doctor now opens none of this machine's `/proc` and
   runs no subprocess, and a test that parses `doctor.py` keeps it that way. The board is read
@@ -6668,7 +6706,7 @@ below, lists what only the hardware can settle.
   without, a stubbed OpenCV capture and a one-line stand-in for `tegrastats`, and its source is
   parsed with Python 3.10's grammar without having run under 3.10. The client, doctor, the host
   camera and the host detector were driven against a fake of the protocol on loopback, and one
-  test runs the real daemon against the real client and doctor. That proves quackd reads the
+  test runs the real daemon against the real client and doctor. That proves Roboglot reads the
   protocol as written, and nothing about a board.
 - **What a board would say is unmeasured.** Whether `--camera csi` opens the CSI camera and
   delivers the IMX219's whole field of view. Whether ultralytics on JetPack, with NVIDIA's
@@ -6682,8 +6720,8 @@ below, lists what only the hardware can settle.
   fixtures, which were written from NVIDIA's documentation. What to send back from a board that
   can is listed at the end of [docs/jetson.md](docs/guides/jetson.md#status).
 - **A fleet has no board.** `--host`, or a host stored with any member, is refused for
-  `--robots`, `--flock`, a task file with a `flock:` block and several robots alike, because one
-  host is one camera, one detector and one board's health. `QUACKD_HOST` is not refused, and for
+  `--robots`, `--team`, a task file with a `team:` block and several robots alike, because one
+  host is one camera, one detector and one board's health. `ROBOGLOT_HOST` is not refused, and for
   a fleet it moves only the local presets' model server.
 - **Two waits on a board can outlast a call's timeout.** Every wait on the board's socket has a
   timeout sized to what the call does, and these two are outside it. Looking the board's name up
@@ -6707,7 +6745,7 @@ below, lists what only the hardware can settle.
   3. The gripper on a real pen: what it reads against the band that infers holding. The
      simulator's pen is a capsule in the model's physics and says nothing about that band.
   4. The front and wrist cameras' placement and field of view, which would replace the default
-     mounts. Front and top are quackd's views of the table, and the wrist view is rendered from
+     mounts. Front and top are Roboglot's views of the table, and the wrist view is rendered from
      upstream's printed mount, which may not be where the lab's camera sits.
   5. The policy loop's rate on the real bus. The simulator's clock is lockstep, `--live`
      included, so nothing timed on it is a rate.
@@ -6719,23 +6757,23 @@ below, lists what only the hardware can settle.
 - **What a rehearsal costs is its connects and its cameras, not its physics.** On this
   project's laptop, with integrated graphics, the physics steps several times faster than the
   wall with nothing rendering. Each connect loads the model and renders once, and each camera a
-  run names renders again whenever it is read after the world has moved. `quackd preflight` of
+  run names renders again whenever it is read after the world has moved. `roboglot preflight` of
   `lerobot-lookout`, three connect cycles and three runs, took about 15 seconds there on a twin
   with no camera and under half a minute with two.
-- **A `lerobot:mujoco` robot makes `robots.json` unreadable to quackd 0.14 and earlier**, which
+- **A `lerobot:mujoco` robot makes `robots.json` unreadable to Roboglot 0.14 and earlier**, which
   check every robot against the backends they know, every robot in the file included, until
   each `lerobot:mujoco` robot is removed. `robot twin` says so and names them all.
-  `QUACKD_REGISTRY_DIR` keeps a registry for this release apart from an older install's.
+  `ROBOGLOT_REGISTRY_DIR` keeps a registry for this release apart from an older install's.
 - **An MCP session on the simulator is not seeded.** A run through the agent loop or
-  `quackd preflight` makes one call at a time, and under one seed the simulator does the same
+  `roboglot preflight` makes one call at a time, and under one seed the simulator does the same
   again. An MCP session runs tool calls at once.
 - **The nightly job has not run yet.** GitHub runs a scheduled workflow only from the default
   branch, so until it has, the simulator's ten of ten on the maker's model is the sweep run by
   hand on 2026-09-27.
-- **The arm has not run quackd since 2026-09-23, and six of the seven bodies never have.** What
+- **The arm has not run Roboglot since 2026-09-23, and six of the seven bodies never have.** What
   this release changes in `lerobot:real` has run only in the test suite, against a fake arm or
   the simulator, and never on an SO-101: the follower built to keep torque on a disconnect
-  quackd did not ask for, the refusal that asks for the release itself, the close that reads the
+  Roboglot did not ask for, the refusal that asks for the release itself, the close that reads the
   flag back rather than assuming it, the port closed with torque kept after a connect that
   failed once the arm was energised, the heartbeat's reads kept out of the trace `pick` watches,
   the deadline each call to the arm spends only while the bus is busy, and the close's warning
@@ -6743,16 +6781,16 @@ below, lists what only the hardware can settle.
   0.14.0's: in step 14 of
   [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md), a second Ctrl-C
   during the fold back to the rest pose, with a hand under the arm. The arm should still hold
-  where it stood once quackd has exited, until you hold it and run
-  `quackd robot release arm-01` or cut its power. Nobody has written a bench step for the
+  where it stood once Roboglot has exited, until you hold it and run
+  `roboglot robot release arm-01` or cut its power. Nobody has written a bench step for the
   other six.
 
 ## [0.14.0] — 2026-09-25
 
-quackd has run on a real arm a second time, and this time the arm ran examples prepared for it.
+Roboglot has run on a real arm a second time, and this time the arm ran examples prepared for it.
 On 2026-09-23 the SO-101 that waved on 2026-09-15, registered by name as `arm-01` this time and
 with a rest pose recorded under it, took 26 runs in one afternoon on a build of the code that
-became quackd 0.13.0, from an earlier revision of its catalogue commit and still numbered
+became Roboglot 0.13.0, from an earlier revision of its catalogue commit and still numbered
 0.12.0, on lerobot 0.6.1 and Windows, piloted by `gpt-6-sol` and `gpt-6-astra`. Twenty-three of
 those runs were ten of the task files written for that day's shoot, from nine of its
 experiments, and the other three were goals typed on the line. This release adds the task files
@@ -6781,7 +6819,7 @@ rest pose past the travel is parked at the edge of it and released there, and `s
 goal for a joint that reads past its travel. The verdict has a word for a task that goes
 nowhere, and an arm's own datasheet no longer refuses the answer. A connect that meets a bad
 packet is tried again. `move_joints` takes the time it is given. And a person holding an arm
-can have its torque taken off wherever it stands, with `quackd robot release` or with Enter at
+can have its torque taken off wherever it stands, with `roboglot robot release` or with Enter at
 the end of a run whose rest move missed. None of it has run on an arm. It is exercised against
 a fake arm that clamps goals the way the servo does, against `lerobot:mock` and in the test
 suite, and Known limitations, below, lists the bench steps that would say whether it works.
@@ -6800,9 +6838,9 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   `runs/20260923-112312-e001-circle/`, and each file opens with a comment carrying its first
   command, or, for `e145` and `e152`, which an MCP session loads, how to load it. Every one
   validates against `lerobot:real`, which the page says to check before a session. Ten of them
-  made 23 of that afternoon's 26 runs, on quackd 0.12.0, and the rest have not run on an arm.
+  made 23 of that afternoon's 26 runs, on Roboglot 0.12.0, and the rest have not run on an arm.
   Their budgets are estimates.
-- **`quackd robot release NAME` takes torque off an arm wherever it stands, while you hold
+- **`roboglot robot release NAME` takes torque off an arm wherever it stands, while you hold
   it.** It is for an arm a run left holding itself up away from its fold, which on 2026-09-23
   only the power switch could put down. It warns before anything connects, because connecting
   takes torque off every motor for a moment and the release then lets the arm fall, asks
@@ -6818,7 +6856,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 - **A run whose last rest move missed offers to release the arm into your hands.** At a
   terminal, on a run that is not a dry one, and only over an arm that answered its last read,
   the run says the arm is holding itself up and asks you to hold it and press Enter before it
-  closes. Enter releases it where it stands, through the same door as `quackd robot release`.
+  closes. Enter releases it where it stands, through the same door as `roboglot robot release`.
   Sixty seconds with no answer (`AgentLoop.RELEASE_OFFER_S`), a terminal with no key to read
   or a Ctrl-C leave torque on, exactly as a run without the offer would. A Ctrl-C that lands on
   the release itself is caught, and what the person is told turns on the arm's backend saying
@@ -6827,12 +6865,12 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   as the rest move left it, with whether the arm holds itself up left to the close's own line.
   The close, `run_end` and the summary still happen either way. The exchange is a
   `prompt` row and a new `release` event whose `stage` and `reason` say how it ended. Never on
-  a dry run, an MCP session or a flock member, and never over an arm whose rest move left a
+  a dry run, an MCP session or a team member, and never over an arm whose rest move left a
   call that never came back, a goal write or the hold a stalled move ends with, since that arm
   has not answered ([docs/architecture.md](docs/concepts/architecture.md)).
 - **`mobility` and `manipulator` take `none`, which asks for nothing.** `any` means some kind,
   which an arm bolted to a table fails, so a task that goes nowhere had no word to say so
-  ([docs/duck-spec.md](docs/reference/duck-spec.md),
+  ([docs/glot-spec.md](docs/reference/glot-spec.md),
   [ADR-0032](docs/adr/0032-datasheets-and-the-verdict.md), amended).
 - **The hardware report and the checklist ask what the bench has not answered yet:** whether a
   move given several seconds looked like one motion and arrived when the time was up, and
@@ -6856,7 +6894,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   bench arm is about 20 degrees of `shoulder_lift`. The run says so once, naming the joint,
   where it was recorded and where it parks, and says to calibrate with the arm folded. `doctor`
   adds it as advice with its verdict still green, an MCP session logs it, and
-  `quackd robot rest-pose` warns before it records. A joint that stops short inside its travel
+  `roboglot robot rest-pose` warns before it records. A joint that stops short inside its travel
   is still a miss and still keeps torque on. The manifest carries `extras.rest_pose_clipped`
   when something was clipped, `report_state` explains a reading past the travel in the arm's own
   numbers, and the prompt's travel line says a joint can read past its travel when it was folded
@@ -6901,11 +6939,11 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   under their hands. Now a take-hold says whether it may have left torque on
   (`HandResult.energised`), for every take-hold since the release. One that switched nothing on,
   refused before its torque write or read off on every motor after it, is told at once that
-  quackd did not take hold of the arm and that it is still in their hands, and one refused over
+  Roboglot did not take hold of the arm and that it is still in their hands, and one refused over
   a fold nobody lifted before pressing Enter, whose own read found the whole arm at its rest
   pose with every motor off, is told that the arm is still limp at its rest pose and which joint
   to lift inside its travel. One whose torque write may have taken with nothing read back is
-  told as quackd not being able to confirm whether the arm has torque, with the person asked to
+  told as Roboglot not being able to confirm whether the arm has torque, with the person asked to
   hold it as though it may move or drop and to cut its power to be sure, and one whose read
   found motors on, some or all of them, is told which joints hold and that any it does not name
   is limp, to keep hold of the arm and to cut its power, where one that found some motors on and
@@ -6917,7 +6955,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   already there, and no release is offered. The close says what its own read found, and a read
   speaks for the arm only when the bus carried it after the last torque write. The close used to
   tell anybody left holding the arm that it was limp and nothing held it up, over motors a read
-  had found on and over a torque write nothing read back. The close's lines are: quackd cannot
+  had found on and over a torque write nothing read back. The close's lines are: Roboglot cannot
   tell whether the arm has torque where nothing read the torque write back, the joints that read
   on by name, the arm limp in their hands, let go of for them to place, rather than the rest
   move's shortfall said twice, and, for an arm the placing release let go of at its rest pose
@@ -6931,7 +6969,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 - **`move_joints` takes the time it is asked for.** `duration_s` was how long a move could take
   before it gave up, and every move ran at the step cap whatever it said. A move is now walked
   from where the arm is to its goal across `duration_s`, one target a tick at 10 Hz, and judged
-  once the walk is done. The step cap, 5 degrees a tick unless `QUACKD_LEROBOT_MAX_STEP_DEG`
+  once the walk is done. The step cap, 5 degrees a tick unless `ROBOGLOT_LEROBOT_MAX_STEP_DEG`
   sets another, is the ceiling, so a time too short for the distance still runs at the cap. The
   default is still 5 seconds, which now means a move given no time takes at least five seconds
   where it used to take as long as the cap needed. The only move sent whole is one with nothing
@@ -6947,18 +6985,18 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 - **The line an arm left holding itself up ends on names the ways out, and puts holding it
   first:** `the arm is not at its rest pose (...), so torque was left on and it will not fall
   as it stands: hold it first, because connecting takes torque off every motor for a moment,
-  then run quackd robot release NAME, or quackd doctor --robot NAME to park it, or cut its
+  then run roboglot robot release NAME, or roboglot doctor --robot NAME to park it, or cut its
   power`, with the name the arm was registered under. It used to end
   `hold the arm and cut its power, or run again`. An arm that stopped answering is no longer
-  said to be holding itself up: the close says quackd cannot tell whether it is, and to hold it
-  and cut its power, and `robot list --probe` shortens that to `torque unknown`. `quackd doctor`
+  said to be holding itself up: the close says Roboglot cannot tell whether it is, and to hold it
+  and cut its power, and `robot list --probe` shortens that to `torque unknown`. `roboglot doctor`
   now warns that connecting takes torque off every motor for a moment before it connects an
-  arm, as `quackd robot release` does, because the line sends people to both.
+  arm, as `roboglot robot release` does, because the line sends people to both.
 - **The verdict gate takes an arm's honest answer.** A zero asks for nothing on every number,
   `work_height_m` included. A body that does not move, and has a datasheet, meets
   `indoor_flat` and is refused anything above it with `(it does not move)`. A pilot's own
   sheet is not held against it for a working height its prompt never listed as missing, while
-  the list of bodies that could, the MCP `could` list, a flock role and the coordinator stay
+  the list of bodies that could, the MCP `could` list, a team role and the coordinator stay
   strict. The prompt's `Not published` line tells the pilot to answer `uncertain` and name the
   figure where a task turns on it, rather than decline, and the SO-101's sheet publishes a
   reach of 0.4 m, an estimate from the link lengths in the maker's URDF, and a payload line
@@ -6971,7 +7009,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   doubt, only on something new. On 2026-09-23 a pilot told only that the verbs now ran assessed
   the same doubt again as `infeasible` and ended its run. A run started to go ahead without
   asking anybody tells its pilot exactly that, and names the three ways that happens, `--yes`, a
-  flock's standing answer and a pipe. The hint beside an `infeasible` verdict, where the body's
+  team's standing answer and a pipe. The hint beside an `infeasible` verdict, where the body's
   sheet meets every need but a working height it publishes no band for, now ends by saying the
   body publishes no working height band, so whether it reaches that height is the pilot's
   judgement. In 0.13.0 it said nothing there about the body's own sheet.
@@ -6988,12 +7026,12 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   refused over because each read outside its travel, and `resting` marks such a refusal whose
   own read found the whole arm at its rest pose with every motor off. `let_go_if_any` passes
   its keywords on, and the one wording of the warning that connecting takes torque off is
-  `quackd.adapters.base.CONNECTING_TAKES_TORQUE_OFF`. The core reads six more attributes off a
+  `roboglot.adapters.base.CONNECTING_TAKES_TORQUE_OFF`. The core reads six more attributes off a
   body with `getattr`, so a body without them is unchanged: `stop_skipped` for the joints the
   `stop` verb names as left out of its hold, `connect_notes` for the connect retries a run
   records and `doctor` reports, `set_stop_check` to hear a Ctrl-C while it connects, `in_hand`
   and `refused_hold` for the end-of-run offer and the teardown of a `--by-hand` run, and
-  `rest_pose_note` for the warning `quackd robot rest-pose` prints.
+  `rest_pose_note` for the warning `roboglot robot rest-pose` prints.
 
 ### Fixed
 
@@ -7019,7 +7057,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   and the connect is refused as stopped rather than making another attempt, each of which
   switches torque off every motor and on again. `let_go` and the take-hold pass `num_retry` 5 to
   their torque writes (`TORQUE_RETRIES`, upstream's own disconnect count).
-- **`quackd doctor --robot NAME` probed a registered arm under the default calibration id,
+- **`roboglot doctor --robot NAME` probed a registered arm under the default calibration id,
   `arm-01`, whatever name it was registered under.** It builds the arm under its registered
   name now, as a run does, so it reads that arm's calibration and its lines name it.
 - **A release that never went out was reported as one that did.** `let_go()`, which
@@ -7051,11 +7089,11 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
 - **None of the code this release changes has run on an arm.** These are the bench steps that
   would settle it, in order, with a hand near the power switch, and what to report from each
   ([docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md)):
-  1. `quackd doctor --robot arm-01`: whether the `rest pose` row reads `at it already` for an
+  1. `roboglot doctor --robot arm-01`: whether the `rest pose` row reads `at it already` for an
      arm left folded, or `returned to it` for one that had to move, with the clip note naming
      `shoulder_lift` listed under the table as advice, and whether the shoulder, released at
      the edge of its travel, settles onto its fold without falling from height.
-  2. `quackd robot release arm-01` with the arm parked: the joints it prints, the y/N, and
+  2. `roboglot robot release arm-01` with the arm parked: the joints it prints, the y/N, and
      `torque reads off`.
   3. The `e004-mornings` task, three times, because three of that afternoon's 26 runs failed at
      connect: whether the verdict goes through with no y/N, the wave happens and the connect
@@ -7072,7 +7110,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   6. A run made to miss its rest pose with a hand in the way: whether the Enter offer
      appears, Enter releases, and left alone the arm keeps torque after 60 s.
   7. Separately, and only if you want to: `lerobot-calibrate` with the shoulder folded all the
-     way back, then `quackd robot rest-pose arm-01` again, after which the clip note should be
+     way back, then `roboglot robot rest-pose arm-01` again, after which the clip note should be
      gone. That moves `shoulder_lift`'s zero, so a task or a remembered note that names an
      angle means a different pose afterwards.
 - **What only the arm can say.** Whether a joint released at the edge of its travel settles
@@ -7086,7 +7124,7 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   called stalled. That a retry after a real lost packet connects, and what torque state a
   failed `configure()` leaves the motors in. Whether a real pilot now answers the verdict
   without a y/N.
-- **The SO-101's reach is quackd's arithmetic on the maker's URDF, not a measurement.**
+- **The SO-101's reach is Roboglot's arithmetic on the maker's URDF, not a measurement.**
 - **A connect refusal places a failure by LeRobot's method names:** `_handshake`, the
   calibration check's `is_calibrated` and `read_calibration`, and `configure`,
   `torque_disabled`, `enable_torque` and `disable_torque`. They match the installed 0.6.1 and
@@ -7094,14 +7132,14 @@ suite, and Known limitations, below, lists the bench steps that would say whethe
   longer be placed, and the refusal falls back to the warning that some motors may be left with
   torque on, which is the safe reading.
 - **On Windows a standard input redirected from `NUL` counts as a terminal**, so
-  `quackd robot release` fed from `NUL` asks its question and aborts rather than refusing for
+  `roboglot robot release` fed from `NUL` asks its question and aborts rather than refusing for
   want of one. Nothing connects either way ([docs/registry.md](docs/guides/registry.md)).
 - **Six of the seven bodies have still never run on hardware, and the one that has last ran
   0.12.0, before any of this.**
 
 ## [0.13.0] — 2026-09-23
 
-quackd has a path onto an NVIDIA Jetson now, and a Jetson is a host rather than a robot. The
+Roboglot has a path onto an NVIDIA Jetson now, and a Jetson is a host rather than a robot. The
 model that decides what a robot should do next and the process that turns that decision into a
 verb both fit on one small computer, so a goal in plain language never has to leave the room.
 Nothing here has been run on a Jetson by this project, and [docs/jetson.md](docs/guides/jetson.md)
@@ -7111,10 +7149,10 @@ section begins.
 The other half is the model catalogue, which caught up with the day before. Anthropic shipped
 Claude Opus 5.5 and OpenAI shipped GPT-6 Sol and Luna on 2026-09-22, and a bare
 `--llm anthropic` and `--llm openai` now run Opus 5.5 and GPT-6 Sol. Moving the Claude default
-found that Opus 5.5 refuses two things: the forced tool call quackd sent every Claude model,
+found that Opus 5.5 refuses two things: the forced tool call Roboglot sent every Claude model,
 and, on accounts created on or after 2026-08-31, a replayed thinking block whose earlier history
-changed, which quackd's dropping of older camera frames did from the third call on. Claude Fable
-5.1, a row since 0.9, does both and has failed every quackd turn since. Reading all eleven
+changed, which Roboglot's dropping of older camera frames did from the third call on. Claude Fable
+5.1, a row since 0.9, does both and has failed every Roboglot turn since. Reading all eleven
 vendors' pages again the same day found three more request forms a model does not take. Each fix
 is proven against the request shape the vendor documents, and against the error text where the
 vendor prints one, and none against a live model: Known limitations, below, says so again where
@@ -7122,44 +7160,44 @@ it counts.
 
 ### Added
 
-- **quackd has a path onto an NVIDIA Jetson, and a Jetson is a host rather than a body.**
-  There is no adapter, no extra and no `--robot jetson:...`: the board runs the quackd
+- **Roboglot has a path onto an NVIDIA Jetson, and a Jetson is a host rather than a body.**
+  There is no adapter, no extra and no `--robot jetson:...`: the board runs the Roboglot
   process the way a laptop does, and everything interesting is about what runs beside it.
-  [`deploy/jetson/`](https://github.com/rokbenko/quackd/tree/v0.13.0/deploy/jetson) is a Dockerfile that builds quackd from the
+  [`deploy/jetson/`](https://github.com/rokbenko/quackd/tree/v0.13.0/deploy/jetson) is a Dockerfile that builds Roboglot from the
   checkout you build it in, with its third-party Python packages pinned by `uv.lock`, onto a
   plain Debian Python image with no CUDA in it at all, and a compose file that gives the GPU
-  to Ollama and nothing to quackd. The quackd service is behind a profile with
-  `restart: "no"`, because `quackd run` is a command that declares a verdict and exits rather
+  to Ollama and nothing to Roboglot. The Roboglot service is behind a profile with
+  `restart: "no"`, because `roboglot run` is a command that declares a verdict and exits rather
   than a service to keep alive. The arrangement the page is really about is a ToddlerBot's own
-  Jetson holding its control daemon, a model and quackd between them, three processes on one
+  Jetson holding its control daemon, a model and Roboglot between them, three processes on one
   board talking over loopback ([docs/jetson.md](docs/guides/jetson.md),
   [ADR-0044](docs/adr/0044-a-jetson-is-a-host-not-a-body.md)).
-- **`quackd doctor` reads the board it is running on, when that board is a Tegra.** The
+- **`roboglot doctor` reads the board it is running on, when that board is a Tegra.** The
   model, the L4T release and which JetPack it is, the memory the CPU and the GPU are
   sharing, whether the only swap is zram, the GPU device node, the power mode and Docker's
   default runtime. All of it informational: none of it can change the exit code, because
-  quackd runs perfectly well on a board with every one of those wrong. It looks for a Tegra in
+  Roboglot runs perfectly well on a board with every one of those wrong. It looks for a Tegra in
   `/proc/device-tree/compatible` and in `/etc/nv_tegra_release`, and it is meant to be run on
   the board itself. Inside a container it will most likely find neither:
   `/proc/device-tree` points into `/sys/firmware`, which Docker masks unless the container is
   privileged or started with `--security-opt systempaths=unconfined`, and a plain Python image
   has no `/etc/nv_tegra_release`.
 - **The image is built and then run on arm64**, which is the first aarch64 Linux run of
-  quackd this repository records: where the contributor transcripts say anything they put
-  an aarch64 model server behind a quackd running on something else, and the largest
+  Roboglot this repository records: where the contributor transcripts say anything they put
+  an aarch64 model server behind a Roboglot running on something else, and the largest
   measurement on that same board publishes none. It was done under emulation on the
   machine that wrote it. `jetson-image.yml` is set up to repeat it on a native arm64
-  runner, running `import cv2`, `quackd doctor --json` and a whole `find-and-kick` task
+  runner, running `import cv2`, `roboglot doctor --json` and a whole `find-and-kick` task
   inside the result, on the scripted pilot, because a runner has no key and no model server.
   It first ran on 2026-09-23, on the commit that merged these files, and was green: the build,
   `import cv2`, the `doctor --json` assertions and the task. It publishes nothing, because an
   image with a pull command beside it is a promise that somebody ran it on the hardware it is
   named after, and nothing here has been run on a Jetson by this project.
 - **The container is a new surface in [SECURITY.md](SECURITY.md).** Both services use host
-  networking, so quackd is on the board's loopback rather than isolated from it. Ollama is
+  networking, so Roboglot is on the board's loopback rather than isolated from it. Ollama is
   pinned to `127.0.0.1:11434`, because its image's own default is every interface, and under
   host networking that would put a server with no authentication on whatever network the
-  board is on. The compose file mounts `~/.quackd` into the quackd service, which hands it the
+  board is on. The compose file mounts `~/.roboglot` into the Roboglot service, which hands it the
   plain-text tokens in `robots.json` and every robot's memory file, the same access a native
   install has, and runs that service as uid 1000; the image itself sets no user, so a bare
   `docker run` is root. The new `.dockerignore` at the repository root is not housekeeping:
@@ -7168,27 +7206,27 @@ it counts.
 - **A turn a refusal fallback answered says which model answered it.** Server-side fallbacks
   are on by default for Claude: a turn the requested model declines is re-run on another one
   inside the same call. Nothing recorded that. The `llm` line the agent loop writes to
-  `transcript.jsonl`, in a solo run and in each member of a pilot flock, now carries
+  `transcript.jsonl`, in a solo run and in each member of a pilot team, now carries
   `served_by`, the model that took the turn, on exactly the turns a fallback took and on no
-  others, and the log prints it at the end of that turn's tokens line. A coordinator flock's
+  others, and the log prints it at the end of that turn's tokens line. A coordinator team's
   one planner call does not record it yet. The cost beside it is still priced at the rate of
   the model that was asked for.
 
 ### Changed
 
-- **`quackd doctor` names the architecture on every machine, and its JSON has a `jetson` key
+- **`roboglot doctor` names the architecture on every machine, and its JSON has a `jetson` key
   everywhere.** The header line and the `platform` field of `--json` now end with
   `platform.machine()`, where they used to stop at the operating system's release, so this
   Windows laptop's `Windows 10` is now `Windows 10 AMD64`, and the arm64 image's ends in
   `aarch64`. `--json` also carries a top-level `jetson` key, `null` unless the device tree
   names a Tegra or `/etc/nv_tegra_release` exists. A script that compared `platform` with what
   0.12.0 printed will stop matching.
-- **The ToddlerBot hardware checklist covers quackd on the robot's own board.** It now says to
+- **The ToddlerBot hardware checklist covers Roboglot on the robot's own board.** It now says to
   drive the robot from a laptop the first time, with nothing else running on the Jetson,
   because a model server saturating that board is the load that can starve the fifty hertz
   loop, and to try the crowded board only once the steps have passed. Step 11 tests the
   deadman by pulling the network cable mid-move, and over loopback there is no cable, so it
-  now says to `kill -STOP` quackd's process instead, which stops the keepalives without
+  now says to `kill -STOP` Roboglot's process instead, which stops the keepalives without
   closing the socket, then kill it outright and start a fresh run once the robot has settled.
   Never resume it with `kill -CONT`: `bot.keepalive` feeds the deadman on its own and the
   daemon clears the trip on the first keepalive it sees, so resuming hands the body straight
@@ -7223,18 +7261,18 @@ it counts.
   which is what `None` charges. No run so far is affected, because none of those vendors
   reports a written token, and the rule is now written beside the others in `catalogue.py`.
 - **Meta is asked for one call per turn.** Meta's tool-calling page documents
-  `parallel_tool_calls` and defaults it to allowing several calls at once. quackd now sends it
+  `parallel_tool_calls` and defaults it to allowing several calls at once. Roboglot now sends it
   as `false`, as it already did for OpenAI, Grok and Mistral, where it had sent nothing. The
   loop took the first call when several came, so what changes is that the others are no
   longer generated and paid for.
 
 ### Fixed
 
-- **Claude Fable 5.1 answered every quackd turn with a 400 since 0.9, and Claude Opus 5.5
+- **Claude Fable 5.1 answered every Roboglot turn with a 400 since 0.9, and Claude Opus 5.5
   would have too.** Two things, both in Anthropic's documentation. Both models refuse a
   forced tool call, `tool_choice: type "tool" and "any" are not supported for this model.`,
-  and quackd asked every Claude model for its one call per turn that way. And both bind each
-  replayed thinking block to everything before it, while quackd drops the camera frames of
+  and Roboglot asked every Claude model for its one call per turn that way. And both bind each
+  replayed thinking block to everything before it, while Roboglot drops the camera frames of
   older turns from every request, which edits an earlier message from the third call on and
   makes that replayed block a 400 for accounts created on or after 2026-08-31. The catalogue
   now marks both models. They are asked with `auto`, still one call per turn, and they ask the
@@ -7247,12 +7285,12 @@ it counts.
   does the same now; it replays no thinking blocks, so the second fix is the CLI's alone. What
   `auto` changes is that a turn can come back as prose with no call in it: the CLI re-prompts
   once and then ends the run, as it always has for a turn like that, and the browser demo ends
-  the run at once, as it does for every vendor it can only ask. A coordinator flock's one
+  the run at once, as it does for every vendor it can only ask. A coordinator team's one
   planner call is asked the same way, and a prose reply there falls back to the task's own
   defaults, with a `planner fallback:` note and `fallback: true` on the `plan` line, as a reply
   with no plan in it always has.
 - **Claude Haiku 4.5, Sonnet 4.5 and Opus 4.5 failed their first call on every run.** They
-  take only the older extended thinking, and answer quackd's adaptive request with
+  take only the older extended thinking, and answer Roboglot's adaptive request with
   `adaptive thinking is not supported on this model`. The retry that exists for exactly those
   models matched a sentence opening with the word `thinking`, and this one does not, so it
   never fired. It matches the sentence Anthropic's errors page gives now, and those three go
@@ -7264,8 +7302,8 @@ it counts.
 - **DeepSeek was asked in a form it refuses.** DeepSeek thinks by default. Its request
   reference says "`required` and named tool choices are not supported in thinking mode; the
   API returns a `400` error", and its thinking-mode guide adds that a request carrying tools
-  must send every earlier turn's reasoning back or be a 400 too, which quackd never did.
-  quackd sent `required`. It now turns thinking off, in the CLI and in the browser demo, and
+  must send every earlier turn's reasoning back or be a 400 too, which Roboglot never did.
+  Roboglot sent `required`. It now turns thinking off, in the CLI and in the browser demo, and
   asks with `required` as it did before, which non-thinking mode accepts. `--extra-body` can
   still turn thinking on, and brings both refusals back with it.
 - **Catalogue comments the vendors' own pages contradicted, and one missed price.** Gemini
@@ -7277,24 +7315,24 @@ it counts.
   Leanstral as a model Mistral did not train. The docstrings of `kimi.py` and `meta.py` said
   those vendors document no `tool_choice` values, and both now do. And four places said
   Mistral answers OpenAI's `required` with a 400, which Mistral's own spec, listing
-  `required` beside `any`, does not support; quackd still sends `any`, the value its guide
+  `required` beside `any`, does not support; Roboglot still sends `any`, the value its guide
   documents.
 
 ### Known limitations
 
 - **Nothing here has been run on a Jetson by this project.** The native arm64 runner has no
-  GPU and is not a Tegra, so what it proves is that the image builds and that quackd runs on
+  GPU and is not a Tegra, so what it proves is that the image builds and that Roboglot runs on
   aarch64 Linux. Ollama on an Orin's GPU, the NVIDIA container runtime, `nvpmodel`, how much
-  memory a model takes beside quackd, and what the doctor section reads off a real board's
+  memory a model takes beside Roboglot, and what the doctor section reads off a real board's
   files are all unproven. [docs/jetson.md](docs/guides/jetson.md) says what to send back from a board
-  that can: the `jetson` block of `quackd doctor --json`, a run's `terminal.txt` and
+  that can: the `jetson` block of `roboglot doctor --json`, a run's `terminal.txt` and
   `transcript.jsonl`, and one `tegrastats` line taken while the model was answering.
 
-- **The Jetson section of `quackd doctor` has never read a real board.** What it reads is tested
+- **The Jetson section of `roboglot doctor` has never read a real board.** What it reads is tested
   against a board made of files in `tests/test_doctor_and_stub.py`, with `nvpmodel` and
   `docker` answered by stubs, and the arm64 job checks only the other half, that `jetson` is
   `null` on a runner that is not a Tegra. That job gates nothing and does not rerun on a change
-  to `quackd/` alone.
+  to `roboglot/` alone.
 
 - **Nobody has measured what a model server does to a ToddlerBot's fifty hertz control loop on
   the same Jetson, and on that body a starved loop is a fall.** A model server saturating the
@@ -7305,16 +7343,16 @@ it counts.
   the model server off the cores the loop runs on
   ([ADR-0044](docs/adr/0044-a-jetson-is-a-host-not-a-body.md)).
 
-- **A `SIGTERM` ends a run without sending the robot a `stop`, and it always has.** quackd
+- **A `SIGTERM` ends a run without sending the robot a `stop`, and it always has.** Roboglot
   installs a handler for SIGINT and for no other signal. A run that ends by itself, or by
   Ctrl-C, goes through the loop's `finally`, which sends the `stop`, and a signal other than
   SIGINT skips it: a bare `kill`, a systemd unit's default stop and a `docker compose stop`
   against a service that names no `stop_signal` all end a run that way. Outside a container
-  the process dies where it is. Inside one, where quackd is PID 1 with no handler, the signal
+  the process dies where it is. Inside one, where Roboglot is PID 1 with no handler, the signal
   is ignored until Docker's SIGKILL arrives. That is why `deploy/jetson/compose.yml` sets
-  `stop_signal: SIGINT`, and anything else you wrap `quackd run` in should send SIGINT too.
+  `stop_signal: SIGINT`, and anything else you wrap `roboglot run` in should send SIGINT too.
   Until this release [docs/safety.md](docs/concepts/safety.md) said the `finally` always sends the
-  `stop`, and it now says which ways of stopping quackd skip it.
+  `stop`, and it now says which ways of stopping Roboglot skip it.
 
 - **No provider fix in this release has reached a live model.** There is no Anthropic or
   DeepSeek key on the machine that made them, and the one live check tried, a bare `--llm
@@ -7364,7 +7402,7 @@ it counts.
 - **`terminal.txt` is most of the screen and not all of it, and it is redacted by name only.**
   Unchanged since 0.11.
 
-- **No pilot flock has been driven by a real model, or by a real robot.** Unchanged since 0.9.
+- **No pilot team has been driven by a real model, or by a real robot.** Unchanged since 0.9.
 
 - **A run directory from 0.10 or 0.11 that used the stepper replays with no stepper lines.**
   Unchanged since 0.12.
@@ -7373,7 +7411,7 @@ it counts.
 
 Jev turned out to be the first of many. In the week after it launched, thirty-odd projects
 shipped models that answer the same typed questions over the same wire format, most of them
-open and several small enough to run on a laptop, and quackd had spelled one vendor's name into
+open and several small enough to run on a laptop, and Roboglot had spelled one vendor's name into
 a flag, an extra, three variables, two transcript kinds, a module and a 600-line page. This
 release names the thing rather than the vendor.
 
@@ -7387,15 +7425,15 @@ allowed to do. Naming one defaults the mode to `on`, so the common case is still
 
 Jev is a preset, and so are Kev, Von, OpenJev, OpenDecision and Laya. Any other server that
 speaks `POST /v1/systemone` is `--decision-llm local --decision-url`, and a decision LLM with a
-Python API of its own is a plugin under the `quackd.decision_llms` entry point group. Adding a
-wire-compatible one to quackd itself is a row of data. What has not changed at all is the part
+Python API of its own is a plugin under the `roboglot.decision_llms` entry point group. Adding a
+wire-compatible one to Roboglot itself is a row of data. What has not changed at all is the part
 that matters near a robot: which turns are a choice, what an answer has to clear before it
 moves a servo, and the rule that a stepper may never record a verdict, declare an outcome or
-end a run. That is quackd's half and it does not move with the vendor
+end a run. That is Roboglot's half and it does not move with the vendor
 ([ADR-0043](docs/adr/0043-decision-llms-are-a-wire-format-and-a-data-row.md)).
 
 Two honest notes, because the rest of this is a robot. Two of the four confidence floors are
-numbers TypeSafe publish and two are quackd's own, all four shaped around Jev, and every
+numbers TypeSafe publish and two are Roboglot's own, all four shaped around Jev, and every
 other preset inherits every one of them unmeasured while computing confidence by its own
 formula. And nothing here has been run against a real robot: the client is tested
 against a stub. `--decision-mode shadow` asks a decision LLM every turn, records what it would
@@ -7403,10 +7441,10 @@ have chosen beside what the model did, and changes nothing about the run. It is 
 changes, and `--decision-mode on` says so, loudly, every time you use it.
 
 The old spellings are gone rather than deprecated, and that is a deliberate departure from how
-0.11 retired `quackd trace`. Those spellings were three releases old and in people's scripts.
-These are three days old, `quackd record` pinned the stepper off so no recording in this
+0.11 retired `roboglot trace`. Those spellings were three releases old and in people's scripts.
+These are three days old, `roboglot record` pinned the stepper off so no recording in this
 repository carries them, and [ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)
-already said a transcript kind the renderer does not know is drawn as nothing. So `quackd log`
+already said a transcript kind the renderer does not know is drawn as nothing. So `roboglot log`
 on a run directory from 0.10 or 0.11 that used the stepper prints no stepper lines at all, still
 prints `from jev` on the verbs it chose, and shows no stepper seconds or cost in its counters,
 because it is now looking for a `decision` block. The run directory itself is untouched; only
@@ -7419,7 +7457,7 @@ the reading of it is.
   `openjev`
   (DiffusionGemma behind vLLM or MLX), `opendecision` (a zero-shot encoder, no GPU),
   `local` (anything else that speaks the format, with `--decision-url`), and `laya`, which runs
-  inside the quackd process with no server and no key at all -- the one of the six that is a
+  inside the Roboglot process with no server and no key at all -- the one of the six that is a
   row plus a module, because a checkpoint in this process is not an HTTP call and `laya.py` is
   the proof that the seam is the protocol rather than the transport. A row carries whatever that
   project actually fixes, which for four of them is an address and a model id and for the
@@ -7428,76 +7466,76 @@ the reading of it is.
   carry one it is not bookkeeping: OpenJev refuses a pinned Jev version with a 400, and Laya's
   plain name is an alias for its English checkpoint rather than its decision-tuned one, so a
   shared default would have been wrong for both on every request.
-- **`quackd[decision]` and `quackd[laya]`.** The first installs the System One protocol client,
+- **`roboglot[decision]` and `roboglot[laya]`.** The first installs the System One protocol client,
   which is one wheel for every server above; the second installs the one that runs in-process
-  and pulls torch with it. Neither is in `quackd[all]`, for the same reason `quackd[jev]` never
+  and pulls torch with it. Neither is in `roboglot[all]`, for the same reason `roboglot[jev]` never
   was: a decision LLM generates nothing and cannot pilot a robot.
-- **A plugin group, `quackd.decision_llms`.** A module exposing `make(spec, *, url, model)` and
+- **A plugin group, `roboglot.decision_llms`.** A module exposing `make(spec, *, url, model)` and
   describing itself with `SUMMARY`, `MODEL`, `URL`, `KEY_ENV` and `EXTRA` is found the way an
-  adapter is found, named in `--decision-llm`'s completions and listed by `quackd doctor`,
-  without quackd having been rebuilt. A name quackd ships always wins over a plugin that took
+  adapter is found, named in `--decision-llm`'s completions and listed by `roboglot doctor`,
+  without Roboglot having been rebuilt. A name Roboglot ships always wins over a plugin that took
   it.
 - **The record says which decision LLM answered, not only which model id.** `run_start` carries
   `decision_llm` with its name, model and address beside `decision_price`, and the summary's
   block carries `llm` and `url`. `kev-latest` on two machines is two different servers, and a
   transcript that recorded only the id could not tell a reader which one it had.
-- **`quackd doctor` lists every preset** with its extra, its key variable, its model and where
+- **`roboglot doctor` lists every preset** with its extra, its key variable, its model and where
   it listens, so "could this run here?" is answerable without starting a task. It does not
   probe any of them, the way it does not probe a cloud vendor.
 
 ### Changed
 
 - **Breaking. `--provider` and `--model` are one flag, `--llm VENDOR[:MODEL]`** (short `-l`).
-  `QUACKD_MODEL` is `QUACKD_LLM` and now holds a whole spec. `quackd list-models` takes
-  `--llm`, and `quackd robot add` and `robot edit` take `--llm` in place of the pair, with
+  `ROBOGLOT_MODEL` is `ROBOGLOT_LLM` and now holds a whole spec. `roboglot list-models` takes
+  `--llm`, and `roboglot robot add` and `robot edit` take `--llm` in place of the pair, with
   `--clear llm` where `--clear provider` and `--clear model` used to be. A refusal now names
   where the spec came from, so a bad value in a `.env` three directories up reads differently
   from one still on your screen.
-- **Breaking. `~/.quackd/robots.json` stores one `llm` key** instead of `provider` and `model`.
+- **Breaking. `~/.roboglot/robots.json` stores one `llm` key** instead of `provider` and `model`.
   A file written by 0.11 or earlier is folded on read -- `provider` alone is the vendor, the
   pair together is the spec, and a `model` with no `provider` beside it names no pilot, because
   under the old flags such an entry did nothing unless a `--provider` was typed beside it --
   and the next write stores the new shape, so
-  nothing needs migrating by hand. `quackd robot show --json` emits `llm` where it emitted the
+  nothing needs migrating by hand. `roboglot robot show --json` emits `llm` where it emitted the
   pair. Reading is deliberately lenient: a spec the catalogue can no longer resolve is kept as
   written, and the run that names that robot is what refuses, because refusing on read would
-  take `quackd robot edit` down with everything else and leave no way to mend the file.
-  `quackd robot add` and `robot edit` check in full, which is where a typo is actually made.
+  take `roboglot robot edit` down with everything else and leave no way to mend the file.
+  `roboglot robot add` and `robot edit` check in full, which is where a typo is actually made.
 - **Breaking. There is no longer any way to mix a vendor from one place with a model from
   another.** A robot registered against OpenAI and run with `--llm gemini` gets Gemini's
   default, full stop. The guard that used to carry a model across vendors, and the refusals it
   produced, are both gone: a spec carries both halves.
 - **Breaking. `--jev off|shadow|on` is `--decision-llm`, `--decision-url` and
-  `--decision-mode`.** A script passing `--jev` gets Typer's "no such option". `QUACKD_JEV` is
-  `QUACKD_DECISION_LLM` plus `QUACKD_DECISION_MODE`, `QUACKD_JEV_PRICE` is
-  `QUACKD_DECISION_PRICE`, and `QUACKD_LIVE_JEV` is `QUACKD_LIVE_DECISION`. None of the old
-  names is read. `QUACKD_JEV` is the one that says so, because it is the one that used to
+  `--decision-mode`.** A script passing `--jev` gets Typer's "no such option". `ROBOGLOT_JEV` is
+  `ROBOGLOT_DECISION_LLM` plus `ROBOGLOT_DECISION_MODE`, `ROBOGLOT_JEV_PRICE` is
+  `ROBOGLOT_DECISION_PRICE`, and `ROBOGLOT_LIVE_JEV` is `ROBOGLOT_LIVE_DECISION`. None of the old
+  names is read. `ROBOGLOT_JEV` is the one that says so, because it is the one that used to
   switch a stepper on and silence there would leave a run quietly not doing what a `.env` line
   asked for; the other three go without a word. Grep your `.env` files and your CI for
-  `QUACKD_JEV`, and for `QUACKD_LIVE_JEV` separately, which that string does not match.
-  `TYPESAFE_BASE_URL` is not read by quackd, and was not read by 0.11 either: an address is
+  `ROBOGLOT_JEV`, and for `ROBOGLOT_LIVE_JEV` separately, which that string does not match.
+  `TYPESAFE_BASE_URL` is not read by Roboglot, and was not read by 0.11 either: an address is
   `--decision-url` and belongs to every row rather than to one vendor, and that variable has
   always belonged to the SDK, which still reads it for the hosted row. `TYPESAFE_DEFAULT_MODEL` is still
   honoured, for `jev` alone, as the fallback when the spec names no model, but the spec is the
   way to say it: `--decision-llm jev:jev-latest` is a choice the record can show somebody
   made.
-- **Breaking. `quackd[jev]` is `quackd[decision]`.**
+- **Breaking. `roboglot[jev]` is `roboglot[decision]`.**
 - **Breaking. The record.** The transcript kinds `jev` and `jev_shadow` are `decision` and
   `decision_shadow`; `jev_choice`, `jev_confidence`, `jev_gate`, `jev_latency_s` and
   `jev_cost_usd` are `decision_*`; `run_start.jev_price` is `decision_price`; the `jev` block in
   `summary.json` is `decision`; `verb_start.source` says `decision`; and a stepper-authored tool
   call's id starts `decision-`. Anything parsing these has to change today. On screen the gutter
   says `decide`, `decide?` and `decide=`, and a verb it chose says `from decision`.
-- **Breaking. `quackd/agent/jev.py` is the package `quackd/agent/decision/`**, `RunConfig.jev`
+- **Breaking. `roboglot/agent/jev.py` is the package `roboglot/agent/decision/`**, `RunConfig.jev`
   is `RunConfig.decision` with `RunConfig.decision_llm` and `RunConfig.decision_price` beside
   it, `RunResult.jev_calls` is `decision_calls`, and `JevMode` is `DecisionMode`. The component
-  is still called a stepper, because that is what quackd's half of this is.
-- **A server you run is costed at nothing, explicitly.** Not `None`, which quackd reserves for
-  "there is a rate and nobody here knows it", but the self-hosted `$0` the rest of quackd
+  is still called a stepper, because that is what Roboglot's half of this is.
+- **A server you run is costed at nothing, explicitly.** Not `None`, which Roboglot reserves for
+  "there is a rate and nobody here knows it", but the self-hosted `$0` the rest of Roboglot
   already prices a local model at. Jev is the only preset with a published rate.
-  `QUACKD_DECISION_PRICE` is how you say otherwise for a paid endpoint behind `local`.
+  `ROBOGLOT_DECISION_PRICE` is how you say otherwise for a paid endpoint behind `local`.
 - **A decision LLM's address is redacted where the run records it.** It can carry a password or
-  a credential-shaped query parameter and it can arrive from `QUACKD_DECISION_URL`, which no
+  a credential-shaped query parameter and it can arrive from `ROBOGLOT_DECISION_URL`, which no
   amount of argv redaction reaches, so it is written through the same redaction `--base-url`
   already gets, at the one place that holds it.
 - **`docs/jev.md` is `docs/decision-llms.md`.** The 0.11.0 README on PyPI links to the old path
@@ -7507,7 +7545,7 @@ the reading of it is.
   turn is decided and the presets table, and that table now links a page per row. The seven
   per-preset sections moved out to `docs/decision-llms/<name>.md`, one each in the shape of the
   robot pages under `docs/adapters/`: the catalogue row it has to agree with, what was read
-  from that project's README and source on 2026-09-22 and where, what quackd assumes about it
+  from that project's README and source on 2026-09-22 and where, what Roboglot assumes about it
   and what it does about each assumption, and the line **Nothing here has ever answered a real
   robot.** until one of them has. A test reads every row back off its page, so a table cell and a catalogue field
   cannot drift apart again. The hub's own path did not move, so nothing that links it, the PyPI
@@ -7523,10 +7561,10 @@ the reading of it is.
   a document.** The line `--decision-mode on` prints on every run said "The confidence floors
   are Jev's published numbers", which is the first entry in the test's own list of forbidden
   phrasings, word for word. It survived the correction because that guard read the markdown,
-  `stepper.py` and two ADRs, and never opened `quackd/cli.py`; the intro to this very note
+  `stepper.py` and two ADRs, and never opened `roboglot/cli.py`; the intro to this very note
   points a reader at that warning as the place the correction is made loudly. Two things
   changed rather than one. The sentence now says which two floors are published and which two
-  are quackd's own. And the guard reads every file under `quackd/` and normalises before it
+  are Roboglot's own. And the guard reads every file under `roboglot/` and normalises before it
   searches: a warning this long is split across adjacent string literals in the source, so the
   sentence carries a quote, a newline and an indent in the middle of itself and matched
   nothing even once the file was in scope. Markdown wraps prose for the same reason, so the
@@ -7553,13 +7591,13 @@ the reading of it is.
   not held past the turn. A turn that runs out says how long it waited, because a bare
   `TimeoutError` stringifies to nothing.
 - **A verb the task file gated on a person answered to the wrong floor.** `Executor.
-  needs_confirm` has always read the `.duck`'s own `verbs.confirm` as well as the manifest's
+  needs_confirm` has always read the `.glot`'s own `verbs.confirm` as well as the manifest's
   safety class, and `verb_class` read only the manifest, so a verb its author gated cleared
   the 0.85 motion floor where the executor would have stopped and asked. Under `--yes` nothing
   else would have noticed. The contract's list reaches the floors now, with `stop` exempt
   exactly as the executor exempts it.
-- **The streak backstop could not fire on a short duck.** `MAX_IN_A_ROW` is eight and
-  `hello-world` allows five steps, so on a duck whose whole budget is smaller than the constant
+- **The streak backstop could not fire on a short task.** `MAX_IN_A_ROW` is eight and
+  `hello-world` allows five steps, so on a task whose whole budget is smaller than the constant
   the streak was unreachable and the model could be consulted once, or not at all, before the
   run ended on `max_steps` -- which is the failure that constant's own docstring says it
   prevents. The limit that holds is now that number or half the run's budget, whichever is
@@ -7585,16 +7623,16 @@ the reading of it is.
   `openjev` was missing the `--ipc=host` vLLM needs and the Hugging Face cache mount, without
   which every container restart downloads about 18 GB again, and it carried its MLX
   alternative inside the same string, so the whole cell was not a command. `laya` carried its
-  own parenthetical the same way and left `quackd[laya]` unquoted, which zsh eats as a glob
+  own parenthetical the same way and left `roboglot[laya]` unquoted, which zsh eats as a glob
   before pip sees it. Each row now holds one command and nothing else, and the note that used
   to be wedged into it is on the page.
 - **`von serve` was handed to readers with its own default bind.** Its `--host` defaults to
   `0.0.0.0`, which is every interface on the machine, and it authenticates nothing unless
   `VON_API_KEY` is set. The row now says `--host 127.0.0.1`, which is where its page already
   told you to put it.
-- **The confidence floors were credited to TypeSafe, and two of the four are quackd's own.**
+- **The confidence floors were credited to TypeSafe, and two of the four are Roboglot's own.**
   Their confidence page publishes 0.5 and 0.9, and both are here as the brake and the
-  confirm-gated floors. The read floor at 0.60 and the motion floor at 0.85 are quackd's,
+  confirm-gated floors. The read floor at 0.60 and the motion floor at 0.85 are Roboglot's,
   set between those two, and nothing published sits there. Every live site now says which is
   which: the `FLOORS` comment in `stepper.py`, the floors table and both warnings in
   `docs/decision-llms.md`, all seven decision LLM pages, two README rows, the changelog's own
@@ -7606,7 +7644,7 @@ the reading of it is.
   `VERIFIED` section was satisfied by the word `UNVERIFIED`, so only one of the pair was ever
   really checked. Both are matched as headings now, and the honesty line is matched literally
   rather than by the word *never*, which turns up in ordinary prose.
-- **Laya reports a token count, and quackd said it did not.** `laya/agent.py` returns
+- **Laya reports a token count, and Roboglot said it did not.** `laya/agent.py` returns
   `usage.input_tokens` as `int(attention_mask.sum())`, a real count of what the model read,
   so its turns are billed measured and print without the `~`. The module docstring, the page
   and `tests/fake_laya.py` all said the opposite, which left the fake standing in for a shape
@@ -7632,25 +7670,25 @@ the reading of it is.
   round-trip that only runs behind an opt-in environment variable.
 - **Two pasted log blocks that could not have come from a run.** The first-run guide's
   decision blocks used the ASCII gutter on a page that uses the Unicode one, and printed
-  token counts bare where quackd prints a `~` for a figure it estimated itself. Both are
+  token counts bare where Roboglot prints a `~` for a figure it estimated itself. Both are
   output from real runs now, re-rendered through the same renderer the CLI uses.
 
 ### Removed
 
-- **`quackd trace`, `--trace/--no-trace`, `--trace-prompt/--no-trace-prompt`, `QUACKD_TRACE`,
-  `QUACKD_TRACE_THINKING` and `QUACKD_TRACE_PROMPT`**, the spellings 0.11 kept alive for one
-  release beside `quackd log`, `--log/--no-log`, `--log-prompt/--no-log-prompt`, `QUACKD_LOG`,
-  `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`, along with the `sys.argv` scan in
-  `quackd/cli.py` and the environment fallback in `quackd/log.py` that existed only to carry
+- **`roboglot trace`, `--trace/--no-trace`, `--trace-prompt/--no-trace-prompt`, `ROBOGLOT_TRACE`,
+  `ROBOGLOT_TRACE_THINKING` and `ROBOGLOT_TRACE_PROMPT`**, the spellings 0.11 kept alive for one
+  release beside `roboglot log`, `--log/--no-log`, `--log-prompt/--no-log-prompt`, `ROBOGLOT_LOG`,
+  `ROBOGLOT_LOG_THINKING` and `ROBOGLOT_LOG_PROMPT`, along with the `sys.argv` scan in
+  `roboglot/cli.py` and the environment fallback in `roboglot/log.py` that existed only to carry
   them. 0.11 said in twelve files, from the flags' own help text to the warning line itself,
   that they would go here, which is the promise 0.4 made about `--transport` and 0.5 kept. The
   subcommand and the flags are refused the way any unknown one is, naming what they are, with
   exit code 2 and no run directory written. The three variables are not simply dropped, and
   that asymmetry is the point: a flag that is gone fails loudly because Click refuses it, while
-  a variable that is gone says nothing at all, and `QUACKD_TRACE=0` going unread would switch
+  a variable that is gone says nothing at all, and `ROBOGLOT_TRACE=0` going unread would switch
   the log back on for the one reader who had deliberately turned it off. So a run that finds
-  one set prints `QUACKD_TRACE is not read any more and this run ignores it; set QUACKD_LOG
-  instead`, the line this release gives `QUACKD_MODEL`, and carries on. It is read where the
+  one set prints `ROBOGLOT_TRACE is not read any more and this run ignores it; set ROBOGLOT_LOG
+  instead`, the line this release gives `ROBOGLOT_MODEL`, and carries on. It is read where the
   command line is rather than where the value used to be consulted, so a `.env` hears about
   every old line in it on any one run rather than only the name that run would have read,
   which is the limit 0.11 described and asked you to treat as a floor. The line is replayed
@@ -7658,11 +7696,11 @@ the reading of it is.
   `trace_dropped` is still read out of a `summary.json`, because a run directory outlives the
   release that wrote it and 0.11 scoped this to what you type on a command line or set in a
   shell.
-- **`--jev`, `QUACKD_JEV`, `QUACKD_JEV_PRICE`, `QUACKD_LIVE_JEV`, the `live_jev` pytest marker
-  and the `quackd[jev]` extra**, with no alias, for the reasons above. Only `QUACKD_JEV` says
+- **`--jev`, `ROBOGLOT_JEV`, `ROBOGLOT_JEV_PRICE`, `ROBOGLOT_LIVE_JEV`, the `live_jev` pytest marker
+  and the `roboglot[jev]` extra**, with no alias, for the reasons above. Only `ROBOGLOT_JEV` says
   anything when it is found set, as the Changed bullet above describes; the other five go
   without a word, and a flag among them fails loudly by itself.
-- **`--provider`, `--model`, `QUACKD_MODEL`, and `list-models --provider`/`-p`.**
+- **`--provider`, `--model`, `ROBOGLOT_MODEL`, and `list-models --provider`/`-p`.**
 
 ### Known limitations
 
@@ -7674,7 +7712,7 @@ the reading of it is.
   that project publishes for itself, on its own hardware and its own task, copied out on the
   day it was read: TypeSafe's for Jev, and this note repeats two more of them, von at about 18
   ms on a GPU and Kev at 149 and 721 ms through MLX on an M5. Not one of them was measured
-  here, through quackd, answering a robot. `--decision-llm` ships off unless you
+  here, through Roboglot, answering a robot. `--decision-llm` ships off unless you
   name one, and `--decision-mode shadow` exists to be the thing that changes this: it asks
   every turn, records what it would have chosen beside what the model did, and changes nothing
   about the run.
@@ -7682,7 +7720,7 @@ the reading of it is.
 - **Two of the four confidence floors are numbers nobody published, and all seven presets
   inherit all four unmeasured.** TypeSafe's confidence page publishes 0.5 and 0.9, and both
   are here as the brake and the confirm-gated floors. The read floor at 0.60 and the motion
-  floor at 0.85 sit between those two and are quackd's own. Every one of the four was shaped
+  floor at 0.85 sit between those two and are Roboglot's own. Every one of the four was shaped
   around Jev, and the other six rows are gated on them while computing confidence by their own
   formula, on their own architecture, with their own idea of what a probability means. A
   number nobody published is a number nobody has calibrated either.
@@ -7706,11 +7744,11 @@ the reading of it is.
   key typed inside the JSON of `--extra-body` on a command line. Read the file before you paste
   a run directory into an issue.
 
-- **No pilot flock has been driven by a real model, or by a real robot.** Unchanged since 0.9.
+- **No pilot team has been driven by a real model, or by a real robot.** Unchanged since 0.9.
 
 - **A run directory from 0.10 or 0.11 that used the stepper replays with no stepper lines.**
   The record's Jev-named kinds were renamed rather than aliased, and ADR-0040 said from the
-  start that a transcript kind the renderer does not know is drawn as nothing. So `quackd log`
+  start that a transcript kind the renderer does not know is drawn as nothing. So `roboglot log`
   on such a directory prints no stepper lines, still prints `from jev` on the verbs it chose,
   and shows no stepper seconds or cost in its counters. The directory itself is untouched; only
   the reading of it is.
@@ -7721,54 +7759,54 @@ A run records when it started, when it ended, where its seconds went and what it
 can give it a name. Until now the only absolute time a run had was the name of its directory,
 which is the local clock at second precision and gone the moment anybody renames the folder, and
 the nearest thing to a cost was a token count, which is not a cost: it is one of the two numbers
-a cost is made of. `summary.json` carries both halves now, per call and per run, and `quackd
+a cost is made of. `summary.json` carries both halves now, per call and per run, and `roboglot
 log` reprints them from a run recorded weeks ago.
 
 What is measured and what is arithmetic is worth separating once, plainly, because the rest of
 this is money. Measured: `wall_s`, `connect_s` and `llm_latency_s` come off a clock in this
 process, and the token counts are the vendor's own, returned beside the answer. One count is
 not, and it is the exception that proves the rule: where TypeSafe's stepper answers without a
-usage, quackd estimates the count from the request it sent, and says `usage_estimated` wherever
+usage, Roboglot estimates the count from the request it sent, and says `usage_estimated` wherever
 that number goes. Arithmetic: every `cost_usd` in this release is a count multiplied by a rate,
 and the rates a person read off a vendor's own pricing page on 2026-09-21 are in
-`quackd/agent/providers/catalogue.py`, with the stepper's own in `quackd/agent/jev.py` because
+`roboglot/agent/providers/catalogue.py`, with the stepper's own in `roboglot/agent/jev.py` because
 there is one model behind that flag rather than a table. The rest are not read off anything:
-`--price` and `QUACKD_PRICE` are yours, and a local model and the fake provider cost nothing per
+`--price` and `ROBOGLOT_PRICE` are yours, and a local model and the fake provider cost nothing per
 token by construction.
 
-quackd has never seen an invoice, and not one figure here has been reconciled against a bill. It
+Roboglot has never seen an invoice, and not one figure here has been reconciled against a bill. It
 knows nothing about your discount, your committed tier, your free credits or a minimum charge,
 and it cannot know that a rate moved this morning: a price read by hand is wrong from the day the
 vendor edits the page until the day somebody reads it again, and wrong silently. So every price
-is recorded with where it came from, and with the date quackd read it where quackd is the one
-that read it: a rate you handed in carries no date, because stamping it with quackd's check date
-would be quackd vouching for a number it has never seen. Every run keeps the rate it was
-actually costed at, and `--price` is there for the moment quackd's number and your bill disagree.
+is recorded with where it came from, and with the date Roboglot read it where Roboglot is the one
+that read it: a rate you handed in carries no date, because stamping it with Roboglot's check date
+would be Roboglot vouching for a number it has never seen. Every run keeps the rate it was
+actually costed at, and `--price` is there for the moment Roboglot's number and your bill disagree.
 
-Reading those pricing pages caught two counting bugs quackd has been shipping. Google reports
-thinking beside the answer rather than inside it, and quackd read `candidates_token_count` alone,
+Reading those pricing pages caught two counting bugs Roboglot has been shipping. Google reports
+thinking beside the answer rather than inside it, and Roboglot read `candidates_token_count` alone,
 so every thinking Gemini run has been under-reporting the output it was billed for by however
-much it thought. Anthropic reports its three input buckets disjoint, and quackd read only the
+much it thought. Anthropic reports its three input buckets disjoint, and Roboglot read only the
 bucket that was neither read from a cache nor written to one. Both are corrected here, and the
-second is a no-op today, because nothing in quackd sets `cache_control` yet: it is the arithmetic
+second is a no-op today, because nothing in Roboglot sets `cache_control` yet: it is the arithmetic
 that stops being a no-op the day something does. The loop had a smaller one of the same shape,
 reading `perf_counter` twice on a model turn and disagreeing with itself about how long the call
 took. It times a call once now, and the record and the running total read that one number.
 
 The trace is the log, and it is now the whole screen as well. The record outgrew the word: it
 holds every intent the robot was sent, every gate the executor closed, the clocks and the money
-above, and from this release what was on your terminal while all of it happened. `quackd trace`
-is `quackd log`, `--trace/--no-trace` is `--log/--no-log`, `--trace-prompt/--no-trace-prompt` is
-`--log-prompt/--no-log-prompt`, `QUACKD_TRACE`, `QUACKD_TRACE_THINKING` and `QUACKD_TRACE_PROMPT`
-are `QUACKD_LOG`, `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`. Every one of those spellings,
+above, and from this release what was on your terminal while all of it happened. `roboglot trace`
+is `roboglot log`, `--trace/--no-trace` is `--log/--no-log`, `--trace-prompt/--no-trace-prompt` is
+`--log-prompt/--no-log-prompt`, `ROBOGLOT_TRACE`, `ROBOGLOT_TRACE_THINKING` and `ROBOGLOT_TRACE_PROMPT`
+are `ROBOGLOT_LOG`, `ROBOGLOT_LOG_THINKING` and `ROBOGLOT_LOG_PROMPT`. Every one of those spellings,
 which is everything you type on a command line or set in a shell, still works for this release,
 printing one line on stderr saying what it is called now, and every one of them goes in 0.12,
 which is the same single release of grace `--transport` got in 0.4 before 0.5 removed it. Three
 things do not get that grace and are the three to change today. An MCP client that reads `trace`
 off a tool result must read `log`. Anything that reads `trace_dropped` out of a summary should
-read `log_dropped`. And `quackd/trace.py` is `quackd/log.py` with its classes renamed after it,
-with no module left behind at the old path, so `import quackd.trace` raises rather than warning:
-a name you import is not a spelling anybody can be told about at runtime. quackd's own replay
+read `log_dropped`. And `roboglot/trace.py` is `roboglot/log.py` with its classes renamed after it,
+with no module left behind at the old path, so `import roboglot.trace` raises rather than warning:
+a name you import is not a spelling anybody can be told about at runtime. Roboglot's own replay
 takes either spelling of the dropped counter, so a run directory recorded before this release
 still replays; nothing here writes the old one any more.
 
@@ -7777,10 +7815,10 @@ text with no colour codes in it, opening with two lines: the command that starte
 then the version that ran it with the UTC time it opened and the directory it ran in. It carries
 the questions you were asked and what you answered, and neither of those reached the file the
 way the rest of the screen did. The question is written straight to the terminal rather than
-through either of quackd's consoles, and your keystrokes are echoed by the terminal itself, so
-the tee sees neither half. quackd writes the exchange into the file itself instead, which is
+through either of Roboglot's consoles, and your keystrokes are echoed by the terminal itself, so
+the tee sees neither half. Roboglot writes the exchange into the file itself instead, which is
 why it is there at all. Control characters are taken out on the way
-in, every C0 code except tab and newline, and DEL, so a goal, a downloaded `.duck` body, a model
+in, every C0 code except tab and newline, and DEL, so a goal, a downloaded `.glot` body, a model
 or a robot that puts an escape sequence in its text cannot drive the terminal of whoever reads
 the file with `cat`. It is the screen and not the record, so `--no-log` empties most of it
 exactly as it empties the terminal, and `transcript.jsonl` is written either way as always, with
@@ -7792,7 +7830,7 @@ top has the values of `--api-key` and `--token` replaced by `***`. `--base-url`,
 `--camera-url` keep their host and path and lose their password and any credential-named query
 parameter, so `https://rok:hunter2@gw/v1?api_key=sk-live` is recorded as
 `https://rok:***@gw/v1?api_key=***`. `--extra-body` has its credential-named keys replaced where
-the run records the object, which is the only place a body set through `QUACKD_EXTRA_BODY` could
+the run records the object, which is the only place a body set through `ROBOGLOT_EXTRA_BODY` could
 ever be caught, and not where it records your command line: a key typed inside that JSON on the
 command line is in the record in the clear. Nothing else on that screen is redacted, and that
 includes the working directory on the header's second line: it is the absolute path as it was,
@@ -7809,7 +7847,7 @@ so a run started from a home directory puts your account name in the file.
   `llm_latency_s` how much went on waiting for a model, summed over every call including one that
   raised, because a run that died on a timeout spent that time too. `ended_at` is derived as
   `started_at + wall_s` rather than read off the clock a second time, so `ended_at` minus
-  `started_at` is `wall_s` in every record quackd writes, including on a laptop that synced its
+  `started_at` is `wall_s` in every record Roboglot writes, including on a laptop that synced its
   clock or slept through part of a run. `elapsed_s` keeps exactly the meaning it had, which is
   the budget clock: it starts later than the record does, it restarts after a `--by-hand`
   handover, and it runs on the transport's own clock, so on a simulator it is the simulator's.
@@ -7830,7 +7868,7 @@ so a run started from a home directory puts your account name in the file.
   for Command R and R7B only and sell Command A as dedicated instances by the hour, which is not
   a number of dollars per token and cannot be made into one. A run on one of those records
   `cost_usd: null` and prints `cost unpriced`. It must not print `$0`, because `$0` is a thing
-  quackd also says truthfully: several GLM Flash models and Mistral's Leanstral are priced at
+  Roboglot also says truthfully: several GLM Flash models and Mistral's Leanstral are priced at
   zero by their own vendors, and a model with no published rate is a different thing from a model
   that is free. Where a prompt was partly cached the cached slices are billed at their own rates
   and the remainder at the full input rate, and where a vendor publishes no cache rate the cached
@@ -7841,9 +7879,9 @@ so a run started from a home directory puts your account name in the file.
 - **The stepper's own bill, measured where TypeSafe report a usage and estimated where they do
   not.** Jev's published rate is $0.042 per million input tokens with output not charged
   ([their models page](https://docs.typesafe.ai/models), read 2026-09-21), and it is the one rate
-  in quackd that does not live in the catalogue, because there is a single model behind the flag
+  in Roboglot that does not live in the catalogue, because there is a single model behind the flag
   rather than a table. Where the API reports an input count the bill is measured from it. Where
-  it does not, which their own SDK types as a possibility, quackd estimates from the size of the
+  it does not, which their own SDK types as a possibility, Roboglot estimates from the size of the
   request it actually sent, the named state and the four questions together at four characters to
   the token, and flags the figure as estimated everywhere it surfaces: `usage_estimated` on the
   turn, `cost_estimated` in the summary, and a `~` in front of both numbers on the console,
@@ -7852,36 +7890,36 @@ so a run started from a home directory puts your account name in the file.
   refuse a turn before the network is touched, `not_offered` and `state_too_large`, add nothing
   at all, and a machine with no `typesafe_sdk` installed owes nothing.
 
-- **`--price`, `QUACKD_PRICE` and `QUACKD_JEV_PRICE`, for the rate quackd does not have.**
+- **`--price`, `ROBOGLOT_PRICE` and `ROBOGLOT_JEV_PRICE`, for the rate Roboglot does not have.**
   `--price "in=3,out=15,cache_read=0.3,cache_write=3.75"`, USD per million tokens, `in` and `out`
   required and the two cache rates optional. It is validated at the top of the run, before
   anything connects and before a directory is made, so a typo costs one line and no half a run on
   disk: *--price 'junk' is not a price: 'junk' has no `=`. Write it as
-  in=3,out=15[,cache_read=0.3,cache_write=3.75], in USD per million tokens.* `QUACKD_PRICE` is
-  the same thing for a shell that runs many and `QUACKD_JEV_PRICE` the same for the stepper, and
+  in=3,out=15[,cache_read=0.3,cache_write=3.75], in USD per million tokens.* `ROBOGLOT_PRICE` is
+  the same thing for a shell that runs many and `ROBOGLOT_JEV_PRICE` the same for the stepper, and
   an override beats everything, including the zero the fake provider would otherwise report,
   because a rehearsal you want costed is a reason to pass a rate. Every price written into a
-  record says where it came from, which is `--price`, `QUACKD_PRICE`, `QUACKD_JEV_PRICE`,
+  record says where it came from, which is `--price`, `ROBOGLOT_PRICE`, `ROBOGLOT_JEV_PRICE`,
   `catalogue`, `published`, `fake` or `self-hosted`, so any figure can be traced back to the
-  rate that produced it. The two quackd read off a vendor's page, `catalogue` and `published`,
+  rate that produced it. The two Roboglot read off a vendor's page, `catalogue` and `published`,
   carry the date they were read on; the other five carry no date, because a rate somebody
-  handed in is theirs to vouch for and stamping it with quackd's own check date would be quackd
+  handed in is theirs to vouch for and stamping it with Roboglot's own check date would be Roboglot
   vouching for it instead. A local model is `self-hosted` and costs nothing per token by
   construction, which is a different claim from a vendor charging nothing and is labelled as one.
 
-- **A run can be named: `--run-name` on `quackd run` and `quackd record`, and a pass in `quackd
+- **A run can be named: `--run-name` on `roboglot run` and `roboglot record`, and a pass in `roboglot
   log` that resolves one.** This is for the person running a hundred examples on one arm in an
   afternoon, who ends the day with a hundred directories named after the second they started and
   no way to tell which was which without opening them. `--run-name "Example 1"` slugs to
-  `example-1` and goes into the directory name after the duck and before the collision counter,
+  `example-1` and goes into the directory name after the task and before the collision counter,
   `runs/20260921-160009-find-and-kick-example-1/`, and the text as you typed it is kept in
   `run_start`, `run_end` and the replay header, which grew a `run name` row beside new `started`
-  and `price` rows. `quackd log example-1` then finds it: an exact label match is tried ahead
+  and `price` rows. `roboglot log example-1` then finds it: an exact label match is tried ahead
   of both the timestamp prefix and the loose substring, so `example-1` resolves to the run you
   called `Example 1` even when `example-19` was recorded later, and a run you called `20260921`
   is reachable by that name rather than being answered by whichever run's timestamp starts the
-  same way. The label is matched against what follows the stamp and only where a duck name
-  precedes it, so `quackd log find-and-kick` still means the newest run of that duck rather
+  same way. The label is matched against what follows the stamp and only where a task name
+  precedes it, so `roboglot log find-and-kick` still means the newest run of that task rather
   than the one that happens to have gone unnamed. A name with nothing ASCII in it is refused
   before anything connects, *--run-name '!!!' has no ASCII letters or digits in it, so there is
   nothing to name the directory after*, rather than quietly becoming something else, because a
@@ -7893,28 +7931,28 @@ so a run started from a home directory puts your account name in the file.
   path once resolved, which is the length the filesystem actually refused and not the shorter
   relative one you typed, and says that a shorter `--run-name` or a shorter `--runs-dir` will
   fit, because the length is the whole diagnosis and nothing else in the message hints at it.
-  Both are `quackd run` options and both reach a flock: a `--flock N` simulator flock and a
-  stored flock of pilots each take the name into their own summary and cost every member at
-  the one rate. `quackd record` takes `--run-name` and not `--price`: a recording is still
-  costed at whatever rate the catalogue or `QUACKD_PRICE` gives it, and the one thing it cannot
+  Both are `roboglot run` options and both reach a team: a `--team N` simulator team and a
+  stored team of pilots each take the name into their own summary and cost every member at
+  the one rate. `roboglot record` takes `--run-name` and not `--price`: a recording is still
+  costed at whatever rate the catalogue or `ROBOGLOT_PRICE` gives it, and the one thing it cannot
   be handed is a rate on the command line.
 
 - **`terminal.txt`, the session as plain text, in every run directory.** The transcript says what
-  quackd did and this says what you saw while it did it: the header, the narration, the warnings,
+  Roboglot did and this says what you saw while it did it: the header, the narration, the warnings,
   the questions and your answers, the verdict, in the order they appeared and with no escape codes
   in them, so it greps and diffs like any other file. It opens with the command that started the
   run, then the version, the UTC time the capture opened and the directory it ran in. That time is
   its own reading of the clock, taken before the run directory exists and truncated to the second
   rather than rounded, so it never names a later second than the `started_at` in `summary.json`,
-  which stays the one to quote. The answers in it are quackd's account of what you said rather than
+  which stays the one to quote. The answers in it are Roboglot's account of what you said rather than
   a copy of your keystrokes: where the kill switch is reading the terminal it writes down what you
   typed, and where it is not, `typer.confirm` has already reduced the answer to a yes or a no and
-  the file says `y` or `n`. Nothing is written until there is a run directory, so what quackd
+  the file says `y` or `n`. Nothing is written until there is a run directory, so what Roboglot
   refuses before it makes one still leaves nothing behind: a bad `--price`, a `--run-name` with
-  nothing to slug, a `.duck` that does not parse. A run that gets a directory and then fails to
+  nothing to slug, a `.glot` that does not parse. A run that gets a directory and then fails to
   reach its robot has always left one, and now it has the screen in it too. `--no-log` takes the
   narration out of the file as it takes it off the screen, because this is the screen;
-  `transcript.jsonl` is unaffected and still not optional. A flock keeps one at the run root rather
+  `transcript.jsonl` is unaffected and still not optional. A team keeps one at the run root rather
   than one per member, because there was one terminal however many robots were narrating into it. If
   the file cannot be opened at all the run does not notice: the capture disables itself and the
   terminal never pays for it. If it breaks after it was opened, which is the case that matters, the
@@ -7924,7 +7962,7 @@ so a run started from a home directory puts your account name in the file.
 
 - **The command and the version are in the record: `command` and `version` in `run_start`, `run_end`
   and `summary.json`.** `command` is the argv as a list with `argv[0]` replaced by the literal
-  `quackd`, so it says what was run rather than which interpreter path ran it, and the values of
+  `roboglot`, so it says what was run rather than which interpreter path ran it, and the values of
   `--api-key` and `--token` are `***` in both spellings a shell allows, `--api-key sk-…` and
   `--api-key=sk-…`. The flag itself stays, because *that* a key was passed is usually what a reader
   is checking, and a trailing `--api-key` with nothing after it is left as it was typed. Redaction
@@ -7940,10 +7978,10 @@ so a run started from a home directory puts your account name in the file.
   and those words should be the ones a person would write. What an
   answer *caused* was already recorded by whoever acted on it; this is the exchange itself, in
   the words it was put in, which nothing held before. It is written only where somebody was
-  really there, so a `--yes` run and a flock member's standing answers produce no `prompt` rows
+  really there, so a `--yes` run and a team member's standing answers produce no `prompt` rows
   at all. A record claiming a human authorised a verb when no human was asked would be worse than
   no record. A run with no terminal under it counts as nobody being there, and that is the part
-  to read if you script quackd: `yes | quackd run` and `quackd run < answers.txt` reach the same
+  to read if you script Roboglot: `yes | roboglot run` and `roboglot run < answers.txt` reach the same
   prompt, `input()` reads the pipe, and the confirm gate opens on that answer exactly as it
   always has. Only the testimony changed. There is no `prompt` row, and the gate's own `reason`
   stopped saying `a human said yes` on a run nobody was watching: it reads
@@ -7951,10 +7989,10 @@ so a run started from a home directory puts your account name in the file.
   those two strings are new. A job with no stdin at all is unchanged in every way: the prompt
   raises, and the gate denies and says which exception it raised on.
 
-- **`on_run_dir` on both flock runners.** `run_pilot_flock` and `run_flock` take
+- **`on_run_dir` on both team runners.** `run_pilot_team` and `run_team` take
   `on_run_dir: Callable[[Path], None] | None`, called the moment their run directory exists and
   before any member has written into it. The CLI passes the terminal capture; anyone embedding a
-  flock now has one hook for *the directory this run will fill*, which previously could only be
+  team now has one hook for *the directory this run will fill*, which previously could only be
   learned from the result after the run was over.
 
 - **The arm from a chat is a second half of the first-run page rather than an appendix to it.**
@@ -7995,38 +8033,38 @@ so a run started from a home directory puts your account name in the file.
 
 - **Breaking. `trace_dropped` is `log_dropped`, in `summary.json` and in `run_end`.** If you parse
   a summary, read `log_dropped` and fall back to `trace_dropped` for the runs you already have.
-  That is what quackd's own replay does, which is why a run directory recorded before this
-  release still replays with its counters intact, and nothing in quackd writes the old name now.
+  That is what Roboglot's own replay does, which is why a run directory recorded before this
+  release still replays with its counters intact, and nothing in Roboglot writes the old name now.
 
-- **Breaking. `quackd/trace.py` is `quackd/log.py`, and its classes were renamed with it.**
+- **Breaking. `roboglot/trace.py` is `roboglot/log.py`, and its classes were renamed with it.**
   `TraceEvent` is `LogEvent`, `TraceLine` is `LogLine`, `TracedTransport` is `LoggedTransport`,
   `ConsoleTrace` and `LineTrace` are `ConsoleLog` and `LineLog`, `Tracer` is `EventLog` and the
   attribute holding one is `.event_log`, `trace_enabled_default` is `log_enabled_default`,
   `intent_trace_line` is `intent_log_line`, `MCP_TRACE_MAX_LINES` is `MCP_LOG_MAX_LINES`, and
-  `RunConfig.trace`, the live view, is `RunConfig.view`. `import quackd.trace` raises.
-  If you embed quackd rather than calling it, the signatures moved with the module and they are
+  `RunConfig.trace`, the live view, is `RunConfig.view`. `import roboglot.trace` raises.
+  If you embed Roboglot rather than calling it, the signatures moved with the module and they are
   the half a rename does not announce: `build_server` and `build_fleet_server` take `log=` where
-  they took `trace=`; `run_flock`, `run_pilot_flock` and `FlockMember` take `view=`;
-  `TraceFactory` is `ViewFactory`; `FlockCoordinator.trace` and `AgentLoop.tracer` are both
+  they took `trace=`; `run_team`, `run_pilot_team` and `TeamMember` take `view=`;
+  `TraceFactory` is `ViewFactory`; `TeamCoordinator.trace` and `AgentLoop.tracer` are both
   `.event_log`; `Executor.traced_transport()` is `logged_transport()`; `RunResult.trace_dropped`
-  and `FlockResult.trace_dropped` are `log_dropped`; and `plan_flock_task` returns six values
+  and `TeamResult.trace_dropped` are `log_dropped`; and `plan_team_task` returns six values
   rather than five, the new one being what the planner's own call spent. Every one of those
   parameters is keyword only, so the call raises `TypeError` and names the argument rather than
   quietly doing nothing. One of them can fail quietly and is the reason this list is here:
-  `run_flock` and `run_pilot_flock` have taken a `log=` of their own since long before this
+  `run_team` and `run_pilot_team` have taken a `log=` of their own since long before this
   rename, which is the `--verbose` callback. Renaming `trace=` to `log=` on those two by hand,
   the way the rest of this release reads, hands the view to that callback and leaves the run
-  with no live view at all. `run_pilot_flock` types its `log` as a `Callable[[str], None]`, so
-  a type checker says something; `run_flock` types it `Any`, so nothing does, and that call
+  with no live view at all. `run_pilot_team` types its `log` as a `Callable[[str], None]`, so
+  a type checker says something; `run_team` types it `Any`, so nothing does, and that call
   fails silently at runtime by quietly doing nothing. On both the new name is `view=`. Two names
   deliberately did not move: `RunConfig.log` and `Executor.log` are still the `--verbose`
-  callback they have always been, and `member_log` is still the record kind a flock member's free
+  callback they have always been, and `member_log` is still the record kind a team member's free
   text lands in, because both are contracts that predate this rename and neither is the event
   stream.
 
 - **The `Usage` convention is written down, and two vendors' numbers move to match it.**
   `input_tokens` is the whole prompt, cached parts included; `cache_read_tokens` and
-  `cache_write_tokens`, both new and both on every usage object quackd builds, are the slices of
+  `cache_write_tokens`, both new and both on every usage object Roboglot builds, are the slices of
   that prompt billed at cache rates; `output_tokens` is everything generated, thinking included;
   and `reasoning_tokens` is the part of the output the vendor counts apart, a subset of it, never
   priced again. Gemini's `output_tokens` now adds `thoughts_token_count`, because Google's own
@@ -8045,15 +8083,15 @@ so a run started from a home directory puts your account name in the file.
   generous. This is where it differs from the Anthropic correction above, which is a no-op
   until something sets `cache_control`.
 
-- **A solo run's verdict panel and `quackd log` print the same counters, through one function.**
+- **A solo run's verdict panel and `roboglot log` print the same counters, through one function.**
   They were two lists that had already drifted, and both gained a time counter and a cost
   counter:
   `steps 4 · llm calls 6 · tokens 10421+96 · time 0.4 s (model 0.0 s) · cost $0.0327`,
-  with the separator falling back to a hyphen on a stream that cannot carry the dot. A flock
+  with the separator falling back to a hyphen on a stream that cannot carry the dot. A team
   counts different things and is only partly in: each of the two runners builds its own list
-  live, a coordinator naming its kicker and its auctions and a pilot flock naming how many
+  live, a coordinator naming its kicker and its auctions and a pilot team naming how many
   members succeeded, but on replay only a coordinator is recognised, by the `kicker` in its
-  summary, and a pilot flock is read back through this one function like a solo run. The time
+  summary, and a pilot team is read back through this one function like a solo run. The time
   counter carries the split and not only the total, because on the one hardware run this project
   has, 62.1 of 78.8 seconds were spent waiting on the model, and that ratio is the most useful
   thing a run measures about itself; the stepper's seconds join it when one ran. The cost counter
@@ -8065,7 +8103,7 @@ so a run started from a home directory puts your account name in the file.
   verdict when a run could not be costed, naming the model and the flag that would fix it,
   because a missing number should say it is missing rather than leave a reader deciding whether
   it means zero. `--provider fake` never draws it: that provider reports a rate of its own, of
-  zero, and a rehearsal is not a model quackd has no price for.
+  zero, and a rehearsal is not a model Roboglot has no price for.
 
 - **The stepper's summary block grew `usage`, `cost_usd`, `cost_estimated` and `price`**, so the
   `jev` block answers what it cost as well as what it decided, and its own log line carries the
@@ -8073,12 +8111,12 @@ so a run started from a home directory puts your account name in the file.
   `jev     gripper(open=false) 0.93 >= 0.85 (0.11 s, 527 tok $0.000022)`. The shadow event carries
   `llm_cost_usd` and `jev_cost_usd` side by side, which is the comparison shadow mode exists to
   make and the one that was previously left for a reader to do by hand out of two other records.
-  `run_start` carries the stepper's rate too, so a run costed against `QUACKD_JEV_PRICE` says so
+  `run_start` carries the stepper's rate too, so a run costed against `ROBOGLOT_JEV_PRICE` says so
   in the file rather than in somebody's shell history.
 
 ### Deprecated
 
-- **`quackd trace` is `quackd log`.** The old subcommand still runs, hidden from `--help`, and
+- **`roboglot trace` is `roboglot log`.** The old subcommand still runs, hidden from `--help`, and
   prints one yellow line on stderr naming the new spelling. It is removed in 0.12.
 
 - **`--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are `--log/--no-log` and
@@ -8088,18 +8126,18 @@ so a run started from a home directory puts your account name in the file.
   a script that greps its own stderr sees it, and the run replays it into the top of
   `terminal.txt` where it was on the screen. Removed in 0.12.
 
-- **`QUACKD_TRACE`, `QUACKD_TRACE_THINKING` and `QUACKD_TRACE_PROMPT` are `QUACKD_LOG`,
-  `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`.** The old variable is read only when the new one
+- **`ROBOGLOT_TRACE`, `ROBOGLOT_TRACE_THINKING` and `ROBOGLOT_TRACE_PROMPT` are `ROBOGLOT_LOG`,
+  `ROBOGLOT_LOG_THINKING` and `ROBOGLOT_LOG_PROMPT`.** The old variable is read only when the new one
   is unset, so a shell or a `.env` that sets both is answered by the new name and the old one is
   ignored. Falling back to an old name writes one line to stderr, once per process, which under
   `serve-mcp` lands in the host's log for that server. Read the warnings as a floor and not a
-  list: a name only warns on a run that reads it, so `QUACKD_TRACE=0` beside
-  `QUACKD_TRACE_PROMPT=0` tells you about the first and says nothing about the second, because
+  list: a name only warns on a run that reads it, so `ROBOGLOT_TRACE=0` beside
+  `ROBOGLOT_TRACE_PROMPT=0` tells you about the first and says nothing about the second, because
   switching the log off means the prompt setting is never consulted. A flag has the same effect
-  one level up: `--log` and `--no-log` answer the question `QUACKD_LOG` would have answered, so
+  one level up: `--log` and `--no-log` answer the question `ROBOGLOT_LOG` would have answered, so
   a run that passes either never consults it and is never told that name has moved. The run that
   names all three is the one that passes no flag and has the log on by default. Grep your `.env`
-  files and CI for `QUACKD_TRACE` rather than waiting to be told; they stop being read in 0.12.
+  files and CI for `ROBOGLOT_TRACE` rather than waiting to be told; they stop being read in 0.12.
 
 ### Fixed
 
@@ -8108,20 +8146,20 @@ so a run started from a home directory puts your account name in the file.
   could not yet know the answer: the policy had gone idle, the gripper had not finished
   closing, and the verb declared failure on a grasp that was about to succeed. Worse than the
   wrong answer is what follows it, because `place` refuses on a precondition that says nothing
-  is held, so the arm is holding the object and quackd will not put it down. It waits one
+  is held, so the arm is holding the object and Roboglot will not put it down. It waits one
   settle now, `PICK_SETTLE_S`, which is the same five ticks the stall detector already used,
   and reads the flag once more before calling it a failure. It surfaced as a macOS job going
   red on one run and it is fixed as the hardware bug it is rather than as a flaky test, and
   like everything else this repository says about that arm, it has been exercised against the
   mock and against a fake arm and never against a real one.
 
-- **`quackd log` on a flock printed one member's counters as though they were the flock's.**
-  A flock replays every member in turn, reading `ducks/<member>/transcript.jsonl` in sorted
+- **`roboglot log` on a team printed one member's counters as though they were the team's.**
+  A team replays every member in turn, reading `robots/<member>/transcript.jsonl` in sorted
   order, so the `run_end` still in hand at the end belonged to the last of them to have
   recorded one.
   Its wall clock, its tokens and its bill are that one robot's rather than the run's, and
   because the order is the member's name rather than the clock's it was the same wrong member
-  every time rather than a different one per replay. The flock's own `summary.json` sits in the
+  every time rather than a different one per replay. The team's own `summary.json` sits in the
   run directory above those, and is what the counters are about, so it is read whenever there
   is more than one member transcript. A single-robot run is unchanged.
 
@@ -8133,17 +8171,17 @@ so a run started from a home directory puts your account name in the file.
   arithmetic this release builds on top of it is not, which is why it is fixed rather than
   noted.
 
-- **The deprecation notice for `quackd trace` was silent for the scripts it was written for.**
+- **The deprecation notice for `roboglot trace` was silent for the scripts it was written for.**
   It was printed when `trace` was the very first word on the command line and never otherwise,
-  so `quackd --no-color trace <run>` ran the retired spelling and said nothing at all. That is
+  so `roboglot --no-color trace <run>` ran the retired spelling and said nothing at all. That is
   precisely the shape of an automated caller, which is the one audience a deprecation cannot
   afford to miss: nobody is reading its output, and it breaks in 0.12. The subcommand is read
   as the first argument that is not an option now. A run that happens to be called `trace` is
-  still not somebody typing the old spelling, because `quackd log trace` has `log` in that
+  still not somebody typing the old spelling, because `roboglot log trace` has `log` in that
   position, and neither is `--run-name trace`. Found by this release's own audit of the
   paragraph above, which promised a line that was not always printed.
 
-- **A mangled comment shipped in `quackd log`'s replay path.** The sentence explaining why the
+- **A mangled comment shipped in `roboglot log`'s replay path.** The sentence explaining why the
   dropped-events counter is read through `_number` lost its opening clause in the rename, so
   what landed on `main` began mid-sentence. Comment only; no behaviour depended on it.
 
@@ -8152,13 +8190,13 @@ so a run started from a home directory puts your account name in the file.
 - **Not one figure in this release has been checked against a bill.** Every rate was read off a
   vendor's pricing page by a person on 2026-09-21 and typed into a table, and a rate read by
   hand is wrong from the moment the vendor edits the page until somebody reads it again, and
-  wrong silently. quackd knows nothing about your discount, your committed tier, your free
+  wrong silently. Roboglot knows nothing about your discount, your committed tier, your free
   credits or a minimum charge. Three of the 115 catalogued models carry no rate at all, the
   whole of Cohere's Command A family including that vendor's own default, because Cohere sell
   those by the hour rather than by the token; a run on one prints `cost unpriced` and records
   `cost_usd: null`. The Anthropic cache arithmetic corrected here changes no number today,
-  because nothing in quackd sets `cache_control` yet: it is arithmetic waiting for the day
-  something does. Treat a `cost_usd` as what quackd's table says the call should have cost, and
+  because nothing in Roboglot sets `cache_control` yet: it is arithmetic waiting for the day
+  something does. Treat a `cost_usd` as what Roboglot's table says the call should have cost, and
   `--price` as what to reach for when it disagrees with your invoice.
 
 - **Six of the seven bodies have still never run on hardware, and the one that has was running
@@ -8169,7 +8207,7 @@ so a run started from a home directory puts your account name in the file.
   called a failure is the day somebody reports that it did.
 
 - **`terminal.txt` is most of the screen and not all of it, and it is redacted by name only.** It
-  holds what went through quackd's two consoles, which is the narration, the warnings and the
+  holds what went through Roboglot's two consoles, which is the narration, the warnings and the
   verdict, plus the handful of lines written straight into the capture because they never went
   through either console: the questions you were asked, which go out to the terminal raw, and the
   answers you typed, which the terminal echoed for itself. It does not hold the live status region,
@@ -8186,11 +8224,11 @@ so a run started from a home directory puts your account name in the file.
 
 - **The stepper has still never made a real call in this repository.** Unchanged since 0.10.
   Everything `--jev` reports about money is arithmetic over measured inputs: TypeSafe's own
-  published rate, quackd's measured request size, and an estimate from that size wherever their
+  published rate, Roboglot's measured request size, and an estimate from that size wherever their
   API reports no usage at all, which is flagged as estimated everywhere it surfaces. The flag is
   off by default and says as much itself when it is switched on.
 
-- **No pilot flock has been driven by a real model, or by a real robot.** Unchanged since 0.9.
+- **No pilot team has been driven by a real model, or by a real robot.** Unchanged since 0.9.
 
 - **Every old `trace` spelling in this release is on its last one.** The subcommand, the two
   flag pairs and the three environment variables all still work and all print one line saying
@@ -8199,21 +8237,21 @@ so a run started from a home directory puts your account name in the file.
 
 ## [0.10.0] — 2026-09-19
 
-A robot ran quackd, `uv pip install quackd` stopped installing one, and quackd learned to put the
+A robot ran Roboglot, `uv pip install roboglot` stopped installing one, and Roboglot learned to put the
 arm down before it lets go. Those are the three things in this release. The first happened on 0.9
 and is what the third was written in answer to; the second is the breaking change, a debt ADR-0017
 had been carrying since a package meant a directory, and it is one line on your install command;
-the third is a posture you record once and that quackd drives the arm to at both ends of a run,
+the third is a posture you record once and that Roboglot drives the arm to at both ends of a run,
 including the ends nobody plans for, and it has stopped no arm falling yet because no arm has run
 it. Behind them is an optional model that answers the turns that are a choice rather than the
 turns that need writing, off by default and never measured on a robot, which is said here as
 plainly as it is said by the flag itself.
 
-A robot ran quackd. On 2026-09-15 a LeRobot SO-101 follower arm, calibrated as `arm-01` and
+A robot ran Roboglot. On 2026-09-15 a LeRobot SO-101 follower arm, calibrated as `arm-01` and
 reached as `--robot lerobot:real --address COM3` with no registered name, did the thing every
 release before this one had to say nothing had ever done: it
-connected, and a real model drove it. Windows 11, Python 3.12.12, lerobot 0.6.1, quackd 0.9.0,
-piloted by OpenAI's `gpt-6-astra`. `ducks/lerobot-lookout.duck` ran and succeeded, and ran once
+connected, and a real model drove it. Windows 11, Python 3.12.12, lerobot 0.6.1, Roboglot 0.9.0,
+piloted by OpenAI's `gpt-6-astra`. `tasks/lerobot-lookout.glot` ran and succeeded, and ran once
 with `--provider fake` as well. Free-form `--goal` runs came after it: the arm waved by rolling
 its wrist about 27 degrees either way, waved again with the arm extended, `shoulder_lift` at -39
 and `elbow_flex` between 24 and 30, opened and closed the gripper, which reported 98 where 100
@@ -8222,7 +8260,7 @@ with it. A USB webcam answered on `opencv://1` and later on `opencv://2` at 640x
 needed a `?backend=` key.
 
 The honest half of that day is the longer half. **The arm fell at the end of every run.** LeRobot's
-`disconnect()` disables torque by its own default, quackd kept that default deliberately, and so a
+`disconnect()` disables torque by its own default, Roboglot kept that default deliberately, and so a
 run that ended well ended with a raised arm dropping onto the bench. One dry run aborted with *the
 arm did not answer: TimeoutError* when a single heartbeat round trip failed, and it never happened
 again, so nobody here knows what that was. One dry run aborted because the pilot answered
@@ -8237,7 +8275,7 @@ run on hardware. Exactly one has, and every forward-facing sentence in this repo
 robot ever had is corrected in this release rather than softened.
 
 What this release does about the falling is a rest pose: one posture recorded off the arm, driven
-to before the pilot is handed control and returned to before quackd lets go, on every path a run
+to before the pilot is handed control and returned to before Roboglot lets go, on every path a run
 can end by. Torque is released only where the arm is known to be at it, and where it is not, the
 arm is left holding itself up and the person is told so in one line. It was written after that
 day and no arm has run it: it is exercised against a fake arm and the mock, which is the standing
@@ -8246,18 +8284,18 @@ reports that it did.
 
 ### Added
 
-- **An optional discrete stepper in front of the model: `quackd run --jev`, off by default.**
-  quackd asks one question a turn, which single tool call now, and pays a frontier model's full
+- **An optional discrete stepper in front of the model: `roboglot run --jev`, off by default.**
+  Roboglot asks one question a turn, which single tool call now, and pays a frontier model's full
   latency for it whether the answer is `report_state` or a six-joint pose. On the SO-101 run at
   the top of the README that is 62.1 seconds of a 78.8 second run. Some of those turns are not
   writing, they are choosing, and [TypeSafe's Jev](https://docs.typesafe.ai/introduction) is a
   model that answers a choice and generates no text at all. `--jev shadow` asks it every turn and
   records what it would have chosen beside what the model did, changing nothing about the run.
   `--jev on` lets it take the turns it is confident about. `--jev off` is the default, needs
-  nothing installed, and is the path quackd has always taken.
+  nothing installed, and is the path Roboglot has always taken.
 
   Which turns it may answer is computed from each tool's own JSON schema and nothing else, so a
-  body quackd has never shipped is classified by the same rule as the seven that ship. A verb is
+  body Roboglot has never shipped is classified by the same rule as the seven that ship. A verb is
   a choice when every parameter is a closed set, an enum, a constant or a boolean, or is optional
   and defaults to null, and the closed sets multiply out to no more than a dozen concrete calls.
   Everything else is a number and the model's. `move_joints` is therefore
@@ -8266,7 +8304,7 @@ reports that it did.
   at all, because they live in a validator, so there is nothing for a classifier to enumerate
   even in principle. Every meta tool takes a required sentence, so the stepper cannot record a
   feasibility verdict, cannot declare an outcome, cannot write to memory and cannot speak to a
-  flock. Every ending goes through the model or through a budget.
+  team. Every ending goes through the model or through a budget.
 
   A turn the stepper answers appends nothing to the model's history, because none of it is
   anything the model said, and writing it down would hand a model back an unsigned tool call it
@@ -8282,7 +8320,7 @@ reports that it did.
 
   **How much it saves depends on how many of a task's turns are a choice**, which is a property
   of the task and the body rather than of Jev, so there is no single multiplier to quote. Taking
-  TypeSafe's published 0.114 s and $0.042 per million input tokens together with quackd's own
+  TypeSafe's published 0.114 s and $0.042 per million input tokens together with Roboglot's own
   measured 6.21 s mean model call on that arm, one decision is about 54 times faster and about a
   two-thousandth of the cost, and a whole run is roughly 1.2 times faster on the wave, where one
   turn in five is a choice, and roughly 2.9 times on `arm-grip-check`, where a run on the mock
@@ -8291,9 +8329,9 @@ reports that it did.
   **Those are estimates and are labelled as such: none of this has run against a real robot.**
   The workings, the inputs and what would make them wrong are in `docs/jev.md`
   ([ADR-0040](docs/adr/0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)). Behind
-  `quackd[jev]`, which is not part of `quackd[all]`, and `TYPESAFE_API_KEY`, or `QUACKD_JEV` for
+  `roboglot[jev]`, which is not part of `roboglot[all]`, and `TYPESAFE_API_KEY`, or `ROBOGLOT_JEV` for
   the mode where you would rather not pass the flag. It is not a provider: `--provider` does not
-  take it, and `quackd doctor` gives it a section of its own. The flag is marked EXPERIMENTAL in
+  take it, and `roboglot doctor` gives it a section of its own. The flag is marked EXPERIMENTAL in
   its own help.
 
   A machine with neither the extra nor a key does not fail: `--jev on` says once, before
@@ -8303,8 +8341,8 @@ reports that it did.
   `--jev maybe` still stops the run and lists the three that exist. Switching it on also says,
   once, that it has never been measured against a real robot: no latency, no agreement rate, and
   the figures above are estimates. `--jev shadow` says nothing, because shadow is how the
-  measurement gets made. It reaches neither a flock, where every member is piloted by its own
-  model and is told so, nor `quackd record`, which pins it off so that a `QUACKD_JEV` left in the
+  measurement gets made. It reaches neither a team, where every member is piloted by its own
+  model and is told so, nor `roboglot record`, which pins it off so that a `ROBOGLOT_JEV` left in the
   environment cannot change what a recording records.
 
 - **A new starter task for the arm: `arm-grip-check`.** Read the state, shut the gripper, read it
@@ -8315,16 +8353,16 @@ reports that it did.
   the band that infers `holding` from a gripper stopping short of shut is right. Run it with
   `--by-hand` and something in the gripper.
 
-- **An arm starts from and returns to a rest pose you recorded: `quackd robot rest-pose NAME`.**
+- **An arm starts from and returns to a rest pose you recorded: `roboglot robot rest-pose NAME`.**
   Two things were wrong with a run on a real arm and they are the same thing twice. It ended by
   letting go, and a LeRobot arm goes limp when it is disconnected, so the arm fell. And it began
   wherever the last run had left the arm, so what a model improvised from was a different body
   every time. You fold the arm by hand, which you can do because nothing is connected to it and it
-  is limp, then run `quackd robot rest-pose arm-01`: quackd connects, reads every joint, prints
-  them, asks whether that is the pose, and keeps it in `~/.quackd/robots.json` beside the address
+  is limp, then run `roboglot robot rest-pose arm-01`: Roboglot connects, reads every joint, prints
+  them, asks whether that is the pose, and keeps it in `~/.roboglot/robots.json` beside the address
   and the camera. `--yes` answers for a script, `--clear` forgets it, and `--address`,
-  `--registry-dir` and `--json` behave as they do everywhere else. `quackd robot show` grows a
-  `rest pose` row, and `quackd robot list --probe` does not move the arm at all, saying `torque
+  `--registry-dir` and `--json` behave as they do everywhere else. `roboglot robot show` grows a
+  `rest pose` row, and `roboglot robot list --probe` does not move the arm at all, saying `torque
   left on: not at its rest pose` where it had to keep it. From then on every run drives the arm
   there before the first LLM call, and a run that cannot get there aborts before the pilot is asked
   anything; every run drives it back between the stop and the disconnect, on every exit path there
@@ -8332,29 +8370,29 @@ reports that it did.
   Ctrl-C, and also the window between the connect and the first step, where a task that needs a
   verb this build does not have is refused with the arm already connected and holding. A pose that
   survived the registry and names no joint the arm drives, which a hand-edited `robots.json` can
-  write and `quackd robot rest-pose` cannot, is refused by name rather than accepted and driven
-  nowhere. Torque is released only where the arm is known to have arrived. Where it did not, quackd
+  write and `roboglot robot rest-pose` cannot, is refused by name rather than accepted and driven
+  nowhere. Torque is released only where the arm is known to have arrived. Where it did not, Roboglot
   turns LeRobot's own disconnect flag off, leaves the arm holding itself up and says once: *the arm
   is not at its rest pose (...), so torque was left on and it will not fall: hold the arm and cut
   its power, or run again*. A `--dry-run` moves the arm at neither end. Only the five body joints
   are ever driven, and the gripper is recorded and never commanded, for the same reason `stop`
   leaves it alone: re-sending it would open a hand that is holding something. The pose is sent
-  unclipped, which is the one place a stored pose escapes quackd's own out-of-range refusal, because a
+  unclipped, which is the one place a stored pose escapes Roboglot's own out-of-range refusal, because a
   folded arm usually sits outside the travel its calibration recorded, the bench arm folding to
   `shoulder_lift` -113.5 against a calibrated 84.2 either way, and a range check that will not let
-  you put the arm down is worse than no range check there. `quackd doctor` parks a probed arm too
+  you put the arm down is worse than no range check there. `roboglot doctor` parks a probed arm too
   and says what it did in a `rest pose` row, because a probe connects and disconnects like anything
   else and is one of the ways the arm hit the bench. An MCP session parks at both ends and refuses
   to start if it cannot get there. One body is parked today and the other six refuse a pose rather
   than accepting one and ignoring it, and say which kind of refusal it is: a Microduck has no
-  joints to record at all, and an XLeRobot has joints quackd does not drive to a pose yet
+  joints to record at all, and an XLeRobot has joints Roboglot does not drive to a pose yet
   ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md), [docs/registry.md](docs/guides/registry.md),
   [docs/safety.md](docs/concepts/safety.md)).
 
 - **Several cameras on the LeRobot arm: repeat `--camera-url`.** One arm, one webcam was the shape
   of the camera 0.9 added, and the first real run is what showed the limit: the one camera framed
   the gripper and cropped the raised arm, and pointing it at the arm would have lost the gripper.
-  `quackd robot add arm-01 lerobot:real --address COM5 --camera-url "opencv://1?name=top"
+  `roboglot robot add arm-01 lerobot:real --address COM5 --camera-url "opencv://1?name=top"
   --camera-url "opencv://2?name=side"` registers both, and the flag repeats the same way on the
   commands that take it directly. With several, every url has to carry `?name=` and the names have
   to differ, because the name is what the model reading two pictures, a pick policy's observation
@@ -8367,7 +8405,7 @@ reports that it did.
   OpenAI APIs, on Gemini and on any OpenAI-compatible local server with `--vision` on, wherever
   the model takes a picture at all: one that does not is sent none. A camera
   that stalls later costs its own picture and nothing else, and both surfaces name which one:
-  `report_state` in a `CAMERA DOWN: <name>:` clause, `quackd doctor` in a `camera <name>` row. If the primary is the one that died, the other frames
+  `report_state` in a `CAMERA DOWN: <name>:` clause, `roboglot doctor` in a `camera <name>` row. If the primary is the one that died, the other frames
   still reach the model and the detections line reports nothing seen, because a bearing measured
   off a different lens would point somewhere else. Whether a picture is named is decided by how
   many cameras the arm has and never by how many answered this step, which is the difference
@@ -8390,13 +8428,13 @@ reports that it did.
   `microduck:mock takes one camera url; only lerobot:real takes several`
   ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
 
-- **An arm served over MCP now gets the rest pose it was registered with.** `quackd serve-mcp
+- **An arm served over MCP now gets the rest pose it was registered with.** `roboglot serve-mcp
   --robot arm-01` built the arm without it, so every guard that stops the arm falling read
   `None` and did nothing: the session connected without parking, refused nothing, and released
   torque wherever the client left the arm. The gate, the refusal and the torque hold all
   worked; nothing reached them.
 
-- **`.env` is read from the folder you run in, too.** quackd read a `.env` by walking up from its
+- **`.env` is read from the folder you run in, too.** Roboglot read a `.env` by walking up from its
   own installed directory, which is what finds the file a `uv venv` user put in their venv root,
   and that is still read. The directory you typed the command in is read first now. Neither file
   overrides a variable already in your environment, and the first file to define a name wins, so
@@ -8406,7 +8444,7 @@ reports that it did.
   on Windows and would have worked nowhere else
   ([docs/lerobot-first-run.md](docs/adapters/lerobot/first-run.md)).
 
-- **A picture can come with the task: `quackd run --goal "draw what is in the picture" --image
+- **A picture can come with the task: `roboglot run --goal "draw what is in the picture" --image
   sketch.png`.** The only images a model could see were camera frames, fetched fresh each step and
   dropped from all but the last two exchanges, which is right for perception and wrong for a task
   that is *about* a picture. "Draw what is in this one" is not a sentence a robot's own camera can
@@ -8420,18 +8458,18 @@ reports that it did.
   what the camera sees. The copies land in `runs/<id>/images/`, byte for byte what was sent, and
   the request line in the trace counts them: `1 messages (1 with image, 1 task picture)`. A pilot
   that cannot take an image refuses the flag before the run starts rather than dropping the
-  pictures and improvising; `quackd list-models` marks those, `--vision` overrides it where the
-  vendor does take them, and a local model needs `--vision` either way. Refused, too, on a flock:
+  pictures and improvising; `roboglot list-models` marks those, `--vision` overrides it where the
+  vendor does take them, and a local model needs `--vision` either way. Refused, too, on a team:
   one task, one body, one set of pictures
   ([ADR-0008](docs/adr/0008-perception-features-not-frames.md)).
 
-- **You can place the arm yourself before the model gets it: `quackd run --by-hand`.** The rest
+- **You can place the arm yourself before the model gets it: `roboglot run --by-hand`.** The rest
   pose fixed an arm that fell and an arm that started somewhere different every time, and it left
   one thing you could not do: start a run from a pose you chose. Handing a pencil to a robot that
   begins every run folded on the bench means teaching it to pick a pencil up first, which is a
-  harder task than the drawing. So with this flag the run goes to the rest pose as usual, quackd
+  harder task than the drawing. So with this flag the run goes to the rest pose as usual, Roboglot
   takes torque off *there* and tells you the arm is yours, and you lift it, load the gripper, hold
-  it where the work should begin and press Enter. quackd writes those joint angles back as the
+  it where the work should begin and press Enter. Roboglot writes those joint angles back as the
   goal, switches torque on, writes them again, reads the arm to check it stayed, and tells you it
   is holding the pose you set and you can let go. The pilot starts from there, and is told in its
   prompt that a person placed this body and that the gripper is where their fingers closed it,
@@ -8440,22 +8478,22 @@ reports that it did.
   jaws drives that pencil into the bench, and the person who put it there is the one to take it
   out. Leave it and the arm folds up anyway, after two minutes.
 
-  This is the only place quackd has ever taken torque off a robot, and it is fenced accordingly.
+  This is the only place Roboglot has ever taken torque off a robot, and it is fenced accordingly.
   It refuses anywhere but the recorded rest pose, which is the same condition `close()` already
   uses to decide that letting go will not drop the arm; it refuses a body that is not the arm, an
-  arm with no pose recorded, a flock, a dry run and a terminal that is not there; no verb reaches
+  arm with no pose recorded, a team, a dry run and a terminal that is not there; no verb reaches
   it and no model can ask for it. A Ctrl-C while you are holding the arm re-energises it where
   your hand is and then folds it, which is the same motion the checklist already tells you to
   expect. One thing upstream does not document is what a servo does with its goal when torque
-  comes back on, so quackd never relies on it: the present position is written before the switch
+  comes back on, so Roboglot never relies on it: the present position is written before the switch
   and again after, and the arm is read back to see whether it actually stayed
   ([ADR-0039](docs/adr/0039-an-arm-placed-by-hand.md),
   [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
 
 ### Changed
 
-- **An extra now pins the adapter it installs.** `quackd[microduck]` named `quackd-microduck` with
-  no window, so `uv pip install "quackd[microduck]==0.10.0"` was free to pair this core with an
+- **An extra now pins the adapter it installs.** `roboglot[microduck]` named `roboglot-microduck` with
+  no window, so `uv pip install "roboglot[microduck]==0.10.0"` was free to pair this core with an
   adapter from another release, and since these are the first adapter wheels there has ever been,
   that means a later one. The only thing standing in the way was the adapter's own back-pin, which
   arrives as a resolver error rather than as the right version. The window runs in both directions
@@ -8465,7 +8503,7 @@ reports that it did.
   from the checkout and a window there would pin nothing.
 
 - **The README leads with a real arm, and the hero is a recording of one.** Since 0.8 the picture
-  at the top of the page was two rendered Microducks in MuJoCo, one with quackd and one without,
+  at the top of the page was two rendered Microducks in MuJoCo, one with Roboglot and one without,
   walked by the scripted pilot with no key in the machine. It is `docs/assets/lerobot.gif` now: a
   phone pointed at a bench on 2026-09-15, run `20260915-145349-goal`, an SO-101 follower on
   `lerobot:real` told *wave to the camera with an extended arm*, and OpenAI's `gpt-6-astra`
@@ -8500,86 +8538,86 @@ reports that it did.
 
   Every limitation stays where it was. Six of the seven bodies have not run on hardware, `pick` was
   never loaded, the rest pose has been driven on no arm, the arm that ran was reached by
-  `--address` and not by a registered name, no flock has touched hardware, and the browser demo is
+  `--address` and not by a registered name, no team has touched hardware, and the browser demo is
   still unrecorded. `LAUNCH.md`, the LeRobot hardware issue template, `docs/faq.md`,
-  `docs/flock.md`, `docs/adapters.md`, `docs/memory.md`, `docs/licenses.md`,
+  `docs/team.md`, `docs/adapters.md`, `docs/memory.md`, `docs/licenses.md`,
   `docs/adapters/lerobot.md`, `docs/registry.md` and `PLAN.md` are corrected to match, the guard
   that scans living documents for the retired claim learns three more spellings and now reads the
   issue templates too, and the port in every dated account of that afternoon is `COM3`, which is
   what was actually typed.
 
-- **Breaking. `uv pip install quackd` now installs no robot at all.** Every adapter is its own
-  distribution, built out of this repository as a uv workspace: `quackd-microduck`,
-  `quackd-lerobot`, `quackd-rosbridge`, `quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`
-  and `quackd-toddlerbot`. The extras you already know are still how you ask for a body, and each
-  of them now buys the adapter itself rather than only the SDK behind it: `quackd[microduck]`,
-  `quackd[lerobot]`, `quackd[rosbridge]`, `quackd[open_duck]`, `quackd[xlerobot]`,
-  `quackd[alohamini]`, `quackd[toddlerbot]`, and `quackd[robots]` for all seven at once, each
-  with the SDK its real backend needs. `quackd[mujoco]` is the duck plus its physics simulator
-  and `quackd[microduck-camera]` the duck plus its WebRTC camera, both of them
-  `quackd-microduck`'s own extras under the names they already had. **The migration is one line:
-  anybody who installed `quackd` and ran the simulator now needs `quackd[microduck]`.** `uvx
-  quackd run find-and-kick` with no extra refuses and names what to install rather than running
+- **Breaking. `uv pip install roboglot` now installs no robot at all.** Every adapter is its own
+  distribution, built out of this repository as a uv workspace: `roboglot-microduck`,
+  `roboglot-lerobot`, `roboglot-rosbridge`, `roboglot-open-duck`, `roboglot-xlerobot`, `roboglot-alohamini`
+  and `roboglot-toddlerbot`. The extras you already know are still how you ask for a body, and each
+  of them now buys the adapter itself rather than only the SDK behind it: `roboglot[microduck]`,
+  `roboglot[lerobot]`, `roboglot[rosbridge]`, `roboglot[open_duck]`, `roboglot[xlerobot]`,
+  `roboglot[alohamini]`, `roboglot[toddlerbot]`, and `roboglot[robots]` for all seven at once, each
+  with the SDK its real backend needs. `roboglot[mujoco]` is the duck plus its physics simulator
+  and `roboglot[microduck-camera]` the duck plus its WebRTC camera, both of them
+  `roboglot-microduck`'s own extras under the names they already had. **The migration is one line:
+  anybody who installed `roboglot` and ran the simulator now needs `roboglot[microduck]`.** `uvx
+  roboglot run find-and-kick` with no extra refuses and names what to install rather than running
   anything, and that extra on the install line is what everything else in this entry costs.
 
-  An installed adapter announces itself through the `quackd.adapters` entry point group, so a
-  robot is available because something in the environment declared it rather than because quackd
+  An installed adapter announces itself through the `roboglot.adapters` entry point group, so a
+  robot is available because something in the environment declared it rather than because Roboglot
   shipped it. That is the whole of the contract, which means somebody can publish an adapter for
-  a body nobody here owns and quackd will find it, with no pull request to this repository. The
-  core keeps a catalogue of the seven it does publish (`quackd/adapters/catalogue.py`), as
-  strings that import none of them, so `quackd list-adapters` and `quackd doctor` still print the
+  a body nobody here owns and Roboglot will find it, with no pull request to this repository. The
+  core keeps a catalogue of the seven it does publish (`roboglot/adapters/catalogue.py`), as
+  strings that import none of them, so `roboglot list-adapters` and `roboglot doctor` still print the
   whole table on a machine with none of them installed, every row marked `not installed`, and a
   robot can be registered, listed and shown on a machine that cannot build it.
 
   There is no default robot any more, with one exception kept on purpose. With nothing installed,
   every command that needs a body refuses with `no robot adapter is installed: uv pip install
-  "quackd[microduck]" (or lerobot, rosbridge, open_duck, xlerobot, alohamini, toddlerbot;
-  quackd[robots] installs all seven), then --robot <adapter>:<backend>`. With exactly one adapter
+  "roboglot[microduck]" (or lerobot, rosbridge, open_duck, xlerobot, alohamini, toddlerbot;
+  roboglot[robots] installs all seven), then --robot <adapter>:<backend>`. With exactly one adapter
   installed that one is the default, because a machine with one robot has no ambiguity to resolve
   and making its owner type the name would be ceremony, so a task file that names no robot runs
   on whichever body is there. With several installed and the Microduck among them,
-  `microduck:sim2d` is still the default, because the six `duck: 0` starters carry no
-  `robots:` line and have always meant the cartoon. With several and no Microduck, quackd lists
-  what is installed and asks you to name one. A pilot flock whose members name no body asks the
-  same question rather than reaching for the duck, because a pilot flock is N bodies of any kind;
-  a coordinator flock still means N simulated Microducks, which is what it is made of. An adapter named but not installed says what to
-  buy: `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`. `quackd record`
-  still pins `microduck:sim2d` and a `--flock N` auction is still sim2d Microducks only, because
+  `microduck:sim2d` is still the default, because the six `glot: 0` starters carry no
+  `robots:` line and have always meant the cartoon. With several and no Microduck, Roboglot lists
+  what is installed and asks you to name one. A pilot team whose members name no body asks the
+  same question rather than reaching for the duck, because a pilot team is N bodies of any kind;
+  a coordinator team still means N simulated Microducks, which is what it is made of. An adapter named but not installed says what to
+  buy: `adapter 'lerobot' needs an extra: uv pip install 'roboglot[lerobot]'`. `roboglot record`
+  still pins `microduck:sim2d` and a `--team N` auction is still sim2d Microducks only, because
   that is what each of them is, and both now stop with the duck's extra named rather than
   assuming it is there.
 
   What moved is what was only ever the duck's: the `robotd` JSON-RPC transport, the WebSocket
   stub, the MuJoCo backend, the transport factory, the whole `sim3d` physics simulator and the
   `upstream_api.py` that names what robotd promises, all of them now under
-  `adapters/microduck/src/quackd_microduck/`. What stayed in the core is the 2D cartoon arena
-  (`quackd/sim2d/`) and the mock transport (`quackd/transport/mock.py`), because those were never
+  `adapters/microduck/src/roboglot_microduck/`. What stayed in the core is the 2D cartoon arena
+  (`roboglot/sim2d/`) and the mock transport (`roboglot/transport/mock.py`), because those were never
   the duck's either: four of the seven bodies run in that arena, the duck's mock backend is
   `MockTransport` itself, two of the other six subclass it, and all six draw their frames with
-  the 2D renderer. `UpstreamRef` is `quackd/upstream.py` now, because every adapter cites upstreams and
-  none of them should import a duck to do it. An adapter that was `quackd/adapters/<name>/` is
-  `adapters/<name>/src/quackd_<name>/`, imported as `quackd_<name>`, which is the part of this
+  the 2D renderer. `UpstreamRef` is `roboglot/upstream.py` now, because every adapter cites upstreams and
+  none of them should import a duck to do it. An adapter that was `roboglot/adapters/<name>/` is
+  `adapters/<name>/src/roboglot_<name>/`, imported as `roboglot_<name>`, which is the part of this
   that breaks a fork or an out-of-tree patch rather than an install. No manifest, verb, datasheet or safety rule changed, and no body gained or
   lost a backend.
 
   The rest of the cost is ours and it recurs. A release is eight wheels and eight sdists instead
   of one and one, they carry one version between them, which `scripts/set_version.py X.Y.Z`
   writes in all eight places at once, and PyPI takes the core first because every adapter depends
-  on it and a resolver meeting `quackd-lerobot` before `quackd` has nothing to resolve against.
+  on it and a resolver meeting `roboglot-lerobot` before `roboglot` has nothing to resolve against.
   CI gained `uv lock --check`, so a lock that has drifted fails a job rather than reaching a
   release, and a `packaging` job that builds every package, installs the core wheel on its own
   and proves it carries no adapter and says what to install. Contributors run `uv sync --extra
   dev`, which installs the core and all seven adapters as editable workspace members and exactly
-  one robot SDK, `pyzmq`, because running quackd's client against a fake XLeRobot host over
+  one robot SDK, `pyzmq`, because running Roboglot's client against a fake XLeRobot host over
   loopback is the only way that wire protocol is exercised for real
   ([ADR-0037](docs/adr/0037-adapters-are-their-own-packages.md)).
 
 - **A `doctor` probe or a dry run on an arm away from its rest pose now leaves torque on where it
-  used to drop it.** `quackd doctor --robot <arm>`, `quackd robot list --probe` and a `--dry-run`
+  used to drop it.** `roboglot doctor --robot <arm>`, `roboglot robot list --probe` and a `--dry-run`
   all connect and disconnect, and disconnecting is what let the arm go. An arm at its recorded rest
   pose is released as it always was; an arm that is not is left energised, holding its own weight,
   with the one line saying so and what to do about it. That line is printed on every path a probe
   can end by, including the timeout and the failure, which is where an arm is most likely to have
-  been left holding itself up, and `quackd doctor` prints it whenever the disconnect left it,
+  been left holding itself up, and `roboglot doctor` prints it whenever the disconnect left it,
   rather than only when the rest move had already reported a miss. A run that leaves the arm
   powered also fails `doctor`'s verdict rather than printing the warning above a green tick:
   the rest move and the disconnect take separate readings, and when they disagree the second
@@ -8588,7 +8626,7 @@ reports that it did.
   one: the servos stay powered and warming after a command you thought was read-only, until you
   return the arm to its pose or cut the power. An arm with no recorded rest pose is untouched by
   all of this and behaves exactly as it did, which is that torque drops where it stands, and
-  `quackd robot rest-pose <name> --clear` says so when it takes a pose away.
+  `roboglot robot rest-pose <name> --clear` says so when it takes a pose away.
 
 - **`llm_request` counts the images in a request as well as the exchanges that carry one.** The
   event's `images` field meant exchanges, which was the same number until a body could have two
@@ -8608,10 +8646,10 @@ reports that it did.
   body.** `assess_task` told the model its verdict was judged against the datasheet and then
   listed "the object is out of view" as a reason to answer `uncertain`, which are two different
   questions: where the ball is decides nothing about whether a duck can kick a ball on the
-  floor it is rated for. It cost the duck's own starter task. `quackd run --goal "Find the
+  floor it is rated for. It cost the duck's own starter task. `roboglot run --goal "Find the
   ball and kick it."`, which is the goal the README's opening paragraph names and the first one
   it shows for a duck, stopped at the gate 5 times in 6 on Qwen3-32B-AWQ, `uncertain` and the
-  run aborted, where `ducks/find-and-kick.duck` passed 6 of 6 on the same body, seed and model,
+  run aborted, where `tasks/find-and-kick.glot` passed 6 of 6 on the same body, seed and model,
   and the pilot's own reason was "Since the camera currently detects nothing, I cannot
   determine feasibility yet". The description now says the verdict is the task's needs against
   the body's limits and not whether you can see the target, and keeps `uncertain` for what it
@@ -8625,7 +8663,7 @@ reports that it did.
   `endurance_min` and the same pilot could not estimate one, so it spent LLM calls on a
   validation refusal. Thanks to [@Vallhalen](https://github.com/Vallhalen) (#25), who measured
   which of the four differences between a goal and a file does it: the allowlist, not the
-  words. **The allowlist is not narrowed** (quackd cannot know what a sentence needs, and the
+  words. **The allowlist is not narrowed** (Roboglot cannot know what a sentence needs, and the
   README's own goal needs `kick`), so the fix is the words, which is their untested candidate
   and still untested: nobody here runs that model, and the six cells want running again on a
   build that carries this.
@@ -8655,18 +8693,18 @@ reports that it did.
   because `nan < 0.85` is False, so it passed the motion floor, the done gate and the need_human
   gate together and moved the body, while the record printed the floor it had not enforced; a
   number that is not a number is an answer that cannot be read, and the turn goes back. And
-  `--jev` on a flock was accepted and silently did nothing, while `QUACKD_JEV` reached
-  `quackd record`, which the docs said it must not.
+  `--jev` on a team was accepted and silently did nothing, while `ROBOGLOT_JEV` reached
+  `roboglot record`, which the docs said it must not.
 
 - **An `infeasible` verdict raised instead of reporting itself, on any machine without all seven
-  adapters.** `shipped_manifests()` built a manifest for every robot quackd publishes, and a
+  adapters.** `shipped_manifests()` built a manifest for every robot Roboglot publishes, and a
   manifest is built by its adapter, so once the adapters became separate distributions that call
   asked for seven adapters on a machine that has one. Everything that calls it sits under the hint that
   names which other body could have done the task, and the loop reached it unguarded: on an install of
-  `quackd[lerobot]` alone, a run that ended in `infeasible` ended in a traceback instead. That is
+  `roboglot[lerobot]` alone, a run that ended in `infeasible` ended in a traceback instead. That is
   the outcome the whole gate exists to produce, and it has its own exit code. The hint reads what
   is installed here and says so, *No robot installed here meets needs ...*, rather than speaking
-  for what quackd publishes. Found by auditing the merged work against the plan rather than by a
+  for what Roboglot publishes. Found by auditing the merged work against the plan rather than by a
   test, because no test ran the verdict path with an adapter missing. One does now, checked by
   reverting the fix and watching it fail.
 
@@ -8737,20 +8775,20 @@ reports that it did.
   word, reason and needs and read as though that one had been refused. The row describes the
   call now.
 
-- **`quackd validate` with no robot named checked the task against the duck.** The Microduck's
+- **`roboglot validate` with no robot named checked the task against the duck.** The Microduck's
   verb list was the only vocabulary the core could produce without connecting to something, so on
   a machine with only an arm installed it passed a task that allows `kick`, and on a machine with
   nothing installed it had an opinion at all. It unions what every installed body provides now. A
-  `.duck` is a contract rather than a robot, so a task that allows `kick` is coherent as long as
+  `.glot` is a contract rather than a robot, so a task that allows `kick` is coherent as long as
   something here can kick, and asking whether one particular body can keep it is what
-  `quackd validate --robot NAME` already does.
+  `roboglot validate --robot NAME` already does.
 
-- **`quackd[openai]` allowed a version of the SDK that cannot make the call quackd makes.** The
+- **`roboglot[openai]` allowed a version of the SDK that cannot make the call Roboglot makes.** The
   extra asked for `openai>=1.50`, and the provider opens on the Responses API for every model the
   catalogue marks, switching to it elsewhere when a 400 says to. `client.responses` arrived in
   openai 1.66.0: on 1.65 the client carries no such attribute at all. So a resolver that landed
   anywhere between 1.50 and 1.65 produced an install that imported cleanly, passed
-  `quackd doctor`, and could only fail at the first call on those models. The floor is 1.66 now,
+  `roboglot doctor`, and could only fail at the first call on those models. The floor is 1.66 now,
   with an upper bound at the next major, which is the treatment `anthropic>=1.0,<2` beside it
   already had, and `google-genai` gains the same bound. Measured rather than remembered: 1.65.0
   and 1.66.0 were each installed into a throwaway environment and the client was asked whether it
@@ -8792,7 +8830,7 @@ reports that it did.
 - **`stand` barely moved the ToddlerBot, and said it was still moving for ever.** Two faults,
   one on top of the other, and the contract job had never once passed because of them.
 
-  The first hid the second. quackd refuses a reading of all-zero positions with all-zero
+  The first hid the second. Roboglot refuses a reading of all-zero positions with all-zero
   velocities, because that is byte for byte what a Dynamixel bulk read hands back when it
   fails, and driving a position controller to it commands a full-scale move to zero. Upstream's
   MuJoCo body rests with every motor and every velocity at exactly zero, so every reading was
@@ -8842,12 +8880,12 @@ reports that it did.
   fresh frame where there is no camera verb. A Microduck's reads exactly as it did.
 
 - **The arm fell at the end of every run.** LeRobot's `disconnect()` disables torque by its own
-  default, quackd took that default on purpose and wrote it down in `upstream_api.py` and on the
+  default, Roboglot took that default on purpose and wrote it down in `upstream_api.py` and on the
   arm's page, and the reasoning was that a limp arm is a safe arm to be standing next to. On a
   bench, at the end of a run nobody is holding, it is not: the arm falls from wherever the last
   verb left it, which on 2026-09-15 was every single run, including the ones that succeeded. The
   rest pose above is the fix at both ends. A run returns the arm to a posture it can be let go
-  from before disconnecting, and where it did not get there, quackd turns the flag off, leaves the
+  from before disconnecting, and where it did not get there, Roboglot turns the flag off, leaves the
   arm holding itself up and prints the one line rather than dropping it and reporting success.
 
 - The feasibility verdict gate now lets a verb declared `read_only` by its adapter run before
@@ -8856,7 +8894,7 @@ reports that it did.
   the pilot had to judge feasibility without the one tool that answers the question; a local
   14B model given a humanoid with two objects in reach declared the task infeasible twice
   without a single look. Learned verbs are unchanged: they never carry the flag. Thanks to
-  [@Bayway](https://github.com/Bayway) (#26), who wired a humanoid quackd has never shipped to
+  [@Bayway](https://github.com/Bayway) (#26), who wired a humanoid Roboglot has never shipped to
   0.9.0 and measured what the gate cost it.
 
   Four things landed on top of it. A test pins every shipped read-only verb inside
@@ -8873,9 +8911,9 @@ reports that it did.
   and only the confirm gate keeping. And the three documents that said the gate reads
   `BEFORE_VERDICT` and nothing else now say what it reads, ADR-0032 by dated amendment rather
   than a quiet edit, including the adapter guide, which had been telling the author of a body
-  quackd does not ship to classify their verb in a file they do not own, in a set whose own
+  Roboglot does not ship to classify their verb in a file they do not own, in a set whose own
   test rejects it. Two more documents were corrected while reading them: the safety page and
-  the duck spec each hand list the read-only verbs that survive `--dry-run`, and both had
+  the glot spec each hand list the read-only verbs that survive `--dry-run`, and both had
   omitted `introspect` since the rosbridge adapter shipped.
 
 - **A pilot is held to its own datasheet, the way a bid already is.** `missing_needs`
@@ -8915,7 +8953,7 @@ reports that it did.
   later.
 
   **Two readings that would have refused an honest pilot** are fixed in the matcher itself,
-  where the flock coordinator shares them: a minimum of zero asks for nothing, except `work_height_m`, where zero means the ground and a
+  where the team coordinator shares them: a minimum of zero asks for nothing, except `work_height_m`, where zero means the ground and a
   body either reaches it or does not, and a body that
   published no terrain meets `indoor_flat`, which is what the prompt already tells such a body
   to assume about itself, where the prompt says it. The same audit narrowed that second one:
@@ -8926,7 +8964,7 @@ reports that it did.
   And the places a pilot reads about `needs` say the check exists, because a refusal nobody
   was warned about reads as a bug. So does `docs/safety.md`, which says out loud the thing
   that is easy to resent: the check asks more of a pilot that answers fully, because a duck
-  asked to nudge a 60 g ball has no published payload to compare against, and a `duck: 2`
+  asked to nudge a 60 g ball has no published payload to compare against, and a `glot: 2`
   datasheet block is the answer that outlives one run. ADR-0032 carries a dated amendment for
   this as well as for #26, since it is the record for the gate and this changes what its
   Decision section describes.
@@ -8945,33 +8983,33 @@ reports that it did.
 
 - **The stepper has never made a real call in this repository.** Every speed and cost figure in
   `docs/jev.md` is arithmetic over measured inputs rather than a measurement of Jev:
-  TypeSafe's published latency and price, quackd's own measured model latency from the arm run,
+  TypeSafe's published latency and price, Roboglot's own measured model latency from the arm run,
   and a request size measured against the mock. The two runs that put a share of turns
   on it were driven on `lerobot:mock` with a stub in Jev's place, so they measure which turns are
   a choice and nothing about the model that would answer them. `tests/test_live_jev.py` is the
-  one thing that can produce the real number, and it is opt-in twice over, `QUACKD_LIVE_JEV=1`
+  one thing that can produce the real number, and it is opt-in twice over, `ROBOGLOT_LIVE_JEV=1`
   and a key, so it has never run here or in CI. `--jev on` says as much itself.
 
-- **No pilot flock has been driven by a real model, or by a real robot.** Unchanged since 0.9.
-  `flock-hello` runs a duck and an arm on the scripted rule, which cannot reason about a
-  datasheet, so what a real model does with the `Your flock` section and with `tell` is still
-  unknown. N simulated pilots are also N separate worlds, and no flock has crossed from one
+- **No pilot team has been driven by a real model, or by a real robot.** Unchanged since 0.9.
+  `team-hello` runs a duck and an arm on the scripted rule, which cannot reason about a
+  datasheet, so what a real model does with the `Your team` section and with `tell` is still
+  unknown. N simulated pilots are also N separate worlds, and no team has crossed from one
   machine to a second.
 
 - **What 0.9 listed here and this release takes off the list:** the trained gait walks 10 of 10
-  seeds under `QUACKD_STRICT_SEEDS=1` again. Seed 4 was not marginal for a reason nobody
+  seeds under `ROBOGLOT_STRICT_SEEDS=1` again. Seed 4 was not marginal for a reason nobody
   understood; it was the gait floor, measured at 0.22 on MuJoCo 3.12 and no longer enough on the
   3.13 the lock resolves. Both nightly jobs, neither of which had ever passed a scheduled run,
   are green.
 
 ## [0.9.0] — 2026-09-15
 
-A robot has a name now. `quackd robot add scout open_duck:bridge --address ... --token ...`
-writes it once to `~/.quackd/robots.json`, and `--robot scout` then means the same thing in
+A robot has a name now. `roboglot robot add scout open_duck:bridge --address ... --token ...`
+writes it once to `~/.roboglot/robots.json`, and `--robot scout` then means the same thing in
 every command that runs or inspects a robot, so reaching a real body stops being four flags, one
-of them a secret, retyped into shell history on every run. A flock is a list of those names you keep, and it can
-be a second kind of thing now: run a task file that asks for pilots, or one with no `flock:`
-block at all, as `quackd run <duck> --flock <name>` and every member gets a whole
+of them a secret, retyped into shell history on every run. A team is a list of those names you keep, and it can
+be a second kind of thing now: run a task file that asks for pilots, or one with no `team:`
+block at all, as `roboglot run <task> --team <name>` and every member gets a whole
 pilot of its own, with its own provider, executor, allowlist, budgets, heartbeat, memory and
 feasibility verdict, all at once on wall-clock time and on any mix of bodies, dividing the work
 by talking to each other rather than by an auction a referee runs. A file that asks for an
@@ -8985,7 +9023,7 @@ names which shipped bodies could have done it. The CLI got a house style in the 
 which is where `--json`, `--no-color`, grouped `--help`, `-h`, the panels and `doctor --json`
 come from.
 
-Two things are breaking. `--model` and `QUACKD_MODEL` now take an id from a curated catalogue,
+Two things are breaking. `--model` and `ROBOGLOT_MODEL` now take an id from a curated catalogue,
 115 of them across eleven vendors, so an unlisted id is refused before a key is read rather
 than by the vendor after the robot has connected — and the three defaults that had quietly
 gone wrong, `gpt-5`, `gemini-2.5-pro` and a `grok-4` that was being silently answered by
@@ -8997,108 +9035,108 @@ than any other body in this release, a camera, a checklist, a lookout task and a
 stopped it taking the arm's word for four things, and no arm was driven for any of it. Of the
 eleven cloud vendors, two have answered a real request: OpenAI here, and Gemini on a
 contributor's machine, which is where both of this release's Gemini bugs came from. No real
-model has yet refused a task on feasibility grounds, no pilot flock has been driven by a real
+model has yet refused a task on feasibility grounds, no pilot team has been driven by a real
 model or by a robot, and the two nightly jobs that watch upstream have been red since before
 0.8.0 shipped. Known limitations, below, says what each of those leaves open.
 
 ### Added
 
-- **A robot has a name now, and quackd keeps it: `quackd robot add|list|show|edit|remove`.**
+- **A robot has a name now, and Roboglot keeps it: `roboglot robot add|list|show|edit|remove`.**
   Reaching a real body took four flags, one of them a secret: `--robot open_duck:bridge
   --address tcp://10.0.0.5:9871 --token ... --camera-url ...`, retyped on every run and
   therefore in shell history from then on. `--robots name=<adapter>:<backend>,...` gave a name
-  that died with the process. `quackd robot add scout open_duck:bridge --address ... --token
-  ...` writes it once to `~/.quackd/robots.json`, and `--robot scout` then means the same thing
-  in `run`, `validate`, `list-verbs`, `doctor`, `serve-mcp` and `quackd memory`. Two commands are
+  that died with the process. `roboglot robot add scout open_duck:bridge --address ... --token
+  ...` writes it once to `~/.roboglot/robots.json`, and `--robot scout` then means the same thing
+  in `run`, `validate`, `list-verbs`, `doctor`, `serve-mcp` and `roboglot memory`. Two commands are
   outside it: `record`, which pins the simulator, and `announce`, which advertises a static
   manifest and so takes an `<adapter>:<backend>` spec and nothing else. An
   entry may also name the provider and model that pilot that robot, so a real duck can default
   to Claude and the simulator to the scripted rule without a flag; a flag on the line still
   wins, field by field, because reaching the same robot through a tunnel today is not renaming
-  it. `quackd robot list` is static, because it is what you run to remember a name, and
+  it. `roboglot robot list` is static, because it is what you run to remember a name, and
   `--probe` connects to each robot and says whether it answered, exiting 1 if any did not.
-  `--registry-dir` beats `QUACKD_REGISTRY_DIR` beats `~/.quackd`, which is the precedence
+  `--registry-dir` beats `ROBOGLOT_REGISTRY_DIR` beats `~/.roboglot`, which is the precedence
   `--memory-dir` already has. A name may not be a number, an adapter name, or an
   `adapter-backend` memory slug, because each of those already means something else on a
   command line. The honest part: the token is stored in plain text in a file in your home
-  directory, quackd masks it in everything it prints, and `SECURITY.md` says so
-  ([docs/registry.md](docs/guides/registry.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  directory, Roboglot masks it in everything it prints, and `SECURITY.md` says so
+  ([docs/registry.md](docs/guides/registry.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **A flock is a list of names you keep: `quackd flock create|list|show|edit|delete`.**
-  Members are robots registered with `quackd robot add`, so a flock is a composition rather
-  than a command line, and `~/.quackd/flocks.json` remembers it between runs. `create` with no
+- **A team is a list of names you keep: `roboglot team create|list|show|edit|delete`.**
+  Members are robots registered with `roboglot robot add`, so a team is a composition rather
+  than a command line, and `~/.roboglot/teams.json` remembers it between runs. `create` with no
   `--robot` prints what you have registered, numbered, and asks which to include; numbers and
   names can be mixed, a bad answer says what was wrong and asks again, and where there is no
   terminal to ask on it says so and tells you to pass `--robot` instead, because a script must
   never hang on a prompt. Order is kept, because it is the order the members are listed and
-  coloured in when the flock runs. A flock stores up to 8 robots and runs with 2 to 8, so one
+  coloured in when the team runs. A team stores up to 8 robots and runs with 2 to 8, so one
   you are still building, or one edited down to nothing, is stored and marked rather than refused. The one broken state either
-  file can be in is a flock naming a robot nobody registered: `quackd robot remove` refuses
-  while a flock lists it and names the flocks, `--force` drops it from them, and a flock that a
+  file can be in is a team naming a robot nobody registered: `roboglot robot remove` refuses
+  while a team lists it and names the teams, `--force` drops it from them, and a team that a
   hand edit left dangling is marked in every listing and refuses to run rather than quietly
   running smaller ([docs/registry.md](docs/guides/registry.md),
-  [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **A flock can be N pilots talking, not only a coordinator refereeing: `quackd run <duck> --flock <name>`.**
-  The 0.3 flock is one deterministic referee and N state machines in one simulated arena on a
+- **A team can be N pilots talking, not only a coordinator refereeing: `roboglot run <task> --team <name>`.**
+  The 0.3 team is one deterministic referee and N state machines in one simulated arena on a
   lockstep clock, which is the right machine for finding and kicking a ball and the wrong one
   for two robots whose bodies differ, because an auction has no way to express half a task.
-  A pilot flock is the other kind: one whole `AgentLoop` per body, all at once, on wall-clock
+  A pilot team is the other kind: one whole `AgentLoop` per body, all at once, on wall-clock
   time, on any adapter and backend including mixed ones, 2 to 8 of them. Each member keeps its
   own provider, executor, allowlist, budgets, heartbeat, memory and feasibility verdict, so what
-  a pilot flock can do is close to what one pilot can do times the number of bodies. What a
+  a pilot team can do is close to what one pilot can do times the number of bodies. What a
   member gives up is what N concurrent pilots cannot have: nobody prompts a person, so a task
   with a `verbs.confirm` needs `--yes` and an `uncertain` verdict cannot be put to anyone, and
-  there is one live view and one rollup for the flock rather than one per member. Each member is handed the part of the contract its own body can
-  answer for, so an arm in a walking flock is not turned away at the door for having no legs,
+  there is one live view and one rollup for the team rather than one per member. Each member is handed the part of the contract its own body can
+  answer for, so an arm in a walking team is not turned away at the door for having no legs,
   while what the task *requires* is still checked against the union of every body before
-  anything connects. Every pilot declares for itself and the flock succeeds only when all of
+  anything connects. Every pilot declares for itself and the team succeeds only when all of
   them did; otherwise the worst outcome wins, with `error` above `aborted` because one member
   raising and the rest being stopped because it did makes the error the cause and the aborts
-  the consequence. Ctrl-C or `q` fans one kill switch out to every executor. `ducks/flock-hello.duck`
+  the consequence. Ctrl-C or `q` fans one kill switch out to every executor. `tasks/team-hello.glot`
   is the bundled demo, a duck and an arm saying hello, and it runs with `--provider fake` on a
   fresh checkout with no key and no registry. The honest part, which is also in the docs: N
   simulated members are N separate worlds with no shared arena and nothing to check a claimed
   success against, a seed does not make it reproducible, it costs one budget and one model call
   per member per turn, and nothing here has run on hardware
-  ([docs/flock.md](docs/guides/flock.md#the-pilot-flock), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/team.md](docs/guides/team.md#the-pilot-team), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **Pilots talk to each other: a `tell` tool and a `TALK` message on the flock bus.**
+- **Pilots talk to each other: a `tell` tool and a `TALK` message on the team bus.**
   `tell(to, text)` sits beside `assess_task`, `declare_success` and `remember`: it moves
   nothing, costs no step and one model call, and whatever was said arrives in the addressee's
-  next observation under "Messages from your flock". `to` is a member name or `all`, a pilot
-  never hears its own words back, and every message is a `TALK` in `flock.jsonl` like any other
+  next observation under "Messages from your team". `to` is a member name or `all`, a pilot
+  never hears its own words back, and every message is a `TALK` in `team.jsonl` like any other
   bus kind. It is not a verb, it is in no manifest, and no robot ever executes one. Each
-  pilot's system prompt also gains a `## Your flock` section naming every peer and giving the
+  pilot's system prompt also gains a `## Your team` section naming every peer and giving the
   short one-paragraph form of its datasheet, which says less than the bulleted sheet a pilot gets
   for its own body and says so out loud, so a pilot
   deciding who fetches and who holds is reading data rather than guessing, and saying that
   `assess_task` judges its own part rather than the whole task. The runner speaks too, under
-  the name `flock`, when a member's loop ends, because otherwise a pilot waiting on somebody
+  the name `team`, when a member's loop ends, because otherwise a pilot waiting on somebody
   who has already stopped would wait until its budget ran out
-  ([ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **`flock.allocation.method` takes `pilots`, the second value it has ever had.**
-  The task file says which kind of flock it wants. `auction` is the default and everything it
-  always was, and `--flock N` is always that one. `pilots` needs `duck: 1` and reads only
-  `flock.members`. A coordinator flock is still 2 to 4 members, because its arena holds four; a
-  pilot flock is 2 to 8, because nothing is shared and the bound is what one terminal can show.
-  `flock.roles` stays a coordinator feature and is refused on a pilots file, which splits the
-  work by talking instead. An older quackd refuses the value rather than ignoring it, which is
+- **`team.allocation.method` takes `pilots`, the second value it has ever had.**
+  The task file says which kind of team it wants. `auction` is the default and everything it
+  always was, and `--team N` is always that one. `pilots` needs `glot: 1` and reads only
+  `team.members`. A coordinator team is still 2 to 4 members, because its arena holds four; a
+  pilot team is 2 to 8, because nothing is shared and the bound is what one terminal can show.
+  `team.roles` stays a coordinator feature and is refused on a pilots file, which splits the
+  work by talking instead. An older Roboglot refuses the value rather than ignoring it, which is
   the correct failure for a file asking for behaviour it does not have
-  ([docs/duck-spec.md](docs/reference/duck-spec.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/glot-spec.md](docs/reference/glot-spec.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **`quackd serve-mcp --flock <name>` fronts a stored flock as the MCP fleet, and adds no tools.**
+- **`roboglot serve-mcp --team <name>` fronts a stored team as the MCP fleet, and adds no tools.**
   `--robots name=<adapter>:<backend>,...` already served several robots from one process, with
   one executor, budget and heartbeat each. What it could not do is give each of them its own
   address, token and camera: those three flags were one value applied to every robot, which is
-  fine for three simulators and wrong for three machines. A stored flock takes all three from
+  fine for three simulators and wrong for three machines. A stored team takes all three from
   the registry per member, keys each member's memory by its registered name, and makes the
-  flock's own first member the default robot rather than whichever Microduck came first.
-  `--flock` refuses `--robot`, `--robots` and the three endpoint flags, because the registry
-  already answers all five. The nine `robot_*` tools are untouched, and a flock **task file**
+  team's own first member the default robot rather than whichever Microduck came first.
+  `--team` refuses `--robot`, `--robots` and the three endpoint flags, because the registry
+  already answers all five. The nine `robot_*` tools are untouched, and a team **task file**
   is still refused over MCP, whichever kind it is ([docs/mcp.md](docs/guides/mcp.md),
-  [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
 - **Every robot carries a datasheet, and the pilot is told to check the task against it before anything moves.**
   A pilot used to be told one line about the body it was driving and a list of verbs, and nothing
@@ -9107,10 +9145,10 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   refuse on. Every manifest now carries a `datasheet`: what it weighs, how tall it is, how many
   joints it actuates, what it can carry and reach, the band of heights its hands work at, how long
   it runs, what it holds with, what it is rated for, and the things it cannot do whatever the task
-  says. Every number states how sure quackd is of it (`official`, `estimate` or `measured`) and
+  says. Every number states how sure Roboglot is of it (`official`, `estimate` or `measured`) and
   who says so, because a figure without a source is a rumour. A figure the maker never published
   is rendered as "not published: decline any task that hinges on it" and never as a zero. Speeds
-  stay out of it: `limits` is what quackd clamps to, which is a rule about what quackd sends
+  stay out of it: `limits` is what Roboglot clamps to, which is a rule about what Roboglot sends
   rather than a fact about the body, and the prompt renders those separately as clamps. The same
   sheet describes a body on every backend, which is what keeps a robot's digest equal across
   sim2d, mock and the real thing. `rosbridge` is the deliberate exception, and this release is
@@ -9127,7 +9165,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   made about the world and what the task would need. The executor gains a `verdict` gate that
   refuses every verb that moves the body until a feasible verdict exists; looking, speaking and
   the brake run before it, because that is how a pilot works out what it has been asked to do.
-  `infeasible` is its own outcome, not a failure: the run ends where it stands, `quackd run` exits
+  `infeasible` is its own outcome, not a failure: the run ends where it stands, `roboglot run` exits
   3, and the run's reason names which shipped bodies could do it by their own datasheets. On the
   first call, which is where the gate forces it, that means nothing moved. A pilot may record a
   verdict again later, so a run that drove and then declared `infeasible` ends the same way with
@@ -9135,14 +9173,14 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   the person at the terminal, and a no ends the run the way the kill switch does; over MCP, where
   there is no terminal, it stays pending and the model is told to ask the person it is chatting
   with, because a reachable human is a better answer than a flag. A model cannot clear its own
-  doubt: the tool has no field for it. The two kinds of flock member differ here: a coordinator
+  doubt: the tool has no field for it. The two kinds of team member differ here: a coordinator
   member is a state machine with no pilot at all, so there is no gate to ask with, while a pilot
-  flock member has the gate and no terminal, so an `uncertain` there is told that nobody is
+  team member has the gate and no terminal, so an `uncertain` there is told that nobody is
   present to answer for the human. The scripted pilot answers the gate as a rule and says so in its
   reason, which keeps every keyless example and all ten acceptance seeds running as before
   ([ADR-0032](docs/adr/0032-datasheets-and-the-verdict.md)).
 
-- **A base over rosbridge reads its own description, and a flock role can ask for a body that can carry.**
+- **A base over rosbridge reads its own description, and a team role can ask for a body that can carry.**
   `rosbridge` names a transport, not a robot, so the honest static answer was that nothing is
   known. At connect it now asks the bridge for the topic list and the robot's own URDF, from the
   `robot_description` parameter first and the latched topic second, and two things a description
@@ -9150,45 +9188,45 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   links weigh and how many joints are not fixed. Everything else stays unknown, payload above
   all. One deadline covers the whole look and it never fails a connect, so a bridge without
   `rosapi` costs that and leaves the sheet saying nothing was discovered, with the reason. A new
-  verb, `introspect`, asks again for a robot that was still booting. Separately, a `duck: 2` flock
+  verb, `introspect`, asks again for a robot that was still booting. Separately, a `glot: 2` team
   role may state physical `needs` in the same vocabulary a verdict uses, checked by `validate`,
   by the member before it bids, and by the coordinator from the datasheet the bid itself carries,
-  so a robot quackd does not run is held to the same standard. An unpublished figure counts as
+  so a robot Roboglot does not run is held to the same standard. An unpublished figure counts as
   not met ([ADR-0032](docs/adr/0032-datasheets-and-the-verdict.md)).
 
-- **A `duck: 2` file can correct a robot's datasheet for the build in front of you.**
+- **A `glot: 2` file can correct a robot's datasheet for the build in front of you.**
   A vendor says an SO-101 lifts 500 g; your printed gripper holds 300. A `datasheet:` block in
   the frontmatter replaces any figure with your own, and the prompt renders it as coming from the
   task file so a reader can tell the maker's numbers from yours. The sentence lists extend and
   never delete: a task file can add something a body cannot do, and can never remove one. A
   correction the body contradicts, a payload on a robot with nothing to hold with, is refused by
-  `quackd validate` before anything connects. `duck: 2` also unlocks `flock.roles.<role>.needs`
-  ([docs/duck-spec.md](docs/reference/duck-spec.md)).
+  `roboglot validate` before anything connects. `glot: 2` also unlocks `team.roles.<role>.needs`
+  ([docs/glot-spec.md](docs/reference/glot-spec.md)).
 
-- **quackd carries a list of the models it will let you pick, and `--model` picks from it.**
+- **Roboglot carries a list of the models it will let you pick, and `--model` picks from it.**
   `--model` used to take any string and hand it to the vendor, so a typo, an id retired last spring
   and an id belonging to a different vendor all failed the same way: at the first call, in the
   vendor's own words, after the run directory had been made and the robot had connected. There is
-  now one curated list per cloud vendor in `quackd/agent/providers/catalogue.py` — eleven vendors,
+  now one curated list per cloud vendor in `roboglot/agent/providers/catalogue.py` — eleven vendors,
   115 models, each with the id as the vendor spells it, a label a human can read, one of five
   statuses (`current`, `legacy`, `preview`, `specialised`, `open`) and two hints about what the
   vendor will accept. The first entry of a vendor is its default, so a default is no longer a second
-  place the id gets written down and falls out of step. `quackd list-models` prints the whole table
+  place the id gets written down and falls out of step. `roboglot list-models` prints the whole table
   and `--provider NAME` narrows it to one vendor; the notes column marks the default, the OpenAI
   models that open on the Responses API, and the individual models whose vendor does not document
   image input, where
-  quackd sends the detections as text instead of the camera frame and `--vision` overrides. That
+  Roboglot sends the detections as text instead of the camera frame and `--vision` overrides. That
   last one is a per-model fact rather than a per-vendor one: several vendors carry both kinds.
-  `QUACKD_MODEL` is checked exactly as `--model` is, and the refusal says which of the two the id
+  `ROBOGLOT_MODEL` is checked exactly as `--model` is, and the refusal says which of the two the id
   came from, because a flag you just typed and a line you forgot in a `.env` want different answers.
   `--model` also completes in the shell, following whichever `--provider` is already on the command
   line. The local presets are deliberately outside all of this: `local`, `ollama`, `vllm`,
   `llamacpp` and `lmstudio` serve whatever you pulled, so `--model` is still free text there and
-  passing none still means "ask the server what it has". `quackd serve-mcp` picks no model at all —
-  the client's own model is the pilot and `QUACKD_MODEL` is irrelevant there — which was already
+  passing none still means "ask the server what it has". `roboglot serve-mcp` picks no model at all —
+  the client's own model is the pilot and `ROBOGLOT_MODEL` is irrelevant there — which was already
   true and is now written down ([ADR-0031](docs/adr/0031-llm-catalogue.md)).
 
-- **`quackd list-models`**, the command that prints what `--model` will accept. Five columns per
+- **`roboglot list-models`**, the command that prints what `--model` will accept. Five columns per
   id: the vendor, the id as that vendor spells it, a label a human can read, its status, and a
   notes column that marks each vendor's default, the OpenAI ids that open on the Responses API,
   and the individual ids whose vendor does not document image input. `--provider NAME` narrows it to one vendor
@@ -9201,8 +9239,8 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   `deepseek` reads `DEEPSEEK_API_KEY`, `cohere` reads `COHERE_API_KEY` (or `CO_API_KEY`, which is
   what Cohere's own examples export), `qwen` reads `DASHSCOPE_API_KEY`, `kimi` reads
   `MOONSHOT_API_KEY`, `glm` reads `ZAI_API_KEY`, and `meta` reads `META_API_KEY` (or
-  `MODEL_API_KEY`). Each has its own extra — `quackd[mistral]`, `quackd[deepseek]` and so on — and
-  every one of them installs the same `openai>=1.50` wheel that `quackd[openai]` and `quackd[grok]`
+  `MODEL_API_KEY`). Each has its own extra — `roboglot[mistral]`, `roboglot[deepseek]` and so on — and
+  every one of them installs the same `openai>=1.50` wheel that `roboglot[openai]` and `roboglot[grok]`
   do. Nine vendors, one package: the extra exists so that a missing-SDK error can name the install
   the reader actually wants rather than a package name they will not connect to the vendor they
   asked for. Meta here is not Llama — Meta retired the hosted Llama API in July 2026, and its
@@ -9222,12 +9260,12 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   fails when the generated file has drifted from `catalogue.py`.
 
 - **A bring-up checklist and a lookout task for the LeRobot arm, which had neither.**
-  Every other body quackd ships a lookout for had both, and this file has said the arm did not
+  Every other body Roboglot ships a lookout for had both, and this file has said the arm did not
   since 0.7. [docs/lerobot-hardware-checklist.md](docs/adapters/lerobot/hardware-checklist.md)
   is the order to try an SO-101 in, with nothing moving until step 10 and a hand on the power
-  switch from there, because this arm has no e-stop. `ducks/lerobot-lookout.duck` is the task
+  switch from there, because this arm has no e-stop. `tasks/lerobot-lookout.glot` is the task
   to point at a real arm first: it moves no joint, and it asks for `report_state` rather than
-  `observe`, because a `.duck` is checked against the static manifest, which cannot know
+  `observe`, because a `.glot` is checked against the static manifest, which cannot know
   whether a webcam is plugged in
   ([docs/adapters/lerobot.md](docs/adapters/lerobot/README.md)).
   One body still has neither, and it is the one that names a transport rather than a robot: a
@@ -9245,14 +9283,14 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   Nothing is asked of the camera by default, because a mode it cannot do is a refusal at
   connect and the webcam in a lab drawer is unknown. An unknown key or a bad value is refused
   with the shape, before LeRobot is imported.
-  quackd builds the camera itself rather than handing it to the follower, and that is the
+  Roboglot builds the camera itself rather than handing it to the follower, and that is the
   whole design: a follower's `is_connected` is the bus **and** every camera, and `send_action`
   and `disconnect()` are gated on it, so one webcam coming unplugged would have made every
   move and every hold raise while the arm was perfectly fine. Beside the follower, a camera
   asked for and not opened refuses at connect naming the url, before the arm is touched at
   all, and a camera that dies later costs `observe` and a `pick` in flight and nothing else:
   the heartbeat still reads the arm, the joints still move, `stop` still holds. `observe` now says what the camera said rather than "this transport has
-  no camera", `quackd doctor` gates its verdict on a real frame as it does on every body whose
+  no camera", `roboglot doctor` gates its verdict on a real frame as it does on every body whose
   transport reports camera health, which is the Microduck over robotd and the Open Duck's bridge
   and not the four that report none, and `?fov=` travels with the camera into `limits.camera_fov_deg` so bearings are
   calibrated over MCP too, where there is no `--fov-deg`
@@ -9261,9 +9299,9 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
 
 - **The LeRobot pages rewritten for someone who owns the arm rather than someone who wrote
   the adapter, and five things they said that were not true.** An SO-101 owner is the likeliest
-  first external user of quackd, and the two pages assumed a reader who already knew what
-  quackd was for. [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md) now opens with what
-  LeRobot already does for you and what quackd deliberately does not touch (teleoperation,
+  first external user of Roboglot, and the two pages assumed a reader who already knew what
+  Roboglot was for. [docs/adapters/lerobot.md](docs/adapters/lerobot/README.md) now opens with what
+  LeRobot already does for you and what Roboglot deliberately does not touch (teleoperation,
   recording, training), the three properties of this body that shape every guard, and a
   starting path that begins with the mock and no arm at all. It gained the install trap in
   full (the `[feetech]` extra, and the `python_version >= '3.12'` marker that makes an install
@@ -9275,13 +9313,13 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   raises it, beside what to do about it, followed by a short list of failures SO-101 owners report that nobody
   here has verified, labelled as such.
   The five corrections: a task that allows `observe` is refused on **every** real arm rather
-  than only on one without a camera, because `quackd run` checks the allowlist as well as
+  than only on one without a camera, because `roboglot run` checks the allowlist as well as
   `requires` against the static manifest, and the place it does work is MCP, where
-  `robot_load_duckfile` validates against the robot already connected, so the same task loads
+  `robot_load_glotfile` validates against the robot already connected, so the same task loads
   on a session started with `--camera-url`; the pilot gets detections every step whether or
   not `observe` is allowed, which makes `--vision` the picture rather than the sight;
   `load_policy()` imports
-  `lerobot.configs.policies.PreTrainedConfig`, which had no ref, so "every name quackd spells
+  `lerobot.configs.policies.PreTrainedConfig`, which had no ref, so "every name Roboglot spells
   lives in `upstream_api.py`" was false until this commit added it; and `pick` is not reachable
   from the CLI or from MCP at all, because `make()` has no policy parameter and `load_policy()`
   has no caller outside a test, which the checklist had presented as something to try at the bench.
@@ -9293,16 +9331,16 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   [hardware report template](.github/ISSUE_TEMPLATE/lerobot-hardware-report.yml) that asks for
   exactly what *What to report* asks for. Two things in the code changed because writing the
   pages found them, and they are under Fixed: a camera that dies mid-run used to be invisible
-  on a `quackd run`, and `doctor` advised about verbs an arm does not have.
+  on a `roboglot run`, and `doctor` advised about verbs an arm does not have.
 
   One thing neither page knew: **upstream's calibration does not sweep `wrist_roll`.** It
   prints *move all joints except 'wrist_roll'* and records a full encoder turn for it, so that
-  joint's travel comes out as -180..180 and quackd's out-of-range refusal, which is real on the
+  joint's travel comes out as -180..180 and Roboglot's out-of-range refusal, which is real on the
   other four body joints, cannot catch anything on that one. Both pages now say so, and the
   checklist's out-of-range step says which joint not to test it on.
 
-- **A body field the server wants and quackd never sends: `--extra-body` and
-  `QUACKD_EXTRA_BODY`.** One JSON object, merged into the top of every request body on every
+- **A body field the server wants and Roboglot never sends: `--extra-body` and
+  `ROBOGLOT_EXTRA_BODY`.** One JSON object, merged into the top of every request body on every
   provider that speaks OpenAI's API, which is nine of the eleven cloud vendors and all five
   local presets, and sent on Chat Completions and Responses both, so it keeps working when a
   run moves from one to the other mid-flight. The case that asked for it: Qwen3 on vLLM thinks
@@ -9312,9 +9350,9 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   1717 output tokens deliberating before a decision that was correct anyway. The flag beats the
   variable, an empty object sends nothing, and a value that is not one JSON object is refused
   before a robot is connected, naming the flag or the variable it came from. Six keys are
-  refused because they are quackd's to send — `model`, `messages`, `input`, `instructions`,
+  refused because they are Roboglot's to send — `model`, `messages`, `input`, `instructions`,
   `tools` and `stream`, the fourth being the system prompt on Responses the way the second is
-  on Chat Completions — and everything else replaces what quackd would have sent, `tool_choice`
+  on Chat Completions — and everything else replaces what Roboglot would have sent, `tool_choice`
   included, because overriding it is the point. `run_start` records the object, since a run
   whose model was told not to think reads nothing like one that was. Anthropic and Gemini
   ignore it, as they already ignore `--base-url`. It is in `.env.example` with the others,
@@ -9354,13 +9392,13 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   five sentence paragraph, and at the 8.1 to 10.2 tokens a second every call in that run decodes
   at, 130 tokens is about 13 of its 16 seconds. `reasoning_tokens` stays 0 in both, which is a
   property of a server running without `--reasoning-parser` rather than evidence of a model that
-  did not reason: the server leaves the thinking in `content`, billed as output, and quackd then
+  did not reason: the server leaves the thinking in `content`, billed as output, and Roboglot then
   splits it into the transcript's own `thinking` field before the text fallback can read a verb
   out of a discarded thought.
-  **And the pair is the first published chain of quackd's memory**, which the PR delivered
+  **And the pair is the first published chain of Roboglot's memory**, which the PR delivered
   without claiming. The thinking run's `remember` saved *"The ball was found at 43° left, ~0.85 m
   during initial scan."* and that sentence is in the other run's `system_prompt` verbatim, beside
-  the episode quackd wrote from the same run, with the counters moving from 1 note and 2 episodes
+  the episode Roboglot wrote from the same run, with the counters moving from 1 note and 2 episodes
   to 2 and 3, so nothing ran between them. A note written by one run and read by the next, both
   ends in this repository, which no transcript here had shown and which
   [PLAN.md](PLAN.md) had carried as open since #7. The machine is an `aarch64` NVIDIA GB10,
@@ -9370,9 +9408,9 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
 
 ### Changed
 
-- **The README and the social card wear the duck head quackd.org uses, and `logo.svg` is
+- **The README and the social card wear the duck head roboglot.org uses, and `logo.svg` is
   gone.** The README opened with a flat biped and a wordmark that set `quack` in yellow and
-  the `d` in purple. It opens with the 3D duck head instead, the same drawing quackd.org
+  the `d` in purple. It opens with the 3D duck head instead, the same drawing roboglot.org
   shows in a browser tab, over a plain `<h1>` in whatever colour the reader's GitHub theme
   uses for a heading. The two marks had been diverging since the landing page shipped, and a
   project whose front door and whose website do not look like the same project is paying for
@@ -9398,7 +9436,7 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   its whole travel. So the heartbeat now reads the arm; torque and each servo's temperature
   are read off the bus by register; every joint's range comes from the arm's own calibration
   file and a goal outside it is refused; and one action moves a joint at most a capped step,
-  set by `QUACKD_LEROBOT_MAX_STEP_DEG`. What a pilot notices: `move_joints` and `gripper`
+  set by `ROBOGLOT_LEROBOT_MAX_STEP_DEG`. What a pilot notices: `move_joints` and `gripper`
   re-send the goal and watch the measurement, so they can now fail with where the arm stopped
   and `duration_s` is a budget rather than a wait; a new `not_hot` precondition refuses
   `move_joints` and `pick` when one of the five body joints reads 60 °C or more, the gripper
@@ -9412,44 +9450,44 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   [ADR-0036](docs/adr/0036-what-the-arm-does-not-say.md).
 
 - **The one-liner changed, and every place that carried the old one followed.**
-  It was *Give your Microduck a brain. Any LLM, one `.duck` file.* It is now *One CLI for all your
+  It was *Give your Microduck a brain. Any LLM, one `.glot` file.* It is now *One CLI for all your
   robots. Connect them, command them, and let them work together, each with an LLM for a brain.*
-  That sentence was accurate for 0.3, when quackd was a brain for exactly one robot. 0.4 made the
-  robot an adapter that declares a manifest, and the registry and the pilot flock in this same
-  section made a robot a name you keep and a flock a list of those names, so what quackd is is the
+  That sentence was accurate for 0.3, when Roboglot was a brain for exactly one robot. 0.4 made the
+  robot an adapter that declares a manifest, and the registry and the pilot team in this same
+  section made a robot a name you keep and a team a list of those names, so what Roboglot is is the
   place you connect the robots you own, the place you command all of them, and where they divide a
-  task between themselves, each with an LLM for a brain. quackd is the CLI, not the brain. The new
+  task between themselves, each with an LLM for a brain. Roboglot is the CLI, not the brain. The new
   sentence is in the README, in `pyproject.toml`'s description, which is what PyPI shows from this
   release on, and in its keywords, where `reachy-mini` gave way to nine vendor names and to
   `multi-robot` and `robot-fleet`, the one place the retired word stays on
-  purpose, in the `quackd --help` banner, in `quackd/__init__.py`'s docstring and in `LAUNCH.md`.
+  purpose, in the `roboglot --help` banner, in `roboglot/__init__.py`'s docstring and in `LAUNCH.md`.
   The demo's title and meta tags, [docs/architecture.md](docs/concepts/architecture.md) and
   [docs/mcp.md](docs/guides/mcp.md) did not take the sentence itself: they lost the retired tagline and
   had the new positioning written into their own words. "Fleet" is retired
-  from prose and from help text in favour of "flock", while the code identifiers keep it, because
-  renaming `build_fleet_server` would be churn no reader sees. [docs/flock.md](docs/guides/flock.md) now
+  from prose and from help text in favour of "team", while the code identifiers keep it, because
+  renaming `build_fleet_server` would be churn no reader sees. [docs/team.md](docs/guides/team.md) now
   reads pilots-first. Nothing new ships here: the features this describes landed in this same
-  release, every body is still simulated or mocked, and flock mode is still EXPERIMENTAL
+  release, every body is still simulated or mocked, and team mode is still EXPERIMENTAL
   ([ADR-0035](docs/adr/0035-one-cli-for-all-your-robots.md)).
 
 - **A registered robot keys its memory by its name, not by its body.**
   Memory was keyed `adapter:backend` so that a simulated duck never inherited a real one's
   notes, which was right and also meant two real ducks on one desk shared one file. A robot
-  registered with `quackd robot add` now keys by the name you gave it, so `duck-a` and `duck-b`
+  registered with `roboglot robot add` now keys by the name you gave it, so `duck-a` and `duck-b`
   keep separate notes, while an unregistered `--robot microduck:sim2d` run keys exactly as it
   did. A registered name may not collide with an `adapter-backend` slug, so a run can never be
   ambiguous about which file it is writing. Amends
   [ADR-0025](docs/adr/0025-memory-between-runs.md)
-  ([docs/memory.md](docs/guides/memory.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-flocks.md)).
+  ([docs/memory.md](docs/guides/memory.md), [ADR-0034](docs/adr/0034-registered-robots-and-pilot-teams.md)).
 
-- **Breaking. `--model` and `QUACKD_MODEL` now take a catalogue id, and three of the four defaults moved.**
+- **Breaking. `--model` and `ROBOGLOT_MODEL` now take a catalogue id, and three of the four defaults moved.**
   [ADR-0010](docs/adr/0010-providers.md) shipped four defaults with the first release and marked
   three of them "(verify)". Nobody ever did, and by 2026-09-12 all three were wrong: `gpt-5` has
   an announced shutdown date, `gemini-2.5-pro` is legacy, and `grok-4` was retired in May 2026 and
   is silently answered by `grok-4.3` — which is the worst of the three, because nothing fails, the
   key is billed and the transcript records a model that did not run. The defaults are now
   `gpt-5.6-sol` for `openai`, `gemini-3.8-flash` for `gemini` and `grok-4.6` for `grok`;
-  `claude-opus-5` for `anthropic` is unchanged. This is breaking for anyone passing an id quackd
+  `claude-opus-5` for `anthropic` is unchanged. This is breaking for anyone passing an id Roboglot
   does not list, and that is the point: the refusal arrives
   before a key is read or a packet is sent, and it says what to pass instead. Two of the three
   old defaults are in that position, `gpt-5` and `grok-4`, both of which the catalogue refuses by
@@ -9458,42 +9496,42 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   explicitly keeps working and only the default moved out from under it.
 
       error: openai: unknown model 'gpt-5' from --model. Valid ids: gpt-5.6-sol (default),
-      gpt-6-astra, gpt-5.6-terra, ... See `quackd list-models --provider openai`.
+      gpt-6-astra, gpt-5.6-terra, ... See `roboglot list-models --provider openai`.
 
   When the id belongs to another vendor the refusal names it — `('grok-4.6' is a grok model: pass
   --provider grok)` — because that is the commonest mistake and the hardest to see, the id looking
-  perfectly valid. A `QUACKD_MODEL` line that has sat in a `.env` since then now stops the run rather
-  than starting a wrong one, and `quackd doctor` shows the id each provider would actually be given
+  perfectly valid. A `ROBOGLOT_MODEL` line that has sat in a `.env` since then now stops the run rather
+  than starting a wrong one, and `roboglot doctor` shows the id each provider would actually be given
   instead of guessing at it. One more thing rides on the same list: five OpenAI entries are marked
   as Responses-API models, `gpt-6-astra`, the three pro ids and `gpt-5.3-codex`, so a run with one
   of them opens on `/v1/responses`
   instead of paying a failed Chat Completions call to find that out. The 400 reader 0.8 added stays,
   because it is what covers a model the catalogue has not been told about yet.
 
-- **The CLI has a house style, and a way out of it.** quackd's colours had grown inline: a
+- **The CLI has a house style, and a way out of it.** Roboglot's colours had grown inline: a
   `[green]` in one command, a `Table` in another, an emoji in a third, with nothing saying
-  which green meant *this worked* and which meant *this is installed*. `quackd/ui.py` is now
+  which green meant *this worked* and which meant *this is installed*. `roboglot/ui.py` is now
   that vocabulary in one place, and three rules run through it. Text a model, a robot or a
   manifest wrote is never read as markup, so a note saying the ball is `[behind]` the sofa
-  and an error naming `quackd[anthropic]` both arrive intact. Glyphs come from a table with
+  and an error naming `roboglot[anthropic]` both arrive intact. Glyphs come from a table with
   an ASCII half chosen from the stream's own encoding, and the panels pick their half when
   they are drawn rather than when they are built, because a replay goes to stdout, a run
   narrates to stderr, and a test hands round a buffer of its own. And chrome goes to stderr
-  while answers go to stdout, so `quackd list-adapters > adapters.txt` gets the table and
+  while answers go to stdout, so `roboglot list-adapters > adapters.txt` gets the table and
   nothing else. On a Windows pipe, where every decoration used to arrive as a question mark,
   the adapter roster now reads `[ok] built-in: sim2d` and `[exp] jsonrpc`.
 
 - **`--no-color`, and `--json` on `validate`, `list-verbs`, `list-adapters`, `list-models` and the
   four registry listings.** The tables are for a person. `--json` prints one object per line on stdout and nothing else, keeping
-  the exit code it would have had, so `quackd validate ducks/*.duck --json` still exits 1 on
+  the exit code it would have had, so `roboglot validate tasks/*.glot --json` still exits 1 on
   a failure and a script can read which file and why. `--no-color` sets `NO_COLOR` as well as
-  quackd's own consoles, because Typer builds a console of its own for every `--help` it
+  Roboglot's own consoles, because Typer builds a console of its own for every `--help` it
   renders. `FORCE_COLOR=1` is the other direction, for a pipe you are colouring on purpose.
-  `quackd list-models` arrived in the same release from the other direction and wears the
+  `roboglot list-models` arrived in the same release from the other direction and wears the
   house style too: its model ids still fold rather than elide, and none of the five columns
   goes through Rich's markup on the way, so a label with a bracket in it survives.
 
-- **`-h` works**, everywhere `--help` does, and `--help` groups what it shows. `quackd run`
+- **`-h` works**, everywhere `--help` does, and `--help` groups what it shows. `roboglot run`
   offered twenty seven flags in one flat list. They are sorted into Task, Model, Robot,
   Output and Memory now, the commands are grouped the same way, and the root help ends with
   three worked examples.
@@ -9506,21 +9544,21 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   same event stream the trace does, it exists only when stderr is a terminal somebody is
   watching, and it steps out of the way for a confirmation prompt, because a live region
   redirects stdout and would otherwise swallow the question until after it was answered.
-  `quackd doctor`, `quackd discover`, `quackd announce` and GIF encoding get a spinner for
+  `roboglot doctor`, `roboglot discover`, `roboglot announce` and GIF encoding get a spinner for
   the same reason.
 
 - **A run opens and closes with a panel.** The header used to be one line of middle dots and
   the verdict three lines under it, and on a long run the two ends of the story were the two
   things hardest to find in a screenful of trace. They are now bordered, the verdict is
   coloured by its outcome, and the run directory and the GIF are links where the terminal
-  allows it. `quackd trace` prints the same verdict from the transcript, so a replay still
+  allows it. `roboglot trace` prints the same verdict from the transcript, so a replay still
   ends the way the run did.
 
-- **`quackd memory show` is two tables**, notes and recent runs, rather than the block of
+- **`roboglot memory show` is two tables**, notes and recent runs, rather than the block of
   dim text the model is given. The outcome has its own column and its own colour, and an
   episode no longer repeats the duck and the outcome inside the sentence that follows them.
 
-- **`quackd doctor --json`**, and a verdict at the end of the human version. doctor knew
+- **`roboglot doctor --json`**, and a verdict at the end of the human version. doctor knew
   whether this machine could run anything and said so only through its exit code, which
   nobody reads off a screen. It now closes with one line: what works here, how many extras
   are installed, how many assumptions are unverified, and which cloud providers are one key
@@ -9534,27 +9572,27 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   and a result is `✓` or `✗` or, for a handover that ended a verb early on purpose, `•`.
   Each step is ruled off with the budget line lifted out of the observation it was buried
   in, and said once rather than twice. The system prompt is an indented block between two
-  rules instead of forty lines of the same dim colour. A flock gives each member a colour as
+  rules instead of forty lines of the same dim colour. A team gives each member a colour as
   well as a name. [ADR-0033](docs/adr/0033-terminal-theme.md) records the decision and
   amends [ADR-0029](docs/adr/0029-tracing.md), whose "lines are ASCII first" rule now
   applies where it was earned: the MCP tool result carries exactly the bytes it always did,
   frozen case by case by a new golden, and the terminal asks the stream it is writing to
   which half of the glyph table it can carry. A redirected stderr on Windows still gets
   `->`, `+` and `x`, and the degree signs, section signs and dashes that used to arrive as
-  question marks now arrive as ASCII quackd chose rather than as the terminal's guess.
+  question marks now arrive as ASCII Roboglot chose rather than as the terminal's guess.
 
-- **A closed pipe is not an error.** `quackd list-verbs | head` answered with a wall of
+- **A closed pipe is not an error.** `roboglot list-verbs | head` answered with a wall of
   traceback about a broken pipe printed on top of the output that was asked for. The console
-  entry point is now `quackd.cli:main`, which leaves quietly, and Typer's pretty exceptions
+  entry point is now `roboglot.cli:main`, which leaves quietly, and Typer's pretty exceptions
   are off because they print local variables and this process's locals hold an API key, a
   robot's address and its bridge token. A Rich traceback without locals is installed instead,
   so a real crash still reads well.
 
-- **`quackd validate` counts in English** (`12 files valid`, `1 of 3 files failed`), names
+- **`roboglot validate` counts in English** (`12 files valid`, `1 of 3 files failed`), names
   where to look next when it fails, and no longer lets a long file path squeeze the column
   that carries the answer down to nothing.
 
-- **`quackd doctor` reads as a report rather than a wall.** Fourteen tables arrived stacked
+- **`roboglot doctor` reads as a report rather than a wall.** Fourteen tables arrived stacked
   with nothing between them, and eight of them were per-upstream lists of unverified
   assumptions, each followed by its own dim footer. Those sixteen blocks are now two: one
   sectioned table of assumptions, and one table of pins that puts the eight upstreams side
@@ -9562,30 +9600,30 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   are ruled off and named, and the five local LLM servers are probed behind a spinner
   rather than ten seconds of silence.
 
-- **Extras in `--help` keep their brackets.** `--live` advertised an install called `quackd`
-  rather than `quackd[live]`, because Rich had read the extra as markup and eaten it. Same
-  for `quackd[microduck-camera]` and `quackd[lan]`.
+- **Extras in `--help` keep their brackets.** `--live` advertised an install called `roboglot`
+  rather than `roboglot[live]`, because Rich had read the extra as markup and eaten it. Same
+  for `roboglot[microduck-camera]` and `roboglot[lan]`.
 
 ### Removed
 
-- **Breaking. The Reachy Mini adapter.** `--robot reachy_mini:{sim2d,mock,sdk}`, `quackd[reachy]`,
+- **Breaking. The Reachy Mini adapter.** `--robot reachy_mini:{sim2d,mock,sdk}`, `roboglot[reachy]`,
   the `reachy-spotter` and `reachy-spots-duck-kicks` starters, the `reachy-mini` GitHub topic and
   the PyPI keyword are gone, along with its doc page, its `hetero.gif` and every mention that
-  described it as a robot quackd still drives. A command line or a `.duck` naming that adapter
+  described it as a robot Roboglot still drives. A command line or a `.glot` naming that adapter
   fails at `--robot` now, which is the correct failure for a body that is not there. The ADRs
   that document it keep their text, marked superseded or amended. The design records under
   `docs/design/` keep their text unmarked, `multi-robot.md` still describing the adapter in the
-  present tense, because those are the record of what 0.4 designed rather than of what ships. quackd ships seven adapters now: Microduck, Open Duck Mini v2, LeRobot arm, any rosbridge
+  present tense, because those are the record of what 0.4 designed rather than of what ships. Roboglot ships seven adapters now: Microduck, Open Duck Mini v2, LeRobot arm, any rosbridge
   base, XLeRobot, AlohaMini and ToddlerBot. Reachy Mini was the only "stationary head"
-  embodiment quackd ever carried, so the machinery that existed solely to pair one with a
+  embodiment Roboglot ever carried, so the machinery that existed solely to pair one with a
   Microduck goes with it: `StationaryHead` and the fixed head poses in `sim2d/world.py` and
-  `sim2d/render.py`, and the reachy-only branch of `flock/runner.py`'s `make_sim_flock`. The
-  capability-based role auction itself (`flock/auction.py`'s `RoleAuction`,
-  `flock.roles` in a `.duck` file) is separate, still-generic machinery and is untouched —
-  [ADR-0020](docs/adr/0020-heterogeneous-flocks.md) always said a two-Microduck spotter/kicker
-  flock is valid on its own; the auction simply has no second embodiment to pair a Microduck
+  `sim2d/render.py`, and the reachy-only branch of `team/runner.py`'s `make_sim_team`. The
+  capability-based role auction itself (`team/auction.py`'s `RoleAuction`,
+  `team.roles` in a `.glot` file) is separate, still-generic machinery and is untouched —
+  [ADR-0020](docs/adr/0020-heterogeneous-teams.md) always said a two-Microduck spotter/kicker
+  team is valid on its own; the auction simply has no second embodiment to pair a Microduck
   against today. [ADR-0023](docs/adr/0023-reachy-mini.md) is marked Superseded rather than
-  deleted, and [ADR-0020](docs/adr/0020-heterogeneous-flocks.md) is amended in place, both left
+  deleted, and [ADR-0020](docs/adr/0020-heterogeneous-teams.md) is amended in place, both left
   readable as the record of what 0.4 through 0.8 actually shipped. Nothing about the other
   seven adapters changed.
 
@@ -9607,20 +9645,20 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   moved, and the run ends on the duck's own *same verb fails 3 times in a row* rule after three
   steps. So seed 4 is marginal and platform dependent rather than the gait being broken, and
   the honest claim is that the sweep has returned 10 of 10 and does not always. The shipped
-  threshold outside `QUACKD_STRICT_SEEDS` is 8, which it clears every time. Every one of those
+  threshold outside `ROBOGLOT_STRICT_SEEDS` is 8, which it clears every time. Every one of those
   four documents now says what was measured instead of a round number, the ADR by dated
   amendment rather than by rewriting what it decided. The kinematic stand-in is untouched and
   still gates every push at 10 of 10.
 
-- **A camera that died mid-run was invisible on a `quackd run`.** `camera_error` was read only
-  by `observe` and by `doctor`, and `observe` cannot be in a `.duck`'s allowlist on the arm, so
+- **A camera that died mid-run was invisible on a `roboglot run`.** `camera_error` was read only
+  by `observe` and by `doctor`, and `observe` cannot be in a `.glot`'s allowlist on the arm, so
   on the one body where a camera is a thing you plugged in yourself the frames simply stopped
   and nothing said why. The camera's health now rides in the arm's own state beside the policy
   and the register errors, which puts it in the transcript and in front of an MCP client, and
   `report_state` says `CAMERA DOWN:` with the reason when a read has actually failed, staying
   quiet for a camera that is merely unread.
 
-- **`quackd doctor` advised about verbs the robot in front of it does not have.** Its no-frame
+- **`roboglot doctor` advised about verbs the robot in front of it does not have.** Its no-frame
   advisory named `go_to`, `search_scan` and `approach_and`, none of which exist on an arm bolted
   to a table. It names that body's own camera verbs now. A `camera_health()` proxy on the adapter
   went with it: `doctor` reaches the transport's own method, as it does on every other body, so
@@ -9636,9 +9674,9 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   gets. The arm supplies its own `report_state` now, and a test pins it through the observation
   text the model actually receives.
 
-- **quackd's log records no longer stop at quackd's own handler.** `install_logging` set
+- **Roboglot's log records no longer stop at Roboglot's own handler.** `install_logging` set
   `propagate = False`, which is the obvious way to stop a record being printed twice and also
-  cuts every quackd logger off from the root: an application embedding quackd saw nothing
+  cuts every Roboglot logger off from the root: an application embedding Roboglot saw nothing
   through its own `logging.basicConfig`, and `caplog` caught nothing in a test. Propagation is
   left alone now, and the double print is prevented where it starts instead.
 
@@ -9648,21 +9686,21 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   took the chin, the lower jaw and the orange mouth with it. Opaque pixels sat on the last row
   of each file, which is the tell. The README has opened with that mark since earlier in this
   release and the social card is built around it, so the same slice showed up in three places
-  at once. Both are re-cut from quackd-web's `src/assets/duck-source.png`, the only original
+  at once. Both are re-cut from roboglot-web's `src/assets/duck-source.png`, the only original
   there is, by a new `web/make_mark.py` that exists because the answer to "how was this made"
   was nothing at all. It keeps the old scale deliberately, recovering it by measuring the dark
   visor panel in both images rather than trusting a number, so the mark's weight on the README
   and on the card is unchanged and only the missing part is new. It drops the body at the neck,
   lifts out the heart speech bubble, and refuses to write a file whose ink reaches an edge,
   which is the check that would have caught this. `web/assets/apple-touch-icon.png` was already
-  whole and is left alone. quackd-web carries its own copies of the two bad exports and needs
+  whole and is left alone. roboglot-web carries its own copies of the two bad exports and needs
   the same fix, which is a separate repository and a manual follow-up.
 
-- **`quackd[lerobot]` installed a LeRobot that could not open a serial port.**
+- **`roboglot[lerobot]` installed a LeRobot that could not open a serial port.**
   At the pinned commit the Feetech SDK and pyserial live in lerobot's own `[feetech]` extra
-  rather than in its base dependencies, so `uv pip install 'quackd[lerobot]'` gave you a
+  rather than in its base dependencies, so `uv pip install 'roboglot[lerobot]'` gave you a
   lerobot that imports perfectly and then cannot reach an arm. The extra now asks for
-  `lerobot[feetech]`, and `quackd doctor` has a row for the SDK by name, because a failure
+  `lerobot[feetech]`, and `roboglot doctor` has a row for the SDK by name, because a failure
   that arrives at `connect()` rather than at import is one a diagnostics command should be
   the first to find.
 
@@ -9673,19 +9711,19 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   same prompt whose allowlist does not list it, and a bolted-down arm was told its controllers
   handle balance and gait. It now names a composite verb only when the body actually provides
   one, and says "the motion" for a body that does not move itself. A Microduck's prompt is
-  unchanged, byte for byte. Found by reading the arm's real prompt in the new `flock-hello`
+  unchanged, byte for byte. Found by reading the arm's real prompt in the new `team-hello`
   demo, which is what a bundled task on a second body is for.
 
 - **A registered robot's model no longer follows `--provider` to another vendor.**
-  `quackd robot add duck-a ... --provider anthropic --model claude-opus-5` then `quackd run
-  <duck> --robot duck-a --provider openai` carried the Claude id into OpenAI's catalogue, where
+  `roboglot robot add duck-a ... --provider anthropic --model claude-opus-5` then `roboglot run
+  <task> --robot duck-a --provider openai` carried the Claude id into OpenAI's catalogue, where
   it was refused with a message blaming a `--model` nobody typed. A stored model now applies
   only to the provider it was stored against, and an explicit `--model` is always taken as
   typed.
 
 - **The browser demo can drive a model that will not take function tools on Chat
   Completions.** 0.8 taught the Python provider to read that 400, move the whole run to the
-  Responses API and stay there. The demo at <https://www.quackd.org/simulator> has an OpenAI
+  Responses API and stay there. The demo at <https://www.roboglot.org/simulator> has an OpenAI
   client of its own — the page calls the vendor straight from the browser and there is no
   server here to proxy it through — and that client never learned any of it. So picking
   `gpt-6-astra` in the page ended the run at the first call with the raw vendor message in
@@ -9739,24 +9777,24 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   other nine walk, and the cartoon's own sweeps are unaffected and still gate every push.
 
 - **No real model has ever refused a task on feasibility grounds here.** The gate, the
-  `infeasible` outcome, the hint and the flock handoff are exercised with scripted verdicts and
+  `infeasible` outcome, the hint and the team handoff are exercised with scripted verdicts and
   an in-process MCP client. Whether a frontier model reaches for `uncertain` when it should, or
   for `infeasible` too readily, is unknown. There is one `live_llm` test waiting for a key. Over
   MCP an `uncertain` verdict stays pending and the model is told to ask the person it is
   chatting with, which has never been watched happening either.
 
-- **No pilot flock has been driven by a real model, or by a real robot.** `flock-hello` runs a
+- **No pilot team has been driven by a real model, or by a real robot.** `team-hello` runs a
   duck and an arm on the scripted rule, which cannot reason about a datasheet, so what a real
-  model does with the `Your flock` section and with `tell` is unknown. N simulated pilots are
+  model does with the `Your team` section and with `tell` is unknown. N simulated pilots are
   also N separate worlds: nothing checks one member's claimed success against ground truth the
-  way the coordinator's shared arena does, a seed does not make a pilot flock reproducible, and
-  it costs one budget and one model call per member per turn. No asset shows a pilot flock,
+  way the coordinator's shared arena does, a seed does not make a pilot team reproducible, and
+  it costs one budget and one model call per member per turn. No asset shows a pilot team,
   because N members are N worlds and there is no single GIF to record.
 
-- **The coordinator flock still knows one adapter.** `flock/runner.py` builds Microducks, so
-  `flock.roles.<role>.needs`, which validates and is matched against the datasheet a bid
+- **The coordinator team still knows one adapter.** `team/runner.py` builds Microducks, so
+  `team.roles.<role>.needs`, which validates and is matched against the datasheet a bid
   carries, has nothing heterogeneous to be exercised against end to end. The latent ordering bug
-  [ADR-0020](docs/adr/0020-heterogeneous-flocks.md) records is inherited with it: the
+  [ADR-0020](docs/adr/0020-heterogeneous-teams.md) records is inherited with it: the
   coordinator judges eligibility before members report their vocabulary.
 
 - **Two of the eleven cloud vendors have answered a real request.** OpenAI from the machine that
@@ -9785,14 +9823,14 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
   in this release touched those code paths. They are three separate things to go and look at.
 
 - **The physics backend is still measured on one machine**, `follow-me` is cartoon only because
-  nobody stands in the physics arena, a coordinator flock member must be `sim2d` so the physics
+  nobody stands in the physics arena, a coordinator team member must be `sim2d` so the physics
   backend does not fly in one, `GAIT_FLOOR_VY` was never measured but assumed equal to the
   training maximum, so a lateral request that clears the dead zone is sent at full scale while
   one below it is dropped entirely, and `--live` on macOS needs `mjpython` because MuJoCo's
   viewer must own the main thread.
 
 - **Outside this repository.** The social preview GitHub serves is a version behind, and there
-  is no API that would let a commit here replace it. quackd-web carries its own copies of the
+  is no API that would let a commit here replace it. roboglot-web carries its own copies of the
   two mark files this release re-cut, so the chinless duck is still live there, and its landing
   copy was written around 0.5.
 
@@ -9801,12 +9839,12 @@ model or by a robot, and the two nightly jobs that watch upstream have been red 
 Two things, mainly. A run narrates itself now: the system prompt once, then per turn the
 observation the model was given, what it reasoned, the verb it chose, every executor gate that
 fired, every intent that actually reached the robot and what came back — on the terminal as it
-happens, in a `trace` list on every MCP result, and replayable afterwards with `quackd trace`.
+happens, in a `trace` list on every MCP result, and replayable afterwards with `roboglot trace`.
 And there is a physics simulator, `--robot microduck:mujoco`, which is MuJoCo with upstream's
 own Microduck in it: its meshes, its trained walking policy, its 50 Hz loop and now its scene,
-with quackd supplying a twist and a head pose and writing no gait at all. A third strand landed
-in the last day: the browser demo is live at <https://www.quackd.org/simulator>, rebuilt in the
-quackd-web design language, with the keyboard and a model driving one duck at the same time and
+with Roboglot supplying a twist and a head pose and writing no gait at all. A third strand landed
+in the last day: the browser demo is live at <https://www.roboglot.org/simulator>, rebuilt in the
+roboglot-web design language, with the keyboard and a model driving one duck at the same time and
 neither taking turns with the other.
 
 Still nothing has run on a robot, on any of the eight adapters, and the Microduck's own hardware
@@ -9819,7 +9857,7 @@ Known limitations, below, says what each of those leaves open.
 
 ### Added
 
-- **quackd narrates itself now, on both surfaces, on by default.** Ask it to walk in a circle and
+- **Roboglot narrates itself now, on both surfaces, on by default.** Ask it to walk in a circle and
   the terminal used to print a header, an outcome and a run directory. It now shows the whole
   conversation as it happens: the system prompt once, then per turn the observation the model was
   given, what it reasoned, the tool it chose with its parameters, the tokens and the latency,
@@ -9827,39 +9865,39 @@ Known limitations, below, says what each of those leaves open.
   came back. A steering loop's burst becomes one line with real ranges (`-> move x26 over 0.5 s
   (vx 0.1..0.2, wz -0.01..0.88)`), because `go_to` recomputes its twist every 100 ms and a line
   per intent would be two hundred lines. Over MCP, where the pilot is the client and its reasoning
-  is not quackd's to see, every call that reaches an executor comes back with a `trace` list of
+  is not Roboglot's to see, every call that reaches an executor comes back with a `trace` list of
   the same lines, capped at thirty, with the uncapped version on the server's stderr. `--no-trace`
-  or `QUACKD_TRACE=0` turns the views off, and `QUACKD_TRACE_THINKING` caps how much reasoning
+  or `ROBOGLOT_TRACE=0` turns the views off, and `ROBOGLOT_TRACE_THINKING` caps how much reasoning
   each turn prints — 2000 characters by default, `all` for everything, `0` for none — because on a
   thinking model the reasoning is otherwise longer than everything else on the screen put
   together. Every knob this release adds is in `.env.example` — the tracing
-  ones, the physics ones, and `QUACKD_OPENAI_API` and `QUACKD_OPENAI_REASONING_EFFORT`, which
+  ones, the physics ones, and `ROBOGLOT_OPENAI_API` and `ROBOGLOT_OPENAI_REASONING_EFFORT`, which
   the Responses entry under Fixed explains — bar three that only the test suite reads:
-  `QUACKD_REQUIRE_GL`, `QUACKD_LIVE_LLM` and `QUACKD_LIVE_LLM_MODEL`. The transcript is unaffected either
+  `ROBOGLOT_REQUIRE_GL`, `ROBOGLOT_LIVE_LLM` and `ROBOGLOT_LIVE_LLM_MODEL`. The transcript is unaffected either
   way: it is the record, and it now carries `llm_request`, `verb_start`, `gate`, `intent`,
   `verb_end` and `note` alongside the kinds it always had ([ADR-0029](docs/adr/0029-tracing.md),
   [docs/architecture.md](docs/concepts/architecture.md#trace)).
-- **A flock narrates itself too, one robot per column.** `docs/flock.md` promised a per robot
+- **A team narrates itself too, one robot per column.** `docs/team.md` promised a per robot
   transcript and the file held nothing but frames: a member built its executor with no tracer,
-  so `--trace` on a flock did nothing at all. Each member now records into its own
-  `ducks/<name>/transcript.jsonl` exactly as a solo run records into its own, and the terminal
+  so `--trace` on a team did nothing at all. Each member now records into its own
+  `robots/<name>/transcript.jsonl` exactly as a solo run records into its own, and the terminal
   gives each one a view with its name on every line, so three robots moving at once are three
   readable columns rather than one interleaving. The coordinator's decisions and the planner's
-  one model call print under `flock`, in the same words the GIF captions use. `flock.jsonl` is
+  one model call print under `team`, in the same words the GIF captions use. `team.jsonl` is
   unchanged, and so is `--verbose` ([ADR-0029](docs/adr/0029-tracing.md) amended,
-  [docs/flock.md](docs/guides/flock.md)).
-- **`quackd trace` replays a finished run.** The transcript held every line the console
+  [docs/team.md](docs/guides/team.md)).
+- **`roboglot trace` replays a finished run.** The transcript held every line the console
   printed and there was no way to read it back except with `jq`. With no argument it replays
-  the newest run under `runs/`, and it takes a run name, a timestamp prefix, a duck name or a
+  the newest run under `runs/`, and it takes a run name, a timestamp prefix, a task name or a
   transcript file. `--from-step N` starts part way in, `--no-prompt` drops the system prompt,
   `--thinking all|N` sets how much reasoning to show, and `--frames` adds a line per camera
-  frame. It prints on stdout, because a replay is what you pipe. A flock run replays every
+  frame. It prints on stdout, because a replay is what you pipe. A team run replays every
   member under its own name.
 - **A switch for the system prompt.** It is forty to seventy lines — measured across the
-  fourteen shipped ducks on `microduck:sim2d`, and longer again with memory lines or on
+  fourteen shipped tasks on `microduck:sim2d`, and longer again with memory lines or on
   `microduck:mujoco`, where ten assumptions and a longer note about the arena join it — worth
   reading once and tiresome on the fiftieth run of an afternoon. `--no-trace-prompt` or
-  `QUACKD_TRACE_PROMPT=0` drops it and keeps everything else; the transcript has it either way.
+  `ROBOGLOT_TRACE_PROMPT=0` drops it and keeps everything else; the transcript has it either way.
 - **A long burst is shown as it happens.** A twenty second `go_to` used to print nothing until
   it ended, because a burst of intents is coalesced into one line and the line was only written
   when something else happened. A burst still going after two seconds is now flushed as it
@@ -9882,22 +9920,22 @@ Known limitations, below, says what each of those leaves open.
   one retry without it and the run carries on with no thinking text. Reasoning token counts
   ride along in `usage` where the vendor reports them.
 - **A physics simulator, with the Microduck's own legs in it** (`--robot microduck:mujoco`,
-  needs `quackd[mujoco]`). The cartoon in `sim2d` has always said what it is: it tests the
+  needs `roboglot[mujoco]`). The cartoon in `sim2d` has always said what it is: it tests the
   agent loop, not the robot, and it will never tell you whether a gait works. `sim3d` is
   MuJoCo, and the duck in it is upstream's: `robot_walk.xml` and its 38 meshes from
   `microduck_rl` at a pinned commit, the `alpha_walking` and `alpha_stand` ONNX policies from
-  the Hugging Face Hub at a pinned revision, and upstream's own 50 Hz loop around them. quackd
+  the Hugging Face Hub at a pinned revision, and upstream's own 50 Hz loop around them. Roboglot
   supplies a twist and a head pose, which is what a gamepad supplies on the real robot, and
   writes no gait at all. `find-and-kick` succeeds on 10 of 10 seeds with the scripted pilot
   while the duck walks on its trained policy, ground truth checked, and on the same ten seeds
   with the kinematic stand-in. Both are named tests, and both run in CI on the two schedules
   under Changed. Design: `docs/adr/0030-mujoco-physics-backend.md`.
 - **Nothing of upstream's is shipped.** The 3D model files are CC BY-NC-SA, so the first run
-  downloads them into `~/.quackd/cache`, checks every file against the sha256 it was read at,
-  and writes the licence notice beside them. `QUACKD_MICRODUCK_ASSETS` points at your own
-  checkout instead, and `QUACKD_MUJOCO_BODY=puppet` runs a kinematic stand-in that needs no
-  download and is the body the tests build. `QUACKD_CACHE_DIR` puts the cache somewhere other
-  than `~/.quackd`.
+  downloads them into `~/.roboglot/cache`, checks every file against the sha256 it was read at,
+  and writes the licence notice beside them. `ROBOGLOT_MICRODUCK_ASSETS` points at your own
+  checkout instead, and `ROBOGLOT_MUJOCO_BODY=puppet` runs a kinematic stand-in that needs no
+  download and is the body the tests build. `ROBOGLOT_CACHE_DIR` puts the cache somewhere other
+  than `~/.roboglot`.
 - **The gait floor is in the open.** Under the model's own actuators the walking policy does
   not step below about 0.22 m/s or 1.0 rad/s and achieves about 0.42 of what it is asked,
   while `move` defaults to 0.15 m/s. A twist that would produce nothing is scaled up bodily,
@@ -9925,8 +9963,8 @@ Known limitations, below, says what each of those leaves open.
   there — which is the one worth the tokens, because without the arena note in the prompt the
   honest reading of `search_scan(target="person")` is to keep scanning, and the run spends its
   whole budget on a lap of an empty room. The live tests cost money and need the network, so
-  they are opt-in twice, by a `live_llm` marker and `QUACKD_LIVE_LLM=1`; CI sets neither and a
-  bare `pytest` runs neither. They read `.env` the way the CLI does, and `QUACKD_LIVE_LLM_MODEL`
+  they are opt-in twice, by a `live_llm` marker and `ROBOGLOT_LIVE_LLM=1`; CI sets neither and a
+  bare `pytest` runs neither. They read `.env` the way the CLI does, and `ROBOGLOT_LIVE_LLM_MODEL`
   is what points them at a second model, which is how both of the OpenAI API paths under Fixed
   get exercised. The third test, that the prompt tells the model the arena is empty, needs no key
   and no network — and it is gated behind the `mujoco` extra and named in no CI job, so today it
@@ -9937,8 +9975,8 @@ Known limitations, below, says what each of those leaves open.
   scripted pilot learned two shapes, and both close the loop on the pose the robot reports
   rather than on a stopwatch, so a body that delivers half of what it was asked still walks the
   shape. That is also the correction a model makes, which is the point of them being here.
-- **A browser demo, so trying quackd costs nobody an install** (`web/`, a static page with no
-  build step, live at `www.quackd.org/simulator`). quackd-web, the separate project that owns
+- **A browser demo, so trying Roboglot costs nobody an install** (`web/`, a static page with no
+  build step, live at `www.roboglot.org/simulator`). roboglot-web, the separate project that owns
   that domain, builds it by fetching this directory at a pinned commit, and `vercel.json` here
   rewrites `/simulator/*` so this project also answers on the mount if it is ever deployed on
   its own. Locally it is `python web/serve.py`, then <http://localhost:8000/simulator/> — a
@@ -9959,10 +9997,10 @@ Known limitations, below, says what each of those leaves open.
   `Esc` hands the keyboard back to the arena from wherever focus is. The switch keeps the one
   job that is the demo's whole argument — whether anything here reads English — and no longer
   decides whether you may drive at all.
-- **The page wears quackd's own mark, and points back at what it is a demo of.** It is in the
-  quackd-web design language rather than an emoji and a default stylesheet. The brand lockup is
+- **The page wears Roboglot's own mark, and points back at what it is a demo of.** It is in the
+  roboglot-web design language rather than an emoji and a default stylesheet. The brand lockup is
   the way home, and "What is this?" answers with the product page rather than a build guide.
-  Both are absolute `https://www.quackd.org/` URLs rather than a bare `/`, because this file is
+  Both are absolute `https://www.roboglot.org/` URLs rather than a bare `/`, because this file is
   fetched into another project's build and `web/serve.py` redirects the local root straight back
   to `/simulator/`.
 - **The demo is one screen, and its bays have names.** A first-time visitor landed, saw the
@@ -9981,32 +10019,32 @@ Known limitations, below, says what each of those leaves open.
   Opus 5, but the blocks come back with empty text unless the request says
   `display: "summarized"`, so "what it thought" would have been a blank line on every turn.
   Display changes what is shown, never what is thought or billed, and the raw chain of thought
-  is never returned by any model. `QUACKD_THINKING_DISPLAY=omitted` opts out.
+  is never returned by any model. `ROBOGLOT_THINKING_DISPLAY=omitted` opts out.
 - **Gemini's thought parts no longer land in the answer.** They were appended to `text`
   regardless, so with thoughts on they would have been replayed to the model next turn as
-  things it had said. `QUACKD_GEMINI_THOUGHTS=0` stops quackd asking for them at all.
+  things it had said. `ROBOGLOT_GEMINI_THOUGHTS=0` stops Roboglot asking for them at all.
 - **The transcript flushes on events, not on every intent.** The flush was a syscall on the
   event loop between two deadman resends of a steering verb. Loss on a hard kill is now bounded
   by the text buffer and ends at every `verb_end`.
-- **A verb ended by another layer keeps its own word.** A flock role change preempts an
+- **A verb ended by another layer keeps its own word.** A team role change preempts an
   in-flight composite verb, and the executor had no branch for that, so every handover in a
-  three robot run printed a red `ERROR`, which the docs define as a bug in quackd. It reads
+  three robot run printed a red `ERROR`, which the docs define as a bug in Roboglot. It reads
   `PREEMPTED` now, in yellow.
 - **`--verbose` is the compact view, not a second one.** With the trace on, the executor's own
   one-line-per-verb log would say every verb twice, so it stands down: `--verbose` is what you
   get with `--no-trace`, and on the MCP server the executor's log drops to DEBUG. Nothing lost
-  its `log` callback, which the flock's member records and several tests read.
+  its `log` callback, which the team's member records and several tests read.
 - **A verb that starts always ends.** `Executor.run_verb` now emits exactly one start and one
   end with an outcome, through a `finally`. Seven exits used to leave nothing behind, among
   them the two that matter most: a verb cancelled mid-flight by a kill switch or a heartbeat
   failure, and the repeat-failure abort.
 - **The arena is upstream's own scene, and the head camera is the one place it cannot go.**
-  `sim3d` no longer draws a world quackd invented. It builds upstream's: the blue-grey checker
+  `sim3d` no longer draws a world Roboglot invented. It builds upstream's: the blue-grey checker
   with edge marks, the gradient skybox, the haze, the headlight at ambient 0.3 and the
   directional light overhead, and the viewer's own azimuth 160 and elevation -20, all taken from
   the `scene*.xml` wrappers in `microduck_rl`, so a duck here stands where a duck there stands.
   Shadows are upstream's default and the largest render cost there is, so they are a switch,
-  `QUACKD_MUJOCO_SHADOWS`, rather than a constant. The head camera is the exception, for a
+  `ROBOGLOT_MUJOCO_SHADOWS`, rather than a constant. The head camera is the exception, for a
   measured reason under Fixed: it keeps the same checker with the colour taken out, in a geom
   group hidden from every human view including the live viewer, and no skybox. That split is a
   stand-in like the others, so it is a ninth line in `extras.assumptions` and in
@@ -10017,11 +10055,11 @@ Known limitations, below, says what each of those leaves open.
   it started, both times. `MicroduckBody` draws nothing from the world's shared generator, so
   removing the person moved neither number.
 - **Nobody is in the 3D arena, and the cartoon is the only simulator with a person in it.** The
-  marker is gone from both 3D worlds — the MuJoCo one in `quackd/sim3d/` and the browser demo —
+  marker is gone from both 3D worlds — the MuJoCo one in `roboglot/sim3d/` and the browser demo —
   while `sim2d` keeps its own, so this is the single place the two arenas differ. What it costs
   is a starter: `follow-me` is a task about following somebody and cannot succeed on
   `microduck:mujoco`, and `patrol-and-quack` still runs there with its person clause gone
-  vacuous, leaving three walk legs. Both `.duck` files are untouched, because their hashes are
+  vacuous, leaving three walk legs. Both `.glot` files are untouched, because their hashes are
   pinned in the goldens and they are right for the cartoon they were written for, so nothing
   stops you pointing `follow-me` at the physics backend and nothing pretends it will get
   anywhere; the README and `docs/faq.md` say which starter is now cartoon-only. What it does not
@@ -10031,7 +10069,7 @@ Known limitations, below, says what each of those leaves open.
   holds both arenas to the same duck pose and the same ball, the ball to the millimetre it always
   allowed. What did move is everything downstream of that draw on the shared generator — the
   puppet's gait noise, the kick skew, the scoop coin-flip — so the ten-seed `find-and-kick`
-  sweep was re-run under `QUACKD_STRICT_SEEDS=1` on both bodies and still passes 10 of 10. The
+  sweep was re-run under `ROBOGLOT_STRICT_SEEDS=1` on both bodies and still passes 10 of 10. The
   model is told outright rather than left to infer it: the mujoco branch of the system prompt
   says nobody is in the arena and that a `person` detection is scenery misread, and the demo's
   own contract says the same. `search_scan` still offers `person` as a target and the head
@@ -10041,7 +10079,7 @@ Known limitations, below, says what each of those leaves open.
   `extras`, the `person` flag has left the world's constructor, and a tenth line joins
   `extras.assumptions` ([ADR-0030](docs/adr/0030-mujoco-physics-backend.md) and
   [docs/faq.md](docs/faq.md) amended).
-- **`quackd doctor` reports the physics backend's upstream too.** Every run of the command now
+- **`roboglot doctor` reports the physics backend's upstream too.** Every run of the command now
   ends with a `microduck_rl` table: the UNVERIFIED count with each one's note, the `microduck_rl`
   pin and the policy revision with the date they were read at, the VERIFIED count, and the line
   that the model and the policies are fetched at run time and never shipped. It is the one place
@@ -10058,33 +10096,33 @@ Known limitations, below, says what each of those leaves open.
   safety claims printed the wrong way round — is under Fixed, with the other things that were
   broken rather than merely wordy.
 - **The rest of what reading found.** The README said the AlohaMini's arm verbs appear only with
-  quackd's host wrapper, when they exist and refuse without it, which is the distinction the
+  Roboglot's host wrapper, when they exist and refuse without it, which is the distinction the
   README's own Open Duck row exists to make. The Open Duck's camera capability comes from
   `--camera-url` and not from `duck_config.json`, so the checklist's abort note stopped an owner
   at a correctly built duck; `FALL_SIGNAL` described an IMU read the daemon does not do; the
   sound row said the bridge resolves a mood to a file when it presses the pad's random-sound
   button. `bridge/open_duck/README.md` was missing three flags from a table that claims to list
   them all, and still said a velocity ceiling above upstream's is "applied on top" when 0.7
-  refuses to start. The ToddlerBot page called itself the second body whose robot side quackd
-  ships (it is the third) and credited the daemon with a walk clamp that quackd applies. The
+  refuses to start. The ToddlerBot page called itself the second body whose robot side Roboglot
+  ships (it is the third) and credited the daemon with a walk clamp that Roboglot applies. The
   ToddlerBot checklist never mentioned that the daemon binds loopback, so every `<host>` in it
   would have been refused. `docs/memory.md` and `CONTRIBUTING.md` said every solo starter asks
   for a `remember` when the three 0.7 lookouts and `hello-world` do not, `docs/architecture.md`
   gave the Open Duck a stand-up policy it does not have, `docs/lan.md` documented a `--json`
   flag that `list-verbs` never had, the FAQ named only the duck's token variable for two
-  daemons, `docs/duck-spec.md` promised a `validate` warning nothing emits and three flock
+  daemons, `docs/glot-spec.md` promised a `validate` warning nothing emits and three team
   ranges that included a zero the schema rejects, `docs/safety.md` put the consecutive-failure
   abort at the wrong stage of the executor, `docs/reading-robots.md` counted three upstreams
   that de-torque on disconnect when there are four, and `SECURITY.md` claimed a version
   handshake and a `doctor` read-out that the AlohaMini wrapper and `doctor` do not do. The rest
-  is release-history narration deleted from pages that describe quackd as it is now.
+  is release-history narration deleted from pages that describe Roboglot as it is now.
 - **A second reading, and the three claims a user would have acted on.** `docs/mcp.md` told an
   operator that after a transport failure every later call to that robot is refused. `stop` is
   exempt and still runs, which the refusal text itself says, so the page took the brake away at
-  exactly the moment a pilot reaches for it. `docs/flock.md` offered a duck falling in
+  exactly the moment a pilot reaches for it. `docs/team.md` offered a duck falling in
   `microduck:mujoco` as the way to exercise fall handling, when both the CLI and the runner
-  refuse a flock member that is not `sim2d`, so the route landed the reader on an error naming
-  that very page — a flock is still simulator-only and still cartoon-only, and the physics
+  refuse a team member that is not `sim2d`, so the route landed the reader on an error naming
+  that very page — a team is still simulator-only and still cartoon-only, and the physics
   backend does not fly in one. And the README's status table said the trained-gait sweep runs on
   a developer's machine when it runs nightly in CI, which undersold what is actually verified.
   Fourteen smaller ones behind them, across eleven files: the loop's fifth outcome (`error`)
@@ -10102,9 +10140,9 @@ Known limitations, below, says what each of those leaves open.
   run for six hours three times and named nothing; with it, the same hang failed in five
   minutes with the frame in the log.
 - **CI runs the physics backend, and the browser demo has a floor under it.** A `physics` job
-  installs `quackd[mujoco]` and runs the two sim3d modules against a software rasteriser, so
+  installs `roboglot[mujoco]` and runs the two sim3d modules against a software rasteriser, so
   36 tests that skipped on all six runners now execute somewhere. It sets
-  `QUACKD_REQUIRE_GL=1`, because a job whose purpose is to run tests that skip has to fail
+  `ROBOGLOT_REQUIRE_GL=1`, because a job whose purpose is to run tests that skip has to fail
   when they skip. A nightly `microduck-assets` job fetches upstream's real model the way a
   user's first run does, into a runner that is then destroyed, and runs the trained-gait
   sweep; it caches nothing, because `docs/licenses.md` says no CI fixture carries a byte of
@@ -10117,7 +10155,7 @@ Known limitations, below, says what each of those leaves open.
   enabled, and it was never the deployment this project uses: the address it promised was a
   github.io one that would have 404ed. `vercel.json` replaces it, with the install and the build
   stubbed out because there is nothing to build — every dependency in that directory is a CDN URL
-  the page fetches at run time. And because quackd-web fetches this directory at build time, a
+  the page fetches at run time. And because roboglot-web fetches this directory at build time, a
   push to `main` touching `web/` pings a deploy hook
   (`.github/workflows/refresh-the-simulator.yml`) asking that site to rebuild. It is inert until
   `VERCEL_DEPLOY_HOOK` exists — a missing secret says so and exits zero, rather than showing a
@@ -10147,7 +10185,7 @@ Known limitations, below, says what each of those leaves open.
   non-finite state by resetting the world rather than raising, so a run could carry on
   reporting poses from a world that had quietly restarted. And a headless machine got an
   OpenGL traceback where `docs/faq.md` promises a sentence naming `MUJOCO_GL`.
-- **The state said `walk` while the duck stood still.** `policy` was read from the twist quackd
+- **The state said `walk` while the duck stood still.** `policy` was read from the twist Roboglot
   commanded rather than from what the body did with it, and a body is free to decline one:
   below the gait floor it sends nothing and stands. That is the exact failure the gait floor
   exists to prevent, and it reached the model while the body's own truthful `extras["policy"]`
@@ -10176,7 +10214,7 @@ Known limitations, below, says what each of those leaves open.
   there for the cartoon, and with nobody left to weigh a detection against, every person reported
   from here is scenery.
 - **The stand-ins were told to the transcript and not to the model.** `extras.assumptions` is
-  what a backend says quackd stands in for, and only `FakeProvider` ever read it: every real
+  what a backend says Roboglot stands in for, and only `FakeProvider` ever read it: every real
   provider sends `obs.text`, built from `DuckState.summary()`, and neither had a branch for it.
   ADR-0030's claim that a transcript never implies more than happened was true of the
   transcript and false of the model. The list now goes into the system prompt in the robot's
@@ -10240,8 +10278,8 @@ Known limitations, below, says what each of those leaves open.
   `gpt-6-astra` as an unsupported value for that model, and the tools are refused at `low`,
   `medium`, `high` and `xhigh` alike and with no effort field at all. Probed directly,
   chat/completions with tools fails four ways there while `/v1/responses` with tools returns a
-  clean `function_call`. Every verb quackd has is a function tool, so for such a model Chat
-  Completions is not a degraded path, it is no path: before this, pointing quackd at one ended
+  clean `function_call`. Every verb Roboglot has is a function tool, so for such a model Chat
+  Completions is not a degraded path, it is no path: before this, pointing Roboglot at one ended
   the run at the first call with a `ProviderError` and nothing but a different model to try. The
   provider now reads that 400, moves the whole run to the Responses API and stays there rather
   than paying a failed call every turn, and it matches on what the API said rather than on a
@@ -10249,8 +10287,8 @@ Known limitations, below, says what each of those leaves open.
   Responses gets its own renderer and parser beside the existing pair: tools go flat, the system
   prompt becomes `instructions`, history becomes `function_call` and `function_call_output` items
   keyed by `call_id` — the item `id` is a 400 — images are `input_image`, and the usage counts
-  live under different names. `QUACKD_OPENAI_API=responses` starts there without waiting to be
-  told; `QUACKD_OPENAI_REASONING_EFFORT` sets the effort on either API and is sent only when set,
+  live under different names. `ROBOGLOT_OPENAI_API=responses` starts there without waiting to be
+  told; `ROBOGLOT_OPENAI_REASONING_EFFORT` sets the effort on either API and is sent only when set,
   so `gpt-5` and every OpenAI-compatible server are untouched. Verified on the physics simulator
   end to end rather than at the first call: `gpt-6-astra` runs `hello-world` to
   `declare_success` and gives up correctly on the person who is no longer in the arena, with
@@ -10267,15 +10305,15 @@ Known limitations, below, says what each of those leaves open.
   summary recorded a default string, and the CLI printed a traceback. The call that failed is
   now in the transcript with its error and its latency, `run_end` says what happened, and the
   CLI answers in one line like every other failure.
-- **Three documented commands could not run, all the same way.** `quackd list-verbs` takes only
+- **Three documented commands could not run, all the same way.** `roboglot list-verbs` takes only
   `--robot`, so the one line on `docs/adapters/lerobot.md` and on `docs/adapters/rosbridge.md`
   that reaches a real robot exits 2 on an unknown option, and step 7 of the ToddlerBot checklist
   did too. Worse than failing, that step could not have done its job even without the flag:
   `list-verbs` builds its table from the static description, so `move` is absent whether or not
-  a walk checkpoint is staged. All three are `quackd doctor --robot X --address Y` now, which is
+  a walk checkpoint is staged. All three are `roboglot doctor --robot X --address Y` now, which is
   the command that connects and reports what the robot itself said.
 - **A fourth could not run, for a different reason.** The sixty-second block's
-  `uvx --from "quackd[anthropic]" ... --robot microduck:mujoco` is the one line in the repository
+  `uvx --from "roboglot[anthropic]" ... --robot microduck:mujoco` is the one line in the repository
   joining bring-your-own-key to the trained gait, which is the thing in this release most worth
   trying, and it installs the SDK and no physics: the extras are independent, so the backend
   refuses before anything happens. It asks for both now. The provider table below it had the same
@@ -10345,19 +10383,19 @@ Known limitations, below, says what each of those leaves open.
   also loads exactly two learned policies, `alpha_walking` and `alpha_stand`; its kick is a
   scripted impulse in the cartoon's cone, not a policy; and it has no scripted pilot, so the
   pre-filled goal still needs a key or a local server before anything happens.
-- **The physics backend's upstream is measured here, on one machine.** `quackd doctor` prints
+- **The physics backend's upstream is measured here, on one machine.** `roboglot doctor` prints
   that table rather than leaving it in a document, because it is a different claim from the
   hardware adapters': not "never run" but "run once, by one person, on one laptop". Four edges
   come with it. The head camera deliberately sees a floor no human view shows, so what the model
   perceives and what the GIF records are not the same picture — and the GIF is one change behind
   besides: `docs/assets/hero3d.py` stopped drawing a person in this release and
-  `quackd-on-off.gif` was not re-rendered after it, so the animation the README leads with still
+  `roboglot-on-off.gif` was not re-rendered after it, so the animation the README leads with still
   shows a blue marker in both of its top-down insets, in an arena this release says has nobody in
   it. Nobody is in the physics arena, so `follow-me` is a cartoon-only starter and
-  `patrol-and-quack` on `microduck:mujoco` is a patrol with nobody to announce. A flock member
-  must be `sim2d`, so the physics backend does not fly in a flock. And `--live` on macOS needs
+  `patrol-and-quack` on `microduck:mujoco` is a patrol with nobody to announce. A team member
+  must be `sim2d`, so the physics backend does not fly in a team. And `--live` on macOS needs
   the command run under `mjpython`, because MuJoCo's viewer must own the main thread.
-- **Non-Anthropic default model IDs are unverified.** Override with `QUACKD_MODEL`. One
+- **Non-Anthropic default model IDs are unverified.** Override with `ROBOGLOT_MODEL`. One
   qualification this release earns and no more: `gpt-5`, the OpenAI default, drove whole runs on
   the physics simulator while the Responses path above was being written, on one machine on one
   afternoon. That is enough to know the ID answers and takes tools, and not enough to move it out
@@ -10368,8 +10406,8 @@ Known limitations, below, says what each of those leaves open.
 
 A sixth, a seventh and an eighth robot, two hardware paths audited against upstream rather
 than against themselves, and an abort that finally reaches the verb it is aborting. Two of the
-new robots quackd drives without importing anything from them, because neither is an
-installable package, and the third has no network API at all, so quackd ships the loop it runs
+new robots Roboglot drives without importing anything from them, because neither is an
+installable package, and the third has no network API at all, so Roboglot ships the loop it runs
 on. The Open Duck Mini's daemon and installer were read against a duck set up exactly the way
 the docs instruct, and it could not start the bridge; if it could, it would have had no camera
 verbs; and the operator's Ctrl-C would not have stopped it. The Microduck's transport was read
@@ -10382,39 +10420,39 @@ that were not true no longer are.
 - **The XLeRobot: a dual-arm mobile manipulator on an IKEA cart, about $660 to build**
   (`--robot xlerobot:mock` or `xlerobot:zmq`). Two five-joint arms with grippers on a
   three-omniwheel base that really can drive sideways, so `move` here carries a `vy` that
-  means something for the first time. It is also the first body quackd talks to **without
+  means something for the first time. It is also the first body Roboglot talks to **without
   importing anything from it**: XLeRobot is not a package — no PyPI entry, no `pyproject.toml`,
   and its documented install is copying files into an existing lerobot tree — but it already
-  ships a ZeroMQ host, so quackd speaks that wire and its extra is `pyzmq` and nothing else.
-  That keeps the 3.11 floor and works on Windows, unlike `quackd[lerobot]`. Design:
+  ships a ZeroMQ host, so Roboglot speaks that wire and its extra is `pyzmq` and nothing else.
+  That keeps the 3.11 floor and works on Windows, unlike `roboglot[lerobot]`. Design:
   `docs/adr/0026-xlerobot.md`, with the page at
   [docs/adapters/xlerobot.md](docs/adapters/xlerobot/README.md).
 - **The whole wire format is exercised against a fake host over loopback**, on every CI
   platform. Upstream ships no test, no CI and no simulator that runs — its ManiSkill host
   imports `xlerobot_single`, which is defined nowhere in the repository — so the other end of
-  the protocol is written from upstream's source at a pinned commit and quackd's real client is
+  the protocol is written from upstream's source at a pinned commit and Roboglot's real client is
   driven against it. That caught a bug no reading would have: `stop` rebuilt its hold from the
   latest observation, which is several cycles behind and carries no timestamp, so stopping
   would have commanded an arm back towards zero. A stop that moves an arm is the failure this
   project exists to prevent. `stop` now zeroes the wheels and leaves every arm goal exactly
   where it already was.
 - **`xlerobot-lookout`**, the task to point at a real cart first: nothing in its allowlist
-  moves a wheel or an arm. It is the thinnest starter quackd ships, and honestly so — without
+  moves a wheel or an arm. It is the thinnest starter Roboglot ships, and honestly so — without
   a head to turn and without a voice, a task that moves nothing can only look and report.
 - **The AlohaMini: two arms on a motorised lift, on a wheeled base** (`--robot alohamini:mock`,
-  `sim2d` or `zmq`). quackd's second bimanual body and its first with a vertical axis. Like the
+  `sim2d` or `zmq`). Roboglot's second bimanual body and its first with a vertical axis. Like the
   XLeRobot it is reached by speaking its ZeroMQ host protocol rather than importing it, and for
   a stronger reason: upstream is a fork of LeRobot that *calls itself* `lerobot`, is not on
   PyPI, and installs only from a large git clone on Python 3.12 with torch. Speaking the wire is
   also more correct than importing would have been, because upstream's own client throws away
   the camera list the host sends and its robot-model default disagrees with the host's, with
-  nothing cross-checking either. quackd reads both off the wire, so neither can be silently
+  nothing cross-checking either. Roboglot reads both off the wire, so neither can be silently
   wrong. Design: `docs/adr/0027-alohamini.md`, with the page at
   [docs/adapters/alohamini.md](docs/adapters/alohamini/README.md).
 - **A host wrapper for the robot, because upstream's own host leaves the arms limp.**
   `configure()` disables arm torque and both of its `enable_torque()` calls are commented out;
   nothing else in the driver turns it on. So `bridge/alohamini/` holds a wrapper that runs
-  upstream's loop with torque enabled and the lift stopped, and adds three fields so quackd can
+  upstream's loop with torque enabled and the lift stopped, and adds three fields so Roboglot can
   tell it from a stock host. Without it, `move_joints`, `gripper` and `home_arms` refuse and say
   why, rather than commanding joints that would not move.
 - **A stop that actually stops this robot.** Three upstream behaviours conspire against one.
@@ -10435,11 +10473,11 @@ that were not true no longer are.
   AlohaMini checklist runs it at step 5, on upstream's stock host with the arms still limp.
 - **The ToddlerBot: a small open source humanoid, and the first body here that can hurt
   itself** (`--robot toddlerbot:mock`, `sim2d` or `bridge`). Two arms, two legs, a two joint
-  neck and thirty servos, on a machine with no network API of any kind, so quackd ships the
+  neck and thirty servos, on a machine with no network API of any kind, so Roboglot ships the
   daemon that runs on it. That is the Open Duck Mini's shape, but for a second reason that
   matters more: a verb is episodic and this body is not. Its `step()` is a no-op, so nothing
   times out and nothing re-arms, and a humanoid frozen mid-stride while a model thinks is a
-  humanoid on the floor. The daemon runs the fifty hertz loop and quackd's intents steer what
+  humanoid on the floor. The daemon runs the fifty hertz loop and Roboglot's intents steer what
   it is already doing. Design: `docs/adr/0028-toddlerbot.md`, with the page at
   [docs/adapters/toddlerbot.md](docs/adapters/toddlerbot/README.md).
 - **Seven things upstream does not do, because reading it at the pin said so.** It clamps
@@ -10454,7 +10492,7 @@ that were not true no longer are.
   disconnects every client and disconnecting disables torque, so any unhandled exception or
   plain Ctrl-C de-torques a standing humanoid with no lowering and no ramp. `SIGTERM` does not
   even reach that handler, and upstream installs no Python one, so systemd stopping it leaves
-  the robot fully torqued holding its last target instead. quackd's daemon settles to a safe
+  the robot fully torqued holding its last target instead. Roboglot's daemon settles to a safe
   pose first, then closes under a hard deadline, because `close()` holds the GIL and retries
   forever on a dead bus.
 - **A deadman that is a trajectory rather than a message.** On a duck, silence is safe and
@@ -10467,18 +10505,18 @@ that were not true no longer are.
 - **[docs/toddlerbot-hardware-checklist.md](docs/adapters/toddlerbot/hardware-checklist.md), the order
   to try a real ToddlerBot in.** Fourteen steps on the safety stand upstream ships, feet off
   the ground until step 13. Step 2 is `calibrate_zero`, because the daemon refuses to actuate
-  without a `motors.yml`. It runs the daemon with `--fake --once` and `quackd doctor` against
+  without a `motors.yml`. It runs the daemon with `--fake --once` and `roboglot doctor` against
   port 9873 before a motor is powered, points `toddlerbot-lookout` at the robot at step 8, and
   holds steps 11 and 12 (pull the network cable mid-move, then send `SIGTERM`) as the two that
   matter, because on this body silence means hold forever and the daemon is the only thing that
   makes it mean anything else. It ends with the four things only a real robot can answer, the
   safe-pose slew from a crawl or a prone start first. There is no issue template for it, so
   open a plain issue with the transcript.
-- **`QUACKD_TODDLERBOT_TOKEN` and `TODDLERBOT_ROOT`**, the two environment variables the
+- **`ROBOGLOT_TODDLERBOT_TOKEN` and `TODDLERBOT_ROOT`**, the two environment variables the
   ToddlerBot's adapter and daemon read. The token is the ToddlerBot's own and not
-  `QUACKD_DUCK_TOKEN`, and `--token`'s help says so now: `quackd/adapters/toddlerbot/bridge.py`
+  `ROBOGLOT_DUCK_TOKEN`, and `--token`'s help says so now: `roboglot/adapters/toddlerbot/bridge.py`
   reads it when `--token` is absent and sends it in `bot.hello`, and
-  `bridge/toddlerbot/quackd_toddlerbot_bridge.py` reads the same name as the default for its
+  `bridge/toddlerbot/roboglot_toddlerbot_bridge.py` reads the same name as the default for its
   own `--token`, compares it with `hmac.compare_digest`, and refuses every other method until a
   hello carries it. A daemon started with no token accepts everyone, and nothing writes one for
   you, because this daemon has no installer. `TODDLERBOT_ROOT` is the daemon's alone: it is the
@@ -10486,7 +10524,7 @@ that were not true no longer are.
   directory into and imports from, because every path upstream's `Robot` builds is relative,
   and `--fake` never opens it. The nightly contract job sets it to its own sparse checkout of
   upstream.
-- **Video off a real Microduck** (`--camera-url webrtc://host:8443`, `quackd[microduck-camera]`).
+- **Video off a real Microduck** (`--camera-url webrtc://host:8443`, `roboglot[microduck-camera]`).
   There is no camera method in `duck-ipc-proto`, no snapshot route in `mediad` and no camera
   subcommand in `robotctl`, so a picture means being a WebRTC peer. It runs on your machine and
   writes nothing to the robot — the alternative needs `mediad` stopped, because its `v4l2src`
@@ -10497,17 +10535,17 @@ that were not true no longer are.
   copes with having no camera and stops to say so when posture reads `unknown`. The checklist
   assumes the duck is borrowed: nothing in it installs anything or needs `sudo`.
 - CI runs on Windows. `robotd` speaks over a unix socket, Windows cannot open one, and the test
-  covering quackd's `ssh -L` answer only runs there — so it had never run anywhere.
+  covering Roboglot's `ssh -L` answer only runs there — so it had never run anywhere.
 - **Bring-up checklists for the XLeRobot and the AlohaMini**
   ([docs/xlerobot-hardware-checklist.md](docs/adapters/xlerobot/hardware-checklist.md),
   [docs/alohamini-hardware-checklist.md](docs/adapters/alohamini/hardware-checklist.md)). The two
   bodies here you can buy today were the two without one. They are not copies of each other:
   the cart's hazard is that its watchdog stops the wheels and leaves fourteen arm servos
   holding, so it stays on blocks until step 9; the AlohaMini's is the opposite, that its arms
-  are limp until quackd's own host turns torque on, which makes upstream's stock host the
+  are limp until Roboglot's own host turns torque on, which makes upstream's stock host the
   safest place to learn the base and the lift first.
 - **[docs/reading-robots.md](docs/adapters/reading-robots.md), the traps by pattern rather than by
-  robot.** quackd drives eight bodies and has run on none, so everything it does came from
+  robot.** Roboglot drives eight bodies and has run on none, so everything it does came from
   reading upstream closely enough to be safe without executing it, and the same shapes kept
   recurring: a number that looks like a different number, a default pose that is not neutral,
   a stop that is not a stop, a partial message that means something else, a capability that is
@@ -10526,12 +10564,12 @@ that were not true no longer are.
   daemon reports a checkpoint staged.
 - **No raw joint verb on the humanoid.** Thirty unclamped radians from a language model, on a
   machine in multi-turn mode with no current limit and no position limit, is the exact failure
-  this project exists to prevent. quackd offers named moves and the daemon owns every
+  this project exists to prevent. Roboglot offers named moves and the daemon owns every
   trajectory.
 - **The XLeRobot's manifest says no to more than it says yes to, and each no is upstream's.**
   There is no speaker and no microphone in the bill of materials, so the `sound` intent is not
   declared and `say` does not exist here. Which head motor is yaw is stated nowhere upstream,
-  so quackd never commands the head and `search_scan` turns the whole cart. The power station
+  so Roboglot never commands the head and `search_scan` turns the whole cart. The power station
   has no data link, so `battery_percent` is permanently `None`. There is no odometry, so
   `go_to` closes the loop on the camera alone. And a stock cart ships with every camera
   commented out of its config, so `observe`, `go_to`, `search_scan` and `approach_and` exist
@@ -10540,12 +10578,12 @@ that were not true no longer are.
   `use_degrees` defaults to False. That is a different contract from the SO-101 arm next door,
   which sets degrees: the same number means a different angle, so `move_joints` validates
   against `joint_norm` and never against `lerobot`'s `joint_deg`. Turn rate is converted on both
-  too, because each wire is deg/s while quackd is rad/s, and a pass-through would be a 57× error
+  too, because each wire is deg/s while Roboglot is rad/s, and a pass-through would be a 57× error
   on a robot heavy enough to hurt someone.
 - `pyzmq` joins the `dev` extra, and is the extra for both new robots. CI installs only
   `dev`, and the fake-host tests are what the two `zmq` backends' 🧪 rest on, so a status claim
   CI could not check would not have been honest.
-- **`quackd run` asks "Are you watching the robot right now?" once before a fall-blind robot
+- **`roboglot run` asks "Are you watching the robot right now?" once before a fall-blind robot
   walks.** The question comes at the start of the run, before any verb, when the task allows
   `move`, `go_to`, `search_scan` or `approach_and` on a robot that reports `fall_detection`
   false and has no `stand_up`, which today is `open_duck:bridge` alone, because the Microduck
@@ -10553,16 +10591,16 @@ that were not true no longer are.
   run with exit 1 before a leg moves, so a script that started the bridge walking without
   `--yes` in 0.6.0 now stops at the question until you add `--yes`. Over MCP nothing asks: the
   pilot sees `fall-blind=nothing-detects-falls` in `report_state` and every observation,
-  `quackd doctor` prints the warning, and that is all it gets. This is the guard that stands in
+  `roboglot doctor` prints the warning, and that is all it gets. This is the guard that stands in
   for the ones "It claimed guards it did not have" above says were never there
   ([docs/open-duck-hardware-checklist.md](docs/adapters/open_duck/hardware-checklist.md)).
-- **`quackd serve-mcp` with no `.duck` loaded now runs on a default budget of 40 verb steps and
+- **`roboglot serve-mcp` with no `.glot` loaded now runs on a default budget of 40 verb steps and
   five minutes, counted from when the server started.** In 0.6.0 that session had no `Budget`
-  at all, so `quackd serve-mcp --robot open_duck:bridge` would have handed an MCP client
+  at all, so `roboglot serve-mcp --robot open_duck:bridge` would have handed an MCP client
   unlimited and uncounted control of a physical biped. The numbers are the frontmatter
   defaults, `max_steps: 40` and `max_minutes: 5`, and every `robot_run_verb` and
   `robot_observe` counts, `stop` included, so from the 41st call or once five minutes have
-  passed every verb answers `budget exhausted` until `robot_load_duckfile` starts the
+  passed every verb answers `budget exhausted` until `robot_load_glotfile` starts the
   contract's own budget. The clock is wall time on `open_duck:bridge` and `microduck:jsonrpc`
   and the simulator's own clock on `sim2d`, and there is no flag to turn the budget off
   ([docs/mcp.md](docs/guides/mcp.md)).
@@ -10571,9 +10609,9 @@ that were not true no longer are.
   stop the duck" above. New here is the second: the kill switch hands `SIGINT` back before it
   fires, so another Ctrl-C is a plain `KeyboardInterrupt`, where 0.6.0 swallowed every Ctrl-C
   after the first for the rest of the run and left you holding a key on a robot you could not
-  be sure had heard. The `kill switch: Ctrl-C` line now prints to stderr on every `quackd run`
+  be sure had heard. The `kill switch: Ctrl-C` line now prints to stderr on every `roboglot run`
   rather than only with `--verbose`, and the banner says `Ctrl-C or q stops the duck. Press it
-  twice to quit at once.` A flock run keeps its old banner, and its kill-switch line is still
+  twice to quit at once.` A team run keeps its old banner, and its kill-switch line is still
   `--verbose` only.
 - **The bridge refuses to start when `--max-vx`, `--max-vy` or `--max-vyaw` is above upstream's
   own clamp, or `--head-safety` is outside (0, 1].** The three velocity flags, documented in
@@ -10581,9 +10619,9 @@ that were not true no longer are.
   in the unit went straight into the clamp the bridge applies and into the limits it advertises
   in the hello, and a unit asking for more than the 0.15, 0.2 and 1.0 that upstream's own
   gamepad allows would have been honoured. Narrowing them is the obvious first power-on
-  precaution, and widening them past the pad is not something quackd should do quietly on your
+  precaution, and widening them past the pad is not something Roboglot should do quietly on your
   behalf, so the bridge exits with the bound in the message rather than silently clamping.
-  `--head-safety` is the fraction of upstream's head range quackd will use, not a multiplier on
+  `--head-safety` is the fraction of upstream's head range Roboglot will use, not a multiplier on
   it, so 0 and anything above 1 are refused the same way.
 - **The bridge's systemd unit has no start rate limit any more (`StartLimitIntervalSec=0`).**
   It was 3 starts in 120 s, and with `Restart=no` the only thing a burst limit could throttle
@@ -10593,13 +10631,13 @@ that were not true no longer are.
 - **camd captures at 5 fps and 256 px by default, from 1 fps and 512.** `go_to` and
   `search_scan` close a visual loop at 10 Hz, and holding one steering correction for a whole
   second gives a per-frame loop gain above 1, a weave that swings the target back out of frame.
-  The smaller frame pays for the faster rate on a Pi Zero 2 W, and `quackd-duck-camd.service`
+  The smaller frame pays for the faster rate on a Pi Zero 2 W, and `roboglot-duck-camd.service`
   now passes `--fps 5 --size 256` explicitly. A 0.6.0 unit left in place still passes `--fps 1`
   and nothing for `--size`, so it keeps the slow loop at the new size until you re-run
   `install.sh`.
 - **mypy type-checks `bridge/` now, the code that actually runs on the robot.** `[tool.mypy]`
-  had `packages = ["quackd"]`, so the daemons on the robot's side were the only Python in the
-  repository nothing type-checked. It is `files = ["quackd", "bridge"]` now, because mypy takes
+  had `packages = ["roboglot"]`, so the daemons on the robot's side were the only Python in the
+  repository nothing type-checked. It is `files = ["roboglot", "bridge"]` now, because mypy takes
   packages or files and not both, and CI's bare `uv run mypy` enforces it. The two Open Duck
   files were clean when the scope widened, and the gate earned its keep at the merge that
   brought the three new robots in: the ToddlerBot daemon's `int(getattr(robot, "nu", ...))` was
@@ -10620,12 +10658,12 @@ that were not true no longer are.
 - **The ToddlerBot's `search_scan` sweeps its head rather than turning its body.** `scan_mode`
   turns any robot with mobility and the twist intent, which is right for a duck and wrong for
   a humanoid with no get-up policy: with a walk checkpoint staged the shared verb would have
-  pirouetted 3 kg of fall-prone robot to look for a ball. quackd supplies its own for this
+  pirouetted 3 kg of fall-prone robot to look for a ball. Roboglot supplies its own for this
   body, and it waits for the neck to arrive before taking the frame, because the daemon rate
   limits every joint and the shared sweep looks after a tenth of a second.
 - **The transport keeps the link alive, so a long verb is not cancelled by its own deadman.**
   The daemon's deadman fires after half a second of silence and `stand` takes three, and the
-  executor sends one command and then only polls while it waits. quackd's own `Heartbeat`
+  executor sends one command and then only polls while it waits. Roboglot's own `Heartbeat`
   cannot be that signal, because its period is a run setting rather than the manifest's and
   defaults to the same half second. The ToddlerBot transport now sends `bot.keepalive` on its
   own timer, and reading state or a frame deliberately does not count as being alive.
@@ -10655,7 +10693,7 @@ that were not true no longer are.
   loaded rather than what was asked for**: a camera that will not open means the camera verbs
   never appear, a walk checkpoint is a file you supply rather than a claim you make, and the
   gripper capability follows the motors.
-- **`policy.step_target()` never existed upstream.** It was quackd's invention, which is the
+- **`policy.step_target()` never existed upstream.** It was Roboglot's invention, which is the
   exact failure ADR-0022 is written to prevent. The real interface takes the whole
   observation and the sim and answers with a pair, and it is now cited at a pinned line
   along with sixteen other names the daemon needed and did not have: that motions carry a
@@ -10665,11 +10703,11 @@ that were not true no longer are.
   returns a picture with red and blue swapped.
 - **The walk envelope comes from the checkpoint now.** `command_range` is read at connect off
   the policy that is actually loaded, rather than hardcoded from a gin file, so a robot whose
-  gait was trained tighter than quackd's caps gets the tighter number. It can only ever
+  gait was trained tighter than Roboglot's caps gets the tighter number. It can only ever
   narrow: a checkpoint trained wider does not get to widen `limits`.
 - **A daemon fault no longer looks like a healthy robot.** A raising tick used to kill the
   control thread while the socket went on answering `ok`. It is now caught: the deadman is
-  forced, `bot.health` reports the fault so quackd's heartbeat trips, and a bus that never
+  forced, `bot.health` reports the fault so Roboglot's heartbeat trips, and a bus that never
   comes back settles and stops rather than failing fifty times a second forever. The
   `sys.excepthook` and `threading.excepthook` that Part C of the plan asked for are installed
   too, because upstream's C level `atexit` disables torque on any interpreter exit and would
@@ -10685,16 +10723,16 @@ that were not true no longer are.
   the ground truth checked: the AlohaMini never moves a wheel, an arm or the lift, and the
   ToddlerBot never takes a step or turns its body. The `alohamini:zmq` row was also sitting
   under the ToddlerBot's heading rather than its own robot's.
-- **`quackd[alohamini]` was never locked.** The extra shipped in `pyproject.toml` and never
+- **`roboglot[alohamini]` was never locked.** The extra shipped in `pyproject.toml` and never
   reached `uv.lock`, so `uv sync --locked` refused it. `NOTICE` also credited every other
   upstream and none of the three new ones, including the fact that ToddlerBot's design files
-  are non-commercially licensed and quackd therefore distributes none of them.
+  are non-commercially licensed and Roboglot therefore distributes none of them.
 - **The five-to-eight sweep reached the places the tests do not police.** `test_docs.py`
   checks three exact phrases, so everything phrased differently had gone stale: `SECURITY.md`
   counted five bodies and scoped on-robot code to the Open Duck's two daemons, `docs/safety.md`
-  had five rows in the table that answers "what stops this body when quackd goes quiet",
+  had five rows in the table that answers "what stops this body when Roboglot goes quiet",
   `docs/faq.md` listed five adapters, and the README said five in four more places while
-  saying eight in a fifth. The architecture pages also still said quackd hosts a control loop
+  saying eight in a fifth. The architecture pages also still said Roboglot hosts a control loop
   on one body when it now does on two, and in very different ways.
 - **The duck could not be started at all.** The shipped `ExecStart` exits 2 before binding a
   socket, because `--script-arg --onnx_model_path` makes argparse refuse a value beginning with
@@ -10774,12 +10812,12 @@ that were not true no longer are.
 - **Every distance on a real camera was wrong, and nothing let you correct it.** The detector
   assumed the simulator's 90 degree field of view where a Pi Camera Module 2 is about 62, so on
   hardware distances came out about 40 percent short, and [docs/faq.md](docs/faq.md) told you
-  to set `fov_deg=62` in code. `quackd run` now takes `--fov-deg`, a manifest can carry
+  to set `fov_deg=62` in code. `roboglot run` now takes `--fov-deg`, a manifest can carry
   `camera_fov_deg` under `limits` ([docs/manifest-spec.md](docs/reference/manifest-spec.md)), and the
   flag wins over the key. Until one of them is set, every detection on a real backend ends in
   `(uncalibrated: distance is a rough guess)` and a warning names the flag, while `sim2d` and
   `mock` stay calibrated because their camera is the one the geometry assumes.
-- **The API version quackd was written against had moved on.** `upstream_api.py` was the one
+- **The API version Roboglot was written against had moved on.** `upstream_api.py` was the one
   adapter ADR-0022 let cite `main` instead of a commit hash, and in the week after it was
   read upstream went from `API_VERSION` 16 to 23. The handshake refuses on mismatch rather
   than guessing — correct behaviour, and it meant the first real Microduck anyone connected
@@ -10816,14 +10854,14 @@ that were not true no longer are.
   records why it failed and says so, and the heartbeat no longer asserts the outcome.
 - An unknown sound tag became a chirp silently; JSON-RPC errors lost their code, so `BUSY` and
   `PERMISSION_DENIED` were the same thing to a caller.
-- **Loading a second `.duck` over MCP refunded the budget.** `robot_load_duckfile` is a tool
+- **Loading a second `.glot` over MCP refunded the budget.** `robot_load_glotfile` is a tool
   the model itself holds, and adopting a contract built a fresh `Budget` and cleared the
   consecutive-failure tallies, so a pilot that had spent its steps or been refused a verb
-  could load a wider duck and start counting from zero. The limits still become the new
+  could load a wider task file and start counting from zero. The limits still become the new
   contract's; the steps, the llm calls, the clock and the failure counts now stay the
   session's, and the tool's reply says what carried over.
-- **`quackd doctor` and `quackd validate` crashed on a Windows pipe.** Python uses the ANSI
-  codepage when stdout is not a console there, and quackd prints ✓, 🦆 and the status emoji in
+- **`roboglot doctor` and `roboglot validate` crashed on a Windows pipe.** Python uses the ANSI
+  codepage when stdout is not a console there, and Roboglot prints ✓, 🦆 and the status emoji in
   `doctor`, so on cp1252 the first two commands
   [docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md) puts in front of
   a Windows user died with `UnicodeEncodeError`, and so did the last step of CI's own Windows
@@ -10835,7 +10873,7 @@ that were not true no longer are.
 - **Nothing has run on hardware, on any of the eight adapters.** `microduck:jsonrpc`,
   `open_duck:bridge`, `reachy_mini:sdk`, `lerobot:real`, `rosbridge:ws`, `xlerobot:zmq`,
   `alohamini:zmq` and `toddlerbot:bridge` spell every upstream name from upstream source at a
-  pinned commit and have only ever talked to fakes, the daemons quackd ships have only ever run
+  pinned commit and have only ever talked to fakes, the daemons Roboglot ships have only ever run
   with `--fake` over loopback or, for the ToddlerBot's, against upstream's MuJoCo body in a
   nightly job, and `microduck:websocket` is still a stub. If you have a body, the first thing
   to point at it is the task that moves nothing: `open-duck-lookout` with the feet off the
@@ -10844,7 +10882,7 @@ that were not true no longer are.
   `microduck-lookout` on a duck you are probably borrowing with someone holding the gamepad
   ([docs/microduck-hardware-checklist.md](docs/adapters/microduck/hardware-checklist.md), feet off until
   step 9), `xlerobot-lookout` with the wheels on blocks until step 9, `alohamini-lookout` on
-  upstream's stock host with the arms limp, before quackd's wrapper ever turns torque on, and
+  upstream's stock host with the arms limp, before Roboglot's wrapper ever turns torque on, and
   `toddlerbot-lookout` on the safety stand with the feet off until step 13. The Reachy Mini,
   the LeRobot arm and the rosbridge base have no lookout task and no checklist, and the base
   has no verified deadman, so it goes on blocks first.
@@ -10855,7 +10893,7 @@ that were not true no longer are.
   one did. Nothing is lost by re-running it: the 0.6.0 unit could never start the bridge
   anyway, because argparse exits 2 on `--script-arg --onnx_model_path` before a socket is
   bound. The new `install.sh` keeps an existing token, makes it group readable by the service
-  user and checks that it is, so the `--token` or `QUACKD_DUCK_TOKEN` your laptop already has
+  user and checks that it is, so the `--token` or `ROBOGLOT_DUCK_TOKEN` your laptop already has
   stays valid.
 - **Update the laptop and the robot together, because the handshake cannot tell 0.6.0 from
   0.7.0.** `PROTOCOL_VERSION` is still 1 on both ends, so a 0.6.0 laptop pairs with an updated
@@ -10873,12 +10911,12 @@ that were not true no longer are.
   editing the adapter's manifest in source. The label is text the pilot reads, not a gate:
   nothing in the verbs checks `calibrated`, so an uncalibrated `go_to` still drives on the
   number.
-- **`quackd[microduck-camera]` is a heavy extra, and the default install is unchanged.** It is
+- **`roboglot[microduck-camera]` is a heavy extra, and the default install is unchanged.** It is
   `aiortc`, `av` and `websockets`, and `aiortc` brings `aioice`, `pylibsrtp`, `pyee`,
   `google-crc32c`, `cryptography` and `pyopenssl` with it, while `av` carries FFmpeg in a wheel
   of 18 to 39 MB depending on the platform. Nothing imports any of it unless `--camera-url`
   starts with `webrtc://`, and a missing extra is one error naming the `pip install` and the
-  HTTP snapshot alternative that needs none. Nobody who is not pointing quackd at a real
+  HTTP snapshot alternative that needs none. Nobody who is not pointing Roboglot at a real
   Microduck needs it, and the H.264 and the ICE inside it have never met a duck.
 
 ## [0.6.0] — 2026-09-04
@@ -10897,22 +10935,22 @@ and no cloud model has ever written a note.
 
 ### Added
 
-- **Memory between runs** (`quackd/memory.py`, [docs/memory.md](docs/guides/memory.md)). Every
+- **Memory between runs** (`roboglot/memory.py`, [docs/memory.md](docs/guides/memory.md)). Every
   run used to start from nothing. Now each robot, keyed `adapter:backend`, has a JSONL
-  file under `~/.quackd/memory/` that holds the notes the pilot saved with the new
-  `remember` tool and an episode line quackd writes at the end of every non-dry run
+  file under `~/.roboglot/memory/` that holds the notes the pilot saved with the new
+  `remember` tool and an episode line Roboglot writes at the end of every non-dry run
   (outcome, reason, the last few verb results). The newest of both are rendered into the
   system prompt at the next run. `remember` costs an LLM call but no step, and a repeated
-  sentence refreshes the old note. `quackd run --no-memory` / `--memory-dir`,
-  `quackd memory show|add|clear`, and over MCP `robot_recall` / `robot_remember` (eight
+  sentence refreshes the old note. `roboglot run --no-memory` / `--memory-dir`,
+  `roboglot memory show|add|clear`, and over MCP `robot_recall` / `robot_remember` (eight
   tools now). A simulated body never inherits a real one's notes. Thanks to
   [@Bayway](https://github.com/Bayway) (#5), whose design and implementation this is.
-- **The solo starter ducks ask for a note.** `find-and-kick`, `fetch`, `follow-me`,
+- **The solo starter tasks ask for a note.** `find-and-kick`, `fetch`, `follow-me`,
   `patrol-and-quack`, `open-duck-scout`, `open-duck-lookout` and `reachy-spotter` carry
   `remember` in their last strategy step and a *Memory* section saying what is worth
   keeping, and `--goal` runs get the same line. A prompt-level hint alone was ignored by a
-  14B local model; the strategy step is followed. The v0 duck goldens were regenerated
-  for this. `hello-world` and the flock ducks are unchanged.
+  14B local model; the strategy step is followed. The v0 task goldens were regenerated
+  for this. `hello-world` and the team tasks are unchanged.
 - **A test that the PyPI project page's links resolve** (`tests/test_pypi_readme.py`),
   because the rewrite below is invisible when it breaks: nothing in a normal run reads the
   built metadata, and the only symptom is dead links on a page the maintainer rarely opens.
@@ -10951,13 +10989,13 @@ and no cloud model has ever written a note.
   and used to leave it where it was in the file, and both the prompt's "newest notes" window
   and the 400-entry cap read file order. So the note a model had just repeated was the first
   one dropped. A refresh now moves the note to the newest position.
-- **`quackd memory show --raw` did not print the file as is.** It went through Rich, which
+- **`roboglot memory show --raw` did not print the file as is.** It went through Rich, which
   ate anything in square brackets: a note reading `the ball is [bold]behind[/bold] the sofa`
   printed as `the ball is behind the sofa`. A note is text a model wrote, so it can contain
   anything.
-- Tests set `QUACKD_MEMORY_DIR` to a temporary directory, so a test run no longer writes
-  the developer's own `~/.quackd/memory`.
-- `quackd memory show|add|clear --robot <bad spec>` printed a Python traceback. Every other
+- Tests set `ROBOGLOT_MEMORY_DIR` to a temporary directory, so a test run no longer writes
+  the developer's own `~/.roboglot/memory`.
+- `roboglot memory show|add|clear --robot <bad spec>` printed a Python traceback. Every other
   command taking `--robot` answers in one line, and now these do too.
 - With `--no-memory` the MCP server still told the pilot to call `robot_recall` early, a
   tool that would answer "memory is off". Those two sentences are now omitted.
@@ -10969,14 +11007,14 @@ and no cloud model has ever written a note.
   transcript event). The README's architecture diagram listed four adapters and omitted
   `open_duck` and its `bridge` backend, which the adapter-count guard could not see because
   it reads the phrase "N adapters" and not a list. The README, `docs/architecture.md` and
-  the FAQ each said one quackd daemon runs on a robot, while `bridge/open_duck/` has shipped
-  two since 0.5, and `docs/architecture.md` contradicted itself about it. `docs/duck-spec.md`
+  the FAQ each said one Roboglot daemon runs on a robot, while `bridge/open_duck/` has shipped
+  two since 0.5, and `docs/architecture.md` contradicted itself about it. `docs/glot-spec.md`
   called `max_minutes` a cap without saying a verb already running is not interrupted.
-  `_deprecated()` in `quackd/cli.py` was dead from the 0.5 `--transport` removal. `quackd
+  `_deprecated()` in `roboglot/cli.py` was dead from the 0.5 `--transport` removal. `roboglot
   --help` still introduced the tool as a way to "pilot a Microduck", five adapters later.
   `_pick_default` justified its rule with the `duck_*` aliases. `tests/test_goldens.py`
   dated its goldens to 0.3.0 after four of the six duck hashes were regenerated here, and
-  ADR-0025 filed learned verbs under ADR-0019, which is the `.duck` spec v1.
+  ADR-0025 filed learned verbs under ADR-0019, which is the `.glot` spec v1.
 - **The README said no live local server had been run.** One now has, by this release's
   contributor, which is the first local-model evidence this project has had. The sentence
   says whose machine it was and that no transcript from it is in the repository.
@@ -10991,9 +11029,9 @@ and no cloud model has ever written a note.
   the stale count turned out to be in a `--robots` help text and two docstrings as well as
   two README sentences. The key the CLI computes for a robot's memory file must equal the
   key the MCP server computes, for all five adapters and all fourteen backends, because
-  "a note saved from Claude Desktop is read by the next `quackd run`" is otherwise an
+  "a note saved from Claude Desktop is read by the next `roboglot run`" is otherwise an
   intention. And the built wheel's long description must contain no relative links.
-- The `quackd memory` command group, and the memory flags on `run`, now have tests. They
+- The `roboglot memory` command group, and the memory flags on `run`, now have tests. They
   shipped with none, which is how two of the three subcommands were wrong.
 - One assertion in the new memory tests was `A or B` where `A` was never true (the sound in
   the highlight is the robot's own tone, not the text), so it checked almost nothing. It is
@@ -11005,7 +11043,7 @@ and no cloud model has ever written a note.
   outcomes and never writes a note. Notes have been exercised by one local model
   (Qwen 2.5 Coder 14B through LM Studio, `find-and-kick`, seeds 5 and 6) on one machine,
   and by no cloud model at all.
-- **`--no-memory` does not silence the ducks.** The seven starter tasks above ask for a
+- **`--no-memory` does not silence the tasks.** The seven starter tasks above ask for a
   `remember` inside their strategy, and that text is in the prompt whether or not memory is
   on. A pilot that follows it gets a clear refusal that costs an LLM call and no step.
 - Memory is a file, not a memory system: newest wins, there is no embedding and no search,
@@ -11019,7 +11057,7 @@ robot you could not buy or had not assembled: the Microduck ships around Christm
 the Reachy, LeRobot and rosbridge backends have only ever talked to fakes. The Open Duck
 Mini v2 is open hardware people are printing at home today, so for the first time a stranger
 can follow these instructions all the way to a walking robot. That also makes this the first
-release where quackd ships code that runs **on** a robot. Design: `docs/adr/0024-open-duck-mini.md`.
+release where Roboglot ships code that runs **on** a robot. Design: `docs/adr/0024-open-duck-mini.md`.
 
 Still nothing has run on a duck. What is new is that everything except the duck is tested.
 
@@ -11027,7 +11065,7 @@ Still nothing has run on a duck. What is new is that everything except the duck 
 
 - **The Open Duck Mini v2 adapter** (`--robot open_duck:sim2d`, `open_duck:mock`,
   `open_duck:bridge`): the
-  first robot quackd supports that anyone can build today. It is an open hardware 3D
+  first robot Roboglot supports that anyone can build today. It is an open hardware 3D
   printed biped that walks on its own 50 Hz ONNX policy on a Raspberry Pi Zero 2 W. Its
   manifest is a strict subset and says so: this robot has no beak, no gripper, no kick
   policy, no sit policy and no get-up-after-fall policy, so `kick`, `grab`, `sit`, `stand`
@@ -11035,18 +11073,18 @@ Still nothing has run on a duck. What is new is that everything except the duck 
   built without a camera or a speaker loses exactly the verbs that need them. Velocities
   are clamped to the ranges read from the robot's own runtime (0.15 m/s forward, 0.2 m/s
   sideways, 1.0 rad/s turning), and a fallen duck refuses to move with a message saying a
-  human must stand it up, because nothing quackd can call will.
+  human must stand it up, because nothing Roboglot can call will.
 - **A bridge daemon that runs on the robot** (`bridge/open_duck/`), which is a first for
-  quackd: every other adapter talks to someone else's daemon, and this robot has none. It
+  Roboglot: every other adapter talks to someone else's daemon, and this robot has none. It
   does not reimplement the 50 Hz control loop, it *is* that loop, with the class upstream
   imports to read a gamepad rebound to read a socket instead. One process, so the servo bus
   keeps one owner, and nothing of upstream's is copied. Going limp is unreachable rather
   than forbidden: the only channel from the network to the body is seven floats and a few
-  buttons. The deadman is quackd's own, it runs on the robot, and it is evaluated by the
+  buttons. The deadman is Roboglot's own, it runs on the robot, and it is evaluated by the
   control loop rather than a timer, so a server thread that is starved, wedged or dead still
   stops the duck. Standard library plus numpy, so it installs on a 512 MB Pi, and
   `--fake` runs the whole protocol on a laptop with no robot at all.
-- **A camera server for the duck's Pi** (`bridge/open_duck/quackd_duck_camd.py`), in its
+- **A camera server for the duck's Pi** (`bridge/open_duck/roboglot_duck_camd.py`), in its
   own process because encoding a JPEG inside a 20 ms control tick is not affordable on a Pi
   Zero 2 W. It captures on a timer so a slow client cannot stall it, serves the newest frame
   over HTTP, and has no control path at all: it reads a camera and answers GET. Without it
@@ -11059,10 +11097,10 @@ Still nothing has run on a duck. What is new is that everything except the duck 
   the first person to run this on a duck they built.
 - **`--camera-url`** on `run`, `serve-mcp` and `doctor`, for a robot whose camera is an HTTP
   snapshot rather than something the control socket can serve.
-- **`--token` and `QUACKD_DUCK_TOKEN`** for a robot that wants authentication. The Open Duck
+- **`--token` and `ROBOGLOT_DUCK_TOKEN`** for a robot that wants authentication. The Open Duck
   bridge's own installer writes one, so until now a duck set up by the book refused every
   client and no document explained why.
-- **`quackd doctor --robot X --address Y` connects.** Everything else in `doctor` is offline
+- **`roboglot doctor --robot X --address Y` connects.** Everything else in `doctor` is offline
   and reads the static manifest, which describes a fully built robot. This prints what your
   robot actually reported: its capabilities, which verbs it does and does not have, and
   whether its control loop is healthy. It is the only way to see that difference before a
@@ -11089,7 +11127,7 @@ Still nothing has run on a duck. What is new is that everything except the duck 
   that it could not see. The detector now follows the camera rather than the backend, which
   also fixes `microduck:jsonrpc` and `rosbridge:ws`. Both entry points ask one function,
   `perception.detector_for`, and both ask it at *connect*: the first cut of this fix keyed
-  `quackd run` on the camera and left `serve-mcp` keyed on the backend, so every hardware
+  `roboglot run` on the camera and left `serve-mcp` keyed on the backend, so every hardware
   body over MCP still ran blind, and deciding from the static description would still have
   missed a `rosbridge:ws` base, which only reports its camera once it has connected.
 - **A robot that reports fewer capabilities at connect than its description claims** used to
@@ -11098,7 +11136,7 @@ Still nothing has run on a duck. What is new is that everything except the duck 
   loop built its tools. A verb the task *requires* now refuses in the validator's words, and
   one it merely *allows* is dropped with a line in the log, which is what a v1 task allowing
   more than it needs is for.
-- `quackd run` now checks a `.duck` against its robot before connecting, the way
+- `roboglot run` now checks a `.glot` against its robot before connecting, the way
   `serve-mcp` always has. Pointing a task at a robot that lacks one of its verbs used to
   reach the agent loop and raise a bare `VerbNotFound` with the robot already connected and
   an empty run directory already written. It now refuses up front with the validator's own
@@ -11106,13 +11144,13 @@ Still nothing has run on a duck. What is new is that everything except the duck 
 - **Two commands still told users to pass `--transport`**, the flag this release removes: a
   `doctor` table title and the `TransportError` the WebSocket stub raises. The guard that
   swept the documentation for it could not see a Python string, and now reads
-  `quackd/**/*.py` too. Six other user-visible strings were still dated "in 0.4", and
-  `doctor` printed the extra as `quackd` because rich ate the `[lan]` as markup.
+  `roboglot/**/*.py` too. Six other user-visible strings were still dated "in 0.4", and
+  `doctor` printed the extra as `roboglot` because rich ate the `[lan]` as markup.
 - **The PyPI summary and keywords never mentioned the Open Duck Mini**, the robot this
   release is named for, and no test had ever read `pyproject.toml`. One now does. The
   `Framework :: Robot Framework` classifier is also gone: that is the test-automation tool
-  of the same name, not robotics, and it filed quackd under the wrong ecosystem.
-- `quackd doctor` reported `?` for opencv and Pillow, which are not optional and were plainly
+  of the same name, not robotics, and it filed Roboglot under the wrong ecosystem.
+- `roboglot doctor` reported `?` for opencv and Pillow, which are not optional and were plainly
   installed. An import name is not a distribution name, so it now asks the installer which
   distribution provides the module before giving up.
 - The Open Duck bring-up checklist keeps the feet off the ground through step 9 and puts
@@ -11128,14 +11166,14 @@ Still nothing has run on a duck. What is new is that everything except the duck 
 ## [0.4.0] — 2026-09-02
 
 From "a brain for the Microduck" to "a brain for any small robot". The thesis does not
-change: the LLM picks verbs, the robot's own controllers move, quackd enforces the
+change: the LLM picks verbs, the robot's own controllers move, Roboglot enforces the
 contract. Four adapters (Microduck, Reachy Mini, a LeRobot arm, any base over rosbridge),
-one `.duck` contract across bodies, a head and a duck completing one task together in the
+one `.glot` contract across bodies, a head and a duck completing one task together in the
 simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`.
 
 ### Added
 
-- **Robot adapters and manifests** (`quackd/adapters/`): every robot is an adapter that
+- **Robot adapters and manifests** (`roboglot/adapters/`): every robot is an adapter that
   returns a `RobotManifest` from `connect()`, and the verb registry is built from that
   manifest rather than hardcoded. A verb that is not in the manifest does not exist. The
   Microduck is the first adapter and wraps the four existing transports with zero
@@ -11143,67 +11181,67 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
 - **Core verbs and aliases**: `observe`, `report_state`, `stop`, `say`, `move`, `go_to`,
   `search_scan` and `approach_and` exist on any robot that meets their requirements;
   `get_frame`, `walk_to` and `walk` are permanent aliases, listed once in
-  `quackd/verbs/aliases.py`. `search_scan` sweeps the head on a robot that can only look.
+  `roboglot/verbs/aliases.py`. `search_scan` sweeps the head on a robot that can only look.
   Preconditions are named in the manifest and supplied by the adapter; the executor spells
   none. (ADR-0018)
-- **`.duck` v1**: `requires`, `robots`, `flock.roles` and `flock.frame_hints`; v0 files
-  parse unchanged. `quackd validate --robot <adapter>:<backend>` checks a task against a
+- **`.glot` v1**: `requires`, `robots`, `team.roles` and `team.frame_hints`; v0 files
+  parse unchanged. `roboglot validate --robot <adapter>:<backend>` checks a task against a
   robot's manifest with field-level errors such as `requires kick, but reachy-01
   (reachy-mini) does not provide it`. (ADR-0019)
 - **`--robot <adapter>:<backend>`** on `run`, `validate`, `serve-mcp`, `doctor` and
-  `list-verbs`; `--robots name=spec,...` on `run` and `validate`; `quackd list-adapters`;
-  `doctor --robot` shows one manifest; a `.duck` may declare its default robot.
+  `list-verbs`; `--robots name=spec,...` on `run` and `validate`; `roboglot list-adapters`;
+  `doctor --robot` shows one manifest; a `.glot` may declare its default robot.
 - Transcripts: `verb` events carry `canonical`; `run_start` and `summary.json` carry the
   robot's manifest and id. `duck_list_verbs` entries gain `canonical`, `aliases` and
   `core`; `duck_get_state` gains `robot`.
-- Goldens recorded from 0.3.0 (`tests/golden/`) prove seeded worlds, the starter ducks and
-  a `flock-kick` conversation are unchanged; CI runs both seeded sweeps at 10 of 10
-  (`QUACKD_STRICT_SEEDS=1`).
-- **Reachy Mini adapter** (`--robot reachy_mini:sim2d | mock | sdk`, extra `quackd[reachy]`
+- Goldens recorded from 0.3.0 (`tests/golden/`) prove seeded worlds, the starter tasks and
+  a `team-kick` conversation are unchanged; CI runs both seeded sweeps at 10 of 10
+  (`ROBOGLOT_STRICT_SEEDS=1`).
+- **Reachy Mini adapter** (`--robot reachy_mini:sim2d | mock | sdk`, extra `roboglot[reachy]`
   for the SDK): a stationary head with a camera, a 180° neck, expressions and a speaker.
   Its manifest carries `observe`, `report_state`, `stop`, `say`, `search_scan` (a gaze
   sweep), `gaze`, `express`, `play_sound` and a confirm-gated `wake_up`; no locomotion
   verbs exist on it. `say(text)` is voiced as the closest expressive sound because the SDK
   has no text-to-speech; `stop` is `cancel_move` and `disable_motors` is never sent. Every
-  SDK name is VERIFIED in `quackd/adapters/reachy_mini/upstream_api.py` against a pinned
+  SDK name is VERIFIED in `roboglot/adapters/reachy_mini/upstream_api.py` against a pinned
   commit and the 1.10.0 wheel; the `sdk` backend has never been run on a robot.
   (ADR-0022, ADR-0023)
 - **`StationaryHead`** in `sim2d`: a fixed camera on a wall with zero RNG draws, so every
   world without a head is byte-identical to 0.3; the recorder and the live window can
   focus a head camera.
-- **`reachy-spotter` starter duck** (`duck: 1`, `robots: reachy_mini:sim2d`): find the
+- **`reachy-spotter` starter task** (`glot: 1`, `robots: reachy_mini:sim2d`): find the
   ball with your gaze and say where it is; 10 of 10 seeds with the scripted pilot, judged
   by ground truth.
-- **Heterogeneous flocks** (ADR-0020): members are adapters sharing one arena and one
+- **Heterogeneous teams** (ADR-0020): members are adapters sharing one arena and one
   lockstep clock; bids carry a capability term so a robot bids only for a role its
   manifest can fill; one auction fills every role (most constrained first, lowest own
   distance, member-name tie-break, per-role hysteresis; the spotter is held for the run).
   With roles the kicker reports `kick_done` and the spotter judges from its own fresh
   frames (`VERDICT`); only `moved` is a success and the ground-truth veto stays on top.
   Frame hints (`HINT`, arena frame, sim only) choose the kicker's pre-turn; the
-  frame-of-reference limitation is documented in `docs/flock.md`. `run --robots
+  frame-of-reference limitation is documented in `docs/team.md`. `run --robots
   name=<adapter>:<backend>,...`.
-- **`reachy-spots-duck-kicks` starter duck**: a Reachy Mini head spots the ball, a
+- **`reachy-spots-duck-kicks` starter task**: a Reachy Mini head spots the ball, a
   Microduck kicks it, the head judges the kick. 10 of 10 seeds with scripted pilots,
-  every message in `flock.jsonl`, zero planner calls with the fake provider.
-- **Multi-robot MCP**: `quackd serve-mcp --robots duck=microduck:sim2d,reachy=reachy_mini:mock`
+  every message in `team.jsonl`, zero planner calls with the fake provider.
+- **Multi-robot MCP**: `roboglot serve-mcp --robots duck=microduck:sim2d,reachy=reachy_mini:mock`
   fronts a fleet with `robot_list`, `robot_list_verbs`, `robot_run_verb`, `robot_observe`,
-  `robot_say` and `robot_load_duckfile`; every robot has its own executor, budget,
-  heartbeat and contract, and `robot_load_duckfile` checks the contract's `requires`
+  `robot_say` and `robot_load_glotfile`; every robot has its own executor, budget,
+  heartbeat and contract, and `robot_load_glotfile` checks the contract's `requires`
   against that robot's manifest before adopting it. The eight `duck_*` tools stay as
   aliases of the default robot (deprecated, removed in 0.5). Simulated robots over MCP
   each get their own world; a shared arena over MCP is future work.
-- **LAN discovery** (`quackd discover`, `quackd announce`, ADR-0021): zeroconf service
-  `_quackd._tcp.local.` with an identity-only TXT record (manifest id, digest, adapter,
+- **LAN discovery** (`roboglot discover`, `roboglot announce`, ADR-0021): zeroconf service
+  `_roboglot._tcp.local.` with an identity-only TXT record (manifest id, digest, adapter,
   body, verb count), every pair validated under 200 bytes before zeroconf sees it. Behind
-  `quackd[lan]`, imported lazily, tested on fakes; exercised once for real between two
+  `roboglot[lan]`, imported lazily, tested on fakes; exercised once for real between two
   processes on one machine, never between two machines.
-- **MQTT flock bus** (`quackd.flock.mqtt_bus.MqttBus`, `run_flock(bus_factory=)`): the
-  same two-method `Bus` protocol over a broker, `quackd/<flock_id>/ctl` at QoS 1 and
-  `/hb` at QoS 0, never retained, the `FlockMessage` JSON as payload. Broker echo is
+- **MQTT team bus** (`roboglot.team.mqtt_bus.MqttBus`, `run_team(bus_factory=)`): the
+  same two-method `Bus` protocol over a broker, `roboglot/<team_id>/ctl` at QoS 1 and
+  `/hb` at QoS 0, never retained, the `TeamMessage` JSON as payload. Broker echo is
   dropped, the tap fires exactly once per message per node, remote messages are
   marshalled onto the event loop, and duplicates are tolerated by the coordinator's
-  idempotent handlers. Library only: a flock across machines also needs a clock across
+  idempotent handlers. Library only: a team across machines also needs a clock across
   machines, so there is no `--bus` flag. Tested on a fake broker; exercised once for real
   against a local `amqtt` broker with paho 2.1 (all eight kinds, one machine).
   `Subscription.drain()` is now an atomic `popleft` loop. `doctor` lists both LAN
@@ -11211,16 +11249,16 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
 - **LeRobot adapter** (`--robot lerobot:mock|real`, ADR-0022): an SO-101 class desktop arm
   with `move_joints`, `gripper`, `place` and, when a policy is available, `pick` as one
   skill intent that the arm's own learned policy executes. No locomotion, no voice, no
-  gaze in its manifest. `real` sits behind `quackd[lerobot]` (Python 3.12 or newer, torch
+  gaze in its manifest. `real` sits behind `roboglot[lerobot]` (Python 3.12 or newer, torch
   never imported on the default path), passes `calibrate=False`, refuses an uncalibrated
   arm, holds position on stop and never disables torque; every LeRobot name is pinned
-  and line-linked in `quackd/adapters/lerobot/upstream_api.py`; never run on an arm.
+  and line-linked in `roboglot/adapters/lerobot/upstream_api.py`; never run on an arm.
 - **rosbridge adapter** (`--robot rosbridge:mock|ws`): any wheeled base that takes a
   `geometry_msgs/msg/Twist` over `rosbridge_server`. The address carries the topics
   (`ws://host:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/compressed`); with an image
   topic the base also gets `observe`, `go_to`, `search_scan` and `approach_and`. There is
-  no deadman: quackd re-sends the Twist at 10 Hz and zeroes it on stop, and the manifest
-  says so. `ws` sits behind `quackd[rosbridge]` (roslibpy 2.x); every roslibpy, rosbridge
+  no deadman: Roboglot re-sends the Twist at 10 Hz and zeroes it on stop, and the manifest
+  says so. `ws` sits behind `roboglot[rosbridge]` (roslibpy 2.x); every roslibpy, rosbridge
   protocol and message name is pinned and line-linked; never run against a bridge.
 - **Speed limits come from the manifest**: `move`, `go_to` and the turn used by
   `search_scan` clamp to `limits.max_vx/max_vy/max_wz` when a manifest names them; the
@@ -11235,7 +11273,7 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
 
 - `default_registry()` is the Microduck manifest's registry; its names are canonical
   (`move`, `go_to`, `observe`) and every entry point accepts the old spellings. The
-  bundled starter ducks keep their 0.3 spellings and stay at `duck: 0`.
+  bundled starter tasks keep their 0.3 spellings and stay at `glot: 0`.
 - The agent loop connects before writing `run_start`, because the vocabulary comes from
   the connected robot.
 - `docs/transport-status.md` is a redirect to `docs/adapter-status.md`; the docs test
@@ -11246,16 +11284,16 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
   diagrams show the adapter layer, and the status table states per feature what was
   exercised against its real target and what was not.
 - Test suite: 360 tests collected, no network and no keys, with four seeded sweeps CI holds
-  at 10 of 10 (`find-and-kick`, `flock-kick`, `reachy-spotter`, `reachy-spots-duck-kicks`).
-- Eight starter `.duck` files ship, up from six.
+  at 10 of 10 (`find-and-kick`, `team-kick`, `reachy-spotter`, `reachy-spots-duck-kicks`).
+- Eight starter `.glot` files ship, up from six.
 
 ### Deprecated
 
 - `--transport X` is an alias of `--robot microduck:X` that prints one warning per
-  process; it is removed in 0.5. The `quackd.transport` package is not deprecated: it is
+  process; it is removed in 0.5. The `roboglot.transport` package is not deprecated: it is
   the Microduck backend layer.
 - The eight `duck_*` MCP tools (`duck_list_verbs`, `duck_run_verb`, `duck_get_frame`,
-  `duck_get_state`, `duck_set_velocity`, `duck_stop`, `duck_quack`, `duck_load_duckfile`)
+  `duck_get_state`, `duck_set_velocity`, `duck_stop`, `duck_quack`, `duck_load_glotfile`)
   are aliases of the six `robot_*` tools on the default robot. Each carries a deprecation
   note in its description and all eight are removed in 0.5.
 
@@ -11263,7 +11301,7 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
 
 - A role auction is complete only when every role can be filled by a *different* member,
   so a single robot that satisfies both roles can no longer deadlock a heterogeneous
-  flock.
+  team.
 - `Subscription.drain()` is an atomic `popleft` loop rather than copy-then-clear, so a
   producer on another thread (the MQTT bus, before a message reaches the event loop)
   cannot have its message cleared unseen.
@@ -11276,9 +11314,9 @@ simulator, and nothing claimed on hardware. Design: `docs/design/multi-robot.md`
   fakes. `microduck:websocket` is a stub waiting on upstream.
 - LAN discovery and the MQTT bus were each exercised once, on one machine: zeroconf
   between two processes, MQTT against a local `amqtt` broker. Neither has crossed to a
-  second machine, and a flock across machines also needs a clock across machines, which
+  second machine, and a team across machines also needs a clock across machines, which
   does not exist.
-- Flock mode stays simulator only, with two choreographies and exactly two roles.
+- Team mode stays simulator only, with two choreographies and exactly two roles.
 - A manifest can be smaller than the robot: `lerobot:real` claims no camera and no `pick`
   until it connects, and `rosbridge:ws` has no camera verbs unless the address names an
   image topic.
@@ -11293,40 +11331,40 @@ one kicks. Everything is on the record.
 
 ### Added
 
-- **Flock mode** (`flock:` block in the `.duck`, or `--flock N` on `run`/`record`): 2 to 4
+- **Team mode** (`team:` block in the `.glot`, or `--team N` on `run`/`record`): 2 to 4
   ducks share one arena and an in-process message bus. A deterministic Contract Net
   auction picks the kicker (bid = each duck's own camera distance estimate, 20 %
   hysteresis, 6 s claim lease, duck-id tie-break, one-claimant lock), heading sectors
   split the search, misses trigger a full-circle re-search and re-auction, and a sim-time
   watchdog drops silent ducks. Every message, bid, claim and role change lands in
-  `flock.jsonl`; the outcome is judged from sim ground truth, not a model claim.
-  Guide: `docs/flock.md`. (ADR-0015)
+  `team.jsonl`; the outcome is judged from sim ground truth, not a model claim.
+  Guide: `docs/team.md`. (ADR-0015)
 - **Multi-duck simulator**: `World(n_ducks=…)` with per-duck deadman, noise streams, kick
   counters, duck-duck collisions and the four Microduck colorways (Cream, Sky, Lavender,
   Graphite); per-duck cameras render teammates, and the detector gained four `duck`
   targets. Sim time is governed by a lockstep clock, so the world freezes while any pilot
   thinks and single-duck runs stay bit-identical per seed. (ADR-0016)
-- The planner makes **at most one** LLM call per flock run (parameters validated and
+- The planner makes **at most one** LLM call per team run (parameters validated and
   clamped, deterministic fallback); `--provider fake` computes the plan as a pure
   function. Per-duck LLM pilots are deliberately out of scope.
 - Duck to duck separation is watched from world ground truth while a claim is live: the
   coordinator orders an intruding non-kicker to retreat, and the retreat still runs
   through that duck's own executor.
-- Starter `ducks/flock-kick.duck`; `runs/<ts>-flock-…/` layout with per-duck transcripts;
-  flock demo GIF in the README. Scripted 3-duck acceptance: 10 of 10 seeds.
-- The flock shipped through an adversarial review (69 agents, 24 confirmed findings, all
+- Starter `tasks/team-kick.glot`; `runs/<ts>-team-…/` layout with per-duck transcripts;
+  team demo GIF in the README. Scripted 3-duck acceptance: 10 of 10 seeds.
+- The team shipped through an adversarial review (69 agents, 24 confirmed findings, all
   fixed before release): deadlock guards around the shared clock's tick hooks and around
   member connect failures, per-duck `max_minutes` enforcement, a heartbeat watchdog floor
   above the longest verb sleep, cooldown gating at bid time, per-field planner clamping,
-  `--max-steps` honoured on flock runs, `flock.search.restart_s` honoured, and
+  `--max-steps` honoured on team runs, `team.search.restart_s` honoured, and
   `one_claimant: false` rejected instead of silently ignored.
 
 ### Changed
 
-- `.duck` spec v0 gains the optional `flock:` block (`docs/duck-spec.md`, `schema.json`
-  regenerated). Files using it need quackd 0.3.0 or newer; older versions refuse them
-  loudly. `quackd validate` reports flock size and rejects flock + `verbs.confirm`.
-- `quackd doctor` notes flock status; `serve-mcp` refuses flock ducks with a clear
+- `.glot` spec v0 gains the optional `team:` block (`docs/glot-spec.md`, `schema.json`
+  regenerated). Files using it need Roboglot 0.3.0 or newer; older versions refuse them
+  loudly. `roboglot validate` reports team size and rejects team + `verbs.confirm`.
+- `roboglot doctor` notes team status; `serve-mcp` refuses team tasks with a clear
   message.
 
 ## [0.2.0] — 2026-08-29
@@ -11338,11 +11376,11 @@ Local and open-source LLMs can pilot the duck. No API key needed.
 - **Local providers** `ollama`, `vllm`, `llamacpp`, `lmstudio` and `local --base-url …`
   for any OpenAI-compatible server: no key, model discovery from `/v1/models`,
   `tool_choice=auto` and no `parallel_tool_calls` field for picky servers
-  (`QUACKD_TOOL_CHOICE` overrides), vision opt-in with `--vision`, and a JSON text
+  (`ROBOGLOT_TOOL_CHOICE` overrides), vision opt-in with `--vision`, and a JSON text
   fallback for models that cannot call tools natively (marked `text_fallback` in the
-  transcript). `quackd doctor` probes the four default local addresses.
+  transcript). `roboglot doctor` probes the four default local addresses.
   Guide: `docs/local-llms.md`. (ADR-0014)
-- `quackd run --goal "…"`: a plain-language goal instead of a `.duck` file (ad-hoc contract:
+- `roboglot run --goal "…"`: a plain-language goal instead of a `.glot` file (ad-hoc contract:
   every `safe` verb, default budgets, standard abort rules). The scripted `fake` pilot picks
   a strategy from the goal's keywords.
 - `--base-url`, `--api-key`, `--vision/--no-vision`, and `--gif-size` on `run`/`record`.
@@ -11359,7 +11397,7 @@ Local and open-source LLMs can pilot the duck. No API key needed.
 
 ### Fixed
 
-- Rich markup ate `quackd[extra]` in CLI error hints.
+- Rich markup ate `roboglot[extra]` in CLI error hints.
 - mypy on Python 3.12 (numpy's PEP 695 stubs) in CI.
 
 ## [0.1.0] — 2026-08-28
@@ -11368,8 +11406,8 @@ First release: sim-first, honest about hardware.
 
 ### Added
 
-- **`.duck` spec v0**: strict pydantic frontmatter, generated `schema.json`,
-  `quackd validate` with fail-fast field-level errors; five starter ducks
+- **`.glot` spec v0**: strict pydantic frontmatter, generated `schema.json`,
+  `roboglot validate` with fail-fast field-level errors; five starter tasks
   (`hello-world`, `find-and-kick`, `patrol-and-quack`, `follow-me`, `fetch`) bundled in the
   wheel and resolvable by name.
 - **Verb registry**: built-ins mapping 1:1 to shipped robot behaviours (`walk`, `sit`,
@@ -11387,19 +11425,19 @@ First release: sim-first, honest about hardware.
 - **Providers**: `anthropic` (adaptive thinking, refusal handling, thinking-block replay),
   `openai`, `grok` (xAI endpoint), `gemini`, and the scripted `fake`; all vendor SDKs are
   optional extras.
-- **`quackd serve-mcp`**: the duck as MCP tools for Claude Code / Claude Desktop through
+- **`roboglot serve-mcp`**: the duck as MCP tools for Claude Code / Claude Desktop through
   the same executor; `docs/mcp.md` with verified client config; project `.mcp.json`.
 - **Transports**: `sim2d` (default), `mock`, experimental `jsonrpc` for the real robot
   (verified `duck-ipc-proto` v16 vocabulary, fake-robotd tests), `websocket` stub.
-- **`quackd doctor`**, `quackd list-verbs`, `quackd record`.
-- Docs: architecture, duck spec, transport status, safety, learned verbs (v2), licenses,
+- **`roboglot doctor`**, `roboglot list-verbs`, `roboglot record`.
+- Docs: architecture, glot spec, transport status, safety, learned verbs (v2), licenses,
   FAQ, MCP; 13 ADRs; LAUNCH.md; CONTRIBUTING.md; hero GIF (scripted pilot, labelled).
 
 ### Known limitations
 
 - The hardware transport has never run on a Microduck (hardware ships Christmas 2026).
 - The README hero is a scripted-pilot recording; a real-model recording needs an API key.
-- Non-Anthropic default model IDs are unverified; override with `QUACKD_MODEL`.
+- Non-Anthropic default model IDs are unverified; override with `ROBOGLOT_MODEL`.
 
 [Unreleased]: https://github.com/rokbenko/quackd/compare/v0.34.0...HEAD
 [0.34.0]: https://github.com/rokbenko/quackd/compare/v0.33.0...v0.34.0

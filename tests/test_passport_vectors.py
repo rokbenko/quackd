@@ -1,7 +1,7 @@
-"""quackd's passport module against the conformance vectors in docs/passport/vectors/.
+"""Roboglot's passport module against the conformance vectors in docs/passport/vectors/.
 
 The vectors are written by scripts/passport_vectors.py, which signs with `cryptography` directly
-and never imports `quackd.passport`, so every row here checks quackd against a second
+and never imports `roboglot.passport`, so every row here checks Roboglot against a second
 implementation of the same rules. The expected results are vectors/README.md's, row for row.
 """
 
@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from quackd.passport import PassportError, document, jws
-from quackd.passport.talk import MAX_HELLO_BYTES, read_message
+from roboglot.passport import PassportError, document, jws
+from roboglot.passport.talk import MAX_HELLO_BYTES, read_message
 from tests.passport_helpers import KEYS, REFERENCE
 
 REPO = Path(__file__).resolve().parents[1]

@@ -1,11 +1,11 @@
-"""Render the tables in `docs/models/` from the code that decides what quackd takes, or check
+"""Render the tables in `docs/models/` from the code that decides what Roboglot takes, or check
 that the pages still hold what the code says.
 
 Every table on those pages that names a model, a vendor, a flag, a key or a rate sits between two
 markers this script owns, and the rows between them are the catalogues rendered:
-`quackd/agent/providers/catalogue.py` and `factory.py` for the pilots, `local.py` for the local
-servers, `quackd/agent/decision/catalogue.py` for the decision LLMs and
-`quackd/adapters/policies.py` for the policy types. So a row is changed in the code and this
+`roboglot/agent/providers/catalogue.py` and `factory.py` for the pilots, `local.py` for the local
+servers, `roboglot/agent/decision/catalogue.py` for the decision LLMs and
+`roboglot/adapters/policies.py` for the policy types. So a row is changed in the code and this
 script run, never in a table, and a test runs it on every commit and fails when a page says
 something the code no longer does.
 
@@ -13,7 +13,7 @@ something the code no longer does.
     uv run --no-sync python scripts/models_docs.py --check  # exit 1 if any page would change
 
 It imports the catalogues and nothing that reaches a vendor, and it reads no environment: a
-`QUACKD_LLM` or an `OPENAI_BASE_URL` on the machine that runs it changes nothing it writes.
+`ROBOGLOT_LLM` or an `OPENAI_BASE_URL` on the machine that runs it changes nothing it writes.
 """
 
 from __future__ import annotations
@@ -24,8 +24,8 @@ import sys
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from quackd.adapters.policies import FAMILIES, NOT_SERVED, PolicyFamily
-from quackd.agent.decision.catalogue import (
+from roboglot.adapters.policies import FAMILIES, NOT_SERVED, PolicyFamily
+from roboglot.agent.decision.catalogue import (
     DECISIONS_API,
     IN_PROCESS,
     PRESET_NAMES,
@@ -33,7 +33,7 @@ from quackd.agent.decision.catalogue import (
     SYSTEM_ONE,
     DecisionSpec,
 )
-from quackd.agent.providers.catalogue import (
+from roboglot.agent.providers.catalogue import (
     CLOUD_NAMES,
     KEY_FALLBACKS,
     LOCAL_NAMES,
@@ -44,9 +44,9 @@ from quackd.agent.providers.catalogue import (
     Price,
     llms_for,
 )
-from quackd.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENAI_COMPATIBLE
-from quackd.agent.providers.local import PRESETS as LOCAL_PRESETS
-from quackd.agent.providers.openai import BASE_URL_ENV, DEFAULT_BASE_URL
+from roboglot.agent.providers.factory import EXTRA_FOR, KEY_ENV, OPENAI_COMPATIBLE
+from roboglot.agent.providers.local import PRESETS as LOCAL_PRESETS
+from roboglot.agent.providers.openai import BASE_URL_ENV, DEFAULT_BASE_URL
 
 REPO = Path(__file__).resolve().parents[1]
 DOCS = REPO / "docs"
@@ -103,7 +103,7 @@ COMPANIES: dict[str, str] = {
     "decision:laya": "Laya",
 }
 
-#: The vendors whose own SDK picks the address, which quackd leaves alone.
+#: The vendors whose own SDK picks the address, which Roboglot leaves alone.
 SDK_ADDRESS = ("anthropic", "gemini")
 
 _WORDS = [
@@ -190,7 +190,7 @@ def address(name: str) -> str:
         return "the SDK's own"
     if name == "openai":
         return f"`{DEFAULT_BASE_URL}`, or `{BASE_URL_ENV}`"
-    module = importlib.import_module(f"quackd.agent.providers.{name}")
+    module = importlib.import_module(f"roboglot.agent.providers.{name}")
     url = getattr(module, OPENAI_COMPATIBLE[name]).base_url
     return f"`{url}`"
 
@@ -209,7 +209,7 @@ def pilot_vendors() -> str:
             [
                 f"`{name}`",
                 maker(name),
-                f"`quackd[{EXTRA_FOR[name]}]`",
+                f"`roboglot[{EXTRA_FOR[name]}]`",
                 key_cell(name),
                 address(name),
                 f"`{ids[0].id}`",
@@ -223,13 +223,13 @@ def pilot_local() -> str:
     rows = []
     for name in LOCAL_NAMES:
         url = LOCAL_PRESETS[name]
-        where = f"`{url}`" if url else "none: give `--base-url` or `QUACKD_BASE_URL`"
+        where = f"`{url}`" if url else "none: give `--base-url` or `ROBOGLOT_BASE_URL`"
         rows.append(
             [
                 f"`{name}`",
                 maker(name),
                 where,
-                f"`quackd[{EXTRA_FOR[name]}]`",
+                f"`roboglot[{EXTRA_FOR[name]}]`",
                 f"`{KEY_ENV[name]}`, or none",
             ]
         )
@@ -319,7 +319,7 @@ def decision_rows() -> str:
             _wire(PRESETS[name]),
             _runs(PRESETS[name]),
             f"`{PRESETS[name].key_env}`" if PRESETS[name].key_env else "none",
-            f"`quackd[{PRESETS[name].extra}]`" if PRESETS[name].extra else "none",
+            f"`roboglot[{PRESETS[name].extra}]`" if PRESETS[name].extra else "none",
             _decision_address(PRESETS[name]),
             f"`{PRESETS[name].llm_id}`" if PRESETS[name].llm_id else "the server's own",
             "with `--decision-frames`" if PRESETS[name].sees else "no",
@@ -365,14 +365,14 @@ def roles() -> str:
         ],
         [
             "**Learned policy**",
-            "`--policy-url`, to a `quackd policy serve` or an endpoint as `hf:NAME`",
+            "`--policy-url`, to a `roboglot policy serve` or an endpoint as `hf:NAME`",
             "no, and the SO-101 arm alone takes one",
             f"{number_word(len(FAMILIES))} LeRobot policy types, {number_word(vlas)} of them "
             "VLAs, served from the Hub",
             "[vlas.md](vlas.md)",
         ],
     ]
-    return table(("Role", "Named with", "Required", "What quackd names", "Page"), rows)
+    return table(("Role", "Named with", "Required", "What Roboglot names", "Page"), rows)
 
 
 def _code(text: str) -> str:
@@ -446,13 +446,13 @@ def vendor_roles() -> str:
         entry = row(company(name))
         add(entry, "pilot", f"`{name}`")
         add(entry, "key", key_cell(name) if name in CLOUD_NAMES else "none needed")
-        add(entry, "extra", f"`quackd[{EXTRA_FOR[name]}]`")
+        add(entry, "extra", f"`roboglot[{EXTRA_FOR[name]}]`")
     for name in PRESET_NAMES:
         spec = PRESETS[name]
         entry = row(company(f"decision:{name}"))
         add(entry, "decision", f"`{name}`")
         add(entry, "key", f"`{spec.key_env}`" if spec.key_env else "none needed")
-        add(entry, "extra", f"`quackd[{spec.extra}]`" if spec.extra else "none")
+        add(entry, "extra", f"`roboglot[{spec.extra}]`" if spec.extra else "none")
     for family in FAMILIES:
         entry = row(family.maker)
         add(entry, "policy", f"`{family.type}`")
@@ -488,13 +488,13 @@ def vendor_roles() -> str:
 #: Every block, by the name its markers carry: what renders it and the file it is rendered
 #: from, which the start marker names so a reader of the page knows where to change a row.
 BLOCKS: dict[str, tuple[str, Callable[[], str]]] = {
-    "roles": ("quackd/agent/providers/catalogue.py and quackd/adapters/policies.py", roles),
-    "pilot-vendors": ("quackd/agent/providers/factory.py", pilot_vendors),
-    "pilot-local": ("quackd/agent/providers/local.py", pilot_local),
-    "pilot-ids": ("quackd/agent/providers/catalogue.py", pilot_ids),
-    "decision-rows": ("quackd/agent/decision/catalogue.py", decision_rows),
-    "policy-served": ("quackd/adapters/policies.py", policy_served),
-    "policy-refused": ("quackd/adapters/policies.py", policy_refused),
+    "roles": ("roboglot/agent/providers/catalogue.py and roboglot/adapters/policies.py", roles),
+    "pilot-vendors": ("roboglot/agent/providers/factory.py", pilot_vendors),
+    "pilot-local": ("roboglot/agent/providers/local.py", pilot_local),
+    "pilot-ids": ("roboglot/agent/providers/catalogue.py", pilot_ids),
+    "decision-rows": ("roboglot/agent/decision/catalogue.py", decision_rows),
+    "policy-served": ("roboglot/adapters/policies.py", policy_served),
+    "policy-refused": ("roboglot/adapters/policies.py", policy_refused),
     "vendor-roles": ("the three catalogues", vendor_roles),
 }
 

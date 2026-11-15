@@ -11,24 +11,24 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.factory import RobotSpec, make_adapter
-from quackd.agent.decision.commands import CommandChooser, offers_for
-from quackd.agent.providers.fake import FakeProvider
-from quackd.drive.run import session_duck
-from quackd.drive.session import Answered, DriveSession
-from quackd.drive.terminal import drive_from_pipe
-from quackd.duckfile.parser import duck_from_goal, load_duck
-from quackd.duckfile.schema import Budgets
-from quackd.log import EventLog, LogEvent
-from quackd.mcp_server import RobotSession
-from quackd.safety import Budget, Executor, Heartbeat
-from quackd.transport.base import DuckState
-from quackd.transport.mock import MockTransport
-from quackd.verbs.core import GoToParams
-from quackd.verbs.registry import NoParams, Verb, VerbContext, VerbResult, default_registry
-from quackd_microduck.verbs import KickParams
-from quackd_open_duck import OpenDuckAdapter
-from quackd_open_duck.mock import OpenDuckMock
+from roboglot.adapters.factory import RobotSpec, make_adapter
+from roboglot.agent.decision.commands import CommandChooser, offers_for
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.drive.run import session_glot
+from roboglot.drive.session import Answered, DriveSession
+from roboglot.drive.terminal import drive_from_pipe
+from roboglot.glotfile.parser import glot_from_goal, load_glot
+from roboglot.glotfile.schema import Budgets
+from roboglot.log import EventLog, LogEvent
+from roboglot.mcp_server import RobotSession
+from roboglot.safety import Budget, Executor, Heartbeat
+from roboglot.transport.base import DuckState
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import GoToParams
+from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbResult, default_registry
+from roboglot_microduck.verbs import KickParams
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.mock import OpenDuckMock
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -101,14 +101,14 @@ async def _drive(
     chooser = None
     if llm is not None:
         verbs = {n: executor.registry.get(n) for n in executor.registry.names()}
-        from quackd.drive.presets import presets_for
+        from roboglot.drive.presets import presets_for
 
         chooser = CommandChooser(llm, offers_for(verbs, presets_for(executor.manifest, verbs)), "")
     drive = DriveSession(
         robot,
         record=lambda kind, **data: records.append({"kind": kind, **data}),
         chooser=chooser,
-        pilot=lambda goal: FakeProvider.for_duck("goal", goal),
+        pilot=lambda goal: FakeProvider.for_glot("goal", goal),
         goals=tmp_path / "goals",
         goal_verbs=["report_state", "observe", "search_scan", "go_to", "kick", "move", "stop"],
         yes=yes,
@@ -361,11 +361,11 @@ async def test_a_line_dropped_before_it_ever_ran_still_settles(tmp_path: Path) -
 
 
 async def test_a_low_battery_ends_a_persons_command_as_it_ends_a_goals(tmp_path: Path) -> None:
-    """The battery rule a goal is held to holds a session without a `.duck` too."""
+    """The battery rule a goal is held to holds a session without a `.glot` too."""
     drive, body, _records = await _drive(tmp_path)
     registry = drive.robot.executor.registry
     drive.robot.adopt(
-        session_duck([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
+        session_glot([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
     )
     body._states = [DuckState(policy="mock", posture="standing", battery_percent=1)]
     walked = drive.submit("forward")
@@ -377,10 +377,10 @@ async def test_a_low_battery_ends_a_persons_command_as_it_ends_a_goals(tmp_path:
 
 async def test_a_goal_keeps_the_confirm_gates_of_the_sessions_duck(tmp_path: Path) -> None:
     """A goal is a contract of its own, written from its line, and one written without the
-    session's gates let the pilot run `search_scan` that the `.duck` asks a yes for."""
+    session's gates let the pilot run `search_scan` that the `.glot` asks a yes for."""
     drive, body, _records = await _drive(tmp_path)
     verbs = ["report_state", "observe", "search_scan", "go_to", "kick", "move", "stop"]
-    drive.robot.adopt(duck_from_goal("drive", verbs, confirm=["search_scan"]))
+    drive.robot.adopt(glot_from_goal("drive", verbs, confirm=["search_scan"]))
     goal = drive.submit("look around and tell me what you see")
     await _settled(goal)
     (run,) = (tmp_path / "goals").iterdir()
@@ -390,7 +390,7 @@ async def test_a_goal_keeps_the_confirm_gates_of_the_sessions_duck(tmp_path: Pat
         if e["kind"] == "gate" and e.get("gate") == "confirm"
     ]
     assert ("search_scan", "denied") in gates, gates
-    assert _turned(body) == [], "the goal turned the body without the yes its .duck asks for"
+    assert _turned(body) == [], "the goal turned the body without the yes its .glot asks for"
     await drive.robot.close()
 
 
@@ -484,7 +484,7 @@ async def test_a_call_the_fast_lane_took_unasked_is_recorded_as_its_reading(
 
 
 async def _nested_session(tmp_path: Path, then: Verb) -> tuple[DriveSession, list[str]]:
-    """A session whose `.duck` gates `approach_and` behind a confirm, with `go_to` stubbed to
+    """A session whose `.glot` gates `approach_and` behind a confirm, with `go_to` stubbed to
     arrive at once, a `then` verb of the test's own, and a person who says yes to anything."""
     drive, _body, _records = await _drive(tmp_path)
     registry = drive.robot.executor.registry
@@ -497,7 +497,7 @@ async def _nested_session(tmp_path: Path, then: Verb) -> tuple[DriveSession, lis
     )
     registry.register(then, replace=True)
     drive.robot.adopt(
-        duck_from_goal(
+        glot_from_goal(
             "drive", ["approach_and", "go_to", then.name, "move"], confirm=["approach_and"]
         )
     )
@@ -555,10 +555,10 @@ async def test_a_question_put_once_is_never_recorded_as_two(tmp_path: Path) -> N
 
 
 async def test_a_duck_that_allows_walk_by_its_alias_can_be_driven(tmp_path: Path) -> None:
-    """`hello-world.duck` allows `walk`, which the executor reads as `move`, and drive matched
+    """`hello-world.glot` allows `walk`, which the executor reads as `move`, and drive matched
     the names alone: no presets, no `walk`, and goals with no `move`."""
     drive, _body, _records = await _drive(tmp_path)
-    drive.robot.adopt(load_duck(REPO / "ducks" / "hello-world.duck"))
+    drive.robot.adopt(load_glot(REPO / "tasks" / "hello-world.glot"))
     drive.exact = drive._exact()
     walked = drive.submit("walk")
     await _settled(walked)
@@ -637,7 +637,7 @@ async def _blind(
     drive = DriveSession(
         robot,
         record=lambda kind, **data: records.append({"kind": kind, **data}),
-        pilot=lambda goal: FakeProvider.for_duck("goal", goal),
+        pilot=lambda goal: FakeProvider.for_glot("goal", goal),
         goals=tmp_path / "goals",
         goal_verbs=["report_state", "move", "stop"],
         ask=ask,
@@ -649,7 +649,7 @@ async def _blind(
 async def test_a_body_blind_to_falls_is_walked_only_once_a_person_says_they_watch(
     tmp_path: Path,
 ) -> None:
-    """Asked once, before the first thing that moves it, as `quackd run` asks: a typed walk and
+    """Asked once, before the first thing that moves it, as `roboglot run` asks: a typed walk and
     a goal each walked such a body with nobody asked."""
     drive, body, asked, records = await _blind(tmp_path, says=True)
     await _settled(drive.submit("forward"))

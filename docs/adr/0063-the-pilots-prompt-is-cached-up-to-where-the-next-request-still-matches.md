@@ -1,6 +1,6 @@
 # ADR-0063: The pilot's prompt is cached up to where the next request still matches
 
-**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0010](0010-providers.md) (the Anthropic request now marks blocks for the prompt cache: its system prompt, and at most two blocks of its history) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the cache buckets it prices are no longer empty on Claude) · Implemented in `quackd/agent/loop.py` (`_with_cache_point`, and `_history_for_provider` and `_last_invalidated` taking the history to build from), `quackd/agent/providers/base.py` (`Exchange.cache_points`) and `quackd/agent/providers/anthropic.py` (`_system`, `_marked`, `render_messages`, `CACHE_ENV`)
+**Status:** accepted · **Date:** 2026-10-26 · Amends [ADR-0010](0010-providers.md) (the Anthropic request now marks blocks for the prompt cache: its system prompt, and at most two blocks of its history) and [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the cache buckets it prices are no longer empty on Claude) · Implemented in `roboglot/agent/loop.py` (`_with_cache_point`, and `_history_for_provider` and `_last_invalidated` taking the history to build from), `roboglot/agent/providers/base.py` (`Exchange.cache_points`) and `roboglot/agent/providers/anthropic.py` (`_system`, `_marked`, `render_messages`, `CACHE_ENV`)
 
 ## Context
 
@@ -8,14 +8,14 @@ Rok asked on 2026-10-25 for a command line that answers as close to real time as
 the arm run in the README says where its seconds go: 62.1 of 78.8 waiting on the LLM, over ten
 calls. Every one of those calls sent the whole request again at the full input rate. The system
 prompt and the tool schemas are the same on every call of a run, and most of a long run's
-history is the same from one call to the next, but nothing quackd sent asked Anthropic to cache
+history is the same from one call to the next, but nothing Roboglot sent asked Anthropic to cache
 any of it, so no Claude call could read anything back, and the cache rates in the Claude rows of
 the catalogue priced nothing.
 
 Anthropic caches only what a request marks, with at most four breakpoints. A read looks back
 twenty block positions at most from a marker, a run of tool_use or tool_result blocks counting
 as one, and a prefix under the LLM's minimum, 512 tokens on Opus 5.5, is never cached. The
-obvious marker, one at the end of each request, is the one quackd cannot use: the loop trims its
+obvious marker, one at the end of each request, is the one Roboglot cannot use: the loop trims its
 history on every call, on most LLMs dropping the oldest picture still sent, and on Opus 5.5
 and Fable 5.1 every eighth exchange, when the pictures go and the thinking the trim invalidates
 is left out (`BINDING_TRIM_PERIOD`). Past the first block a trim changes, the next call reads
@@ -50,7 +50,7 @@ nothing back, and the write it paid for was a quarter more than the input it rep
    re-prompt adds two exchanges where it counted one, so the trim's cut can move by both, and
    the entries that call and the next one write can go unread. A retry resends the same marked
    copy, so the request ADR-0059 asks again is the request that failed.
-7. **`QUACKD_ANTHROPIC_CACHE=0` marks nothing.** Neither the system prompt nor the history, the
+7. **`ROBOGLOT_ANTHROPIC_CACHE=0` marks nothing.** Neither the system prompt nor the history, the
    request exactly as it was before.
 
 ## Why not
@@ -72,7 +72,7 @@ nothing back, and the write it paid for was a quarter more than the input it rep
   meant to be billed at the LLM's cache read rate, a tenth of its input rate on most Claude
   LLMs, a twentieth on Opus 5.5 and a fortieth on Fable 5.1, and written once at a quarter
   more. How much of a run's bill that saves is not measured. The check is one paid run per vendor
-  with the cache on and with `QUACKD_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd`
+  with the cache on and with `ROBOGLOT_ANTHROPIC_CACHE=0`, reading `cache_read_tokens`, `cost_usd`
   and `latency_s` per call.
 - A run of one call pays the write and never reads it.
 - The test is a request-level oracle through the real loop and the real Claude provider, over

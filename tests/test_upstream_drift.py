@@ -25,7 +25,7 @@ from typing import Any
 import pytest
 import yaml
 
-from quackd.upstream import Status, UpstreamRef
+from roboglot.upstream import Status, UpstreamRef
 from tests.test_upstream_api import UPSTREAMS as SUITE_ROWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -605,11 +605,11 @@ def test_a_newer_release_on_pypi_or_at_the_baseline_is_drift() -> None:
     )
     report = _one(script, module, Store(urls))
     assert report.versions == [
-        ("PyPI widget is 1.1.0; quackd read 1.0.0", True),
+        ("PyPI widget is 1.1.0; Roboglot read 1.0.0", True),
         ("pyproject.toml says 1.2.0 at main; 1.0.1 at the pin", True),
     ]
     assert report.drift is True
-    assert "- **moved:** PyPI widget is 1.1.0; quackd read 1.0.0" in script.section(report)
+    assert "- **moved:** PyPI widget is 1.1.0; Roboglot read 1.0.0" in script.section(report)
 
     urls[f"{script.PYPI}/widget/json"] = json.dumps({"info": {"version": "1.0.0"}}).encode()
     urls[f"{script.RAW}/{WIDGET}/{HEAD}/pyproject.toml"] = b'version = "1.0.1"\n'
@@ -641,8 +641,8 @@ def test_the_hub_version_and_an_api_document_are_checked_the_same_way() -> None:
     report = _one(script, module, Store(urls))
     assert report.baselines[WIDGET].kind == "tag"
     assert report.versions == [
-        ("PyPI huggingface_hub is 1.30.0; quackd read 1.29.0", True),
-        (f"{api_doc} is 2.1.0; quackd read 2.0.0", True),
+        ("PyPI huggingface_hub is 1.30.0; Roboglot read 1.29.0", True),
+        (f"{api_doc} is 2.1.0; Roboglot read 2.0.0", True),
     ]
     assert report.drift is True
 
@@ -960,7 +960,7 @@ def test_a_version_nobody_can_read_holds_the_issue_open() -> None:
         f"{api_doc} names no version",
     }
     assert script.exit_code([report]) == 2
-    body = "- **moved:** PyPI widget is 1.1.0; quackd read 1.0.0"
+    body = "- **moved:** PyPI widget is 1.1.0; Roboglot read 1.0.0"
     gh = FakeGh([{"number": 7, "title": "upstream drift: widget", "body": body}])
     script.sync_issues([report], "rokbenko/quackd", gh)
     assert gh.verbs() == ["label create", "issue list"], "neither closed nor edited"
@@ -1283,7 +1283,7 @@ def test_an_open_issue_is_edited_in_place_and_commented_only_when_what_needs_som
     assert changed_set.verbs() == ["label create", "issue list", "issue edit", "issue comment"]
 
     # a version that moved is part of what needs somebody, so a release on PyPI earns a comment
-    earlier = first_body + "\n- **moved:** PyPI widget is 1.1.0; quackd read 1.0.0"
+    earlier = first_body + "\n- **moved:** PyPI widget is 1.1.0; Roboglot read 1.0.0"
     versions = FakeGh(_open(7, earlier))
     script.sync_issues([report], "rokbenko/quackd", versions)
     assert versions.verbs()[-1] == "issue comment"
@@ -1450,7 +1450,7 @@ def test_the_command_says_which_upstreams_it_knows_only_after_a_walk_of_every_ad
 def test_an_adapter_that_does_not_import_is_one_the_walk_could_not_read(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from quackd.adapters import factory
+    from roboglot.adapters import factory
 
     script = _script()
     real = factory._module
@@ -1504,7 +1504,7 @@ def test_what_was_done_before_a_refusal_stays_in_the_summary() -> None:
 
 
 def test_the_walk_covers_every_module_the_suite_knows() -> None:
-    """The script reads what `quackd doctor` walks, so a module doctor does not know is one the
+    """The script reads what `roboglot doctor` walks, so a module doctor does not know is one the
     nightly never reads: the arm's endpoint module was that until this test."""
     script = _script()
     walked = {module.__name__ for _name, module in script.upstream_rows()}
@@ -1532,10 +1532,10 @@ def test_every_real_ref_is_a_file_or_a_page_the_script_knows_how_to_skip() -> No
 @pytest.mark.parametrize(
     ("module_name", "attribute", "expected"),
     [
-        ("quackd_open_duck.upstream_api", "BRANCH", "v2"),
-        ("quackd_open_duck.upstream_api", "BRANCHES", {"apirrone/Open_Duck_Mini": "v2"}),
-        ("quackd_microduck.sim3d.upstream_api", "BRANCH", "develop"),
-        ("quackd_microduck.mapd_upstream_api", "BRANCH", "maploc-v2"),
+        ("roboglot_open_duck.upstream_api", "BRANCH", "v2"),
+        ("roboglot_open_duck.upstream_api", "BRANCHES", {"apirrone/Open_Duck_Mini": "v2"}),
+        ("roboglot_microduck.sim3d.upstream_api", "BRANCH", "develop"),
+        ("roboglot_microduck.mapd_upstream_api", "BRANCH", "maploc-v2"),
     ],
 )
 def test_a_pin_on_a_branch_that_is_not_the_default_says_which(
@@ -1558,11 +1558,11 @@ def test_a_pin_on_a_branch_that_is_not_the_default_says_which(
 @pytest.mark.parametrize(
     ("module_name", "prefix"),
     [
-        ("quackd_microduck.upstream_api", "daemon-v"),
-        ("quackd_huebot.upstream_api", "daemon-v"),
-        ("quackd_toddlerbot.upstream_api", "v"),
-        ("quackd_lerobot.upstream_api", ""),
-        ("quackd_lerobot.policy.upstream_api", ""),
+        ("roboglot_microduck.upstream_api", "daemon-v"),
+        ("roboglot_huebot.upstream_api", "daemon-v"),
+        ("roboglot_toddlerbot.upstream_api", "v"),
+        ("roboglot_lerobot.upstream_api", ""),
+        ("roboglot_lerobot.policy.upstream_api", ""),
     ],
 )
 def test_a_pin_on_a_release_is_compared_with_the_newest_release_of_its_kind(
@@ -1582,7 +1582,7 @@ def test_another_repository_a_module_cites_at_a_release_is_compared_with_its_new
     moved a cited line, a release or none: the module names the release it read for each other
     repository, as `BRANCHES` names a branch, and a repository it names neither way is still
     compared with its default branch."""
-    module = importlib.import_module("quackd_lerobot.upstream_api")
+    module = importlib.import_module("roboglot_lerobot.upstream_api")
     script = _script()
     assert module.RELEASES == {"pollen-robotics/rustypot": "v1.13.1"}
     files, _elsewhere = script.cited_of(module)
@@ -1623,7 +1623,7 @@ def test_the_toddlerbot_contract_checks_out_upstream_at_the_adapters_pin() -> No
     """The contract job clones ToddlerBot and checks out a commit it spells itself, and the
     adapter's refs were read at its own `PIN`: nothing held the two together, so a re-pin that
     moved one of them would run the contract against code the refs were never read at."""
-    module = importlib.import_module("quackd_toddlerbot.upstream_api")
+    module = importlib.import_module("roboglot_toddlerbot.upstream_api")
     workflow = yaml.safe_load(TODDLERBOT_CONTRACT.read_text(encoding="utf-8"))
     (job,) = workflow["jobs"].values()
     runs = "\n".join(step.get("run", "") for step in job["steps"]).replace("\\\n", " ")

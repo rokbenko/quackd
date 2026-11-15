@@ -1,15 +1,15 @@
-hook: The power switch cut the arm during its lift, twice, and both times quackd ended the run saying the arm did not answer, with no traceback.
+hook: The power switch cut the arm during its lift, twice, and both times Roboglot ended the run saying the arm did not answer, with no traceback.
 goal_met: "Partly"
 parts:
   - "Cut, and left off"
   - "Cut, then switched back on after the run had ended"
 why_example: >
-  An SO-101 has no emergency stop button, and quackd cannot give it one: cutting the servo supply is
-  the one thing that stops this arm in every case, including the one where quackd itself has died.
+  An SO-101 has no emergency stop button, and Roboglot cannot give it one: cutting the servo supply is
+  the one thing that stops this arm in every case, including the one where Roboglot itself has died.
   This example cuts it on purpose, mid-move, with the move small and a hand under the arm, to see the
-  arm go limp and quackd end the run cleanly and say why, instead of crashing.
+  arm go limp and Roboglot end the run cleanly and say why, instead of crashing.
 why_result: >
-  The switch stopped the arm both times. quackd's first sign of it came within half a second of the
+  The switch stopped the arm both times. Roboglot's first sign of it came within half a second of the
   last goal the arm answered, and each run ended saying `the arm did not answer`, with no Python
   traceback, about 1.7 s and 1.6 s after that goal. Neither asked a person anything, since the arm
   could not answer, and both closed by telling the person what to do, `hold it, and cut its power`.
@@ -31,7 +31,7 @@ showed:
   - >
     In Part 1 the supply went near the end of the lift, 9.7 s into it: the last goal the arm answered
     was elbow_flex 76.6. 0.4 s later the move had failed, `Failed to sync read 'Present_Position' from
-    motor IDs [1, 2, 3, 4, 5, 6] after 3 tries`, and the stop quackd sent after it was refused. The
+    motor IDs [1, 2, 3, 4, 5, 6] after 3 tries`, and the stop Roboglot sent after it was refused. The
     heartbeat failed next, and the run's own read of the arm ended it in an error, in one line and
     with no Python traceback: `the arm did not answer`.
   - >
@@ -39,9 +39,9 @@ showed:
     later the heartbeat met the silence first, `heartbeat failed: the arm did not answer`. The move
     failed after it, and the run ended `ABORTED`.
   - >
-    Every `stop` quackd sent after the cut was refused, `the hold did not reach the arm`, and the fold
+    Every `stop` Roboglot sent after the cut was refused, `the hold did not reach the arm`, and the fold
     failed too, `the arm did not reach its rest pose`. Nothing asked the person anything, and both runs
-    closed with `quackd cannot tell whether the arm is holding itself up`, telling them to hold it and
+    closed with `roboglot cannot tell whether the arm is holding itself up`, telling them to hold it and
     cut its power.
 did_not_show:
   - >
@@ -63,4 +63,4 @@ did_not_show:
     It does not show how far the arm fell, or whether the hand under it caught it. The record stops at
     the cut, with the last goals elbow_flex 76.6 and 83.4 from 96 at rest.
   - >
-    It does not show the card's third line, `quackd doctor` with the switch off.
+    It does not show the card's third line, `roboglot doctor` with the switch off.

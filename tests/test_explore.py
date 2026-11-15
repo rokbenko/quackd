@@ -14,46 +14,46 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.factory import make_adapter
-from quackd.adapters.manifest import VerbSpec
-from quackd.agent.prompts import body_lines, body_summary
-from quackd.duckfile.parser import parse_duck_text
-from quackd.duckfile.validate import validate_duck
-from quackd.safety import Aborted, Executor, allow_all
-from quackd.sim2d.world import DUCK_R, World
-from quackd.space.grid import FREE
-from quackd.space.places import MAX_PLACES, Place, PlaceBook, PlaceStore
-from quackd.space.pose import wrap_angle
-from quackd.space.room import Box, Wall, load_room
-from quackd.space.simmap import BUMPED, CARRIED, SimulatedMap
-from quackd.transport.base import DuckState, spatial_of
-from quackd.transport.sim2d import Sim2DTransport
-from quackd.verbs import explore as explore_module
-from quackd.verbs.explore import (
+from roboglot.adapters.factory import make_adapter
+from roboglot.adapters.manifest import VerbSpec
+from roboglot.agent.prompts import body_lines, body_summary
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.glotfile.validate import validate_glot
+from roboglot.safety import Aborted, Executor, allow_all
+from roboglot.sim2d.world import DUCK_R, World
+from roboglot.space.grid import FREE
+from roboglot.space.places import MAX_PLACES, Place, PlaceBook, PlaceStore
+from roboglot.space.pose import wrap_angle
+from roboglot.space.room import Box, Wall, load_room
+from roboglot.space.simmap import BUMPED, CARRIED, SimulatedMap
+from roboglot.transport.base import DuckState, spatial_of
+from roboglot.transport.sim2d import Sim2DTransport
+from roboglot.verbs import explore as explore_module
+from roboglot.verbs.explore import (
     EXPLORE_MAX_MIN,
     EXPLORE_TIMEOUT_S,
     START,
     TRIES,
     ExploreParams,
 )
-from quackd.verbs.navigate import Walked
-from quackd.verbs.registry import (
+from roboglot.verbs.navigate import Walked
+from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
     VerbContext,
     VerbResult,
     registry_from_manifest,
 )
-from quackd_microduck import (
+from roboglot_microduck import (
     MICRODUCK_VERBS,
     NO_MAP_WHY,
     NO_SIZE_WHY,
     MicroduckAdapter,
     describe,
 )
-from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
-from quackd_microduck.transports.mapd import MapdSource, sim_map_params
-from quackd_moss import verbs as moss_verbs
+from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+from roboglot_microduck.transports.mapd import MapdSource, sim_map_params
+from roboglot_moss import verbs as moss_verbs
 from tests.fake_mapd import FakeMapd
 from tests.fake_robotd import FakeRobotd
 from tests.test_go_to_place import Recording, _map
@@ -337,8 +337,8 @@ async def test_the_battery_rule_read_inside_a_walk_of_its_own_ends_the_run_in_it
             return state
 
         body.get_state = battery  # type: ignore[method-assign]
-        duck = parse_duck_text(
-            "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [explore]\n"
+        duck = parse_glot_text(
+            "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [explore]\n"
             "success: [x]\nabort_when: [Battery below 15%]\n---\n# Task\nx\n"
         )
         registry = registry_from_manifest(ctx.manifest, adapter)  # type: ignore[arg-type]
@@ -761,20 +761,20 @@ async def test_a_duck_whose_reading_keeps_no_map_is_not_offered_explore_and_says
         assert f"Not offered here: explore and find, {NO_MAP_WHY}." in body_summary(manifest)
     finally:
         await adapter.close()
-    needs = parse_duck_text(
-        "---\nduck: 1\nname: t\ndescription: d\nrequires: [explore]\n"
+    needs = parse_glot_text(
+        "---\nglot: 1\nname: t\ndescription: d\nrequires: [explore]\n"
         "verbs:\n  allow: [explore, stop]\nsuccess: [x]\n---\n# T\nx\n"
     )
-    allows = parse_duck_text(
-        "---\nduck: 1\nname: t\ndescription: d\nrequires: [stop]\n"
+    allows = parse_glot_text(
+        "---\nglot: 1\nname: t\ndescription: d\nrequires: [stop]\n"
         "verbs:\n  allow: [explore, stop]\nsuccess: [x]\n---\n# T\nx\n"
     )
     for backend, why in (("mock", NO_MAP_WHY), ("jsonrpc", NO_SIZE_WHY)):
         static = describe(backend)
-        assert [p.message for p in validate_duck(needs, [static])] == [
+        assert [p.message for p in validate_glot(needs, [static])] == [
             f"requires explore, but microduck (microduck) does not provide it ({why})"
         ], backend
-        assert [p.message for p in validate_duck(allows, [static])] == [
+        assert [p.message for p in validate_glot(allows, [static])] == [
             f"explore is not provided by microduck ({why})"
         ], backend
 

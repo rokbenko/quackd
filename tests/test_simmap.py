@@ -1,4 +1,4 @@
-"""The simulators' stand-in for a robot's own map (`quackd.space.simmap`): it looks only at stops,
+"""The simulators' stand-in for a robot's own map (`roboglot.space.simmap`): it looks only at stops,
 sees no further than the first wall, and is lost and found again as the real one says it is."""
 
 from __future__ import annotations
@@ -9,13 +9,13 @@ from dataclasses import dataclass, replace
 import numpy as np
 import pytest
 
-from quackd.sim2d.world import DUCK_R
-from quackd.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
-from quackd.space.places import FrameRecord
-from quackd.space.room import load_room
-from quackd.space.simmap import BOOT, BUMPED, CARRIED, FELL, BodyNow, SimulatedMap
-from quackd_microduck import mapd_upstream_api as mapd
-from quackd_microduck.transports.mapd import sim_map_params
+from roboglot.sim2d.world import DUCK_R
+from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid
+from roboglot.space.places import FrameRecord
+from roboglot.space.room import load_room
+from roboglot.space.simmap import BOOT, BUMPED, CARRIED, FELL, BodyNow, SimulatedMap
+from roboglot_microduck import mapd_upstream_api as mapd
+from roboglot_microduck.transports.mapd import sim_map_params
 
 PARAMS = sim_map_params(DUCK_R)
 DT = 0.05

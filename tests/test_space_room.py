@@ -1,4 +1,4 @@
-"""Rooms for the simulators (`quackd.space.room`): the files, the geometry, and the ray a camera
+"""Rooms for the simulators (`roboglot.space.room`): the files, the geometry, and the ray a camera
 column and a map's zone are cast along."""
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from quackd.sim2d.world import DUCK_R
-from quackd.space.room import BUILT_IN, Box, Room, RoomError, Wall, load_room
+from roboglot.sim2d.world import DUCK_R
+from roboglot.space.room import BUILT_IN, Box, Room, RoomError, Wall, load_room
 
 ROOM = Room(
     "test",

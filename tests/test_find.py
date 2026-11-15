@@ -14,21 +14,21 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd.perception.base import Detection, labels_of
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.perception.host import HostDetector
-from quackd.perception.yolo import YoloDetector
-from quackd.sim2d.world import World
-from quackd.space.places import MAX_PLACES, Place
-from quackd.space.pose import wrap_angle
-from quackd.space.room import load_room
-from quackd.space.simmap import SimulatedMap
-from quackd.transport.base import Intent, spatial_of
-from quackd.verbs import explore as explore_module
-from quackd.verbs.explore import MINUTES_UP, START, FindParams
-from quackd.verbs.registry import STOPPED, VerbContext, VerbResult
-from quackd_microduck import MICRODUCK_VERBS, NO_CAMERA_WHY, microduck_manifest
-from quackd_microduck.verbs import MICRODUCK_EXPLORE
+from roboglot.perception.base import Detection, labels_of
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.perception.host import HostDetector
+from roboglot.perception.yolo import YoloDetector
+from roboglot.sim2d.world import World
+from roboglot.space.places import MAX_PLACES, Place
+from roboglot.space.pose import wrap_angle
+from roboglot.space.room import load_room
+from roboglot.space.simmap import SimulatedMap
+from roboglot.transport.base import Intent, spatial_of
+from roboglot.verbs import explore as explore_module
+from roboglot.verbs.explore import MINUTES_UP, START, FindParams
+from roboglot.verbs.registry import STOPPED, VerbContext, VerbResult
+from roboglot_microduck import MICRODUCK_VERBS, NO_CAMERA_WHY, microduck_manifest
+from roboglot_microduck.verbs import MICRODUCK_EXPLORE
 from tests.test_explore import _duck
 from tests.test_go_to_place import Recording, _go
 
@@ -637,14 +637,14 @@ async def test_a_detector_that_cannot_read_a_frame_ends_it() -> None:
 def test_the_prompt_names_find_among_the_verbs_that_ask_first() -> None:
     """The task's own confirm list is empty, and `find` asks first whatever it says: the pilot is
     told it will be asked, as the executor will ask."""
-    from quackd.adapters.factory import describe, parse_robot_spec, registry_for
-    from quackd.agent.prompts import build_system_prompt
-    from quackd.duckfile.parser import load_duck
+    from roboglot.adapters.factory import describe, parse_robot_spec, registry_for
+    from roboglot.agent.prompts import build_system_prompt
+    from roboglot.glotfile.parser import load_glot
 
     robot = parse_robot_spec("microduck:sim2d")
     manifest = describe(robot, room="two-rooms")
     registry = registry_for(robot, manifest)
-    duck = load_duck("find-the-ball")
+    duck = load_glot("find-the-ball")
     assert duck.frontmatter.verbs.confirm == []
     verbs = [registry.view(name) for name in duck.frontmatter.verbs.allow]
     prompt = build_system_prompt(duck, verbs, "sim2d", manifest=manifest)

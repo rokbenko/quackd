@@ -1,12 +1,12 @@
 # ADR-0065: A person drives one robot, a command at a time
 
-**Status:** accepted · **Date:** 2026-10-26 · Extends [ADR-0003](0003-three-loops.md) (a person's loop above the pilot's, which reaches the body through the same executor) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's labels and floors answer a person's line as well as a turn) · Implemented in `quackd/drive/` (`session.py`, `lanes.py`, `presets.py`, `attached.py`, `terminal.py`, `run.py`), `quackd/agent/decision/commands.py`, `quackd/agent/loop.py` (`stop_reason`) and `quackd/cli.py` (`quackd drive`) · Documented in [docs/guides/drive.md](../guides/drive.md)
+**Status:** accepted · **Date:** 2026-10-26 · Extends [ADR-0003](0003-three-loops.md) (a person's loop above the pilot's, which reaches the body through the same executor) and [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (the stepper's labels and floors answer a person's line as well as a turn) · Implemented in `roboglot/drive/` (`session.py`, `lanes.py`, `presets.py`, `attached.py`, `terminal.py`, `run.py`), `roboglot/agent/decision/commands.py`, `roboglot/agent/loop.py` (`stop_reason`) and `roboglot/cli.py` (`roboglot drive`) · Documented in [docs/guides/drive.md](../guides/drive.md)
 
 ## Context
 
 Rok asked on 2026-10-25 for a command line that answers as close to real time as it can, after
 research on a demo in which a decision LLM picked one of a duck's trained moves in a fraction
-of a second. quackd had no path from a person's command to a verb. `quackd run` is one serial
+of a second. Roboglot had no path from a person's command to a verb. `roboglot run` is one serial
 loop, observe, an LLM call, a verb, observe again, and on the README's arm run the body first
 moved on the third LLM call, after 23.2 seconds of them. A person who says "forward" has
 already chosen the call, and an LLM asked to choose it again adds seconds and a bill and
@@ -15,7 +15,7 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
 
 ## Decision
 
-1. **`quackd drive` holds one robot and reads a line at a time**, from the keyboard or from a
+1. **`roboglot drive` holds one robot and reads a line at a time**, from the keyboard or from a
    pipe or a file. It resolves the robot as `serve-mcp` does (`fleet_from_flags`) and holds it in
    the same `RobotSession`, so the connect, the rest pose, the heartbeat and the close are the
    ones every MCP session has.
@@ -31,7 +31,7 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
      executor validates and clamps every number, as it does anybody's.
    - The fast lane, only where a decision LLM is named. It puts one closed question over every
      offered call and preset, plus `pilot` and `unclear`, and is bounded by the stepper's own
-     second (`TIMEOUT_S`) and held to its floors (`FLOORS`) and the `.duck`'s confirm gates, as
+     second (`TIMEOUT_S`) and held to its floors (`FLOORS`) and the `.glot`'s confirm gates, as
      a run's stepper is. Below a floor it asks the person, and a question nobody could answer
      hands the line to the pilot. Nothing moves on a guess. Each question is a `fast` row.
    - The pilot: anything else is a goal.
@@ -50,8 +50,8 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
    connect hands back the manifest, whose close and heartbeat do nothing and which has no rest
    pose, nor any way to set the arm's segment length, so a goal never reconnects, folds or lets
    go of the body between two commands. A goal runs inside the session's contract:
-   - it gets the body's safe verbs, as `quackd run --goal` gives one, behind any confirm the
-     session's `.duck` asks for them;
+   - it gets the body's safe verbs, as `roboglot run --goal` gives one, behind any confirm the
+     session's `.glot` asks for them;
    - its budgets are no more than the session has left, its steps and LLM calls are charged to
      the session's, and no goal starts once the session's are spent;
    - the session's abort rules are its own, the goal's kept only where the session has none of
@@ -60,7 +60,7 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
 
    The session's own abort, its heartbeat failing above all, ends it, and `stop_reason` says why
    in the goal's own record.
-6. **A session drives under a contract.** With `--duckfile` it is that file's, its body not run.
+6. **A session drives under a contract.** With `--glotfile` it is that file's, its body not run.
    Without one it is a contract of the session's own:
    - every verb that is not dangerous, as a contractless session allows;
    - the battery rule a goal is held to;
@@ -84,19 +84,19 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
    - A session ends what is still moving the body before it folds and lets go of it.
 8. **The record is a run's.** It is a run directory of its own, `runs/<stamp>-drive[-name]/`,
    opened by `run_start` once the robot has connected and closed by `run_end`, whose outcome says
-   how the session ended, so `quackd log` replays it. Between them are `command`, `fast`,
+   how the session ended, so `roboglot log` replays it. Between them are `command`, `fast`,
    `routed`, `started`, `ended`, `brake`, `goal_start` and `goal_end`. The summary's `drive`
    block counts the lanes and outcomes, and gives the waits to a call's start and to its first
-   motion by lane, and from a brake to its stop, as `quackd.latency`'s nearest rank.
+   motion by lane, and from a brake to its stop, as `roboglot.latency`'s nearest rank.
 9. **A body that cannot see a fall is driven only with somebody watching it.** On a body with
    no fall detection and no way to get up, drive asks once, before the first thing that moves
-   it, whether the person is watching, as `quackd run` asks before its first leg moves. A no
+   it, whether the person is watching, as `roboglot run` asks before its first leg moves. A no
    refuses that command and the next asks again, `--yes` answers yes, and a pipe, which nobody
    answers for, is refused.
 
 ## Why not
 
-- **A prompt in front of `quackd run`'s pilot.** Every command would wait on an LLM call, and
+- **A prompt in front of `roboglot run`'s pilot.** Every command would wait on an LLM call, and
   the point is that a line which names a call needs none.
 - **An LLM reading every line.** The exact lane answers in microseconds, offline, for nothing,
   and the fast lane is there for the lines it cannot read.
@@ -105,7 +105,7 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
 - **A goal that connects its own body.** A run folds its arm and lets go of it at its end, so an
   arm would fold and go limp between two commands.
 - **Numbers for the presets.** A number of its own would be wrong on the first body whose
-  clamps differ, and `move`'s own defaults are already quackd's word for a walk.
+  clamps differ, and `move`'s own defaults are already Roboglot's word for a walk.
 
 ## Consequences
 
@@ -115,8 +115,8 @@ walk. The rest are goals with several steps in them, which is what the pilot is 
 - The fast lane's floors are the stepper's, unmeasured on this question. The `fast` rows, with
   the person's yes or no to each question in the `routed` row after it, are the data to measure
   them by.
-- `quackd log` replays the verbs and does not yet draw drive's own lines.
-- A goal's pilot takes `--llm` alone, without the vendor flags `quackd run` takes, and a session
+- `roboglot log` replays the verbs and does not yet draw drive's own lines.
+- A goal's pilot takes `--llm` alone, without the vendor flags `roboglot run` takes, and a session
   keeps no memory.
 - A session whose link has failed refuses every call but `stop`, as a run's executor does, and
   ends any goal it is flying.

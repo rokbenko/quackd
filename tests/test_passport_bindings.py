@@ -1,7 +1,7 @@
 """Where a passport is found on a network (docs/passport/discovery.md): the DNS-SD beacon, and the
 HTTP server a robot serves its own passport and its talk inbox from.
 
-The server runs on a real socket, and DNS-SD on the fakes the flock bus and `quackd announce` are
+The server runs on a real socket, and DNS-SD on the fakes the team bus and `roboglot announce` are
 tested with. A robot carries its own passport now, so a server serves one robot and no index.
 """
 
@@ -14,14 +14,14 @@ from typing import Any
 
 import pytest
 
-from quackd.lan.passports import (
+from roboglot.lan.passports import (
     announce_passport,
     beacon_from_info,
     discover_passports,
     passport_record,
 )
-from quackd.passport import strict
-from quackd.passport.beacon import (
+from roboglot.passport import strict
+from roboglot.passport.beacon import (
     DIGEST_CHARS,
     SERVICE_TYPE,
     TXT_VERSION,
@@ -31,7 +31,7 @@ from quackd.passport.beacon import (
     beacon_from_txt,
     txt_record,
 )
-from quackd.passport.serve import INBOX_PATH, PassportServer, Served
+from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
 from tests.passport_helpers import OWNER, RUNTIME, A, B, doc, passport
 
 BEACON = RUNTIME["robot-a"]["beacon"]
@@ -68,7 +68,7 @@ def test_a_beacon_of_another_version_on_no_port_or_with_a_relative_path_is_ignor
     found = beacon(good)
     assert found is not None and found.url() == f"http://1.2.3.4:8790{WELL_KNOWN_JSON}"
     assert (found.short_id, found.beacon_id) == (A.short_id, BEACON)
-    # a quackd 0.23 to 0.28 laptop's record, version 1, points at what a 1.0 reader refuses
+    # a Roboglot 0.23 to 0.28 laptop's record, version 1, points at what a 1.0 reader refuses
     assert beacon({**good, "v": "1"}) is None
     assert beacon({k: v for k, v in good.items() if k != "sha"}) is None
     assert beacon(good, port=0) is None
@@ -218,7 +218,7 @@ def test_discovery_skips_a_record_of_the_version_before_owners_signed_passports(
     old = passport_record(
         instance="cart-01", port=8790, short_id=B.short_id, digest="12" * 32, host="lab-pc"
     )
-    old = replace(old, properties={**old.properties, "v": "1"})  # what quackd 0.23 to 0.28 sent
+    old = replace(old, properties={**old.properties, "v": "1"})  # what Roboglot 0.23 to 0.28 sent
     new = passport_record(
         instance="duck-01", port=8790, short_id=A.short_id, digest="34" * 32, host="duck-01"
     )

@@ -1,4 +1,4 @@
-"""Walking to a place (`go_to_place`, `quackd.verbs.navigate`): through a room on the simulated
+"""Walking to a place (`go_to_place`, `roboglot.verbs.navigate`): through a room on the simulated
 map, round what it has seen, and stopped, saying why, on everything that should stop it. Every
 walk runs on a simulator's own clock, so a test of a twenty-second walk takes a fraction of one."""
 
@@ -11,22 +11,22 @@ from typing import Any
 import numpy as np
 import pytest
 
-from quackd.adapters.factory import make_adapter
-from quackd.safety import Aborted
-from quackd.space.grid import FREE, OCCUPIED, OccupancyGrid
-from quackd.space.places import Place, PlaceBook, PlaceStore
-from quackd.space.pose import Fix, FrameRef, Pose2D
-from quackd.space.room import Box, Room, Wall, load_room
-from quackd.space.simmap import BUMPED, SimulatedMap
-from quackd.space.source import SpatialSourceBase
-from quackd.transport.base import Ack, DuckState, Intent, TransportError, spatial_of
-from quackd.transport.mock import MockTransport
-from quackd.transport.sim2d import Sim2DTransport
-from quackd.verbs.core import speed_limits
-from quackd.verbs.navigate import BLIND_S, SHARE, Gait, steer
-from quackd.verbs.places import PLACE_VERBS, GoToPlaceParams
-from quackd.verbs.registry import STOP_ENDED, STOPPED, VerbContext, VerbResult
-from quackd_microduck import MicroduckAdapter
+from roboglot.adapters.factory import make_adapter
+from roboglot.safety import Aborted
+from roboglot.space.grid import FREE, OCCUPIED, OccupancyGrid
+from roboglot.space.places import Place, PlaceBook, PlaceStore
+from roboglot.space.pose import Fix, FrameRef, Pose2D
+from roboglot.space.room import Box, Room, Wall, load_room
+from roboglot.space.simmap import BUMPED, SimulatedMap
+from roboglot.space.source import SpatialSourceBase
+from roboglot.transport.base import Ack, DuckState, Intent, TransportError, spatial_of
+from roboglot.transport.mock import MockTransport
+from roboglot.transport.sim2d import Sim2DTransport
+from roboglot.verbs.core import speed_limits
+from roboglot.verbs.navigate import BLIND_S, SHARE, Gait, steer
+from roboglot.verbs.places import PLACE_VERBS, GoToPlaceParams
+from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbContext, VerbResult
+from roboglot_microduck import MicroduckAdapter
 
 
 class Recording:
@@ -77,7 +77,7 @@ async def _duck(
     """A duck in a room, connected and looked about from where it starts, and the context a verb
     of its runs in, on a body that writes down what it is sent."""
     if isinstance(room, Room):
-        from quackd_microduck.transports.mapd import sim_map_params
+        from roboglot_microduck.transports.mapd import sim_map_params
 
         adapter: Any = MicroduckAdapter(
             Sim2DTransport(seed=seed, room=room, map_params=sim_map_params(0.08))
@@ -458,7 +458,7 @@ def test_the_walks_numbers_come_from_the_body_and_its_source() -> None:
         def footprint_m(self) -> float | None:
             return 0.08
 
-    from quackd_microduck import microduck_manifest
+    from roboglot_microduck import microduck_manifest
 
     ctx = VerbContext(transport=MockTransport(), manifest=microduck_manifest("sim2d"))
     max_vx, _max_vy, max_wz = speed_limits(ctx.manifest)
@@ -467,7 +467,7 @@ def test_the_walks_numbers_come_from_the_body_and_its_source() -> None:
     assert plain.w == pytest.approx(min(1.0, max_wz))
     assert plain.tol_xy == pytest.approx(max(0.08, plain.v * (0.25 + 0.1)))
     assert plain.blind_m == pytest.approx(BLIND_S * max_vx)
-    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX, GAIT_FLOOR_WZ
+    from roboglot_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX, GAIT_FLOOR_WZ
 
     floored = Gait.of(
         ctx,
@@ -788,9 +788,9 @@ async def test_no_headway_is_seen_on_a_source_that_reads_slower_than_a_twists_ho
 async def test_the_battery_rule_read_at_a_stop_ends_the_run_in_its_own_words() -> None:
     """Through the executor: the rule's reader stops the body and raises; a stop awaited on the
     way out let the run's abort cancel the walk, and the words became a cancelled verb's."""
-    from quackd.duckfile.parser import parse_duck_text
-    from quackd.safety import Executor
-    from quackd.verbs.registry import registry_from_manifest
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.safety import Executor
+    from roboglot.verbs.registry import registry_from_manifest
 
     adapter, body, ctx = await _duck(_facing_away())
     try:
@@ -802,8 +802,8 @@ async def test_the_battery_rule_read_at_a_stop_ends_the_run_in_its_own_words() -
             return state
 
         body.get_state = battery  # type: ignore[method-assign]
-        duck = parse_duck_text(
-            "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [go_to_place]\n"
+        duck = parse_glot_text(
+            "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [go_to_place]\n"
             "success: [x]\nabort_when: [Battery below 15%]\n---\n# Task\nx\n"
         )
         registry = registry_from_manifest(ctx.manifest, adapter)  # type: ignore[arg-type]
@@ -915,7 +915,7 @@ def test_it_turns_in_place_before_an_arc_would_bulge_past_the_room_its_way_was_g
         def footprint_m(self) -> float | None:
             return 0.08
 
-    from quackd_microduck import microduck_manifest
+    from roboglot_microduck import microduck_manifest
 
     ctx = VerbContext(transport=MockTransport(), manifest=microduck_manifest("sim2d"))
     gait = Gait.of(ctx, Source(), {})
@@ -1093,7 +1093,7 @@ class _SlowStart(Sim2DTransport):
 async def test_a_gait_that_takes_a_moment_to_start_is_not_taken_for_no_headway() -> None:
     """Judged by its rate alone, a walk from a stand was called stalled before its first step:
     the physics duck stands a second and more before it steps."""
-    from quackd_microduck.transports.mapd import sim_map_params
+    from roboglot_microduck.transports.mapd import sim_map_params
 
     room = Room("open", 1.5, 1.5, start=(-0.5, 0.0, 0.0))
     transport = _SlowStart(seed=3, room=room, map_params=sim_map_params(0.08))
@@ -1157,7 +1157,7 @@ async def test_at_the_place_a_body_that_turns_no_nearer_its_heading_says_so_and_
     a reading taken turning that said it faced the way had the walk look, plan and turn again
     until its clock ran out, seventy-six stops on the physics duck, and a turn that came no nearer
     ended a walk that had arrived as stalled."""
-    from quackd_microduck.transports.mapd import sim_map_params
+    from roboglot_microduck.transports.mapd import sim_map_params
 
     room = Room("open", 1.5, 1.5, start=(-0.3, 0.0, 0.0))
     transport = _NoTurnInPlace(
@@ -1254,7 +1254,7 @@ async def test_a_held_body_whose_heading_sways_across_a_turns_line_stops_for_no_
     """The physics duck's numbers, held where it stands, its heading reading swaying across the
     line between turning in place and walking an arc to a place a metre off: each change began the
     no-headway clock again, and it pushed until its time ran out."""
-    from quackd_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX, GAIT_FLOOR_WZ
+    from roboglot_microduck.sim3d.gait import ACHIEVED_FRACTION, GAIT_FLOOR_VX, GAIT_FLOOR_WZ
 
     mock = MockTransport()
     adapter = MicroduckAdapter(mock)
@@ -1344,7 +1344,7 @@ async def test_another_try_short_of_the_floor_beside_a_place_names_that_floor() 
 async def test_a_body_that_does_not_turn_in_place_toward_its_way_is_told_so() -> None:
     """A place behind a body that does not turn in place: the leg said something its map does
     not show was in its way."""
-    from quackd_microduck.transports.mapd import sim_map_params
+    from roboglot_microduck.transports.mapd import sim_map_params
 
     room = Room("open", 1.5, 1.5, start=(0.3, 0.0, 0.0))
     transport = _NoTurnInPlace(None, seed=3, room=room, map_params=sim_map_params(0.08))
@@ -1393,7 +1393,7 @@ class _RestsOff(Sim2DTransport):
 async def test_a_heading_further_off_than_a_try_before_says_how_near_that_try_came() -> None:
     """At the place, the first turn came to rest nearer the way than the second: it said the
     second was as near as it turned."""
-    from quackd_microduck.transports.mapd import sim_map_params
+    from roboglot_microduck.transports.mapd import sim_map_params
 
     room = Room("open", 1.5, 1.5, start=(-0.3, 0.0, 0.0))
     probe = _RestsOff(0.0, [], seed=3, room=room, map_params=sim_map_params(0.08))

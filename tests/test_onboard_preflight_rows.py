@@ -1,4 +1,4 @@
-"""`quackd onboard preflight`, the radio's rows: what each finding says and what it tells a person
+"""`roboglot onboard preflight`, the radio's rows: what each finding says and what it tells a person
 to do, from facts a test writes, and the collector run for real on this machine, where it can
 only ever read."""
 
@@ -14,9 +14,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from quackd.radio import ONBOARD_INSTALL
-from quackd.radio.bluez.core import AdapterFacts
-from quackd.radio.preflight import Facts, Row, as_json, collect, passed, render, rows
+from roboglot.radio import ONBOARD_INSTALL
+from roboglot.radio.bluez.core import AdapterFacts
+from roboglot.radio.preflight import Facts, Row, as_json, collect, passed, render, rows
 
 ADAPTER = AdapterFacts(
     path="/org/bluez/hci0",

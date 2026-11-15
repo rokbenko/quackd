@@ -1,4 +1,4 @@
-"""The board's YOLO as a `Detector`: `quackd.perception.host.HostDetector`.
+"""The board's YOLO as a `Detector`: `roboglot.perception.host.HostDetector`.
 
 Driven against the fake daemon in `tests/fake_jetson_hostd.py` over real HTTP on loopback, and
 beside `YoloDetector` with a fake `ultralytics` standing in for the model, so the claim that the
@@ -21,22 +21,22 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd import host as host_module
-from quackd.adapters.factory import make_adapter
-from quackd.adapters.manifest import RobotManifest, VerbSpec
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import parse_duck_text
-from quackd.host import HostClient
-from quackd.perception import detector_for
-from quackd.perception.base import Detection, detect_off_loop
-from quackd.perception.host import JPEG_QUALITY, HostDetector
-from quackd.perception.yolo import YoloDetector, detections_from_boxes
-from quackd.transport.base import Ack, Intent
-from quackd.transport.mock import MockTransport
-from quackd.verbs.core import (
+from roboglot import host as host_module
+from roboglot.adapters.factory import make_adapter
+from roboglot.adapters.manifest import RobotManifest, VerbSpec
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.host import HostClient
+from roboglot.perception import detector_for
+from roboglot.perception.base import Detection, detect_off_loop
+from roboglot.perception.host import JPEG_QUALITY, HostDetector
+from roboglot.perception.yolo import YoloDetector, detections_from_boxes
+from roboglot.transport.base import Ack, Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import (
     HOLD_TTL_S,
     GoToParams,
     SearchScanParams,
@@ -44,7 +44,7 @@ from quackd.verbs.core import (
     go_to,
     search_scan,
 )
-from quackd.verbs.registry import VerbContext
+from roboglot.verbs.registry import VerbContext
 from tests.fake_jetson_hostd import (
     BALL_BOX,
     FRAME_SIZE,
@@ -70,7 +70,7 @@ def _frame() -> Image.Image:
 
 
 def _boxes() -> list[Box]:
-    """Every name quackd maps and some it does not, at fractional corners across the frame, so a
+    """Every name Roboglot maps and some it does not, at fractional corners across the frame, so a
     reordered sum or a lost float would show in the last bit of a bearing."""
     names = ["sports ball", "person", "cat", "dog", "potted plant", "car"]
     boxes: list[Box] = []
@@ -177,7 +177,7 @@ def test_the_frame_goes_to_the_board_as_one_jpeg_of_the_frame_itself(hostd: Fake
 
 
 def test_names_the_board_has_no_word_for_are_dropped(hostd: FakeHostd) -> None:
-    """The daemon maps nothing and sends the model's own names; quackd keeps the ones its verbs
+    """The daemon maps nothing and sends the model's own names; Roboglot keeps the ones its verbs
     have a word for. A dog is a pet, a potted plant and a car are nothing the verbs can steer
     at, and the one ball is where the fake frame drew it."""
     x1, y1, x2, y2 = BALL_BOX
@@ -203,7 +203,7 @@ def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [
         r.getMessage()
         for r in caplog.records
-        if r.name == "quackd.perception" and r.levelno >= logging.WARNING
+        if r.name == "roboglot.perception" and r.levelno >= logging.WARNING
     ]
 
 
@@ -213,7 +213,7 @@ def test_a_dead_daemon_yields_nothing_and_warns_once_then_recovers(
     """Three frames into an outage are three empty answers and one warning, because `go_to`
     asks ten times a second and a warning per frame buries the sentence. The next answer ends
     the outage and says so, and a second outage is warned about again."""
-    caplog.set_level(logging.INFO, logger="quackd.perception")
+    caplog.set_level(logging.INFO, logger="roboglot.perception")
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
     hostd.detect_status = 503
     hostd.detect_reply = {"ok": False, "reason": "detection is not available: CUDA out of memory"}
@@ -256,7 +256,7 @@ def test_an_answer_for_an_image_of_another_size_is_no_detections(
     at pixels a 320x240 image does not have, became a bearing of 58 degrees, outside a 62
     degree lens altogether, and `go_to` would have steered at it. It is a failed call instead,
     with the reason, the same one warning as an outage, and the next honest answer ends it."""
-    caplog.set_level(logging.INFO, logger="quackd.perception")
+    caplog.set_level(logging.INFO, logger="roboglot.perception")
     hostd.detect_reply = _reply([("sports ball", 0.9, 560.0, 400.0, 600.0, 440.0)], (320, 240))
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
 
@@ -309,11 +309,11 @@ async def test_the_loop_and_observe_run_a_blocking_detector_off_the_event_loop(
     step, and the `observe` verb. `go_to` and `search_scan` go through `_see`, above."""
     loop_thread = threading.get_ident()
     probe = _Probe(blocking=True)
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: look\ndescription: d\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: look\ndescription: d\nverbs:\n"
         "  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(
@@ -510,8 +510,8 @@ async def test_it_never_swaps_itself_for_the_colour_detector(
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
     assert detector_for(["camera"], detector, fov_deg=90.0, backend="mock") is detector
 
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: look-twice\ndescription: d\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: look-twice\ndescription: d\nverbs:\n"
         "  allow: [observe, report_state, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     cfg = RunConfig(
@@ -527,7 +527,7 @@ async def test_it_never_swaps_itself_for_the_colour_detector(
         detector=detector,
         runs_dir=tmp_path,
     )
-    result = await run_duck(cfg)
+    result = await run_glot(cfg)
     assert result.outcome == "success", result.reason
     assert cfg.detector is detector, "the run ends with the detector it started with"
 
@@ -581,12 +581,12 @@ async def test_a_flaky_link_is_a_note_per_outage_and_per_kind_of_reason_not_per_
         truncated.format(90),
         None,
     ]
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: wait\ndescription: d\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: wait\ndescription: d\nverbs:\n"
         "  allow: [report_state, stop]\nsuccess: [x]\n---\n# Task\nWait.\n"
     )
     script = [ToolCall(name="report_state", arguments={}) for _ in range(len(reasons) + 1)]
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(
@@ -656,13 +656,13 @@ async def test_a_run_records_what_the_board_took_for_every_frame(
     hostd.detect_reply = {**default_detections(), "w": 64, "h": 64, "boxes": [], "ms": 31.5}
     hostd.delays["/detect"] = 0.02
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: scan\ndescription: d\nverbs:\n"
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: scan\ndescription: d\nverbs:\n"
         "  allow: [search_scan, observe, report_state, stop]\nsuccess: [x]\n"
         "abort_when: [Same verb fails 1 times in a row]\n---\n# Task\nScan.\n"
     )
     verdict = {"verdict": "feasible", "reason": "a scan on a flat floor"}
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(
@@ -704,7 +704,7 @@ def test_uncalibrated_when_nobody_said_the_fov(
     """On a real body with no field of view from anyone, the lens is a guess: 62 degrees,
     every detection marked uncalibrated, and one warning however often it is recalibrated. A
     field of view from anyone makes it measured; a simulator's own camera is known."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.detect_reply = _reply([("sports ball", 0.9, *BALL_BOX)])
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
 

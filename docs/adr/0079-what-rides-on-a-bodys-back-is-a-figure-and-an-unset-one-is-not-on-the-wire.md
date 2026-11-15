@@ -1,6 +1,6 @@
 # ADR-0079: What rides on a body's back is a figure of its own, and an unset one is not on the wire
 
-**Status:** accepted on 2026-11-10 · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `quackd/adapters/manifest.py` and `quackd/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
+**Status:** accepted on 2026-11-10 · **Date:** 2026-11-09 · Follows [ADR-0077](0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md), whose consequence held a quadruped's load back for a record of its own, and [ADR-0032](0032-datasheets-and-the-verdict.md) (a figure has a confidence and a source, and an unknown one is not a yes) · Implemented in `roboglot/adapters/manifest.py` and `roboglot/verdict.py` · Documented in [docs/reference/manifest-spec.md](../reference/manifest-spec.md#the-datasheet)
 
 ## Context
 
@@ -11,27 +11,27 @@ task cannot ask for a back load in `needs`, no refusal can name one, and no list
 could do a task will offer such a body. ADR-0077 left it there on the ground that a `carries_kg`
 figure "is a change to the manifest every peer reads", and the owner has now asked for one.
 
-So the first thing is what a peer reads. The manifest never crosses between quackd processes as
+So the first thing is what a peer reads. The manifest never crosses between Roboglot processes as
 a `RobotManifest`, and `Datasheet` is only ever built inside one process, from a body file, a
 `robot.yaml`, an adapter's code or a task file's corrections, so `extra="forbid"` on it has never
 judged anything a peer said. What crosses, traced through the code on 2026-11-09, is this:
 
 - `digest()`, a hash of `model_dump(mode="json", exclude={"id", "backend"})`, in the mDNS record
   (`sha`) and in MCP's `robot_list` row, where a reader takes it as a fingerprint. One more key in
-  that dump, even a null, changes the digest of every body quackd ships.
-- A flock bid carries the datasheet as a `dict[str, Any]`, read by key through `missing_needs_in`.
-  A key the reader has not heard of is read past. The flock bus is in-process by default, and the
+  that dump, even a null, changes the digest of every body Roboglot ships.
+- A team bid carries the datasheet as a `dict[str, Any]`, read by key through `missing_needs_in`.
+  A key the reader has not heard of is read past. The team bus is in-process by default, and the
   MQTT bus that fills the same protocol is library-only (`mqtt_bus.py`), but a bid is shaped for a
   stranger to read, so this is the shape that counts.
 - MCP's `robot_list` gives a client the same dump as JSON, and the same facts as prose in
-  `datasheet_text`, for an LLM, and no quackd reads either back.
-- A role's `needs` travels inside TASK as `FlockTask.roles`, and `FlockRole` runs `check_needs` on
+  `datasheet_text`, for an LLM, and no Roboglot reads either back.
+- A role's `needs` travels inside TASK as `TeamTask.roles`, and `TeamRole` runs `check_needs` on
   decode. A word the reader's vocabulary lacks fails that decode, and `MqttBus._on_message` counts
   the message as rejected and drops it.
 - A passport is another document, with its own normative list of `body` members (spec section 2.3)
-  and its own rule for a member it does not know (rule 8: ignored, and quackd's own reader
+  and its own rule for a member it does not know (rule 8: ignored, and Roboglot's own reader
   leaves a note).
-- A `.duck` file is read by whichever release loads it, with `extra="forbid"` on its `datasheet:`
+- A `.glot` file is read by whichever release loads it, with `extra="forbid"` on its `datasheet:`
   block and `check_needs` on its `needs`.
 
 So a design owes two things. A body that says nothing about its back must look, on every one of
@@ -73,12 +73,12 @@ block for one robot's run, which is how a person supplies it for a body whose ma
 
 The field is left out of every dump where unset, by a serializer on `Datasheet` and the same
 one on a task file's block (`DatasheetOverride`), and is an ordinary field everywhere else, so
-a task file that does not say it reads the same in `robot_load_duckfile` and in a transcript.
+a task file that does not say it reads the same in `robot_load_glotfile` and in a transcript.
 That is the whole of compatibility for a body with no such figure: its digest, its bid and its
 `robot_list` row carry no new key, so a peer on an older release sees byte for byte what it saw.
 A body that says it adds one key to the bid's free-form datasheet and a new digest to itself, and
 an older coordinator reads past the key, while an older member's own bid, with no key, reads as a
-body that said nothing. A task file that names `carries_kg` is refused by an older quackd at
+body that said nothing. A task file that names `carries_kg` is refused by an older Roboglot at
 load, in its own words. A role that names it goes out inside a TASK, which an older member cannot
 decode, so the bus counts it and drops the whole message, and that member takes no part in that
 task. Refusing is right: a member that cannot say what the word means is not one to bid for a
@@ -86,9 +86,9 @@ role that turns on it.
 
 The passport does not carry it. A passport's `body` is what its specification lists, normatively,
 with a schema and conformance vectors beside it, and a new member is a minor of that
-specification rather than a side effect of this one. Until then `quackd/adapters/passport.py` and
-`quackd/onboard/body.py` keep their `_FIGURES`, `quackd/onboard/config.py`'s `Body` refuses the key
-as one `robot.yaml` does not know, and `quackd/passport/document.py` reads no such member.
+specification rather than a side effect of this one. Until then `roboglot/adapters/passport.py` and
+`roboglot/onboard/body.py` keep their `_FIGURES`, `roboglot/onboard/config.py`'s `Body` refuses the key
+as one `robot.yaml` does not know, and `roboglot/passport/document.py` reads no such member.
 
 ## Consequences
 
@@ -97,7 +97,7 @@ as one `robot.yaml` does not know, and `quackd/passport/document.py` reads no su
   static manifest of every adapter backend and described body before and after this change, 38 in
   all, found 36 identical. The two that differ are the B2 and the Go2 EDU, because their sheets
   changed, as any edit of a body's figures changes its digest, and neither travels on the LAN:
-  `quackd announce` refuses a described body. The `--robot-type` variants are outside that count,
+  `roboglot announce` refuses a described body. The `--robot-type` variants are outside that count,
   and none of them publishes the figure.
 - The Unitree B2 and the Go2 EDU move out of their notes into the field, read again on 2026-11-09:
   40 kg on the B2, from `unitree.com/b2`'s "Load(Walking)" row of "> 40kg", with its "Load(Standing)"
@@ -112,7 +112,7 @@ as one `robot.yaml` does not know, and `quackd/passport/document.py` reads no su
   that has the figure, since that schema is `additionalProperties: false`, and accepts one that
   does not.
 - A task file or a role that names `carries_kg` needs this release or a later one, and an older
-  quackd refuses it. That is the cost of `Added`, a minor, in RELEASING.md's table.
+  Roboglot refuses it. That is the cost of `Added`, a minor, in RELEASING.md's table.
 - Nothing can fill a role that names it yet: only the auction reads roles, the auction is sim2d
   only, and no simulated body publishes the figure. The word is in the vocabulary for the day
   one does, and the verdict gate and a task file's block already use it on one robot.

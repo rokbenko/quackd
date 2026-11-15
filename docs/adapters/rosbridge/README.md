@@ -1,7 +1,7 @@
 # rosbridge (a wheeled base over ROS 2)
 
-The first robot in quackd that is not a specific product: any wheeled base that takes a
-`geometry_msgs/msg/Twist` and is reachable through `rosbridge_server`. quackd talks to it
+The first robot in Roboglot that is not a specific product: any wheeled base that takes a
+`geometry_msgs/msg/Twist` and is reachable through `rosbridge_server`. Roboglot talks to it
 with [roslibpy](https://github.com/gramaziokohler/roslibpy) over a WebSocket. The manifest
 is small and honest: one intent (`twist`), odometry, optionally a compressed image topic,
 and therefore `move`, `stop`, `report_state`, the place verbs `map`, `mark_place`,
@@ -11,15 +11,15 @@ verb of its own, `introspect`, which asks the bridge what the body under it actu
 `ws` backend has **never been run against a bridge by us**.
 
 ```bash
-uvx --from "quackd[rosbridge]" quackd list-verbs --robot rosbridge:mock
-uvx --from "quackd[rosbridge]" quackd run patrol-and-quack --robot rosbridge:mock --llm fake   # exit 1: requires quack, but base-01 (rosbridge-base) does not provide it
-uv pip install "quackd[rosbridge]"
-quackd doctor --robot rosbridge:ws --address "ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed"
+uvx --from "roboglot[rosbridge]" roboglot list-verbs --robot rosbridge:mock
+uvx --from "roboglot[rosbridge]" roboglot run patrol-and-quack --robot rosbridge:mock --llm fake   # exit 1: requires quack, but base-01 (rosbridge-base) does not provide it
+uv pip install "roboglot[rosbridge]"
+roboglot doctor --robot rosbridge:ws --address "ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed"
 ```
 
-The extra is two packages: `quackd-rosbridge`, quackd's own adapter, and roslibpy, which only
-the `ws` backend imports. A bare `uv pip install quackd` carries no robot at all, so `mock`
-needs the extra as much as `ws` does. `uv pip install quackd-rosbridge` is the adapter without
+The extra is two packages: `roboglot-rosbridge`, Roboglot's own adapter, and roslibpy, which only
+the `ws` backend imports. A bare `uv pip install roboglot` carries no robot at all, so `mock`
+needs the extra as much as `ws` does. `uv pip install roboglot-rosbridge` is the adapter without
 roslibpy, which is enough for `mock` and for reading the manifest.
 
 The address carries everything: host, port, `ws` or `wss`, and the topics as query
@@ -33,7 +33,7 @@ and turns the camera verbs on). Two more name where the robot's own description 
 | `--robot` | Status | What it is |
 |---|---|---|
 | `rosbridge:mock` | ✅ | a planar kinematic integrator with the simulator's deadman semantics (a Twist holds for half a second, then the base coasts to zero), integrated odometry, a synthetic camera with an orange disc at a fixed spot |
-| `rosbridge:ws` | 🧪 | roslibpy 2.x to a rosbridge server (extra `quackd[rosbridge]`); every roslibpy, rosbridge protocol and message name VERIFIED against pinned commits, never run against a bridge |
+| `rosbridge:ws` | 🧪 | roslibpy 2.x to a rosbridge server (extra `roboglot[rosbridge]`); every roslibpy, rosbridge protocol and message name VERIFIED against pinned commits, never run against a bridge |
 
 ## The manifest
 
@@ -57,16 +57,16 @@ blurb is one fixed line on either backend, and the sheet is the thing that is no
 here. On `mock` it reads 11 kg over three link inertials and two moving joints, read from the
 canned URDF the mock serves.
 The `limits` are what `move`, `go_to` and the turn used by `search_scan` clamp to; they are
-quackd's caution, not the base's capability. A manifest can lower them, but not raise them past
+Roboglot's caution, not the base's capability. A manifest can lower them, but not raise them past
 `move`'s own schema bounds (±0.3 m/s, ±0.2 m/s, ±1.5 rad/s), which reject a larger request.
 
 ## What the bridge tells us about the body
 
 `rosbridge` is a name for a transport. It says nothing about what the robot on the other
-side weighs, how far it reaches or what it can climb, so this is the one adapter in quackd
+side weighs, how far it reaches or what it can climb, so this is the one adapter in Roboglot
 whose datasheet is not a constant: it is whatever the bridge answered.
 
-At `connect()`, and again whenever the pilot calls `introspect`, quackd asks for three
+At `connect()`, and again whenever the pilot calls `introspect`, Roboglot asks for three
 things, under one deadline of `timeout_s` so a silent bridge costs that much and no more:
 
 1. the topic list, from `/rosapi/topics`;
@@ -86,7 +86,7 @@ to the file they were read from, because it is the robot's own:
 | the joints whose type is not `fixed` | `dof`, with every moving joint and its limits listed in the notes |
 
 Everything else stays unknown, **payload above all**: a description says nothing about what
-a gripper can hold, and quackd on this adapter commands a velocity and nothing else. Joints
+a gripper can hold, and Roboglot on this adapter commands a velocity and nothing else. Joints
 named like a gripper are noted and claimed as nothing. A pilot reading a datasheet full of
 "not published" is told to answer `uncertain` wherever a task turns on one of them, and a
 `feasible` that names one is refused, which is the point.
@@ -96,7 +96,7 @@ joint count stay unknown with `the description is over 8192 KiB` as the reason, 
 first 24 moving joints reach the notes, the rest counted as `and N more joints not listed
 here`. Neither is settable.
 
-If nothing answers, quackd connects anyway and the datasheet says `nothing discovered on the
+If nothing answers, Roboglot connects anyway and the datasheet says `nothing discovered on the
 bridge`, with the reason. A bridge launched without the `rosapi` node is the usual cause,
 and both description sources can be turned off in the address (`?urdf_param=off`,
 `?urdf_topic=off`). That skips the two description reads and not the topic list, which is
@@ -109,13 +109,13 @@ place, but the prompt built at connect keeps the old text: read the result.
 ## Safety
 
 There is no deadman anywhere in this stack that we verified: neither rosbridge nor a
-base's driver. quackd re-sends the Twist at 10 Hz while a verb runs and publishes a zero
+base's driver. Roboglot re-sends the Twist at 10 Hz while a verb runs and publishes a zero
 Twist on `stop`, on `close()`, and when the heartbeat fails, and that is the only stop
 authority. The manifest says exactly that (`native: none`, `deadman: false`). A base
 whose driver does implement a command timeout is safer than this page assumes.
 
 `go_to_place` walks on `/odom`, every message taken into the reading as it arrives, so the
-stream's own period sizes the walk's windows however seldom quackd reads it. A message is dated
+stream's own period sizes the walk's windows however seldom Roboglot reads it. A message is dated
 by its header stamp, or by its arrival while the stack has stamped none; once one is stamped, an
 unstamped message is another clock's and no reading, and the same stamp again is the same
 reading. With no deadman, a twist left standing would drive the base on, so a walk whose reading
@@ -154,14 +154,14 @@ adapter sends no goal.
 | `Topic.unsubscribe()` | |
 | `Topic.advertise()` | |
 | `Topic.unadvertise()` | |
-| `compression: png or none` | quackd subscribes with `none` |
+| `compression: png or none` | Roboglot subscribes with `none` |
 | `roslibpy.Message(values)` | a `UserDict` |
 | `JSON text frames` | `json.loads` on every frame, keyed by `op` |
 | `op=advertise {id, topic, type, latch, queue_size}` | |
 | `op=publish {id, topic, msg, latch}` | |
 | `op=subscribe {id, topic, type, compression, throttle_rate, queue_length}` | |
 | `uint8[] fields arrive base64-encoded` | a `CompressedImage`'s `data` is one |
-| `pkg/Type and pkg/msg/Type both resolve` | quackd sends the ROS 2 three-part form |
+| `pkg/Type and pkg/msg/Type both resolve` | Roboglot sends the ROS 2 three-part form |
 | `geometry_msgs/msg/Twist` | `{linear: Vector3, angular: Vector3}` |
 | `geometry_msgs/msg/Vector3` | `{x, y, z}` |
 | `sensor_msgs/msg/CompressedImage` | `{header, format, data: uint8[]}` |
@@ -178,8 +178,8 @@ adapter sends no goal.
 | `/rosapi/get_param` | `create_service(GetParam, "~/get_param")` |
 | `rosapi_msgs/srv/GetParam` | `{string name, string default_value}` to `{string value, bool successful, string reason}` |
 | `node:parameter` | the ROS 2 rosapi splits `request.name` on a colon, and makes the node name absolute |
-| `get_param answers with JSON` | `return dumps(value)`, so a description arrives quoted; quackd decodes it and keeps the raw text when that fails |
-| `Ros.get_param(name, callback=None, errback=None)` | what roslibpy offers; quackd calls the service itself, because this one decodes inside roslibpy's own thread |
+| `get_param answers with JSON` | `return dumps(value)`, so a description arrives quoted; Roboglot decodes it and keeps the raw text when that fails |
+| `Ros.get_param(name, callback=None, errback=None)` | what roslibpy offers; Roboglot calls the service itself, because this one decodes inside roslibpy's own thread |
 | `subscribe carries an optional qos` | protocol 4.3.4; roslibpy 2.1.0 never sends one |
 | `a subscription is transient_local when every publisher on the topic is` | which is how a subscription made now still sees a description published at startup |
 | `std_msgs/msg/String` | `{data}`; what a `robot_description` topic carries |
@@ -216,9 +216,9 @@ adapter sends no goal.
 | `self.once("ready", callback)` | a send handed over while the socket is down waits, and goes out when the client reconnects by itself: an action goal too, which is why the industrial arm lets go of a client whose socket dropped |
 | `reactor.callFromThread(reactor.stop)` | `Ros.terminate()` stops the one reactor every roslibpy client in a process runs on, so it ends every client's socket: this adapter and the industrial arm each close their own socket instead, and leave the reactor to the rest |
 
-### UNVERIFIED (our assumptions, and what quackd does about each)
+### UNVERIFIED (our assumptions, and what Roboglot does about each)
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
 | `NO_DEADMAN` | re-sends at 10 Hz, zeroes on stop; the manifest says `native: none` |
 | `TOPIC_NAMES` | every topic is set in the address query; the defaults are conventions |

@@ -1,5 +1,5 @@
 """The courtesy handler, and the executor's two gates for a robot met over Robot Passport
-(docs/passport/talk.md#what-quackd-does-with-an-ask, docs/concepts/safety.md).
+(docs/passport/talk.md#what-roboglot-does-with-an-ask, docs/concepts/safety.md).
 
 A peer may ask for two courtesies and nothing else, each tier for a short list with a limit, out
 of one budget every peer shares. What is granted runs through a real executor over a mock body,
@@ -18,16 +18,16 @@ from typing import Any
 
 import pytest
 
-from quackd.duckfile.parser import parse_duck_text
-from quackd.passport import SigningKey
-from quackd.passport.talk import Endpoint, read_message
-from quackd.passport_courtesy import IDENTIFY_BY, PAUSE_S, Courtesy, Decision
-from quackd.passport_talk import Talker
-from quackd.passport_trust import TIERS, judge
-from quackd.safety import Aborted, Budget, Budgets, Executor, VerbNotAllowed
-from quackd.transport.base import Ack, DuckState, Intent
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import Verb, VerbContext, VerbResult, default_registry
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.passport import SigningKey
+from roboglot.passport.talk import Endpoint, read_message
+from roboglot.passport_courtesy import IDENTIFY_BY, PAUSE_S, Courtesy, Decision
+from roboglot.passport_talk import Talker
+from roboglot.passport_trust import TIERS, judge
+from roboglot.safety import Aborted, Budget, Budgets, Executor, VerbNotAllowed
+from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import Verb, VerbContext, VerbResult, default_registry
 from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
 
 DUCK, CART = A, B
@@ -48,8 +48,8 @@ def test_only_what_the_signed_passport_offers_can_be_asked_for() -> None:
 
 
 def contract(allow: str = "move, say, stop, report_state") -> Any:
-    return parse_duck_text(
-        f"---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [{allow}]\nsuccess: [x]\n"
+    return parse_glot_text(
+        f"---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [{allow}]\nsuccess: [x]\n"
         "---\n# Task\nx\n"
     ).frontmatter
 
@@ -229,8 +229,8 @@ def test_a_verb_a_pause_ended_is_not_the_pilots_failure(
     on_a_loop: tuple[Executor, asyncio.AbstractEventLoop],
 ) -> None:
     executor, loop = on_a_loop
-    executor.contract = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
+    executor.contract = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
         "success: [x]\nabort_when:\n  - Same verb fails 2 times in a row\n---\n# Task\nx\n"
     ).frontmatter
     clock = Clock()

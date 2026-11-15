@@ -10,10 +10,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from quackd.passport import fetch
-from quackd.passport.errors import PassportError
-from quackd.radio.links import LinkDown
-from quackd.radio.transport import Transports, http_post
+from roboglot.passport import fetch
+from roboglot.passport.errors import PassportError
+from roboglot.radio.links import LinkDown
+from roboglot.radio.transport import Transports, http_post
 
 
 class Inbox(BaseHTTPRequestHandler):

@@ -1,10 +1,10 @@
 """Play: a task can give the pilot a part to play, and nothing else changes.
 
-`play: true` in a `duck: 4` task file, or `--play` on the command line, adds one section to the
+`play: true` in a `glot: 4` task file, or `--play` on the command line, adds one section to the
 system prompt, `## Playing a part`, directly before the task. The tools, every gate and every
 other byte of the prompt are what they were, and a run that does not ask for it reads exactly
 the prompt it read before there was such a thing. These tests hold each half of that, on every
-body quackd ships, and the places a played run is said and recorded.
+body Roboglot ships, and the places a played run is said and recorded.
 """
 
 from __future__ import annotations
@@ -18,30 +18,30 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import cli
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe, registry_for
-from quackd.agent.loop import RunConfig, resolve_play, run_duck
-from quackd.agent.prompts import PLAY_HEADING, build_system_prompt, play_paragraphs, play_section
-from quackd.agent.providers.base import Exchange, ProviderTurn, ToolCall
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import DuckParseError, duck_from_goal, load_duck, parse_duck_text
-from quackd.duckfile.schema import Budgets, DuckFile, DuckFrontmatter
-from quackd.flock.pilots import trim_contract
-from quackd.log import play_row
-from quackd.mcp_server import build_server
-from quackd.preflight import Rehearsal
-from quackd.transport.mock import MockTransport
-from quackd.verdict import MOVES_THE_BODY
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.mock import REST, LeRobotMock
+from roboglot import cli
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe, registry_for
+from roboglot.agent.loop import RunConfig, resolve_play, run_glot
+from roboglot.agent.prompts import PLAY_HEADING, build_system_prompt, play_paragraphs, play_section
+from roboglot.agent.providers.base import Exchange, ProviderTurn, ToolCall
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import GlotParseError, glot_from_goal, load_glot, parse_glot_text
+from roboglot.glotfile.schema import Budgets, GlotFile, GlotFrontmatter
+from roboglot.log import play_row
+from roboglot.mcp_server import build_server
+from roboglot.preflight import Rehearsal
+from roboglot.team.pilots import trim_contract
+from roboglot.transport.mock import MockTransport
+from roboglot.verdict import MOVES_THE_BODY
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.mock import REST, LeRobotMock
 
-from .conftest import DUCKS, REPO, help_text
+from .conftest import REPO, TASKS, help_text
 
 SPECS = [RobotSpec(a, b) for a in ADAPTER_NAMES for b in BACKENDS[a]]
 runner = CliRunner()
 
 PLAYED = """---
-duck: 4
+glot: 4
 name: t-rex
 description: Be a T-rex.
 verbs:
@@ -75,19 +75,19 @@ WORDS = (
 """A count as the examples README spells it in a sentence."""
 
 
-def _played_flock(method: str) -> str:
-    """flock-hello, at `duck: 4`, playing, with the allocation method given."""
-    text = (DUCKS / "flock-hello.duck").read_text(encoding="utf-8")
+def _played_team(method: str) -> str:
+    """team-hello, at `glot: 4`, playing, with the allocation method given."""
+    text = (TASKS / "team-hello.glot").read_text(encoding="utf-8")
     return (
-        text.replace("duck: 1", "duck: 4", 1)
+        text.replace("glot: 1", "glot: 4", 1)
         .replace("method: pilots", f"method: {method}", 1)
         .replace("persona:", "play: true\npersona:", 1)
     )
 
 
-def _played(duck: DuckFile) -> DuckFile:
-    """The same task file, saying `play: true` at `duck: 4`."""
-    fm = duck.frontmatter.model_copy(update={"duck": 4, "play": True})
+def _played(duck: GlotFile) -> GlotFile:
+    """The same task file, saying `play: true` at `glot: 4`."""
+    fm = duck.frontmatter.model_copy(update={"glot": 4, "play": True})
     return duck.model_copy(update={"frontmatter": fm})
 
 
@@ -96,7 +96,7 @@ def _section(prompt: str) -> str:
     return prompt[start : prompt.index("\n## Task file:", start)]
 
 
-def _render(spec: RobotSpec, duck: DuckFile, **kw: Any) -> str:
+def _render(spec: RobotSpec, duck: GlotFile, **kw: Any) -> str:
     manifest = describe(spec)
     registry = registry_for(spec, manifest)
     allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
@@ -111,10 +111,10 @@ def _render(spec: RobotSpec, duck: DuckFile, **kw: Any) -> str:
     )
 
 
-def _goal(spec: RobotSpec, goal: str = "You are a T-rex. Show me.") -> DuckFile:
-    """A `--goal` task as `quackd run` builds one for this body: every safe verb it has."""
+def _goal(spec: RobotSpec, goal: str = "You are a T-rex. Show me.") -> GlotFile:
+    """A `--goal` task as `roboglot run` builds one for this body: every safe verb it has."""
     registry = registry_for(spec, describe(spec))
-    return duck_from_goal(
+    return glot_from_goal(
         goal, sorted(v.name for v in registry.verbs() if v.safety_class == "safe")
     )
 
@@ -132,37 +132,37 @@ def _start(path: Path) -> dict[str, Any]:
 
 
 def test_a_duck_4_file_can_give_its_pilot_a_part() -> None:
-    assert parse_duck_text(PLAYED, path="t.duck").frontmatter.play is True
+    assert parse_glot_text(PLAYED, path="t.glot").frontmatter.play is True
 
 
 @pytest.mark.parametrize("version", [0, 1, 2, 3])
 def test_play_needs_duck_4(version: int) -> None:
     """Every version before the one that adds the key refuses it, with the fix in the words."""
-    with pytest.raises(DuckParseError, match="play needs duck: 4"):
-        parse_duck_text(PLAYED.replace("duck: 4", f"duck: {version}"), path="t.duck")
+    with pytest.raises(GlotParseError, match="play needs glot: 4"):
+        parse_glot_text(PLAYED.replace("glot: 4", f"glot: {version}"), path="t.glot")
 
 
 @pytest.mark.parametrize("version", [0, 1, 2, 3, 4])
 def test_play_false_parses_at_every_version(version: int) -> None:
-    """Read off the value: a pilot flock dumps every member's contract and validates it again,
+    """Read off the value: a pilot team dumps every member's contract and validates it again,
     so a dumped `play: false` must pass at the version the file was written at."""
-    text = PLAYED.replace("duck: 4", f"duck: {version}").replace("play: true", "play: false")
-    assert parse_duck_text(text, path="t.duck").frontmatter.play is False
+    text = PLAYED.replace("glot: 4", f"glot: {version}").replace("play: true", "play: false")
+    assert parse_glot_text(text, path="t.glot").frontmatter.play is False
 
 
-def test_an_auction_flock_cannot_play_and_a_pilot_flock_can() -> None:
-    """An auction flock's members follow a plan and none of them is a pilot a part could
+def test_an_auction_team_cannot_play_and_a_pilot_team_can() -> None:
+    """An auction team's members follow a plan and none of them is a pilot a part could
     reach, so a task file cannot ask for one there."""
-    with pytest.raises(DuckParseError, match="an auction flock has none"):
-        parse_duck_text(_played_flock("auction"), path="flock-hello.duck")
-    assert parse_duck_text(_played_flock("pilots"), path="flock-hello.duck").frontmatter.play
+    with pytest.raises(GlotParseError, match="an auction team has none"):
+        parse_glot_text(_played_team("auction"), path="team-hello.glot")
+    assert parse_glot_text(_played_team("pilots"), path="team-hello.glot").frontmatter.play
 
 
-def test_a_trimmed_pilot_flock_contract_keeps_its_play() -> None:
+def test_a_trimmed_pilot_team_contract_keeps_its_play() -> None:
     arm = describe(RobotSpec("lerobot", "mock"))
-    plain = load_duck(str(DUCKS / "flock-hello.duck")).frontmatter
-    assert trim_contract(plain, arm).play is False, "a dumped play: false at duck: 1 still passes"
-    played = parse_duck_text(_played_flock("pilots"), path="flock-hello.duck").frontmatter
+    plain = load_glot(str(TASKS / "team-hello.glot")).frontmatter
+    assert trim_contract(plain, arm).play is False, "a dumped play: false at glot: 1 still passes"
+    played = parse_glot_text(_played_team("pilots"), path="team-hello.glot").frontmatter
     assert trim_contract(played, arm).play is True
 
 
@@ -237,7 +237,7 @@ def test_a_played_hello_world_reads_what_its_run_keeps_and_says() -> None:
     its lines with `quack`, which maps them to a tone as the Microduck's `say` does: the section
     follows the task's verbs, not the body's."""
     spec = RobotSpec("microduck", "sim2d")
-    duck = load_duck(str(DUCKS / "hello-world.duck"))
+    duck = load_glot(str(TASKS / "hello-world.glot"))
     played = _render(spec, duck, play=True)
     assert PLAY_HEADING in played and "remember" not in played.lower()
     assert "`quack` gives them this body's own sound" in played
@@ -250,7 +250,7 @@ def test_a_played_hello_world_reads_what_its_run_keeps_and_says() -> None:
 def test_the_open_duck_prompt_still_names_no_verb_it_does_not_offer() -> None:
     """`tests/test_open_duck_adapter.py` bans these words from the whole prompt, played or not."""
     spec = RobotSpec("open_duck", "mock")
-    played = _render(spec, load_duck(str(DUCKS / "open-duck-lookout.duck")), play=True)
+    played = _render(spec, load_glot(str(TASKS / "open-duck-lookout.glot")), play=True)
     assert PLAY_HEADING in played
     for word in ("kick", "grab", "stand_up"):
         assert word not in played, word
@@ -298,7 +298,7 @@ def test_the_table_sentence_follows_move_joints_and_the_travel_one_follows_trave
     gated = [v.name for v in registry.verbs() if v.safety_class == "confirm"]
     if not joints:
         safe, gated = safe - {"move_joints"}, [g for g in gated if g != "move_joints"]
-    duck = duck_from_goal("You are a T-rex. Show me.", sorted(safe | set(gated)), confirm=gated)
+    duck = glot_from_goal("You are a T-rex. Show me.", sorted(safe | set(gated)), confirm=gated)
     section = _section(_render(spec, duck, play=True))
     assert ("This body cannot travel" in section) is travel
     assert ("stops short of the surface this body stands on" in section) is table
@@ -320,7 +320,7 @@ def test_the_lines_sentence_follows_the_verbs_the_task_allows() -> None:
 
 
 def test_the_section_reads_no_word_of_the_task() -> None:
-    """The rule from #25: nothing quackd says to a pilot turns on what the task's words are."""
+    """The rule from #25: nothing Roboglot says to a pilot turns on what the task's words are."""
     spec = RobotSpec("lerobot", "mock")
     cat = _section(_render(spec, _goal(spec, "You are a cat."), play=True))
     switch = _section(_render(spec, _goal(spec, "Flip the switch off."), play=True))
@@ -385,51 +385,51 @@ class Script:
         return ProviderTurn(tool_calls=[call.model_copy(update={"id": f"s-{len(self.systems)}"})])
 
 
-async def _run(duck: DuckFile, tmp_path: Path, **cfg: Any) -> tuple[Script, list[dict[str, Any]]]:
+async def _run(duck: GlotFile, tmp_path: Path, **cfg: Any) -> tuple[Script, list[dict[str, Any]]]:
     provider = cfg.pop("provider", None) or Script()
     transport = cfg.pop("transport", None) or MockTransport()
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(duck=duck, provider=provider, transport=transport, runs_dir=tmp_path, **cfg)
     )
     return provider, Transcript.read(result.run_dir / "transcript.jsonl")
 
 
 async def test_play_from_the_run_reaches_the_prompt_and_the_record(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """`--play` over a file that does not play: the pilot reads the section, the record says
     the flag asked for it, and the contract stays the file's own, which cannot say so."""
-    provider, events = await _run(hello_duck, tmp_path, play=True)
+    provider, events = await _run(hello_glot, tmp_path, play=True)
     assert PLAY_HEADING in provider.systems[0]
     start = events[0]
     assert start["play"] == {"on": True, "from": "--play"}
     assert start["contract"]["play"] is False, "the contract is the file's own, which does not play"
 
 
-async def test_no_play_turns_a_files_play_off(hello_duck: DuckFile, tmp_path: Path) -> None:
-    provider, events = await _run(_played(hello_duck), tmp_path, play=False)
+async def test_no_play_turns_a_files_play_off(hello_glot: GlotFile, tmp_path: Path) -> None:
+    provider, events = await _run(_played(hello_glot), tmp_path, play=False)
     assert PLAY_HEADING not in provider.systems[0]
     assert events[0]["play"] == {"on": False, "from": "--no-play"}
 
 
-async def test_without_a_flag_the_task_file_decides(hello_duck: DuckFile, tmp_path: Path) -> None:
-    played, events = await _run(_played(hello_duck), tmp_path / "a")
+async def test_without_a_flag_the_task_file_decides(hello_glot: GlotFile, tmp_path: Path) -> None:
+    played, events = await _run(_played(hello_glot), tmp_path / "a")
     assert PLAY_HEADING in played.systems[0]
     assert events[0]["play"] == {"on": True, "from": "task file"}
-    plain, events = await _run(hello_duck, tmp_path / "b")
+    plain, events = await _run(hello_glot, tmp_path / "b")
     assert PLAY_HEADING not in plain.systems[0]
     assert events[0]["play"] == {"on": False, "from": "task file"}
 
 
-async def test_play_and_max_steps_both_hold(hello_duck: DuckFile, tmp_path: Path) -> None:
-    provider, events = await _run(hello_duck, tmp_path, play=True, max_steps=7)
+async def test_play_and_max_steps_both_hold(hello_glot: GlotFile, tmp_path: Path) -> None:
+    provider, events = await _run(hello_glot, tmp_path, play=True, max_steps=7)
     assert PLAY_HEADING in provider.systems[0] and "Budgets: 7 steps" in provider.systems[0]
     assert events[0]["contract"]["budgets"]["max_steps"] == 7
 
 
-async def test_the_tools_are_the_same_played_or_not(hello_duck: DuckFile, tmp_path: Path) -> None:
-    played, _ = await _run(hello_duck, tmp_path / "a", play=True)
-    plain, _ = await _run(hello_duck, tmp_path / "b")
+async def test_the_tools_are_the_same_played_or_not(hello_glot: GlotFile, tmp_path: Path) -> None:
+    played, _ = await _run(hello_glot, tmp_path / "a", play=True)
+    plain, _ = await _run(hello_glot, tmp_path / "b")
     assert played.tools[0] == plain.tools[0]
 
 
@@ -448,10 +448,10 @@ async def test_a_rehearsal_plays_as_a_run_of_the_same_file_would(
     """`preflight` builds its runs itself, so its flag has to reach each one's `RunConfig` the
     way `run`'s does. On the arm's mock rather than its simulator, which a machine without
     MuJoCo cannot build: what is checked is the record, not the physics."""
-    lookout = (DUCKS / "lerobot-lookout.duck").read_text(encoding="utf-8")
+    lookout = (TASKS / "lerobot-lookout.glot").read_text(encoding="utf-8")
     if file_play:
-        lookout = re.sub(r"^duck: \d+$", "duck: 4\nplay: true", lookout, count=1, flags=re.M)
-    path = tmp_path / "lerobot-lookout.duck"
+        lookout = re.sub(r"^glot: \d+$", "glot: 4\nplay: true", lookout, count=1, flags=re.M)
+    path = tmp_path / "lerobot-lookout.glot"
     path.write_text(lookout, encoding="utf-8")
     spec = RobotSpec("lerobot", "mujoco")
     rehearsal = Rehearsal(
@@ -476,7 +476,7 @@ async def test_a_rehearsal_plays_as_a_run_of_the_same_file_would(
 
 
 ARM_TASK = """---
-duck: {version}
+glot: {version}
 name: arm-part
 description: Play a part with the arm.
 verbs:
@@ -503,7 +503,7 @@ async def test_the_gate_says_the_same_words_played_or_not(tmp_path: Path) -> Non
     ]
     answers = []
     for version, play in ((1, ""), (4, "play: true\n")):
-        duck = parse_duck_text(ARM_TASK.format(version=version, play=play), path="arm.duck")
+        duck = parse_glot_text(ARM_TASK.format(version=version, play=play), path="arm.glot")
         _provider, events = await _run(
             duck,
             tmp_path / f"v{version}",
@@ -535,7 +535,7 @@ async def test_a_file_that_does_not_play_loads_over_mcp_as_it_always_did() -> No
     """The load result's keys, and the contract's, are exactly what they were before `play`
     existed: the key is left out of the dump for a file that does not play."""
     arm = LeRobotAdapter(LeRobotMock(rest_pose=dict(REST)))
-    result = await _load(arm, str(DUCKS / "lerobot-lookout.duck"))
+    result = await _load(arm, str(TASKS / "lerobot-lookout.glot"))
     assert result["ok"], result
     assert set(result) == {
         "ok",
@@ -546,12 +546,12 @@ async def test_a_file_that_does_not_play_loads_over_mcp_as_it_always_did() -> No
         "datasheet_text",
         "note",
     }
-    assert set(result["contract"]) == set(DuckFrontmatter.model_fields) - {"play"}
+    assert set(result["contract"]) == set(GlotFrontmatter.model_fields) - {"play"}
     assert "part to play" not in result["note"]
 
 
 async def test_a_played_file_hands_the_mcp_pilot_its_part(tmp_path: Path) -> None:
-    path = tmp_path / "t-rex.duck"
+    path = tmp_path / "t-rex.glot"
     path.write_text(PLAYED, encoding="utf-8")
     result = await _load(LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))), str(path))
     assert result["ok"], result
@@ -583,7 +583,7 @@ async def test_a_session_with_no_manifest_loads_a_played_file(tmp_path: Path) ->
     """A bare transport has no manifest, so `effective_manifest()` is None. Loading must not
     read `mobility` off it, and a body nobody described is taken as one that moves, as the
     run's prompt takes it. With memory off, the part says nothing about notes."""
-    path = tmp_path / "t-rex.duck"
+    path = tmp_path / "t-rex.glot"
     path.write_text(
         PLAYED.replace("[report_state, move_joints, gripper, stop]", "[quack, move_joints, stop]"),
         encoding="utf-8",
@@ -600,7 +600,7 @@ async def test_a_session_with_no_manifest_loads_a_played_file(tmp_path: Path) ->
 async def test_an_mcp_part_reads_its_poses_off_the_verbs_the_task_allows(tmp_path: Path) -> None:
     """The arm offers `move_joints`, but a task that does not allow it sets no pose with it, so
     its part reads no sentence about where those poses stop, as a run of the same file would."""
-    path = tmp_path / "t-rex.duck"
+    path = tmp_path / "t-rex.glot"
     path.write_text(PLAYED.replace(", move_joints", ""), encoding="utf-8")
     result = await _load(LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))), str(path))
     assert result["ok"], result
@@ -655,15 +655,15 @@ def test_a_played_goal_run_says_so_and_records_it(tmp_path: Path) -> None:
     "argv",
     [
         ["record", "hello-world", "--gif-size", "64"],
-        ["run", "flock-hello", "--no-gif", "--no-memory"],
+        ["run", "team-hello", "--no-gif", "--no-memory"],
     ],
-    ids=["record", "pilot-flock"],
+    ids=["record", "pilot-team"],
 )
 def test_play_reaches_every_pilot_a_command_builds(argv: list[str], tmp_path: Path) -> None:
-    """`record` and a pilot flock are call sites of their own, so a `--play` that reached only a
+    """`record` and a pilot team are call sites of their own, so a `--play` that reached only a
     solo `run` would do nothing on them and say nothing. Every pilot they build reads the
-    section and records `--play`, a flock's `flock_start` says what its members say, and the
-    header says so before anything moves. Whether the flock's scripted members hear each other
+    section and records `--play`, a team's `team_start` says what its members say, and the
+    header says so before anything moves. Whether the team's scripted members hear each other
     in time is another test's business, so its outcome is not asserted."""
     runs = tmp_path / "runs"
     result = runner.invoke(cli.app, [*argv, "--llm", "fake", "--play", "--runs-dir", str(runs)])
@@ -674,10 +674,10 @@ def test_play_reaches_every_pilot_a_command_builds(argv: list[str], tmp_path: Pa
     for start in starts:
         assert start["play"] == {"on": True, "from": "--play"}
         assert PLAY_HEADING in start["system_prompt"]
-    for flock in runs.rglob("flock.jsonl"):
-        lines = flock.read_text(encoding="utf-8").splitlines()
-        first = next(json.loads(line) for line in lines if '"flock_start"' in line)
-        assert first["play"] == starts[0]["play"], "the flock's record agrees with its members"
+    for team in runs.rglob("team.jsonl"):
+        lines = team.read_text(encoding="utf-8").splitlines()
+        first = next(json.loads(line) for line in lines if '"team_start"' in line)
+        assert first["play"] == starts[0]["play"], "the team's record agrees with its members"
 
 
 def test_a_run_that_does_not_play_has_no_play_row(tmp_path: Path) -> None:
@@ -693,49 +693,49 @@ def test_a_run_that_does_not_play_has_no_play_row(tmp_path: Path) -> None:
     assert " play " not in f" {out} ", result.output
 
 
-def test_a_coordinator_flock_refuses_play_before_it_warns_of_a_decision_llm(
+def test_a_coordinator_team_refuses_play_before_it_warns_of_a_decision_llm(
     tmp_path: Path,
 ) -> None:
-    """The warning that a decision LLM does not apply to a flock would otherwise speak of a run
+    """The warning that a decision LLM does not apply to a team would otherwise speak of a run
     the play refusal then stops before it starts."""
     runs = tmp_path / "runs"
-    argv = ["run", "find-and-kick", "--flock", "2", "--llm", "fake", "--play", "--no-memory"]
+    argv = ["run", "find-and-kick", "--team", "2", "--llm", "fake", "--play", "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--decision-llm", "jev", "--runs-dir", str(runs)])
     out = _flat(result.output)
     assert result.exit_code == 1, result.output
-    assert "a coordinator flock has no pilot for --play or --no-play to reach" in out
-    assert "does not apply to a flock" not in out
+    assert "a coordinator team has no pilot for --play or --no-play to reach" in out
+    assert "does not apply to a team" not in out
     assert not runs.exists() or not any(runs.iterdir())
 
 
 @pytest.mark.parametrize("flag", ["--play", "--no-play"])
-def test_a_coordinator_flock_refuses_either_flag(flag: str, tmp_path: Path) -> None:
-    """A coordinator flock has no pilot a part could reach, so either way of asking about one
+def test_a_coordinator_team_refuses_either_flag(flag: str, tmp_path: Path) -> None:
+    """A coordinator team has no pilot a part could reach, so either way of asking about one
     is refused rather than dropped without a word."""
     runs = tmp_path / "runs"
-    argv = ["run", "find-and-kick", "--flock", "2", "--llm", "fake", flag, "--no-memory"]
+    argv = ["run", "find-and-kick", "--team", "2", "--llm", "fake", flag, "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
     assert result.exit_code == 1
-    said = "a coordinator flock has no pilot for --play or --no-play to reach"
+    said = "a coordinator team has no pilot for --play or --no-play to reach"
     assert said in _flat(result.output)
     assert not runs.exists() or not any(runs.iterdir())
 
 
 @pytest.mark.parametrize("flags", [[], ["--play"], ["--no-play"]], ids=["file", "play", "no-play"])
-def test_a_coordinator_flock_refuses_a_file_that_plays(flags: list[str], tmp_path: Path) -> None:
-    """`--flock N` with a task file that plays: the file asked for a pilot nobody would be, and
+def test_a_coordinator_team_refuses_a_file_that_plays(flags: list[str], tmp_path: Path) -> None:
+    """`--team N` with a task file that plays: the file asked for a pilot nobody would be, and
     with no pilot there is none for `--no-play` to turn the part off for either, so the file's
     refusal comes first and no flag lifts it."""
     runs = tmp_path / "runs"
-    path = tmp_path / "hello.duck"
-    hello = (DUCKS / "hello-world.duck").read_text(encoding="utf-8")
-    played = re.sub(r"^duck: \d+$", "duck: 4", hello, count=1, flags=re.M)
+    path = tmp_path / "hello.glot"
+    hello = (TASKS / "hello-world.glot").read_text(encoding="utf-8")
+    played = re.sub(r"^glot: \d+$", "glot: 4", hello, count=1, flags=re.M)
     path.write_text(played.replace("persona:", "play: true\npersona:", 1), encoding="utf-8")
-    argv = ["run", str(path), "--flock", "2", "--llm", "fake", *flags, "--no-memory"]
+    argv = ["run", str(path), "--team", "2", "--llm", "fake", *flags, "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
     assert result.exit_code == 1
     out = _flat(result.output)
-    assert "gives its pilot a part to play, and a coordinator flock has no pilot to play it" in out
+    assert "gives its pilot a part to play, and a coordinator team has no pilot to play it" in out
     assert not runs.exists() or not any(runs.iterdir())
 
 
@@ -760,42 +760,42 @@ def test_the_play_row_says_something_only_when_there_is_something_to_say() -> No
 
 
 def test_the_spec_shows_a_whole_v4_file_and_the_validate_it_passes(tmp_path: Path) -> None:
-    """docs/reference/duck-spec.md shows a played file and the `quackd validate` it passes, so
+    """docs/reference/glot-spec.md shows a played file and the `roboglot validate` it passes, so
     the file it shows has to be one and pass it, plainly and against the arm it is written
     for, and the table it quotes has to count the verbs the file allows."""
-    page = (REPO / "docs" / "reference" / "duck-spec.md").read_text(encoding="utf-8")
+    page = (REPO / "docs" / "reference" / "glot-spec.md").read_text(encoding="utf-8")
     section = page.split("\n### `play` (v4)", 1)[1].split("\n### ", 1)[0]
     found = re.search(r"```yaml\n(---\n.*?)```", section, flags=re.DOTALL)
     assert found, "the play section no longer shows a whole file"
-    fm = parse_duck_text(found.group(1)).frontmatter
-    assert fm.duck == 4 and fm.play is True
-    duck = tmp_path / "t-rex.duck"
+    fm = parse_glot_text(found.group(1)).frontmatter
+    assert fm.glot == 4 and fm.play is True
+    duck = tmp_path / "t-rex.glot"
     duck.write_text(found.group(1), encoding="utf-8")
-    assert "```console\n$ quackd validate t-rex.duck\n" in section, "the command it quotes"
+    assert "```console\n$ roboglot validate t-rex.glot\n" in section, "the command it quotes"
     result = runner.invoke(cli.app, ["validate", str(duck)])
     assert result.exit_code == 0, result.output
     assert "1 file valid" in result.output and "1 file valid" in section
-    quoted = re.search(r"\|\s*t-rex\.duck\s*\|\s*t-rex\s*\|\s*(\d+)\s*\|", section)
+    quoted = re.search(r"\|\s*t-rex\.glot\s*\|\s*t-rex\s*\|\s*(\d+)\s*\|", section)
     assert quoted and int(quoted.group(1)) == len(fm.verbs.allow), "the verbs column it quotes"
     arm = runner.invoke(cli.app, ["validate", str(duck), "--robot", "lerobot:mock"])
     assert arm.exit_code == 0, arm.output
 
 
 def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
-    """CI validates only `ducks/*.duck`, and nothing else reads the shoot's task files, so a hand
+    """CI validates only `tasks/*.glot`, and nothing else reads the shoot's task files, so a hand
     edit could leave one unparseable, half edited or miscounted without anything noticing.
-    Every file parses, a file plays exactly when it is `duck: 4`, no played file still counts
+    Every file parses, a file plays exactly when it is `glot: 4`, no played file still counts
     saying why the body cannot as a success, every played file carries the lines they share, and
     the arm's README's counts and the files it names are the files' own, the ones it says are
     meant to fall short among them."""
     folder = REPO / "docs" / "examples"
-    for path in sorted(folder.rglob("*.duck")):
-        fm = load_duck(str(path)).frontmatter
-        assert (fm.duck == 4) == fm.play, f"{path}: duck {fm.duck}, play {fm.play}"
+    for path in sorted(folder.rglob("*.glot")):
+        fm = load_glot(str(path)).frontmatter
+        assert (fm.glot == 4) == fm.play, f"{path}: duck {fm.glot}, play {fm.play}"
     arm = folder / "lerobot"
-    files = sorted(arm.rglob("*.duck"))
+    files = sorted(arm.rglob("*.glot"))
     assert files, "no example files"
-    played = [p for p in files if load_duck(str(p)).frontmatter.play]
+    played = [p for p in files if load_glot(str(p)).frontmatter.play]
     shared = "Game for anything: commit to the bit"
     success = "You have shown what the task asks with this arm's joints and gripper"
     declare = (
@@ -803,7 +803,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     )
     # Their runs end without a declare, on the cable or on the budget, so their success line and
     # their last step say so instead.
-    held = {arm / "e067" / "last-words.duck", arm / "e076" / "strike.duck"}
+    held = {arm / "e067" / "last-words.glot", arm / "e076" / "strike.glot"}
     for path in played:
         text = path.read_text(encoding="utf-8")
         assert "said plainly why this body cannot" not in text, path
@@ -820,14 +820,14 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     kept = [p for p in played if step in p.read_text(encoding="utf-8")]
     count = WORDS[len(kept)] if len(kept) < len(WORDS) else str(len(kept))
     assert f"{count.capitalize()} of them keep the older second step" in readme, len(kept)
-    assert arm / "e089" / "less.duck" in kept, "the README names e089/less among them"
+    assert arm / "e089" / "less.glot" in kept, "the README names e089/less among them"
     for ran in ("e004/royalty", "e004/mornings", "e011/yoga", "e022/pat-on-the-back"):
-        assert arm / f"{ran}.duck" in played, ran
+        assert arm / f"{ran}.glot" in played, ran
     # Where the run sheet expects the arm not to do what a file asks, by what stops it. An entry
     # that hedges, names failure as one outcome of several, or expects some of a set to fall
     # short without saying which, counts as running, so none of those is here.
     short = {
-        "meet a limit of the arm or of how quackd drives it": (
+        "meet a limit of the arm or of how Roboglot drives it": (
             "e001/circle",
             "e001/duck-picture",
             "e001/initials",
@@ -847,7 +847,7 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
             "e113/swat-the-fly",
         ),
         "ask for two things at the same time": ("e062/pat-and-rub", "e070/multitasking"),
-        "end on one of quackd's own limits": (
+        "end on one of Roboglot's own limits": (
             "e084/give-110",
             "e120/out-of-steps",
             "e126/monkey",
@@ -892,9 +892,9 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
     named = set()
     for (start, why), (end, _) in zip(heads, [*heads[1:], (len(span), "")], strict=True):
         for name in short[why]:
-            assert arm / f"{name}.duck" in files, name
+            assert arm / f"{name}.glot" in files, name
             folder = name.split("/")[0]
-            whole = {f"{folder}/{p.stem}" for p in (arm / folder).glob("*.duck")} <= set(names)
+            whole = {f"{folder}/{p.stem}" for p in (arm / folder).glob("*.glot")} <= set(names)
             said = folder if whole else name
             assert f"`{said}`" in span[start:end], f"the README does not say why {name} falls short"
             named.add(said)
@@ -909,9 +909,9 @@ def test_the_example_files_parse_and_play_only_where_the_readme_says() -> None:
 
 def _live_or_skip() -> None:
     """Opt-in twice over, as `tests/test_llm_in_the_simulator.py` is: the `live_llm` marker and
-    `QUACKD_LIVE_LLM=1`, then a key, which the CLI would find in `.env`."""
-    if os.environ.get("QUACKD_LIVE_LLM") != "1":
-        pytest.skip("live LLM tests are opt-in: set QUACKD_LIVE_LLM=1")
+    `ROBOGLOT_LIVE_LLM=1`, then a key, which the CLI would find in `.env`."""
+    if os.environ.get("ROBOGLOT_LIVE_LLM") != "1":
+        pytest.skip("live LLM tests are opt-in: set ROBOGLOT_LIVE_LLM=1")
     try:
         from dotenv import load_dotenv
 
@@ -928,9 +928,9 @@ def _live_or_skip() -> None:
 async def test_a_real_llm_plays_a_part_with_the_arm(tmp_path: Path) -> None:
     """The arm's variant of the section, with the travel sentence and no voice, read by a real
     LLM: "You are a T-rex. Show me." played on the arm's mock gets past the verdict and
-    moves. `QUACKD_LIVE_LLM_MODEL` points it at another LLM. One paid run."""
+    moves. `ROBOGLOT_LIVE_LLM_MODEL` points it at another LLM. One paid run."""
     _live_or_skip()
-    from quackd.agent.providers.factory import make_provider
+    from roboglot.agent.providers.factory import make_provider
 
     goal = "You are a T-rex. Show me."
     duck = _goal(RobotSpec("lerobot", "mock"), goal)
@@ -938,11 +938,11 @@ async def test_a_real_llm_plays_a_part_with_the_arm(tmp_path: Path) -> None:
     duck = duck.model_copy(
         update={"frontmatter": duck.frontmatter.model_copy(update={"budgets": budgets})}
     )
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
             duck=duck,
             provider=make_provider(
-                "openai", llm_id=os.environ.get("QUACKD_LIVE_LLM_MODEL"), goal=goal
+                "openai", llm_id=os.environ.get("ROBOGLOT_LIVE_LLM_MODEL"), goal=goal
             ),
             transport=LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))),
             runs_dir=tmp_path,

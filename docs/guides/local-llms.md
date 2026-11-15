@@ -5,44 +5,44 @@ tools works: llama.cpp's `llama-server`, vLLM, Ollama, LM Studio, and any other
 OpenAI-compatible endpoint. No API key is needed.
 
 ```bash
-uvx --from "quackd[openai,microduck]" quackd run find-and-kick --llm ollama:qwen3:8b
-uvx --from "quackd[openai,microduck]" quackd run find-and-kick --llm vllm:Qwen/Qwen3-8B
-uvx --from "quackd[openai,microduck]" quackd run find-and-kick --llm llamacpp
-uvx --from "quackd[openai,microduck]" quackd run find-and-kick --llm lmstudio
-uvx --from "quackd[openai,microduck]" quackd run find-and-kick --llm local --base-url http://gpu-box:8000/v1
+uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm ollama:qwen3:8b
+uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B
+uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm llamacpp
+uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm lmstudio
+uvx --from "roboglot[openai,microduck]" roboglot run find-and-kick --llm local --base-url http://gpu-box:8000/v1
 ```
 
 The `openai` extra is the `openai` Python package, which is the client for all of these. The
-`microduck` extra is there because a bare `quackd` carries no robot at all: `find-and-kick`
+`microduck` extra is there because a bare `roboglot` carries no robot at all: `find-and-kick`
 means the cartoon duck, and that is the package the duck lives in.
 One flag carries both halves: `--llm ollama:qwen3:8b` is the preset before the first colon and
 the LLM after it, and a tag with a colon of its own survives that, because the split is at the
-first colon only. Leave the LLM half off, as in `--llm llamacpp`, and quackd asks the server
+first colon only. Leave the LLM half off, as in `--llm llamacpp`, and Roboglot asks the server
 for its LLM list and takes the first one. The LLM half is free text here: any id your server
-serves is accepted, because the LLM catalogue `quackd list-models` prints, and that a cloud
+serves is accepted, because the LLM catalogue `roboglot list-models` prints, and that a cloud
 vendor's id is checked against, covers the cloud vendors only. A local preset is never refused
 for naming something the catalogue has not heard of.
 
 | Preset (`--llm`) | Default address | Override |
 |---|---|---|
-| `ollama` | `http://localhost:11434/v1` | `--base-url` or `QUACKD_BASE_URL`, or `--host` to move it to another machine |
+| `ollama` | `http://localhost:11434/v1` | `--base-url` or `ROBOGLOT_BASE_URL`, or `--host` to move it to another machine |
 | `vllm` | `http://localhost:8000/v1` | same |
 | `llamacpp` | `http://localhost:8080/v1` | same |
 | `lmstudio` | `http://localhost:1234/v1` | same |
-| `local` | none, you must pass one | `--base-url` or `QUACKD_BASE_URL`, never `--host` |
+| `local` | none, you must pass one | `--base-url` or `ROBOGLOT_BASE_URL`, never `--host` |
 
-`quackd doctor` probes all four default addresses and prints which servers are up and what
+`roboglot doctor` probes all four default addresses and prints which servers are up and what
 they serve. An Ollama that answers is also asked where it put each loaded LLM
 (`GET /api/ps`): all on the GPU, a share of it, or on the CPU.
 
 **The server can live on another machine, and `--host` moves a preset there.** An NVIDIA Jetson
 is the case this project has written up ([guides/jetson.md](jetson.md)): the LLM runs on the
-board's GPU and quackd stays on your laptop. `--host jetson.local` replaces a preset's `localhost`
+board's GPU and Roboglot stays on your laptop. `--host jetson.local` replaces a preset's `localhost`
 with that machine and keeps the preset's own port and path, so `--llm ollama` then asks
 `http://jetson.local:11434/v1`. That address answers only once Ollama on the board listens
-beyond its own loopback, which it does not by default, and quackd's daemon is the same, so the
+beyond its own loopback, which it does not by default, and Roboglot's daemon is the same, so the
 usual way in is an ssh tunnel and `--host 127.0.0.1`
-([guides/jetson.md](jetson.md#from-the-laptop)). The port in `--host` is the one quackd's daemon on
+([guides/jetson.md](jetson.md#from-the-laptop)). The port in `--host` is the one Roboglot's daemon on
 the board listens on, 9874 unless you changed it, and never the LLM server's. A cloud vendor's
 address is never moved. Where a local server is, the first rung that is set wins, and nothing is
 probed:
@@ -50,21 +50,21 @@ probed:
 1. `--base-url`: a URL given for this run is used exactly as given.
 2. `--host`, or the host a registered robot was stored with: the preset's address moved to that
    machine, port and path kept.
-3. `QUACKD_BASE_URL`, used exactly as given.
+3. `ROBOGLOT_BASE_URL`, used exactly as given.
 4. `OPENAI_BASE_URL`, used exactly as given.
-5. `QUACKD_HOST`: the preset's address moved to that machine.
+5. `ROBOGLOT_HOST`: the preset's address moved to that machine.
 6. The preset's own address, on localhost.
 
 A URL given anywhere is used as given, and a host only ever moves a preset. That is why
 `--llm local`, which has no preset address, refuses a host on its own and asks for
 `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
 registered with this robot is a decision about this run, and beats a `.env` line naming an
-LLM server's URL. `QUACKD_HOST` is the board you usually use, and does not.
+LLM server's URL. `ROBOGLOT_HOST` is the board you usually use, and does not.
 
-`--host` asks more of the board than its LLM server. It names the machine quackd's own daemon
+`--host` asks more of the board than its LLM server. It names the machine Roboglot's own daemon
 runs on, for its camera, its detector and its health, and a run whose daemon does not answer is
 refused before anything connects. For the LLM alone, `--base-url http://127.0.0.1:11434/v1`
-through that tunnel asks nothing of the daemon. `quackd doctor --host` probes the four presets
+through that tunnel asks nothing of the daemon. `roboglot doctor --host` probes the four presets
 on that machine instead of this one, which is the quickest way to see where a run will look:
 
 ```
@@ -72,7 +72,7 @@ LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ───�
 ┌──────────┬───────────────────────────────────┬─────────────┐
 │ preset   │ base url                          │ status      │
 ├──────────┼───────────────────────────────────┼─────────────┤
-│ local    │ set QUACKD_BASE_URL or --base-url │             │
+│ local    │ set ROBOGLOT_BASE_URL or --base-url │           │
 │ ollama   │ http://127.0.0.1:11434/v1         │ not running │
 │ vllm     │ http://127.0.0.1:8000/v1          │ not running │
 │ llamacpp │ http://127.0.0.1:8080/v1          │ not running │
@@ -80,7 +80,7 @@ LLM servers, the presets on 127.0.0.1 (GET /v1/models, 1.5 s timeout) ───�
 └──────────┴───────────────────────────────────┴─────────────┘
 ```
 
-That came from `quackd doctor --host 127.0.0.1:19874` on Windows, against quackd's daemon
+That came from `roboglot doctor --host 127.0.0.1:19874` on Windows, against Roboglot's daemon
 started with `--camera fake --port 19874` and serving a board made of files, not a Jetson.
 Each preset kept its own port, and the 19874 went to the daemon alone.
 
@@ -93,7 +93,7 @@ Each preset kept its own port, and the 19874 went to the daemon alone.
 > System One server of your own in front of it, as `--llm openai` is OpenAI's chat LLMs and
 > `--decision-llm openai` their Decisions API. Several decision LLMs are servers you run on your own
 > machine, exactly like the four presets above, and each one has a page of its own under
-> [the hub's table](decision-llms/README.md#the-ones-quackd-names). They are still not the same kind
+> [the hub's table](decision-llms/README.md#the-ones-roboglot-names). They are still not the same kind
 > of thing: a System One server speaks `POST /v1/systemone` rather than
 > OpenAI's Chat Completions, so `--base-url` is not how you reach one. `--decision-url` is, and
 > `--decision-llm` names which one. `--host` does not move one either, so one running on a
@@ -110,7 +110,7 @@ Tool calling has to be switched on in some servers. These are the flags that mat
 ```bash
 ollama pull qwen3:8b          # any LLM whose card says it supports tools
 ollama serve                  # usually already running as a service
-quackd run find-and-kick --llm ollama:qwen3:8b
+roboglot run find-and-kick --llm ollama:qwen3:8b
 ```
 
 On a Jetson, install it with the official script rather than a tarball: the script reads
@@ -122,14 +122,14 @@ processor a loaded LLM is on, which is where you find out.
 
 ```bash
 llama-server -m model.gguf --jinja --port 8080     # --jinja enables the tool-calling chat templates
-quackd run find-and-kick --llm llamacpp
+roboglot run find-and-kick --llm llamacpp
 ```
 
 **vLLM**
 
 ```bash
 vllm serve Qwen/Qwen3-8B --enable-auto-tool-choice --tool-call-parser hermes
-quackd run find-and-kick --llm vllm:Qwen/Qwen3-8B
+roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B
 ```
 
 The `--tool-call-parser` value depends on the LLM family (`hermes` for Qwen and Hermes
@@ -149,7 +149,7 @@ vllm serve Qwen/Qwen3-8B --enable-auto-tool-choice --tool-call-parser hermes \
 On a server somebody else runs, or when you want it per run, send it with the request:
 
 ```bash
-quackd run find-and-kick --llm vllm:Qwen/Qwen3-8B \
+roboglot run find-and-kick --llm vllm:Qwen/Qwen3-8B \
   --extra-body '{"chat_template_kwargs": {"enable_thinking": false}}'
 ```
 
@@ -159,7 +159,7 @@ and `cmd.exe` wants the whole thing in double quotes with the inner ones escaped
 all of it is a line in `.env`, which every shell leaves alone:
 
 ```
-QUACKD_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}'
+ROBOGLOT_EXTRA_BODY='{"chat_template_kwargs": {"enable_thinking": false}}'
 ```
 
 Single quotes there, or none. Double quotes around JSON make python-dotenv drop the variable
@@ -168,15 +168,15 @@ without setting it, and the run then thinks out loud as though you had never wri
 **LM Studio**
 
 Developer tab → Start Server (default port 1234), load an LLM that supports tools, then
-`quackd run find-and-kick --llm lmstudio`.
+`roboglot run find-and-kick --llm lmstudio`.
 
 ## What to expect from small LLMs
 
-quackd asks for exactly one tool call per turn. Frontier LLMs do this reliably. Small
+Roboglot asks for exactly one tool call per turn. Frontier LLMs do this reliably. Small
 local LLMs sometimes answer with JSON in plain text instead of a native tool call, or
 call a verb that is not allowed, or add chatter. Three things make that workable:
 
-1. **Text fallback.** If a reply has no native tool call, quackd looks for a JSON object
+1. **Text fallback.** If a reply has no native tool call, Roboglot looks for a JSON object
    like `{"name": "walk_to", "arguments": {"target": "ball"}}` in the text and uses it. Only
    the answer is read: an inline `<think>...</think>` block is split off first, so a verb the
    LLM weighed inside its reasoning and dropped is never executed, and a turn that carries
@@ -191,7 +191,7 @@ call a verb that is not allowed, or add chatter. Three things make that workable
 Vision is off by default for local providers because most local LLMs are text only and
 servers reject image parts. The text observation already carries what the camera detected
 (`ball at bearing 18° left, ~0.6 m`), which is the designed path. For a vision LLM
-(qwen2.5-vl, gemma3, llava and friends) pass `--vision` or set `QUACKD_VISION=1`.
+(qwen2.5-vl, gemma3, llava and friends) pass `--vision` or set `ROBOGLOT_VISION=1`.
 
 > [!NOTE]
 > A robot registered with several `--camera-url` values sends every picture in one message,
@@ -206,22 +206,22 @@ servers reject image parts. The text observation already carries what the camera
 pilot a file rather than the robot a camera, and it is on the first request as an image part
 like any frame, so a run is refused before it starts if the pilot takes no images at all. A
 local preset starts with vision off whatever the LLM behind it can do, which means `--image`
-wants `--vision` or `QUACKD_VISION=1` beside it here exactly as a camera does, and the refusal
-says so rather than leaving you to guess. The flag tells quackd your server accepts image
+wants `--vision` or `ROBOGLOT_VISION=1` beside it here exactly as a camera does, and the refusal
+says so rather than leaving you to guess. The flag tells Roboglot your server accepts image
 parts, and a text only LLM is still a text only LLM with it on.
 
 ## Knobs
 
 | Setting | Values | Default for local |
 |---|---|---|
-| `--llm PRESET:LLM` / `QUACKD_LLM` | any id the server serves after the colon, checked against no catalogue | first entry of `/v1/models` |
-| `--base-url` / `QUACKD_BASE_URL` | `http://host:port/v1` | the preset's address |
-| `--host` / `QUACKD_HOST` | `HOST` or `HOST:PORT`, the machine quackd's daemon runs on ([guides/jetson.md](jetson.md)). Moves a preset's `localhost` there, port kept, at the rung shown above | no host, the preset's own `localhost` |
-| `--host-token` / `QUACKD_HOST_TOKEN` | the token that daemon was started with, sent to the daemon and never to the LLM server | no token |
+| `--llm PRESET:LLM` / `ROBOGLOT_LLM` | any id the server serves after the colon, checked against no catalogue | first entry of `/v1/models` |
+| `--base-url` / `ROBOGLOT_BASE_URL` | `http://host:port/v1` | the preset's address |
+| `--host` / `ROBOGLOT_HOST` | `HOST` or `HOST:PORT`, the machine Roboglot's daemon runs on ([guides/jetson.md](jetson.md)). Moves a preset's `localhost` there, port kept, at the rung shown above | no host, the preset's own `localhost` |
+| `--host-token` / `ROBOGLOT_HOST_TOKEN` | the token that daemon was started with, sent to the daemon and never to the LLM server | no token |
 | `--api-key` / `LOCAL_API_KEY` | any string | `not-needed` (servers ignore it), and never `OPENAI_API_KEY` |
-| `QUACKD_TOOL_CHOICE` | `auto`, `required`, `none` | `auto` (`none` omits the field for servers that reject it) |
-| `--vision` / `QUACKD_VISION` | on, off | off |
-| `--extra-body` / `QUACKD_EXTRA_BODY` | one JSON object, merged into the top of every request body | nothing extra is sent |
+| `ROBOGLOT_TOOL_CHOICE` | `auto`, `required`, `none` | `auto` (`none` omits the field for servers that reject it) |
+| `--vision` / `ROBOGLOT_VISION` | on, off | off |
+| `--extra-body` / `ROBOGLOT_EXTRA_BODY` | one JSON object, merged into the top of every request body | nothing extra is sent |
 
 `parallel_tool_calls` is never sent to local servers, because some reject unknown fields, and
 nothing else is added unless `--extra-body` asks for it.
@@ -237,7 +237,7 @@ rung found the server, `OPENAI_BASE_URL` included: the lines of `OPENAI_CUSTOM_H
 `OPENAI_BASE_URL` gives `--llm openai`, and never to a server a local preset reaches
 ([SECURITY.md](../../SECURITY.md)). So a gateway or an access proxy in front of a server, one
 that wants a header of its own such as Cloudflare Access's pair, is not sent one by a local
-preset, and quackd has no other way to add a header yet. One that takes its token as the
+preset, and Roboglot has no other way to add a header yet. One that takes its token as the
 `Authorization` works with that token as `LOCAL_API_KEY`. A server that answers a turn with a
 redirect fails that turn, because the client follows none, and the error says where the redirect
 pointed and, where it moved the whole API, as a plain-HTTP server that sends everything on to its
@@ -247,31 +247,31 @@ HTTPS twin does, the `--base-url` that reaches it.
 cloud vendors and all five local presets, and on Chat Completions and Responses alike, so it
 keeps working when a run moves from one to the other. The flag beats the variable, and an empty
 object sends nothing, which is how a `.env` line is silenced for a single run. Six keys are
-refused because they are quackd's to send: `model`, `messages`, `input`, `instructions`,
+refused because they are Roboglot's to send: `model`, `messages`, `input`, `instructions`,
 `tools` and `stream`. The odd one there is `instructions`, which is the system prompt on the
 Responses API the way `messages` carries it on Chat Completions. Everything else replaces what
-quackd would have sent, `tool_choice` included, because overriding it is the point. That cuts
+Roboglot would have sent, `tool_choice` included, because overriding it is the point. That cuts
 both ways: `n` or `response_format` will reach the server too, and what the LLM answers with
-afterwards is yours to live with. In a flock the object goes to every member that speaks
+afterwards is yours to live with. In a team the object goes to every member that speaks
 OpenAI's API, and there is no per robot value in the registry. On OpenRouter a seventh key,
 `models`, is refused as well, and a `provider` object is merged beside the `require_parameters`
-quackd sends rather than replacing it ([openrouter.md](openrouter.md)).
+Roboglot sends rather than replacing it ([openrouter.md](openrouter.md)).
 
 Add physics by asking for both extras and naming the backend:
 
 ```bash
-uvx --from "quackd[openai,mujoco]" quackd run find-and-kick --llm ollama:qwen3:8b --robot microduck:mujoco
+uvx --from "roboglot[openai,mujoco]" roboglot run find-and-kick --llm ollama:qwen3:8b --robot microduck:mujoco
 ```
 
 The duck then walks on upstream's own trained policy instead of sliding around a cartoon. It
 also undershoots what it is asked for, which is a harder task for a small LLM and which the
 run states in `report_state` ([ADR-0030](../adr/0030-mujoco-physics-backend.md)).
 
-## The same duck in a browser, with no quackd installed
+## The same duck in a browser, with no Roboglot installed
 
 [`web/`](../../web/README.md) is a static page that runs the physics simulator through MuJoCo's
 WebAssembly build and drives it from any OpenAI compatible server, so a local LLM can pilot
-the duck with no key and no `pip install`. It is live at <https://www.quackd.org/simulator>, and
+the duck with no key and no `pip install`. It is live at <https://www.roboglot.org/simulator>, and
 that copy asks nothing of you first: same page, same Local option, same base-URL box, no checkout.
 
 If your LLM server is on the same machine, a checkout is still the more reliable route, because
@@ -280,7 +280,7 @@ that live copy is served over https and your server is not. Browsers disagree ab
 plaintext server on your own machine and others refuse it as mixed content or want a permission
 first. A copy you serve yourself is plain http at both ends, so there is no such argument to have,
 and it is also what you run when you are changing the page. `web/serve.py` is the server it
-needs, stdlib only, so it is Python but not quackd ([web/README.md](../../web/README.md) says
+needs, stdlib only, so it is Python but not Roboglot ([web/README.md](../../web/README.md) says
 why a plain `http.server` will not do):
 
 ```bash
@@ -315,7 +315,7 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   | transcript | seed | outcome | steps | LLM calls | tokens in + out | text fallbacks | what it shows |
   |---|---|---|---|---|---|---|---|
   | [`…seed6-memory-read.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed6-memory-read.jsonl) | 6 | success | 8 | 9 | 29,403 + 244 | 0 | the system prompt carries an earlier run's episode under *What you remember*; the LLM never calls `remember`; two kicks fall short before the third connects |
-  | [`…seed5-remember.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.duck` body now says `remember` in strategy step 5; after the kick the LLM returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
+  | [`…seed5-remember.jsonl`](../assets/transcripts/qwen2.5-coder-14b-lmstudio-find-and-kick-seed5-remember.jsonl) | 5 | success | 4 | 6 | 17,939 + 265 | 0 | the `.glot` body now says `remember` in strategy step 5; after the kick the LLM returns `remember`, `quack` and `declare_success` in one response, the loop keeps the first (a fact from the verb results) and marks `multiple_tool_calls`, and the other two arrive one per turn after |
 
   These two are not a chain, and nothing here should be read as one: they ran against
   different memory directories (`memory-qwen3` and `memory-qwen2`), seed 5 started from an
@@ -327,7 +327,7 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   clock (`elapsed_s` in `run_end`, which is what the budget counts on `sim2d`) says 14 s and
   11 s; the transcript timestamps say 33 s and 29 s of wall clock, three to nine seconds per
   LLM call. What this pair cannot show: anything about another LLM, another machine, or a
-  harder task than the starter duck.
+  harder task than the starter task.
 
   **Qwen3-32B-AWQ on vLLM 0.27.2.dev**, an NVIDIA GB10 that is `aarch64`, 2026-09-14, from
   the contributor who asked for `--extra-body` (#12). Not a selection this time but a pair:
@@ -377,18 +377,18 @@ What the page has and has not been run against is in [web/README.md](../../web/R
 
   **`reasoning_tokens` reads 0 in both, and the thought is still in the file.** vLLM ran
   without `--reasoning-parser`, so the server left the thinking inside `content` and billed
-  it as output, which is why output tokens is the column to read. quackd then split the
+  it as output, which is why output tokens is the column to read. Roboglot then split the
   `<think>` block out itself before anything else saw the text, so in the transcript it is
   the `llm` row's `thinking` field: 599 to 1,446 characters of it on every one of the eight
   calls with the flag off, and not one such field in the other file. That split is a safety
   property rather than a cosmetic one, because the JSON text fallback reads `turn.text`, and
   an LLM that weighs a verb inside its reasoning and then rejects it would otherwise have
-  that call parsed out of a discarded thought (`quackd/agent/providers/local.py`).
+  that call parsed out of a discarded thought (`roboglot/agent/providers/local.py`).
 
   **This pair is also the first published chain.** The thinking run called `remember` and
   saved *"The ball was found at 43° left, ~0.85 m during initial scan."* That sentence is in
   the other run's `system_prompt` verbatim, under *What you remember*, next to an episode
-  quackd wrote from the same run, and the counters move from 1 note and 2 episodes to 2 and
+  Roboglot wrote from the same run, and the counters move from 1 note and 2 episodes to 2 and
   3, so exactly one of each separates them and no run sat in between. A note written by one
   run, read by the next, both ends in this repository. The Qwen 2.5 pair could not show that
   and neither could anything else here.
@@ -399,7 +399,7 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   qwen3` beside `--default-chat-template-kwargs '{"enable_thinking": false}'`, and that is
   the better answer for a box you own. The flag is what you have on one you do not.
 
-  What this pair cannot show: anything about a harder task than the starter duck, about an
+  What this pair cannot show: anything about a harder task than the starter task, about an
   LLM this size on a machine that is not a GB10, or about whether the quiet run's missed
   `quack` is a pattern or one run's slip. If you run one, please share the transcript in a
   Discussion or a PR into that folder: it is the cheapest way to make this section shorter.
@@ -429,10 +429,10 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   before the verdict contradicts it.
 
 - **`--goal` and the same task as a file are not the same question.** Also theirs, filed as
-  [#25](https://github.com/rokbenko/quackd/issues/25). `quackd run find-and-kick` was
+  [#25](https://github.com/rokbenko/quackd/issues/25). `roboglot run find-and-kick` was
   `feasible` 6 of 6 and succeeded 6 of 6. The same words as
   `--goal "Find the ball and kick it."`, same body, same seed, same LLM, were `uncertain` 5
-  of 6 and aborted 5 of 6. They rebuilt the goal contract as a `.duck` whose system prompt
+  of 6 and aborted 5 of 6. They rebuilt the goal contract as a `.glot` whose system prompt
   diffs to zero against a real `--goal` run, reproduced the 5 and 1 split, and changed one
   thing at a time: the persona does nothing, a concrete success criterion does nothing, the
   five step strategy reaches 3 of 6, and narrowing the allowlist from fifteen verbs to six
@@ -449,16 +449,16 @@ What the page has and has not been run against is in [web/README.md](../../web/R
   coded the reasons blind and 23 of the 25 `uncertain` were still about where the ball was. It
   moved the reasons only a little: of the `uncertain` answers, 42 of 42 had rested on where the
   target was before it and 44 of 51 did after. What moved the verdicts is a line of theirs,
-  which quackd now puts under an observation until a verdict is recorded, when a detector
+  which Roboglot now puts under an observation until a verdict is recorded, when a detector
   looked at the frame and found nothing: that is not by itself a reason for `uncertain`, which
   is for a limit that turns on the unseen thing's mass or size, or on a figure the datasheet
   does not publish. On 0.10.0 with that line, `feasible` was 27 of 30, and every one of those
   runs found the ball and kicked it. On 02411b3, a build of 2026-09-17, a task the body cannot
   do, carrying the ball, went from 5 of 30 `infeasible` to 17 of 30 with it, and `feasible`
-  stayed at none either way. The line they measured had no "by itself", which quackd added so
+  stayed at none either way. The line they measured had no "by itself", which Roboglot added so
   it says what the rule line says, and nobody has measured it on a build since 0.14.0, which
   changed what the prompt says about a figure nobody published. They also found that a cell of
-  six cannot show this: quackd sends an LLM no temperature, top_p or seed, so each verdict is
+  six cannot show this: Roboglot sends an LLM no temperature, top_p or seed, so each verdict is
   a draw at the server's own sampling unless `--extra-body` pins it, and the same configuration
   measured at six, thirty and eighty runs told three different stories. These are cells of
   thirty, on one LLM, Qwen3-32B-AWQ with thinking off.

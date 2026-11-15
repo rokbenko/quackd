@@ -1,7 +1,7 @@
 {
-  "duck": "lerobot-lookout",
+  "glot": "lerobot-lookout",
   "command": [
-    "quackd",
+    "roboglot",
     "run",
     "lerobot-lookout",
     "--robot",

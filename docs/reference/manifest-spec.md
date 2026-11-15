@@ -1,16 +1,16 @@
 # The robot manifest (v1)
 
 What a connected robot is and can do, as data. Pydantic in code
-(`quackd/adapters/manifest.py`), JSON on the wire (MCP `robot_list`, mDNS by digest, the
-flock bus), never YAML on disk. The JSON Schema is exported to
-`quackd/adapters/manifest.schema.json` (`python -m quackd.adapters.export`) and
+(`roboglot/adapters/manifest.py`), JSON on the wire (MCP `robot_list`, mDNS by digest, the
+team bus), never YAML on disk. The JSON Schema is exported to
+`roboglot/adapters/manifest.schema.json` (`python -m roboglot.adapters.export`) and
 drift-tested. Every adapter's `connect()` returns one; `describe()` returns the static
 version without touching the robot.
 
 The model is core and the robots are not. Each adapter is its own package under `adapters/`,
-imported as `quackd_<name>` and installed by its own extra, and it reaches this file the way
-anyone would: `from quackd.adapters.manifest import RobotManifest`. No module in the core
-imports an adapter by name, which is why an adapter quackd does not publish declares its
+imported as `roboglot_<name>` and installed by its own extra, and it reaches this file the way
+anyone would: `from roboglot.adapters.manifest import RobotManifest`. No module in the core
+imports an adapter by name, which is why an adapter Roboglot does not publish declares its
 manifest on exactly the same terms ([concepts/architecture.md](../concepts/architecture.md),
 [adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md)).
 
@@ -19,7 +19,7 @@ manifest on exactly the same terms ([concepts/architecture.md](../concepts/archi
 | Field | Type | Meaning |
 |---|---|---|
 | `manifest` | `1` | schema version |
-| `id` | slug | unique within a run or a flock: `microduck`, `open-duck-01`, `duck-01`, or the member name from `--robots name=...` |
+| `id` | slug | unique within a run or a team: `microduck`, `open-duck-01`, `duck-01`, or the member name from `--robots name=...` |
 | `vendor`, `model` | string | who made it and what it is (`huggingface`, `lerobot-so101`) |
 | `embodiment` | `biped`, `quadruped`, `wheeled`, `arm`, `humanoid` | the body |
 | `mobility` | `none`, `legged`, `wheeled` | whether it can go somewhere |
@@ -27,12 +27,12 @@ manifest on exactly the same terms ([concepts/architecture.md](../concepts/archi
 | `sensors` | list of `camera`, `battery`, `odometry`, `imu`, `tof`, `microphone`, `joint_state` | what it can report |
 | `verbs` | list of `VerbSpec` | the vocabulary (see below) |
 | `preconditions` | verb → list of condition names | checks the executor runs before a verb; the adapter supplies the predicates by name |
-| `safety_authority` | `{native, deadman, heartbeat_hz}` | who stops the body when quackd goes quiet: `native` is `robotd_deadman`, `lease`, `torque_limit`, `estop` or `none`; `deadman` is whether motion zeroes on silence, wherever that code lives. An Open Duck Mini declares `native: none` with `deadman: true`, because the thing doing the zeroing is quackd's own daemon running on the robot — on the `bridge` backend, only when that daemon reported a `deadman_ms` window at connect |
+| `safety_authority` | `{native, deadman, heartbeat_hz}` | who stops the body when Roboglot goes quiet: `native` is `robotd_deadman`, `lease`, `torque_limit`, `estop` or `none`; `deadman` is whether motion zeroes on silence, wherever that code lives. An Open Duck Mini declares `native: none` with `deadman: true`, because the thing doing the zeroing is Roboglot's own daemon running on the robot — on the `bridge` backend, only when that daemon reported a `deadman_ms` window at connect |
 | `frame` | `{reference, note}` | `body`, `head`, `base` or `world`; what bearings are relative to |
 | `limits` | name → number | `max_vx`, `max_vy`, `max_wz`, `gaze_yaw_deg`, `gaze_pitch_deg`, `joint_deg`, ...; the core verbs clamp to them. `camera_fov_deg` is the exception: not a clamp but the lens the detector assumes, and without it (or `--fov-deg`) a real camera falls back to the simulator's 90° and every detection is labelled uncalibrated |
 | `backend` | string | informational: which backend produced this |
 | `blurb` | string | the prompt's one-line intro: "a small biped duck robot (25 cm, 800 g)" |
-| `datasheet` | `Datasheet` or absent | the body as numbers, each with how sure quackd is and who says so, plus what it cannot do whatever the task says (see below) |
+| `datasheet` | `Datasheet` or absent | the body as numbers, each with how sure Roboglot is and who says so, plus what it cannot do whatever the task says (see below) |
 | `extras` | object | adapter-specific facts (`speech: tones`, `camera_calibrated: false`, `policy: true`). One key the core reads: `camera_fov_assumed`, the words of the assumption `limits.camera_fov_deg` rests on when nobody measured that lens, which makes every detection through it say it is uncalibrated and the log say to pass `--fov-deg` |
 
 A `VerbSpec`: `name` (canonical, never an alias), `core` (the same verb on every robot
@@ -44,7 +44,7 @@ that has it), `description` (LLM-facing; empty means the implementation's defaul
 
 - No duplicate verbs; no alias as a verb name (`walk` is declared as `move`).
 - `stop` is inserted when missing, is `core`, and can never be anything but `safe`.
-- A core verb must have what it requires (`quackd/verbs/core.py`, `REQUIREMENTS`):
+- A core verb must have what it requires (`roboglot/verbs/core.py`, `REQUIREMENTS`):
 
 | Core verb | Requires |
 |---|---|
@@ -62,7 +62,7 @@ that has it), `description` (LLM-facing; empty means the implementation's defaul
 | `go_to_place` | `twist`, mobility and the `odometry` sensor |
 
 The four place verbs need more than a manifest can promise: a transport that says where the
-robot is on this connection (`quackd.transport.base.spatial_of`). An adapter declares them in its
+robot is on this connection (`roboglot.transport.base.spatial_of`). An adapter declares them in its
 static manifest for a backend that says where the robot is, and leaves them out at `connect()`
 when the transport carries no reading after all, as it leaves out a camera's verbs when no frame
 arrives ([concepts/places.md](../concepts/places.md)).
@@ -85,7 +85,7 @@ a `confidence` and a `source`, plus an optional `note` read with it.
 | `reach_m` | arm base to fingertips |
 | `workspace_height_m` | a `Span`: the band of heights the hands can work at, as `low` and `high` with a `confidence` and a `source` of their own |
 | `endurance_min` | minutes on a charge |
-| `manipulator` | `none`, `beak`, `gripper` or `arms`: what quackd can command that touches an object |
+| `manipulator` | `none`, `beak`, `gripper` or `arms`: what Roboglot can command that touches an object |
 | `arms`, `tethered`, `terrain`, `not_rated` | how many, mains or battery, what it is rated for (`indoor_flat`, `indoor` or `outdoor`) and what it is not |
 | `cannot`, `notes` | sentences: what it cannot do whatever the task says, and what is worth knowing first |
 
@@ -101,8 +101,8 @@ Three rules make it honest:
   manipulator) is not listed as missing either. A load on the back is an extra, as a
   working height is: shown where a body says it, never listed as missing, and still refused
   by default when a task names it on a sheet that says nothing.
-- **Speeds are not in it.** `limits` is what quackd clamps to, which is a rule about what
-  quackd sends rather than a fact about the body, and the prompt renders those separately as
+- **Speeds are not in it.** `limits` is what Roboglot clamps to, which is a rule about what
+  Roboglot sends rather than a fact about the body, and the prompt renders those separately as
   clamps.
 
 `manipulator` is the only field a sheet must carry, and three contradictions are refused
@@ -116,7 +116,7 @@ equal across `sim2d`, `mock` and the real thing. `rosbridge` is the one exceptio
 names a transport rather than a body: its sheet is whatever the bridge answered when asked
 ([adapters/rosbridge/README.md](../adapters/rosbridge/README.md)).
 
-The ten sheets quackd publishes, with each figure's confidence:
+The ten sheets Roboglot publishes, with each figure's confidence:
 
 | Robot | Mass | Height | Joints | Payload | Reach | Endurance | Hands |
 |---|---|---|---|---|---|---|---|
@@ -139,14 +139,14 @@ One body carries the eighth figure: the XLeRobot publishes a working height of 0
 1.25 m, official, because its torso does not lift, so its hands work in that band and
 nowhere else.
 
-A `.duck` file can correct any of it for the build in front of it
-([reference/duck-spec.md](duck-spec.md)), and the prompt labels those numbers as coming from the
+A `.glot` file can correct any of it for the build in front of it
+([reference/glot-spec.md](glot-spec.md)), and the prompt labels those numbers as coming from the
 task file.
 
 ## Intents on the wire
 
 The manifest speaks the vocabulary other systems read; the backends speak the intent kinds
-quackd has used since 0.1. One table maps them (`INTENT_KIND_FOR`): `twist → move`,
+Roboglot has used since 0.1. One table maps them (`INTENT_KIND_FOR`): `twist → move`,
 `skill → do`, `gaze → look`, `sound → sound`, `joint → joint`, `pose → pose`,
 `gripper → gripper`.
 
@@ -160,10 +160,10 @@ and MCP `robot_list` returns it.
 
 ## Examples
 
-The ten manifests quackd publishes, from `quackd list-verbs --robot ...` or `describe()`.
+The ten manifests Roboglot publishes, from `roboglot list-verbs --robot ...` or `describe()`.
 Both read the static manifest without connecting to anything, and both need that body's
-package installed: on a machine without it, `quackd list-verbs --robot lerobot:mock` refuses
-with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
+package installed: on a machine without it, `roboglot list-verbs --robot lerobot:mock` refuses
+with `adapter 'lerobot' needs an extra: uv pip install 'roboglot[lerobot]'`.
 
 | Robot | embodiment / mobility | intents | verbs |
 |---|---|---|---|
@@ -179,6 +179,6 @@ with `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'`.
 | `rosarm:mock` | arm / none | joint | report_state, stop, move_joints |
 
 What each body lacks is as important as what it has: the arm cannot `move`, neither the
-base nor the cart can `say`, and a `.duck` that `requires` one of those fails
+base nor the cart can `say`, and a `.glot` that `requires` one of those fails
 validation against that robot with a field-level message
-([reference/duck-spec.md](duck-spec.md)).
+([reference/glot-spec.md](glot-spec.md)).

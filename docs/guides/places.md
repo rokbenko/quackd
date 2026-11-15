@@ -6,7 +6,7 @@ Microduck's `mapd` would, so nothing here needs a robot. Why it works the way it
 [concepts/places.md](../concepts/places.md).
 
 ```bash
-quackd drive --robot microduck:sim2d --room two-rooms
+roboglot drive --robot microduck:sim2d --room two-rooms
 ```
 
 `two-rooms` is two rooms with a doorway between them and a box in the far one. The duck starts in
@@ -14,7 +14,7 @@ the near one, facing the doorway, and its map knows nothing until it has stood s
 to look. This session was piped, a line at a time, with the scripted pilot:
 
 ```
-$ printf 'mark_place sofa\nforward\nforward\nturn left\nforward\nmap\ngo_to_place sofa\nquit\n' | quackd --no-color drive --robot microduck:sim2d --room two-rooms --llm fake
+$ printf 'mark_place sofa\nforward\nforward\nturn left\nforward\nmap\ngo_to_place sofa\nquit\n' | roboglot --no-color drive --robot microduck:sim2d --room two-rooms --llm fake
 drive    microduck: type a command, a goal, or help; Enter brakes
 exact    mark_place(name='sofa') (0.362 ms)
 result   ok: marked 'sofa' where the robot stands, (-1.00, 0.00) by its map
@@ -75,32 +75,32 @@ What each step shows:
   it got by what, and that it is facing the way it faced when the place was marked, within what a
   reading every quarter of a second allows.
 
-The places are kept beside the robot's memory and keyed as it is, so a `quackd run` on the same
+The places are kept beside the robot's memory and keyed as it is, so a `roboglot run` on the same
 room finds `sofa` where it was left, and a run that is told to go back to the sofa can. Try a
 place in the other room: mark it there, walk back through the doorway, and send the duck to it.
 The map fills in a stop at a time as it goes.
 
 ## From the command line
 
-`quackd places` and `quackd map` do the same from a shell, with no pilot and no drive session.
+`roboglot places` and `roboglot map` do the same from a shell, with no pilot and no drive session.
 `places add` marks the spot the robot stands on, as `mark_place` does, and `map` says what the
 `map` verb says and draws the map. Both connect to the robot, with no camera, and nothing
 moves, and both take `--robot`, `--address`, `--token`, `--room` and `--map-address` as `drive`
 does. `places list` and `places rm` read and change the place file and connect nothing:
 
 ```
-$ quackd places add sofa --note "the grey one" --robot microduck:sim2d --room two-rooms
+$ roboglot places add sofa --note "the grey one" --robot microduck:sim2d --room two-rooms
 ✓ microduck:sim2d: marked 'sofa' where the robot stands, (-1.00, 0.00) by its map
-$ quackd places list --robot microduck:sim2d
-microduck:sim2d  1 place  ~/.quackd/memory/microduck-sim2d.places.jsonl
+$ roboglot places list --robot microduck:sim2d
+microduck:sim2d  1 place  ~/.roboglot/memory/microduck-sim2d.places.jsonl
 places, each in the frame it was marked in
 ┌──────┬─────────────┬────────┬─────┬────────────────────────┬────────────┬──────────────┐
 │ name │    x, y (m) │ facing │ by  │ frame                  │ marked     │ note         │
 ├──────┼─────────────┼────────┼─────┼────────────────────────┼────────────┼──────────────┤
 │ sofa │ -1.00, 0.00 │     0° │ map │ sim:sim2d:758d2642d7fb │ 2026-10-27 │ the grey one │
 └──────┴─────────────┴────────┴─────┴────────────────────────┴────────────┴──────────────┘
-quackd map says which of them can be walked to now
-$ quackd map --robot microduck:sim2d --room two-rooms --cells 31
+roboglot map says which of them can be walked to now
+$ roboglot map --robot microduck:sim2d --room two-rooms --cells 31
 where: map(-1.00, 0.00, 0.00 rad), by the simulator's stand-in for the robot's own map (two-rooms)
 places:
 - sofa: here, where the robot stands
@@ -128,13 +128,13 @@ map: 31 x 21 cells of 10 cm, x right, y up (the map has no north)
 ???????????????????????????????
 ???????????????????????????????
 places: A sofa
-$ quackd places rm sofa --robot microduck:sim2d
+$ roboglot places rm sofa --robot microduck:sim2d
 ✓ microduck:sim2d: forgot 'sofa'
 ```
 
 `places list` prints the file's full path, which this page writes from your home directory as
 `~`. It reads the file and nothing else, so it cannot say which places can be walked to now:
-`quackd map` connects and says. Its frame column is what each place belongs to, and a frame
+`roboglot map` connects and says. Its frame column is what each place belongs to, and a frame
 whose map was wiped says so. In the map the duck stands on the sofa, so its arrow covers the
 sofa's `A`. `--cells` sets how many columns the map is drawn in, 10 to 80, and `--watch` draws
 it again every second until Ctrl+C. On a real Microduck, `--map-address` says where its `mapd`
@@ -142,10 +142,10 @@ answers, as it does on `run`.
 
 `--wipe` forgets the map first, every stop it has looked from, and every place marked in it is
 orphaned from then on, in every session after. It asks the person at the terminal, naming those
-places, and nothing else in quackd wipes a map, a pilot or a script included:
+places, and nothing else in Roboglot wipes a map, a pilot or a script included:
 
 ```
-$ quackd map --wipe --robot microduck:sim2d --room two-rooms < /dev/null
+$ roboglot map --wipe --robot microduck:sim2d --room two-rooms < /dev/null
 ✗ error: --wipe asks the person at the terminal first, and there is no terminal here: run it in one
   a map is never wiped by a pilot or a script
 ```

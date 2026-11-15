@@ -1,5 +1,5 @@
 """A policy server on a Hugging Face Inference Endpoint, over the wire: the client's bearer, the
-proxy in front, what each token reaches, and `quackd policy endpoint` end to end.
+proxy in front, what each token reaches, and `roboglot policy endpoint` end to end.
 
 The server here is the real one serving a scripted policy, as in
 `tests/test_policy_contract.py`, behind `tests/fake_hugging_face.py`'s stand-in for the proxy,
@@ -24,13 +24,13 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner, Result
 
-from quackd.cli import app
-from quackd_lerobot.policy import client as C
-from quackd_lerobot.policy import endpoint as E
-from quackd_lerobot.policy import protocol as wire
-from quackd_lerobot.policy import server as S
-from quackd_lerobot.policy.client import PolicyServerError, RemoteRunner, is_endpoint_host
-from quackd_lerobot.verbs import JOINTS
+from roboglot.cli import app
+from roboglot_lerobot.policy import client as C
+from roboglot_lerobot.policy import endpoint as E
+from roboglot_lerobot.policy import protocol as wire
+from roboglot_lerobot.policy import server as S
+from roboglot_lerobot.policy.client import PolicyServerError, RemoteRunner, is_endpoint_host
+from roboglot_lerobot.verbs import JOINTS
 from tests.fake_hugging_face import ACCOUNT_TOKEN, FakeAPI, FakeProxy, Recorded, point
 from tests.test_policy_contract import TOKEN, Serving, _serving
 
@@ -147,7 +147,7 @@ def test_the_bearer_goes_to_the_proxy_and_the_token_to_the_server(
     """Every request carries the bearer for the proxy and the server's own token, and is served
     end to end. Whether the bearer reaches the server is the proxy's to decide: one that passes
     it on is said once in the server's log, and one that strips it leaves nothing to say."""
-    caplog.set_level(logging.WARNING, logger="quackd.policy")
+    caplog.set_level(logging.WARNING, logger="roboglot.policy")
     with FakeProxy(HF_TOKEN, served.url, forward_authorization=forwarded) as proxy:
         _as_endpoint(monkeypatch, proxy)
         runner = _runner(proxy.url)
@@ -168,7 +168,7 @@ def test_the_bearer_goes_to_the_proxy_and_the_token_to_the_server(
 
 
 def _observation() -> Any:
-    from quackd_lerobot.policy.runner import Observation
+    from roboglot_lerobot.policy.runner import Observation
 
     return Observation(0, {f"{motor}.pos": 0.0 for motor in JOINTS})
 
@@ -176,8 +176,8 @@ def _observation() -> Any:
 @pytest.mark.parametrize(
     ("status", "needle"),
     [
-        (503, "hf:arm is not serving (HTTP 503 from Hugging Face, not from quackd's server)"),
-        (502, "hf:arm is not serving (HTTP 502 from Hugging Face, not from quackd's server)"),
+        (503, "hf:arm is not serving (HTTP 503 from Hugging Face, not from Roboglot's server)"),
+        (502, "hf:arm is not serving (HTTP 502 from Hugging Face, not from Roboglot's server)"),
         (500, "is not serving (HTTP 500 from Hugging Face"),
         (504, "is not serving (HTTP 504 from Hugging Face"),
         (401, "Hugging Face refused the token hf:arm was reached with (HTTP 401"),
@@ -202,7 +202,7 @@ def test_what_the_proxy_answers_is_said_as_the_proxys(
     said = str(refused.value)
     assert needle in said and refused.value.status == status, said
     if status in C.PROXY_UNSERVED:
-        assert "quackd policy endpoint up arm wakes it" in said
+        assert "roboglot policy endpoint up arm wakes it" in said
     assert HF_TOKEN not in said and TOKEN not in said
 
 
@@ -256,7 +256,7 @@ def test_both_tokens_are_scrubbed_from_whatever_comes_back(
     assert HF_TOKEN not in said and TOKEN not in said
 
 
-# ── quackd policy endpoint, end to end against the stand-ins ────────────────────────────
+# ── roboglot policy endpoint, end to end against the stand-ins ────────────────────────────
 
 ACT = "natsuki0000/act-so101-bluecap@82f75fe40a311026b4f7cacdea7bf14cadc44ccd"
 ACT_REPO = "natsuki0000/act-so101-bluecap"
@@ -265,7 +265,7 @@ UP = ["policy", "endpoint", "up", "arm", "--policy", ACT, "--fps", "30", "--late
 
 @pytest.fixture
 def hf(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAPI]:
-    """The stand-ins, with quackd pointed at them and the stand-in account's token in
+    """The stand-ins, with Roboglot pointed at them and the stand-in account's token in
     `HF_TOKEN`, and a registry of the test's own, which the suite already gives every test."""
     with FakeAPI() as api:
         point(monkeypatch, api)
@@ -294,7 +294,7 @@ def test_up_creates_an_endpoint_waits_until_it_serves_and_says_how_a_run_reaches
 ) -> None:
     """Every row as it happens: what was created and what it bills, each state with its time,
     the address, where the token is kept and what the server says it serves. One endpoint was
-    created, `authenticated`, with quackd's token as its one secret, and the account's token
+    created, `authenticated`, with Roboglot's token as its one secret, and the account's token
     went nowhere but to the API, the Hub and the endpoint's proxy, never into the body, the
     output, the listing or PyPI."""
     result = _cli(*UP, "--yes")
@@ -308,9 +308,9 @@ def test_up_creates_an_endpoint_waits_until_it_serves_and_says_how_a_run_reaches
         "url http://127.0.0.1:",
         "token kept in",
         "endpoints.json, for hf:arm",
-        "serving scripted:sweep (quackd-policy 1, quackd ",
+        "serving scripted:sweep (roboglot-policy 1, Roboglot ",
         "gpu yes",
-        "Run with --policy-url hf:arm. quackd policy endpoint pause arm stops the bill.",
+        "Run with --policy-url hf:arm. roboglot policy endpoint pause arm stops the bill.",
     ):
         assert needle in said, needle
     record = _store().get("arm")
@@ -397,7 +397,7 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
     else:
         assert result.exit_code == 1, said
         assert "whether arm was created could not be read either" in said
-        assert "quackd policy endpoint up arm finds out" in said
+        assert "roboglot policy endpoint up arm finds out" in said
         assert kept is not None and ("rok", "arm") in hf.endpoints
     assert ACCOUNT_TOKEN not in result.output
 
@@ -473,7 +473,7 @@ def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
     result = _cli(*UP, "--yes", "--no-wait")
     said = _flat(result.output)
     assert result.exit_code == 0 and "created arm on rok's account" in said, result.output
-    assert "Not waiting: quackd policy endpoint up arm waits until it serves" in said
+    assert "Not waiting: roboglot policy endpoint up arm waits until it serves" in said
     assert "state " not in said
     record = _store().get("arm")
     assert record is not None and record.url is None and len(_posts(hf)) == 1
@@ -490,7 +490,7 @@ def test_up_with_no_terminal_and_no_yes_creates_nothing(hf: FakeAPI) -> None:
 def test_up_asks_at_a_terminal_and_a_no_creates_nothing(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from quackd import cli
+    from roboglot import cli
 
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     refused = _cli(*UP, given="n\n")
@@ -517,7 +517,7 @@ def test_up_asks_at_a_terminal_and_a_no_creates_nothing(
             "is gated or private on the Hub",
         ),
         (["--policy", ACT], {"quota": 0}, "has no nvidia-l4 left in its quota"),
-        (["--policy", ACT, "--hub-token-from", "QUACKD_TEST_NOWHERE"], {}, "is not set"),
+        (["--policy", ACT, "--hub-token-from", "ROBOGLOT_TEST_NOWHERE"], {}, "is not set"),
     ],
 )
 def test_up_refuses_before_anything_is_created(
@@ -672,7 +672,7 @@ def test_an_endpoint_at_zero_is_woken_by_up_only_after_asking(
     """Waking one that scaled to zero bills again, as resuming a paused one does, so up asks
     first, with the price, and with no terminal it needs --yes. A yes wakes it with one request,
     with --no-wait too, which sends no other."""
-    from quackd import cli
+    from roboglot import cli
 
     assert _cli(*UP, "--yes").exit_code == 0
     ep = hf.endpoints[("rok", "arm")]
@@ -744,8 +744,8 @@ def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
     server's token, a container's argv being what it is, or the Hub token in its secrets, or
     what a terminal would act on: all are taken out, and the message is cut."""
     hub = "hf_" + "HubReadToken" * 3
-    monkeypatch.setenv("QUACKD_TEST_HUB", hub)
-    assert _cli(*UP, "--yes", "--hub-token-from", "QUACKD_TEST_HUB").exit_code == 0
+    monkeypatch.setenv("ROBOGLOT_TEST_HUB", hub)
+    assert _cli(*UP, "--yes", "--hub-token-from", "ROBOGLOT_TEST_HUB").exit_code == 0
     record = _store().get("arm")
     assert record is not None
     ep = hf.endpoints[("rok", "arm")]
@@ -840,9 +840,9 @@ def test_list_says_what_this_machine_started_and_what_hugging_face_says_of_it(
 
 
 def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: bool) -> Any:
-    """quackd's arm deleted on huggingface.co, and another endpoint called arm made there in its
+    """Roboglot's arm deleted on huggingface.co, and another endpoint called arm made there in its
     place, running at an address of its own: untagged, as one made on huggingface.co would be,
-    or with quackd's tag and the one another machine's record gives it, as that machine's `up`
+    or with Roboglot's tag and the one another machine's record gives it, as that machine's `up`
     would make it. The address the record holds, if it holds one, stays one the client's rule
     takes, as a real endpoint's would once it is gone."""
     taken = set(hf.proxies)
@@ -858,7 +858,7 @@ def _made_elsewhere(hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, *, tagged: boo
         "provider": {"vendor": "aws", "region": "us-east-1"},
         "compute": {"accelerator": "gpu", "instanceType": "nvidia-a10g", "instanceSize": "x1"},
         "model": {"repository": "someone/llm", "framework": "custom", "image": {}},
-        "tags": [E.TAG, "quackd-policy-0123456789ab"] if tagged else ["production"],
+        "tags": [E.TAG, "roboglot-policy-0123456789ab"] if tagged else ["production"],
     }
     E._request("POST", E.API, "/v2/endpoint/rok", bearer=ACCOUNT_TOKEN, body=body)
     other = hf.endpoints[("rok", "arm")]
@@ -885,8 +885,8 @@ def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_anoth
     addressed: bool,
 ) -> None:
     """An endpoint deleted on huggingface.co leaves this machine's record behind, and another
-    made by that name is not quackd's to wake, pause or delete. Each command reads it first and
-    leaves it as it is when it carries no quackd tag, or not the one this record gave its own,
+    made by that name is not Roboglot's to wake, pause or delete. Each command reads it first and
+    leaves it as it is when it carries no Roboglot tag, or not the one this record gave its own,
     whether or not the record has an address yet, as one `up --no-wait` left has not, saying
     how to forget the record: nothing is changed on it, nothing is sent to it, and the record
     is kept."""
@@ -897,12 +897,12 @@ def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_anoth
     result = _cli(*command)
     said = _flat(result.output)
     needle = (
-        "carries quackd's tag but not the one this machine's up gave hf:arm"
+        "carries Roboglot's tag but not the one this machine's up gave hf:arm"
         if tagged
-        else "carries no quackd-policy tag, so quackd did not start it"
+        else "carries no roboglot-policy tag, so Roboglot did not start it"
     )
     assert result.exit_code == 1 and needle in said, said
-    assert "quackd policy endpoint delete arm --forget forgets the record" in said
+    assert "roboglot policy endpoint delete arm --forget forgets the record" in said
     assert hf.endpoints.get(("rok", "arm")) is other and other.state == "running"
     changed = [r for r in hf.requests[before:] if r.method in ("POST", "DELETE")]
     assert not changed and not other.proxy.requests, changed
@@ -914,7 +914,7 @@ def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_t
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch, token: str
 ) -> None:
     """A record whose token cannot be read gives no tag to hold the endpoint by that name to, and
-    quackd's own tag, which is all there is then, another machine's up gives its endpoints too:
+    Roboglot's own tag, which is all there is then, another machine's up gives its endpoints too:
     the remote delete is refused before anything is asked, and --forget still forgets the
     record."""
     assert _cli(*UP, "--yes").exit_code == 0
@@ -926,9 +926,9 @@ def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_t
     before = len(hf.requests)
     refused = _cli("policy", "endpoint", "delete", "arm", "--yes")
     said = _flat(refused.output)
-    assert refused.exit_code == 1 and "holds no token quackd can read" in said, said
+    assert refused.exit_code == 1 and "holds no token Roboglot can read" in said, said
     assert "delete it on huggingface.co if it is yours" in said
-    assert "quackd policy endpoint delete arm --forget forgets the record" in said
+    assert "roboglot policy endpoint delete arm --forget forgets the record" in said
     assert len(hf.requests) == before and hf.endpoints.get(("rok", "arm")) is other
     forgot = _cli("policy", "endpoint", "delete", "arm", "--forget", "--yes")
     assert forgot.exit_code == 0 and not _store().recorded("arm"), forgot.output
@@ -938,7 +938,7 @@ def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_t
 def test_delete_forget_forgets_the_record_and_leaves_hugging_face_as_it_is(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The way out of a record whose endpoint is not quackd's any more: it asks, or needs --yes,
+    """The way out of a record whose endpoint is not Roboglot's any more: it asks, or needs --yes,
     since the server's token is kept nowhere else, needs no Hugging Face token, and asks
     Hugging Face nothing."""
     assert _cli(*UP, "--yes").exit_code == 0
@@ -961,7 +961,7 @@ def test_an_endpoint_the_wait_finds_is_not_the_recorded_one_is_not_paused(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Every other reason a wait stops pauses the endpoint, and this one does not: an endpoint by
-    that name that is not the one recorded is not quackd's to pause."""
+    that name that is not the one recorded is not Roboglot's to pause."""
 
     def swapped(*args: Any, **kw: Any) -> Any:
         raise E.Unconfirmed(
@@ -1019,7 +1019,7 @@ def test_a_planted_record_sends_the_account_token_nowhere(
         url="https://a7tacker00.endpoints.huggingface.cloud",
     )
     E.EndpointStore(planted).save(attacker)
-    monkeypatch.setenv("QUACKD_REGISTRY_DIR", str(planted))
+    monkeypatch.setenv("ROBOGLOT_REGISTRY_DIR", str(planted))
     if answer == 403:
         real = FakeAPI._endpoint
 
@@ -1062,14 +1062,14 @@ def test_a_registry_a_dotenv_names_is_not_one_hf_name_reads(
     own, and choose which policy drives the arm. One a `.env` named is refused before anything
     is asked of anyone, even when it holds a record Hugging Face would confirm."""
     assert _cli(*UP, "--yes").exit_code == 0
-    shells = os.environ["QUACKD_REGISTRY_DIR"]  # the suite's, which this shell exported
-    _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={Path(shells).as_posix()}\n")
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+    shells = os.environ["ROBOGLOT_REGISTRY_DIR"]  # the suite's, which this shell exported
+    _cloned_project(tmp_path, monkeypatch, f"ROBOGLOT_REGISTRY_DIR={Path(shells).as_posix()}\n")
+    monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
     before = len(hf.requests)
     result = _cli("policy", "check", "--policy-url", "hf:arm")
     said = _flat(result.output)
     assert result.exit_code == 1, said
-    assert "QUACKD_REGISTRY_DIR comes from a .env file here" in said
+    assert "ROBOGLOT_REGISTRY_DIR comes from a .env file here" in said
     assert "export it in the shell, or pass --registry-dir" in said
     assert len(hf.requests) == before and not _no_request_reaches_hugging_face
 
@@ -1078,22 +1078,22 @@ def test_a_registry_a_dotenv_names_is_not_one_hf_name_reads(
 def test_hf_name_reads_a_registry_the_shell_or_the_flag_names(
     hf: FakeAPI, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, named: str
 ) -> None:
-    """The shell's own `QUACKD_REGISTRY_DIR`, which a `.env` never overrides, and
+    """The shell's own `ROBOGLOT_REGISTRY_DIR`, which a `.env` never overrides, and
     `--registry-dir` are both read, and a `.env` that sets anything but the registry changes
     nothing."""
     assert _cli(*UP, "--yes").exit_code == 0
-    shells = os.environ["QUACKD_REGISTRY_DIR"]
+    shells = os.environ["ROBOGLOT_REGISTRY_DIR"]
     elsewhere = (tmp_path / "elsewhere").as_posix()
     check = ["policy", "check", "--policy-url", "hf:arm"]
     if named == "by the shell":
-        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
+        _cloned_project(tmp_path, monkeypatch, f"ROBOGLOT_REGISTRY_DIR={elsewhere}\n")
     elif named == "by --registry-dir":
-        _cloned_project(tmp_path, monkeypatch, f"QUACKD_REGISTRY_DIR={elsewhere}\n")
-        monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+        _cloned_project(tmp_path, monkeypatch, f"ROBOGLOT_REGISTRY_DIR={elsewhere}\n")
+        monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
         check += ["--registry-dir", shells]
     else:
-        monkeypatch.delenv("QUACKD_TEST_SOMETHING_ELSE", raising=False)
-        _cloned_project(tmp_path, monkeypatch, "QUACKD_TEST_SOMETHING_ELSE=1\n")
+        monkeypatch.delenv("ROBOGLOT_TEST_SOMETHING_ELSE", raising=False)
+        _cloned_project(tmp_path, monkeypatch, "ROBOGLOT_TEST_SOMETHING_ELSE=1\n")
     result = _cli(*check)
     said = _flat(result.output)
     assert result.exit_code == 0 and "policy scripted:sweep" in said, said
@@ -1103,7 +1103,7 @@ def test_hf_name_reads_a_registry_the_shell_or_the_flag_names(
 def test_check_benches_an_endpoint_by_its_name_through_the_proxy(
     hf: FakeAPI, forwarded: bool
 ) -> None:
-    """`up`, then `quackd policy check --policy-url hf:arm --bench`, end to end through the
+    """`up`, then `roboglot policy check --policy-url hf:arm --bench`, end to end through the
     stand-in proxy to the server in the stand-in container. Every request to the proxy carries
     the account's token as the bearer and the record's token for the server, and nothing reaches
     the server with the account's token unless the proxy passes it on, which the server's log
@@ -1136,8 +1136,8 @@ def test_a_paused_endpoint_is_not_serving_and_says_how_to_wake_it(hf: FakeAPI) -
     result = _cli("policy", "check", "--policy-url", "hf:arm")
     said = _flat(result.output)
     assert result.exit_code == 1, result.output
-    assert "hf:arm is not serving (HTTP 503 from Hugging Face, not from quackd's server)" in said
-    assert "quackd policy endpoint up arm wakes it and waits until it answers" in said
+    assert "hf:arm is not serving (HTTP 503 from Hugging Face, not from Roboglot's server)" in said
+    assert "roboglot policy endpoint up arm wakes it and waits until it answers" in said
 
 
 def test_check_of_an_endpoint_with_no_record_or_no_account_token_refuses_before_it_asks(
@@ -1157,11 +1157,11 @@ def test_check_of_an_endpoint_with_no_record_or_no_account_token_refuses_before_
 def test_a_run_reaches_an_endpoint_by_its_name_and_the_record_names_both(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The arm a run builds asks the endpoint what it serves, as `quackd run` asks before the arm
+    """The arm a run builds asks the endpoint what it serves, as `roboglot run` asks before the arm
     connects, and what the record will say names the server by its address and the endpoint by
     its name, and holds neither token."""
-    from quackd.adapters.base import PolicyChoice
-    from quackd.adapters.factory import make_adapter
+    from roboglot.adapters.base import PolicyChoice
+    from roboglot.adapters.factory import make_adapter
 
     assert _cli(*UP, "--yes").exit_code == 0
     record = _store().get("arm")

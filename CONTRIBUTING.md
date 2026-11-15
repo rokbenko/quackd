@@ -1,18 +1,18 @@
-# Contributing to quackd
+# Contributing to Roboglot
 
 Thanks for taking a toy duck seriously. Two kinds of contribution matter most: **new
-`.duck` files** (the community funnel) and **new verbs** (the vocabulary). Both are small.
+`.glot` files** (the community funnel) and **new verbs** (the vocabulary). Both are small.
 
 ## Dev setup
 
 ```bash
-git clone https://github.com/rokbenko/quackd && cd quackd
+git clone https://github.com/rokbenko/quackd && cd Roboglot
 uv sync --extra dev            # the core and all ten robots, editable, no robot SDKs
 uv sync --extra dev --extra mujoco   # the physics simulator, or its tests just skip
 uv tool install pre-commit     # the hooks' runner, in an environment of its own, not in the lock
 pre-commit install
 uv run pytest -n auto          # the whole suite on every core, about ten minutes, no network, no keys
-uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run quackd validate ducks/*.duck
+uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run roboglot validate tasks/*.glot
 ```
 
 Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real provider.
@@ -22,20 +22,20 @@ Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real
 `uv run pre-commit install` stops every commit with `No module named pre_commit`, so run
 `pre-commit install` again.
 
-This repository is a uv workspace: `quackd` is one distribution and each robot under
-`adapters/` is another (`quackd-microduck`, `quackd-lerobot`, `quackd-rosbridge`,
-`quackd-open-duck`, `quackd-xlerobot`, `quackd-alohamini`, `quackd-toddlerbot`,
-`quackd-huebot`, `quackd-moss`, `quackd-rosarm`). The dev extra installs the core and all ten
+This repository is a uv workspace: `roboglot` is one distribution and each robot under
+`adapters/` is another (`roboglot-microduck`, `roboglot-lerobot`, `roboglot-rosbridge`,
+`roboglot-open-duck`, `roboglot-xlerobot`, `roboglot-alohamini`, `roboglot-toddlerbot`,
+`roboglot-huebot`, `roboglot-moss`, `roboglot-rosarm`). The dev extra installs the core and all ten
 of them editable, so an edit anywhere is live in the next test run with nothing to reinstall.
 None of the robot SDKs come with them, and none is needed: the suite drives every adapter
 against a mock or a fake.
 
 > [!IMPORTANT]
-> What a user gets is not what you have. `uv pip install quackd` installs no robot at all,
+> What a user gets is not what you have. `uv pip install roboglot` installs no robot at all,
 > and every command that needs a body refuses with the list of extras. You are working with
 > all ten present, so a message that only fires when one is missing is a message you will
 > never see by accident. CI's `packaging` job is the one that checks it: it builds all eleven
-> packages, installs the core wheel alone, and asserts that `quackd doctor --json` reports
+> packages, installs the core wheel alone, and asserts that `roboglot doctor --json` reports
 > ten adapters and none of them installed.
 
 `uv lock --check` runs before anything else in CI. Eleven packages share one lock file and
@@ -45,7 +45,7 @@ extra once reached a release. Change a dependency anywhere, run `uv lock`, and c
 
 Versions move together. The core and each adapter carry their own `__version__`, because an
 adapter's sdist holds only its own source and cannot read the core's, and each one pins a window
-on the core (`quackd>=0.34.0,<0.35`). `uv run python scripts/set_version.py X.Y.Z` rewrites all
+on the core (`roboglot>=0.34.0,<0.35`). `uv run python scripts/set_version.py X.Y.Z` rewrites all
 eleven and the windows that tie them together in `pyproject.toml`, each starting at the release
 itself: a patch raises every floor to itself, so an adapter from a patch never installs beside a
 core from before it, and a minor moves the whole window. It cannot reach prose, so at every
@@ -62,43 +62,43 @@ made mypy reject numpy's stubs under 3.12), so a clean local run is half of that
 
 Windows, macOS and Linux are all first-class. Tests must never touch the network. About a
 third of that is the seeded acceptance sweeps, which CI holds at 10 of 10 by setting
-`QUACKD_STRICT_SEEDS=1`; locally they pass at 8 of 10 so a slow machine does not block you.
+`ROBOGLOT_STRICT_SEEDS=1`; locally they pass at 8 of 10 so a slow machine does not block you.
 
 ## Where things live
 
 | Path | What is there |
 |---|---|
-| `quackd/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.duck` contract, the MCP server, the 2D arena (`quackd/sim2d/`) and the mock transport (`quackd/transport/mock.py`) |
-| `quackd/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the ten quackd publishes, as strings), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, as strings), `factory.py` (`--robot` to a body) |
-| `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/quackd_<name>/` |
-| `bridge/<name>/` | the daemons that run across the network from quackd and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
-| `quackd/onboard/`, `quackd/boards/`, `quackd/radio/` | Robot Passport on a robot's own computer, the one part of quackd that runs there: `quackd onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `quackd/passport/`, which imports nothing else from quackd |
-| `quackd/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `quackd/adapters/host_camera.py`, and its detector is `quackd/perception/host.py` |
-| `ducks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
+| `roboglot/` | the core, and nothing that is one robot's: the loop, the executor, the verb registry, the `.glot` contract, the MCP server, the 2D arena (`roboglot/sim2d/`) and the mock transport (`roboglot/transport/mock.py`) |
+| `roboglot/adapters/` | what every adapter shares: `base.py` (the `RobotAdapter` protocol and its helpers), `manifest.py`, `catalogue.py` (the ten Roboglot publishes, as strings), `policies.py` (the policy types the arm's policy server serves and the ones it refuses, as strings), `factory.py` (`--robot` to a body) |
+| `adapters/<name>/` | one robot, one distribution: `pyproject.toml`, `README.md`, and the code in `src/roboglot_<name>/` |
+| `bridge/<name>/` | the daemons that run across the network from Roboglot and never import it: on the robot itself (`open_duck`, `alohamini`, `toddlerbot`), and on an NVIDIA Jetson that `--host` names (`jetson`), which serves that board's camera, a detector on its GPU and its health |
+| `roboglot/onboard/`, `roboglot/boards/`, `roboglot/radio/` | Robot Passport on a robot's own computer, the one part of Roboglot that runs there: `roboglot onboard`, its robot file, keys, service and wizard, the boards it runs on (a Jetson, and `sim` for a laptop and the tests), and Bluetooth LE with the simulated air two robots on one computer share. The protocol itself is `roboglot/passport/`, which imports nothing else from Roboglot |
+| `roboglot/host.py` | the laptop half of the Jetson daemon's protocol: what `--host` accepts, which board a run uses, and the one client every request to it goes through. The board's camera joins a body in `roboglot/adapters/host_camera.py`, and its detector is `roboglot/perception/host.py` |
+| `tasks/`, `docs/`, `tests/`, `web/`, `scripts/` | the starter task files, the documentation, the whole suite, the browser demo, `set_version.py`, and `models_docs.py`, which renders the tables in `docs/models/` from the catalogues |
 
-A robot's code is imported as `quackd_<name>`, never as `quackd.adapters.<name>`. The 2D
+A robot's code is imported as `roboglot_<name>`, never as `roboglot.adapters.<name>`. The 2D
 arena and the mock transport stayed in the core on purpose: three bodies subclass
 `Sim2DTransport` and a fourth uses it as it is, and seven of the ten mocks draw their frame
-with `quackd/sim2d/render.py`, so neither was ever the duck's. `UpstreamRef`
-lives in `quackd/upstream.py` for the same reason, since every adapter cites an upstream and
+with `roboglot/sim2d/render.py`, so neither was ever the duck's. `UpstreamRef`
+lives in `roboglot/upstream.py` for the same reason, since every adapter cites an upstream and
 none of them should import a duck to do it.
 
-Touching `adapters/microduck/src/quackd_microduck/sim3d/` or that package's
+Touching `adapters/microduck/src/roboglot_microduck/sim3d/` or that package's
 `transports/mujoco.py`? Install `--extra mujoco` or your work
 is untested locally: both test modules start with `pytest.importorskip("mujoco")` and vanish
 without it. CI's `physics` job installs the extra and runs them on the kinematic stand-in, which
-touches no network. The tests marked `real_duck` need upstream's model in `~/.quackd/cache`, so
+touches no network. The tests marked `real_duck` need upstream's model in `~/.roboglot/cache`, so
 they skip until you have run `--robot microduck:mujoco` once, and a nightly job runs them there.
 The gait arithmetic itself lives in that package's `sim3d/gait.py`, which imports no `mujoco`, so
 `tests/test_sim3d_gait.py` runs whether you installed the extra or not.
 
-Touching the arm's simulator under `adapters/lerobot/src/quackd_lerobot/sim/`? The same extra
+Touching the arm's simulator under `adapters/lerobot/src/roboglot_lerobot/sim/`? The same extra
 gives you `mujoco`, and `tests/test_lerobot_sim.py` vanishes without it the same way. It runs on
 `sim/standin.py`, a primitives-only arm that needs nothing fetched, and CI's `physics` job runs
 it too. The tests marked `so101_model`, the model check in that file and the whole of
 `tests/test_lerobot_sim_model.py` (the seeded grasp sweep, the rehearsal sweeps, the real
-meshes rendered and the physics timed), need the maker's model already in `~/.quackd/cache`,
-or `QUACKD_LEROBOT_SIM_ASSETS` pointing at the `Simulation/SO101` directory of a checkout, and
+meshes rendered and the physics timed), need the maker's model already in `~/.roboglot/cache`,
+or `ROBOGLOT_LEROBOT_SIM_ASSETS` pointing at the `Simulation/SO101` directory of a checkout, and
 skip without either. The nightly `lerobot-sim-assets` job fetches the model and runs them, and
 no job a pull request waits on does. So a contact setting changed in `sim/model.py` meets the
 grasp sweep only that night: run `uv run pytest tests/test_lerobot_sim_model.py` yourself first.
@@ -113,7 +113,7 @@ in its file is a weak one, which the job lists because it cannot follow it once 
 line. A module names the branch its pin sits on in a `BRANCH` constant, as the Open Duck's and
 `microduck_rl`'s do, and must when that is not the default, or in `BRANCHES`, by `owner/repo`,
 for a second repository; one pinned at a release names it in `TAG`, `RELEASE` or `VERSION`; and
-a module `quackd doctor` does not list in its adapter's `UPSTREAMS` is one the job never reads,
+a module `roboglot doctor` does not list in its adapter's `UPSTREAMS` is one the job never reads,
 which `tests/test_upstream_drift.py` holds against the suite's own list. To check one upstream
 by hand, `uv run --no-sync python scripts/upstream_drift.py --only lerobot` reaches the network:
 exit 1 is drift or a broken ref, and exit 2 is that something did not answer as it should or an
@@ -126,7 +126,7 @@ ref passes: read the line you cite, at the pin.
 
 Touching anything under `bridge/`? That is the code that runs on a robot, or on the board
 `--host` names, and there are four lots of it now (`open_duck/`, `alohamini/`,
-`toddlerbot/`, `jetson/`). It plays by different rules: it must never import quackd (its
+`toddlerbot/`, `jetson/`). It plays by different rules: it must never import roboglot (its
 dependencies do not belong on a 512 MB Raspberry Pi), it ships in the sdist and never in
 the wheel, and it stays testable with no hardware through a fake mode of its own and a pure
 core the tests drive directly. The ToddlerBot daemon carries the most of its own safety
@@ -134,41 +134,41 @@ machinery, because it owns that robot's control loop rather than feeding one.
 
 Touching `bridge/jetson/`? That is the daemon at the far end of `--host`, and the one under
 `bridge/` that is not a robot side: it serves a Jetson's camera, a YOLO detector on its GPU
-and the board's own files and command output, and it has no control path at all. Every quackd
-command but `quackd onboard` stays off the board. The daemon runs there under JetPack's own
+and the board's own files and command output, and it has no control path at all. Every Roboglot
+command but `roboglot onboard` stays off the board. The daemon runs there under JetPack's own
 Python 3.10, so it is written to 3.10 and imports only the standard library until a camera
-or a detector needs more, and it never imports quackd. `tests/test_jetson_hostd.py` holds
+or a detector needs more, and it never imports Roboglot. `tests/test_jetson_hostd.py` holds
 all of that in the ordinary suite with nothing extra installed: it drives the real server in
 process, parses the source with Python 3.10's grammar and scans it for names newer than 3.10,
 and fails if the daemon ever grows a way to move anything. The protocol lives on both sides,
-the daemon here and the client in `quackd/host.py`, so a change to one is a change to the
+the daemon here and the client in `roboglot/host.py`, so a change to one is a change to the
 other. `tests/test_jetson_host_contract.py` runs the real daemon against the real client and
-the real `quackd doctor`, which is what catches the two drifting apart, and the rest of the
+the real `roboglot doctor`, which is what catches the two drifting apart, and the rest of the
 suite talks to `tests/fake_jetson_hostd.py`. The board in all of them is files written by
 `tests/jetson_fixtures.py`, and `tests/test_docs.py` holds the JetPack table in
-[docs/guides/jetson.md](docs/guides/jetson.md) against `JETPACK_FOR_L4T` in `quackd/boards/l4t.py`, so
+[docs/guides/jetson.md](docs/guides/jetson.md) against `JETPACK_FOR_L4T` in `roboglot/boards/l4t.py`, so
 editing one of those two and not the other fails locally. Nothing here has been run on a
 Jetson by this project, so what you change is checked against the contract and a board made
 of files, and never against the board it is named after
 ([ADR-0046](docs/adr/0046-the-jetson-is-reached-not-run-on.md)).
 
-Touching `quackd/onboard/`, `quackd/boards/` or `quackd/radio/`? That is Robot Passport on a
-robot's own computer, the one part of quackd that runs there, and the suite runs all of it on the
+Touching `roboglot/onboard/`, `roboglot/boards/` or `roboglot/radio/`? That is Robot Passport on a
+robot's own computer, the one part of Roboglot that runs there, and the suite runs all of it on the
 `sim` board: a laptop standing in for the robot's computer, a simulated air between processes on
 one machine for the radio, and fakes for BlueZ, so nothing you change needs a board or a Bluetooth
-adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with `quackd[onboard]`,
+adapter to test. The BlueZ half imports dbus-fast and bleak only on Linux with `roboglot[onboard]`,
 and the radio's tests run with both installed in CI's `onboard` job, on a private bus
 `dbus-run-session` starts, so sync `--extra onboard` on Linux to run them yourself. `generic` is
 any other Linux computer, only when it is named, and written from the kernel's documentation. A
-board that finds itself, other than a Jetson, comes in as a plugin through the `quackd.boards`
-entry point group, the way an adapter comes in through `quackd.adapters`, and may not take the
+board that finds itself, other than a Jetson, comes in as a plugin through the `roboglot.boards`
+entry point group, the way an adapter comes in through `roboglot.adapters`, and may not take the
 names `jetson`, `sim` or `generic`. Identity strings come from kernel.org or a vendor's documents,
 cited where they are used, and anything that cannot tell a robot from a laptop is only ever named.
 Nothing in these folders has run on a Jetson or over a real radio, so a change is checked against
 the sim board and the fakes, and a page or a help string that claims more than that of a board or a
 radio is a bug ([ADR-0073](docs/adr/0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md)).
 
-Touching `web/`? That is the browser demo, and the only quackd code that is not Python: plain
+Touching `web/`? That is the browser demo, and the only Roboglot code that is not Python: plain
 JavaScript modules, no build step, nothing to install. Run it with the server in the directory
 itself, not with `http.server` ([web/README.md](web/README.md) says why):
 
@@ -177,13 +177,13 @@ python web/serve.py            # then open http://localhost:8000/simulator/
 ```
 
 The mount matters here for a reason that is yours rather than the reader's. The live page at
-<https://www.quackd.org/simulator> belongs to quackd-web, a separate project whose build fetches
+<https://www.roboglot.org/simulator> belongs to roboglot-web, a separate project whose build fetches
 this directory into its own `/simulator` at a pinned commit. `web/serve.py` mounts the directory
 the way that deploy does, so the local mount is what you compare your change against, and what
 you test there is what ships.
 
 Merging is not shipping here. Because the deployed copy is pinned, a change to `web/` on `main`
-does not reach a visitor until quackd-web builds again. Asking it to is the whole job of
+does not reach a visitor until roboglot-web builds again. Asking it to is the whole job of
 `.github/workflows/refresh-the-simulator.yml`, which pings a Vercel deploy hook on pushes to
 `main` that touch `web/` or the workflow file itself, and on a manual `workflow_dispatch`. The
 hook is a secret (`VERCEL_DEPLOY_HOOK`), and until it exists the job says so and exits green
@@ -200,35 +200,35 @@ floor, not the test: the page has been booted in a browser twice and a held `W` 
 but no LLM-driven run, no barge-in out of one and no recording has ever been watched. If you
 open it, say what you saw in the PR. See [web/README.md](web/README.md).
 
-Touching `quackd/lan/` or `quackd/flock/mqtt_bus.py`? Neither imports its library at module
+Touching `roboglot/lan/` or `roboglot/team/mqtt_bus.py`? Neither imports its library at module
 level and neither is in the default install, so the tests run them on fakes: a fake zeroconf
 registrar and a synchronous fake MQTT broker, no sockets. Keep it that way, and see
 [docs/guides/lan.md](docs/guides/lan.md).
 
-## Submit a `.duck`
+## Submit a `.glot`
 
-1. Copy a starter from [`ducks/`](ducks/) and edit the frontmatter + body.
-   Spec: [docs/reference/duck-spec.md](docs/reference/duck-spec.md).
-2. `uv run quackd validate ducks/your-duck.duck` — it must pass.
-3. Run it at least once: `uv run quackd run ducks/your-duck.duck --llm fake`
+1. Copy a starter from [`tasks/`](tasks/) and edit the frontmatter + body.
+   Spec: [docs/reference/glot-spec.md](docs/reference/glot-spec.md).
+2. `uv run roboglot validate tasks/your-duck.glot` — it must pass.
+3. Run it at least once: `uv run roboglot run tasks/your-duck.glot --llm fake`
    (the scripted pilot only knows the starters, so for a new duck use a real provider if
-   you have a key, or add a strategy to `quackd/agent/providers/fake.py`).
+   you have a key, or add a strategy to `roboglot/agent/providers/fake.py`).
 4. Open a PR. In the description say what it does, which providers you tried, and what
    failed. Ducks that mostly fail are still welcome if the file says so — that is data.
 
-Checklist: `duck: 0` (or `duck: 1` if you use `requires`, `robots`, `flock.roles` or
-`flock.allocation.method: pilots`, or `duck: 2` if you correct the robot's `datasheet` or a
-role's `needs`, or `duck: 3` if you use `policy`, or `duck: 4` if the task gives the pilot a
+Checklist: `glot: 0` (or `glot: 1` if you use `requires`, `robots`, `team.roles` or
+`team.allocation.method: pilots`, or `glot: 2` if you correct the robot's `datasheet` or a
+role's `needs`, or `glot: 3` if you use `policy`, or `glot: 4` if the task gives the pilot a
 part to play with `play: true`) ·
-slug name · `allow` lists only verbs the robot provides (`quackd list-verbs --robot ...`)
+slug name · `allow` lists only verbs the robot provides (`roboglot list-verbs --robot ...`)
 · `confirm` ⊆ `allow` · at least one `success` line · `abort_when` uses the two enforced
-phrasings if you want them enforced · body starts with `# Task` · `quackd validate
-your.duck --robot <adapter>:<backend>` passes for the robot you mean.
+phrasings if you want them enforced · body starts with `# Task` · `roboglot validate
+your.glot --robot <adapter>:<backend>` passes for the robot you mean.
 
 **Ask for a note.** Every solo starter except `hello-world` and the bring-up lookouts
 ends its numbered strategy with a `remember` and carries a short *Memory* section saying what
-is worth keeping for next time. A coordinator flock's duck has no `remember` step, because its
-members are state machines with nothing to remember with; a pilot flock's members are whole
+is worth keeping for next time. A coordinator team's duck has no `remember` step, because its
+members are state machines with nothing to remember with; a pilot team's members are whole
 pilots and may.
 Put the call in the strategy rather than only in a Memory section: a 14B local LLM read a
 prompt-level hint and never wrote to memory, and followed the same instruction on its first
@@ -238,10 +238,10 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
 
 ## Add a verb
 
-1. Decide the kind. **Core** (`quackd/verbs/core.py`) = the same on every robot whose
+1. Decide the kind. **Core** (`roboglot/verbs/core.py`) = the same on every robot whose
    manifest meets a requirement (a camera, a `twist` intent, a `sound` intent); add its
    `Requirement` to `REQUIREMENTS`. **Extension** = one robot's own behaviour, in that
-   adapter's `verbs.py` (Microduck: `adapters/microduck/src/quackd_microduck/verbs.py`; it
+   adapter's `verbs.py` (Microduck: `adapters/microduck/src/roboglot_microduck/verbs.py`; it
    needs a VERIFIED upstream method in that package's `upstream_api.py`). **Learned** = v2, see
    [docs/concepts/learned-verbs.md](docs/concepts/learned-verbs.md). If the thing you are adding
    never touches the body, it is probably not a verb at all: `remember` sits next to
@@ -256,14 +256,14 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
    `safety_class` (`safe` · `confirm` · `dangerous`) and a `done_condition` to `CORE` or to
    the adapter's verb table, then a `VerbSpec` entry in the adapter's manifest (that is
    what makes the verb exist: a verb not in the manifest is not in the registry, the MCP
-   tool list, `.duck` validation or the prompt). Preconditions are named in the manifest
-   and supplied by the adapter's `conditions()`. Then classify it in `quackd/verdict.py`:
+   tool list, `.glot` validation or the prompt). Preconditions are named in the manifest
+   and supplied by the adapter's `conditions()`. Then classify it in `roboglot/verdict.py`:
    `BEFORE_VERDICT` if it looks, speaks or brakes, `MOVES_THE_BODY` otherwise. The gate reads
    that first set and one flag beside it, the verb's own `read_only`, so a shipped verb in
    neither set waits for a verdict like anything that moves the body, which is wrong for a
    verb the pilot needs in order to reach one, and `tests/test_verdict.py` fails until you
    have chosen. A verb you flag `read_only` has to be in `BEFORE_VERDICT` as well: the flag
-   is for a body quackd does not ship, and a second test there says so.
+   is for a body Roboglot does not ship, and a second test there says so.
 4. Add a test: on `MockTransport` for intent sequences, on `Sim2DTransport` for behaviour, and on `MujocoTransport(body="puppet")` if the verb makes a claim about the body, because the cartoon cannot tell you whether one is true.
 5. If the verb needs an upstream method we have not verified, add it to the adapter's
    `upstream_api.py` as `UNVERIFIED` with a note and a row in that adapter's page,
@@ -274,23 +274,23 @@ nothing in your `allow` list. Skip it for a smoke test, the way `hello-world` do
    and `ctx.log(...)` is already a `note`. If you emit a new event *kind*, add a row for it
    to the table in `docs/concepts/architecture.md`, because a test reads the kinds out of the code
    and fails when the docs do not name one. Then decide whether it draws a line in
-   `render_events` (`quackd/log.py`), which three kinds deliberately do not: a kind nothing
+   `render_events` (`roboglot/log.py`), which three kinds deliberately do not: a kind nothing
    draws is in `transcript.jsonl` and on no screen, so it is in no `terminal.txt` either.
 
 Renaming a verb is not a rename: add the new name and keep the old one in
-`quackd/verbs/aliases.py`, the only file that may spell an alias.
+`roboglot/verbs/aliases.py`, the only file that may spell an alias.
 
 ## Add a provider
 
-A provider is one file under `quackd/agent/providers/` and six entries that have to
+A provider is one file under `roboglot/agent/providers/` and six entries that have to
 agree: its tuple in `CATALOGUE` in `providers/catalogue.py`, which is where the name, the
 LLM ids and the default all come from and what puts a cloud vendor in `CLOUD_NAMES`, then
 rows in `KEY_ENV`, `EXTRA_FOR` and `SDK_FOR` in `providers/factory.py`, then either a row in
-`OPENAI_COMPATIBLE` or a branch in `make_provider`, and finally a `quackd[<name>]` extra in
+`OPENAI_COMPATIBLE` or a branch in `make_provider`, and finally a `roboglot[<name>]` extra in
 `pyproject.toml`. `tests/test_catalogue.py` counts them now, under the heading
 `one file and the entries that have to agree`: it walks `PROVIDER_NAMES` and fails on the
 missing row, and it opens `pyproject.toml` to check the extra exists and installs the SDK
-that provider imports. Before it existed a missing row was a `KeyError` out of `quackd
+that provider imports. Before it existed a missing row was a `KeyError` out of `roboglot
 doctor`, which is the command people run when something is already wrong.
 
 A router is the one shape the six entries do not cover on their own. OpenRouter's ids name
@@ -329,29 +329,29 @@ Four things the log depends on, none of them optional:
    that is a string, a tool call with no name: all of it is `ProviderError`, and the test
    for it belongs in `tests/test_providers.py`.
 
-**A stepper is not a provider, and must not be added as one.** `quackd/agent/decision/` holds
+**A stepper is not a provider, and must not be added as one.** `roboglot/agent/decision/` holds
 the optional LLMs that answer typed questions about a state and generate no text at all
 ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). None of them can pilot
 a robot, so they are deliberately absent from `CATALOGUE`, from `PROVIDER_NAMES` and from `--llm`,
-they have their own section in `quackd doctor` rather than rows in the providers table, and the
-extras that exist only for them, `quackd[decision]` and `quackd[laya]`, are not part of
-`quackd[all]`. Two words are in both lists, `local` and `openai`, and the flag says which is meant:
+they have their own section in `roboglot doctor` rather than rows in the providers table, and the
+extras that exist only for them, `roboglot[decision]` and `roboglot[laya]`, are not part of
+`roboglot[all]`. Two words are in both lists, `local` and `openai`, and the flag says which is meant:
 `--llm openai` is OpenAI's chat LLMs and `--decision-llm openai` their Decisions API, whose row
-reuses the pilot's own `quackd[openai]` rather than adding an extra. If you are adding something
+reuses the pilot's own `roboglot[openai]` rather than adding an extra. If you are adding something
 that answers a question rather than writing an answer, none of the six entries above apply to it.
 
 **And a decision LLM is usually a row rather than a module.** Most of them share a wire format,
 `POST /v1/systemone`, rather than a vendor, so one that speaks it is one `DecisionSpec` in
-`quackd/agent/decision/catalogue.py` (name, summary, install line, default url, default LLM
+`roboglot/agent/decision/catalogue.py` (name, summary, install line, default url, default LLM
 id, key variable if it wants one, price if anybody publishes one), one page under
 `docs/guides/decision-llms/`, and one row in the table in
 [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md), and
 `scripts/models_docs.py` run once to render the row onto
 [docs/models/decision-llms.md](docs/models/decision-llms.md). No new file under
-`quackd/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
+`roboglot/`, no new client, no new flag: `systemone.py` already talks to it and `--decision-url`
 already moves it off the port its row expects. The three shapes that are not just a row: one with
 a Python API of its own rather than a server, which is a plugin announcing itself under the
-`quackd.decision_llms` entry point group and carrying its own `make(spec, *, url, llm_id)`, the way a
+`roboglot.decision_llms` entry point group and carrying its own `make(spec, *, url, llm_id)`, the way a
 third party's robot adapter announces itself; a server that speaks another wire format, which is a
 backend of its own beside `systemone.py`, as `decisions_api.py` is for OpenAI's
 `POST /v1/decisions`: a constant in `catalogue.py`, a client that translates both ways, a branch
@@ -361,17 +361,17 @@ what the stepper *asks*, which is `stepper.py` and belongs to none of them.
 A new row is sent text and nothing else. Whether a row may be shown the robot's camera is its
 `sees` field, true on `openai` alone, which a test pins, and a plugin's row is built with it false
 whatever the plugin says about itself. Every frame passes one gate, `frames.may_send_frames`, which
-allows quackd's own client for OpenAI's Decisions API, at OpenAI's own hosts, and nothing else
+allows Roboglot's own client for OpenAI's Decisions API, at OpenAI's own hosts, and nothing else
 (ADR-0053). Letting another row see is a decision of its own, not a field to flip in passing.
 
 Four things a row needs, and a test reads the first three:
 
-1. **The row itself**, in `PRESETS`, in the position `quackd doctor` should print it.
+1. **The row itself**, in `PRESETS`, in the position `roboglot doctor` should print it.
 2. **`docs/guides/decision-llms/<name>.md`**, copied in shape from an existing page
    ([`local.md`](docs/guides/decision-llms/local.md) is the smallest): a `## The row`
    table quoting every
    field verbatim, a `## VERIFIED` section naming what you read and on what date, a
-   `## UNVERIFIED, and what quackd does about each` table, and the line **Nothing here has
+   `## UNVERIFIED, and what Roboglot does about each` table, and the line **Nothing here has
    ever answered a real robot.** until somebody has. `tests/test_docs.py` reads the address,
    the LLM id, the key variable, the install line and the extra back off that page and
    compares them with the row, because a page nobody checks is a page that describes an older release.
@@ -388,12 +388,12 @@ nobody here can reproduce.
 ## Add a described body
 
 A robot nobody here can run still has a place: as a described body, one YAML under
-`quackd/adapters/bodies/` that holds what its maker publishes and nothing else
-([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)). quackd lists it,
-registers it, shows a pilot its datasheet and plans with it in a flock, and drives no part of
+`roboglot/adapters/bodies/` that holds what its maker publishes and nothing else
+([ADR-0077](docs/adr/0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)). Roboglot lists it,
+registers it, shows a pilot its datasheet and plans with it in a team, and drives no part of
 it. Four steps:
 
-1. **The file**, `quackd/adapters/bodies/<maker>-<model>.yaml`: `vendor`, `model`, `embodiment`,
+1. **The file**, `roboglot/adapters/bodies/<maker>-<model>.yaml`: `vendor`, `model`, `embodiment`,
    `mobility`, a one-line `blurb` and a `datasheet` in the manifest's own shape. Every
    figure carries its `value`, a `confidence` (`official` for the maker's own page, `estimate` for
    a reseller or a reading off a picture) and a `source` that names the page and ends with the
@@ -403,8 +403,8 @@ it. Four steps:
    pilot should know before planning: how the body stops, and what it does when its link drops.
    The loader refuses `limits`, `intents`, `verbs`, `sensors` and `safety_authority` by name,
    because a body nobody drives cannot claim them: the sensors a manifest lists are the ones
-   quackd reads, so what the robot carries is a note too.
-2. **The name**, added to `DESCRIBED_BODIES` in `quackd/adapters/catalogue.py`, alphabetically.
+   Roboglot reads, so what the robot carries is a note too.
+2. **The name**, added to `DESCRIBED_BODIES` in `roboglot/adapters/catalogue.py`, alphabetically.
    A test holds that list equal to the files.
 3. **The table**: `uv run --no-sync python scripts/bodies_docs.py` rewrites the described bodies
    table in [docs/adapters/status.md](docs/adapters/status.md#described-bodies) from the files.
@@ -418,9 +418,9 @@ the whole of it.
 
 ## Add an adapter
 
-A robot joins quackd as its own distribution, built from `adapters/<name>/` and imported as
-`quackd_<name>`. It declares a `RobotManifest`, moves the body through intents its own
-controllers execute, and announces itself to the core through the `quackd.adapters` entry
+A robot joins Roboglot as its own distribution, built from `adapters/<name>/` and imported as
+`roboglot_<name>`. It declares a `RobotManifest`, moves the body through intents its own
+controllers execute, and announces itself to the core through the `roboglot.adapters` entry
 point group. That group is the whole of the contract, so an adapter for a robot nobody here
 owns can be published to PyPI without a pull request against this repository. The recipe,
 the rules the manifest enforces and the checklist are in
@@ -438,22 +438,22 @@ speaks, is a body record in that package and a thin distribution of its own, not
 backend that reaches a real robot enters this repository only with a named owner and a date for
 its first hardware run ([ADR-0076](docs/adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)),
 which the catalogue row carries and a test holds. A robot you cannot run can still join: as a
-described body, one YAML under `quackd/adapters/bodies/` with its maker's figures and a source
-for each ([ADR-0077](docs/adr/0077-a-body-quackd-only-describes-is-one-yaml-in-the-core.md)),
+described body, one YAML under `roboglot/adapters/bodies/` with its maker's figures and a source
+for each ([ADR-0077](docs/adr/0077-a-body-roboglot-only-describes-is-one-yaml-in-the-core.md)),
 which is the cheapest row in the catalogue and the honest one.
 [Add a described body](#add-a-described-body) is the recipe.
 
 ### Tiers and the owner rule
 
-Every backend carries one tier, as data in its row of `quackd/adapters/catalogue.py`, and
-`quackd list-adapters` and [the status page](docs/adapters/status.md) print it:
+Every backend carries one tier, as data in its row of `roboglot/adapters/catalogue.py`, and
+`roboglot list-adapters` and [the status page](docs/adapters/status.md) print it:
 
-- **verified** 🤖: the real robot has moved under quackd, and the row names who ran it and the
+- **verified** 🤖: the real robot has moved under Roboglot, and the row names who ran it and the
   first day it did.
 - **bound** 🧪: code that reaches a real robot and has never met one. The row names who answers
   for its first hardware run, and a date.
 - **rehearsed** ✅: runs whole tasks with no robot, in a simulator or against a scripted mock.
-- **described** 📄: a body quackd lists and reasons about and drives no part of.
+- **described** 📄: a body Roboglot lists and reasons about and drives no part of.
 
 The rule, since 2026-11-05: bound code enters this repository only with a named owner and a date
 for its first hardware run, and everything else enters as a described body or lives out of
@@ -473,11 +473,11 @@ every row to all of this.
 - Consequential decisions get a short ADR in `docs/adr/` (copy the shape of an existing one).
 - Every module opens with a docstring saying *why it exists*.
 - Keep the default install light: robots, provider SDKs and YOLO are all optional extras,
-  and `uv pip install quackd` brings none of them.
+  and `uv pip install roboglot` brings none of them.
 - **Never commit an upstream asset.** No logos, meshes, CAD, MJCF, ONNX policies or videos,
   from Pollen Robotics or anyone else, in a commit, a test fixture or a docs asset. This got
   sharper in 0.8: a real `--robot microduck:mujoco` run puts upstream's `robot_walk.xml` and
-  38 CC BY-NC-SA 4.0 meshes in `~/.quackd/cache`. quackd's whole licence position is that it
+  38 CC BY-NC-SA 4.0 meshes in `~/.roboglot/cache`. Roboglot's whole licence position is that it
   redistributes none of them, and a public history does not forget. `.gitignore` now catches
   `.stl`, `robot_walk.xml` and the SO-101's `so101_*.xml` as well as `.onnx`, but do not rely
   on it.
@@ -498,10 +498,10 @@ what the next release is:
   run's record gains other than for a fix, an MCP tool, the adapter interface, a protocol, an
   extra, or a refusal of something that worked. Any one of those makes the next release a
   minor.
-- `Fixed` for shipped behaviour brought back to what the docs or quackd's own output said it
+- `Fixed` for shipped behaviour brought back to what the docs or Roboglot's own output said it
   would do, and `Security` for a vulnerability closed. Those alone make it a patch. `Fixed` also
   takes a field a fix adds to a run's record or to what `--json` prints, when a reader that
-  does not know the field still works, and a refusal of what never did what quackd said it
+  does not know the field still works, and a refusal of what never did what Roboglot said it
   would. It takes a safety fix that refuses or asks about what could move a body in a way the
   docs never promised, whose entry says what is refused now and what to do instead. And it
   takes catalogue data that changes no default, and a dependency or packaging fix nobody has to
@@ -596,7 +596,7 @@ together, it is too long.
 Use the issue templates. The attachment that turns a vague bug into a fixable one is
 `terminal.txt` from the run directory: it is the whole session as plain text and it opens
 with the command that started the run and the version that ran it, so it usually answers
-what happened on its own. `quackd doctor` output says what your machine has, and
+what happened on its own. `roboglot doctor` output says what your machine has, and
 `transcript.jsonl` is worth sending beside it when the question is about one record rather
 than the session, because the screen summarises an event and that file keeps every field of
 it.

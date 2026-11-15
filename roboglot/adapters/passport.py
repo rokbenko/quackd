@@ -1,0 +1,150 @@
+"""A robot's passport, built from its manifest, so a robot Roboglot drives needs little written.
+
+`docs/passport/passport.md` has the mapping as a table. What a manifest cannot know, because it
+belongs to one robot rather than to its model, comes from the owner: who owns it and which key
+signs for them, how a person stops it, and how long the signature holds. Left out, the stopping
+reads as the worst case, which is what the protocol asks a reader to assume when nobody said."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Mapping
+from datetime import UTC, datetime
+from typing import Any
+
+from roboglot.adapters.manifest import Figure, RobotManifest
+from roboglot.passport import strict
+from roboglot.passport.document import ESTOPS, VERSION, validate
+
+#: A `cannot` line is at most this long in a passport (spec 2.2).
+CANNOT_CHARS = 120
+#: And a passport carries at most this many.
+CANNOT_LINES = 8
+#: A passport lists at most this many skills, each a name a reader accepts (spec 2.4).
+SKILLS = 64
+_SKILL = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+#: Datasheet figures carried into a passport's `body`, under the same names. `carries_kg` is
+#: not one of them (ADR-0079): `body` is the spec's own list (section 2.3), a new member is a
+#: minor of the spec, and a reader ignores a member it does not know (rule 8).
+_FIGURES = ("mass_kg", "height_m", "payload_kg", "reach_m", "endurance_min")
+
+
+def passport_from_manifest(
+    manifest: RobotManifest,
+    *,
+    robot_id: str,
+    name: str,
+    owner: Mapping[str, str],
+    board: Mapping[str, str],
+    issued: datetime,
+    expires: datetime,
+    estop: str | None = None,
+    how_to_stop: str | None = None,
+    courtesies: list[str] | None = None,
+) -> dict[str, Any]:
+    """The 1.0 passport for one robot with this manifest, as the dict its owner signs.
+
+    `robot_id` is the robot's own key as a `did:key`, `owner` the owner's `id` (the key that
+    signs), `label` and `contact`, `board` what the robot runs on, and `issued` and `expires`
+    the dates the signature holds between (spec 4.5). `courtesies` overrides what the manifest
+    offers a peer, for a body that cannot pause. Members with nothing honest in them are left
+    out."""
+    if estop is not None and estop not in ESTOPS:
+        raise ValueError(f"estop {estop!r} is not one of {', '.join(ESTOPS)}")
+    doc: dict[str, Any] = {"passport": VERSION, "id": robot_id, "name": name}
+    doc["maker"] = {"vendor": manifest.vendor, "model": manifest.model}
+    kept = {k: owner[k] for k in ("label", "contact") if owner.get(k)}
+    doc["owner"] = {"id": owner["id"], **kept}
+    doc["board"] = dict(board)
+    doc["body"] = _body(manifest)
+    doc["skills"] = skill_names(manifest)
+    doc["courtesy"] = courtesy(manifest) if courtesies is None else list(courtesies)
+    cannot = [
+        cannot_line(line) for line in (manifest.datasheet.cannot if manifest.datasheet else [])
+    ]
+    if cannot:
+        doc["cannot"] = cannot[:CANNOT_LINES]
+    safety: dict[str, Any] = {"stops_on_silence": manifest.safety_authority.deadman}
+    if estop is not None:
+        safety["estop"] = estop
+    if how_to_stop:
+        safety["how_to_stop"] = how_to_stop
+    doc["safety"] = safety
+    doc["issued"] = _moment(issued)
+    doc["expires"] = _moment(expires)
+    # read back the way any reader would, so Roboglot never signs a passport a reader refuses:
+    # a manifest's names are freer than a passport's, and this is where that would show
+    validate(strict.loads(strict.dumps(doc), limit=len(strict.dumps(doc))))
+    return doc
+
+
+def _moment(when: datetime) -> str:
+    return when.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def skill_names(manifest: RobotManifest) -> list[str]:
+    """The manifest's verbs as names a passport may carry. A manifest allows a hyphen, which a
+    passport writes as an underscore; a name a passport cannot carry at all, one too long or
+    starting with a digit, is left out rather than breaking the passport around it."""
+    names: list[str] = []
+    for verb in manifest.verbs:
+        name = verb.name.lower().replace("-", "_")
+        if _SKILL.match(name) and name not in names:
+            names.append(name)
+    return names[:SKILLS]
+
+
+def courtesy(manifest: RobotManifest) -> list[str]:
+    """What a peer may ask this body for. Every body Roboglot drives moves, so every one can
+    pause; only a body with a voice can identify itself, by sound, which is the one way
+    strangers are allowed to ask for (`docs/passport/trust.md`)."""
+    names = ["pause"]
+    if any(verb.name == "say" for verb in manifest.verbs):
+        names.append("identify")
+    return names
+
+
+def cannot_line(line: str) -> str:
+    """A datasheet `cannot` line, cut to what a passport carries.
+
+    The datasheets write a claim and then its explanation, `lift or hold more than about half a
+    kilogram: a pen, an empty cup...`. A line too long for a passport keeps the claim, and a
+    claim still too long is cut at a word."""
+    if len(line) <= CANNOT_CHARS:
+        return line
+    claim = line.split(": ", 1)[0]
+    if len(claim) <= CANNOT_CHARS:
+        return claim
+    return claim[: CANNOT_CHARS - 1].rsplit(" ", 1)[0] + "…"
+
+
+def _figure(figure: Figure | None) -> list[Any] | None:
+    if figure is None:  # not published, which a passport says by leaving it out
+        return None
+    source = figure.source if len(figure.source) <= CANNOT_CHARS else None
+    return (
+        [figure.value, figure.confidence, source] if source else [figure.value, figure.confidence]
+    )
+
+
+def _body(manifest: RobotManifest) -> dict[str, Any]:
+    body: dict[str, Any] = {"embodiment": manifest.embodiment, "mobility": manifest.mobility}
+    sheet = manifest.datasheet
+    if sheet is not None:
+        body["manipulator"] = sheet.manipulator
+        if sheet.terrain is not None:
+            body["terrain"] = sheet.terrain
+        if sheet.tethered is not None:
+            body["tethered"] = sheet.tethered
+        for name in _FIGURES:
+            figure = _figure(getattr(sheet, name))
+            if figure is not None:
+                body[name] = figure
+    speeds = [manifest.limits[k] for k in ("max_vx", "max_vy") if manifest.limits.get(k)]
+    if speeds:
+        # what Roboglot clamps to, which is what another body sharing the floor needs: a
+        # configured limit rather than a measured fact, so it carries no confidence
+        body["max_speed_mps"] = max(speeds)
+    if manifest.sensors:
+        body["sensors"] = list(manifest.sensors)
+    return body

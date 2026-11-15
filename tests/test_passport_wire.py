@@ -20,9 +20,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.passport import PassportError, document, fetch, serve, strict
-from quackd.passport.serve import INBOX_PATH, PassportServer, Served
+from roboglot.cli import app
+from roboglot.passport import PassportError, document, fetch, serve, strict
+from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
 from tests.passport_helpers import OWNER, A, doc
 
 runner = CliRunner()
@@ -192,7 +192,7 @@ def test_a_post_must_say_how_long_it_is_and_cannot_say_less_than_nothing(
 
 def test_the_server_names_itself_and_not_the_python_under_it(with_inbox: PassportServer) -> None:
     answer = _exchange(with_inbox.port, b"GET /.well-known/robot-passport.json HTTP/1.0\r\n\r\n")
-    assert b"Server: quackd-passport\r\n" in answer
+    assert b"Server: roboglot-passport\r\n" in answer
     assert b"Python" not in answer
 
 

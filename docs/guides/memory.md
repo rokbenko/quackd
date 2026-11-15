@@ -9,8 +9,8 @@ and appends to at the end. Two kinds of entry live in it:
 
 | Kind | Who writes it | Example |
 |---|---|---|
-| **note** | the LLM, with the `remember` tool (or you, with `quackd memory add`) | `the ball is usually near the left wall` |
-| **episode** | quackd itself, at the end of every non-dry run | `find-and-kick: success — ball displaced 0.49 m (4 steps) · search_scan: ball found at bearing 18° left; kick: ball moved 0.49 m` |
+| **note** | the LLM, with the `remember` tool (or you, with `roboglot memory add`) | `the ball is usually near the left wall` |
+| **episode** | Roboglot itself, at the end of every non-dry run | `find-and-kick: success — ball displaced 0.49 m (4 steps) · search_scan: ball found at bearing 18° left; kick: ball moved 0.49 m` |
 
 A run that ended `infeasible`, where the pilot judged the task beyond this body and
 nothing moved, is remembered the same way and with the same reason, hint included: the next
@@ -27,37 +27,37 @@ One JSONL file per robot, keyed by `adapter:backend`, so a simulated duck and a 
 never share notes (a note about the cartoon arena is wrong for your living room):
 
 ```
-~/.quackd/memory/microduck-sim2d.jsonl
-~/.quackd/memory/microduck-mujoco.jsonl
-~/.quackd/memory/microduck-jsonrpc.jsonl
-~/.quackd/memory/lerobot-mock.jsonl
+~/.roboglot/memory/microduck-sim2d.jsonl
+~/.roboglot/memory/microduck-mujoco.jsonl
+~/.roboglot/memory/microduck-jsonrpc.jsonl
+~/.roboglot/memory/lerobot-mock.jsonl
 ```
 
-The key is the body, not the name you gave it, so two members of one flock that are the
+The key is the body, not the name you gave it, so two members of one team that are the
 same `adapter:backend` share a file. That is the same rule that keeps `microduck:sim2d` and
 `microduck:jsonrpc` apart, read the other way round.
 
-**Unless you have registered it.** `quackd robot add duck-a microduck:jsonrpc` gives that one
+**Unless you have registered it.** `roboglot robot add duck-a microduck:jsonrpc` gives that one
 robot a name, and a run by that name keys its memory by the name instead:
 
 ```
-~/.quackd/memory/duck-a.jsonl
-~/.quackd/memory/duck-b.jsonl
+~/.roboglot/memory/duck-a.jsonl
+~/.roboglot/memory/duck-b.jsonl
 ```
 
 So two real ducks on one desk keep separate notes, which the rule above could not express.
 A registered name may not collide with an adapter name or with one of the `adapter-backend`
 slugs above, so the two schemes never meet in one file
-([guides/registry.md](registry.md), [ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md)
+([guides/registry.md](registry.md), [ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)
 amending [ADR-0025](../adr/0025-memory-between-runs.md)).
 
 `microduck:sim2d` and `microduck:mujoco` are the pair that catches people out. They share an
-arena (bar the cartoon's person, who is not in the physics one), a seed and a `.duck` file by
+arena (bar the cartoon's person, who is not in the physics one), a seed and a `.glot` file by
 design, and they still keep separate files, because what a
 pilot learns about how far to walk before kicking comes from the body, and only one of the two
 has a gait.
 
-Override the directory with `--memory-dir` or `QUACKD_MEMORY_DIR`. Turn it off for one run
+Override the directory with `--memory-dir` or `ROBOGLOT_MEMORY_DIR`. Turn it off for one run
 with `--no-memory`. The file is plain text, one JSON object per line, meant to be read and
 edited by hand; a line that is not JSON is skipped, not fatal. It is capped at 400 entries,
 and the oldest **episodes** go first, because notes were chosen on purpose.
@@ -65,7 +65,7 @@ and the oldest **episodes** go first, because notes were chosen on purpose.
 ## The `remember` tool
 
 When memory is on, the LLM gets one more tool beside `assess_task`, `declare_success` and
-`declare_failure` (and `tell`, in a flock of pilots):
+`declare_failure` (and `tell`, in a team of pilots):
 
 ```jsonc
 {"name": "remember", "arguments": {"text": "kick with the right leg from 0.25 m works", "tags": ["strategy"]}}
@@ -80,22 +80,22 @@ lands in the next observation like any verb result (`last verb remember: ok — 
 for future runs: …`) and in the transcript as a `memory` event, so a run's provenance still
 shows every fact it saved.
 
-## The starter ducks ask for it
+## The starter tasks ask for it
 
 Telling the LLM about `remember` in the prompt is not enough for a small local LLM: in
 the runs this feature's contributor did, Qwen 2.5 Coder 14B read the memory block and never
 wrote to it (both cases are in [`assets/transcripts/`](../assets/transcripts/)). What works is
-putting the call **inside the numbered strategy** of the `.duck` body, right before the
+putting the call **inside the numbered strategy** of the `.glot` body, right before the
 declaration (`5. When the ball has moved ≥ 0.3 m, \`remember\` where you found the ball,
 \`quack\` once and declare success.`), plus a short *Memory* section saying what is worth
 keeping. The solo starters do that, except the bring-up lookouts (`xlerobot-lookout`,
 `alohamini-lookout`, `toddlerbot-lookout`, `lerobot-lookout`); `--goal` runs get the same line
-while memory is on, and none under `--no-memory`, which offers no `remember`. `flock-kick`
-does not, because a coordinator flock's member is a state machine: it never runs the
-deliberation loop and is never offered `remember`. `flock-hello` is a flock of pilots, whose
+while memory is on, and none under `--no-memory`, which offers no `remember`. `team-kick`
+does not, because a coordinator team's member is a state machine: it never runs the
+deliberation loop and is never offered `remember`. `team-hello` is a team of pilots, whose
 members are whole agent loops with a memory file each, so a note there would work; it does not
 ask for one because it is a radio check. `hello-world` is left alone: it is a smoke test that says "do not do anything
-else". Write your own ducks the same way.
+else". Write your own task files the same way.
 
 A second LLM on a second server says the same thing from the other end. Qwen3-32B-AWQ on
 vLLM, with `remember` sitting in strategy step 5, called it and saved where the ball was. The
@@ -107,25 +107,25 @@ and both ends are published ([guides/local-llms.md](local-llms.md)).
 ## The CLI
 
 ```bash
-quackd memory show                              # the Microduck simulator's memory
-quackd memory show --robot microduck:jsonrpc    # the real duck's
-quackd memory show --raw                        # the JSONL as is
-quackd memory add "the charger is under the desk" --tag place
-quackd memory clear --robot microduck:sim2d     # asks first; --yes to skip
-quackd run find-and-kick --no-memory            # one fresh run, file untouched
+roboglot memory show                              # the Microduck simulator's memory
+roboglot memory show --robot microduck:jsonrpc    # the real duck's
+roboglot memory show --raw                        # the JSONL as is
+roboglot memory add "the charger is under the desk" --tag place
+roboglot memory clear --robot microduck:sim2d     # asks first; --yes to skip
+roboglot run find-and-kick --no-memory            # one fresh run, file untouched
 ```
 
-`quackd run` names it in the header panel it opens with (`memory  3 notes, 5 earlier runs`
+`roboglot run` names it in the header panel it opens with (`memory  3 notes, 5 earlier runs`
 and the file it came from) so you always know what the pilot was told.
 
 ## Over MCP
 
-`quackd serve-mcp` gives every `adapter:backend` in the flock its own memory behind two
+`roboglot serve-mcp` gives every `adapter:backend` in the team its own memory behind two
 tools:
 `robot_recall(robot?)` returns the notes and recent episodes (the server's instructions
 tell the LLM to call it early), `robot_remember(text, tags?, robot?)` saves one note.
 `--no-memory` and `--memory-dir` apply to the server too. A note saved from Claude Desktop
-is read by the next `quackd run` on the same `adapter:backend`, and the other way round.
+is read by the next `roboglot run` on the same `adapter:backend`, and the other way round.
 
 ## What it is not
 
@@ -141,8 +141,8 @@ is read by the next `quackd run` on the same `adapter:backend`, and the other wa
   from here", or that its frame has ended since ([concepts/places.md](../concepts/places.md)).
   On a body that does not, write where things are as a few notes.
 - **Not shared between bodies.** By design, where a body means an `adapter:backend`. Use
-  `quackd memory add` on the other robot if a fact really transfers. The same rule decides a
-  [flock](flock.md): members key by body, so two of one kind share a file unless they are
+  `roboglot memory add` on the other robot if a fact really transfers. The same rule decides a
+  [team](team.md): members key by body, so two of one kind share a file unless they are
   registered, and what one needs another to know *during* a run it says with `tell` rather
   than through memory, which the other pilot would not read until its next run anyway.
 - **Not written by the scripted pilot.** `--llm fake` has no `remember` in its script,

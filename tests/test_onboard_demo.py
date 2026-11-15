@@ -1,4 +1,4 @@
-"""`quackd onboard demo --offline --fast`: two robots' services as two processes on the sim air,
+"""`roboglot onboard demo --offline --fast`: two robots' services as two processes on the sim air,
 through every act, as the README tells a reader to run it.
 
 The robots fly the scripted pilot, so nothing here needs a key or a network, and each act's
@@ -13,8 +13,8 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.onboard import demo
+from roboglot.cli import app
+from roboglot.onboard import demo
 
 runner = CliRunner()
 

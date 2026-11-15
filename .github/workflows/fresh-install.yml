@@ -1,7 +1,7 @@
 name: fresh install
 
-# What somebody who installs quackd today gets, rather than what uv.lock holds. The lock's numpy
-# stays old because LeRobot pins it, and a fresh `uv pip install quackd` has no LeRobot in it, so
+# What somebody who installs Roboglot today gets, rather than what uv.lock holds. The lock's numpy
+# stays old because LeRobot pins it, and a fresh `uv pip install roboglot` has no LeRobot in it, so
 # it resolves past it, and no other job here runs that combination. It keeps a schedule of its
 # own, off main's run, because what it answers to is other people's releases: one of them breaking
 # this should say so here, and should not stop a tag (RELEASING.md wants every job of main's run green).
@@ -25,7 +25,7 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12"]
     env:
-      QUACKD_STRICT_SEEDS: "1"
+      ROBOGLOT_STRICT_SEEDS: "1"
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
@@ -72,15 +72,15 @@ jobs:
           uv venv --python 3.12 bare
           python_in() { if [ -x bare/bin/python ]; then echo bare/bin/python; else echo bare/Scripts/python.exe; fi; }
           echo "PY=$PWD/$(python_in)" >> "$GITHUB_ENV"
-          uv pip install --python "$(python_in)" dist/quackd-*.whl dist/quackd_microduck-*.whl
+          uv pip install --python "$(python_in)" dist/roboglot-*.whl dist/roboglot_microduck-*.whl
       - name: What a person runs first
         shell: bash
         run: |
           set -euo pipefail
-          run() { "$PY" -P -c "from quackd.cli import main; main()" "$@"; }
+          run() { "$PY" -P -c "from roboglot.cli import main; main()" "$@"; }
           run --version
           run doctor
           run list-verbs --robot microduck:sim2d
-          run validate ducks/hello-world.duck
+          run validate tasks/hello-world.glot
           mkdir first-run && cd first-run
           run run hello-world --llm fake --robot microduck:sim2d --no-memory

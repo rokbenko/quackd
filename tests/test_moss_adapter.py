@@ -18,21 +18,21 @@ from typing import Any, get_args
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters.base import AdapterError, RobotAdapter
-from quackd.adapters.factory import make_adapter
-from quackd.cli import app
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.duckfile.schema import POLICY_VERBS
-from quackd.duckfile.validate import validate_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Aborted, ConfirmDenied, Executor, VerbNotAllowed, allow_all
-from quackd.transport.base import Ack, HeartbeatError, Intent, TransportError
-from quackd.verbs.core import CORE
-from quackd.verbs.core import MAX_VX as SCHEMA_VX
-from quackd.verbs.core import MAX_VY as SCHEMA_VY
-from quackd.verbs.core import MAX_WZ as SCHEMA_WZ
-from quackd.verbs.registry import STOP_ENDED, STOPPED, registry_from_manifest
-from quackd_moss import (
+from roboglot.adapters.base import AdapterError, RobotAdapter
+from roboglot.adapters.factory import make_adapter
+from roboglot.cli import app
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.glotfile.schema import POLICY_VERBS
+from roboglot.glotfile.validate import validate_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Aborted, ConfirmDenied, Executor, VerbNotAllowed, allow_all
+from roboglot.transport.base import Ack, HeartbeatError, Intent, TransportError
+from roboglot.verbs.core import CORE
+from roboglot.verbs.core import MAX_VX as SCHEMA_VX
+from roboglot.verbs.core import MAX_VY as SCHEMA_VY
+from roboglot.verbs.core import MAX_WZ as SCHEMA_WZ
+from roboglot.verbs.registry import STOP_ENDED, STOPPED, registry_from_manifest
+from roboglot_moss import (
     DATASHEET,
     MossAdapter,
     conditions,
@@ -42,9 +42,9 @@ from quackd_moss import (
     moss_manifest,
     split_address,
 )
-from quackd_moss import upstream_api as up
-from quackd_moss.cockpit import NEVER_POSTED, CockpitClient, MossCockpit
-from quackd_moss.mock import (
+from roboglot_moss import upstream_api as up
+from roboglot_moss.cockpit import NEVER_POSTED, CockpitClient, MossCockpit
+from roboglot_moss.mock import (
     ARM_GUARD_S,
     MAX_KEEPALIVE_S,
     PICK_STARTUP_S,
@@ -57,7 +57,7 @@ from quackd_moss.mock import (
     shape_twist,
     tracks_for,
 )
-from quackd_moss.verbs import (
+from roboglot_moss.verbs import (
     BATTERY_FLOOR_V,
     DRIVE_TO_GIVE_UP_S,
     DRIVE_TO_MAX_M,
@@ -73,9 +73,9 @@ from quackd_moss.verbs import (
 )
 
 REPO = Path(__file__).resolve().parents[1]
-PACKAGE = REPO / "adapters" / "moss" / "src" / "quackd_moss"
+PACKAGE = REPO / "adapters" / "moss" / "src" / "roboglot_moss"
 DOC = REPO / "docs" / "adapters" / "moss" / "README.md"
-DUCK = load_duck("moss-lookout")
+DUCK = load_glot("moss-lookout")
 
 BASE = {"observe", "report_state", "stop"}
 TWISTS = {"move", "go_to", "search_scan", "approach_and"}
@@ -83,7 +83,7 @@ PLANNER = {"drive_to", "explore"}
 ARM = {"pick_and_drop", "stow_arm"}
 OWN = {"drive_to", "explore", "collect_litter", "pick_and_drop", "stow_arm"}
 MARKS = {"map", "mark_place", "forget_place"}
-"""The place verbs that keep places in the rover's odometry, on every stack quackd drives."""
+"""The place verbs that keep places in the rover's odometry, on every stack Roboglot drives."""
 GO = {"go_to_place"}
 """Its own, by the planner, where the planner and the bridge both are."""
 
@@ -91,8 +91,8 @@ GO = {"go_to_place"}
 def _contract(allow: str) -> Any:
     """A task file that allows `allow`: a dangerous verb runs under nothing less, since with no
     task file the executor allows every verb but a dangerous one."""
-    return parse_duck_text(
-        f"---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [{allow}]\n  confirm: []\n"
+    return parse_glot_text(
+        f"---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [{allow}]\n  confirm: []\n"
         "success: [x]\nabort_when: []\n---\n# Task\nx\n"
     ).frontmatter
 
@@ -273,13 +273,15 @@ def test_the_pick_poses_are_the_cycles_own() -> None:
         ({"blueprint": "moss-gamepad"}, "the pad and the base alone"),
         ({"blueprint": "moss-base"}, "the pad and the base alone"),
         ({"blueprint": "moss-arm"}, "reads only the newest dimOS run, and that is moss-arm"),
-        ({"blueprint": "moss-jev"}, "quackd knows moss-nav"),
+        ({"blueprint": "moss-jev"}, "Roboglot knows moss-nav"),
         ({"bus": "zenoh"}, "speak LCM only"),
-        ({"blueprint": "moss-litter", "bridge": False}, "only quackd's bridge"),
+        ({"blueprint": "moss-litter", "bridge": False}, "only Roboglot's bridge"),
         ({"blueprint": "moss-litter", "mission": False}, "nothing could stop it"),
     ],
 )
-def test_a_stack_quackd_cannot_drive_is_refused_with_its_fix(kw: dict[str, Any], said: str) -> None:
+def test_a_stack_roboglot_cannot_drive_is_refused_with_its_fix(
+    kw: dict[str, Any], said: str
+) -> None:
     args: dict[str, Any] = {
         "running": True,
         "blueprint": "moss-explore",
@@ -293,7 +295,7 @@ def test_a_stack_quackd_cannot_drive_is_refused_with_its_fix(kw: dict[str, Any],
 
 
 @pytest.mark.parametrize("stack", ["moss-nav", "moss-explore", "moss-litter"])
-def test_the_stacks_quackd_drives_are_not_refused(stack: str) -> None:
+def test_the_stacks_roboglot_drives_are_not_refused(stack: str) -> None:
     assert (
         stack_refusal(running=True, blueprint=stack, bus="lcm", bridge=True, mission=True) is None
     )
@@ -321,7 +323,7 @@ def test_the_address_carries_the_bridge_port_and_never_the_token(
     assert split_address(None) == ("127.0.0.1", 8904, 9876)
     assert split_address("http://rover.local:8905?bridge=9999") == ("rover.local", 8905, 9999)
     assert split_address("10.0.0.7") == ("10.0.0.7", 8904, 9876)
-    monkeypatch.setenv("QUACKD_MOSS_TOKEN", "from-the-environment")
+    monkeypatch.setenv("ROBOGLOT_MOSS_TOKEN", "from-the-environment")
     built = make("cockpit", address="http://rover.local:8904")
     transport = built.transport
     assert isinstance(transport, MossCockpit)
@@ -406,7 +408,7 @@ async def test_the_gated_verbs_ask_and_a_no_stops_them() -> None:
 
 @pytest.mark.parametrize("asker", [allow_all, _a_person(True)], ids=["--yes", "a person"])
 async def test_collect_litter_runs_only_when_a_person_answers_it(asker: Any) -> None:
-    """The one dangerous verb quackd ships: `--yes`, a flock's standing answer and the MCP
+    """The one dangerous verb Roboglot ships: `--yes`, a team's standing answer and the MCP
     server never clear it, and nothing is started for the mission before it is refused. A
     person at a terminal does clear it."""
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
@@ -423,7 +425,7 @@ async def test_collect_litter_runs_only_when_a_person_answers_it(asker: Any) -> 
 
 async def test_collect_litter_waits_for_the_arm_in_its_drive_pose() -> None:
     """The mission drives off as soon as it starts, so an arm out of its drive pose refuses
-    collect_litter, with how to stow it on a stack where quackd stows nothing, and nothing is
+    collect_litter, with how to stow it on a stack where Roboglot stows nothing, and nothing is
     started for the mission."""
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.4, 0.0)])
     ex = _executor(adapter, adapter.manifest, confirm=_a_person(True), allow=LITTER_ALLOW)
@@ -434,7 +436,7 @@ async def test_collect_litter_waits_for_the_arm_in_its_drive_pose() -> None:
 
 
 async def test_a_dangerous_verb_is_out_of_a_session_with_no_task_file() -> None:
-    """With no `.duck`, the executor allows every verb but a dangerous one."""
+    """With no `.glot`, the executor allows every verb but a dangerous one."""
     _, _, ex = await _connected(stack="moss-litter", litter=[])
     assert "collect_litter" not in ex.allowed
     assert {"observe", "report_state", "stop"} <= set(ex.allowed)
@@ -631,8 +633,8 @@ async def test_explore_ends_with_the_explorers_stop_and_a_soft_stop() -> None:
 
 
 async def test_explore_hears_a_brake_pulled_beside_it_within_a_second() -> None:
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import MinutesParams, explore
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import MinutesParams, explore
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -709,8 +711,8 @@ async def test_an_arm_that_plays_on_through_its_cancel_is_never_said_to_hold() -
     """The mock's coordinator can ignore a cancel, as the fake bus's can: the stop then says
     the arm did not hold, the verb says so rather than that it holds, and so does the close
     note."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import pick_and_drop
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import pick_and_drop
 
     mock = MossMock(arm_ignores_cancel=True)
     adapter = MossAdapter(mock)
@@ -762,8 +764,8 @@ async def test_a_stop_mid_cycle_cancels_it_and_the_arm_holds_once_the_watch_has_
     """The stop reads the arm still, and the bridge watches it for ARM_GUARD_S after, for a
     trajectory sent before the stop: the verb says so rather than that it holds, a cycle is
     refused meanwhile, and once the window has passed the cycle holds."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import pick_and_drop
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import pick_and_drop
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -793,8 +795,8 @@ async def test_a_stop_while_drive_to_waits_on_the_explorer_sends_no_goal() -> No
     """drive_to stops an exploration the cockpit cannot see and waits out the explorer's own
     stay here goal before it sends its own. A stop asked for beside it during that wait is
     heard there, and no goal goes out after it."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import drive_to
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import drive_to
 
     mock = MossMock(arm=True)
     adapter = MossAdapter(mock)
@@ -821,8 +823,8 @@ async def test_a_stop_while_drive_to_waits_on_the_explorer_sends_no_goal() -> No
 async def test_a_stop_asked_for_before_drive_to_sends_its_goal_sends_no_goal() -> None:
     """With no explorer to wait out, the check just before the goal hears a stop asked for
     while drive_to read the pose."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import drive_to
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import drive_to
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -859,7 +861,7 @@ async def test_the_arm_and_a_twist_never_run_together() -> None:
 async def test_stop_is_the_bridges_zero_then_its_cancel_and_the_soft_stop_every_time() -> None:
     """Every stop does the same arm step, as the bridge's: the cancel goes out every time, a
     verb's own at its end among them, and one that finds nothing executing, with nothing of
-    quackd's in play, starts no watch."""
+    Roboglot's in play, starts no watch."""
     mock, adapter, _ = await _connected()
     await adapter.stop()
     assert mock.stop_log[-3:] == ["twist.zero", "arm.cancel", "cockpit.stop"]
@@ -938,7 +940,7 @@ async def test_collect_litter_runs_once_per_stack_start() -> None:
     assert not second.ok and "restart the stack" in second.summary
 
 
-async def test_a_dropped_link_halts_what_quackd_started_and_nothing_else() -> None:
+async def test_a_dropped_link_halts_what_roboglot_started_and_nothing_else() -> None:
     """The bridge halts what the last keepalive it took said the session started. The start
     was said before it went out, so a link that drops the instant after still halts it."""
     mock, adapter, _ = await _connected()
@@ -953,7 +955,7 @@ async def test_a_dropped_link_halts_what_quackd_started_and_nothing_else() -> No
     idle.drop_link()
     await idle.sleep(3.5)
     assert idle.session_halts == 1
-    assert idle.exploring, "an exploration quackd did not start is not quackd's to halt"
+    assert idle.exploring, "an exploration Roboglot did not start is not Roboglot's to halt"
 
 
 async def test_a_session_lives_while_its_loop_runs_and_a_wedged_loop_has_it_halted() -> None:
@@ -974,7 +976,7 @@ async def test_a_session_lives_while_its_loop_runs_and_a_wedged_loop_has_it_halt
 async def test_the_idle_stop_ends_every_run_and_the_arms_torque_unless_kept_alive(
     limit: float,
 ) -> None:
-    """quackd sends the cockpit's keepalive while it is connected, from its loop's own
+    """Roboglot sends the cockpit's keepalive while it is connected, from its loop's own
     heartbeat, and nothing does once it has gone."""
     kept, _, _ = await _connected(idle_limit_s=limit)
     await kept.sleep(limit * 1.5)
@@ -1011,7 +1013,7 @@ async def test_close_on_moss_litter_says_the_mission_stopped_only_if_it_did(
 
 
 async def test_on_moss_litter_a_session_that_started_nothing_leaves_the_mission_running() -> None:
-    """A probe's connect, health and close, `quackd doctor`'s: no stop, no note, and no session
+    """A probe's connect, health and close, `roboglot doctor`'s: no stop, no note, and no session
     left for the bridge's deadman, which on moss-litter is the whole stop, however long the probe
     takes to close."""
     mock, adapter, _ = await _connected(stack="moss-litter", litter=[(0.6, 0.0)])
@@ -1103,14 +1105,14 @@ def test_a_run_on_moss_litter_still_ends_with_the_missions_stop(tmp_path: Path) 
     )
     out = " ".join(result.output.split())
     assert result.exit_code == 0, out[-3000:]
-    from quackd.agent.transcript import Transcript
+    from roboglot.agent.transcript import Transcript
 
     events = Transcript.read(next(tmp_path.rglob("transcript.jsonl")))
     notes = [str(e.get("text")) for e in events if e["kind"] == "note"]
     assert any(n.startswith("The litter mission is stopped, and runs again") for n in notes), notes
 
 
-# ── what quackd never sends ─────────────────────────────────────────────────────────────
+# ── what Roboglot never sends ─────────────────────────────────────────────────────────────
 
 
 def test_no_code_path_posts_the_cockpits_stack_command() -> None:
@@ -1127,7 +1129,7 @@ def test_no_code_path_posts_the_cockpits_stack_command() -> None:
 def test_no_code_path_sends_a_go_limp_call_or_ends_a_dimos_run() -> None:
     """The arm's torque goes off only when its dimOS run ends, so nothing here may end one:
     the client runs no process at all, and the bridge's one process is the maker's cycle."""
-    bridge = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
+    bridge = REPO / "bridge" / "moss" / "roboglot_moss_bridge.py"
     # upstream_api.py is left out: it describes what upstream does, the hard stop included
     code = [p for p in PACKAGE.rglob("*.py") if p.name != "upstream_api.py"]
     for path in [*code, bridge]:
@@ -1220,10 +1222,10 @@ def test_every_ref_links_to_one_of_the_two_pinned_upstreams() -> None:
 
 def test_the_page_states_the_stops_waits_as_the_code_holds_them() -> None:
     """The two numbers the page gives a person deciding how long a stop may take."""
-    from quackd_moss.verbs import STOP_TIMEOUT_S, STOP_VERB_TIMEOUT_S
+    from roboglot_moss.verbs import STOP_TIMEOUT_S, STOP_VERB_TIMEOUT_S
 
     page = " ".join(DOC.read_text(encoding="utf-8").split())
-    assert f"quackd waits {STOP_TIMEOUT_S:g} s for the bridge's answer" in page
+    assert f"Roboglot waits {STOP_TIMEOUT_S:g} s for the bridge's answer" in page
     assert f"The stop verb's own timeout, {STOP_VERB_TIMEOUT_S:g} s, covers that wait" in page
 
 
@@ -1235,7 +1237,7 @@ def test_the_page_names_every_ref_carries_the_pin_and_says_never() -> None:
 
 
 def test_the_shipped_lookout_validates_and_moves_nothing() -> None:
-    assert validate_duck(DUCK, [describe("mock")]) == []
+    assert validate_glot(DUCK, [describe("mock")]) == []
     assert not set(DUCK.frontmatter.verbs.allow) & (TWISTS | PLANNER | ARM | {"collect_litter"})
 
 
@@ -1249,8 +1251,8 @@ def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:
 async def test_a_stop_once_drive_tos_goal_is_out_ends_it_marked_as_the_brake() -> None:
     """The stop is heard while drive_to waits on the planner, after its goal went out, and the
     result says it was the brake, as a core verb's does."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import drive_to
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import drive_to
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -1270,8 +1272,8 @@ async def test_a_stop_once_drive_tos_goal_is_out_ends_it_marked_as_the_brake() -
 async def test_a_budget_that_ran_out_beside_a_moss_verb_is_no_brake() -> None:
     """Only the stop is marked: the run's minutes spent end the verb in the budget's own words,
     and that is a failure `abort_when` counts."""
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import MinutesParams, explore
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import MinutesParams, explore
 
     mock = MossMock()
     adapter = MossAdapter(mock)
@@ -1291,8 +1293,8 @@ async def test_three_stops_beside_drive_to_are_three_brakes_and_no_abort() -> No
     mock = MossMock()
     adapter = MossAdapter(mock)
     manifest = await adapter.connect()
-    contract = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [drive_to, stop]\n"
+    contract = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [drive_to, stop]\n"
         "  confirm: []\nsuccess: [x]\nabort_when: [Same verb fails 3 times in a row]\n---\n"
         "# Task\nx\n"
     ).frontmatter
@@ -1353,7 +1355,7 @@ class _Recorder(MossMock):
 
 
 async def _rover(store: Any = None, **kw: Any) -> tuple[_Recorder, MossAdapter, Executor]:
-    from quackd.space.places import PlaceStore
+    from roboglot.space.places import PlaceStore
 
     mock = _Recorder(stack=up.EXPLORE_STACK, **kw)
     adapter = MossAdapter(mock)
@@ -1409,7 +1411,7 @@ async def test_go_to_place_says_it_does_not_turn_to_face_the_way() -> None:
 
 
 async def test_a_place_marked_in_another_run_of_the_stack_is_refused(tmp_path: Any) -> None:
-    from quackd.space.places import PlaceStore
+    from roboglot.space.places import PlaceStore
 
     _mock, _adapter, ex = await _rover(PlaceStore("rover", base_dir=tmp_path))
     assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
@@ -1431,7 +1433,7 @@ async def test_a_place_marked_in_another_run_of_the_stack_is_refused(tmp_path: A
 
 
 async def test_the_same_run_keeps_its_places_from_one_connection_to_the_next(tmp_path: Any) -> None:
-    from quackd.space.places import PlaceStore
+    from roboglot.space.places import PlaceStore
 
     _mock, _adapter, ex = await _rover(PlaceStore("rover", base_dir=tmp_path))
     assert (await ex.run_verb("mark_place", {"name": "dock"})).ok
@@ -1458,14 +1460,14 @@ class _Sagging(_Recorder):
 async def test_the_runs_battery_rule_is_read_before_each_goal_of_go_to_place() -> None:
     """go_to_place chains goals for up to two minutes, and the executor reads a run's rules when
     it admits a verb and not again until the next one: the walk reads them before each goal."""
-    from quackd.space.places import PlaceStore
+    from roboglot.space.places import PlaceStore
 
     mock = _Sagging(stack=up.EXPLORE_STACK)
     adapter = MossAdapter(mock)
     manifest = await adapter.connect()
     line = (await adapter.get_state()).battery_percent  # where the pack stands as it begins
-    contract = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n"
+    contract = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
         "  allow: [report_state, stop, mark_place, drive_to, go_to_place]\n  confirm: []\n"
         f"success: [x]\nabort_when: [battery below {line}%]\n---\n# Task\nx\n"
     ).frontmatter
@@ -1530,10 +1532,10 @@ async def test_a_stop_between_goals_ends_go_to_place_in_its_own_words(heard: str
     """A stop that landed between two goals came back in drive_to's words, saying no goal was
     sent and counting one that never went out, whether the walk heard it before it read the
     rover again or only as its next goal was about to go out."""
-    from quackd.space.places import PlaceBook, PlaceStore
-    from quackd.verbs.places import GoToPlaceParams
-    from quackd.verbs.registry import VerbContext
-    from quackd_moss.verbs import drive_to, go_to_place
+    from roboglot.space.places import PlaceBook, PlaceStore
+    from roboglot.verbs.places import GoToPlaceParams
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_moss.verbs import drive_to, go_to_place
 
     mock = _Recorder(stack=up.EXPLORE_STACK)
     adapter = MossAdapter(mock)

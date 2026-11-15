@@ -1,8 +1,8 @@
 {
   "command": [
-    "quackd",
+    "roboglot",
     "run",
-    "D:/Development/quackd-shoot/docs/examples/lerobot/e016/wave.duck",
+    "D:/Development/roboglot-shoot/docs/examples/lerobot/e016/wave.glot",
     "--robot",
     "lerobot:real",
     "--address",

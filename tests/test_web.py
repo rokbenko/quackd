@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from quackd_microduck.sim3d import upstream_api as up
+from roboglot_microduck.sim3d import upstream_api as up
 from tests.conftest import REPO
 
 WEB = REPO / "web"
@@ -33,13 +33,13 @@ HTML = (WEB / "index.html").read_text(encoding="utf-8")
 CSS = (WEB / "style.css").read_text(encoding="utf-8")
 MODULES = sorted(SRC.glob("*.js"))
 
-# The path the page is served from: www.quackd.org/simulator, and /simulator on this project's
+# The path the page is served from: www.roboglot.org/simulator, and /simulator on this project's
 # own deployment. Every local reference in the HTML is absolute under it.
 MOUNT = "/simulator"
 
 # The other half of the product, one level up from the mount. Written absolute wherever this
 # page points at it, and so written absolute here.
-SITE = "https://www.quackd.org/"
+SITE = "https://www.roboglot.org/"
 
 
 def _unmount(reference: str) -> str:
@@ -119,7 +119,7 @@ def test_the_goal_form_cannot_navigate_away_with_what_was_typed_in_it() -> None:
 def test_the_header_wears_the_vendored_duck_mark_and_not_an_emoji() -> None:
     """The header and the favicon were both a 🦆: the emoji in a `<span aria-hidden>`, and the
     same emoji drawn into an inline-SVG data URI for the tab. A logo rendered out of the
-    visitor's emoji font is a different logo on every machine that opens the page, and quackd
+    visitor's emoji font is a different logo on every machine that opens the page, and Roboglot
     has a mark of its own. It is in `web/assets` now, with the two icon sizes beside it."""
     chrome = HTML.split("</header>")[0]
     assert "🦆" not in chrome, (
@@ -149,7 +149,7 @@ def test_no_mark_in_web_assets_runs_off_its_own_canvas() -> None:
     It reached the repository README and the social card before anyone noticed, because both
     read the same file. `web/make_mark.py` refuses to write an export that fails this, and this
     is the same check standing over what is actually committed."""
-    pytest.importorskip("PIL", reason="Pillow is not a runtime dependency of quackd")
+    pytest.importorskip("PIL", reason="Pillow is not a runtime dependency of Roboglot")
     from PIL import Image
 
     marks = sorted((REPO / "web" / "assets").glob("*.png"))
@@ -169,7 +169,7 @@ def test_no_mark_in_web_assets_runs_off_its_own_canvas() -> None:
 
 
 def test_the_page_offers_a_way_back_to_the_site_that_mounts_it() -> None:
-    """quackd-web links here from five places — the hero, the loop, the try section, the footer
+    """roboglot-web links here from five places — the hero, the loop, the try section, the footer
     and the nav — and this page linked back zero times: the mark was not even a link and "What
     is this?" answered with a README, which is written for somebody who already decided to
     care. So a visitor arriving straight at /simulator, from a shared link or from search or
@@ -204,10 +204,10 @@ def test_every_asset_the_page_asks_for_is_a_file_in_this_directory() -> None:
 
 
 def test_every_local_reference_is_absolute_under_the_mount() -> None:
-    """The page is served at www.quackd.org/simulator, and quackd-web sets `trailingSlash: false`
-    — so the browser lands on `/simulator` with no slash, and a *relative* `style.css` resolves
-    to `/style.css`, which is the landing page's root and not this directory at all. The HTML
-    would arrive and every asset under it would 404. Relative paths cannot come back."""
+    """The page is served at www.roboglot.org/simulator, and roboglot-web sets `trailingSlash:
+    false` — so the browser lands on `/simulator` with no slash, and a *relative* `style.css`
+    resolves to `/style.css`, which is the landing page's root and not this directory at all. The
+    HTML would arrive and every asset under it would 404. Relative paths cannot come back."""
     referenced = set(re.findall(r'(?:src|href)="(?!https?:|data:|mailto:|#)([^"]+)"', HTML))
     assert referenced, "the regex found no local references, so this test is not testing anything"
     relative = sorted(ref for ref in referenced if not ref.startswith(MOUNT + "/"))
@@ -217,7 +217,7 @@ def test_every_local_reference_is_absolute_under_the_mount() -> None:
 
 
 def test_the_deploy_answers_on_the_mount_it_tells_the_browser_to_use() -> None:
-    """Two projects serve this page: quackd-web proxies /simulator/* through to this one, and
+    """Two projects serve this page: roboglot-web proxies /simulator/* through to this one, and
     this one is also reachable on its own deployment URL. The HTML asks for /simulator/... in
     both cases, so this project has to answer there as well as at its root, or the direct
     deployment serves an unstyled page with no script."""
@@ -232,15 +232,15 @@ def test_the_deploy_answers_on_the_mount_it_tells_the_browser_to_use() -> None:
 # ── two ways to drive, and both of them always live ─────────────────────────────────────
 
 
-def test_the_keyboard_is_not_gated_behind_the_quackd_switch() -> None:
+def test_the_keyboard_is_not_gated_behind_the_roboglot_switch() -> None:
     """The switch used to be exclusive: `runtime.manual = !on` inside applyToggle, an early
     return on `ui.toggle.checked` at the top of the keydown handler, and the cockpit hidden
-    while quackd was on. So the page's own argument arrived as an either/or, and a visitor had
+    while Roboglot was on. So the page's own argument arrived as an either/or, and a visitor had
     to flip a mode before a key did anything at all. The switch decides one thing now — whether
     anything here reads English — and the keyboard was never that layer."""
     app = _js("app.js")
     body = _keydown()
-    for gate in ("toggle", "checked", "quackd-on"):
+    for gate in ("toggle", "checked", "roboglot-on"):
         assert gate not in body, (
             f"the keydown handler reads `{gate}`: driving must not depend on the switch, which "
             f"is the whole of the dual-control claim the page makes"
@@ -434,7 +434,7 @@ def test_the_browser_moves_to_responses_when_chat_refuses_function_tools() -> No
 
     Some reasoning LLMs refuse function tools on `/v1/chat/completions` and name
     `/v1/responses` in the 400. Every verb here is a function tool, so that refusal is not a
-    degraded path, it is no path. `quackd/agent/providers/openai.py` learned to read it and
+    degraded path, it is no path. `roboglot/agent/providers/openai.py` learned to read it and
     move the run; the browser has an OpenAI client of its own, kept speaking Chat Completions
     only, and put the raw vendor message in the transcript at the first call instead. Picking
     `gpt-6-astra` in the page was a demo that could not take one step.
@@ -623,7 +623,7 @@ console.log(JSON.stringify({
 def test_the_browser_asks_deepseek_with_thinking_off_and_its_call_insisted_on() -> None:
     """DeepSeek thinks by default, and thinking mode refuses `required` and wants every earlier
     turn's reasoning sent back, which this page never keeps. So the page turns thinking off the
-    way `deepseek.py` does, and a vendor's extra fields sit under quackd's own, never over."""
+    way `deepseek.py` does, and a vendor's extra fields sit under Roboglot's own, never over."""
     got = _drive_providers(
         _FIXTURES
         + """
@@ -784,7 +784,7 @@ def test_the_browser_and_python_agree_on_which_400_means_responses() -> None:
     substring check passes happily on an `and` quietly turned into an `or`, which is exactly
     the drift worth catching: it would move a run on any 400 that said `responses`.
     """
-    from quackd.agent.providers.openai import _wants_the_responses_api
+    from roboglot.agent.providers.openai import _wants_the_responses_api
 
     class Vendor(Exception):
         """What the SDK raises: a message, and a status code hanging off it."""
@@ -823,8 +823,8 @@ def test_the_browser_and_python_start_the_same_llms_on_the_same_api() -> None:
     call finding out. Run in the browser rather than read, so a `startingApi` that quietly stopped
     consulting the catalogue would fail here instead of costing every visitor a wasted call.
     """
-    from quackd.agent.providers.catalogue import llms_for
-    from quackd.agent.providers.openai import OpenAIProvider
+    from roboglot.agent.providers.catalogue import llms_for
+    from roboglot.agent.providers.openai import OpenAIProvider
 
     ids = [m.id for m in llms_for("openai")]
     browser = _drive_providers(
@@ -857,7 +857,7 @@ def test_the_browser_asks_each_vendor_for_a_tool_call_the_way_python_does() -> N
     """
     import importlib
 
-    from quackd.agent.providers.factory import OPENAI_COMPATIBLE
+    from roboglot.agent.providers.factory import OPENAI_COMPATIBLE
 
     offered = _drive_providers(
         """
@@ -870,7 +870,7 @@ console.log(JSON.stringify(Object.fromEntries(
     for name, in_browser in offered.items():
         if name not in OPENAI_COMPATIBLE:
             continue
-        module = importlib.import_module(f"quackd.agent.providers.{name}")
+        module = importlib.import_module(f"roboglot.agent.providers.{name}")
         in_python = getattr(module, OPENAI_COMPATIBLE[name]).default_tool_choice
         assert in_browser == in_python, (
             f"the page asks {name} with tool_choice={in_browser!r} and the CLI with {in_python!r}"
@@ -881,8 +881,8 @@ def test_the_browser_asks_each_openrouter_row_what_the_cli_asks() -> None:
     """Every row the dropdown offers, through the page's own client: the `tool_choice` the CLI
     sends for that row, the `provider` object and the two attribution headers the CLI sends,
     and no `parallel_tool_calls`, which `require_parameters` would route almost nowhere."""
-    from quackd.agent.providers.catalogue import llm_ids
-    from quackd.agent.providers.openrouter import ATTRIBUTION, DEFAULT_BODY, OpenRouterProvider
+    from roboglot.agent.providers.catalogue import llm_ids
+    from roboglot.agent.providers.openrouter import ATTRIBUTION, DEFAULT_BODY, OpenRouterProvider
 
     sent = _drive_providers(
         _FIXTURES
@@ -1010,7 +1010,7 @@ console.log(JSON.stringify({{ call }}));
         (post,) = stand_in.posts()
     assert got["call"]["name"] == "assess_task" and got["call"]["replay"][0]["signature"] == "sig-1"
     assert post.path == "/api/v1/chat/completions"
-    assert post.headers["x-openrouter-title"] == "quackd"
+    assert post.headers["x-openrouter-title"] == "roboglot"
     assert post.headers["http-referer"] == "https://github.com/rokbenko/quackd"
     assert post.body["provider"] == {"require_parameters": True}
     assert post.body["tool_choice"] == "required" and "parallel_tool_calls" not in post.body
@@ -1044,12 +1044,12 @@ def test_the_browser_pins_the_same_upstream_commits_python_does() -> None:
     for label, pin in (("microduck_rl", up.PIN), ("microduck-policies", up.POLICIES_PIN)):
         assert pin in js, (
             f"web/src/microduck.js does not pin {label} at {pin}, which is what "
-            f"quackd/sim3d/upstream_api.py fetches. Paste it."
+            f"roboglot/sim3d/upstream_api.py fetches. Paste it."
         )
 
 
 def test_the_browser_uses_the_same_gait_numbers_python_does() -> None:
-    from quackd_microduck.sim3d import gait
+    from roboglot_microduck.sim3d import gait
 
     js = _js("microduck.js")
     floor = re.search(r"GAIT_FLOOR\s*=\s*\{([^}]*)\}", js)
@@ -1058,13 +1058,13 @@ def test_the_browser_uses_the_same_gait_numbers_python_does() -> None:
     got = {k: float(v) for k, v in re.findall(r"(\w+):\s*([\d.]+)", floor.group(1))}
     want = {"vx": gait.GAIT_FLOOR_VX, "vy": gait.GAIT_FLOOR_VY, "wz": gait.GAIT_FLOOR_WZ}
     assert got == want, (
-        f"the browser walks on {got}, and quackd/sim3d/gait.py sends the real duck {want}"
+        f"the browser walks on {got}, and roboglot/sim3d/gait.py sends the real duck {want}"
     )
     achieved = re.search(r"ACHIEVED_FRACTION\s*=\s*([\d.]+)", js)
     assert achieved and float(achieved.group(1)) == gait.ACHIEVED_FRACTION
 
 
-# ── the arena is quackd's, and still the arena the verbs aim at ─────────────────────────
+# ── the arena is Roboglot's, and still the arena the verbs aim at ─────────────────────────
 
 
 def test_nobody_is_in_the_browser_arena_either() -> None:
@@ -1096,7 +1096,7 @@ def test_nobody_is_in_the_browser_arena_either() -> None:
 
 
 def test_the_demo_claims_no_more_policies_than_it_downloads() -> None:
-    """Two ONNX files load: one stands the duck up and one walks it. The kick is quackd's own
+    """Two ONNX files load: one stands the duck up and one walks it. The kick is Roboglot's own
     scripted impulse, as the comment above it says, and copy promising a shelf of learned
     skills is a claim the download does not support."""
     # what is fetched, not what is named: the comment above `kick` names a third file,
@@ -1155,7 +1155,7 @@ def test_the_page_loads_every_module_it_ships() -> None:
 def test_the_deploy_config_serves_this_directory_and_builds_nothing() -> None:
     """`web/` has no build step on purpose: every dependency is a CDN URL fetched at run time,
     so the deploy is a copy. A host that guessed a framework from the Python at the repo root
-    would try to build quackd instead."""
+    would try to build Roboglot instead."""
     config = json.loads((REPO / "vercel.json").read_text(encoding="utf-8"))
     assert config["outputDirectory"] == "web"
     assert config["framework"] is None, "no framework: this is a folder, not an app to build"
@@ -1227,7 +1227,7 @@ def test_the_browser_refuses_the_arguments_python_refuses() -> None:
 def test_the_browser_offers_the_same_llms_python_does() -> None:
     """The generated half of the catalogue, checked the way the upstream pins are.
 
-    `quackd/agent/providers/catalogue.py` is the single source of truth for LLM names and the
+    `roboglot/agent/providers/catalogue.py` is the single source of truth for LLM names and the
     browser cannot import it, so `web/build_catalogue.py` writes the copy the page reads. A
     generated file that nothing re-generates is just a stale file with a comment on it, so the
     generator is run here and its output compared against what is committed.
@@ -1257,13 +1257,13 @@ def test_every_vendor_the_page_cannot_offer_is_named_in_its_README() -> None:
     """A vendor may be missing from the dropdown, and may not be missing quietly.
 
     The page calls a vendor from the visitor's browser, so one that refuses a cross-origin
-    preflight cannot be offered here however well it works under `quackd run`. GLM is that
+    preflight cannot be offered here however well it works under `roboglot run`. GLM is that
     vendor today: `api.z.ai` answers the preflight with no `Access-Control-Allow-*` header at
     all. That is a fact about a third party on a particular day, not a decision this repository
     made, so what is enforced is not *which* vendors are absent but that each absence is
     written down with its reason. Otherwise the next one drops out in a diff nobody reads.
     """
-    from quackd.agent.providers.catalogue import CLOUD_NAMES
+    from roboglot.agent.providers.catalogue import CLOUD_NAMES
 
     both = _drive_providers(
         """

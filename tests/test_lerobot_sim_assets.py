@@ -1,8 +1,8 @@
 """Fetching the SO-101's model: the pins, the hashes, the licence notice, the failures.
 
-`quackd_lerobot/sim/assets.py` is what keeps `docs/reference/licenses.md`'s "never shipped" true for
-the arm's simulator: the model and its meshes reach a user cache at run time, one file at a time,
-each checked against the sha256 it was read at. Nothing here touches the network or needs the
+`roboglot_lerobot/sim/assets.py` is what keeps `docs/reference/licenses.md`'s "never shipped" true
+for the arm's simulator: the model and its meshes reach a user cache at run time, one file at a
+time, each checked against the sha256 it was read at. Nothing here touches the network or needs the
 physics extra. `fetch` is stubbed and the pins are moved onto files built in memory, so it runs
 on every CI runner. The one test of `fetch` itself talks to a server on loopback.
 """
@@ -24,9 +24,9 @@ from typing import Any
 
 import pytest
 
-from quackd_lerobot.sim import assets
-from quackd_lerobot.sim import upstream_api as up
-from quackd_lerobot.sim.assets import (
+from roboglot_lerobot.sim import assets
+from roboglot_lerobot.sim import upstream_api as up
+from roboglot_lerobot.sim.assets import (
     ASSETS_ENV,
     CACHE_SUBDIR,
     FILE_LIMIT,
@@ -62,7 +62,7 @@ def _scratch() -> list[Path]:
 @pytest.fixture
 def upstream(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     """Move the pins onto a model we can build here, and answer `fetch` from memory."""
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(tmp_path / "cache"))
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(tmp_path / "cache"))
     monkeypatch.delenv(ASSETS_ENV, raising=False)
     monkeypatch.setattr(up, "FILES", {rel: _sha(blob) for rel, blob in BODIES.items()})
     served = {up.raw(f"{up.SIM_DIR}/{rel}"): blob for rel, blob in BODIES.items()}
@@ -149,7 +149,7 @@ def test_a_cached_file_that_changed_is_fetched_again(upstream: dict[str, Any]) -
 def test_the_cache_is_compared_byte_for_byte_line_endings_included(
     upstream: dict[str, Any],
 ) -> None:
-    """quackd wrote the cache, so a CRLF model there is damage, unlike in a checkout."""
+    """Roboglot wrote the cache, so a CRLF model there is damage, unlike in a checkout."""
     got = ensure_so101()
     got.model_path.write_bytes(BODIES[up.MODEL_FILE].replace(b"\n", b"\r\n"))
     with pytest.raises(AssetError, match="offline"):
@@ -406,7 +406,7 @@ def test_a_windows_checkout_of_the_pinned_commit_is_the_pinned_model(
     upstream: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: Any
 ) -> None:
     """Git for Windows checks text out with CRLF by default and upstream has no
-    `.gitattributes`, so a checkout of the very commit quackd pins differs from it byte for
+    `.gitattributes`, so a checkout of the very commit Roboglot pins differs from it byte for
     byte in the model. That is not a different model, and a warning saying so would be false.
     """
     crlf = {**BODIES, up.MODEL_FILE: BODIES[up.MODEL_FILE].replace(b"\n", b"\r\n")}
@@ -448,7 +448,7 @@ def test_a_checkout_that_differs_warns_and_is_not_reported_as_pinned(
     assert not got.pinned
     assert ASSETS_ENV in caplog.text and up.PIN[:12] in caplog.text
     assert up.MODEL_FILE in caplog.text, "the warning names what differs"
-    assert not (own / NOTICE_FILE).exists(), "quackd does not write into your checkout"
+    assert not (own / NOTICE_FILE).exists(), "Roboglot does not write into your checkout"
     assert upstream["fetches"] == []
 
 
@@ -469,12 +469,12 @@ def test_a_tilde_in_the_cache_variable_is_a_home_directory_not_a_folder_named_ti
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
-    monkeypatch.setenv("QUACKD_CACHE_DIR", "~/.quackd/cache")
-    assert cache_root() == tmp_path / ".quackd" / "cache"
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", "~/.roboglot/cache")
+    assert cache_root() == tmp_path / ".roboglot" / "cache"
     assert "~" not in str(cache_root())
 
 
-def test_a_second_quackd_filling_the_same_cache_waits_rather_than_racing(
+def test_a_second_roboglot_filling_the_same_cache_waits_rather_than_racing(
     upstream: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _home().mkdir(parents=True, exist_ok=True)
@@ -485,7 +485,7 @@ def test_a_second_quackd_filling_the_same_cache_waits_rather_than_racing(
     assert upstream["fetches"] == [], "it never fetched under someone else's lock"
 
 
-def test_a_run_that_waited_uses_what_the_other_quackd_filled(
+def test_a_run_that_waited_uses_what_the_other_roboglot_filled(
     upstream: dict[str, Any], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The cache is checked again once the lock is ours, because whoever held it was most
@@ -628,8 +628,8 @@ def test_a_cache_that_cannot_be_made_says_which_variable_moves_it(
     moves it rather than escaping as a bare OSError."""
     in_the_way = tmp_path / "not-a-directory"
     in_the_way.write_text("a file where the cache should be", encoding="utf-8")
-    monkeypatch.setenv("QUACKD_CACHE_DIR", str(in_the_way))
-    with pytest.raises(AssetError, match="QUACKD_CACHE_DIR"):
+    monkeypatch.setenv("ROBOGLOT_CACHE_DIR", str(in_the_way))
+    with pytest.raises(AssetError, match="ROBOGLOT_CACHE_DIR"):
         ensure_so101()
     assert upstream["fetches"] == []
 
@@ -640,8 +640,8 @@ def test_a_cache_that_cannot_be_made_says_which_variable_moves_it(
 def test_looking_for_the_model_fetches_nothing_and_writes_nothing(
     upstream: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: Any
 ) -> None:
-    """`quackd doctor` asks whether the model is here, and asking must not be the thing that
-    fetches it, waits on another quackd's lock, or writes into somebody's checkout."""
+    """`roboglot doctor` asks whether the model is here, and asking must not be the thing that
+    fetches it, waits on another Roboglot's lock, or writes into somebody's checkout."""
     assert cached_so101() is None
     assert upstream["fetches"] == []
     assert not _home().exists(), "looking made the cache"
@@ -673,8 +673,8 @@ def test_doctors_row_for_the_simulator_names_the_extra_the_pin_and_the_cache(
     rather than by importing it, the SO-101 model's pin, and whether it is in the cache. It
     makes no GL context, because it never imports MuJoCo at all: that check is the simulator's
     own connect, which `doctor --robot NAME` reaches for a registered simulator."""
-    from quackd_lerobot import doctor_rows
-    from quackd_lerobot.sim import SIM_EXTRA
+    from roboglot_lerobot import doctor_rows
+    from roboglot_lerobot.sim import SIM_EXTRA
 
     monkeypatch.setitem(sys.modules, "mujoco", None)  # any import of it now fails
     real_version = importlib.metadata.version
@@ -709,10 +709,10 @@ def test_doctors_row_for_the_simulator_names_the_extra_the_pin_and_the_cache(
 def test_doctors_row_for_a_checkout_never_calls_it_the_cache_or_promises_a_fetch(
     upstream: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`QUACKD_LEROBOT_SIM_ASSETS` names somebody's own checkout, which a connect uses in place
+    """`ROBOGLOT_LEROBOT_SIM_ASSETS` names somebody's own checkout, which a connect uses in place
     of the cache and never fetches for. So a checkout without the model is the one thing doctor
     can catch before a connect refuses it, and a checkout at the pin is not in the cache."""
-    from quackd_lerobot import doctor_rows
+    from roboglot_lerobot import doctor_rows
 
     empty = tmp_path / "empty"
     empty.mkdir()

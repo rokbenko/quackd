@@ -82,7 +82,7 @@ A_VLA_RUN = {
     "cost_usd": 0.0,
     "policy": {"server": "http://127.0.0.1:9875", "policy": "scripted:sweep"},
     "command": [
-        "quackd",
+        "roboglot",
         "run",
         "--goal",
         "hold the arm where it is",
@@ -134,17 +134,17 @@ def _logged(
     log = folder / "log"
     log.mkdir(parents=True)
     command = [
-        "quackd",
+        "roboglot",
         "run",
-        f"D:/x/docs/examples/lerobot/{name}/{duck}.duck",
+        f"D:/x/docs/examples/lerobot/{name}/{duck}.glot",
         "--robot",
         "arm-01",
     ]
     (log / "summary.json").write_text(
-        json.dumps({"duck": f"{name}-{duck}", "command": command, **summary}), encoding="utf-8"
+        json.dumps({"glot": f"{name}-{duck}", "command": command, **summary}), encoding="utf-8"
     )
     (log / "terminal.txt").write_text(
-        f"$ {' '.join(command)}\nquackd 0.31.1, started\nsome `code` here\n", encoding="utf-8"
+        f"$ {' '.join(command)}\nRoboglot 0.31.1, started\nsome `code` here\n", encoding="utf-8"
     )
     media = {"speed": 10, "frames": frames, "run_folder": f"20261104-114416-{name}-{duck}"}
     (log / "media.json").write_text(json.dumps(media), encoding="utf-8")
@@ -286,13 +286,13 @@ def test_what_a_run_really_said_keeps_its_own_words(tmp_path: Path) -> None:
         notes={"showed": ["It printed `model calls p50`."]},
     )
     (folder / "log" / "terminal.txt").write_text(
-        "$ quackd run x.duck --model big\ntime 49.5 s (model 20.4 s)\n", encoding="utf-8"
+        "$ roboglot run x.glot --model big\ntime 49.5 s (model 20.4 s)\n", encoding="utf-8"
     )
     text = script.render_log(root, _experiment(root, "E001"))
     assert "(model 20.4 s)" in text
     assert "> The model refused." in text
     assert "`model calls p50`" in text
-    assert "```text\nquackd run x.duck --model big\n```" in text
+    assert "```text\nroboglot run x.glot --model big\n```" in text
 
 
 def test_the_numbers_say_llm(tmp_path: Path) -> None:
@@ -320,16 +320,16 @@ def test_a_vla_run_is_logged_in_turns_and_tried_on_the_simulator(tmp_path: Path)
     assert "No LLM is asked, so it costs nothing." in tried
     assert "--llm" not in tried and "lerobot:mock" not in tried
     assert (
-        "quackd policy serve --policy scripted:sweep\n"
-        'quackd run --goal "hold the arm where it is" --robot lerobot:mujoco '
+        "roboglot policy serve --policy scripted:sweep\n"
+        'roboglot run --goal "hold the arm where it is" --robot lerobot:mujoco '
         "--policy-url http://127.0.0.1:9875 --controller vla --no-memory"
     ) in tried
 
 
-def test_the_try_line_of_a_vla_run_is_one_quackd_takes() -> None:
+def test_the_try_line_of_a_vla_run_is_one_roboglot_takes() -> None:
     """Every flag of what the log prints, read off that command's own help, since a flag it does
     not take would only fail a reader."""
-    from quackd.agent.providers.pricing import VLA_PILOT
+    from roboglot.agent.providers.pricing import VLA_PILOT
 
     assert script.VLA == VLA_PILOT, "the script spells the pilot's name, and has to spell it so"
     words = [*A_VLA_RUN["command"], "--no-play", "--accept-other-frame"]
@@ -340,21 +340,21 @@ def test_the_try_line_of_a_vla_run_is_one_quackd_takes() -> None:
         flags = [word for word in shlex.split(line) if word.startswith("--")]
         assert flags, line
         for flag in flags:
-            assert flag in shown, f"quackd {' '.join(command)} takes no {flag}"
+            assert flag in shown, f"roboglot {' '.join(command)} takes no {flag}"
 
 
 def test_a_vla_run_of_a_checkpoint_is_tried_with_the_line_that_served_it(tmp_path: Path) -> None:
     """`--policy` alone is refused for a checkpoint that names another repository, and a run
     records neither its pins nor its cameras, so the line somebody typed is the one that works,
-    and a log with no such line stops and says so rather than print one quackd refuses."""
+    and a log with no such line stops and says so rather than print one Roboglot refuses."""
     root = _tree(tmp_path / "examples")
     run = {**A_VLA_RUN, "policy": {"policy": "owner/smol@abc"}}
     _logged(root, "e001", run)
-    with pytest.raises(script.LogError, match="quackd policy serve"):
+    with pytest.raises(script.LogError, match="roboglot policy serve"):
         script.render_log(root, _experiment(root, "E001"))
-    typed = "quackd policy serve --policy owner/smol@abc --pin base/vision@def --fps 30"
+    typed = "roboglot policy serve --policy owner/smol@abc --pin base/vision@def --fps 30"
     _logged(root, "e002", run, notes={"before": [typed]})
-    assert f"{typed}\nquackd run --goal" in script.render_log(root, _experiment(root, "E002"))
+    assert f"{typed}\nroboglot run --goal" in script.render_log(root, _experiment(root, "E002"))
 
 
 def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
@@ -362,7 +362,7 @@ def test_a_chat_session_is_refused_in_a_sentence(tmp_path: Path) -> None:
     `KeyError` with no word about what to do."""
     root = _tree(tmp_path / "examples")
     session = {
-        "duck": "drive",
+        "glot": "drive",
         "drive": {"lanes": {"pilot": 1}},
         "outcome": "success",
         "reason": "goodbye",
@@ -378,24 +378,25 @@ def test_a_dry_run_is_tried_dry_and_any_other_is_not(tmp_path: Path) -> None:
     """Left off, the line under Try it yourself would send the moves the log says were skipped."""
     root = _tree(tmp_path / "examples")
     for number, extra in (("e001", ["--dry-run"]), ("e002", [])):
-        command = ["quackd", "run", "t.duck", "--robot", "arm-01", *extra]
+        command = ["roboglot", "run", "t.glot", "--robot", "arm-01", *extra]
         _logged(root, number, {**GOOD, "command": command})
         text = script.render_log(root, _experiment(root, number.upper()))
-        tried = "quackd run t.duck --robot lerobot:mock --llm openai:gpt-6-sol --no-memory"
+        tried = "roboglot run t.glot --robot lerobot:mock --llm openai:gpt-6-sol --no-memory"
         assert f"{tried}{' --dry-run' if extra else ''}\n```" in text
 
 
 def test_a_goal_on_an_llm_run_is_tried_as_that_goal(tmp_path: Path) -> None:
     """The line took the command's third word for a task, which beside a goal is `--goal`, so it
-    printed `quackd run --goal --robot lerobot:mock`, which quackd refuses."""
+    printed `roboglot run --goal --robot lerobot:mock`, which Roboglot refuses."""
     root = _tree(tmp_path / "examples")
     for number, given in (("e001", ["--goal", "wave at me"]), ("e002", ["--goal=wave at me"])):
-        command = ["quackd", "run", *given, "--robot", "arm-01"]
+        command = ["roboglot", "run", *given, "--robot", "arm-01"]
         _logged(root, number, {**GOOD, "command": command})
         text = script.render_log(root, _experiment(root, number.upper()))
         assert "This runs the same goal with no arm attached, on `lerobot:mock`" in text
         assert (
-            'quackd run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol --no-memory'
+            'roboglot run --goal "wave at me" --robot lerobot:mock --llm openai:gpt-6-sol '
+            "--no-memory"
         ) in text
 
 
@@ -404,23 +405,23 @@ def _in_parts(root: Path, name: str = "e001") -> Path:
     log = root / name / "log"
     run = log / "part-1"
     run.mkdir(parents=True)
-    command = ["quackd", "run", "lerobot-lookout", "--robot", "arm-01"]
+    command = ["roboglot", "run", "lerobot-lookout", "--robot", "arm-01"]
     (run / "summary.json").write_text(
-        json.dumps({"duck": "lerobot-lookout", "command": command, **GOOD}), encoding="utf-8"
+        json.dumps({"glot": "lerobot-lookout", "command": command, **GOOD}), encoding="utf-8"
     )
     (run / "terminal.txt").write_text(
-        "$ quackd run lerobot-lookout --robot arm-01\nquackd 0.31.3\n", encoding="utf-8"
+        "$ roboglot run lerobot-lookout --robot arm-01\nRoboglot 0.31.3\n", encoding="utf-8"
     )
     media = {"speed": 5, "frames": 2, "run_folder": "20261106-121736-lerobot-lookout"}
     (run / "media.json").write_text(json.dumps(media), encoding="utf-8")
     text = log / "part-2"
     text.mkdir()
     (text / "terminal.txt").write_text(
-        "(v) PS D:\\x> quackd robot rest-pose arm-01\n✓ recorded the pose\n(v) PS D:\\x>\n",
+        "(v) PS D:\\x> roboglot robot rest-pose arm-01\n✓ recorded the pose\n(v) PS D:\\x>\n",
         encoding="utf-8",
     )
     record = {
-        "command": ["quackd", "robot", "rest-pose", "arm-01"],
+        "command": ["roboglot", "robot", "rest-pose", "arm-01"],
         "version": "0.31.3",
         "started_at": "2026-11-06T12:27:26Z",
         "outcome": "success",
@@ -473,12 +474,14 @@ def test_a_log_in_parts_has_the_structure_of_any_other(tmp_path: Path) -> None:
     )
     assert "(log/part-1/frame-2.jpg)" in parts
     assert "**Part 2 of 2:** The command\n\nThis run used no camera." in parts
-    said = "The following command was run with quackd 0.31.3:\n\n"
-    assert said + "```text\nquackd robot rest-pose arm-01\n```" in parts
+    said = "The following command was run with Roboglot 0.31.3:\n\n"
+    assert said + "```text\nroboglot robot rest-pose arm-01\n```" in parts
     assert "> recorded the pose" in parts
-    assert "quackd run lerobot-lookout --robot lerobot:mock" in parts, "the part that can be tried"
+    assert "roboglot run lerobot-lookout --robot lerobot:mock" in parts, (
+        "the part that can be tried"
+    )
     trace = parts.split("<details>", 1)[1]
-    assert "quackd 0.31.3\n\n(v) PS D:\\x> quackd robot rest-pose arm-01" in trace
+    assert "Roboglot 0.31.3\n\n(v) PS D:\\x> roboglot robot rest-pose arm-01" in trace
 
 
 def test_parts_need_one_line_each(tmp_path: Path) -> None:
@@ -513,11 +516,11 @@ def _text_file(tmp_path: Path, body: str) -> Path:
 
 
 REST_POSE = (
-    "\ufeff(v) PS D:\\x> quackd robot rest-pose arm-01\n"
+    "\ufeff(v) PS D:\\x> roboglot robot rest-pose arm-01\n"
     "arm-01 (lerobot:real) is at\n"
     "shoulder_pan   -5.7\n"
     "✓ recorded arm-01's rest pose (6 joints)\n"
-    "  quackd run <duck> --robot arm-01 starts from it\n"
+    "  roboglot run <task> --robot arm-01 starts from it\n"
     "(v) PS D:\\x>\n"
 )
 
@@ -545,7 +548,7 @@ def test_add_text_reads_a_command_that_writes_no_run_folder(
     notes = _add_text(root, _text_file(tmp_path, REST_POSE), tmp_path)
     part = root / "e001" / "log" / "part-3"
     record = json.loads((part / "record.json").read_text(encoding="utf-8"))
-    assert record["command"] == ["quackd", "robot", "rest-pose", "arm-01"]
+    assert record["command"] == ["roboglot", "robot", "rest-pose", "arm-01"]
     assert record["version"] == "0.31.3"
     assert record["started_at"] == "2026-11-06T12:27:26Z"
     assert record["outcome"] == "success"
@@ -566,7 +569,7 @@ def test_add_text_marks_a_failed_command_as_an_error(
 ) -> None:
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
-    failed = "PS> quackd robot rest-pose arm-01\n✗ error: no arm\nPS>\n"
+    failed = "PS> roboglot robot rest-pose arm-01\n✗ error: no arm\nPS>\n"
     _add_text(root, _text_file(tmp_path, failed), tmp_path)
     part = root / "e001" / "log" / "part-3"
     record = json.loads((part / "record.json").read_text(encoding="utf-8"))
@@ -577,10 +580,10 @@ def test_add_text_marks_a_failed_command_as_an_error(
 @pytest.mark.parametrize(
     ("body", "over", "named"),
     [
-        ("PS> quackd robot x\nno mark here\n", {}, "no line marked"),
+        ("PS> roboglot robot x\nno mark here\n", {}, "no line marked"),
         ("nothing typed\n✓ fine\n", {}, "does not open with the command"),
-        ("PS C:\\Users\\me> quackd robot x\n✓ fine\n", {}, "holds a key"),
-        ("PS> quackd robot x\n✓ fine\n", {"started": "yesterday"}, "UTC time"),
+        ("PS C:\\Users\\me> roboglot robot x\n✓ fine\n", {}, "holds a key"),
+        ("PS> roboglot robot x\n✓ fine\n", {"started": "yesterday"}, "UTC time"),
     ],
 )
 def test_add_text_refuses_what_it_cannot_log(
@@ -619,11 +622,11 @@ def test_add_text_uses_a_gif_already_made(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 REFUSED = (
-    "(v) PS D:\\x> quackd run D:/co/docs/examples/lerobot/e016/wave.duck --robot lerobot:real"
+    "(v) PS D:\\x> roboglot run D:/co/docs/examples/lerobot/e016/wave.glot --robot lerobot:real"
     " --address COM3 --llm openai:gpt-6-astra --max-steps 10 --no-memory\n"
     "✗ error: lerobot:real names no registered arm, so it has no rest pose, and it\n"
     "would be left holding itself up wherever it stopped\n"
-    "  quackd robot add NAME lerobot:real --address COM3, then quackd robot rest-pose NAME\n"
+    "  roboglot robot add NAME lerobot:real --address COM3, then roboglot robot rest-pose NAME\n"
     "(v) PS D:\\x>\n"
 )
 
@@ -657,7 +660,7 @@ def test_a_refused_run_names_what_it_was_given_and_says_it_used_none_of_it(
     text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
     assert "| Robot | `lerobot:real` (real) |" in text
     assert "| LLM | `openai:gpt-6-astra`, never asked |" in text
-    assert "| Task file | [`wave.duck`](../e016/wave.duck) |" in text
+    assert "| Task file | [`wave.glot`](../e016/wave.glot) |" in text
     assert "| LLM calls | none |" in text
     assert "| Tokens | none |" in text
     assert "| Connecting | never connected |" in text
@@ -671,7 +674,7 @@ def test_a_refused_run_is_tried_as_the_same_line_and_dry(
     root = _tree(tmp_path / "examples")
     text = _refused_log(root, _text_file(tmp_path, REFUSED), tmp_path)
     line = (
-        "quackd run docs/examples/lerobot/e016/wave.duck --robot lerobot:real --address COM3"
+        "roboglot run docs/examples/lerobot/e016/wave.glot --robot lerobot:real --address COM3"
         " --llm openai:gpt-6-astra --max-steps 10 --no-memory --dry-run"
     )
     assert f"```bash\n{line}\n```" in text
@@ -739,23 +742,23 @@ def test_a_run_that_went_wrong_still_gets_a_whole_log(tmp_path: Path) -> None:
 def test_the_command_comes_from_the_trace_with_its_quotes(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     folder = _logged(root, "e001", GOOD)
-    typed = "quackd run x.duck --camera-url 'opencv://1?name=arm'"
-    (folder / "log" / "terminal.txt").write_text(f"$ {typed}\nquackd 0.31.1\n", encoding="utf-8")
+    typed = "roboglot run x.glot --camera-url 'opencv://1?name=arm'"
+    (folder / "log" / "terminal.txt").write_text(f"$ {typed}\nRoboglot 0.31.1\n", encoding="utf-8")
     assert f"```text\n{typed}\n```" in script.render_log(root, _experiment(root, "E001"))
 
 
 def test_what_was_set_before_the_command_goes_with_it(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
-    before = '$env:QUACKD_LEROBOT_MAX_STEP_DEG = "2"'
+    before = '$env:ROBOGLOT_LEROBOT_MAX_STEP_DEG = "2"'
     _logged(root, "e001", GOOD, notes={"before": [before]})
     text = script.render_log(root, _experiment(root, "E001"))
-    assert f"```text\n{before}\nquackd run D:/x/" in text
+    assert f"```text\n{before}\nroboglot run D:/x/" in text
 
 
 def test_a_trace_with_backticks_cannot_close_its_fence(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     folder = _logged(root, "e001", GOOD)
-    trace = "$ quackd run x.duck\n````\ninside\n"
+    trace = "$ roboglot run x.glot\n````\ninside\n"
     (folder / "log" / "terminal.txt").write_text(trace, encoding="utf-8")
     assert f"`````text\n{trace}`````" in script.render_log(root, _experiment(root, "E001"))
 
@@ -852,7 +855,7 @@ def test_an_example_with_a_task_file_gets_no_such_page(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     folder = root / "e001"
     folder.mkdir()
-    (folder / "task.duck").write_text("a task\n", encoding="utf-8")
+    (folder / "task.glot").write_text("a task\n", encoding="utf-8")
     script.write_all(root)
     assert not (folder / "README.md").exists()
     (folder / "README.md").write_text("written by hand\n", encoding="utf-8")
@@ -889,11 +892,11 @@ def test_a_log_github_would_cut_off_is_refused(
 
 
 def _run_folder(
-    tmp_path: Path, name: str = "20261104-114416-e001-task", trace: str = "$ quackd run x\n"
+    tmp_path: Path, name: str = "20261104-114416-e001-task", trace: str = "$ roboglot run x\n"
 ) -> Path:
     run = tmp_path / "runs" / name
     run.mkdir(parents=True)
-    (run / "summary.json").write_text(json.dumps({"duck": "e001-task", **GOOD}), encoding="utf-8")
+    (run / "summary.json").write_text(json.dumps({"glot": "e001-task", **GOOD}), encoding="utf-8")
     (run / "terminal.txt").write_text(trace, encoding="utf-8")
     return run
 
@@ -974,7 +977,7 @@ def test_add_will_not_copy_a_key_or_a_home_path(
 ) -> None:
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
-    run = _run_folder(tmp_path, trace=f"$ quackd run x\n{secret}\n")
+    run = _run_folder(tmp_path, trace=f"$ roboglot run x\n{secret}\n")
     (run / "video.mp4").write_bytes(b"video")
     with pytest.raises(script.LogError, match=r"terminal\.txt holds a key"):
         script.add_run(root, run, 10.0)
@@ -1036,8 +1039,8 @@ def test_a_connect_that_failed_names_the_robot_from_the_command(tmp_path: Path) 
     assert "| Robot | `arm-01` (real), whose connect failed |" in text
     assert "`None`" not in text
     for words in (["-r", "arm-01"], ["--robot=arm-01"]):
-        assert script._robot_asked(["quackd", "run", "task", *words]) == "arm-01"
-    assert script._robot_asked(["quackd", "run", "task"]) is None
+        assert script._robot_asked(["roboglot", "run", "task", *words]) == "arm-01"
+    assert script._robot_asked(["roboglot", "run", "task"]) is None
 
 
 MOCK = {**GOOD, "transport": "mock"}
@@ -1062,7 +1065,7 @@ def test_add_takes_no_video_for_a_run_on_the_mock(
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
     run = _run_folder(tmp_path)
-    (run / "summary.json").write_text(json.dumps({"duck": "e001-task", **MOCK}), encoding="utf-8")
+    (run / "summary.json").write_text(json.dumps({"glot": "e001-task", **MOCK}), encoding="utf-8")
     (run / "E001.mp4").write_bytes(b"video")
     for given in ({"speed": 5.0}, {"gif": run / "E001.mp4"}, {"video": run / "E001.mp4"}):
         with pytest.raises(script.LogError, match="nothing to film"):
@@ -1087,9 +1090,9 @@ def test_a_run_on_the_mock_is_tried_as_it_ran(tmp_path: Path) -> None:
     """It needed no arm, so its own lines are the try, with the server typed before it first."""
     root = _tree(tmp_path / "examples")
     command = [
-        "quackd",
+        "roboglot",
         "run",
-        "D:/co/docs/examples/lerobot/e001/monkey.duck",
+        "D:/co/docs/examples/lerobot/e001/monkey.glot",
         "--robot",
         "lerobot:mock",
         "--llm",
@@ -1109,13 +1112,13 @@ def test_a_run_on_the_mock_is_tried_as_it_ran(tmp_path: Path) -> None:
     text = script.render_log(root, _experiment(root, "E001"))
     tried = (
         "python docs/examples/lerobot/e001/monkey.py --port 8799 --seed 1\n"
-        "quackd run docs/examples/lerobot/e001/monkey.duck --robot lerobot:mock --llm local:monkey"
-        " --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory\n"
-        "python docs/examples/lerobot/e001/monkey.py --count runs"
+        "roboglot run docs/examples/lerobot/e001/monkey.glot --robot lerobot:mock --llm "
+        "local:monkey --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 "
+        "--no-memory\npython docs/examples/lerobot/e001/monkey.py --count runs"
     )
     assert f"```bash\n{tried}\n```" in text
     assert "stays running in a terminal of its own while the others run" in text
-    assert "needs quackd's `openai` extra" in text
+    assert "needs Roboglot's `openai` extra" in text
     assert "nothing is billed" in text
     assert "lerobot:mujoco" not in text
 
@@ -1127,8 +1130,8 @@ def test_trying_a_run_the_scripted_pilot_flew_needs_no_key(tmp_path: Path) -> No
     _logged(root, "e001", {**GOOD, "provider": "fake", "model": "scripted:e001-task"})
     _logged(root, "e002", {**MOCK, "provider": "fake", "model": "scripted:e002-task"})
     on_the_arm = script.render_log(root, _experiment(root, "E001"))
-    assert f"with quackd's `lerobot` extra.\n{script.SCRIPTED}" in on_the_arm
-    # quackd ignores what follows `fake:`, so the line says what picks the pilot: the task
+    assert f"with Roboglot's `lerobot` extra.\n{script.SCRIPTED}" in on_the_arm
+    # Roboglot ignores what follows `fake:`, so the line says what picks the pilot: the task
     assert "--robot lerobot:mock --llm fake --no-memory" in on_the_arm
     on_the_mock = script.render_log(root, _experiment(root, "E002"))
     for text in (on_the_arm, on_the_mock):
@@ -1145,7 +1148,7 @@ def test_a_trace_too_long_for_a_readme_shows_its_two_ends(
     root = _tree(tmp_path / "examples")
     folder = _logged(root, "e001", GOOD)
     body = "\n".join(f"line {n}" for n in range(1, 3001))
-    (folder / "log" / "terminal.txt").write_text(f"$ quackd run x\n{body}\n", encoding="utf-8")
+    (folder / "log" / "terminal.txt").write_text(f"$ roboglot run x\n{body}\n", encoding="utf-8")
     (folder / "log" / "after.txt").write_text("PS> python count.py\n998 calls\n", encoding="utf-8")
     monkeypatch.setattr(script, "README_LIMIT", 20 * 1024)
     text = script.render_log(root, _experiment(root, "E001"))
@@ -1182,29 +1185,30 @@ def test_a_video_kept_elsewhere_is_named_with_video(
 def test_what_a_command_after_the_run_printed_follows_its_trace(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd robot release` writes no run folder, so its output comes in as text, verbatim."""
+    """`roboglot robot release` writes no run folder, so its output comes in as text, verbatim."""
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
-    run = _run_folder(tmp_path, trace="$ quackd run x\nthe run's last line\n")
-    recorded = {"duck": "e001-task", "command": ["quackd", "run", "x"], **GOOD}
+    run = _run_folder(tmp_path, trace="$ roboglot run x\nthe run's last line\n")
+    recorded = {"glot": "e001-task", "command": ["roboglot", "run", "x"], **GOOD}
     (run / "summary.json").write_text(json.dumps(recorded), encoding="utf-8")
     (run / "E001.mp4").write_bytes(b"video")
     saved = tmp_path / "E001-2.txt"
     saved.write_bytes(
-        "\ufeffPS> quackd robot release arm-01\r\n✓ torque reads off\r\nPS>\r\n".encode()
+        "\ufeffPS> roboglot robot release arm-01\r\n✓ torque reads off\r\nPS>\r\n".encode()
     )
     notes = script.add_run(root, run, 5.0, after=[saved])
     after = root / "e001" / "log" / "after.txt"
     assert (
-        after.read_bytes() == "PS> quackd robot release arm-01\n✓ torque reads off\nPS>\n".encode()
+        after.read_bytes()
+        == "PS> roboglot robot release arm-01\n✓ torque reads off\nPS>\n".encode()
     )
     notes.write_text(json.dumps(NOTES), encoding="utf-8")
     text = script.render_log(root, _experiment(root, "E001"))
-    run_part = "$ quackd run x\nthe run's last line"
-    after_part = "PS> quackd robot release arm-01\n✓ torque reads off\nPS>"
+    run_part = "$ roboglot run x\nthe run's last line"
+    after_part = "PS> roboglot robot release arm-01\n✓ torque reads off\nPS>"
     assert f"```text\n{run_part}\n\n{after_part}\n```" in text
     assert "Show the full terminal trace (6 lines)" in text
-    assert "```text\nquackd run x\n```" in text, "the exact command is the run's alone"
+    assert "```text\nroboglot run x\n```" in text, "the exact command is the run's alone"
 
 
 def test_add_will_not_copy_a_key_from_what_came_after(
@@ -1215,7 +1219,7 @@ def test_add_will_not_copy_a_key_from_what_came_after(
     run = _run_folder(tmp_path)
     (run / "E001.mp4").write_bytes(b"video")
     saved = tmp_path / "E001-2.txt"
-    saved.write_text("PS C:\\Users\\somebody> quackd robot release arm-01\n", encoding="utf-8")
+    saved.write_text("PS C:\\Users\\somebody> roboglot robot release arm-01\n", encoding="utf-8")
     with pytest.raises(script.LogError, match=r"E001-2\.txt holds a key"):
         script.add_run(root, run, 5.0, after=[saved])
     assert not (root / "e001" / "log").exists()
@@ -1231,15 +1235,15 @@ def test_add_needs_a_run_that_reached_its_end(tmp_path: Path) -> None:
 
 def _killed_run(tmp_path: Path, *, ended: bool = False, bundled: str = "") -> Path:
     """A run folder as a killed process leaves it: a transcript cut off mid-run, no summary.json.
-    `bundled` runs a task that ships with quackd in place of the example's own file."""
+    `bundled` runs a task that ships with Roboglot in place of the example's own file."""
     run = tmp_path / "runs" / "20261110-113231-e001-task"
     run.mkdir(parents=True)
-    task = bundled or "D:/co/docs/examples/lerobot/e001/task.duck"
-    command = ["quackd", "run", task, "--robot", "arm-01"]
+    task = bundled or "D:/co/docs/examples/lerobot/e001/task.glot"
+    command = ["roboglot", "run", task, "--robot", "arm-01"]
     state = {"extras": {"step_deg": 5.0}}
     usage = {"input_tokens": 3500, "output_tokens": 70}
     rows = [
-        {"t": 10.3, "kind": "run_start", "duck": bundled or "e001-task", "command": command}
+        {"t": 10.3, "kind": "run_start", "glot": bundled or "e001-task", "command": command}
         | {"version": "0.33.0", "started_at": "2026-11-10T11:32:31.535Z", "provider": "openai"}
         | {"llm_id": "gpt-6-astra", "transport": "real", "connect_s": 10.322},
         {"t": 10.4, "kind": "observation", "features": {"state": state}},
@@ -1255,7 +1259,7 @@ def _killed_run(tmp_path: Path, *, ended: bool = False, bundled: str = "") -> Pa
         rows.append({"t": 30.0, "kind": "run_end"})
     lines = "".join(json.dumps(row) + "\n" for row in rows)
     (run / "transcript.jsonl").write_text(lines, encoding="utf-8")
-    trace = f"$ quackd run {task} --robot arm-01\n"
+    trace = f"$ roboglot run {task} --robot arm-01\n"
     (run / "terminal.txt").write_text(trace, encoding="utf-8")
     (run / "E001.mp4").write_bytes(b"video")
     return run
@@ -1273,7 +1277,7 @@ def test_a_killed_run_is_logged_from_what_its_transcript_recorded(
     record = json.loads((log / "record.json").read_text(encoding="utf-8"))
     assert not (log / "summary.json").exists()
     assert (record["outcome"], record["reason"], record["version"]) == ("killed", None, "0.33.0")
-    # first motion is timed from the start of the verb that moved, as quackd times it
+    # first motion is timed from the start of the verb that moved, as Roboglot times it
     assert (record["steps"], record["llm_calls"], record["first_motion_s"]) == (1, 2, 14.94)
     # the wait and the tokens are the answered call's: the one sent at the kill has neither
     assert (record["llm_latency_s"], record["usage"]["input_tokens"]) == (4.4, 3500)
@@ -1289,10 +1293,10 @@ def test_a_killed_run_is_logged_from_what_its_transcript_recorded(
     assert "| Speed cap | 5° per send |" in text
 
 
-def test_a_killed_run_of_a_task_that_ships_with_quackd_names_it(
+def test_a_killed_run_of_a_task_that_ships_with_roboglot_names_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A task that ships with quackd has no file in the command to name it by, so a killed run
+    """A task that ships with Roboglot has no file in the command to name it by, so a killed run
     keeps its name from the run's start, as a summary would."""
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
@@ -1300,7 +1304,7 @@ def test_a_killed_run_of_a_task_that_ships_with_quackd_names_it(
     log = root / "e001" / "log"
     (log / "notes.yaml").write_text(json.dumps(NOTES), encoding="utf-8")
     text = script.render_log(root, _experiment(root, "E001"))
-    assert "| Task file | `lerobot-lookout`, which ships with quackd |" in text
+    assert "| Task file | `lerobot-lookout`, which ships with Roboglot |" in text
 
 
 def test_a_run_that_reached_its_end_needs_its_summary(
@@ -1315,20 +1319,20 @@ def test_a_run_that_reached_its_end_needs_its_summary(
 def test_the_exact_command_has_what_was_typed_after_the_run(tmp_path: Path) -> None:
     root = _tree(tmp_path / "examples")
     folder = _logged(root, "e001", GOOD)
-    saved = "(v) PS D:\\x> taskkill /F /IM quackd.exe\nSUCCESS: gone\n(v) PS D:\\x>\n"
+    saved = "(v) PS D:\\x> taskkill /F /IM roboglot.exe\nSUCCESS: gone\n(v) PS D:\\x>\n"
     (folder / "log" / "after.txt").write_text(saved, encoding="utf-8")
     text = script.render_log(root, _experiment(root, "E001"))
-    assert "--robot arm-01\ntaskkill /F /IM quackd.exe\n```" in text
+    assert "--robot arm-01\ntaskkill /F /IM roboglot.exe\n```" in text
 
 
-DRIVE = ["quackd", "drive", "--robot", "arm-01", "--llm", "openai:gpt-6-astra"]
+DRIVE = ["roboglot", "drive", "--robot", "arm-01", "--llm", "openai:gpt-6-astra"]
 
 
 def _session(tmp_path: Path) -> tuple[Path, Path]:
-    """A `quackd drive` folder as a session leaves it, and its terminal as somebody saved it."""
+    """A `roboglot drive` folder as a session leaves it, and its terminal as somebody saved it."""
     run = tmp_path / "runs" / "20261110-143606-drive"
     run.mkdir(parents=True)
-    own = {"duck": "drive", "outcome": "success", "reason": "the session ended", "steps": 3}
+    own = {"glot": "drive", "outcome": "success", "reason": "the session ended", "steps": 3}
     own |= {"provider": "openai", "llm_calls": 2, "wall_s": 20.5}
     own |= {"usage": {"input_tokens": 2000, "output_tokens": 40}}
     own |= {"started_at": "2026-11-10T14:36:06.959Z", "drive": {"brake_ms": {"n": 1, "p50": 20.4}}}
@@ -1356,7 +1360,7 @@ def _session(tmp_path: Path) -> tuple[Path, Path]:
 def test_a_session_is_logged_with_every_line_typed_at_its_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A `quackd drive` session writes no terminal record and its summary has no version and no
+    """A `roboglot drive` session writes no terminal record and its summary has no version and no
     command: those come from its start, its goals and what somebody saved off the screen."""
     _no_media(monkeypatch)
     root = _tree(tmp_path / "examples")
@@ -1378,7 +1382,7 @@ def test_a_session_is_logged_with_every_line_typed_at_its_prompt(
     assert "| Cost at list price | $0.0800 |" in text
     assert "| First motion | not recorded |" in text
     assert script.TRY_A_SESSION in text
-    assert "```bash\nquackd drive --robot lerobot:mock --llm openai:gpt-6-astra\n```" in text
+    assert "```bash\nroboglot drive --robot lerobot:mock --llm openai:gpt-6-astra\n```" in text
 
 
 def test_only_a_session_takes_a_terminal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

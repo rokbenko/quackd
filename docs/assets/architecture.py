@@ -3,7 +3,7 @@ through on its way to a robot, from the adapter catalogue.
 
 The README and `docs/concepts/architecture.md` show this picture. It is generated, because a
 picture of the adapters that somebody has to redraw is a picture that stops being true the day
-the tenth one lands. Each adapter is drawn where its row in `quackd/adapters/catalogue.py` says:
+the tenth one lands. Each adapter is drawn where its row in `roboglot/adapters/catalogue.py` says:
 its `family` puts it in a box of the second layer, and its `route` in a box of the third. So a
 new adapter joins the picture by naming those two, and a name this script has no label for
 stops it with a message rather than drawing a box nobody wrote.
@@ -16,7 +16,7 @@ measures text, because nothing here can: the width of a line is an estimate from
 letters, on the safe side, and `layout` refuses a line that estimate says does not fit. The same
 two files come out on every machine, since nothing depends on an installed font.
 
-It imports the catalogue and nothing else of quackd's, and reads no environment.
+It imports the catalogue and nothing else of Roboglot's, and reads no environment.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from dataclasses import dataclass
 from html import escape
 from pathlib import Path
 
-from quackd.adapters.catalogue import OFFICIAL, AdapterInfo
+from roboglot.adapters.catalogue import OFFICIAL, AdapterInfo
 
 ASSETS = Path(__file__).resolve().parent
 REPO = ASSETS.parents[1]
@@ -55,7 +55,7 @@ FAMILIES: dict[str, tuple[str, str]] = {
     "wheeled": ("Wheeled base", "a twist, a stop that zeroes it, places where odometry allows"),
     "humanoid": (
         "Humanoid, own loop",
-        "a loop quackd ships, safe-pose slew, keyframes, clamps",
+        "a loop Roboglot ships, safe-pose slew, keyframes, clamps",
     ),
 }
 """The boxes of the second layer, in the order they are drawn: title, what bodies of that kind
@@ -64,7 +64,7 @@ do alike. The catalogue's `family` names one of these for every adapter."""
 ROUTES: dict[str, tuple[str, str]] = {
     "sdk": ("Import the SDK", "upstream ships a package with a client"),
     "wire": ("Speak its wire", "upstream ships a host process; the framing is ours"),
-    "bridge": ("A bridge quackd ships", "quackd runs a daemon of its own on the robot"),
+    "bridge": ("A bridge Roboglot ships", "Roboglot runs a daemon of its own on the robot"),
 }
 """The boxes of the third layer: title, when that route is the one a robot leaves you."""
 

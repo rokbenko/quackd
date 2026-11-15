@@ -1,20 +1,20 @@
-hook: Two folds in a row missed against a soft roll in the arm's way, and quackd let go of the arm where it stood only when a person pressed Enter at a question that said it would drop.
+hook: Two folds in a row missed against a soft roll in the arm's way, and Roboglot let go of the arm where it stood only when a person pressed Enter at a question that said it would drop.
 goal_met: "Partly"
 why_example: >
   Dropping a robot arm can break it or hurt the hand under it. For an arm with a rest pose recorded,
-  quackd drops it where it stands in one way only: its fold has to miss twice, and a person has to
+  Roboglot drops it where it stands in one way only: its fold has to miss twice, and a person has to
   press Enter at a question that says the arm will drop and to hold it first. Until then torque stays
   on and the arm stays up. This example blocks both folds on purpose, to walk that one path to its
   end.
 why_result: >
   It took both misses and an Enter at the question that warns the arm will drop. The first fold
-  missed and quackd only asked to clear the way; the second missed too, and only then came that
+  missed and Roboglot only asked to clear the way; the second missed too, and only then came that
   question, word for word as the card has it, and torque came off at an Enter pressed 7.3 s after
   it. The question asks for the arm to be held first, and here nobody held it: the roll it lay on is
   what kept it from dropping. Two misses and a key press stand between the arm and a drop, and the
   person pressing that key still has to be ready to catch it.
 goal: >
-  Show the only way quackd drops an arm where it stands: two folds missed, and a person pressing Enter
+  Show the only way Roboglot drops an arm where it stands: two folds missed, and a person pressing Enter
   at a question that says the arm will drop. It is the third of the nine bench steps 0.24.0 left for
   a real arm.
 expected: >
@@ -25,20 +25,20 @@ expected: >
   and after 60 s torque stays on`. Holding the arm's weight and pressing Enter lets it go limp into
   the hand, with `✓ torque reads off on every joint of arm-01` and `the arm is limp and in your hands
   (torque was taken off where it stood, because you asked for it): put it down before you let go of
-  it, because nothing is holding it up`. The card does this with `quackd robot release` and foam, at
+  it, because nothing is holding it up`. The card does this with `roboglot robot release` and foam, at
   E171's slow step, and asks how far the arm dropped and whether one hand caught it.
 showed:
   - >
     Like E172, this take used the run's own closing fold, started by Ctrl-C at the wait to hand the
-    arm back, where the card runs `quackd robot release`. A soft roll of clear packing plastic lay
+    arm back, where the card runs `roboglot robot release`. A soft roll of clear packing plastic lay
     across the fold's path, under the forearm, and stayed there through both folds.
   - >
-    With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd was `connected in 8.02
+    With no LLM and no key, `--llm fake` flew the task's scripted pilot. Roboglot was `connected in 8.02
     s`, the arm was lifted by hand and held, `holding the pose you set, you can let go`, and the
     pilot's three calls ended in its `declare_success`.
   - >
     Ctrl-C at the wait to hand the arm back ended that wait, `(the kill switch ended the wait, without
-    an Enter)`, and quackd counted down: `folding the arm to its rest pose in 3 s: take your hands
+    an Enter)`, and Roboglot counted down: `folding the arm to its rest pose in 3 s: take your hands
     away from it now. Ctrl-C or q stops it before it moves`. The `stop` the trace prints after the
     press is the one the run sent when the pilot declared, 10.5 s earlier.
   - >
@@ -48,7 +48,7 @@ showed:
     The first fold met the roll and missed when its time ran out: `elbow_flex is at 62 with a goal of
     96 when the time ran out (4 s)`. The elbow came to rest against the roll, moving under half a
     degree a send for the fold's last two seconds, but the shoulder kept moving to its rest angle, so
-    quackd's time limit ended the fold and not its stall check, which wants every joint still. quackd
+    Roboglot's time limit ended the fold and not its stall check, which wants every joint still. Roboglot
     held the arm up and asked to clear the way: the first question.
   - >
     Enter, 7.7 s later, with the roll left where it was, started the second fold, which stalled
@@ -79,10 +79,10 @@ did_not_show:
   - >
     Keep your hands off a fold: the countdown says so, and the five body joints have no torque cap. A
     hand was on this one for most of the countdown and the first half of the fold. The take also ran
-    at quackd's default step, 5 degrees per send and up to 50 degrees a second, where the card's slow
+    at Roboglot's default step, 5 degrees per send and up to 50 degrees a second, where the card's slow
     step is 1 degree per send and 10 degrees a second.
   - >
-    It does not show `quackd robot release`, which the card runs. A run's release reads the torque
+    It does not show `roboglot robot release`, which the card runs. A run's release reads the torque
     back as the command does, and here every joint read off, but a run prints no `✓ torque reads off
     on every joint of arm-01` line for it.
   - >

@@ -24,7 +24,7 @@ from typing import Any
 
 import pytest
 
-from quackd.safety import (
+from roboglot.safety import (
     ENTER_QUIET_S,
     ENTER_TOO_SOON,
     TYPED_AHEAD_S,
@@ -223,7 +223,7 @@ async def test_stdin_running_out_ends_a_wait_that_has_no_clock_on_it(
 
     That makes the reader the only thing that can ever end it, and a reader that reaches the
     end of its input is a reader that never will. Without this the run waited for ever with
-    the arm limp: a closed terminal, or a Ctrl-D at the wrong moment, and quackd is holding
+    the arm limp: a closed terminal, or a Ctrl-D at the wrong moment, and Roboglot is holding
     nothing and asking nobody."""
     ks, _ = switch()
     await feed(ks, "", monkeypatch)
@@ -260,7 +260,7 @@ async def test_a_press_during_a_wait_is_never_an_enter(
     its line, so a press and an Enter arrive together. The wait used to answer True whenever
     both were in by the time it looked: `q`, the key that stops a run, read as a yes, at the
     question whose yes drops the arm. A press is never an Enter, at any wait."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.0)
     ks, _ = switch()
 
     def q_and_its_enter() -> None:
@@ -280,7 +280,7 @@ async def test_a_deliberate_question_takes_only_a_bare_enter(
     arm with no rest pose was connected to and dropped on a person saying no. A question whose
     Enter moves or drops an arm takes only a bare one: anything typed on the line is a no, and
     says so (`declined`), `y` too, since the question asks for Enter."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.0)
     ks, _ = switch()
     asyncio.get_running_loop().call_later(0.02, ks._heard_enter, typed)
     got = await ks.wait_for_enter(timeout_s=2.0, until_abort=False, deliberate=True)
@@ -302,9 +302,9 @@ async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(
     """The key thread reads whatever is already in the terminal as it starts, and an Enter typed
     while a command was starting used to answer the first question it asked. One read within
     `TYPED_AHEAD_S` of the question being put is passed by, and the wait goes on to the next."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.2)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.2)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.ENTER_QUIET_S", 0.1)
     ks, _ = switch()
     ks._heard_enter("")  # already in the terminal when the question was put
     loop = asyncio.get_running_loop()
@@ -419,11 +419,11 @@ def test_a_key_held_down_answers_no_deliberate_question(
     ran on wall-clock sleeps then, and a stall on CI's macOS runner failed it once. Every moment
     here is a step of the script's, on a clock that stands still between steps, so nothing comes
     early or late whatever the machine is doing."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)
-    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.5)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.5)
+    monkeypatch.setattr("roboglot.safety.ENTER_QUIET_S", 0.5)
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks = KillSwitch(asyncio.Event())
     asked = clock.now
     answers: list[tuple[float, str | None]] = []
@@ -459,10 +459,10 @@ async def test_a_look_that_finds_an_enter_alone_answers_at_once(
     shows an Enter has stood that long is what gets the yes said the moment it is sure, rather than
     up to a whole turn later. So for the press after one passed by, too: somebody told they came
     too soon, who stops and presses again, is answered as soon as the first one would have been."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 1.0)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)  # a turn longer than any step here
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 1.0)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 30.0)  # a turn longer than any step here
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks, _ = switch()
     ks._nothing_waiting(clock.now)  # a console, looked at
     looked_again = _spied_on(ks)
@@ -496,10 +496,10 @@ async def test_a_yes_a_look_has_made_sure_of_stands_though_the_keys_end_with_it(
     before the wait gets to look: a terminal closed, or the end of a stand-in's list of keys. What
     the key thread saw is what it saw, and the end of the keys is no answer to the question it
     has just answered."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 30.0)
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks, _ = switch()
     ks._nothing_waiting(clock.now)
     looked_again = _spied_on(ks)
@@ -523,10 +523,10 @@ async def test_an_abort_with_a_look_at_its_side_takes_no_yes(
     """Only the keys ending leaves a yes a look has just made sure of standing. An abort ends a wait
     that watches it, as it always did, whatever a look said at the same moment and whether or not
     the keys ended with it."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.0)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.0)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 30.0)
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks, _ = switch()
     ks._nothing_waiting(clock.now)
     looked_again = _spied_on(ks)
@@ -551,9 +551,9 @@ async def test_a_look_is_nothing_to_a_wait_that_any_enter_answers(
     """Only a deliberate question cares that an Enter has stood alone. A wait that any Enter
     answers came back from anything that woke it saying whether one had come, so a look at the
     console would have ended it with nobody having pressed a thing."""
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 30.0)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 30.0)
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks, _ = switch()
     ks._nothing_waiting(clock.now)
     clock.now += 0.25
@@ -574,7 +574,7 @@ def _read_late(
     """A switch on a still clock with production's own constants, and a wait that looks at a
     question put at the clock's start, keeping each answer it gets."""
     clock = _Clock()
-    monkeypatch.setattr("quackd.safety.time", clock)
+    monkeypatch.setattr("roboglot.safety.time", clock)
     ks = KillSwitch(asyncio.Event())
     asked = clock.now
     answers: list[str | None] = []
@@ -709,9 +709,9 @@ async def test_enter_pressed_again_and_again_is_told_why_and_gets_through_on_sto
     """It takes quiet before it to be an answer, so somebody pressing it because nothing seemed to
     happen would be locked out with no idea why. They are told, once, and the next press after
     they stop answers."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.05)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.15)
-    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.6)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.05)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.15)
+    monkeypatch.setattr("roboglot.safety.ENTER_QUIET_S", 0.6)
     ks, _ = switch()
     loop = asyncio.get_running_loop()
     told: list[str] = []
@@ -737,11 +737,11 @@ async def test_the_terminal_says_when_it_passes_an_enter_by(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The person at the terminal is who has to be told, and nobody else reads this."""
-    from quackd.cli import _TerminalHandOff
+    from roboglot.cli import _TerminalHandOff
 
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.3)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.02)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.ENTER_QUIET_S", 0.3)
     ks, _ = switch()
     hand = _TerminalHandOff()
     hand.bind(ks)
@@ -756,7 +756,7 @@ async def test_the_terminal_says_when_it_passes_an_enter_by(
 async def test_a_press_as_a_question_prints_ends_it(monkeypatch: pytest.MonkeyPatch) -> None:
     """It ends the wait through the event loop, and it was counted before the wait began to count,
     so the record filed it under a question nobody answered."""
-    from quackd.cli import _TerminalHandOff
+    from roboglot.cli import _TerminalHandOff
 
     ks, _ = switch()
     hand = _TerminalHandOff()
@@ -893,7 +893,7 @@ def test_a_press_as_the_interpreter_ends_leaves_the_exit_code_alone() -> None:
     The first callback here runs before the one the close registered, and the second after it."""
     done = _a_process(
         "import asyncio, atexit, signal, sys\n"
-        "from quackd.safety import KillSwitch\n"
+        "from roboglot.safety import KillSwitch\n"
         "at_the_end = lambda: print('last', signal.getsignal(signal.SIGINT) == signal.SIG_IGN)\n"
         "atexit.register(at_the_end)\n"
         "async def main():\n"
@@ -930,7 +930,7 @@ def test_a_press_once_a_process_has_outstayed_its_close_ends_it() -> None:
     press doing nothing that left `kill`. The record is written by then."""
     done = _a_process(
         "import asyncio, signal, sys\n"
-        "import quackd.safety as safety\n"
+        "import roboglot.safety as safety\n"
         "safety.OUTSTAYED_S = 0.0\n"
         "async def main():\n"
         "    ks = safety.KillSwitch(asyncio.Event())\n"
@@ -953,7 +953,7 @@ def test_a_press_gets_out_of_a_join_on_a_call_that_never_came_back() -> None:
     """
     done = _a_process(
         "import asyncio, os, signal, threading, time\n"
-        "import quackd.safety as safety\n"
+        "import roboglot.safety as safety\n"
         "safety.OUTSTAYED_S = 0.5\n"
         "def presses():\n"
         "    for _ in range(40):\n"
@@ -988,7 +988,7 @@ async def test_a_press_told_to_stay_before_any_press_is_put_back_too() -> None:
 
 async def test_an_enter_twice_in_a_breath_is_no_answer(monkeypatch: pytest.MonkeyPatch) -> None:
     alone = 0.1
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", alone)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", alone)
     ks, _ = switch()
     asyncio.get_running_loop().call_later(TYPED_AHEAD_S + 0.1, _twice_in_a_breath, ks)
     got = await ks.wait_for_enter(

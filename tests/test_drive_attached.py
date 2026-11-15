@@ -5,15 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from quackd.adapters.base import HandResult, RestResult
-from quackd.agent.loop import AgentLoop, RunConfig
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.drive.attached import AttachedBody
-from quackd.duckfile.schema import DuckFile
-from quackd.transport.mock import MockTransport
-from quackd_microduck import microduck_manifest
-from quackd_microduck.verbs import MICRODUCK_VERBS, microduck_conditions
+from roboglot.adapters.base import HandResult, RestResult
+from roboglot.agent.loop import AgentLoop, RunConfig
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.drive.attached import AttachedBody
+from roboglot.glotfile.schema import GlotFile
+from roboglot.transport.mock import MockTransport
+from roboglot_microduck import microduck_manifest
+from roboglot_microduck.verbs import MICRODUCK_VERBS, microduck_conditions
 
 NEWER = "a newer command, sit"
 
@@ -71,11 +71,11 @@ class _Held(MockTransport):
             self.loop.executor.abort.set()
 
 
-def _goal(duck: DuckFile, body: _Held, runs: Path) -> AgentLoop:
+def _goal(duck: GlotFile, body: _Held, runs: Path) -> AgentLoop:
     return AgentLoop(
         RunConfig(
             duck=duck,
-            provider=FakeProvider.for_duck(duck.name),
+            provider=FakeProvider.for_glot(duck.name),
             transport=AttachedBody(body, microduck_manifest("mock")),
             runs_dir=runs,
         )
@@ -83,14 +83,14 @@ def _goal(duck: DuckFile, body: _Held, runs: Path) -> AgentLoop:
 
 
 async def test_a_goal_leaves_the_sessions_body_connected_held_and_where_it_put_it(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A goal is a whole run, and a run connects its body, heartbeats it, folds it and lets go of
     it. On the session's body it does none of those, which the session does once as it closes,
     and its record does not tell the session's connect and close again: its own verbs are all
     that reach the body."""
     body = _Held()
-    result = await _goal(hello_duck, body, tmp_path).run()
+    result = await _goal(hello_glot, body, tmp_path).run()
     assert result.outcome == "success", result.reason
     assert body.done == [], f"the goal did what only the session may: {body.done}"
     assert body.connected and body.heartbeats == 0
@@ -101,13 +101,13 @@ async def test_a_goal_leaves_the_sessions_body_connected_held_and_where_it_put_i
 
 
 async def test_a_goal_the_session_moves_on_from_ends_in_the_sessions_words(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
-    """The session ends a goal the way a flock stops a member, the reason first and then the
+    """The session ends a goal the way a team stops a member, the reason first and then the
     abort, and the goal ends at its next check in those words, not as a kill switch nobody
     pressed."""
     body = _Held()
-    loop = _goal(hello_duck, body, tmp_path)
+    loop = _goal(hello_glot, body, tmp_path)
     body.loop = loop
     result = await loop.run()
     assert result.outcome == "aborted"
@@ -115,11 +115,11 @@ async def test_a_goal_the_session_moves_on_from_ends_in_the_sessions_words(
 
 
 def test_a_failed_heartbeat_is_named_before_the_sessions_reason(
-    hello_duck: DuckFile, tmp_path: Path
+    hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A body that stopped answering is the fact a reader most needs, whatever else asked the
     run to stop."""
-    loop = _goal(hello_duck, _Held(), tmp_path)
+    loop = _goal(hello_glot, _Held(), tmp_path)
     loop.stop_reason = NEWER
     assert loop._abort_reason() == NEWER
     loop.heartbeat.failure = RuntimeError("the robot stopped answering")

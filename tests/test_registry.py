@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from quackd.safety import Executor, allow_all
-from quackd.transport.mock import MockTransport
-from quackd.verbs.learned import LearnedVerbSpec, register_learned_verb
-from quackd.verbs.registry import VerbContext, VerbNotFound, VerbRegistry, VerbResult
+from roboglot.safety import Executor, allow_all
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.learned import LearnedVerbSpec, register_learned_verb
+from roboglot.verbs.registry import VerbContext, VerbNotFound, VerbRegistry, VerbResult
 
 BUILTINS = {
     "move",
@@ -37,7 +37,7 @@ def test_default_registry_contents(registry: VerbRegistry) -> None:
 def test_tool_schema_shape(registry: VerbRegistry) -> None:
     assert registry.get("walk").name == "move"  # stored canonically, resolved by alias
     schema = registry.view("walk").tool_schema()
-    assert schema["name"] == "walk"  # shown as the .duck spelled it
+    assert schema["name"] == "walk"  # shown as the .glot spelled it
     assert schema["input_schema"]["type"] == "object"
     assert set(schema["input_schema"]["properties"]) == {"vx", "vy", "wz", "duration_s"}
     assert schema["input_schema"]["additionalProperties"] is False

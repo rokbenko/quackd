@@ -1,6 +1,6 @@
 # Open Duck Mini v2: the first hardware run
 
-Nobody has run quackd against a physical Open Duck Mini v2. If you have one, this page is
+Nobody has run Roboglot against a physical Open Duck Mini v2. If you have one, this page is
 the order to do it in. Every step has an abort condition, and they are ordered so that the
 duck's feet do not touch the ground until step 10.
 
@@ -10,25 +10,25 @@ loop — so `posture` reads `unknown` whether the duck is upright or on its side
 refuses because it has gone over. **You are the fall detector.** Work with the duck on a
 stand, keep a hand near the power switch, and do not skip the stand.
 
-quackd says this about itself rather than leaving you to find out: every observation the
-pilot sees carries `fall-blind`, `quackd doctor` prints it, and the first run that could move
+Roboglot says this about itself rather than leaving you to find out: every observation the
+pilot sees carries `fall-blind`, `roboglot doctor` prints it, and the first run that could move
 a leg on a fall-blind robot asks you to confirm you are watching before it starts.
 
 ## 1. Upstream's own teleop works first
 
-Drive the duck with its gamepad, the way its README says, with quackd nowhere in sight.
+Drive the duck with its gamepad, the way its README says, with Roboglot nowhere in sight.
 
 > Abort if it does not walk. Something in the build, the calibration or the offsets is
-> wrong, and adding quackd will only make it harder to see.
+> wrong, and adding Roboglot will only make it harder to see.
 
 ## 2. Nothing else owns the serial bus
 
 ```bash
 pgrep -af v2_rl_walk_mujoco.py
-systemctl status quackd-duck-bridge
+systemctl status roboglot-duck-bridge
 ```
 
-The Feetech bus has exactly one owner, and quackd's daemon **replaces** however you started
+The Feetech bus has exactly one owner, and Roboglot's daemon **replaces** however you started
 the walk script before.
 
 > Abort if anything is still holding `/dev/ttyACM0`.
@@ -36,7 +36,7 @@ the walk script before.
 ## 3. What the bridge thinks your duck is
 
 ```bash
-python /opt/quackd/quackd_duck_bridge.py check
+python /opt/roboglot/roboglot_duck_bridge.py check
 ```
 
 Read the `capabilities` block against what you actually soldered, and the `limits` block
@@ -53,12 +53,12 @@ upstream's teleop sends.
 On the Pi, in two terminals. The camera first, so the bridge has a URL to advertise:
 
 ```bash
-python /opt/quackd/quackd_duck_camd.py --fake --size 256 --seconds 300
-python /opt/quackd/quackd_duck_bridge.py serve --fake --seconds 120 \
+python /opt/roboglot/roboglot_duck_camd.py --fake --size 256 --seconds 300
+python /opt/roboglot/roboglot_duck_bridge.py serve --fake --seconds 120 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg
 ```
 
-`--fake` paints a duck's eye view with a ball on the floor, so `quackd run open-duck-scout`
+`--fake` paints a duck's eye view with a ball on the floor, so `roboglot run open-duck-scout`
 should complete against it. If it does, the socket, the protocol, the JPEG transport and the
 verbs all work.
 
@@ -73,13 +73,13 @@ camera. Export the token `install.sh` wrote, or pass `--token`:
 
 ```bash
 ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 your-pi
-export QUACKD_DUCK_TOKEN="$(ssh your-pi sudo cat /etc/quackd/duck-bridge.token)"
-quackd doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
+export ROBOGLOT_DUCK_TOKEN="$(ssh your-pi sudo cat /etc/roboglot/duck-bridge.token)"
+roboglot doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871
 ```
 
 `doctor` with an address connects and prints what your duck actually reported: its
 capabilities, which verbs it does and does not have, and whether the loop is healthy. Read
-that against what you soldered. `quackd list-verbs` will not do: it reads the static
+that against what you soldered. `roboglot list-verbs` will not do: it reads the static
 description of a fully built duck, not yours.
 
 > Abort on a protocol mismatch. Update whichever side is older rather than working around it.
@@ -104,7 +104,7 @@ done | sort -n | tail -3
 
 > Abort if p99 ping is above about 100 ms, **or** if a snapshot fetch is regularly above
 > about 150 ms. Use Ethernet or a USB gadget link instead, or the duck will stutter and stop
-> in the middle of steps. quackd holds its last command for one deadman window while a frame
+> in the middle of steps. Roboglot holds its last command for one deadman window while a frame
 > is in flight, so a slow camera degrades the steering rate before it breaks the gait — but
 > only for that long.
 
@@ -114,7 +114,7 @@ Put a known orange object on the floor at a tape-measured 1.00 m, in front of th
 ask it what it sees:
 
 ```bash
-quackd run --goal "look once and report what you can see, then stop" \
+roboglot run --goal "look once and report what you can see, then stop" \
     --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg --max-steps 3 --llm anthropic
 ```
@@ -131,7 +131,7 @@ rough guess)` until you pass `--fov-deg`; a Pi Camera Module 2 is about 62.
 ## 6. Dry run, feet still off the ground
 
 ```bash
-quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+roboglot run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg --dry-run
 ```
 
@@ -142,7 +142,7 @@ tunnel is what makes that address reach it from your laptop.
 ## 7. The head only, feet still off the ground
 
 ```bash
-quackd run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871
+roboglot run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.1:9871
 ```
 
 Nothing in this task's allowlist moves a leg. If you started the daemon without
@@ -159,7 +159,7 @@ This is the first thing that moves a leg. `--llm fake` has no script for a free-
 goal, so this one needs a real LLM:
 
 ```bash
-quackd run --goal "walk in place with small forward steps, do not turn, then stop" \
+roboglot run --goal "walk in place with small forward steps, do not turn, then stop" \
     --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
     --llm anthropic --max-steps 6
 ```
@@ -167,7 +167,7 @@ quackd run --goal "walk in place with small forward steps, do not turn, then sto
 Watch `loop_hz` in the run's own `report_state`. Anything below 35 Hz fails the heartbeat on
 purpose, because a starved Pi walks badly with no other symptom.
 
-Read it from the run, not from a second `quackd doctor` in another terminal: a second client
+Read it from the run, not from a second `roboglot doctor` in another terminal: a second client
 is fine to have connected, but the run's own state is what the pilot is acting on.
 
 > Abort if the gait is visibly stuttering. That is the deadman tripping, and step 5 is where
@@ -184,7 +184,7 @@ With the duck walking in place on the stand, pull your laptop's Wi-Fi.
 Then test the other shutdown, still on the stand. With it walking in place:
 
 ```bash
-sudo systemctl stop quackd-duck-bridge
+sudo systemctl stop roboglot-duck-bridge
 ```
 
 > The duck must decelerate to a stand over about half a second, not freeze mid-stride. It
@@ -201,11 +201,11 @@ Start the same walk again and press Ctrl-C.
 ## 10. Feet down
 
 Clear floor, hand on the power switch. Abort and cut the power if the duck goes over: you are
-the fall detector on this robot, because nothing on it reports a fall, so quackd cannot know,
+the fall detector on this robot, because nothing on it reports a fall, so Roboglot cannot know,
 and there is no get-up policy to call.
 
 ```bash
-quackd run open-duck-scout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
+roboglot run open-duck-scout --robot open_duck:bridge --address tcp://127.0.0.1:9871 \
     --camera-url http://127.0.0.1:9872/snapshot.jpg --max-steps 10
 ```
 
@@ -213,13 +213,13 @@ quackd run open-duck-scout --robot open_duck:bridge --address tcp://127.0.0.1:98
 
 Open an issue with the Open Duck hardware report template, and attach:
 
-1. `quackd doctor --robot open_duck:bridge --address ...`, in full. It carries what your
+1. `roboglot doctor --robot open_duck:bridge --address ...`, in full. It carries what your
    duck reported at connect, which is how we know what was actually tested.
-2. `python /opt/quackd/quackd_duck_bridge.py check`, in full. It carries your capabilities
+2. `python /opt/roboglot/roboglot_duck_bridge.py check`, in full. It carries your capabilities
    and limits, which is how we know what was actually tested.
 3. `git rev-parse HEAD` inside your `Open_Duck_Mini_Runtime` checkout, and which walk policy
    you used.
-4. `journalctl -u quackd-duck-bridge` for the run.
+4. `journalctl -u roboglot-duck-bridge` for the run.
 5. `runs/<timestamp>-<name>/terminal.txt` from the run, which is the whole session as plain
    text and opens with the command that started it and the version that ran it. It is
    usually the one file that answers what happened. Send `transcript.jsonl` beside it when
@@ -232,7 +232,7 @@ Open an issue with the Open Duck hardware report template, and attach:
 Read the first line of `terminal.txt` before you paste it. The values of `--api-key` and
 `--token` are replaced there, and so is a password or a credential-named query parameter in
 `--base-url`, `--address` and `--camera-url`. Nothing else on the screen is
-([SECURITY.md](../../../SECURITY.md)). The bridge token is safest in `QUACKD_DUCK_TOKEN` rather than
+([SECURITY.md](../../../SECURITY.md)). The bridge token is safest in `ROBOGLOT_DUCK_TOKEN` rather than
 `--token`, because an environment variable reaches no part of the record.
 
 A report earns a row on this adapter's page and our thanks. Only a run on the maintainer's
@@ -241,23 +241,23 @@ own duck flips a status to 🤖, which is the same rule every other adapter live
 ## Five numbers only you can measure
 
 Everything else about this adapter has been read from upstream's source at a pinned commit.
-These five cannot be, and each one is currently a guess that quackd is open about. If you
+These five cannot be, and each one is currently a guess that Roboglot is open about. If you
 record any of them, say so in the issue — they are the difference between a default someone
 chose and a default someone measured.
 
 1. **How long the bridge takes to reach "listening on".** `--patch-watchdog-s` defaults to
    150 s to cover onnxruntime, the servo bus, a two second settle and the IMU on a cold Pi.
-   Nobody has timed it. From `journalctl -u quackd-duck-bridge`:
+   Nobody has timed it. From `journalctl -u roboglot-duck-bridge`:
 
    ```bash
-   journalctl -u quackd-duck-bridge -o short-precise | grep -E "Started|listening on"
+   journalctl -u roboglot-duck-bridge -o short-precise | grep -E "Started|listening on"
    ```
 
 2. **camd's real peak memory**, against the `MemoryMax=140M` in its unit. If this is close,
    the cap is wrong and picamera2 will be OOM-killed on a walking duck:
 
    ```bash
-   systemctl show quackd-duck-camd -p MemoryPeak
+   systemctl show roboglot-duck-camd -p MemoryPeak
    ```
 
 3. **What the loop actually leaves you.** `MIN_LOOP_HZ` is 35 against a 50 Hz policy, and
@@ -269,7 +269,7 @@ chose and a default someone measured.
    what `observe` said, at two distances if you can.
 
 5. **The accelerometer, upright and on its side.** This is the one that would give this
-   robot fall detection. quackd will not guess it: the axis that reads gravity depends on
+   robot fall detection. Roboglot will not guess it: the axis that reads gravity depends on
    the IMU's remap, on `imu_upside_down`, and on a tare offset, so a wrong guess means a
    confident "not fallen" — worse than admitting blindness. Hold the duck still in each
    pose and record `accelero`:

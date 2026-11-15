@@ -6,7 +6,7 @@ and the host flag's call `tests/fake_jetson_hostd.py`. Each stand-in is written 
 contract, and two sides can each agree with a fake and still disagree with each other: a field
 renamed on one side, a shape one side sends and the other refuses, a constant that moved. This
 file runs the REAL daemon, loaded by path the way the board runs it, against the REAL client in
-`quackd/host.py` and the REAL `quackd doctor`. It is the test that catches drift between the
+`roboglot/host.py` and the REAL `roboglot doctor`. It is the test that catches drift between the
 two sides of the protocol, and a change to either side that breaks it is a change to both.
 
 What it cannot catch is anything about a Jetson. The board is a tree of files written from
@@ -35,9 +35,9 @@ import pytest
 from PIL import Image
 from rich.console import Console
 
-from quackd import doctor, host
-from quackd.host import HostClient, HostError
-from quackd.perception.yolo import detections_from_boxes
+from roboglot import doctor, host
+from roboglot.host import HostClient, HostError
+from roboglot.perception.yolo import detections_from_boxes
 from tests.jetson_fixtures import (
     COMPATIBLE,
     MEMINFO,
@@ -51,7 +51,7 @@ from tests.jetson_fixtures import (
 )
 
 REPO = Path(__file__).resolve().parents[1]
-HOSTD = REPO / "bridge" / "jetson" / "quackd_jetson_hostd.py"
+HOSTD = REPO / "bridge" / "jetson" / "roboglot_jetson_hostd.py"
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 """Shaped like `openssl rand -hex 32`, and on every request, so the header is part of the
 contract this file holds and not a detail left to the unit tests."""
@@ -67,7 +67,7 @@ SIZE = (640, 480)
 
 
 def _load(path: Path, name: str) -> ModuleType:
-    """The daemon as the board runs it: a file, never imported through quackd."""
+    """The daemon as the board runs it: a file, never imported through Roboglot."""
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -79,7 +79,7 @@ def _load(path: Path, name: str) -> ModuleType:
 @pytest.fixture(scope="module")
 def hostd() -> ModuleType:
     # its own name, so nothing this file patches can leak into the daemon's own tests
-    return _load(HOSTD, "quackd_jetson_hostd_contract")
+    return _load(HOSTD, "roboglot_jetson_hostd_contract")
 
 
 # ── a fake GPU, and fake board commands ─────────────────────────────────────────────────
@@ -261,9 +261,9 @@ def test_the_board_dump_round_trips_raw(board: Board) -> None:
     assert dump.errors == {}
 
 
-def test_a_snapshot_and_a_detection_round_trip_into_quackds_geometry(board: Board) -> None:
+def test_a_snapshot_and_a_detection_round_trip_into_roboglots_geometry(board: Board) -> None:
     """A frame from the daemon's camera, sent back to its detector, and the boxes read by the
-    one function every quackd detector reads boxes with: the ball the board saw is a ball on
+    one function every Roboglot detector reads boxes with: the ball the board saw is a ball on
     this side, dead ahead of the lens."""
     client = board.client()
     image, age = client.snapshot()
@@ -302,7 +302,7 @@ def test_the_token_rides_every_path_and_its_absence_names_the_flag(board: Board)
 def test_doctor_reads_the_real_daemon_into_a_jetson_report(
     board: Board, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The whole path `quackd doctor --host` takes: the daemon's `/hello`, `/healthz` and
+    """The whole path `roboglot doctor --host` takes: the daemon's `/hello`, `/healthz` and
     `/board`, the client's parsing, and doctor's parsers turning raw text into the section. The
     LLM servers are the one thing stubbed, since the presets would be probed on loopback."""
     monkeypatch.setattr(doctor, "_probe_llms", lambda url, timeout_s=1.5: ("down", "not running"))

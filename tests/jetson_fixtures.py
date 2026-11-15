@@ -1,7 +1,7 @@
 """A Jetson made of files, shared by every test that reads one.
 
 Two readers need the same board: the host daemon's `/board` (`bridge/jetson/`), which ships the
-files raw, and `quackd doctor`, which parses what the daemon ships. Building the board once, here,
+files raw, and `roboglot doctor`, which parses what the daemon ships. Building the board once, here,
 means the two cannot drift into agreeing with two different boards.
 
 The thing tested is always the reading and never the hardware. The one fact no fixture can

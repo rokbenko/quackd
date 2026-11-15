@@ -1,9 +1,9 @@
 """E215: a stand-in for an LLM that never says which way the gripper goes.
 
 Standard library only. It listens on 127.0.0.1 and speaks the one request an OpenAI-compatible
-pilot sends, so `quackd run ... --llm local:lazy --base-url http://127.0.0.1:8800/v1` flies with it.
-It says the task is feasible, calls `gripper` with no arguments, then with a `null`, reads the arm,
-and gives up. A vendor that drops a call's arguments sends what the first call sends, and until
+pilot sends, so `roboglot run ... --llm local:lazy --base-url http://127.0.0.1:8800/v1` flies with
+it. It says the task is feasible, calls `gripper` with no arguments, then with a `null`, reads the
+arm, and gives up. A vendor that drops a call's arguments sends what the first call sends, and until
 0.30.2 that opened the jaws on whatever was in them.
 
 Serve it in one terminal and run the task file in another:

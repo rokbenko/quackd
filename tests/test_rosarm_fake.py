@@ -2,9 +2,9 @@
 
 `rosarm:mock` rehearses a task against `fake.py`, so a fake kinder than the real thing would be a
 rehearsal that passes where the arm would refuse. Each test here is one thing a source in
-`quackd_rosarm/upstream_api.py` says a bridge, a JointTrajectoryController or MotoROS2 does, and the
-fake doing it: the goals each refuses, how a running goal is ended, the bridge that holds a cancel
-behind its goal, and the one move that runs on when its client goes quiet.
+`roboglot_rosarm/upstream_api.py` says a bridge, a JointTrajectoryController or MotoROS2 does, and
+the fake doing it: the goals each refuses, how a running goal is ended, the bridge that holds a
+cancel behind its goal, and the one move that runs on when its client goes quiet.
 """
 
 from __future__ import annotations
@@ -14,10 +14,10 @@ from typing import Any
 
 import pytest
 
-from quackd.transport.base import Intent
-from quackd_rosarm import upstream_api as up
-from quackd_rosarm.bodies import arm_body
-from quackd_rosarm.fake import (
+from roboglot.transport.base import Intent
+from roboglot_rosarm import upstream_api as up
+from roboglot_rosarm.bodies import arm_body
+from roboglot_rosarm.fake import (
     FakeBridge,
     FakeClock,
     FakeJtcArm,
@@ -25,7 +25,7 @@ from quackd_rosarm.fake import (
     GoalStatus,
     minimum_jerk,
 )
-from quackd_rosarm.transport import RosArmWs, trajectory_goal
+from roboglot_rosarm.transport import RosArmWs, trajectory_goal
 
 UR = arm_body("ur5e")
 IISY = arm_body("kuka-lbr-iisy-3-r760")
@@ -242,7 +242,7 @@ def test_motoros2_answers_a_second_goal_only_once_the_first_has_ended() -> None:
     _run(arm, 1.5)
     assert first.status == GoalStatus.SUCCEEDED
     # the waiting goal is answered once the first has ended, and by then its first point is no
-    # longer where the arm is: one more reason quackd never sends a goal over a running one
+    # longer where the arm is: one more reason Roboglot never sends a goal over a running one
     assert second.status == GoalStatus.ABORTED and second.values["error_code"] == -100204
 
 
@@ -282,7 +282,7 @@ def _client(bridge: FakeBridge) -> tuple[Any, Heard]:
 
 
 def test_a_blocking_bridge_lands_a_cancel_only_after_the_move_has_ended() -> None:
-    """`up.GOAL_THREAD_PARAM`: what quackd refuses such a bridge for, shown on the fake itself."""
+    """`up.GOAL_THREAD_PARAM`: what Roboglot refuses such a bridge for, shown on the fake itself."""
     bridge = FakeBridge(UR, new_thread=False)
     actions, heard = _client(bridge)
     goal_id = actions.send_goal(_goal(bridge.arm, 30.0, 3.0), *heard.args())
@@ -427,15 +427,15 @@ def test_a_goal_handed_over_on_a_dropped_socket_goes_out_when_the_socket_is_back
     assert bridge.operations().count("send_action_goal") == 1, "a terminated client sends nothing"
 
 
-# ── quackd going quiet ───────────────────────────────────────────────────────────────────────
+# ── Roboglot going quiet ───────────────────────────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize("body", [UR, IISY, IIWA, MOTO], ids=lambda b: b.robot_type)
-async def test_when_quackd_vanishes_mid_move_the_arm_finishes_that_move_and_holds(
+async def test_when_roboglot_vanishes_mid_move_the_arm_finishes_that_move_and_holds(
     body: Any,
 ) -> None:
     """`up.ONE_MOVE_WHEN_QUIET`, which the manifest promises and the page says: nothing between
-    quackd and the arm ends a goal on its client's silence, so the move it was given runs to its
+    Roboglot and the arm ends a goal on its client's silence, so the move it was given runs to its
     end, and then the arm holds there."""
     bridge = FakeBridge(body)
     transport = RosArmWs(
@@ -448,7 +448,7 @@ async def test_when_quackd_vanishes_mid_move_the_arm_finishes_that_move_and_hold
     goal[joint] = target
     assert (await transport.send_intent(Intent.joint(goal, 4.0))).accepted
     await transport.sleep(1.0)
-    bridge.client_gone()  # no cancel, no close: quackd is simply gone
+    bridge.client_gone()  # no cancel, no close: Roboglot is simply gone
     bridge.clock.advance(4.0)
     reached = math.degrees(bridge.arm.positions[joint])
     assert reached == pytest.approx(target, abs=0.01), "it finished the move it was given"

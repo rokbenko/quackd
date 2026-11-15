@@ -1,5 +1,5 @@
 """The page's end of a run or a drive session, in-process: JSON lines out, ops in, questions put
-by id, and a stop that sets the run's abort (`quackd.front`).
+by id, and a stop that sets the run's abort (`roboglot.front`).
 
 The commands behind it, run as the page runs them, are in `test_front_run.py` and
 `test_front_drive.py`."""
@@ -21,9 +21,9 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd import front as front_mod
-from quackd.agent.loop import KILL_SWITCH, PERSON_STOPS, STOP_BUTTON
-from quackd.front import (
+from roboglot import front as front_mod
+from roboglot.agent.loop import KILL_SWITCH, PERSON_STOPS, STOP_BUTTON
+from roboglot.front import (
     CHANNEL,
     PAGE_GONE,
     Channel,
@@ -33,10 +33,10 @@ from quackd.front import (
     QuestionWithdrawn,
     trimmed,
 )
-from quackd.log import A_PERSON, A_PIPE, LogEvent, asked_on, who_answered
-from quackd.safety import VerbNotAllowed
-from quackd.transport.mock import MockTransport
-from quackd.verbs.registry import VerbRegistry
+from roboglot.log import A_PERSON, A_PIPE, LogEvent, asked_on, who_answered
+from roboglot.safety import VerbNotAllowed
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import VerbRegistry
 from tests.test_executor import _dangerous, gates, logged
 
 
@@ -458,7 +458,7 @@ async def test_a_stop_after_the_run_ended_stops_nothing() -> None:
 async def test_a_stop_leaves_the_reason_whatever_stopped_the_run_first_gave_it() -> None:
     front, _out = _front()
     agent = _Agent()
-    agent.executor.abort.set()  # a heartbeat, a flock, a rule: already stopped
+    agent.executor.abort.set()  # a heartbeat, a team, a rule: already stopped
     front.bind(agent, asyncio.get_running_loop())
     front.stop()
     await asyncio.sleep(0.01)
@@ -510,7 +510,7 @@ async def test_a_stop_sets_the_abort_even_where_saying_so_fails(
     """The page's process dying closes its run's stderr, and on Windows the next write to it
     raises. The stop used to say what it was doing first, raise there, and never set the abort,
     so the robot went on: the abort is set first now, and a word that fails is not said."""
-    from quackd import ui
+    from roboglot import ui
 
     def gone(*_args: Any, **_kwargs: Any) -> None:
         raise OSError(22, "Invalid argument")
@@ -693,7 +693,7 @@ def test_a_run_takes_stop_and_answer_and_says_so_of_anything_else() -> None:
     _until(lambda: len([line for line in _lines(out) if line["ev"] == "notice"]) == 2)
     notices = [line["text"] for line in _lines(out) if line["ev"] == "notice"]
     assert notices == [
-        "quackd run takes stop and answer, not 'line'",
+        "roboglot run takes stop and answer, not 'line'",
         "no question 9 is waiting for that answer",
     ]
 

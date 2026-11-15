@@ -14,24 +14,24 @@ from types import ModuleType
 
 import pytest
 
-from quackd_alohamini import upstream_api as alohamini_api
-from quackd_huebot import upstream_api as huebot_api
-from quackd_lerobot import upstream_api as lerobot_api
-from quackd_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
-from quackd_lerobot.policy import upstream_api as lerobot_policy_api
-from quackd_lerobot.sim import upstream_api as so_arm100_api
-from quackd_microduck import mapd_upstream_api as mapd_api
-from quackd_microduck import upstream_api
-from quackd_microduck.sim3d import upstream_api as microduck_rl_api
-from quackd_moss import upstream_api as moss_api
-from quackd_open_duck import upstream_api as open_duck_api
-from quackd_rosarm import upstream_api as rosarm_api
-from quackd_rosbridge import upstream_api as rosbridge_api
-from quackd_toddlerbot import upstream_api as toddlerbot_api
-from quackd_xlerobot import upstream_api as xlerobot_api
+from roboglot_alohamini import upstream_api as alohamini_api
+from roboglot_huebot import upstream_api as huebot_api
+from roboglot_lerobot import upstream_api as lerobot_api
+from roboglot_lerobot.policy import endpoint_upstream_api as lerobot_endpoint_api
+from roboglot_lerobot.policy import upstream_api as lerobot_policy_api
+from roboglot_lerobot.sim import upstream_api as so_arm100_api
+from roboglot_microduck import mapd_upstream_api as mapd_api
+from roboglot_microduck import upstream_api
+from roboglot_microduck.sim3d import upstream_api as microduck_rl_api
+from roboglot_moss import upstream_api as moss_api
+from roboglot_open_duck import upstream_api as open_duck_api
+from roboglot_rosarm import upstream_api as rosarm_api
+from roboglot_rosbridge import upstream_api as rosbridge_api
+from roboglot_toddlerbot import upstream_api as toddlerbot_api
+from roboglot_xlerobot import upstream_api as xlerobot_api
 from tests.adapter_layout import canonical_rel, source_roots
 
-PKG = Path(__file__).resolve().parents[1] / "quackd"
+PKG = Path(__file__).resolve().parents[1] / "roboglot"
 
 UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
     (
@@ -119,7 +119,7 @@ UPSTREAMS: list[tuple[ModuleType, set[str], tuple[str, ...]]] = [
             "adapters/rosarm/fake.py",
         },
         (
-            # the binding's refs, imported by name from quackd_rosbridge.upstream_api
+            # the binding's refs, imported by name from roboglot_rosbridge.upstream_api
             "https://github.com/gramaziokohler/roslibpy",
             "https://github.com/RobotWebTools/rosbridge_suite",
             "https://github.com/ros2/common_interfaces",
@@ -327,7 +327,7 @@ def test_verified_vocabulary_matches_upstream_enums() -> None:
 def test_the_release_that_plays_emotions_is_the_one_read() -> None:
     """A verdict that robotd has not taken a twist names an emotion as a cause only on a robotd
     from `EMOTIONS_SINCE` on, so that has to be the release the VERIFIED ref that read the
-    emotions names, and the release quackd read has to be one of them."""
+    emotions names, and the release Roboglot read has to be one of them."""
     since = "daemon-v" + ".".join(str(n) for n in upstream_api.EMOTIONS_SINCE)
     skills = upstream_api.SKILLS
     assert f"From {since} robot.do plays an emotion" in skills.note
@@ -356,7 +356,7 @@ def test_microduck_refs_are_pinned_to_a_commit() -> None:
 
 
 def test_the_mapd_refs_are_assumptions_read_at_one_branch_commit() -> None:
-    """`mapd` is on an upstream branch and in no release, so every name quackd spells for it is
+    """`mapd` is on an upstream branch and in no release, so every name Roboglot spells for it is
     an assumption until a release carries it, and every one cites the one commit it was read at:
     the re-read at that release starts from one place, as robotd's does."""
     assert len(mapd_api.PIN) == 40 and mapd_api.PIN.isalnum() and mapd_api.BRANCH == "maploc-v2"
@@ -387,14 +387,14 @@ def test_each_number_the_simulated_map_keeps_to_is_the_one_its_ref_quotes(
 ) -> None:
     """The numbers are typed once, beside the refs, for the code that keeps to them, and each has
     to be the figure its ref quotes from upstream: a number changed on one side alone is a stand-in
-    that no longer stands in for what quackd read."""
+    that no longer stands in for what Roboglot read."""
     assert quoted in str(getattr(ref, "note", "")), (ref, quoted)
 
 
 def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
     """The floor and the version read are numbers the handshake compares, and the frame route is
     a path the transport matches `--camera-url` against, so each has to agree with the ref beside
-    it: a floor above the version read refuses the very robot quackd read, and a path that is not
+    it: a floor above the version read refuses the very robot Roboglot read, and a path that is not
     the route's leaves `extras.robotd.mediad_frame` saying nothing about it. What the rule rests
     on, upstream's own word on a skew and the two facts the echo reads, was read, not assumed."""
     assert int(upstream_api.API_FLOOR.name) <= int(upstream_api.API_VERSION.name)
@@ -409,10 +409,10 @@ def test_the_skew_rule_agrees_with_the_refs_it_rests_on() -> None:
 
 
 def test_the_posture_labels_are_the_ones_robotd_names() -> None:
-    """quackd sorts `robot.state.policy` into standing, sitting and everything else, and the
+    """Roboglot sorts `robot.state.policy` into standing, sitting and everything else, and the
     labels it sorts were an UNVERIFIED assumption until they were read in robotd's source at the
-    pin. The sort has to cover exactly what the two VERIFIED refs name: a label quackd sorts
-    that robotd never reports is one read wrong, and one robotd reports that quackd does not
+    pin. The sort has to cover exactly what the two VERIFIED refs name: a label Roboglot sorts
+    that robotd never reports is one read wrong, and one robotd reports that Roboglot does not
     sort is one nobody read."""
     driven, not_driven = upstream_api.POLICY_LABELS_DRIVEN, upstream_api.POLICY_LABELS_NOT_DRIVEN
     named = [label for ref in (driven, not_driven) for label in ref.name.split(", ")]
@@ -508,11 +508,11 @@ def test_the_numbers_that_stop_a_walk_are_the_ones_read() -> None:
 def beta_bearing_shortfalls(
     shares: tuple[float, ...] = (0.5, 0.75, 0.95),
 ) -> list[tuple[float, float]]:
-    """How far, in degrees, the bearing quackd's detectors take on a beta's frame falls short of
+    """How far, in degrees, the bearing Roboglot's detectors take on a beta's frame falls short of
     the one the beta family's solve gives, at each share of the way from the frame's centre to
     its left edge and to its right, along the principal row: (left, right) for each share.
 
-    quackd's is the pinhole through `GC2093_FOV_DEG` from the frame's centre. The solve's undoes
+    Roboglot's is the pinhole through `GC2093_FOV_DEG` from the frame's centre. The solve's undoes
     `BETA_DISTORTION`, OpenCV's model with y at 0, from `BETA_SOLVE`'s principal point. Near the
     very edge the model stops rising and cannot be undone, so the shares stop short of it."""
     solve = upstream_api.BETA_SOLVE
@@ -615,7 +615,7 @@ def test_lerobot_and_rosbridge_vocabularies_match_what_was_read() -> None:
     ]
     assert lerobot_api.PYTHON.name == ">=3.12" and lerobot_api.PIN in lerobot_api.ROBOT_BASE.source
     assert "NEVER" in lerobot_api.BUS_DISABLE_TORQUE.note
-    assert "input()" in lerobot_api.ROBOT_CALIBRATE.note  # why quackd never calibrates
+    assert "input()" in lerobot_api.ROBOT_CALIBRATE.note  # why Roboglot never calibrates
     assert len(lerobot_api.refs_by_status("VERIFIED")) >= 30
     assert rosbridge_api.MSG_TWIST.name == "geometry_msgs/msg/Twist"
     assert rosbridge_api.MSG_COMPRESSED_IMAGE.name == "sensor_msgs/msg/CompressedImage"
@@ -681,7 +681,7 @@ def test_the_simulators_lerobot_facts_are_the_ones_its_refs_read() -> None:
         assert word in step_cap.note, word
     # the words the simulated bus fails in, and the model number its handshake prints
     assert lerobot_api.STS3215_MODEL_NUMBER.name.endswith(f" {lerobot_api.STS3215_MODEL}")
-    from quackd_lerobot.sim import follower as simulated
+    from roboglot_lerobot.sim import follower as simulated
 
     sync = lerobot_api.BUS_SYNC_READ_ERROR
     assert sync.name.startswith("Failed to sync read '") and "sync write" in sync.note
@@ -758,7 +758,7 @@ def test_the_pipeline_is_verified_for_what_the_torch_job_runs_and_no_more() -> N
     assert api.DEVICE_STEP in api.DEFAULT_STEP_NAMES and api.DEVICE_STEP in api.DEVICE_OVERRIDE.name
     assert api.POLICY_TYPES.name == ", ".join(f'"{t}"' for t in api.SERVED_TYPES)
     # LeRobot 0.6.1's async server listed no X-VLA, and 0.7.0 replaced it with a remote server
-    # that takes any type it can build (ASYNC_SUPPORTED_POLICIES). quackd runs neither
+    # that takes any type it can build (ASYNC_SUPPORTED_POLICIES). Roboglot runs neither
     # (ASYNC_PICKLE), so the old list says only which served types that server took
     served_there = set(re.findall(r'"(\w+)"', api.ASYNC_SUPPORTED_POLICIES.name))
     assert set(api.SERVED_TYPES) - served_there == {"xvla"}
@@ -806,7 +806,7 @@ def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> 
     that type's own processors add, read at the pin. A type served with no allowlist could not
     load, and an allowlist for a type nobody serves would be steps read for nothing. Every step
     a type allows past the defaults is one its own ref names."""
-    from quackd_lerobot.policy import pipeline
+    from roboglot_lerobot.policy import pipeline
 
     api = lerobot_policy_api
     assert set(pipeline.STEPS_BY_TYPE) == set(api.SERVED_TYPES)
@@ -817,7 +817,7 @@ def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> 
         assert allowed - set(api.DEFAULT_STEP_NAMES) <= own, policy_type
         assert not allowed & set(pipeline.REFUSED_STEPS), policy_type
     # a type read and refused is no type served, and the core says why it is not
-    from quackd.adapters import policies
+    from roboglot.adapters import policies
 
     assert not set(pipeline.REFUSED_TYPES) & set(api.SERVED_TYPES)
     not_served = {row.type for row in policies.NOT_SERVED}
@@ -825,14 +825,14 @@ def test_every_served_type_allows_the_steps_read_for_it_and_no_other_types() -> 
 
 
 def test_the_policy_families_are_the_types_the_server_serves() -> None:
-    """`quackd.adapters.policies` says, in the core and as data, which learned policies quackd
+    """`roboglot.adapters.policies` says, in the core and as data, which learned policies Roboglot
     serves and which it does not and why, for the pages and the commands that print them on a
     machine with no LeRobot. Its rows are the served types in the server's order, none of the
     ones it does not serve is a type it does, and importing it costs nothing."""
     import subprocess
     import sys
 
-    from quackd.adapters import policies
+    from roboglot.adapters import policies
 
     assert tuple(f.type for f in policies.FAMILIES) == lerobot_policy_api.SERVED_TYPES
     assert len({f.label for f in policies.FAMILIES}) == len(policies.FAMILIES)
@@ -840,9 +840,9 @@ def test_the_policy_families_are_the_types_the_server_serves() -> None:
     assert not set(refused) & set(lerobot_policy_api.SERVED_TYPES), refused
     for row in policies.NOT_SERVED:
         assert row.why and row.would_change, row.name
-    heavy = ("torch", "lerobot", "transformers", "huggingface_hub", "quackd_lerobot", "pydantic")
+    heavy = ("torch", "lerobot", "transformers", "huggingface_hub", "roboglot_lerobot", "pydantic")
     probe = (
-        f"import sys, quackd.adapters.policies\nprint([m for m in {heavy!r} if m in sys.modules])"
+        f"import sys, roboglot.adapters.policies\nprint([m for m in {heavy!r} if m in sys.modules])"
     )
     done = subprocess.run(
         [sys.executable, "-c", probe], capture_output=True, text=True, timeout=60, check=True
@@ -857,7 +857,7 @@ def test_the_endpoint_refs_say_what_the_code_takes_and_cite_huggingface_hub_at_i
     somebody has to make on purpose. The names the endpoint's code takes as data sit beside the
     refs that read them and say what those refs say, the image is pinned by its digest on both
     registries, and the UNVERIFIED rows are the ones a first real endpoint settles."""
-    from quackd_lerobot.policy import client
+    from roboglot_lerobot.policy import client
 
     api = lerobot_endpoint_api
     for pin in (api.PIN, api.LOCK_PIN):
@@ -1036,7 +1036,7 @@ def test_the_industrial_arms_read_the_protocol_through_the_binding() -> None:
 def test_the_arm_bodies_take_their_names_from_the_refs_that_read_them() -> None:
     """A body record's action and joints are the names its driver's files give, as the VERIFIED
     ref beside them says them: a record changed on one side alone is a name nobody read."""
-    from quackd_rosarm.bodies import BODIES
+    from roboglot_rosarm.bodies import BODIES
 
     ur, iisy, iiwa, moto = (BODIES[t] for t in BODIES)
     assert ur.action == rosarm_api.UR_ACTION.name

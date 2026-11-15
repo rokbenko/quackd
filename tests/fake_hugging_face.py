@@ -2,9 +2,9 @@
 Endpoints API with the Hub and PyPI beside it, the proxy in front of an endpoint, and the
 container behind it.
 
-The standard library and quackd itself, nothing else, so it runs wherever the suite does:
+The standard library and Roboglot itself, nothing else, so it runs wherever the suite does:
 
-- `FakeAPI` answers the routes `quackd policy endpoint` asks (`endpoint_upstream_api`): the
+- `FakeAPI` answers the routes `roboglot policy endpoint` asks (`endpoint_upstream_api`): the
   provider listing with no token and every other route only with the account's token as
   `Authorization: Bearer`, whoami-v2, a repository's visibility and its raw `config.json`, and
   PyPI's JSON for a release. An endpoint it creates passes `pending`, then `initializing`, then
@@ -12,8 +12,8 @@ The standard library and quackd itself, nothing else, so it runs wherever the su
   reaches `running`; one scaled to zero wakes on a request to its proxy. It records every
   request.
 - `FakeContainer` is what Hugging Face would run from the body an endpoint was created with. It
-  asserts the `uvx` command installs this quackd's release with an `--exclude-newer`, parses the
-  arguments with `quackd policy serve`'s own parser and builds its options with
+  asserts the `uvx` command installs this Roboglot's release with an `--exclude-newer`, parses the
+  arguments with `roboglot policy serve`'s own parser and builds its options with
   `cli._serve_options`, as the command does, checks them as the server would, and then serves
   `scripted:sweep` in place of the checkpoint, on 127.0.0.1, with the token the body's secrets
   carry, and says so: the checkpoint itself would need torch and a GPU.
@@ -22,17 +22,17 @@ The standard library and quackd itself, nothing else, so it runs wherever the su
   request to the server behind it, passing the client's `Authorization` header on or stripping
   it, as told. It records every request.
 
-It proves what quackd sends and what it makes of answers shaped like the ones Hugging Face
+It proves what Roboglot sends and what it makes of answers shaped like the ones Hugging Face
 documents. It proves nothing about Hugging Face: what the real proxy answers while a replica
 starts, whether it passes `Authorization` on, and whether an endpoint pulls the image are
-written down nowhere quackd could read (`endpoint_upstream_api`'s UNVERIFIED rows), and nothing
+written down nowhere Roboglot could read (`endpoint_upstream_api`'s UNVERIFIED rows), and nothing
 that passes against this has met a real endpoint.
 
-By hand, from the repository root, to see what `quackd policy endpoint` prints against it:
+By hand, from the repository root, to see what `roboglot policy endpoint` prints against it:
 
     python tests/fake_hugging_face.py -- policy endpoint up arm-act --policy OWNER/NAME@REV --yes
 
-Each `--` starts one more quackd command, run in turn against the same stand-ins, in a scratch
+Each `--` starts one more Roboglot command, run in turn against the same stand-ins, in a scratch
 registry, memory and cache that are thrown away after, with a stand-in account token in
 `HF_TOKEN`. That is how the quoted output in docs/guides/policies.md was made.
 """
@@ -68,7 +68,7 @@ ACCOUNT_TOKEN = "hf_" + "StandInAccountToken" * 2
 """The stand-in account's token, shaped like a Hugging Face token, and nobody's."""
 ACCOUNT = "rok"
 UPLOADED = "2026-10-25T13:08:57.887490Z"
-"""When the stand-in PyPI says this quackd's release was uploaded: quackd-lerobot 0.25.0's last
+"""When the stand-in PyPI says this Roboglot's release was uploaded: roboglot-lerobot 0.25.0's last
 file, as PyPI said on 2026-10-25."""
 
 
@@ -223,9 +223,9 @@ class FakeProxy:
 class FakeContainer:
     """The container an endpoint's body describes, standing in for one Hugging Face would run.
 
-    It holds the body to what quackd's real container needs: a `uvx` that installs this
-    quackd's release of the server's extra, `version`, with an `--exclude-newer`, and runs
-    `quackd policy serve`. The arguments are parsed by that command's own parser and made into
+    It holds the body to what Roboglot's real container needs: a `uvx` that installs this
+    Roboglot's release of the server's extra, `version`, with an `--exclude-newer`, and runs
+    `roboglot policy serve`. The arguments are parsed by that command's own parser and made into
     options by `cli._serve_options`, as the command makes them, and checked as the server checks
     them before it builds anything. Then, in place of the checkpoint, which would need torch and
     a GPU, it serves `scripted:sweep` with the serve flags it was given, on 127.0.0.1, with the
@@ -236,17 +236,17 @@ class FakeContainer:
     def __init__(self, payload: Mapping[str, Any], *, gpu: bool = True) -> None:
         import typer.main
 
-        from quackd import cli
-        from quackd_lerobot import __version__
-        from quackd_lerobot.policy import protocol as wire
-        from quackd_lerobot.policy import server
+        from roboglot import cli
+        from roboglot_lerobot import __version__
+        from roboglot_lerobot.policy import protocol as wire
+        from roboglot_lerobot.policy import server
 
         model = payload["model"]
         command, args, held = list(model["command"]), list(model["args"]), model["secrets"]
         assert command[:3] == ["uvx", "--python", "3.12"], command
-        assert command[-3:] == ["quackd", "policy", "serve"], command
-        assert f"quackd[lerobot-vla]=={__version__}" in command, command
-        assert f"quackd-lerobot[vla]=={__version__}" in command, command
+        assert command[-3:] == ["roboglot", "policy", "serve"], command
+        assert f"roboglot[lerobot-vla]=={__version__}" in command, command
+        assert f"roboglot-lerobot[vla]=={__version__}" in command, command
         self.exclude_newer = command[command.index("--exclude-newer") + 1]
         datetime.fromisoformat(self.exclude_newer.replace("Z", "+00:00"))
         serve = typer.main.get_command(cli.app).commands["policy"].commands["serve"]  # type: ignore[attr-defined]
@@ -267,21 +267,21 @@ class FakeContainer:
         app = self.served.app
         app.info = app.info.model_copy(update={"gpu": gpu})
         self.log = [
-            f"stand-in container: uvx installed quackd {__version__} as of {self.exclude_newer}",
+            f"stand-in container: uvx installed Roboglot {__version__} as of {self.exclude_newer}",
             f"stand-in container: serving scripted:sweep in place of {self.options.policy}, "
             "which would need torch and a GPU",
         ]
         # what the server logs goes to the endpoint's log, as a container's would, and not to
         # the terminal of the run that reached it
         self._kept = _Kept(self.log)
-        logging.getLogger("quackd.policy").addHandler(self._kept)
+        logging.getLogger("roboglot.policy").addHandler(self._kept)
 
     @property
     def url(self) -> str:
         return self.served.url
 
     def close(self) -> None:
-        logging.getLogger("quackd.policy").removeHandler(self._kept)
+        logging.getLogger("roboglot.policy").removeHandler(self._kept)
         self.served.close()
 
 
@@ -397,7 +397,7 @@ class FakeAPI:
     `hub_token` a second one the Hub also takes, for a gated checkpoint. `models` says a
     repository's visibility by name, `{"private": ..., "gated": ...}`, and None for one the Hub
     does not have; any other is public. `configs` gives a repository's `config.json`, an ACT's
-    unless told. `releases` are the versions PyPI has, by project, this quackd's unless told.
+    unless told. `releases` are the versions PyPI has, by project, this Roboglot's unless told.
     `quota` is how many GPUs of the kind asked the account may run, and `fail` has an endpoint
     reach `failed` where it would reach `running`. `gpu` is what each container says. `account`
     and `account_type` are whoami's answer."""
@@ -511,10 +511,10 @@ class FakeAPI:
         state: str = "running",
     ) -> FakeEndpoint:
         """An endpoint the API has that no `up` against it created, for a test of what a run
-        finds: at `url`, an address no stand-in serves, or `""` for none, with quackd's tag and
+        finds: at `url`, an address no stand-in serves, or `""` for none, with Roboglot's tag and
         `mark`, the tag a record gives its endpoint (`endpoint.mark`), unless `tags` says
         otherwise, in `state`. Its proxy is never started: nothing should reach it."""
-        from quackd_lerobot.policy import endpoint
+        from roboglot_lerobot.policy import endpoint
 
         given = [endpoint.TAG, *([mark] if mark else [])] if tags is None else list(tags)
         payload = {"name": name, "type": "authenticated", "tags": given}
@@ -560,11 +560,11 @@ class FakeAPI:
         return _json_reply(404, {"error": f"the stand-in has no {seen.method} {parts.path}"})
 
     def _pypi(self, path: list[str]) -> Reply:
-        from quackd_lerobot import __version__
+        from roboglot_lerobot import __version__
 
         releases = self.releases
         if releases is None:
-            releases = {"quackd": [__version__], "quackd-lerobot": [__version__]}
+            releases = {"roboglot": [__version__], "roboglot-lerobot": [__version__]}
         if len(path) == 4 and path[3] == "json" and path[2] in releases.get(path[1], []):
             files = [{"filename": f"{path[1]}-{path[2]}.tar.gz", "upload_time_iso_8601": UPLOADED}]
             return _json_reply(200, {"info": {"version": path[2]}, "urls": files})
@@ -682,15 +682,15 @@ class FakeAPI:
         self._server = None
 
 
-# ── pointing quackd at it ───────────────────────────────────────────────────────────────
+# ── pointing Roboglot at it ───────────────────────────────────────────────────────────────
 
 
 def point(monkeypatch: Any, api: FakeAPI) -> None:
-    """quackd's endpoint module pointed at `api` for one test: its three addresses, no wait
+    """Roboglot's endpoint module pointed at `api` for one test: its three addresses, no wait
     between reads, and the client's rule for where the account's token may go as a bearer
     taking the stand-in proxies' addresses besides an endpoint's own, compared on the whole
     address. `monkeypatch` is pytest's, and puts all of it back."""
-    from quackd_lerobot.policy import client, endpoint
+    from roboglot_lerobot.policy import client, endpoint
 
     for name in ("API", "HUB", "PYPI"):
         monkeypatch.setattr(endpoint, name, api.url)
@@ -703,11 +703,11 @@ def point(monkeypatch: Any, api: FakeAPI) -> None:
 
 @contextlib.contextmanager
 def pointed_at(api: FakeAPI, *, poll_s: float = 0.0) -> Iterator[None]:
-    """quackd's endpoint module and client pointed at `api`, for as long as the block lasts: its
+    """Roboglot's endpoint module and client pointed at `api`, for as long as the block lasts: its
     three addresses, the rule for where the account's token may go as a bearer, taking the
     stand-in proxies' addresses besides an endpoint's own, and the wait between reads. What a
     test does with `monkeypatch`, for the run by hand."""
-    from quackd_lerobot.policy import client, endpoint
+    from roboglot_lerobot.policy import client, endpoint
 
     saved = (endpoint.API, endpoint.HUB, endpoint.PYPI, endpoint.POLL_S, client.is_endpoint_host)
     real = client.is_endpoint_host
@@ -726,19 +726,19 @@ def pointed_at(api: FakeAPI, *, poll_s: float = 0.0) -> Iterator[None]:
 
 
 def run_by_hand(commands: Sequence[Sequence[str]], *, poll_s: float, answer: str | None) -> int:
-    """Each of `commands` as `quackd` would run it, against one set of stand-ins, in scratch
+    """Each of `commands` as `roboglot` would run it, against one set of stand-ins, in scratch
     directories that are thrown away after, and printed as a terminal shows it. `answer` is what
     a person at a terminal types to the question `up` asks, when there is one."""
-    from quackd import cli
+    from roboglot import cli
 
-    with tempfile.TemporaryDirectory(prefix="quackd-fake-hf-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="roboglot-fake-hf-") as scratch:
         # a home of its own, so nothing it writes lands in the real one, and every path it
-        # prints reads as the pages name it, under ~/.quackd
+        # prints reads as the pages name it, under ~/.roboglot
         home = Path(scratch)
         os.environ["HOME"] = os.environ["USERPROFILE"] = str(home)
-        os.environ["QUACKD_REGISTRY_DIR"] = str(home / ".quackd")
-        os.environ["QUACKD_MEMORY_DIR"] = str(home / ".quackd" / "memory")
-        os.environ["QUACKD_CACHE_DIR"] = str(home / ".quackd" / "cache")
+        os.environ["ROBOGLOT_REGISTRY_DIR"] = str(home / ".roboglot")
+        os.environ["ROBOGLOT_MEMORY_DIR"] = str(home / ".roboglot" / "memory")
+        os.environ["ROBOGLOT_CACHE_DIR"] = str(home / ".roboglot" / "cache")
         os.environ["HF_HOME"] = str(home / ".cache" / "huggingface")
         os.environ["HF_TOKEN"] = ACCOUNT_TOKEN
         os.environ.pop("HF_TOKEN_PATH", None)
@@ -748,9 +748,9 @@ def run_by_hand(commands: Sequence[Sequence[str]], *, poll_s: float, answer: str
         code = 0
         with FakeAPI() as api, pointed_at(api, poll_s=poll_s):
             for argv in commands:
-                print(f"$ quackd {shlex.join(argv)}", flush=True)
+                print(f"$ roboglot {shlex.join(argv)}", flush=True)
                 try:
-                    said = cli.app(list(argv), prog_name="quackd", standalone_mode=False)
+                    said = cli.app(list(argv), prog_name="roboglot", standalone_mode=False)
                     code = said if isinstance(said, int) and said else code
                 except SystemExit as e:
                     code = int(e.code or 0) or code
@@ -776,7 +776,7 @@ def main() -> None:
             commands[-1].append(part)
     commands = [c for c in commands if c]
     if not commands:
-        parser.error("give a quackd command after --")
+        parser.error("give a Roboglot command after --")
     raise SystemExit(run_by_hand(commands, poll_s=args.poll_s, answer=args.answer))
 
 

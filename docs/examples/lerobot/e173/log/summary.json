@@ -1,8 +1,8 @@
 {
-  "duck": "lerobot-lookout",
+  "glot": "lerobot-lookout",
   "run_name": null,
   "command": [
-    "quackd",
+    "roboglot",
     "run",
     "lerobot-lookout",
     "--robot",

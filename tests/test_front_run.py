@@ -1,5 +1,5 @@
-"""`quackd run --front jsonl`, started as the page `quackd ui` starts it: a child process whose
-stdout is JSON lines and whose stdin is the page's ops (`quackd.front`).
+"""`roboglot run --front jsonl`, started as the page `roboglot ui` starts it: a child process whose
+stdout is JSON lines and whose stdin is the page's ops (`roboglot.front`).
 
 Real children, so each test is a process start: few of them, each run on the mock duck with the
 scripted pilot, and each one about a way the run can end."""
@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 
-from quackd.front import PROTOCOL
+from roboglot.front import PROTOCOL
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -41,7 +41,7 @@ class _Page:
 
     def __init__(self, args: list[str], cwd: Path) -> None:
         self.proc = subprocess.Popen(
-            [sys.executable, "-P", "-m", "quackd", *args, "--front", "jsonl"],
+            [sys.executable, "-P", "-m", "roboglot", *args, "--front", "jsonl"],
             cwd=cwd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -111,9 +111,9 @@ def _transcript(run_dir: str) -> list[dict[str, Any]]:
 def _gated_duck(tmp_path: Path) -> Path:
     """The smoke test with its walk behind a confirm gate. Still named hello-world, which is
     how the scripted pilot knows to quack, walk and quack again."""
-    text = (REPO / "ducks" / "hello-world.duck").read_text(encoding="utf-8")
+    text = (REPO / "tasks" / "hello-world.glot").read_text(encoding="utf-8")
     assert "  confirm: []" in text
-    duck = tmp_path / "gated.duck"
+    duck = tmp_path / "gated.glot"
     duck.write_text(text.replace("  confirm: []", "  confirm: [walk]"), encoding="utf-8")
     return duck
 
@@ -205,9 +205,9 @@ def test_the_end_of_the_page_input_is_a_stop_nobody_pressed(tmp_path: Path) -> N
     ("task", "said"),
     [
         (["--goal", "fetch the ball", "--by-hand"], "--by-hand waits for somebody at the arm"),
-        (["flock-hello"], "is a task for a flock, and the page drives one robot at a time"),
+        (["team-hello"], "is a task for a team, and the page drives one robot at a time"),
     ],
-    ids=["by-hand", "a flock's task"],
+    ids=["by-hand", "a team's task"],
 )
 def test_the_page_refuses_what_it_cannot_drive_before_anything_is_built(
     tmp_path: Path, task: list[str], said: str
@@ -225,7 +225,7 @@ def test_a_stray_write_to_stdout_lands_on_stderr_and_never_breaks_a_line(tmp_pat
     script = textwrap.dedent(
         """
         import os, sys
-        from quackd.front import Channel
+        from roboglot.front import Channel
         channel = Channel.open()
         print("stray print")
         os.write(1, b"raw write\\n")
@@ -252,7 +252,7 @@ def test_a_run_whose_page_dies_still_stops_and_closes_its_record(tmp_path: Path)
     """The page's process killed outright: the child's input ends with it, the question the run
     was waiting on is taken back, and the run ends and writes its record as for any stop."""
     out_file = tmp_path / "child-out.jsonl"
-    child = [sys.executable, "-P", "-m", "quackd"]
+    child = [sys.executable, "-P", "-m", "roboglot"]
     child += [*_run_args(tmp_path, str(_gated_duck(tmp_path))), "--front", "jsonl"]
     parent = tmp_path / "page.py"
     parent.write_text(
@@ -327,7 +327,7 @@ def test_a_page_that_dies_while_the_pilot_thinks_still_stops_the_run(tmp_path: P
         textwrap.dedent(
             f"""
             import asyncio, pathlib, sys
-            from quackd.agent.providers import fake
+            from roboglot.agent.providers import fake
 
             async def thinking(self, system, history, tools):
                 pathlib.Path({str(calling)!r}).write_text("calling", encoding="utf-8")
@@ -335,8 +335,8 @@ def test_a_page_that_dies_while_the_pilot_thinks_still_stops_the_run(tmp_path: P
                 raise RuntimeError("the page's going away never stopped this call")
 
             fake.FakeProvider.step = thinking
-            from quackd.cli import main
-            sys.argv[0] = "quackd"
+            from roboglot.cli import main
+            sys.argv[0] = "roboglot"
             main()
             """
         ),

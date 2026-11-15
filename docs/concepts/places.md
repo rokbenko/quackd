@@ -1,7 +1,7 @@
 # Places
 
 A robot that says where it is can name the spots it stood on, and its pilot can find them in
-its list again. quackd makes no map of its own. It reads where a robot is from what the robot
+its list again. Roboglot makes no map of its own. It reads where a robot is from what the robot
 itself offers, keeps the names a pilot or a person gave, and says how far each one is and which
 way. How much a position can be trusted differs from one body to the next, and every reading says
 which kind it is.
@@ -9,16 +9,16 @@ which kind it is.
 ## Where a robot says where it is
 
 A body's transport carries a reading, its `spatial` source, for the life of one connection
-(`quackd.space.source`). Today that is:
+(`roboglot.space.source`). Today that is:
 
 | Body | Reading | Its frame |
 |---|---|---|
 | Microduck over `robotd` (`jsonrpc`), with `mapd` beside it | the duck's own map, `mapd`: its newest pose carried on by robotd's odometry since (UNVERIFIED: `mapd` is in no release yet) | the map's own, known again in a later session by its first stops after its origin, until a wipe or a map with fewer stops |
-| Microduck over `robotd` (`jsonrpc`) | contact odometry, `robot.state.odom`, which every robotd quackd serves has sent since before the release quackd reads | one connection, begun again within it when the duck is picked up, falls or rides a fall down, when robotd's clock goes back, or on a step longer than its walking policy could make in the time between two frames |
+| Microduck over `robotd` (`jsonrpc`) | contact odometry, `robot.state.odom`, which every robotd Roboglot serves has sent since before the release Roboglot reads | one connection, begun again within it when the duck is picked up, falls or rides a fall down, when robotd's clock goes back, or on a step longer than its walking policy could make in the time between two frames |
 | Microduck `mock` | the mock's scripted pose | the mock's own, for as long as it runs |
 | MOSS (`cockpit`, `mock`) | the cockpit's pose, the stack's odometry, dated on the rover's clock | the stack's run, `odom:moss:<run_id>`, over every connection to it, and begun again by nothing else; its own `go_to_place` drives by the planner |
 | rosbridge (`ws`, `mock`) | `/odom`, dated by its header stamp, or by its arrival when the stack stamps nothing | one connection |
-| Microduck `sim2d` or `mujoco` in a room, with `--room` | quackd's stand-in for the duck's own map, `mapd`, kept to the numbers quackd read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
+| Microduck `sim2d` or `mujoco` in a room, with `--room` | Roboglot's stand-in for the duck's own map, `mapd`, kept to the numbers Roboglot read of it ([below](#a-room-for-the-simulator)) | the room's own: the same room is the same frame from one session to the next, until a wipe |
 
 Every other body says nothing of where it is yet, and the place verbs are not offered on it. The
 simulator without a room is one of them. A
@@ -30,7 +30,7 @@ Odometry is the robot's own sense of how far it has gone, with nothing to correc
 little with every metre walked. Pollen measured the Microduck's at about 2.4 % of the distance
 walked and about 2 degrees of heading, over 47.5 m of walks on their own floor
 ([Pollen's odometry post](https://pollen-robotics.com/microduck/blog/microduck-odometry/), 23
-October 2026), figures quackd has not measured. That is why its frame is kept short, and why a
+October 2026), figures Roboglot has not measured. That is why its frame is kept short, and why a
 pilot is told how far the duck has walked in it.
 
 ## What the pilot sees
@@ -38,7 +38,7 @@ pilot is told how far the duck has walked in it.
 - **The state line** says where the robot is and how it knows, as `where=odometry(x, y, yaw rad,
   walked N m)` or `where=lost(why)`, beside `extras.where`, the same reading as data:
   `{kind, frame, x, y, yaw, walked_m}`. A Microduck's `x`, `y` and `theta` stay empty: those are
-  the simulators' plain truth, which a flock reads as one arena every member shares.
+  the simulators' plain truth, which a team reads as one arena every member shares.
 - **Every observation** lists the nearest places as `places: kitchen 1.2 m +38°, door 0.6 m -95°`,
   each with how far it is and which way, in degrees from where the robot faces, positive to its
   left, or `door here` for the one it stands on, then the names of the places it cannot reach now
@@ -74,7 +74,7 @@ reads as one of:
   quiet);
 - orphaned: "it was marked on odometry that has started again since", or "its map was wiped".
 
-quackd never converts a position from one frame into another. Two frames share no origin and no
+Roboglot never converts a position from one frame into another. Two frames share no origin and no
 heading to convert by, and a guess would send a robot somewhere nobody chose.
 
 ## Where places are kept
@@ -83,10 +83,10 @@ In `<memory dir>/<robot slug>.places.jsonl`, beside the robot's memory file and 
 ([guides/memory.md](../guides/memory.md)), one JSON record a line: the places, and the frames
 they were marked in. Like memory, every write goes to a temporary file renamed over the old one,
 and nothing is locked. A robot keeps at most 100 places, a name is 1 to 32 letters, digits, spaces,
-hyphens or apostrophes, names are the same in any case, and `start` is a name quackd keeps for
+hyphens or apostrophes, names are the same in any case, and `start` is a name Roboglot keeps for
 itself. With `--no-memory`, places last as long as the run or the session and nothing is written.
 A dry run reads the places a robot has and changes none, as it runs no `mark_place` or
-`forget_place`. `quackd drive` keeps them as a run does.
+`forget_place`. `roboglot drive` keeps them as a run does.
 
 ## Walking to a place
 
@@ -179,10 +179,10 @@ it. The duck's camera sees the walls and the furniture, in greys no detector tak
 and nothing behind them. On `mujoco` they are solid geoms 30 cm tall: the puppet is held off
 them as the cartoon's duck is, and the walking duck meets them with its own feet, each touch
 counted as a bump. And the duck keeps a map of the room the way its own `mapd` keeps one,
-kept to the numbers quackd read of `mapd` ([the Microduck's page](../adapters/microduck/README.md#mapd-the-onboard-map-unverified-an-upstream-branch-in-no-release)):
+kept to the numbers Roboglot read of `mapd` ([the Microduck's page](../adapters/microduck/README.md#mapd-the-onboard-map-unverified-an-upstream-branch-in-no-release)):
 it looks only from a stop, once the duck has stood still for 0.4 s, as far as the head's ToF sees,
 45° across and 2 m out, and it is lost at the start and after a bump or a fall until two stops
-agree. `map` draws it. Every state says the map is quackd's stand-in, so a walk in a room is no
+agree. `map` draws it. Every state says the map is Roboglot's stand-in, so a walk in a room is no
 measure of the real map's errors. Without `--room` the simulator is the arena it always was, and
 says nothing of where the duck is.
 
@@ -193,12 +193,12 @@ When it is recalled, the note says how far that was from the nearest place and f
 robot stands now, "saved 0.3 m from sofa, 2.1 m from here", or that its frame has ended since. A
 note saved before places, or where the robot did not know, reads as it always did.
 
-## What quackd does not do
+## What Roboglot does not do
 
 - **Make a map.** A map is the robot's own work: a Microduck's `mapd`, when a robotd release
   carries it. The simulator's map of a room is a stand-in for that one, and knows the room's walls
   exactly.
 - **Share a frame between robots.** Two robots that have just met share no frame of reference
-  ([ADR-0020](../adr/0020-heterogeneous-flocks.md)), so their places stay their own.
+  ([ADR-0020](../adr/0020-heterogeneous-teams.md)), so their places stay their own.
 
-Why it is built this way: [ADR-0068](../adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-quackd-reads-a-map-rather-than-making-one.md).
+Why it is built this way: [ADR-0068](../adr/0068-a-place-belongs-to-the-frame-it-was-marked-in-and-roboglot-reads-a-map-rather-than-making-one.md).

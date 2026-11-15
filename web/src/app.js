@@ -3,10 +3,10 @@
  *
  * Two things can drive this robot and both are always live. The keyboard writes a twist —
  * three numbers, vx, vy, wz — plus a head angle, which is the entire interface the hardware
- * has. quackd's switch adds a layer above that: an LLM reads an English sentence and picks
+ * has. Roboglot's switch adds a layer above that: an LLM reads an English sentence and picks
  * from the robot's own verbs, and the executor checks each one against a contract before
  * anything moves. Underneath there are two learned policies — one stands the duck up, one
- * walks it — and a scripted kick that is quackd's own, not a policy. None of it reads
+ * walks it — and a scripted kick that is Roboglot's own, not a policy. None of it reads
  * English. That is what the switch is for, and it is the only thing the switch decides:
  * turning it off does not take the keyboard away, because the keyboard was never the layer.
  */
@@ -39,7 +39,7 @@ const ui = {
   loading: $("loading"), phase: $("loading-phase"), bar: $("loading-bar"),
   canvas: $("view"), readout: $("readout"), owner: $("owner"), transcript: $("transcript"),
   goalForm: $("goal-form"), goal: $("goal"), run: $("run"), stopRun: $("stop-run"),
-  reset: $("reset"), toggle: $("quackd-on"), toggleLabel: $("toggle-label"),
+  reset: $("reset"), toggle: $("roboglot-on"), toggleLabel: $("toggle-label"),
   toggleNote: $("toggle-note"), keyBox: $("key-box"),
   provider: $("provider"), llm: $("llm"), llmText: $("llm-text"),
   key: $("key"), baseUrl: $("base-url"),
@@ -143,7 +143,7 @@ function giveTwistTo(who) {
     runtime.manual = true;
     runtime.manualTwist = manualTwist(); // resume from what is actually still held
   } else {
-    abortHand("quackd took the twist");  // and no kick still settling may write into its log
+    abortHand("Roboglot took the twist");  // and no kick still settling may write into its log
     held.clear();                        // no stale key may clobber the first verb
     runtime.manualTwist = [0, 0, 0];
     runtime.manual = false;
@@ -168,7 +168,7 @@ function ownerState() {
 const OWNER_TEXT = {
   live: "keyboard ready",
   hand: "you have the twist",
-  pilot: "quackd has the twist",
+  pilot: "Roboglot has the twist",
   typing: "keyboard pauses while you type · Esc",
 };
 
@@ -214,14 +214,14 @@ const OFF_NOTE =
  */
 function applyToggle() {
   const on = ui.toggle.checked;
-  ui.toggleLabel.textContent = on ? "quackd is on" : "quackd is off";
+  ui.toggleLabel.textContent = on ? "Roboglot is on" : "Roboglot is off";
   ui.toggleNote.textContent = on ? ON_NOTE : OFF_NOTE;
   ui.keyBox.hidden = !on;                 // no LLM is called, so no key is needed
   ui.run.textContent = on ? "Run" : "Send";
-  document.body.classList.toggle("no-quackd", !on);
+  document.body.classList.toggle("no-roboglot", !on);
 }
 
-ui.toggle.addEventListener("change", () => { abortRun("you switched quackd off"); applyToggle(); });
+ui.toggle.addEventListener("change", () => { abortRun("you switched Roboglot off"); applyToggle(); });
 
 // ── running ─────────────────────────────────────────────────────────────────────────────
 
@@ -586,7 +586,7 @@ ui.save.addEventListener("click", () => recorder.save());
 
 function showShare(goal) {
   ui.share.hidden = false;
-  ui.share.href = shareUrl(goal, { quackd: ui.toggle.checked });
+  ui.share.href = shareUrl(goal, { roboglot: ui.toggle.checked });
   ui.share.title = recorder?.blob
     ? "Opens X with the post written. Save the clip first and attach it there."
     : "Opens X with the post written.";
@@ -607,7 +607,7 @@ for (const [id, spec] of Object.entries(PROVIDERS)) {
  * The field used to be free text with one id pre-filled, so every other LLM this build knows
  * was something you had to have read the source to name, and a typo reached the vendor before
  * anything said so. The list is `catalogue.js`, generated from the Python that is the single
- * source of truth, so the page offers exactly what `quackd list-models` does.
+ * source of truth, so the page offers exactly what `roboglot list-models` does.
  *
  * createElement throughout. A label is vendor copy — "Z.ai GLM 5.2 (hosted by Mistral)" — and
  * innerHTML would make a `<` in one of them markup.
@@ -640,7 +640,7 @@ function chosenLlm() {
 function applyProvider() {
   const provider = ui.provider.value;
   const spec = PROVIDERS[provider];
-  // A vendor quackd keeps a list for gets the list; a local server gets the free-text box,
+  // A vendor Roboglot keeps a list for gets the list; a local server gets the free-text box,
   // because it serves whatever you pulled and there is no list to keep.
   const fromCatalogue = Boolean(CATALOGUE[provider]);
   fillLlms(provider);

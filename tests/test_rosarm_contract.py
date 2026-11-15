@@ -1,9 +1,9 @@
 """The rosarm contract job: the transport against a real rosbridge and a real action server.
 
 `rosarm:mock` rehearses every task against a fake bridge written from reading
-(`FAKE_FROM_READING` in `quackd_rosarm.upstream_api`). This holds the transport to the real
+(`FAKE_FROM_READING` in `roboglot_rosarm.upstream_api`). This holds the transport to the real
 thing instead, in the official ROS 2 image of a distribution, Jazzy or Humble: rosbridge_server
-and rosapi as that distribution releases them, roslibpy as quackd locks it, a
+and rosapi as that distribution releases them, roslibpy as Roboglot locks it, a
 robot_state_publisher serving the arm's description, and a stand-in for the arm's driver in rclpy
 (`tests/rosarm_contract/arm.py`), whose action server and status topic are ROS 2's own. What a
 JointTrajectoryController or MotoROS2 does with a goal is the stand-in's here, so nothing below
@@ -35,18 +35,18 @@ from typing import Any
 import pytest
 import yaml
 
-from quackd.safety import Executor
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.registry import registry_from_manifest
-from quackd_rosarm import RosArmAdapter
-from quackd_rosarm.bodies import BODIES, ArmBody, arm_body
-from quackd_rosarm.fake import description_urdf
-from quackd_rosarm.transport import DEFAULT_BRIDGE_NODE, RosArmWs, trajectory_goal
-from quackd_rosarm.upstream_api import GOAL_THREAD_PARAM, NO_ACTION_SERVER
-from quackd_rosarm.verbs import TOL_DEG
+from roboglot.safety import Executor
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_rosarm import RosArmAdapter
+from roboglot_rosarm.bodies import BODIES, ArmBody, arm_body
+from roboglot_rosarm.fake import description_urdf
+from roboglot_rosarm.transport import DEFAULT_BRIDGE_NODE, RosArmWs, trajectory_goal
+from roboglot_rosarm.upstream_api import GOAL_THREAD_PARAM, NO_ACTION_SERVER
+from roboglot_rosarm.verbs import TOL_DEG
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("QUACKD_ROSARM_CONTRACT") != "1",
+    os.environ.get("ROBOGLOT_ROSARM_CONTRACT") != "1",
     reason="the contract job is opt-in: it runs in an official ROS 2 image (tests/rosarm_contract)",
 )
 
@@ -249,7 +249,7 @@ class Cell:
 
 
 def _raw_client(port: int) -> Any:
-    """roslibpy itself, for what quackd never does: a goal from another client."""
+    """roslibpy itself, for what Roboglot never does: a goal from another client."""
     import roslibpy
 
     ros = roslibpy.Ros("127.0.0.1", port)
@@ -417,7 +417,7 @@ async def test_the_stock_launch_file_decides_whether_a_bridge_is_refused(
     cells: Callable[..., Cell],
 ) -> None:
     """The distribution's own launch file, with nothing said of the goal thread: Humble's says
-    false, so quackd refuses that bridge in words naming rosbridge_suite#909, and Jazzy's says
+    false, so Roboglot refuses that bridge in words naming rosbridge_suite#909, and Jazzy's says
     true, so it connects (`GOAL_THREAD_DEFAULTS`)."""
     body = arm_body("ur5e")
     cell = cells(body, new_thread=None)
@@ -436,7 +436,7 @@ async def test_a_bridge_that_runs_goals_on_its_reader_lands_a_cancel_after_the_m
 ) -> None:
     """`GOAL_RUNS_ON_THE_READER`, on the real bridge: with the goal thread off, a cancel sent a
     second into a three second move is reached only once the move has ended, so the goal ends
-    SUCCEEDED. That is the bridge quackd refuses at connect."""
+    SUCCEEDED. That is the bridge Roboglot refuses at connect."""
     import roslibpy
 
     body = arm_body("ur5e")
@@ -501,7 +501,7 @@ async def test_a_goal_left_running_refuses_the_connect_until_it_ends(
     with pytest.raises(TransportError) as refused:
         await RosArmWs(cell.address, body=body).connect()
     said = str(refused.value)
-    assert "is still running a goal sent before quackd connected (executing)" in said, said
+    assert "is still running a goal sent before Roboglot connected (executing)" in said, said
     # refused for as long as the move runs, and taken once it has ended
     while True:
         transport = RosArmWs(cell.address, body=body)

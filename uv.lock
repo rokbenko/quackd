@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
@@ -36,17 +36,17 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "quackd",
-    "quackd-alohamini",
-    "quackd-huebot",
-    "quackd-lerobot",
-    "quackd-microduck",
-    "quackd-moss",
-    "quackd-open-duck",
-    "quackd-rosarm",
-    "quackd-rosbridge",
-    "quackd-toddlerbot",
-    "quackd-xlerobot",
+    "roboglot",
+    "roboglot-alohamini",
+    "roboglot-huebot",
+    "roboglot-lerobot",
+    "roboglot-microduck",
+    "roboglot-moss",
+    "roboglot-open-duck",
+    "roboglot-rosarm",
+    "roboglot-rosbridge",
+    "roboglot-toddlerbot",
+    "roboglot-xlerobot",
 ]
 
 [[package]]
@@ -3998,426 +3998,6 @@ wheels = [
 ]
 
 [[package]]
-name = "quackd"
-source = { editable = "." }
-dependencies = [
-    { name = "cryptography" },
-    { name = "mcp" },
-    { name = "numpy" },
-    { name = "pillow" },
-    { name = "prompt-toolkit" },
-    { name = "pydantic" },
-    { name = "python-dotenv" },
-    { name = "pyyaml" },
-    { name = "rich" },
-    { name = "segno" },
-    { name = "typer" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "anthropic" },
-    { name = "google-genai" },
-    { name = "openai" },
-]
-alohamini = [
-    { name = "quackd-alohamini" },
-]
-anthropic = [
-    { name = "anthropic" },
-]
-cohere = [
-    { name = "openai" },
-]
-decision = [
-    { name = "typesafe-sdk" },
-]
-deepseek = [
-    { name = "openai" },
-]
-dev = [
-    { name = "hatchling" },
-    { name = "mypy" },
-    { name = "opencv-python-headless" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-xdist" },
-    { name = "pyzmq" },
-    { name = "quackd-alohamini" },
-    { name = "quackd-huebot" },
-    { name = "quackd-lerobot" },
-    { name = "quackd-microduck" },
-    { name = "quackd-moss" },
-    { name = "quackd-open-duck" },
-    { name = "quackd-rosarm" },
-    { name = "quackd-rosbridge" },
-    { name = "quackd-toddlerbot" },
-    { name = "quackd-xlerobot" },
-    { name = "ruff" },
-    { name = "types-pyyaml" },
-]
-gemini = [
-    { name = "google-genai" },
-]
-glm = [
-    { name = "openai" },
-]
-grok = [
-    { name = "openai" },
-]
-huebot = [
-    { name = "quackd-huebot" },
-]
-kimi = [
-    { name = "openai" },
-]
-lan = [
-    { name = "paho-mqtt" },
-    { name = "zeroconf" },
-]
-laya = [
-    { name = "laya" },
-]
-lerobot = [
-    { name = "quackd-lerobot", extra = ["sdk"] },
-]
-lerobot-sim = [
-    { name = "quackd-lerobot", extra = ["sim"] },
-]
-lerobot-vla = [
-    { name = "quackd-lerobot", extra = ["vla"] },
-]
-live = [
-    { name = "pygame" },
-]
-meta = [
-    { name = "openai" },
-]
-microduck = [
-    { name = "quackd-microduck" },
-]
-microduck-camera = [
-    { name = "quackd-microduck", extra = ["camera"] },
-]
-mistral = [
-    { name = "openai" },
-]
-moss = [
-    { name = "quackd-moss" },
-]
-mujoco = [
-    { name = "quackd-microduck", extra = ["mujoco"] },
-]
-onboard = [
-    { name = "bleak", marker = "sys_platform == 'linux'" },
-    { name = "dbus-fast", marker = "sys_platform == 'linux'" },
-    { name = "openai" },
-    { name = "zeroconf" },
-]
-open-duck = [
-    { name = "quackd-open-duck" },
-]
-openai = [
-    { name = "openai" },
-]
-openrouter = [
-    { name = "openai" },
-]
-qwen = [
-    { name = "openai" },
-]
-robots = [
-    { name = "quackd-alohamini" },
-    { name = "quackd-huebot" },
-    { name = "quackd-lerobot", extra = ["sdk"] },
-    { name = "quackd-microduck" },
-    { name = "quackd-moss" },
-    { name = "quackd-open-duck" },
-    { name = "quackd-rosarm", extra = ["sdk"] },
-    { name = "quackd-rosbridge", extra = ["sdk"] },
-    { name = "quackd-toddlerbot" },
-    { name = "quackd-xlerobot" },
-]
-rosarm = [
-    { name = "quackd-rosarm", extra = ["sdk"] },
-]
-rosbridge = [
-    { name = "quackd-rosbridge", extra = ["sdk"] },
-]
-toddlerbot = [
-    { name = "quackd-toddlerbot" },
-]
-ui = [
-    { name = "streamlit" },
-]
-xlerobot = [
-    { name = "quackd-xlerobot" },
-]
-yolo = [
-    { name = "opencv-python-headless" },
-    { name = "ultralytics", version = "8.4.123", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
-    { name = "ultralytics", version = "8.4.197", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "anthropic", marker = "extra == 'all'", specifier = ">=1.0,<2" },
-    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=1.0,<2" },
-    { name = "bleak", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=3.0.2,<4" },
-    { name = "cryptography", specifier = ">=42" },
-    { name = "dbus-fast", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=5.2,<6" },
-    { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0,<3" },
-    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0,<3" },
-    { name = "hatchling", marker = "extra == 'dev'", specifier = ">=1.25" },
-    { name = "laya", marker = "extra == 'laya'", specifier = ">=0.3,<1" },
-    { name = "mcp", specifier = ">=2.0,<3" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
-    { name = "numpy", specifier = ">=1.26" },
-    { name = "openai", marker = "extra == 'all'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'cohere'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'deepseek'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'glm'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'grok'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'kimi'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'meta'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'mistral'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'onboard'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=1.66,<4" },
-    { name = "openai", marker = "extra == 'qwen'", specifier = ">=1.66,<4" },
-    { name = "opencv-python-headless", marker = "extra == 'dev'", specifier = ">=4.9" },
-    { name = "opencv-python-headless", marker = "extra == 'yolo'", specifier = ">=4.9" },
-    { name = "paho-mqtt", marker = "extra == 'lan'", specifier = ">=2,<3" },
-    { name = "pillow", specifier = ">=13" },
-    { name = "prompt-toolkit", specifier = ">=3.0.42" },
-    { name = "pydantic", specifier = ">=2.7,<3" },
-    { name = "pygame", marker = "extra == 'live'", specifier = ">=2.5" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
-    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5" },
-    { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "pyzmq", marker = "extra == 'dev'", specifier = ">=26" },
-    { name = "quackd-alohamini", marker = "extra == 'alohamini'", editable = "adapters/alohamini" },
-    { name = "quackd-alohamini", marker = "extra == 'dev'", editable = "adapters/alohamini" },
-    { name = "quackd-alohamini", marker = "extra == 'robots'", editable = "adapters/alohamini" },
-    { name = "quackd-huebot", marker = "extra == 'dev'", editable = "adapters/huebot" },
-    { name = "quackd-huebot", marker = "extra == 'huebot'", editable = "adapters/huebot" },
-    { name = "quackd-huebot", marker = "extra == 'robots'", editable = "adapters/huebot" },
-    { name = "quackd-lerobot", marker = "extra == 'dev'", editable = "adapters/lerobot" },
-    { name = "quackd-lerobot", extras = ["sdk"], marker = "extra == 'lerobot'", editable = "adapters/lerobot" },
-    { name = "quackd-lerobot", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/lerobot" },
-    { name = "quackd-lerobot", extras = ["sim"], marker = "extra == 'lerobot-sim'", editable = "adapters/lerobot" },
-    { name = "quackd-lerobot", extras = ["vla"], marker = "extra == 'lerobot-vla'", editable = "adapters/lerobot" },
-    { name = "quackd-microduck", marker = "extra == 'dev'", editable = "adapters/microduck" },
-    { name = "quackd-microduck", marker = "extra == 'microduck'", editable = "adapters/microduck" },
-    { name = "quackd-microduck", marker = "extra == 'robots'", editable = "adapters/microduck" },
-    { name = "quackd-microduck", extras = ["camera"], marker = "extra == 'microduck-camera'", editable = "adapters/microduck" },
-    { name = "quackd-microduck", extras = ["mujoco"], marker = "extra == 'mujoco'", editable = "adapters/microduck" },
-    { name = "quackd-moss", marker = "extra == 'dev'", editable = "adapters/moss" },
-    { name = "quackd-moss", marker = "extra == 'moss'", editable = "adapters/moss" },
-    { name = "quackd-moss", marker = "extra == 'robots'", editable = "adapters/moss" },
-    { name = "quackd-open-duck", marker = "extra == 'dev'", editable = "adapters/open_duck" },
-    { name = "quackd-open-duck", marker = "extra == 'open-duck'", editable = "adapters/open_duck" },
-    { name = "quackd-open-duck", marker = "extra == 'robots'", editable = "adapters/open_duck" },
-    { name = "quackd-rosarm", marker = "extra == 'dev'", editable = "adapters/rosarm" },
-    { name = "quackd-rosarm", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosarm" },
-    { name = "quackd-rosarm", extras = ["sdk"], marker = "extra == 'rosarm'", editable = "adapters/rosarm" },
-    { name = "quackd-rosbridge", marker = "extra == 'dev'", editable = "adapters/rosbridge" },
-    { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosbridge" },
-    { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'rosbridge'", editable = "adapters/rosbridge" },
-    { name = "quackd-toddlerbot", marker = "extra == 'dev'", editable = "adapters/toddlerbot" },
-    { name = "quackd-toddlerbot", marker = "extra == 'robots'", editable = "adapters/toddlerbot" },
-    { name = "quackd-toddlerbot", marker = "extra == 'toddlerbot'", editable = "adapters/toddlerbot" },
-    { name = "quackd-xlerobot", marker = "extra == 'dev'", editable = "adapters/xlerobot" },
-    { name = "quackd-xlerobot", marker = "extra == 'robots'", editable = "adapters/xlerobot" },
-    { name = "quackd-xlerobot", marker = "extra == 'xlerobot'", editable = "adapters/xlerobot" },
-    { name = "rich", specifier = ">=13.7" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
-    { name = "segno", specifier = ">=1.6" },
-    { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.61,<2" },
-    { name = "typer", specifier = ">=0.12" },
-    { name = "types-pyyaml", marker = "extra == 'dev'" },
-    { name = "typesafe-sdk", marker = "extra == 'decision'", specifier = ">=0.7,<1" },
-    { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.2" },
-    { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
-    { name = "zeroconf", marker = "extra == 'onboard'", specifier = ">=0.132" },
-]
-provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "moss", "mujoco", "onboard", "open-duck", "openai", "openrouter", "qwen", "robots", "rosarm", "rosbridge", "toddlerbot", "ui", "xlerobot", "yolo"]
-
-[[package]]
-name = "quackd-alohamini"
-source = { editable = "adapters/alohamini" }
-dependencies = [
-    { name = "pyzmq" },
-    { name = "quackd" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pyzmq", specifier = ">=26" },
-    { name = "quackd", editable = "." },
-]
-
-[[package]]
-name = "quackd-huebot"
-source = { editable = "adapters/huebot" }
-dependencies = [
-    { name = "quackd" },
-    { name = "quackd-microduck" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quackd", editable = "." },
-    { name = "quackd-microduck", editable = "adapters/microduck" },
-]
-
-[[package]]
-name = "quackd-lerobot"
-source = { editable = "adapters/lerobot" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.optional-dependencies]
-sdk = [
-    { name = "lerobot", extra = ["feetech"], marker = "python_full_version >= '3.12'" },
-    { name = "rustypot", marker = "python_full_version >= '3.12'" },
-]
-sim = [
-    { name = "mujoco" },
-]
-vla = [
-    { name = "dm-tree", marker = "python_full_version >= '3.12'" },
-    { name = "lerobot", extra = ["diffusers-dep", "pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "dm-tree", marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.1.8,<1.0.0" },
-    { name = "lerobot", extras = ["diffusers-dep", "pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.7,<0.7.1" },
-    { name = "lerobot", extras = ["feetech"], marker = "python_full_version >= '3.12' and extra == 'sdk'", specifier = ">=0.7,<0.7.1" },
-    { name = "mujoco", marker = "extra == 'sim'", specifier = ">=3.12,<4" },
-    { name = "quackd", editable = "." },
-    { name = "rustypot", marker = "python_full_version >= '3.12' and extra == 'sdk'", specifier = ">=1.13.1,<1.14" },
-]
-provides-extras = ["sdk", "sim", "vla"]
-
-[[package]]
-name = "quackd-microduck"
-source = { editable = "adapters/microduck" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.optional-dependencies]
-camera = [
-    { name = "aiortc" },
-    { name = "av" },
-    { name = "websockets" },
-]
-mujoco = [
-    { name = "mujoco" },
-    { name = "onnxruntime" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "aiortc", marker = "extra == 'camera'", specifier = ">=1.9" },
-    { name = "av", marker = "extra == 'camera'", specifier = ">=12" },
-    { name = "mujoco", marker = "extra == 'mujoco'", specifier = ">=3.12,<4" },
-    { name = "onnxruntime", marker = "extra == 'mujoco'", specifier = ">=1.20" },
-    { name = "quackd", editable = "." },
-    { name = "websockets", marker = "extra == 'camera'", specifier = ">=13" },
-]
-provides-extras = ["camera", "mujoco"]
-
-[[package]]
-name = "quackd-moss"
-source = { editable = "adapters/moss" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quackd", editable = "." }]
-
-[[package]]
-name = "quackd-open-duck"
-source = { editable = "adapters/open_duck" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quackd", editable = "." }]
-
-[[package]]
-name = "quackd-rosarm"
-source = { editable = "adapters/rosarm" }
-dependencies = [
-    { name = "quackd" },
-    { name = "quackd-rosbridge" },
-]
-
-[package.optional-dependencies]
-sdk = [
-    { name = "quackd-rosbridge", extra = ["sdk"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quackd", editable = "." },
-    { name = "quackd-rosbridge", editable = "adapters/rosbridge" },
-    { name = "quackd-rosbridge", extras = ["sdk"], marker = "extra == 'sdk'", editable = "adapters/rosbridge" },
-]
-provides-extras = ["sdk"]
-
-[[package]]
-name = "quackd-rosbridge"
-source = { editable = "adapters/rosbridge" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.optional-dependencies]
-sdk = [
-    { name = "roslibpy" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "quackd", editable = "." },
-    { name = "roslibpy", marker = "extra == 'sdk'", specifier = ">=2,<3" },
-]
-provides-extras = ["sdk"]
-
-[[package]]
-name = "quackd-toddlerbot"
-source = { editable = "adapters/toddlerbot" }
-dependencies = [
-    { name = "quackd" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "quackd", editable = "." }]
-
-[[package]]
-name = "quackd-xlerobot"
-source = { editable = "adapters/xlerobot" }
-dependencies = [
-    { name = "pyzmq" },
-    { name = "quackd" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pyzmq", specifier = ">=26" },
-    { name = "quackd", editable = "." },
-]
-
-[[package]]
 name = "referencing"
 version = "0.37.0"
 source = { registry = "https://pypi.org/simple" }
@@ -4577,6 +4157,426 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c0/8f/0722ca900cc807c13a6a0c696dacf35430f72e0ec571c4275d2371fca3e9/rich-15.0.0.tar.gz", hash = "sha256:edd07a4824c6b40189fb7ac9bc4c52536e9780fbbfbddf6f1e2502c31b068c36", size = 230680, upload-time = "2026-04-12T08:24:00.75Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/82/3b/64d4899d73f91ba49a8c18a8ff3f0ea8f1c1d75481760df8c68ef5235bf5/rich-15.0.0-py3-none-any.whl", hash = "sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb", size = 310654, upload-time = "2026-04-12T08:24:02.83Z" },
+]
+
+[[package]]
+name = "roboglot"
+source = { editable = "." }
+dependencies = [
+    { name = "cryptography" },
+    { name = "mcp" },
+    { name = "numpy" },
+    { name = "pillow" },
+    { name = "prompt-toolkit" },
+    { name = "pydantic" },
+    { name = "python-dotenv" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "segno" },
+    { name = "typer" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "anthropic" },
+    { name = "google-genai" },
+    { name = "openai" },
+]
+alohamini = [
+    { name = "roboglot-alohamini" },
+]
+anthropic = [
+    { name = "anthropic" },
+]
+cohere = [
+    { name = "openai" },
+]
+decision = [
+    { name = "typesafe-sdk" },
+]
+deepseek = [
+    { name = "openai" },
+]
+dev = [
+    { name = "hatchling" },
+    { name = "mypy" },
+    { name = "opencv-python-headless" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "pytest-xdist" },
+    { name = "pyzmq" },
+    { name = "roboglot-alohamini" },
+    { name = "roboglot-huebot" },
+    { name = "roboglot-lerobot" },
+    { name = "roboglot-microduck" },
+    { name = "roboglot-moss" },
+    { name = "roboglot-open-duck" },
+    { name = "roboglot-rosarm" },
+    { name = "roboglot-rosbridge" },
+    { name = "roboglot-toddlerbot" },
+    { name = "roboglot-xlerobot" },
+    { name = "ruff" },
+    { name = "types-pyyaml" },
+]
+gemini = [
+    { name = "google-genai" },
+]
+glm = [
+    { name = "openai" },
+]
+grok = [
+    { name = "openai" },
+]
+huebot = [
+    { name = "roboglot-huebot" },
+]
+kimi = [
+    { name = "openai" },
+]
+lan = [
+    { name = "paho-mqtt" },
+    { name = "zeroconf" },
+]
+laya = [
+    { name = "laya" },
+]
+lerobot = [
+    { name = "roboglot-lerobot", extra = ["sdk"] },
+]
+lerobot-sim = [
+    { name = "roboglot-lerobot", extra = ["sim"] },
+]
+lerobot-vla = [
+    { name = "roboglot-lerobot", extra = ["vla"] },
+]
+live = [
+    { name = "pygame" },
+]
+meta = [
+    { name = "openai" },
+]
+microduck = [
+    { name = "roboglot-microduck" },
+]
+microduck-camera = [
+    { name = "roboglot-microduck", extra = ["camera"] },
+]
+mistral = [
+    { name = "openai" },
+]
+moss = [
+    { name = "roboglot-moss" },
+]
+mujoco = [
+    { name = "roboglot-microduck", extra = ["mujoco"] },
+]
+onboard = [
+    { name = "bleak", marker = "sys_platform == 'linux'" },
+    { name = "dbus-fast", marker = "sys_platform == 'linux'" },
+    { name = "openai" },
+    { name = "zeroconf" },
+]
+open-duck = [
+    { name = "roboglot-open-duck" },
+]
+openai = [
+    { name = "openai" },
+]
+openrouter = [
+    { name = "openai" },
+]
+qwen = [
+    { name = "openai" },
+]
+robots = [
+    { name = "roboglot-alohamini" },
+    { name = "roboglot-huebot" },
+    { name = "roboglot-lerobot", extra = ["sdk"] },
+    { name = "roboglot-microduck" },
+    { name = "roboglot-moss" },
+    { name = "roboglot-open-duck" },
+    { name = "roboglot-rosarm", extra = ["sdk"] },
+    { name = "roboglot-rosbridge", extra = ["sdk"] },
+    { name = "roboglot-toddlerbot" },
+    { name = "roboglot-xlerobot" },
+]
+rosarm = [
+    { name = "roboglot-rosarm", extra = ["sdk"] },
+]
+rosbridge = [
+    { name = "roboglot-rosbridge", extra = ["sdk"] },
+]
+toddlerbot = [
+    { name = "roboglot-toddlerbot" },
+]
+ui = [
+    { name = "streamlit" },
+]
+xlerobot = [
+    { name = "roboglot-xlerobot" },
+]
+yolo = [
+    { name = "opencv-python-headless" },
+    { name = "ultralytics", version = "8.4.123", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform == 'darwin'" },
+    { name = "ultralytics", version = "8.4.197", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'darwin'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anthropic", marker = "extra == 'all'", specifier = ">=1.0,<2" },
+    { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=1.0,<2" },
+    { name = "bleak", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=3.0.2,<4" },
+    { name = "cryptography", specifier = ">=42" },
+    { name = "dbus-fast", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=5.2,<6" },
+    { name = "google-genai", marker = "extra == 'all'", specifier = ">=1.0,<3" },
+    { name = "google-genai", marker = "extra == 'gemini'", specifier = ">=1.0,<3" },
+    { name = "hatchling", marker = "extra == 'dev'", specifier = ">=1.25" },
+    { name = "laya", marker = "extra == 'laya'", specifier = ">=0.3,<1" },
+    { name = "mcp", specifier = ">=2.0,<3" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10" },
+    { name = "numpy", specifier = ">=1.26" },
+    { name = "openai", marker = "extra == 'all'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'cohere'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'deepseek'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'glm'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'grok'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'kimi'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'meta'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'mistral'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'onboard'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'openai'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'openrouter'", specifier = ">=1.66,<4" },
+    { name = "openai", marker = "extra == 'qwen'", specifier = ">=1.66,<4" },
+    { name = "opencv-python-headless", marker = "extra == 'dev'", specifier = ">=4.9" },
+    { name = "opencv-python-headless", marker = "extra == 'yolo'", specifier = ">=4.9" },
+    { name = "paho-mqtt", marker = "extra == 'lan'", specifier = ">=2,<3" },
+    { name = "pillow", specifier = ">=13" },
+    { name = "prompt-toolkit", specifier = ">=3.0.42" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+    { name = "pygame", marker = "extra == 'live'", specifier = ">=2.5" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.2" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.23" },
+    { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.5" },
+    { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0" },
+    { name = "pyzmq", marker = "extra == 'dev'", specifier = ">=26" },
+    { name = "rich", specifier = ">=13.7" },
+    { name = "roboglot-alohamini", marker = "extra == 'alohamini'", editable = "adapters/alohamini" },
+    { name = "roboglot-alohamini", marker = "extra == 'dev'", editable = "adapters/alohamini" },
+    { name = "roboglot-alohamini", marker = "extra == 'robots'", editable = "adapters/alohamini" },
+    { name = "roboglot-huebot", marker = "extra == 'dev'", editable = "adapters/huebot" },
+    { name = "roboglot-huebot", marker = "extra == 'huebot'", editable = "adapters/huebot" },
+    { name = "roboglot-huebot", marker = "extra == 'robots'", editable = "adapters/huebot" },
+    { name = "roboglot-lerobot", marker = "extra == 'dev'", editable = "adapters/lerobot" },
+    { name = "roboglot-lerobot", extras = ["sdk"], marker = "extra == 'lerobot'", editable = "adapters/lerobot" },
+    { name = "roboglot-lerobot", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/lerobot" },
+    { name = "roboglot-lerobot", extras = ["sim"], marker = "extra == 'lerobot-sim'", editable = "adapters/lerobot" },
+    { name = "roboglot-lerobot", extras = ["vla"], marker = "extra == 'lerobot-vla'", editable = "adapters/lerobot" },
+    { name = "roboglot-microduck", marker = "extra == 'dev'", editable = "adapters/microduck" },
+    { name = "roboglot-microduck", marker = "extra == 'microduck'", editable = "adapters/microduck" },
+    { name = "roboglot-microduck", marker = "extra == 'robots'", editable = "adapters/microduck" },
+    { name = "roboglot-microduck", extras = ["camera"], marker = "extra == 'microduck-camera'", editable = "adapters/microduck" },
+    { name = "roboglot-microduck", extras = ["mujoco"], marker = "extra == 'mujoco'", editable = "adapters/microduck" },
+    { name = "roboglot-moss", marker = "extra == 'dev'", editable = "adapters/moss" },
+    { name = "roboglot-moss", marker = "extra == 'moss'", editable = "adapters/moss" },
+    { name = "roboglot-moss", marker = "extra == 'robots'", editable = "adapters/moss" },
+    { name = "roboglot-open-duck", marker = "extra == 'dev'", editable = "adapters/open_duck" },
+    { name = "roboglot-open-duck", marker = "extra == 'open-duck'", editable = "adapters/open_duck" },
+    { name = "roboglot-open-duck", marker = "extra == 'robots'", editable = "adapters/open_duck" },
+    { name = "roboglot-rosarm", marker = "extra == 'dev'", editable = "adapters/rosarm" },
+    { name = "roboglot-rosarm", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosarm" },
+    { name = "roboglot-rosarm", extras = ["sdk"], marker = "extra == 'rosarm'", editable = "adapters/rosarm" },
+    { name = "roboglot-rosbridge", marker = "extra == 'dev'", editable = "adapters/rosbridge" },
+    { name = "roboglot-rosbridge", extras = ["sdk"], marker = "extra == 'robots'", editable = "adapters/rosbridge" },
+    { name = "roboglot-rosbridge", extras = ["sdk"], marker = "extra == 'rosbridge'", editable = "adapters/rosbridge" },
+    { name = "roboglot-toddlerbot", marker = "extra == 'dev'", editable = "adapters/toddlerbot" },
+    { name = "roboglot-toddlerbot", marker = "extra == 'robots'", editable = "adapters/toddlerbot" },
+    { name = "roboglot-toddlerbot", marker = "extra == 'toddlerbot'", editable = "adapters/toddlerbot" },
+    { name = "roboglot-xlerobot", marker = "extra == 'dev'", editable = "adapters/xlerobot" },
+    { name = "roboglot-xlerobot", marker = "extra == 'robots'", editable = "adapters/xlerobot" },
+    { name = "roboglot-xlerobot", marker = "extra == 'xlerobot'", editable = "adapters/xlerobot" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.5" },
+    { name = "segno", specifier = ">=1.6" },
+    { name = "streamlit", marker = "extra == 'ui'", specifier = ">=1.61,<2" },
+    { name = "typer", specifier = ">=0.12" },
+    { name = "types-pyyaml", marker = "extra == 'dev'" },
+    { name = "typesafe-sdk", marker = "extra == 'decision'", specifier = ">=0.7,<1" },
+    { name = "ultralytics", marker = "extra == 'yolo'", specifier = ">=8.2" },
+    { name = "zeroconf", marker = "extra == 'lan'", specifier = ">=0.132" },
+    { name = "zeroconf", marker = "extra == 'onboard'", specifier = ">=0.132" },
+]
+provides-extras = ["all", "alohamini", "anthropic", "cohere", "decision", "deepseek", "dev", "gemini", "glm", "grok", "huebot", "kimi", "lan", "laya", "lerobot", "lerobot-sim", "lerobot-vla", "live", "meta", "microduck", "microduck-camera", "mistral", "moss", "mujoco", "onboard", "open-duck", "openai", "openrouter", "qwen", "robots", "rosarm", "rosbridge", "toddlerbot", "ui", "xlerobot", "yolo"]
+
+[[package]]
+name = "roboglot-alohamini"
+source = { editable = "adapters/alohamini" }
+dependencies = [
+    { name = "pyzmq" },
+    { name = "roboglot" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyzmq", specifier = ">=26" },
+    { name = "roboglot", editable = "." },
+]
+
+[[package]]
+name = "roboglot-huebot"
+source = { editable = "adapters/huebot" }
+dependencies = [
+    { name = "roboglot" },
+    { name = "roboglot-microduck" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "roboglot", editable = "." },
+    { name = "roboglot-microduck", editable = "adapters/microduck" },
+]
+
+[[package]]
+name = "roboglot-lerobot"
+source = { editable = "adapters/lerobot" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.optional-dependencies]
+sdk = [
+    { name = "lerobot", extra = ["feetech"], marker = "python_full_version >= '3.12'" },
+    { name = "rustypot", marker = "python_full_version >= '3.12'" },
+]
+sim = [
+    { name = "mujoco" },
+]
+vla = [
+    { name = "dm-tree", marker = "python_full_version >= '3.12'" },
+    { name = "lerobot", extra = ["diffusers-dep", "pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dm-tree", marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.1.8,<1.0.0" },
+    { name = "lerobot", extras = ["diffusers-dep", "pi", "smolvla", "xvla"], marker = "python_full_version >= '3.12' and extra == 'vla'", specifier = ">=0.7,<0.7.1" },
+    { name = "lerobot", extras = ["feetech"], marker = "python_full_version >= '3.12' and extra == 'sdk'", specifier = ">=0.7,<0.7.1" },
+    { name = "mujoco", marker = "extra == 'sim'", specifier = ">=3.12,<4" },
+    { name = "roboglot", editable = "." },
+    { name = "rustypot", marker = "python_full_version >= '3.12' and extra == 'sdk'", specifier = ">=1.13.1,<1.14" },
+]
+provides-extras = ["sdk", "sim", "vla"]
+
+[[package]]
+name = "roboglot-microduck"
+source = { editable = "adapters/microduck" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.optional-dependencies]
+camera = [
+    { name = "aiortc" },
+    { name = "av" },
+    { name = "websockets" },
+]
+mujoco = [
+    { name = "mujoco" },
+    { name = "onnxruntime" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aiortc", marker = "extra == 'camera'", specifier = ">=1.9" },
+    { name = "av", marker = "extra == 'camera'", specifier = ">=12" },
+    { name = "mujoco", marker = "extra == 'mujoco'", specifier = ">=3.12,<4" },
+    { name = "onnxruntime", marker = "extra == 'mujoco'", specifier = ">=1.20" },
+    { name = "roboglot", editable = "." },
+    { name = "websockets", marker = "extra == 'camera'", specifier = ">=13" },
+]
+provides-extras = ["camera", "mujoco"]
+
+[[package]]
+name = "roboglot-moss"
+source = { editable = "adapters/moss" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "roboglot", editable = "." }]
+
+[[package]]
+name = "roboglot-open-duck"
+source = { editable = "adapters/open_duck" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "roboglot", editable = "." }]
+
+[[package]]
+name = "roboglot-rosarm"
+source = { editable = "adapters/rosarm" }
+dependencies = [
+    { name = "roboglot" },
+    { name = "roboglot-rosbridge" },
+]
+
+[package.optional-dependencies]
+sdk = [
+    { name = "roboglot-rosbridge", extra = ["sdk"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "roboglot", editable = "." },
+    { name = "roboglot-rosbridge", editable = "adapters/rosbridge" },
+    { name = "roboglot-rosbridge", extras = ["sdk"], marker = "extra == 'sdk'", editable = "adapters/rosbridge" },
+]
+provides-extras = ["sdk"]
+
+[[package]]
+name = "roboglot-rosbridge"
+source = { editable = "adapters/rosbridge" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.optional-dependencies]
+sdk = [
+    { name = "roslibpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "roboglot", editable = "." },
+    { name = "roslibpy", marker = "extra == 'sdk'", specifier = ">=2,<3" },
+]
+provides-extras = ["sdk"]
+
+[[package]]
+name = "roboglot-toddlerbot"
+source = { editable = "adapters/toddlerbot" }
+dependencies = [
+    { name = "roboglot" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "roboglot", editable = "." }]
+
+[[package]]
+name = "roboglot-xlerobot"
+source = { editable = "adapters/xlerobot" }
+dependencies = [
+    { name = "pyzmq" },
+    { name = "roboglot" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pyzmq", specifier = ">=26" },
+    { name = "roboglot", editable = "." },
 ]
 
 [[package]]

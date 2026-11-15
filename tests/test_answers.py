@@ -1,4 +1,4 @@
-"""One way to wait for a person's answer (`quackd.answers`), and every question a run puts going
+"""One way to wait for a person's answer (`roboglot.answers`), and every question a run puts going
 through it."""
 
 from __future__ import annotations
@@ -10,15 +10,15 @@ from pathlib import Path
 
 import pytest
 
-from quackd.answers import WITHDRAWN, QuestionWithdrawn, answered
+from roboglot.answers import WITHDRAWN, QuestionWithdrawn, answered
 
 ROOT = Path(__file__).resolve().parents[1]
 
 ANSWERERS = {"confirm", "decide", "judge", "acknowledge"}
 """The four questions a run puts, by the names `RunConfig` and the executor hold them under."""
 
-SITES = ("quackd/agent/loop.py", "quackd/safety.py")
-"""Where they are put. Nothing else in quackd calls one (`git grep` for the names finds the
+SITES = ("roboglot/agent/loop.py", "roboglot/safety.py")
+"""Where they are put. Nothing else in Roboglot calls one (`git grep` for the names finds the
 decision LLM's `decide`, the auction's and typer's `confirm`, never these)."""
 
 
@@ -144,7 +144,7 @@ def test_no_question_a_run_puts_is_called_around_answered(path: str) -> None:
         for node in ast.walk(tree)
         if isinstance(node, ast.Call) and _name(node.func) in ANSWERERS
     ]
-    assert direct == [], "put the question through quackd.answers.answered"
+    assert direct == [], "put the question through roboglot.answers.answered"
 
 
 def test_all_four_questions_are_put_through_answered() -> None:

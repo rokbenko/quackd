@@ -39,8 +39,8 @@ jobs:
     env:
       MUJOCO_GL: osmesa
       PYOPENGL_PLATFORM: osmesa
-      QUACKD_STRICT_SEEDS: "1"
-      QUACKD_REQUIRE_GL: "1"
+      ROBOGLOT_STRICT_SEEDS: "1"
+      ROBOGLOT_REQUIRE_GL: "1"
     steps:
       - uses: actions/checkout@v7
       - name: OSMesa, the software rasteriser mujoco renders through
@@ -56,6 +56,6 @@ jobs:
         # The watchdog. A moved archive or a republished policy fails here, with the name of
         # the file that did not match, rather than silently on a stranger's first run.
         run: |
-          uv run python -c "from quackd_microduck.sim3d.assets import ensure_microduck; a = ensure_microduck(); print(a.robot_dir, a.policies_dir, 'pinned:', a.pinned)"
+          uv run python -c "from roboglot_microduck.sim3d.assets import ensure_microduck; a = ensure_microduck(); print(a.robot_dir, a.policies_dir, 'pinned:', a.pinned)"
       - name: find-and-kick on the gait Pollen trained, ten seeds
         run: uv run pytest tests/test_acceptance_mujoco.py tests/test_sim3d.py -m real_duck

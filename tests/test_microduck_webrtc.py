@@ -1,7 +1,7 @@
 """The signalling exchange with `mediad`, driven by a fake socket and a fake peer connection,
 and what is done with the frames and the control channel once a session is up.
 
-What this can prove: that quackd sends the five messages gst-plugins-rs `net/webrtc` expects,
+What this can prove: that Roboglot sends the five messages gst-plugins-rs `net/webrtc` expects,
 in the order the robot's own web client sends them, with the field shapes read off
 `mediad/webclient/index.html`. Getting those wrong is the mistake that produces silence rather
 than an error, which is exactly the mistake worth a test. And that a frame comes out turned the
@@ -23,9 +23,9 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd_microduck import upstream_api as up
-from quackd_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
-from quackd_microduck.webrtc import (
+from roboglot_microduck import upstream_api as up
+from roboglot_microduck.transports.jsonrpc_unix import JsonRpcUnixTransport
+from roboglot_microduck.webrtc import (
     INTRINSICS_SHOWN,
     NO_MOUNT,
     UNTURNED,
@@ -122,7 +122,7 @@ def _pushed(video: dict[str, Any]) -> dict[str, Any]:
 
 
 def _answered(request: dict[str, Any], video: dict[str, Any]) -> dict[str, Any]:
-    """mediad's answer to the question quackd asked, with the id it was asked with
+    """mediad's answer to the question Roboglot asked, with the id it was asked with
     (session.rs:167-172)."""
     return {"jsonrpc": "2.0", "id": request["id"], "result": video}
 
@@ -141,7 +141,7 @@ def _uyvy_source(rotate: int, ux: int, uy: int, width: int, height: int) -> tupl
     """`uyvy::Turn::source` at the pin (uyvy/src/lib.rs:64-80): where a pixel of the upright
     picture is in the frame the camera took, for a frame `width` by `height` as it was sent and the
     turn `Turn::from_degrees(rotate)` names. It is what mediad stands its PNGs and its duck
-    detector's input up with, written out here as upstream wrote it, so that quackd's turn is held
+    detector's input up with, written out here as upstream wrote it, so that Roboglot's turn is held
     to upstream's arithmetic and not to PIL's."""
     if rotate == 0:
         return ux, uy
@@ -222,7 +222,7 @@ async def test_the_robot_ending_the_session_is_recorded(camera: WebRtcCamera) ->
 async def test_the_one_line_written_to_the_control_channel_is_the_video_question(
     camera: WebRtcCamera,
 ) -> None:
-    """mediad opens `control` at us whether we want it or not. quackd reads what comes on it and
+    """mediad opens `control` at us whether we want it or not. Roboglot reads what comes on it and
     writes one line, once: `media.video`, asked the way upstream's console asks it, because the
     push mediad sends when the channel opens can be lost. Motion never goes this way."""
     channel = FakeChannel()
@@ -256,7 +256,7 @@ async def test_how_far_to_turn_a_frame_is_read_off_the_answer_and_off_the_push(
     camera: WebRtcCamera, how: str
 ) -> None:
     """mediad pushes `media.video` when the channel opens and answers it when asked, with the
-    same params either way, and whichever arrives is what quackd turns frames by."""
+    same params either way, and whichever arrives is what Roboglot turns frames by."""
     channel = FakeChannel()
     camera._on_channel(channel)
     video = _video(90, intrinsics={"fx": 1000.0, "fy": 1000.0, "cx": 640.0, "cy": 360.0})
@@ -418,9 +418,9 @@ def test_the_lens_of_an_upright_frame_is_mediads_own_turned_with_it(rotate: int)
     assert upright_fov_deg(video | {"rotate": 45}) is None
 
 
-def test_an_upright_alpha_frame_is_as_wide_as_upstreams_page_and_quackds_say() -> None:
+def test_an_upright_alpha_frame_is_as_wide_as_upstreams_page_and_roboglots_say() -> None:
     """The alpha family's calibration, solved on the frame as mediad sends it, gives the lens of
-    an upright alpha frame at the alpha's own mount, and the number quackd states for it is that
+    an upright alpha frame at the alpha's own mount, and the number Roboglot states for it is that
     one, not a figure typed in."""
     solve = up.ALPHA_SOLVE
     video = {

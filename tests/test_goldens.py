@@ -2,8 +2,8 @@
 duck hashes regenerated in 0.6 when the solo starters gained a `remember` step.
 
 They turn three promises into machine checks: seeded single- and multi-duck worlds are
-byte-identical (poses, camera and top-down renders, RNG state), the six v0 starter ducks
-are unchanged, and a `flock-kick` run on seed 3 still produces the same summary and the
+byte-identical (poses, camera and top-down renders, RNG state), the six v0 starter tasks
+are unchanged, and a `team-kick` run on seed 3 still produces the same summary and the
 same bus conversation. `sim2d_rooms.json`, recorded when explore came, holds a world laid out
 in each built-in room to the same promise, and `explore_seed3.json` a `find-the-ball` run in
 two-rooms on seed 3: what the scripted pilot called, what each verb said, and where the duck
@@ -19,14 +19,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-from quackd.sim2d.render import render_duckcam, render_topdown
-from quackd.sim2d.world import DT, World
-from quackd.space.room import BUILT_IN, load_room
+from roboglot.sim2d.render import render_duckcam, render_topdown
+from roboglot.sim2d.world import DT, World
+from roboglot.space.room import BUILT_IN, load_room
 
 REPO = Path(__file__).resolve().parents[1]
 GOLDEN = REPO / "tests" / "golden"
-V0_DUCKS = ("hello-world", "find-and-kick", "patrol-and-quack", "follow-me", "fetch", "flock-kick")
-FLOCK_SUMMARY_KEYS = ("outcome", "kicker", "ball_displacement_m", "bus_messages", "auctions")
+V0_DUCKS = ("hello-world", "find-and-kick", "patrol-and-quack", "follow-me", "fetch", "team-kick")
+TEAM_SUMMARY_KEYS = ("outcome", "kicker", "ball_displacement_m", "bus_messages", "auctions")
 
 
 def _sha(data: bytes) -> str:
@@ -96,8 +96,8 @@ def room_case(room: str, seed: int) -> dict[str, Any]:
     return rec
 
 
-def duck_hashes() -> dict[str, str]:
-    return {name: _sha((REPO / "ducks" / f"{name}.duck").read_bytes()) for name in V0_DUCKS}
+def glot_hashes() -> dict[str, str]:
+    return {name: _sha((REPO / "tasks" / f"{name}.glot").read_bytes()) for name in V0_DUCKS}
 
 
 def bus_kinds(events: list[dict[str, Any]]) -> list[list[str]]:
@@ -112,16 +112,16 @@ def bus_kinds(events: list[dict[str, Any]]) -> list[list[str]]:
     return out
 
 
-def flock_golden(seed: int, runs_dir: Path) -> dict[str, Any]:
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd.duckfile.parser import load_duck
-    from quackd.flock.runner import run_flock
+def team_golden(seed: int, runs_dir: Path) -> dict[str, Any]:
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.team.runner import run_team
 
     result = asyncio.run(
         asyncio.wait_for(
-            run_flock(
-                load_duck("flock-kick"),
-                provider=FakeProvider.for_duck("flock-kick"),
+            run_team(
+                load_glot("team-kick"),
+                provider=FakeProvider.for_glot("team-kick"),
                 seed=seed,
                 runs_dir=runs_dir,
             ),
@@ -129,9 +129,9 @@ def flock_golden(seed: int, runs_dir: Path) -> dict[str, Any]:
         )
     )
     summary = json.loads((result.run_dir / "summary.json").read_text(encoding="utf-8"))
-    with (result.run_dir / "flock.jsonl").open(encoding="utf-8") as fh:
+    with (result.run_dir / "team.jsonl").open(encoding="utf-8") as fh:
         events = [json.loads(line) for line in fh if line.strip()]
-    picked = {k: summary.get(k) for k in FLOCK_SUMMARY_KEYS if k in summary}
+    picked = {k: summary.get(k) for k in TEAM_SUMMARY_KEYS if k in summary}
     picked["outcome"] = result.outcome
     picked["ball_displacement_m"] = round(result.ball_displacement_m, 4)
     return {"seed": seed, "summary": picked, "bus": bus_kinds(events)}
@@ -141,20 +141,20 @@ def explore_golden(seed: int, runs_dir: Path) -> dict[str, Any]:
     """`find-the-ball` in two-rooms on `seed` with the scripted pilot: the verbs it called, in
     order, whether each worked and what it said, and where the duck and the ball ended, to the
     centimetre."""
-    from quackd.adapters.factory import make_adapter
-    from quackd.agent.loop import RunConfig, RunResult, run_duck
-    from quackd.agent.providers.fake import FakeProvider
-    from quackd.duckfile.parser import load_duck
-    from quackd.perception.color_blob import ColorBlobDetector
-    from quackd.safety import allow_all
+    from roboglot.adapters.factory import make_adapter
+    from roboglot.agent.loop import RunConfig, RunResult, run_glot
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.glotfile.parser import load_glot
+    from roboglot.perception.color_blob import ColorBlobDetector
+    from roboglot.safety import allow_all
 
     async def go() -> tuple[RunResult, list[float], list[float]]:
         adapter = make_adapter("microduck:sim2d", seed=seed, room="two-rooms")
         try:
-            result = await run_duck(
+            result = await run_glot(
                 RunConfig(
-                    duck=load_duck("find-the-ball"),
-                    provider=FakeProvider.for_duck("find-the-ball"),
+                    duck=load_glot("find-the-ball"),
+                    provider=FakeProvider.for_glot("find-the-ball"),
                     transport=adapter,
                     detector=ColorBlobDetector(),
                     runs_dir=runs_dir,
@@ -200,12 +200,12 @@ def test_worlds_laid_out_in_each_room_are_byte_identical() -> None:
 
 
 def test_v0_starter_ducks_are_unchanged() -> None:
-    assert duck_hashes() == _load("duck_hashes.json")
+    assert glot_hashes() == _load("glot_hashes.json")
 
 
-def test_flock_kick_seed_3_conversation_is_unchanged(tmp_path: Path) -> None:
-    want = _load("flock_kick_seed3.json")
-    got = flock_golden(want["seed"], tmp_path)
+def test_team_kick_seed_3_conversation_is_unchanged(tmp_path: Path) -> None:
+    want = _load("team_kick_seed3.json")
+    got = team_golden(want["seed"], tmp_path)
     assert got["summary"] == want["summary"]
     assert got["bus"] == want["bus"]
 

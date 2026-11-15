@@ -15,15 +15,15 @@ import os
 import time
 from pathlib import Path
 
-from quackd.adapters.factory import make_adapter
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import load_duck
-from quackd.perception.color_blob import ColorBlobDetector
+from roboglot.adapters.factory import make_adapter
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import load_glot
+from roboglot.perception.color_blob import ColorBlobDetector
 
 SEEDS = range(10)
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 
 #: Everything in this body's registry that would move it, plus the verbs it does not have.
 NOT_IN_THIS_TASK = {
@@ -41,7 +41,7 @@ NOT_IN_THIS_TASK = {
 
 
 async def test_alohamini_lookout_acceptance(tmp_path: Path) -> None:
-    duck = load_duck("alohamini-lookout")
+    duck = load_glot("alohamini-lookout")
     successes = 0
     report = []
     for seed in SEEDS:
@@ -51,10 +51,10 @@ async def test_alohamini_lookout_acceptance(tmp_path: Path) -> None:
             adapter.world.ducks[adapter.duck_index].y,
         )
         t0 = time.perf_counter()
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
                 duck=duck,
-                provider=FakeProvider.for_duck("alohamini-lookout"),
+                provider=FakeProvider.for_glot("alohamini-lookout"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,
@@ -82,10 +82,10 @@ async def test_the_lookout_never_asks_for_a_voice_this_robot_has_not_got(tmp_pat
     adapter = make_adapter("alohamini:sim2d", seed=0)
     manifest = await adapter.connect()
     assert not manifest.provides("say")
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=load_duck("alohamini-lookout"),
-            provider=FakeProvider.for_duck("alohamini-lookout"),
+            duck=load_glot("alohamini-lookout"),
+            provider=FakeProvider.for_glot("alohamini-lookout"),
             transport=adapter,
             detector=ColorBlobDetector(),
             runs_dir=tmp_path,

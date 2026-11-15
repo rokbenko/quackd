@@ -1,7 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════════════════════════════
-   quackd — the browser simulator.
+   Roboglot — the browser simulator.
 
-   Hand-authored CSS in the quackd-web design language (www.quackd.org): cream ground with a
+   Hand-authored CSS in the roboglot-web design language (www.roboglot.org): cream ground with a
    radial wash, film grain, purple/gold brand, Nunito Sans + DM Mono, 1rem radii, hard-drop
    button shadows, a 2px #7c4a9e focus ring.
 
@@ -57,12 +57,12 @@
   --ink-2: #4e365b;  /* 10.6:1 */
   --body: #6b5875;   /*  5.9:1 */
   --meta: #7a6784;   /*  4.9:1 */
-  --btn-ink: #5f4577;     /* quackd-web's control ink, 7.3:1 */
+  --btn-ink: #5f4577;     /* roboglot-web's control ink, 7.3:1 */
 
   /* edges */
   --edge: #dfcce9;
   --edge-3: #ecdff2;
-  --edge-guard: #e4d3ee;  /* quackd-web's .guard-card border */
+  --edge-guard: #e4d3ee;  /* roboglot-web's .guard-card border */
   --edge-soft: #cdb3e6;
   --field: #ddc8ea;
 
@@ -86,7 +86,7 @@
   /* Deliberately the same hue as --pink: with the language layer off the page has ONE
      off-brand accent, not two. The pink #run is a two-colour object — face, ink, plinth and
      hover — and a single custom property cannot express that, so it is spelled out under
-     `body.no-quackd #run` rather than smuggled in here. */
+     `body.no-roboglot #run` rather than smuggled in here. */
   --off: var(--pink);
   --ring: #7c4a9e;
   --duck: var(--gold);
@@ -111,7 +111,7 @@
      invisible on the dark panel. Gold #f1c642 is 8:1 there. */
   --ring-dark: #f1c642;
 
-  /* shadow — the four that quackd-web casts, at quackd-web's own strength */
+  /* shadow — the four that roboglot-web casts, at roboglot-web's own strength */
   --shadow-card: 0 24px 60px rgba(118, 81, 140, 0.1);
   --shadow-term: 0 22px 48px rgba(79, 55, 85, 0.18);
   --shadow-guard: 0 16px 40px rgba(118, 81, 140, 0.08);
@@ -150,7 +150,7 @@
   --r: 1rem;
   --r-lg: 1.25rem;
 
-  /* spacing, a 0.25rem ladder. quackd-web's section rhythm is py-20 sm:py-28 (5rem/7rem) and
+  /* spacing, a 0.25rem ladder. roboglot-web's section rhythm is py-20 sm:py-28 (5rem/7rem) and
      NONE of it is ported: a landing page can afford 7rem between ideas, a tool cannot afford
      it between the arena and the button that drives it. The ladder stops at --s-6. */
   --s-0: 0.25rem;
@@ -177,16 +177,16 @@
 /* ── class registry ──────────────────────────────────────────────────────────────────────
    tests/test_web.py asserts every class the JavaScript passes to classList.add/remove/toggle
    or querySelectorAll is defined here. The matcher wants `.name` immediately followed by a
-   comma, an opening brace or a colon — `body.no-quackd #run {` does NOT register `no-quackd`,
+   comma, an opening brace or a colon — `body.no-roboglot #run {` does NOT register `no-roboglot`,
    and `.a .b {` registers only `b`.
 
    The other five checked classes register themselves where they are actually styled and need
    no stub: `bad` below, `on` at `.camera-buttons button.on`, `live` at `#record.live`, `chip`
-   at `.chip`, `down` at `kbd.down`. Only `no-quackd` needs a line of its own, because every
+   at `.chip`, `down` at `kbd.down`. Only `no-roboglot` needs a line of its own, because every
    rule that uses it is a descendant selector the matcher cannot see. */
 
 .bad { color: var(--bad); }
-body.no-quackd { --duck: var(--off); }       /* standalone: a descendant selector will not do */
+body.no-roboglot { --duck: var(--off); }       /* standalone: a descendant selector will not do */
 
 /* ── base and typography ─────────────────────────────────────────────────────────────── */
 
@@ -275,7 +275,7 @@ button:disabled,
 
 /* ── shell and header ────────────────────────────────────────────────────────────────── */
 
-/* quackd.org's nav is a DETACHED rounded pill sitting inside the page's own 1180px column,
+/* roboglot.org's nav is a DETACHED rounded pill sitting inside the page's own 1180px column,
    not an app bar flush to the viewport. As a full-bleed bar the mark landed ~190px left of the
    console it labels on a 1600px screen — three different left edges stacked down one page. */
 .nav-shell {
@@ -303,7 +303,7 @@ button:disabled,
   letter-spacing: -0.03em;
   color: var(--ink);
 }
-/* The lockup is the way back to www.quackd.org, so the mark and the word are inside one
+/* The lockup is the way back to www.roboglot.org, so the mark and the word are inside one
    anchor — the heading is still an h1, only its text is wrapped. It must not read as a link:
    it inherits the h1's ink and weight rather than the user-agent's link blue and underline,
    which is what an unstyled <a> in this header would otherwise get — nothing in this file
@@ -332,7 +332,7 @@ button:disabled,
   color: var(--body);
 }
 
-/* quackd-web's own pill, at its own strength: #5f4577 ink, a soft pink shadow, and the live
+/* roboglot-web's own pill, at its own strength: #5f4577 ink, a soft pink shadow, and the live
    dot the hero puts in front of the text. */
 .status-pill {
   display: inline-flex;
@@ -371,7 +371,7 @@ button:disabled,
   border: 1px solid transparent;
 }
 .nav-link:hover { color: var(--primary-deep); background: rgba(235, 221, 250, 0.7); }
-/* quackd-web's .nav-star: the one visible action in the nav, so the bar is not two identical
+/* roboglot-web's .nav-star: the one visible action in the nav, so the bar is not two identical
    pieces of grey text. */
 .nav-star {
   color: var(--btn-ink);
@@ -655,7 +655,7 @@ button, .button {
     box-shadow var(--t-base) var(--ease);
 }
 
-/* #run — the hard-shadow object, quackd-web's .button-yellow at full 7px. The same physics
+/* #run — the hard-shadow object, roboglot-web's .button-yellow at full 7px. The same physics
    appears again at keycap scale on <kbd>: one object, two sizes. */
 #run {
   background: var(--duck);
@@ -684,15 +684,15 @@ button, .button {
    to gold under the cursor. A custom property cannot express a four-part object, so the object
    is spelled out. These sit BEFORE #run:disabled on purpose — equal specificity, and the
    disabled state must stay the same grey in both worlds. */
-body.no-quackd #run {
+body.no-roboglot #run {
   color: #fff;                                   /* 5.6:1 on #a34a72 */
   box-shadow: 0 7px 0 var(--pink-deep), 0 12px 25px rgba(163, 74, 114, 0.18);
 }
-body.no-quackd #run:hover:not(:disabled) {
+body.no-roboglot #run:hover:not(:disabled) {
   background: var(--pink-hi);
   box-shadow: 0 9px 0 var(--pink-deep), 0 16px 28px rgba(163, 74, 114, 0.22);
 }
-body.no-quackd #run:active:not(:disabled) { box-shadow: 0 4px 0 var(--pink-deep); }
+body.no-roboglot #run:active:not(:disabled) { box-shadow: 0 4px 0 var(--pink-deep); }
 
 #run:disabled {
   background: #f0e6d3;
@@ -878,7 +878,7 @@ label {
 
 /* ── the cockpit ─────────────────────────────────────────────────────────────────────── */
 
-/* quackd-web's .guard-card, whole: its gradient, its #e4d3ee border and its shadow. Two of
+/* roboglot-web's .guard-card, whole: its gradient, its #e4d3ee border and its shadow. Two of
    the three were dropped on the way over, which left the same object reading flat here. */
 .cockpit {
   background: linear-gradient(150deg, #fbf5ff, #fff6f3);
@@ -893,7 +893,7 @@ label {
 }
 /* The ONE place "controls recede" is broken on purpose: with the language layer off, the
    keyboard strip is the only thing on the page that still does anything, so it says so. */
-body.no-quackd .cockpit {
+body.no-roboglot .cockpit {
   border-color: #e0b93f;
   box-shadow: 0 0 0 3px rgba(245, 197, 51, 0.22), var(--shadow-guard);
 }
@@ -1222,7 +1222,7 @@ details[open] summary { margin-bottom: var(--s-2); }
   #record.live { animation: rec-pulse 1.8s ease-in-out infinite; }
   /* #run.textContent silently becomes "Send" when the switch flips off; this wobble is the
      only thing that makes that change perceptible. */
-  body.no-quackd #run { animation: nudge 0.45s var(--ease) 1; }
+  body.no-roboglot #run { animation: nudge 0.45s var(--ease) 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1268,7 +1268,7 @@ details[open] summary { margin-bottom: var(--s-2); }
   }
   .llm-bar > * + * { margin-top: 0; }
   /* With the language layer off, #key-box is `hidden` and the right track has nothing in it. */
-  body.no-quackd .llm-bar { grid-template-columns: minmax(0, 1fr); }
+  body.no-roboglot .llm-bar { grid-template-columns: minmax(0, 1fr); }
   .toggle-row > div > #toggle-note { font-size: var(--t-micro); }
 
   /* <details> interposes a ::details-content box between #key-box and everything after the
@@ -1343,7 +1343,7 @@ details[open] summary { margin-bottom: var(--s-2); }
   }
   /* The off-state signal was an OUTSET 3px ring; this column's own edges and the console's
      `overflow: hidden` would scissor it, so it goes inset. */
-  body.no-quackd .cockpit {
+  body.no-roboglot .cockpit {
     border-color: #e0b93f;
     box-shadow: inset 0 0 0 2px rgba(245, 197, 51, 0.55), var(--shadow-guard);
   }

@@ -1,4 +1,4 @@
-"""quackd's MOSS bridge on its own: what it does on the rover, driven with no rover.
+"""Roboglot's MOSS bridge on its own: what it does on the rover, driven with no rover.
 
 The bridge is loaded by path, the way the rover runs it, and driven through its pure parts with
 a clock of the test's own wherever timing is the claim: the twist deadman and its silence, the
@@ -28,15 +28,15 @@ from typing import Any
 
 import pytest
 
-from quackd_moss import upstream_api as up
+from roboglot_moss import upstream_api as up
 from tests.conftest import REPO
 
-BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
+BRIDGE = REPO / "bridge" / "moss" / "roboglot_moss_bridge.py"
 
 
 def load_bridge() -> ModuleType:
-    """It lives outside the package on purpose: quackd's core must never import it."""
-    spec = importlib.util.spec_from_file_location("quackd_moss_bridge", BRIDGE)
+    """It lives outside the package on purpose: Roboglot's core must never import it."""
+    spec = importlib.util.spec_from_file_location("roboglot_moss_bridge", BRIDGE)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -107,12 +107,12 @@ def _wait(predicate: Any, limit_s: float = 10.0) -> None:
 # ── the rules this file lives by ────────────────────────────────────────────────────────
 
 
-def test_the_bridge_never_imports_quackd() -> None:
-    """quackd's dependencies do not belong on a rover, and this file is the proof."""
+def test_the_bridge_never_imports_roboglot() -> None:
+    """Roboglot's dependencies do not belong on a rover, and this file is the proof."""
     for line in BRIDGE.read_text(encoding="utf-8").splitlines():
         stripped = line.split("#", 1)[0].strip()
         if stripped.startswith(("import ", "from ")):
-            assert "quackd" not in stripped, f"the bridge imports quackd: {stripped}"
+            assert "roboglot" not in stripped, f"the bridge imports Roboglot: {stripped}"
 
 
 def test_upstream_is_imported_only_inside_functions() -> None:
@@ -133,7 +133,7 @@ def test_upstream_is_imported_only_inside_functions() -> None:
 def test_the_bridge_runs_with_upstream_absent() -> None:
     script = (
         "import sys\n"
-        "for name in ('lcm', 'dimos_lcm', 'dimos', 'moss_dimos', 'quackd', 'numpy', 'PIL'):\n"
+        "for name in ('lcm', 'dimos_lcm', 'dimos', 'moss_dimos', 'roboglot', 'numpy', 'PIL'):\n"
         "    sys.modules[name] = None\n"
         "import importlib.util\n"
         f"spec = importlib.util.spec_from_file_location('b', r'{BRIDGE}')\n"
@@ -154,7 +154,7 @@ def test_it_ships_in_the_sdist_and_never_in_the_wheel() -> None:
     build = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["hatch"][
         "build"
     ]["targets"]
-    assert build["wheel"]["packages"] == ["quackd"]
+    assert build["wheel"]["packages"] == ["roboglot"]
     assert "bridge" in build["sdist"]["include"]
 
 
@@ -580,7 +580,7 @@ def test_a_restarted_bridge_never_hands_out_an_id_a_close_from_before_holds() ->
 
 
 def test_the_makers_script_runs_in_the_arm_runs_own_environment() -> None:
-    """The mission runs the maker's script in its own environment, so quackd runs it in the
+    """The mission runs the maker's script in its own environment, so Roboglot runs it in the
     moss-arm run's, its calibration among it, never the bridge's. Unreadable, the cycle is
     refused rather than played on another calibration."""
     stack = B.StackInfo(
@@ -944,7 +944,7 @@ def test_off_moss_litter_the_zero_goes_before_an_arm_that_does_not_answer() -> N
     zeros = [t for t, _, values in bus.published if values == (0.0, 0.0)]
     assert zeros and zeros[0] == 0.0, f"the first zero went out at {zeros[:1]}"
     assert clock.t >= B.RPC_TIMEOUT_S, "the arm's cancel waited out its timeout after it"
-    assert "the arm's coordinator did not answer, and no cycle of quackd's ran" in doc["did"]
+    assert "the arm's coordinator did not answer, and no cycle of Roboglot's ran" in doc["did"]
     bridge.close()
 
 
@@ -1053,7 +1053,7 @@ def test_a_mission_that_falls_silent_with_the_arm_is_a_bus_down_not_a_stop() -> 
     clock = Clock()
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     _all_on(clock, bridge)
-    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    assert bridge.mission_doc()["answering"] is True, "heard, as Roboglot's connect hears it"
     bus = bridge.bus
 
     def down() -> None:
@@ -1068,7 +1068,7 @@ def test_a_mission_that_falls_silent_with_the_arm_is_a_bus_down_not_a_stop() -> 
 
 
 def test_a_stop_for_a_run_that_has_gone_touches_nothing_of_the_new_one() -> None:
-    """The owner restarted the stack. quackd's stop names the run it connected to, and the
+    """The owner restarted the stack. Roboglot's stop names the run it connected to, and the
     new run is sent no mission stop and no zero, and says why. Its arm cycle is cancelled
     only for the session that started it. A stop that names the run running, or none,
     stops as ever."""
@@ -1138,7 +1138,7 @@ def test_a_mission_still_answering_is_sent_its_stop_again_less_and_less_often() 
 
 def test_every_stop_cancels_and_reads_and_watches_only_what_was_in_play() -> None:
     """Every stop does the same arm step, a verb's own at its end as much as the stop verb's.
-    cancel_trajectory goes out, and when it finds nothing executing, with nothing of quackd's
+    cancel_trajectory goes out, and when it finds nothing executing, with nothing of Roboglot's
     in play, that is the whole step: no reads and no watch, so the next cycle is not refused.
     A trajectory it cancels, the owner's own in one of its pauses among them, has the arm read
     and watched."""
@@ -1161,7 +1161,7 @@ def test_every_stop_cancels_and_reads_and_watches_only_what_was_in_play() -> Non
 def test_on_moss_litter_the_mission_stops_first_then_the_zero_then_the_arm() -> None:
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     bus = bridge.bus
-    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    assert bridge.mission_doc()["answering"] is True, "heard, as Roboglot's connect hears it"
     bus.executing = True  # the mission's own pick is mid cycle
     doc = bridge.stop()
     assert doc["ok"] and doc["mission"] == "stopped", doc
@@ -1186,7 +1186,7 @@ def test_on_moss_litter_the_arm_is_cancelled_before_the_missions_stop_is_confirm
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=slow)
     _fake_time(bridge, clock)
     bus = bridge.bus
-    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    assert bridge.mission_doc()["answering"] is True, "heard, as Roboglot's connect hears it"
     bus.executing = True  # the mission's own pick is mid cycle
     cancelled_at: list[float] = []
     cancel = bus.arm_cancel
@@ -1237,7 +1237,7 @@ def _litter_on_fake_time() -> tuple[Any, Clock]:
     clock = Clock()
     bridge = B.fake_bridge(blueprint="moss-litter", fps=0, mission_stop_s=0.2)
     _fake_time(bridge, clock)
-    assert bridge.mission_doc()["answering"] is True, "heard, as quackd's connect hears it"
+    assert bridge.mission_doc()["answering"] is True, "heard, as Roboglot's connect hears it"
     return bridge, clock
 
 
@@ -1449,7 +1449,7 @@ def test_the_process_table_finds_only_the_missions_own_picks(tmp_path: Path) -> 
 
 
 def test_the_arm_cancel_route_cancels_its_own_cycle_and_nothing_else() -> None:
-    """quackd's close names the cycle it started. Another id, or a cycle that has ended, is left
+    """Roboglot's close names the cycle it started. Another id, or a cycle that has ended, is left
     alone, so a close never cancels a trajectory it did not send, and it sends nothing else."""
     bridge = B.fake_bridge(cycle_s=30.0, fps=0)
     bus = bridge.bus
@@ -1726,7 +1726,7 @@ def _registered(root: Path, name: str, blueprint: str, run_id: str, started: str
 
 @pytest.fixture
 def two_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The run quackd connected to, and a second dimOS run started by hand after it."""
+    """The run Roboglot connected to, and a second dimOS run started by hand after it."""
     monkeypatch.setattr(B, "proc_environ", lambda pid: {"DIMOS_TRANSPORT": "lcm"})
     monkeypatch.setattr(B, "proc_cmdline", lambda pid: ())
     _registered(tmp_path, "a", "moss-explore", "run-explore", "2026-10-21T10:00:00Z")
@@ -1734,11 +1734,11 @@ def two_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path
 
 
-def test_a_stop_reaches_the_run_quackd_connected_to_while_it_runs_beside_a_newer_one(
+def test_a_stop_reaches_the_run_roboglot_connected_to_while_it_runs_beside_a_newer_one(
     two_runs: Path,
 ) -> None:
-    """A second dimOS run started by hand, of any blueprint, is the newest, and the run quackd
-    connected to still runs behind it: quackd's stop is for that run and reaches it. Once that
+    """A second dimOS run started by hand, of any blueprint, is the newest, and the run Roboglot
+    connected to still runs behind it: Roboglot's stop is for that run and reaches it. Once that
     run has ended, the stop touches nothing of the other."""
     bus = B.FakeBus(B.FAKE_UPSTREAM, B.FrameStore(), fps=0)
     bridge = B.Bridge(
@@ -1862,7 +1862,7 @@ def test_a_keepalive_names_its_session() -> None:
 
 
 def test_one_sessions_keepalive_or_end_never_touches_another() -> None:
-    """A doctor beside a run, or a second quackd that started nothing: neither can strip the
+    """A doctor beside a run, or a second Roboglot that started nothing: neither can strip the
     run's deadman, by overwriting what it started or by ending it."""
     clock = Clock()
     bridge = B.fake_bridge(fps=0)
@@ -1871,7 +1871,7 @@ def test_one_sessions_keepalive_or_end_never_touches_another() -> None:
     _beat(bridge, "doctor", 0.1, None)
     bridge.keepalive({"session": "doctor", "end": True})
     assert bridge.sessions["run"].started == "explore"
-    for _ in range(10):  # the second quackd beats on, having started nothing
+    for _ in range(10):  # the second Roboglot beats on, having started nothing
         clock.t += 0.1
         _beat(bridge, "second", 0.1, None)
         bridge.session_tick()

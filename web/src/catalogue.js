@@ -1,14 +1,14 @@
 /**
  * GENERATED FILE. Do not edit.
  *
- * The LLM list, copied out of `quackd/agent/providers/catalogue.py`, which is the only place
+ * The LLM list, copied out of `roboglot/agent/providers/catalogue.py`, which is the only place
  * an LLM is ever added. Regenerate after editing that file:
  *
  *     python web/build_catalogue.py
  *
  * `tests/test_web.py` fails if this file and that one disagree, so the two cannot drift.
  *
- * Every cloud vendor quackd knows is here, including the ones this page cannot call: a vendor
+ * Every cloud vendor Roboglot knows is here, including the ones this page cannot call: a vendor
  * whose API refuses a cross-origin preflight stays out of `PROVIDERS` in `providers.js` and is
  * named in `web/README.md` with the reason. The data stays whole either way.
  */

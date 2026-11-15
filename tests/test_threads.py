@@ -1,4 +1,4 @@
-"""Threads no exit waits for (`quackd.adapters.threads`), and what has to run on them."""
+"""Threads no exit waits for (`roboglot.adapters.threads`), and what has to run on them."""
 
 from __future__ import annotations
 
@@ -13,9 +13,9 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.threads import DaemonThreads
-from quackd_lerobot.policy.loop import PolicyLoop
-from quackd_lerobot.real import TORQUE_RELEASE_NOT_KNOWN, LeRobotReal
+from roboglot.adapters.threads import DaemonThreads
+from roboglot_lerobot.policy.loop import PolicyLoop
+from roboglot_lerobot.real import TORQUE_RELEASE_NOT_KNOWN, LeRobotReal
 from tests.test_lerobot_adapter import FOLDED, FakeArm
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -71,7 +71,7 @@ def test_a_call_that_never_comes_back_does_not_hold_the_process() -> None:
     done = _ended(
         """
         import asyncio, sys, threading
-        from quackd.adapters.threads import DaemonThreads
+        from roboglot.adapters.threads import DaemonThreads
 
         async def main():
             never = threading.Event()
@@ -99,7 +99,7 @@ def test_a_real_arm_whose_bus_call_never_returns_lets_the_process_end() -> None:
         """
         import asyncio, sys, threading
         from tests.test_lerobot_adapter import FakeArm
-        from quackd_lerobot.real import LeRobotReal
+        from roboglot_lerobot.real import LeRobotReal
 
         never = threading.Event()
 
@@ -208,7 +208,7 @@ async def test_a_disconnect_that_takes_torque_off_is_waited_for() -> None:
 async def test_a_disconnect_that_does_not_come_back_is_said_of(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("quackd_lerobot.real.DISCONNECT_S", 0.05)
+    monkeypatch.setattr("roboglot_lerobot.real.DISCONNECT_S", 0.05)
     transport = await _closed_at_rest(_disconnects_slowly(0.5))
     assert transport.close_note == TORQUE_RELEASE_NOT_KNOWN
 
@@ -216,7 +216,7 @@ async def test_a_disconnect_that_does_not_come_back_is_said_of(
 async def test_a_second_close_says_nothing_of_a_port_it_finds_shut() -> None:
     """The first let go of the arm, and a disconnect that raises because it did is no failed one.
     Nor is a read refused on the port the first close shut an arm that stopped answering: the
-    second close's line was that quackd could not tell whether the arm held itself up, over an
+    second close's line was that Roboglot could not tell whether the arm held itself up, over an
     arm the first had let go of at its rest pose. It keeps the first close's line now."""
 
     class Upstream(FakeArm):

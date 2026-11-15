@@ -23,24 +23,24 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd import host as host_module
-from quackd.adapters.host_camera import HostCameraAdapter
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.cli import app
-from quackd.duckfile.parser import parse_duck_text
-from quackd.host import HOST_ENV, HostClient, HostHello
-from quackd.log import LogEvent, render_lines
-from quackd.mcp_server import build_fleet_server, fleet_from_flags
-from quackd.perception import detector_for, explicit_detector, lens
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.perception.host import HostDetector
-from quackd.perception.yolo import YoloDetector
-from quackd.registry import Registry, RobotEntry
-from quackd.transport.mock import MockTransport
-from quackd_toddlerbot import ToddlerBotAdapter
-from quackd_toddlerbot.mock import ToddlerBotMock
+from roboglot import host as host_module
+from roboglot.adapters.host_camera import HostCameraAdapter
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.cli import app
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.host import HOST_ENV, HostClient, HostHello
+from roboglot.log import LogEvent, render_lines
+from roboglot.mcp_server import build_fleet_server, fleet_from_flags
+from roboglot.perception import detector_for, explicit_detector, lens
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.perception.host import HostDetector
+from roboglot.perception.yolo import YoloDetector
+from roboglot.registry import Registry, RobotEntry
+from roboglot.transport.mock import MockTransport
+from roboglot_toddlerbot import ToddlerBotAdapter
+from roboglot_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FakeHostd, dead_address
 from tests.test_mcp_fleet import _data, connected
 
@@ -73,8 +73,8 @@ def nothing_connects(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
         built.append(spec)
         raise AssertionError(f"{spec} was built before the refusal")
 
-    monkeypatch.setattr("quackd.flock.pilots.make_adapter", refuse)
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", refuse)
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", refuse)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", refuse)
     return built
 
 
@@ -110,7 +110,7 @@ def _flat(result: Any) -> str:
 
 
 def _run_line(start: dict[str, Any]) -> str:
-    """The `run` line `render_lines` draws for this `run_start`: what `quackd log` prints and an
+    """The `run` line `render_lines` draws for this `run_start`: what `roboglot log` prints and an
     MCP result carries. The live console draws a panel instead, so it is read from the record.
     The connect time is pinned so the line can be compared whole."""
     event = LogEvent("run_start", 0.0, {**start, "connect_s": 0.0})
@@ -125,7 +125,7 @@ def _start(tmp_path: Path) -> dict[str, Any]:
 
 
 class _BridgeMock(ToddlerBotMock):
-    """The ToddlerBot's mock standing in for its daemon on the `bridge` backend, so quackd
+    """The ToddlerBot's mock standing in for its daemon on the `bridge` backend, so Roboglot
     treats it as the real body it stands for: `describe("bridge")` names no camera, and the
     daemon reports one at connect when it owns one, exactly as the real bridge does."""
 
@@ -143,12 +143,12 @@ def _toddlerbot_on_its_bridge(monkeypatch: pytest.MonkeyPatch, *, camera: bool) 
             return HostCameraAdapter(body, host, hello)
         return body
 
-    monkeypatch.setattr("quackd.adapters.factory.make_adapter", build)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", build)
 
 
 def _loops(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Every loop `run` starts, kept, so a test can read the detector it ended with."""
-    from quackd.agent import loop as loop_module
+    from roboglot.agent import loop as loop_module
 
     made: list[Any] = []
 
@@ -163,12 +163,12 @@ def _loops(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
 
 def _task(tmp_path: Path, *, look: bool) -> str:
     """A task file for the ToddlerBot: one that needs a camera, or one that needs none."""
-    path = tmp_path / ("look.duck" if look else "wait.duck")
+    path = tmp_path / ("look.glot" if look else "wait.glot")
     needs = "requires: [observe]\nverbs:\n  allow: [observe, stop]\n"
     if not look:
         needs = "verbs:\n  allow: [report_state, stop]\n"
     path.write_text(
-        f"---\nduck: 1\nname: {path.stem}\ndescription: d\n{needs}success: [x]\n---\n# Task\n"
+        f"---\nglot: 1\nname: {path.stem}\ndescription: d\n{needs}success: [x]\n---\n# Task\n"
         "Look around.\n",
         encoding="utf-8",
     )
@@ -179,7 +179,7 @@ def _lens_warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
     return [
         r.getMessage()
         for r in caplog.records
-        if r.name == "quackd.perception" and "field of view" in r.getMessage()
+        if r.name == "roboglot.perception" and "field of view" in r.getMessage()
     ]
 
 
@@ -274,7 +274,7 @@ def test_detector_yolo_without_the_extra_names_the_install(
     monkeypatch.setitem(sys.modules, "ultralytics", None)
     result = _run(tmp_path, "--robot", "microduck:mock", "--detector", "yolo")
     assert result.exit_code == 1, result.output
-    assert "uv pip install 'quackd[yolo]'" in _flat(result)
+    assert "uv pip install 'roboglot[yolo]'" in _flat(result)
     assert nothing_connects == []
 
 
@@ -289,7 +289,7 @@ def test_a_detector_nobody_offers_is_refused(tmp_path: Path, nothing_connects: l
 def test_a_detector_is_for_one_robot(
     tmp_path: Path, nothing_connects: list[Any], robots: str
 ) -> None:
-    """Every flock builds its members' detectors itself, so a choice here would be dropped
+    """Every team builds its members' detectors itself, so a choice here would be dropped
     without a word; it is refused instead, as `--image` is.
 
     `--robots` with one member is refused too. It is the fleet spelling, as it is for `--host`,
@@ -327,9 +327,9 @@ def test_a_board_nobody_typed_is_refused_by_where_it_was_named(
     Registry(tmp_path / "reg").add_robot(RobotEntry(name="jet", spec="microduck:mock", host=dead))
     stored = _flat(_run(tmp_path, "--robot", "jet"))
     assert f"the host {dead} from robot jet (robots.json) did not answer" in stored, stored
-    assert "quackd robot edit jet --clear host to run without it" in stored
+    assert "roboglot robot edit jet --clear host to run without it" in stored
     # no stored token to carry, so the doctor it names asks the board and leaves the body alone
-    assert f"quackd doctor --host {dead} shows what the board says" in stored
+    assert f"roboglot doctor --host {dead} shows what the board says" in stored
     monkeypatch.setenv(HOST_ENV, dead)
     usual = _flat(_run(tmp_path, "--robot", "microduck:mock"))
     assert f"the host {dead} from {HOST_ENV} did not answer" in usual, usual
@@ -416,7 +416,7 @@ def test_a_body_described_blind_that_reports_its_own_camera_is_measured_through_
     connect now, through the body's lens, which nobody gave: the guess, uncalibrated, and the
     warning. The header says the board's camera is primary only if the body has none of its
     own, and the record says which it was."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.without_detector()
     _toddlerbot_on_its_bridge(monkeypatch, camera=True)
     loops = _loops(monkeypatch)
@@ -469,7 +469,7 @@ def test_the_boards_detector_waits_for_a_camera_on_a_body_described_without_one(
     --camera none. The board's detector is still chosen, because the body may report a camera
     at connect, and the header says it reads nothing until then. This body reports one, so
     the detector learns its lens then, and warns once that nobody gave it."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.without_camera()
     hostd.detect_reply = {**hostd.detect_reply, "w": 128, "h": 128, "boxes": []}
     _toddlerbot_on_its_bridge(monkeypatch, camera=True)
@@ -503,7 +503,7 @@ def test_a_body_with_nothing_to_look_at_is_told_nothing_about_a_lens(
     """The same board beside a body that reports no camera at connect either. The detector
     that was waiting reads nothing, so nobody is warned about the field of view of a camera the
     body has not got, and the record names no detector, as it does for any blind body."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.without_camera()
     _toddlerbot_on_its_bridge(monkeypatch, camera=False)
     task = _task(tmp_path, look=False)
@@ -578,7 +578,7 @@ def test_validate_and_list_verbs_say_the_boards_camera_is_not_counted(
     assert checked.exit_code == 1, checked.output
     flat = _flat(checked)
     assert f"validate {note}" in flat, flat
-    assert f"quackd doctor --host {hostd.address} shows whether it does" in flat
+    assert f"roboglot doctor --host {hostd.address} shows whether it does" in flat
     (row,) = [
         json.loads(line)
         for line in cli("validate", look, "--robot", "tb", "--json").stdout.splitlines()
@@ -621,7 +621,7 @@ async def test_serve_mcp_serves_the_boards_camera_and_names_its_detector(
 ) -> None:
     """The same wiring as `run`: the body wrapped with the board's camera, the detector kept
     through connect, `robot_list` naming it, and the line the server logs when it is up."""
-    caplog.set_level(logging.INFO, logger="quackd.mcp")
+    caplog.set_level(logging.INFO, logger="roboglot.mcp")
     plan = fleet_from_flags(robot="microduck:mock", host=hostd.address, detector="host")
     assert isinstance(plan.detector, HostDetector)
     (body,) = plan.adapters.values()
@@ -653,7 +653,7 @@ async def test_serve_mcp_gives_yolo_the_lens_of_the_body_that_connected(
     calibrated, though the body's own camera turned out to be the primary view. Now nothing
     is claimed about the lens until connect, where the server tells the detector the lens of
     the body that connected: none given, so the guess, uncalibrated, and one warning."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     module = ModuleType("ultralytics")
     module.YOLO = _FakeYOLO  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ultralytics", module)
@@ -680,7 +680,7 @@ async def test_serve_mcp_tells_a_body_with_nothing_to_look_at_nothing_about_a_le
     """The server's side of the blind ToddlerBot: the board's detector waits for a camera that
     never comes, and nobody is warned about the field of view of a camera the body has not
     got, before connect or after."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.without_camera()
     _toddlerbot_on_its_bridge(monkeypatch, camera=False)
     plan = fleet_from_flags(robot="toddlerbot:bridge", host=hostd.address)
@@ -702,7 +702,7 @@ def test_build_fleet_server_is_given_the_plans_detector(
         seen.update(kw)
         raise SystemExit(0)
 
-    monkeypatch.setattr("quackd.mcp_server.build_fleet_server", build)
+    monkeypatch.setattr("roboglot.mcp_server.build_fleet_server", build)
     result = runner.invoke(
         app,
         ["serve-mcp", "--robot", "microduck:mock", "--host", hostd.address, "--detector", "host"],
@@ -717,7 +717,7 @@ def test_build_fleet_server_is_given_the_plans_detector(
 
 def _toddlerbot(backend: str) -> ToddlerBotAdapter:
     """A ToddlerBot with a camera and no field of view anybody gave: the mock as the simulator
-    it is, or on its bridge, which quackd treats as the real body it stands for."""
+    it is, or on its bridge, which Roboglot treats as the real body it stands for."""
     return ToddlerBotAdapter((_BridgeMock if backend == "bridge" else ToddlerBotMock)(camera=True))
 
 
@@ -746,15 +746,15 @@ class _OwnDetector:
 
 
 async def _run_with(detector: Any, body: Any, tmp_path: Path) -> Any:
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: look\ndescription: d\nrequires: [observe]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     script = [
         ToolCall(name="observe", arguments={}),
         ToolCall(name="declare_success", arguments={"reason": "looked"}),
     ]
-    return await run_duck(
+    return await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(script=script),
@@ -778,7 +778,7 @@ async def test_a_yolo_handed_to_a_run_from_python_keeps_the_lens_it_was_built_wi
     the bridge, the 62-degree guess, uncalibrated, with a warning to pass --fov-deg to somebody
     who never used the command line. Bearings and distances, which `go_to` steers by, changed
     with no `--host` anywhere. Only a detector `explicit_detector` built is told the lens."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     yolo = _yolo_70(monkeypatch)
     result = await _run_with(yolo, _toddlerbot(backend), tmp_path)
     assert result.outcome == "success", result.reason
@@ -793,7 +793,7 @@ async def test_a_yolo_handed_to_the_mcp_server_keeps_the_lens_it_was_built_with(
     """The server's side, where a caller of `build_fleet_server` had no way out at all: it
     takes no field of view, so a real body without `camera_fov_deg` in its manifest always
     replaced the caller's lens with the guess."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     yolo = _yolo_70(monkeypatch)
     async with connected({"toddler": _toddlerbot(backend)}, detector=yolo) as (_client, fleet):
         (session,) = fleet.sessions.values()
@@ -850,15 +850,15 @@ async def _run_looking(
     detector: Any, body: Any, tmp_path: Path, *, fov_deg: float | None = None
 ) -> Any:
     """`_run_with`, with the `--fov-deg` a run was given."""
-    duck = parse_duck_text(
-        "---\nduck: 1\nname: look\ndescription: d\nrequires: [observe]\n"
+    duck = parse_glot_text(
+        "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     script = [
         ToolCall(name="observe", arguments={}),
         ToolCall(name="declare_success", arguments={"reason": "looked"}),
     ]
-    return await run_duck(
+    return await run_glot(
         RunConfig(
             duck=duck,
             provider=FakeProvider(script=script),
@@ -877,7 +877,7 @@ def test_a_lens_the_body_assumed_is_measured_through_and_called_uncalibrated(
     Microduck does of the lens it takes from a tall `/frame`. Then the detections through it say
     they are uncalibrated, and the log names the assumption and `--fov-deg`, once, where the
     lens used to pass for a measured one and the advice never came."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     assert lens(37.3, "jsonrpc", guess=90.0) == (37.3, True)
     assert lens(37.3, "jsonrpc", guess=90.0, assumed=ASSUMED) == (37.3, False)
     detector = detector_for(["camera"], None, fov_deg=37.3, backend="jsonrpc", assumed=ASSUMED)
@@ -894,7 +894,7 @@ def test_yolo_and_the_boards_detector_take_an_assumed_lens_as_uncalibrated(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The detectors that learn the lens at connect learn whether it was assumed too."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     yolo = _yolo_70(monkeypatch)
     board = HostDetector(HostClient("127.0.0.1:1"), fov_deg=62.0)
     for detector in (yolo, board):
@@ -914,22 +914,22 @@ async def test_a_run_measures_through_the_lens_its_body_reports_when_it_connects
     assumed: str | None,
     calibrated: bool,
 ) -> None:
-    """`quackd run` builds its colour detector before the body connects, from the body's own
+    """`roboglot run` builds its colour detector before the body connects, from the body's own
     description, and a Microduck describes a camera with no lens, which its camera reports only
     once a frame has come. The detector kept the simulator's 90 degrees for the whole run, the
     lens the camera reported unread, while the YOLO and board detectors learned it at connect.
     The colour detector learns it then too: calibrated when the camera reported it, and
     uncalibrated, with the assumption named, when the camera assumed it. Nothing calls the lens
     a guess before connect, when the camera had not yet said it."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
     loops = _loops(monkeypatch)
-    from quackd_microduck import MicroduckAdapter, describe
+    from roboglot_microduck import MicroduckAdapter, describe
 
     built = detector_for(describe("jsonrpc").sensors, None, fov_deg=None, backend="jsonrpc")
     assert isinstance(built, ColorBlobDetector) and (built.fov_deg, built.calibrated) == (
         90.0,
         False,
-    ), "what quackd run builds before the body connects"
+    ), "what roboglot run builds before the body connects"
     result = await _run_looking(built, MicroduckAdapter(_ReportsItsLens(37.3, assumed)), tmp_path)
     assert result.outcome == "success", result.reason
     (loop,) = loops
@@ -950,7 +950,7 @@ async def test_fov_deg_reaches_the_body_so_its_state_names_the_lens_the_detector
     assumed in every state, so the pilot was told to discount bearings for a lens nobody was
     measuring through. The loop hands the flag on to the body at connect, which says so."""
     loops = _loops(monkeypatch)
-    from quackd_microduck import MicroduckAdapter
+    from roboglot_microduck import MicroduckAdapter
 
     body = _ReportsItsLens(37.3, ASSUMED)
     result = await _run_looking(None, MicroduckAdapter(body), tmp_path, fov_deg=50.0)
@@ -965,8 +965,8 @@ async def test_serve_mcp_measures_through_an_assumed_lens_uncalibrated(
 ) -> None:
     """`serve-mcp` has no `--fov-deg`, so a body's lens is all it has, and one the body assumed
     is measured through uncalibrated, with the advice to pass a lens in the log."""
-    caplog.set_level(logging.WARNING, logger="quackd.perception")
-    from quackd_microduck import MicroduckAdapter
+    caplog.set_level(logging.WARNING, logger="roboglot.perception")
+    from roboglot_microduck import MicroduckAdapter
 
     async with connected({"duck": MicroduckAdapter(_ReportsItsLens(37.3, ASSUMED))}) as (
         _client,

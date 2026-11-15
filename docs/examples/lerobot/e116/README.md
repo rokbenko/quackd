@@ -6,7 +6,7 @@
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Yes | ERROR | 2026-11-06 | 0.31.3 |
 
@@ -15,22 +15,22 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** A USB cable can be knocked out, and the arm does not go limp when it is: its servos take their power from their own supply, not from USB, and keep holding their last goal. In that moment quackd has lost the only way it had to steer the arm. This example pulls the cable mid-move to see whether quackd notices at once, stops trying to drive the arm, and says plainly what state it leaves the arm in.
+**Why this example exists:** A USB cable can be knocked out, and the arm does not go limp when it is: its servos take their power from their own supply, not from USB, and keep holding their last goal. In that moment Roboglot has lost the only way it had to steer the arm. This example pulls the cable mid-move to see whether Roboglot notices at once, stops trying to drive the arm, and says plainly what state it leaves the arm in.
 
-**Why this result is important:** With the cable out, nothing can fold the arm, stop it or let it go, so what matters is what quackd says and when. It ended the run under half a second after the arm's last answer and told the person the one thing that was true: it could not tell whether the arm was holding itself up, so hold it and cut its power. Once the cable was back in, `quackd robot release` put the arm down at its rest pose.
+**Why this result is important:** With the cable out, nothing can fold the arm, stop it or let it go, so what matters is what Roboglot says and when. It ended the run under half a second after the arm's last answer and told the person the one thing that was true: it could not tell whether the arm was holding itself up, so hold it and cut its power. Once the cable was back in, `roboglot robot release` put the arm down at its rest pose.
 
 ## The goal
 
-Show that pulling the arm's USB cable mid-move ends the run at once, that the arm stays where the move left it, and that quackd tells the person to hold the arm and cut its power rather than claiming anything it cannot check.
+Show that pulling the arm's USB cable mid-move ends the run at once, that the arm stays where the move left it, and that Roboglot tells the person to hold the arm and cut its power rather than claiming anything it cannot check.
 
-**What we expected:** The run ends within about a second of the pull, saying the arm did not answer. The arm holds its last goal and does not sag. The close cannot read the arm, so it ends on a line telling the person to hold it and cut its power, and nothing is asked. Once the cable is back in, `quackd robot release` folds the arm to its rest pose and lets go there.
+**What we expected:** The run ends within about a second of the pull, saying the arm did not answer. The arm holds its last goal and does not sag. The close cannot read the arm, so it ends on a line telling the person to hold it and cut its power, and nothing is asked. Once the cable is back in, `roboglot robot release` folds the arm to its rest pose and lets go there.
 
 ## What the run showed
 
 * The LLM began the reach with one slow move of 5 s, from the fold toward the arm held out. The cable came out about 3 s into it, after 29 sends had gone through.
 * The next send could not read the arm, 0.11 s after the last good one, and the run stopped there. Its last line came under half a second after the arm's last answer, `✗ error: the arm did not answer: ...`, on one line and with no Python traceback, which is what 0.31.3 changed for an arm that stops answering.
-* Before that, the close said what this example asks to hear, word for word: `quackd cannot tell whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut its power`. It asked nothing, because nothing could reach the arm.
-* The video shows the arm staying where the reach stopped while the cable was out. Once it was back in, `quackd robot release arm-01` read the arm within 3° of the last goal sent, folded it to its rest pose and took torque off: `✓ torque reads off on every joint of arm-01`.
+* Before that, the close said what this example asks to hear, word for word: `roboglot cannot tell whether the arm is holding itself up (...), so it kept whatever torque the arm has: hold it, and cut its power`. It asked nothing, because nothing could reach the arm.
+* The video shows the arm staying where the reach stopped while the cable was out. Once it was back in, `roboglot robot release arm-01` read the arm within 3° of the last goal sent, folded it to its rest pose and took torque off: `✓ torque reads off on every joint of arm-01`.
 * The error says `Port is in use!`, though what happened was a pulled cable. Those are the words of the servo SDK underneath, and they read as if another program held the port.
 
 ## What the run did not show
@@ -47,22 +47,22 @@ The run ended with **ERROR**. The reason on record:
 
 ## The exact command
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e116/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd robot release arm-01
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e116/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot robot release arm-01
 ```
 
 ## The numbers
 
 | | |
 |---|---|
-| quackd version | 0.31.3 |
+| roboglot version | 0.31.3 |
 | Started | 2026-11-06 11:58:31 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |
-| Task file | [`slow-raise.duck`](slow-raise.duck) |
+| Task file | [`slow-raise.glot`](slow-raise.glot) |
 | Steps | 2 |
 | LLM calls | 3 |
 | Total time | 22.9 s |
@@ -84,10 +84,10 @@ quackd robot release arm-01
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e116/slow-raise.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run docs/examples/lerobot/e116/slow-raise.glot --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -96,8 +96,8 @@ quackd run docs/examples/lerobot/e116/slow-raise.duck --robot lerobot:mock --llm
 <summary>Show the full terminal trace (169 lines)</summary>
 
 ```text
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e116/slow-raise.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.31.3, started 2026-11-06T11:58:28Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e116/slow-raise.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.31.3, started 2026-11-06T11:58:28Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e116-slow-raise ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -106,7 +106,7 @@ quackd 0.31.3, started 2026-11-06T11:58:28Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 6.49 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -136,7 +136,7 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -144,8 +144,8 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -155,13 +155,13 @@ system prompt, 5583 chars, 72 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -224,11 +224,11 @@ step 1/10 · llm calls 2/16, 0.1/4 min ─────────────�
 →  send    stop
 ·  note    moving to the rest pose
 ·  note    the arm did not reach its rest pose: the hold did not reach the arm: ConnectionError: Failed to sync read 'Present_Position' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. [TxRxResult] Port is in use!
-·  note    quackd cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. [TxRxResult] Port is in use!), so it kept whatever torque the arm has: hold it, and cut its power
+·  note    Roboglot cannot tell whether the arm is holding itself up (the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. [TxRxResult] Port is in use!), so it kept whatever torque the arm has: hold it, and cut its power
 ✗ error: the arm did not answer: ConnectionError: Failed to sync read 'Present_Position' on ids=[1, 2, 3, 4, 5, 6] after 3 tries. [TxRxResult] Port is in 
 use!
 
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it off, and the arm then folds to its rest pose and is let go
 of there: support it while it connects, then take your hands away when it says so, before it folds
 fold arm-01 to its rest pose and release torque there? [y/N]: y

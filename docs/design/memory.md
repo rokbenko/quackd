@@ -1,27 +1,27 @@
-# Design: quackd 0.6, a run that starts with what the last one learned
+# Design: Roboglot 0.6, a run that starts with what the last one learned
 
 **Status:** implemented in 0.6.0 · **Branch:** `feat/memory-between-runs` (#5), `fix/max-minutes-provider-deadline` (#3) · **Shipped:** 2026-09-04
 
 > **Read on 2026-09-13:** the decision below to key a memory file by `adapter:backend` is
 > still what an unregistered run does, and still for the reason given. 0.9 added a finer key
-> beside it: a robot registered with `quackd robot add` keys by the name you gave it, so two
+> beside it: a robot registered with `roboglot robot add` keys by the name you gave it, so two
 > real ducks on one desk no longer share a file, which is the case this table's reasoning did
-> not separate ([ADR-0034](../adr/0034-registered-robots-and-pilot-flocks.md),
+> not separate ([ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md),
 > [registry.md](../guides/registry.md)).
 
 ## Why
 
-Every quackd release so far built a pilot with no past. The transcript recorded each prompt,
+Every Roboglot release so far built a pilot with no past. The transcript recorded each prompt,
 each tool call, each frame and each verb result, wrote a summary, and then the process
 exited and nothing ever read any of it again. A duck that had found the ball behind the sofa
-three times searched the whole room a fourth time, and a `.duck` that had failed the same way
+three times searched the whole room a fourth time, and a `.glot` that had failed the same way
 on six runs failed the same way on the seventh.
 
 Nothing in the repository said so. The README's Limitations section listed eleven honest
 gaps and this was not among them, which is its own small failure: a gap nobody has written
 down is a gap nobody is accounting for.
 
-The thesis does not change. The LLM picks verbs, the robot's own controllers move, quackd
+The thesis does not change. The LLM picks verbs, the robot's own controllers move, Roboglot
 enforces the contract. What changes is what the LLM knows when it starts picking.
 
 ## What this release is not
@@ -37,13 +37,13 @@ Recorded in [ADR-0025](../adr/0025-memory-between-runs.md); the short version:
 
 | Decision | Why |
 |---|---|
-| One append-only JSONL file per robot, keyed `adapter:backend` | A note about a 2 m cartoon arena is wrong for a living room. The simulator and a real duck must never share notes, and `adapter:backend` is the key both `quackd run` and `serve-mcp` already have |
+| One append-only JSONL file per robot, keyed `adapter:backend` | A note about a 2 m cartoon arena is wrong for a living room. The simulator and a real duck must never share notes, and `adapter:backend` is the key both `roboglot run` and `serve-mcp` already have |
 | Two kinds of entry, one chosen and one automatic | An LLM that has to be asked to remember will forget, and a log nobody curates is the only kind that stays honest. Notes are what the pilot decided to keep, episodes are what happened whether it noticed or not |
 | `remember` is a meta tool, not a verb | ADR-0017 says the vocabulary comes from the manifest. A verb that moves nothing does not belong in a manifest, so `remember` sits next to `declare_success`, costs an LLM call and no step, and is absent from every allowlist |
 | Newest wins, capped, no retrieval | A vector store means an embedding model in the default install, a second thing to keep in sync, and a search index over a handful of sentences about a toy duck. Twenty notes and five episodes fit in the prompt and cost nothing to maintain |
-| The starter ducks ask for the note inside the strategy | A prompt-level hint alone was ignored: Qwen 2.5 Coder 14B read the memory block and never wrote to it across four runs. A `remember` in the last numbered step was followed on the first |
+| The starter tasks ask for the note inside the strategy | A prompt-level hint alone was ignored: Qwen 2.5 Coder 14B read the memory block and never wrote to it across four runs. A `remember` in the last numbered step was followed on the first |
 | The executor never reads memory | A note is text an LLM wrote. Letting it reach the allowlist, the budgets or a confirm gate would make the safety layer argue with the thing it exists to distrust |
-| Memory off removes the heading, the tool and the episode | So the scaffolding's cost is auditable against any previous transcript rather than believed to be small. It does *not* make the whole prompt byte-for-byte what it was, because the starter ducks' own bodies now ask for a `remember` either way (see below) |
+| Memory off removes the heading, the tool and the episode | So the scaffolding's cost is auditable against any previous transcript rather than believed to be small. It does *not* make the whole prompt byte-for-byte what it was, because the starter tasks' own bodies now ask for a `remember` either way (see below) |
 
 ## What the work found
 
@@ -68,10 +68,10 @@ either arrived.
 - **A refreshed note sorted as the oldest.** Repeating a sentence refreshes its timestamp and
   left it where it sat, and both the prompt's newest-first window and the cap read *file*
   order. The note the LLM had just chosen to repeat was the first one evicted.
-- **`quackd memory show --raw` did not print the file as is**, which is its only job: it
+- **`roboglot memory show --raw` did not print the file as is**, which is its only job: it
   went through Rich, so a note reading `the ball is [bold]behind[/bold] the sofa` printed as
   `the ball is behind the sofa`. A note is text an LLM wrote and can contain anything.
-- **`quackd memory --robot <bad spec>` printed a Python traceback**, where every other
+- **`roboglot memory --robot <bad spec>` printed a Python traceback**, where every other
   command taking `--robot` answers in one line through `_fail`. The whole command group
   shipped with no test, which is how two of its three subcommands were wrong.
 - **One assertion was `A or B` where `A` was never true.** The highlight carries the
@@ -89,7 +89,7 @@ either arrived.
   memory on it is nine schemas and 7.0 k, and the sentence now carries the 6.0 k
   `--no-memory` figure beside it. Both re-measured, not estimated.
 - **ADR-0025 promised the memory-off prompt was "byte-for-byte what it was".** It is not, for
-  any of the seven ducks the same PR rewrote: a duck body is part of the prompt.
+  any of the seven tasks the same PR rewrote: a task body is part of the prompt.
 - **`RobotMemory`'s docstring claimed it was "safe across a CLI run and an MCP server".** It
   is a read-modify-write of the whole file with no lock, so two simultaneous writers lose one
   of the two notes. Renaming a temporary file over the old one makes it *atomic*, which is
@@ -110,12 +110,12 @@ either arrived.
 - The README's own architecture diagram listed four adapters and omitted `open_duck` and its
   `bridge` backend, five releases after a guard was written for exactly this class of
   staleness, because that guard reads the phrase "N adapters" and not a list.
-- Three documents said one quackd daemon runs on a robot, while `bridge/open_duck/` has
+- Three documents said one Roboglot daemon runs on a robot, while `bridge/open_duck/` has
   shipped two since 0.5, and `docs/architecture.md` contradicted itself about it two tables
   apart.
-- `docs/duck-spec.md` called `max_minutes` a cap without saying that a verb already running
+- `docs/glot-spec.md` called `max_minutes` a cap without saying that a verb already running
   is not interrupted, so a run can overshoot by that verb's own timeout.
-- `_deprecated()` in the CLI was dead from 0.5's `--transport` removal, `quackd --help`
+- `_deprecated()` in the CLI was dead from 0.5's `--transport` removal, `roboglot --help`
   still introduced the tool as a way to "pilot a Microduck" five adapters later, and
   `_pick_default`'s docstring justified its rule with the `duck_*` aliases.
 - **The README said no live local server had ever been run.** PR #5's evidence *is* a live
@@ -128,7 +128,7 @@ Python string a user reads* may not claim a number of `robot_*` tools the server
 with, which is 0.5's `--transport` lesson finally applied to counts as well as flags. The key
 the CLI computes for a robot's memory file must equal the key the MCP server computes, for
 all eight adapters and all twenty-two backends. Every way of corrupting the memory file by hand
-is skipped rather than fatal. And the `quackd memory` command group has tests at all, which
+is skipped rather than fatal. And the `roboglot memory` command group has tests at all, which
 is how two of its three subcommands came to be wrong.
 
 ## What is still not true
@@ -137,10 +137,10 @@ is how two of its three subcommands came to be wrong.
   `--llm fake` accumulates episodes and never writes a note. The only evidence an LLM
   uses the tool at all is the contributor's Qwen 2.5 Coder 14B runs on `find-and-kick`,
   seeds 5 and 6.
-- **`--no-memory` does not silence the ducks.** The seven starter tasks ask for a `remember`
+- **`--no-memory` does not silence the tasks.** The seven starter tasks ask for a `remember`
   inside their strategy, and that text is in the prompt whether or not memory is on. A pilot
   that follows it gets a clear refusal costing one LLM call and no step. Fixing this properly
-  means the duck body knowing about a runtime flag, which is a worse coupling than the wasted
+  means the task body knowing about a runtime flag, which is a worse coupling than the wasted
   call.
 - Nothing here has run on a robot of any kind, as before.
 
@@ -153,7 +153,7 @@ is how two of its three subcommands came to be wrong.
 - A dry run writes no episode.
 - The key the CLI computes and the key the MCP server computes agree for all eight adapters
   and all twenty-two backends, which is what makes "a note saved from Claude Desktop is read
-  by the next `quackd run`" true rather than intended.
+  by the next `roboglot run`" true rather than intended.
 - A late provider answer ends the run as `budget`, and an in-budget one is still processed.
 - The built wheel's long description has no relative links left in it.
 

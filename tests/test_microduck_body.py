@@ -12,15 +12,15 @@ from pathlib import Path
 
 import pytest
 
-import quackd_huebot
-import quackd_microduck
-from quackd.transport.base import Intent
-from quackd_huebot import upstream_api as huebot_api
-from quackd_huebot.body import HUEBOT
-from quackd_microduck import upstream_api as up
-from quackd_microduck.body import MICRODUCK
-from quackd_microduck.transports.jsonrpc_unix import CAMERA_FPS, JsonRpcUnixTransport
-from quackd_microduck.verbs import verbs_for
+import roboglot_huebot
+import roboglot_microduck
+from roboglot.transport.base import Intent
+from roboglot_huebot import upstream_api as huebot_api
+from roboglot_huebot.body import HUEBOT
+from roboglot_microduck import upstream_api as up
+from roboglot_microduck.body import MICRODUCK
+from roboglot_microduck.transports.jsonrpc_unix import CAMERA_FPS, JsonRpcUnixTransport
+from roboglot_microduck.verbs import verbs_for
 from tests.golden.manifest_digests import GOLDEN, digests
 
 REPO = Path(__file__).resolve().parent.parent
@@ -49,16 +49,16 @@ def test_a_microduck_is_described_alike_whatever_its_robot_lists_as_skills() -> 
     """Its verbs are not gated on the list (`Body.skill_verbs` is None), so a connection that
     answers with no skills at all describes the same duck as a description with none asked."""
     for backend in MICRODUCK.backends:
-        listed = quackd_microduck.manifest_for(MICRODUCK, backend, skills=())
-        assert listed.digest() == quackd_microduck.manifest_for(MICRODUCK, backend).digest()
+        listed = roboglot_microduck.manifest_for(MICRODUCK, backend, skills=())
+        assert listed.digest() == roboglot_microduck.manifest_for(MICRODUCK, backend).digest()
 
 
 def test_an_adapter_refuses_a_transport_built_for_another_body() -> None:
     """A Huebot over a transport built for a Microduck would send looks its shim does not
     answer, and nothing would say so."""
     with pytest.raises(ValueError, match="huebot adapter over a transport built for microduck"):
-        quackd_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1"))
-    quackd_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", body=HUEBOT))
+        roboglot_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1"))
+    roboglot_huebot.HuebotAdapter(JsonRpcUnixTransport("tcp://127.0.0.1:1", body=HUEBOT))
 
 
 def test_a_transport_whose_body_is_no_body_record_is_any_bodys() -> None:
@@ -69,7 +69,7 @@ def test_a_transport_whose_body_is_no_body_record_is_any_bodys() -> None:
         name = "mujoco"
         body = "puppet"
 
-    assert quackd_microduck.MicroduckAdapter(Physics()).body is MICRODUCK  # type: ignore[arg-type]
+    assert roboglot_microduck.MicroduckAdapter(Physics()).body is MICRODUCK  # type: ignore[arg-type]
 
 
 def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
@@ -78,9 +78,10 @@ def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
     assert "Nobody has measured" in verbs_for(HUEBOT)["kick"].description
     assert "Nobody has measured" not in verbs_for(MICRODUCK)["kick"].description
     conditions = {
-        body.name: quackd_microduck.conditions_for(body)["standing"] for body in (MICRODUCK, HUEBOT)
+        body.name: roboglot_microduck.conditions_for(body)["standing"]
+        for body in (MICRODUCK, HUEBOT)
     }
-    from quackd.transport.base import DuckState
+    from roboglot.transport.base import DuckState
 
     sitting = DuckState(posture="sitting")
     assert conditions["microduck"](sitting) == "the duck is sitting; run stand first"
@@ -92,17 +93,17 @@ def test_a_verb_of_the_family_a_body_does_not_have_says_why() -> None:
     is refused quoting it. The Microduck's list stays what a connection leaves it, so a duck on a
     connection with everything has none."""
     family = set(verbs_for(MICRODUCK))
-    manifest = quackd_huebot.huebot_manifest("jsonrpc")
+    manifest = roboglot_huebot.huebot_manifest("jsonrpc")
     assert set(manifest.not_offered()) == family - HUEBOT.verbs
     assert all(why for why in manifest.not_offered().values())
     assert not MICRODUCK.withheld
-    assert "not_offered" not in quackd_microduck.microduck_manifest("sim2d", places=False).extras
+    assert "not_offered" not in roboglot_microduck.microduck_manifest("sim2d", places=False).extras
 
 
 async def test_a_mock_is_not_kinder_than_its_robot() -> None:
     """Huebot's mock offers what a Huebot offers: no place verb, no head and no map, whatever the
     Microduck's mock scripts."""
-    manifest = await quackd_huebot.make("mock").connect()
+    manifest = await roboglot_huebot.make("mock").connect()
     assert manifest.sensors == ["camera", "tof", "microphone"]
     assert not {
         "map",
@@ -114,7 +115,7 @@ async def test_a_mock_is_not_kinder_than_its_robot() -> None:
         "find",
         "grab",
     } & set(manifest.verb_names())
-    duck = await quackd_microduck.make("mock").connect()
+    duck = await roboglot_microduck.make("mock").connect()
     assert {"map", "mark_place", "gaze", "grab"} <= set(duck.verb_names())
 
 
@@ -161,17 +162,17 @@ def test_nothing_of_the_family_spells_a_claim_about_one_of_its_bodies() -> None:
     body names its family, and the Microduck installs with no Huebot."""
     claims = [name for name in vars(huebot_api) if name.startswith("SHIM_")]
     assert len(claims) >= 5, claims
-    package = REPO / "adapters" / "microduck" / "src" / "quackd_microduck"
+    package = REPO / "adapters" / "microduck" / "src" / "roboglot_microduck"
     for path in package.rglob("*.py"):
         said = path.read_text(encoding="utf-8")
         assert "SHIM_" not in said, path
-        assert "import quackd_huebot" not in said and "from quackd_huebot" not in said, path
+        assert "import roboglot_huebot" not in said and "from roboglot_huebot" not in said, path
 
 
 def test_huebot_reads_the_protocol_the_microduck_reads_by_construction() -> None:
     """Imported and not copied, so a re-pin moves both, and only what is Huebot's is its own: its
     maker's refs, and what its lines say a label means."""
-    from quackd_microduck import upstream_api as up
+    from roboglot_microduck import upstream_api as up
 
     for name in ("HELLO", "ROBOT_MOVE", "API_VERSION", "API_FLOOR", "MOVE_ECHO", "DEADMAN"):
         assert getattr(huebot_api, name) is getattr(up, name), name

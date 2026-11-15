@@ -1,6 +1,6 @@
 # Reading someone else's robot
 
-quackd drives ten bodies and has run on one of them: a LeRobot SO-101 follower arm, on
+Roboglot drives ten bodies and has run on one of them: a LeRobot SO-101 follower arm, on
 2026-09-15 and again on 2026-09-23, the only two days any of this met hardware
 ([adapters/status.md](status.md) says what those runs covered and what they did not). The
 other nine it has never touched. Almost everything it does was worked out by reading upstream
@@ -18,7 +18,7 @@ This page is the pattern; that file is the evidence.
 
 ## A number that looks like a different number
 
-The XLeRobot's wire takes `theta.vel` in **degrees per second**. quackd's `wz` is radians per
+The XLeRobot's wire takes `theta.vel` in **degrees per second**. Roboglot's `wz` is radians per
 second. A pass-through would have been wrong by a factor of 57, in the direction of "faster
 than you meant", on a 12 kg cart.
 
@@ -26,7 +26,7 @@ Both ZeroMQ bodies take arm positions in a normalised **−100..100** range, not
 because `use_degrees` defaults to False. The LeRobot adapter, which looks like their sibling,
 sets it True and really is in degrees. Copying its `limits` across would have been silent.
 
-And quackd has this trap internally too: its own `look` intent carries a **direction vector**,
+And Roboglot has this trap internally too: its own `look` intent carries a **direction vector**,
 which every other body reads with `atan2`. The ToddlerBot's verb takes degrees, and packing
 them into the same three slots made a 45 degree sweep arrive as 0.7 degrees.
 
@@ -36,7 +36,7 @@ them into the same three slots made a 45 degree sweep arrive as 0.7 degrees.
 
 Zero is not home. The ToddlerBot's home pose carries plus or minus 1.57 rad of shoulder and
 elbow yaw and 1.22 of wrist, so slewing "to zero" is a large motion on every limb, not a small
-one. It is also the pose quackd's deadman goes to when nobody is driving.
+one. It is also the pose Roboglot's deadman goes to when nobody is driving.
 
 The same value is overloaded elsewhere: an all-zeros motor reading is exactly what a dropped
 packet returns on that bus, so a robot genuinely at zero and a robot you cannot hear look
@@ -61,7 +61,7 @@ on and the ToddlerBot unconditionally. That one also installs a C-level `atexit`
 that disconnects every client, so **any** normal interpreter exit de-torques a standing
 robot, and `SIGTERM` does not even reach it.
 
-**What to do:** treat teardown as part of the stop contract. quackd never calls those, and the
+**What to do:** treat teardown as part of the stop contract. Roboglot never calls those, and the
 daemon it ships settles to a safe pose before anything is allowed to exit.
 
 ## A partial message that means something else
@@ -77,11 +77,11 @@ against a fake that reproduces the bug on purpose.
 ## A transport that drops your older message
 
 Both ZeroMQ hosts set `CONFLATE`, which keeps only the newest message. Two intents in one tick
-become one, silently. quackd's answer is a single writer that re-sends the whole desired
+become one, silently. Roboglot's answer is a single writer that re-sends the whole desired
 action, so the newest message carries everything.
 
 Related: nothing on either wire is timestamped, and upstream's own client serves its cache on
-a read miss — a stopped robot that looks like a moving one. quackd stamps on arrival and turns
+a read miss — a stopped robot that looks like a moving one. Roboglot stamps on arrival and turns
 a stale reading into a heartbeat failure.
 
 ## A capability that is a claim
@@ -119,7 +119,7 @@ written where a joint reads is not "stay here" when the reading is past the limi
 ## A name that exists, on the wrong class
 
 `default_motor_pos` is a real attribute in the ToddlerBot's upstream — on `BasePolicy`, not on
-`Robot`, where quackd was reading it. Behind a `getattr(..., default)` it produced a
+`Robot`, where Roboglot was reading it. Behind a `getattr(..., default)` it produced a
 plausible-looking pose instead of an error.
 
 **What to do:** read the attribute at the pin, and let a rename fail loudly. A fallback on a
@@ -139,7 +139,7 @@ out of the box is what most owners will have.
 
 A robot that publishes a URDF is handing you its own account of itself, which is the best
 source there is and still not a spec sheet. A `link/inertial` is optional per link, so the
-mass is a sum over whichever links carry one and the rest weigh nothing; quackd's note says
+mass is a sum over whichever links carry one and the rest weigh nothing; Roboglot's note says
 how many did, because 11 kg over three of four links is a different claim from 11 kg. Every
 non-fixed joint counts as a degree of freedom, so wheels, casters and fingers all land in
 the same number. And nothing anywhere in the file says what a gripper can hold: payload is
@@ -151,5 +151,5 @@ parses far enough to look like an answer and is missing whatever the macros woul
 
 **What to do:** tag what the file says as official and source it to the file, because it is
 the robot's own, and say in the note how much of the file said it. Leave everything else
-not published rather than deriving it. A body that reports a description quackd cannot check
+not published rather than deriving it. A body that reports a description Roboglot cannot check
 is believed, and that assumption is written down as one.

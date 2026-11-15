@@ -15,23 +15,23 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.described import describe as described
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.base import ToolCall
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import load_duck, parse_duck_text
-from quackd.safety import Executor, allow_all
-from quackd.verbs.registry import STOP_ENDED, registry_from_manifest
-from quackd_rosarm import RosArmAdapter, make
-from quackd_rosarm.bodies import BODIES, arm_body
-from quackd_rosarm.fake import FakeBridge, FakeClock
-from quackd_rosarm.transport import RosArmWs
+from roboglot.adapters.described import describe as described
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.base import ToolCall
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.safety import Executor, allow_all
+from roboglot.verbs.registry import STOP_ENDED, registry_from_manifest
+from roboglot_rosarm import RosArmAdapter, make
+from roboglot_rosarm.bodies import BODIES, arm_body
+from roboglot_rosarm.fake import FakeBridge, FakeClock
+from roboglot_rosarm.transport import RosArmWs
 
 TYPES = list(BODIES)
 
 WAVE = """---
-duck: 1
+glot: 1
 name: rosarm-wave
 description: Wave one joint ten degrees and back, slowly.
 robots: rosarm:mock
@@ -101,10 +101,10 @@ async def test_the_lookout_reads_every_arm_back_and_moves_nothing(
     robot_type: str, tmp_path: Path
 ) -> None:
     adapter = make("mock", robot_type=robot_type)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=load_duck("rosarm-lookout"),
-            provider=FakeProvider.for_duck("rosarm-lookout"),
+            duck=load_glot("rosarm-lookout"),
+            provider=FakeProvider.for_glot("rosarm-lookout"),
             transport=adapter,
             runs_dir=tmp_path,
         )
@@ -130,9 +130,9 @@ async def test_a_slow_wave_a_person_confirms_runs_on_every_arm(
         asked.append(name)
         return True
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=parse_duck_text(WAVE),
+            duck=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave(joint)),
             transport=adapter,
             runs_dir=tmp_path,
@@ -149,9 +149,9 @@ async def test_a_slow_wave_a_person_confirms_runs_on_every_arm(
 
 async def test_a_wave_nobody_confirmed_never_moves(tmp_path: Path) -> None:
     adapter = make("mock")
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=parse_duck_text(WAVE),
+            duck=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave("shoulder_pan_joint")),
             transport=adapter,
             runs_dir=tmp_path,
@@ -195,9 +195,9 @@ async def test_a_heartbeat_that_fails_mid_move_ends_the_run_and_its_teardown_par
     adapter = _adapter(robot_type, pace=1.0)
     joint = BODIES[robot_type].joints[0]
     _when_moving(adapter, 0.5, adapter.bridge.quiet)
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=parse_duck_text(WAVE),
+            duck=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave(joint, out=30.0, seconds=3.0)),
             transport=adapter,
             runs_dir=tmp_path,
@@ -230,9 +230,9 @@ async def test_an_arm_that_stops_itself_mid_move_fails_the_move_and_refuses_the_
     adapter = make("mock", robot_type=robot_type)
     joint = BODIES[robot_type].joints[0]
     _when_moving(adapter, 1.0, getattr(adapter.bridge.arm, fault))
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=parse_duck_text(WAVE),
+            duck=parse_glot_text(WAVE),
             provider=FakeProvider(
                 script=[
                     *_wave(joint, out=20.0, seconds=4.0)[:3],
@@ -248,6 +248,6 @@ async def test_an_arm_that_stops_itself_mid_move_fails_the_move_and_refuses_the_
     moves = [e for e in _verbs(result) if e["name"] == "move_joints"]
     assert moves and not moves[0]["ok"] and words in moves[0]["summary"], moves
     assert adapter.bridge.operations().count("send_action_goal") == 1, "nothing after the stop"
-    # the driver's own word that it stopped reached quackd, and the next move was refused for it
+    # the driver's own word that it stopped reached Roboglot, and the next move was refused for it
     said = " ".join(str(e) for e in _events(result))
     assert "the arm's driver says it cannot move" in said

@@ -3,7 +3,7 @@
 **Status:** accepted, amended · **Date:** 2026-08-28
 
 **Amended 2026-10-08 by [ADR-0051](0051-a-microduck-newer-than-the-read-is-served.md):** a
-VERIFIED ref is what quackd read at one pin, and the Microduck's handshake no longer refuses a
+VERIFIED ref is what Roboglot read at one pin, and the Microduck's handshake no longer refuses a
 robot on any other `duck-ipc-proto` version. It refuses one older than the oldest version read
 and serves the rest, warning whenever the version is not the one read, because upstream refuses
 a changed call by name rather than a peer by its number. The one kind of call nothing answers,
@@ -11,7 +11,7 @@ the `robot.move` notification, is checked against the robot's own state instead.
 
 **Amended 2026-10-19:** the `websocket` tier below is gone. Upstream dropped the WebSocket agent
 gateway that stub was waiting for: by daemon-v0.16.1 a server-side agent goes over a rendezvous
-lane that upstream's own relay says is not a teleop lane, and quackd does not drive over it.
+lane that upstream's own relay says is not a teleop lane, and Roboglot does not drive over it.
 0.18.0 deprecated `microduck:websocket`, and 0.19.0 removes it with its stub and with the
 `WebSocket agent gateway` ref that only the stub read, so the stub's file is no longer among
 those `tests/test_upstream_api.py` allows to touch an UNVERIFIED ref. The Consequences' "the stub
@@ -27,7 +27,7 @@ Christmas 2026; nobody outside Pollen can verify against a robot today.
 
 ## Decision
 
-- `quackd/transport/upstream_api.py` is the **only** module allowed to spell an upstream
+- `roboglot/transport/upstream_api.py` is the **only** module allowed to spell an upstream
   method name, socket path, enum value or wire convention. Each is an `UpstreamRef` with
   `status="VERIFIED"` (read from upstream source, link given) or `"UNVERIFIED"` (designed
   but not shipped, or our assumption) and a note.
@@ -52,4 +52,4 @@ socket paths and `DUCK_RUNTIME_DIR`.
 
 - We never silently invent an upstream API. When upstream ships the WebSocket surface, the
   stub becomes real by editing one file and one doc.
-- `quackd doctor` can print exactly which assumptions a hardware run relies on.
+- `roboglot doctor` can print exactly which assumptions a hardware run relies on.

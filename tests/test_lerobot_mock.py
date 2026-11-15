@@ -1,4 +1,4 @@
-"""`lerobot:mock` is the real backend over an arm in memory (`quackd_lerobot.fake_follower`).
+"""`lerobot:mock` is the real backend over an arm in memory (`roboglot_lerobot.fake_follower`).
 
 The follower is held here to what it stands in for, LeRobot's follower and its bus as the real
 backend reads and writes them, and the mock to being that backend: a change to the real backend's
@@ -12,11 +12,11 @@ from typing import Any
 import numpy as np
 import pytest
 
-from quackd.sim2d.render import BALL
-from quackd.transport.base import Intent
-from quackd_lerobot import LeRobotAdapter, make
-from quackd_lerobot.fake_follower import FakeCamera, FakeFollower, calibration_for
-from quackd_lerobot.mock import (
+from roboglot.sim2d.render import BALL
+from roboglot.transport.base import Intent
+from roboglot_lerobot import LeRobotAdapter, make
+from roboglot_lerobot.fake_follower import FakeCamera, FakeFollower, calibration_for
+from roboglot_lerobot.mock import (
     GRIP_ON_OBJECT,
     MOCK_CAM_HEIGHT_M,
     MOCK_OBJECT_R,
@@ -26,14 +26,14 @@ from quackd_lerobot.mock import (
     REST,
     LeRobotMock,
 )
-from quackd_lerobot.real import MAX_STEP_DEG, STEP_ENV, LeRobotReal, joint_ranges
-from quackd_lerobot.sim.follower import (
+from roboglot_lerobot.real import MAX_STEP_DEG, STEP_ENV, LeRobotReal, joint_ranges
+from roboglot_lerobot.sim.follower import (
     DeviceAlreadyConnectedError,
     DeviceNotConnectedError,
     SimFollowerConfig,
 )
-from quackd_lerobot.upstream_api import SO_MOTOR_IDS
-from quackd_lerobot.verbs import (
+from roboglot_lerobot.upstream_api import SO_MOTOR_IDS
+from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     JOINTS,
@@ -322,7 +322,7 @@ async def test_the_mock_is_the_real_backend_and_reads_its_travel_off_its_calibra
 async def test_the_mock_moves_under_the_step_the_arm_s_variable_sets(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`QUACKD_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm and its simulator, so a
+    """`ROBOGLOT_LEROBOT_MAX_STEP_DEG` is read for the mock as for the arm and its simulator, so a
     rehearsal under a lowered cap moves as slowly as the arm will and says so in its manifest."""
     lowered = MAX_STEP_DEG / 2
     monkeypatch.setenv(STEP_ENV, str(lowered))
@@ -373,7 +373,7 @@ async def test_a_change_to_the_real_close_is_a_change_to_the_mock_s(
 async def test_an_asked_release_a_motor_kept_on_through_closes_in_the_real_close_s_words(
     backend: str,
 ) -> None:
-    """`quackd robot release` lets go of the arm at its rest pose, one motor keeps its torque,
+    """`roboglot robot release` lets go of the arm at its rest pose, one motor keeps its torque,
     and the close's read finds the arm lying in its fold: the real close says it lies there with
     that joint still on, and to leave it where it rests. The mock's own close told the person to
     put down an arm that was down, a line the real close stopped saying and the mock went on

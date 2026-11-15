@@ -42,7 +42,7 @@ PNG_MAGIC = bytes.fromhex("89504e470d0a1a0a")  # the 8 bytes every PNG starts wi
 
 
 def _get(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": "quackd-contributors"})
+    request = urllib.request.Request(url, headers={"User-Agent": "roboglot-contributors"})
     token = os.environ.get("GITHUB_TOKEN")
     if token and "api.github.com" in url:
         request.add_header("Authorization", f"Bearer {token}")
@@ -127,7 +127,7 @@ def humans() -> list[dict[str, str]]:
     """Contributors with every `Bot` account dropped, most lines added first.
 
     Dependabot is a real contributor to this repository and still does not belong in a row
-    of faces under the words "thank you to everyone who has sent quackd code".
+    of faces under the words "thank you to everyone who has sent Roboglot code".
 
     Both endpoints are eventually consistent, and the first run of the workflow proved it:
     called from a runner seconds after two contributions merged, `/contributors` answered
@@ -214,7 +214,7 @@ def render(people: list[dict[str, str]]) -> str:
     return (
         f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
         f'width="{width}" height="{height}" viewBox="0 0 {width} {height}" '
-        f'role="img" aria-label="People who have contributed to quackd">\n'
+        f'role="img" aria-label="People who have contributed to Roboglot">\n'
         f"<defs>{''.join(defs)}</defs>\n" + "\n".join(body) + "\n</svg>\n"
     )
 

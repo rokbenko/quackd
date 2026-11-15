@@ -3,31 +3,31 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-xlerobot"
+name = "roboglot-xlerobot"
 dynamic = ["version"]
-description = "The XLeRobot dual-arm cart adapter for quackd. Install it as quackd[xlerobot]."
+description = "The XLeRobot dual-arm cart adapter for Roboglot. Install it as roboglot[xlerobot]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
-dependencies = ["quackd>=0.34.0,<0.35", "pyzmq>=26"]
+dependencies = ["roboglot>=0.34.0,<0.35", "pyzmq>=26"]
 
 
-[project.entry-points."quackd.adapters"]
-xlerobot = "quackd_xlerobot"
+[project.entry-points."roboglot.adapters"]
+xlerobot = "roboglot_xlerobot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/xlerobot/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_xlerobot/__init__.py"
+path = "src/roboglot_xlerobot/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_xlerobot"]
+packages = ["src/roboglot_xlerobot"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
+roboglot = { workspace = true }

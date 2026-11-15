@@ -1,6 +1,6 @@
 # E119: Rest pose and hand-off, first time on hardware
 
-**quackd handed the arm over, held the pose a person set by hand, and folded it back to rest when the run was done.**
+**Roboglot handed the arm over, held the pose a person set by hand, and folded it back to rest when the run was done.**
 
 **Part 1 of 3:** The rest pose at both ends of a run
 
@@ -8,7 +8,7 @@
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-**Part 2 of 3:** The hand-off: a person places the arm and quackd holds it
+**Part 2 of 3:** The hand-off: a person places the arm and Roboglot holds it
 
 ![E119, filmed with an external camera](log/part-2/run.gif)
 
@@ -20,7 +20,7 @@ Filmed with an external camera. The GIF plays at 5x speed.
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Yes | SUCCESS / SUCCESS / SUCCESS | 2026-11-06 | 0.31.3 |
 
@@ -29,23 +29,23 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** When LeRobot disconnects from an arm it takes the torque off, so an arm left raised falls where it is. This project's first arm did that at the end of every run. The rest pose is quackd's answer: a pose the arm can hold with no power, which every run starts from and folds back to. The hand-off is the other half, where a person places the arm and quackd takes hold of it without dropping it. This example shows both on a real arm.
+**Why this example exists:** When LeRobot disconnects from an arm it takes the torque off, so an arm left raised falls where it is. This project's first arm did that at the end of every run. The rest pose is Roboglot's answer: a pose the arm can hold with no power, which every run starts from and folds back to. The hand-off is the other half, where a person places the arm and Roboglot takes hold of it without dropping it. This example shows both on a real arm.
 
-**Why this result is important:** A run on this arm begins and ends at a pose it can hold on its own, so the end of a run is not the moment it falls. When a person placed the arm by hand, quackd took hold of a pose it had never been told about and only then said to let go, and at the end it opened the gripper first and gave 3 s to clear before it folded. Those are the moments a person's hands are nearest the arm.
+**Why this result is important:** A run on this arm begins and ends at a pose it can hold on its own, so the end of a run is not the moment it falls. When a person placed the arm by hand, Roboglot took hold of a pose it had never been told about and only then said to let go, and at the end it opened the gripper first and gave 3 s to clear before it folded. Those are the moments a person's hands are nearest the arm.
 
 ## The goal
 
-Show the rest pose and the hand-off working on a real arm: a run starts from the rest pose and folds back to it, a person can place the arm by hand and quackd holds it there, and a new rest pose can be recorded.
+Show the rest pose and the hand-off working on a real arm: a run starts from the rest pose and folds back to it, a person can place the arm by hand and Roboglot holds it there, and a new rest pose can be recorded.
 
-**What we expected:** At each end of a run quackd says `moving to the rest pose`, then `already at the rest pose` or `at the rest pose`. Placed by hand, the arm holds the pose it is given once quackd says the person can let go, and it folds back to its rest pose at the end.
+**What we expected:** At each end of a run Roboglot says `moving to the rest pose`, then `already at the rest pose` or `at the rest pose`. Placed by hand, the arm holds the pose it is given once Roboglot says the person can let go, and it folds back to its rest pose at the end.
 
 ## What the run showed
 
-* Part 1: the arm was already folded, so quackd said `already at the rest pose` at both ends and nothing moved. The LLM read the arm back once and ended the run, with no joint reading hot.
-* Part 2: quackd took the torque off at the rest pose and handed the arm over, saying `the arm is yours`. With a pen in the jaws and the arm held up by hand, Enter made quackd take hold and say `holding the pose you set, you can let go`. The arm stayed there for the 38 s until the next Enter.
+* Part 1: the arm was already folded, so Roboglot said `already at the rest pose` at both ends and nothing moved. The LLM read the arm back once and ended the run, with no joint reading hot.
+* Part 2: Roboglot took the torque off at the rest pose and handed the arm over, saying `the arm is yours`. With a pen in the jaws and the arm held up by hand, Enter made Roboglot take hold and say `holding the pose you set, you can let go`. The arm stayed there for the 38 s until the next Enter.
 * At the end of Part 2, Enter opened the gripper all the way so the pen could be taken, and 3 s later the arm folded back in about 2.6 s, ending on `at the rest pose`.
-* The arm reported `holding nothing` while the pen was in its jaws, and its own camera shows the pen there in the second picture of Part 2. quackd infers holding from the gripper stopping short of shut, and a pen this thin leaves it nearly shut, at 4 of 100.
-* Part 3: `quackd robot rest-pose arm-01` read all six joints, asked before replacing the pose already recorded, and kept the new one.
+* The arm reported `holding nothing` while the pen was in its jaws, and its own camera shows the pen there in the second picture of Part 2. Roboglot infers holding from the gripper stopping short of shut, and a pen this thin leaves it nearly shut, at 4 of 100.
+* Part 3: `roboglot robot rest-pose arm-01` read all six joints, asked before replacing the pose already recorded, and kept the new one.
 
 ## What the run did not show
 
@@ -60,7 +60,7 @@ The run ended with **SUCCESS**. The reason on record:
 
 > Reported joints are shoulder_pan −5°, shoulder_lift −88°, elbow_flex 96°, wrist_flex 73°, wrist_roll 1°, and gripper 0°; torque is on, and none reads hot (reported maximum: elbow_flex 33°C, below 60°C), though temperature is flagged as a stand-in rather than a verified measurement.
 
-**Part 2 of 3:** The hand-off: a person places the arm and quackd holds it
+**Part 2 of 3:** The hand-off: a person places the arm and Roboglot holds it
 
 The run ended with **SUCCESS**. The reason on record:
 
@@ -76,37 +76,37 @@ The run ended with **SUCCESS**. The reason on record:
 
 **Part 1 of 3:** The rest pose at both ends of a run
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run lerobot-lookout --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run lerobot-lookout --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
-**Part 2 of 3:** The hand-off: a person places the arm and quackd holds it
+**Part 2 of 3:** The hand-off: a person places the arm and Roboglot holds it
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run lerobot-lookout --robot arm-01 --by-hand --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run lerobot-lookout --robot arm-01 --by-hand --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
 **Part 3 of 3:** Recording the rest pose
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd robot rest-pose arm-01
+roboglot robot rest-pose arm-01
 ```
 
 ## The numbers
 
 | | Part 1 | Part 2 | Part 3 |
 |---|---|---|---|
-| quackd version | 0.31.3 | 0.31.3 | 0.31.3 |
+| roboglot version | 0.31.3 | 0.31.3 | 0.31.3 |
 | Started | 2026-11-06 12:17:36 UTC | 2026-11-06 12:20:54 UTC | 2026-11-06 12:27:26 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` | none |
-| Task file | `lerobot-lookout`, which ships with quackd | `lerobot-lookout`, which ships with quackd | none |
+| Task file | `lerobot-lookout`, which ships with Roboglot | `lerobot-lookout`, which ships with Roboglot | none |
 | Steps | 1 | 1 | none |
 | LLM calls | 2 | 2 | none |
 | Total time | 18.4 s | 92.5 s | not recorded |
@@ -126,7 +126,7 @@ quackd robot rest-pose arm-01
 |---|---|
 | ![Start](log/part-1/frame-1.jpg) | ![End](log/part-1/frame-2.jpg) |
 
-**Part 2 of 3:** The hand-off: a person places the arm and quackd holds it
+**Part 2 of 3:** The hand-off: a person places the arm and Roboglot holds it
 
 | Start | End |
 |---|---|
@@ -140,10 +140,10 @@ This run used no camera.
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -152,8 +152,8 @@ quackd run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-astra --no-me
 <summary>Show the full terminal trace (492 lines)</summary>
 
 ```text
-$ quackd run lerobot-lookout --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.31.3, started 2026-11-06T12:17:33Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run lerobot-lookout --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.31.3, started 2026-11-06T12:17:33Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -162,7 +162,7 @@ quackd 0.31.3, started 2026-11-06T12:17:33Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 6.86 s
    tools   report_state, stop, assess_task, declare_success, declare_failure
@@ -189,7 +189,7 @@ system prompt, 6427 chars, 88 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -197,8 +197,8 @@ system prompt, 6427 chars, 88 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -208,13 +208,13 @@ system prompt, 6427 chars, 88 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -287,8 +287,8 @@ step 1/10 · llm calls 1/12, 0.1/3 min ─────────────�
 │ run dir  runs\20261106-121736-lerobot-lookout                                                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-$ quackd run lerobot-lookout --robot arm-01 --by-hand --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.31.3, started 2026-11-06T12:20:49Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run lerobot-lookout --robot arm-01 --by-hand --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.31.3, started 2026-11-06T12:20:49Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -297,7 +297,7 @@ quackd 0.31.3, started 2026-11-06T12:20:49Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 7.64 s
    tools   report_state, stop, assess_task, declare_success, declare_failure
@@ -324,7 +324,7 @@ system prompt, 7241 chars, 100 lines (also in transcript.jsonl as run_start): �
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -332,8 +332,8 @@ system prompt, 7241 chars, 100 lines (also in transcript.jsonl as run_start): �
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -343,12 +343,12 @@ system prompt, 7241 chars, 100 lines (also in transcript.jsonl as run_start): �
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## Where this run starts
-   A person placed this body by hand before your first turn, and quackd is holding it exactly
+   A person placed this body by hand before your first turn, and Roboglot is holding it exactly
    where they left it. This run does **not** start from the recorded rest pose, so do not assume
    a folded arm or a known shape: read `report_state` and work from the joint angles it gives you. They
    are where somebody decided the work should begin.
@@ -357,11 +357,11 @@ system prompt, 7241 chars, 100 lines (also in transcript.jsonl as run_start): �
    reported as held, and nothing should be: this task cannot work the gripper, so whatever is between the jaws is held at the squeeze the person left and you cannot tighten it.
 
    When the run ends, the arm is handed back the same way: it holds where you left it, the person
-   is asked to take whatever is in the gripper, and only then does quackd fold the arm up.
+   is asked to take whatever is in the gripper, and only then does Roboglot fold the arm up.
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -632,7 +632,7 @@ WARNING:root:Relative goal position magnitude had to be clamped to be safe.
 │ run dir  runs\20261106-122054-lerobot-lookout                                                                                                            │
 ╰──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot rest-pose arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot rest-pose arm-01
 arm-01 (lerobot:real) is at
 shoulder_pan   -5.7
 shoulder_lift  -100.9
@@ -642,7 +642,7 @@ wrist_roll     0.7
 gripper        2.5
 record this as arm-01's rest pose, replacing the one already recorded? [y/N]: Y
 ✓ recorded arm-01's rest pose (6 joints)
-  quackd run <duck> --robot arm-01 starts from it and returns to it before letting go
+  roboglot run <task> --robot arm-01 starts from it and returns to it before letting go
 (lerobot-test) PS D:\Development\lerobot-test\.venv>
 ```
 

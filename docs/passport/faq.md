@@ -1,7 +1,7 @@
 # Robot Passport FAQ
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
+> Spec 1.0. Roboglot 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
 > is built and what has run.
 
 **Has it run on a Jetson?**
@@ -12,18 +12,18 @@ and what the first run on two Jetsons has to write down.
 **Why does it not run on my laptop any more?**
 A passport that the laptop driving a robot hands out vouches for the laptop. The robot could not
 introduce itself without it, and could not tell which robots were near it. Since 0.29.0 the passport
-lives on the robot's own computer, and quackd on a laptop still drives robots the way it always has
+lives on the robot's own computer, and Roboglot on a laptop still drives robots the way it always has
 ([why.md](why.md#why-identity-belongs-to-the-body)).
 
 **Why is there no passport for my SO-101, or my Microduck?**
 An arm is fixed in place and will rarely meet another robot, and a toy-sized robot has no computer
-on board that can run quackd. Robot Passport is for the robots that will meet strangers, humanoids
-and quadrupeds, which carry a computer that can run quackd, on many of them a Jetson
+on board that can run Roboglot. Robot Passport is for the robots that will meet strangers, humanoids
+and quadrupeds, which carry a computer that can run Roboglot, on many of them a Jetson
 ([compatibility.md](compatibility.md)).
 
-**Do I need quackd?**
+**Do I need Roboglot?**
 Not to implement the protocol: it is a specification, with schemas and conformance vectors
-([spec.md](spec.md)). quackd is its first implementation.
+([spec.md](spec.md)). Roboglot is its first implementation.
 
 **Does my robot need the internet?**
 No. Two robots find each other by Bluetooth and talk over the LAN or a Bluetooth link, and a
@@ -71,9 +71,9 @@ No. The protocol started under that name and was renamed because three projects 
 ([naming.md](naming.md)).
 
 **Who governs it?**
-For now, quackd's maintainer, in quackd's repository, under quackd's licence, Apache-2.0. It is
+For now, Roboglot's maintainer, in Roboglot's repository, under Roboglot's licence, Apache-2.0. It is
 written to move to a repository of its own once a second implementation exists or another maker
-wants to adopt it ([roadmap.md](roadmap.md#leaving-quackd)).
+wants to adopt it ([roadmap.md](roadmap.md#leaving-roboglot)).
 
 **How do I put a passport on my robot?**
 Three commands on its Jetson, or one on a laptop to try it: [quickstart.md](quickstart.md).

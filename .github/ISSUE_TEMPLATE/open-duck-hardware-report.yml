@@ -1,5 +1,5 @@
 name: Open Duck Mini v2 hardware report
-description: You ran quackd against a real Open Duck Mini v2. Tell us what happened.
+description: You ran Roboglot against a real Open Duck Mini v2. Tell us what happened.
 labels: ["open-duck", "hardware", "adapter-status"]
 body:
   - type: markdown
@@ -13,10 +13,10 @@ body:
         first. It is ordered so the duck's feet stay off the ground until step 10, and this
         robot cannot get back up if it falls.
   - type: input
-    id: quackd_version
+    id: roboglot_version
     attributes:
-      label: quackd version
-      description: Output of `quackd --version`
+      label: roboglot version
+      description: Output of `roboglot --version`
     validations:
       required: true
   - type: input
@@ -75,7 +75,7 @@ body:
   - type: textarea
     id: check
     attributes:
-      label: quackd_duck_bridge.py check
+      label: roboglot_duck_bridge.py check
       description: The whole thing. It carries your capabilities and limits.
       render: json
     validations:
@@ -83,7 +83,7 @@ body:
   - type: textarea
     id: doctor
     attributes:
-      label: quackd doctor --robot open_duck:bridge --address ...
+      label: roboglot doctor --robot open_duck:bridge --address ...
       render: shell
     validations:
       required: true
@@ -94,7 +94,7 @@ body:
       description: >-
         The whole session as you saw it, opening with
         the command that started the run and the version that ran it. Check it before you
-        paste: quackd replaces the values of `--api-key` and `--token` and the credentials
+        paste: Roboglot replaces the values of `--api-key` and `--token` and the credentials
         in a `--base-url`, an `--address` or a `--camera-url`, and nothing else on that
         screen (see SECURITY.md).
       render: text
@@ -117,5 +117,5 @@ body:
       options:
         - label: The duck was on a stand for steps 1 through 9
           required: true
-        - label: I understand quackd claims nothing about hardware until a maintainer runs it too
+        - label: I understand Roboglot claims nothing about hardware until a maintainer runs it too
           required: true

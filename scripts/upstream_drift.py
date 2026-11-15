@@ -1,4 +1,4 @@
-"""Say when an upstream a quackd adapter was read against has moved: the nightly's script.
+"""Say when an upstream a Roboglot adapter was read against has moved: the nightly's script.
 
 Every adapter cites what it reads from upstream as `UpstreamRef`s in its `upstream_api.py`,
 each a permalink to a commit and, nearly always, a line (ADR-0022). Nothing re-read them when
@@ -34,7 +34,7 @@ a page (`.md`, `.rst`, `.txt`) that changed is reported without counting as drif
 moves for reasons that are nobody's concern. A newer release on PyPI than the one a module read
 is drift too.
 
-**A broken ref** is one of quackd's own that cannot be followed: its line is blank or only a
+**A broken ref** is one of Roboglot's own that cannot be followed: its line is blank or only a
 bracket (`bad anchor`), or nothing is at its path at the pin (`nothing at the pin`, asked of the
 API as well as the raw host, so a refusal by one of them is not read as an absence). That is a
 defect here, not a move there.
@@ -104,7 +104,7 @@ BARE = {"", ")", "]", "}", "),", "],", "},", "):", '"""', "'''", "pass", "else:"
 #: with no extension is not one of them: it is a LICENSE, a Dockerfile, a Makefile.
 PAGES = (".md", ".rst", ".txt")
 
-USER_AGENT = "quackd-upstream-drift"
+USER_AGENT = "roboglot-upstream-drift"
 TIMEOUT_S = 30
 RETRY_AFTER_S = 20
 RETRY_AFTER_MAX_S = 60
@@ -345,7 +345,7 @@ class Report:
     drift: bool = False
     """Upstream moved under a ref, or published a newer release than the one read."""
     broken: bool = False
-    """A ref of quackd's own cannot be followed: a bad anchor, or nothing at its pin."""
+    """A ref of Roboglot's own cannot be followed: a bad anchor, or nothing at its pin."""
 
     def count(self, status: str) -> None:
         self.counts[status] = self.counts.get(status, 0) + 1
@@ -771,7 +771,7 @@ def check_versions(
         if not latest:
             unknown.append(f"{url} names no version")
         elif latest != read:
-            lines.append((f"{label} is {latest}; quackd read {read}", True))
+            lines.append((f"{label} is {latest}; Roboglot read {read}", True))
         else:
             lines.append((f"{label} is still {read}", False))
 
@@ -828,9 +828,9 @@ def _document_version(document: Any) -> str:
 
 def upstream_rows() -> list[tuple[str, ModuleType]]:
     """(doctor's name, module) for every upstream an installed adapter declares, each module
-    once: the walk `quackd doctor` makes, so a module doctor does not know is one this script
+    once: the walk `roboglot doctor` makes, so a module doctor does not know is one this script
     does not read either, and a test holds that walk to the suite's list."""
-    from quackd.doctor import _upstreams
+    from roboglot.doctor import _upstreams
 
     rows: list[tuple[str, ModuleType]] = []
     names: set[str] = set()
@@ -1041,7 +1041,7 @@ def sync_issues(
             "--color",
             "D93F0B",
             "--description",
-            "an upstream a quackd adapter was read against has moved",
+            "an upstream a Roboglot adapter was read against has moved",
         ]
     )
     listed = gh(
@@ -1164,7 +1164,7 @@ def _close_unknown(
                         "--repo",
                         repo,
                         "--comment",
-                        f"No upstream quackd reads is called {name} any more, so nothing would "
+                        f"No upstream Roboglot reads is called {name} any more, so nothing would "
                         "update this issue or close it. An upstream renamed since gets an issue "
                         "under its new name the night it needs somebody.",
                     ]
@@ -1177,11 +1177,11 @@ def _close_unknown(
 
 
 def unread_adapters() -> list[str]:
-    """Each adapter quackd knows that the walk could not read here, and why: one not installed,
-    or one whose module or `UPSTREAMS` raises, which `quackd doctor`'s walk passes over in
+    """Each adapter Roboglot knows that the walk could not read here, and why: one not installed,
+    or one whose module or `UPSTREAMS` raises, which `roboglot doctor`'s walk passes over in
     silence, and its upstreams with it. A night with one closes no issue for an upstream the walk
     does not know, since that upstream may be one of its."""
-    from quackd.adapters.factory import _module, adapter_names, is_installed
+    from roboglot.adapters.factory import _module, adapter_names, is_installed
 
     unread: list[str] = []
     for name in adapter_names():

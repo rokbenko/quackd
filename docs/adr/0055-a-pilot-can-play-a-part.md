@@ -1,6 +1,6 @@
 # ADR-0055: A pilot can play a part
 
-**Status:** accepted · **Date:** 2026-10-08 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a task that gives the pilot a part is judged by whether the body can act it out, and the needs of what it plays are not the body's) and the `.duck` spec, which gains `duck: 4` ([ADR-0019](0019-duck-spec-v1.md)) · Keeps [ADR-0035](0035-one-cli-for-all-your-robots.md)'s "You are the brain of" and [ADR-0005](0005-duck-spec-v0.md)'s rule that the executor enforces the contract and the prompt does not · Implemented in `quackd/agent/prompts.py` (`play_paragraphs`, `play_section`), with changes in the schema, the loop, the CLI, pilot flocks, preflight, the MCP server, the log and the OpenAI provider · Documented in [docs/guides/play.md](../guides/play.md)
+**Status:** accepted · **Date:** 2026-10-08 · Amends [ADR-0032](0032-datasheets-and-the-verdict.md) (a task that gives the pilot a part is judged by whether the body can act it out, and the needs of what it plays are not the body's) and the `.glot` spec, which gains `glot: 4` ([ADR-0019](0019-glot-spec-v1.md)) · Keeps [ADR-0035](0035-one-cli-for-all-your-robots.md)'s "You are the brain of" and [ADR-0005](0005-glot-spec-v0.md)'s rule that the executor enforces the contract and the prompt does not · Implemented in `roboglot/agent/prompts.py` (`play_paragraphs`, `play_section`), with changes in the schema, the loop, the CLI, pilot teams, preflight, the MCP server, the log and the OpenAI provider · Documented in [docs/guides/play.md](../guides/play.md)
 
 ## Context
 
@@ -34,7 +34,7 @@ part at every turn:
 The same LLM played along when a task named the body's action. On 2026-09-15 `--goal "Go into
 a duck pose and quack with the gripper"` was judged feasible and mimed with the arm, and the same
 day "Imagine you're a duck that quacks" moved nothing and declared success with a quack typed
-into its reason. Every refusal recorded on the arm quoted quackd's own words back: the
+into its reason. Every refusal recorded on the arm quoted Roboglot's own words back: the
 datasheet, the gate, a verb's description, or a joint reading past its travel.
 
 Rok asked for three things to be weighed: (a) dropping the system prompt, (b) keeping it exactly
@@ -43,12 +43,12 @@ one of them saying the robot is "capable of human or animal like capabilities".
 
 ## Decision
 
-- **One named framing, `play`.** `play: true` in a `duck: 4` task file, or `--play` on `run`,
+- **One named framing, `play`.** `play: true` in a `glot: 4` task file, or `--play` on `run`,
   `record` and `preflight`, adds one section, `## Playing a part`, to the system prompt, directly
   before the task file. `--no-play` turns a file's `play` off for one run, and the flag wins over
   the file. No environment variable and no `robots.json` field sets it, as none sets
   `--policy-url`, so a robot never starts playing every task it is given.
-- **The section says four things**, in quackd's own words. A part is acted out in moves, and one
+- **The section says four things**, in Roboglot's own words. A part is acted out in moves, and one
   told only in words has not been played. The verdict asks whether this body can act it out, the
   needs of what it plays are left out of `needs`, and every need of a real result is named in
   full. A real result still has to happen and is judged as it would be without the part, no part
@@ -61,16 +61,16 @@ one of them saying the robot is "capable of human or animal like capabilities".
   the run keeps notes.
 - **Everything else is what it was.** The tools, the observations, the opening, the Rules, the
   datasheet and its `cannot` lines, `ASSESS_TASK`, `own_sheet_objection` and every gate. With
-  play off quackd adds nothing to the prompt, which was checked by rendering every shipped body
+  play off Roboglot adds nothing to the prompt, which was checked by rendering every shipped body
   with every starter, and the arm with every example file that does not play, before and after
   the change. An example file that now plays reads its new lines with `--no-play` as well.
 - **The record keeps the file's contract.** `run_start.play` says whether the pilot was told it
   may play and whose word that was: `task file`, `--play` or `--no-play`. `contract.play` stays
-  the file's own, since `--play` on a `duck: 1` file would otherwise record a contract the schema
-  refuses. A pilot flock's `flock_start` says the same.
-- **Over MCP the part rides on the file.** `robot_load_duckfile` returns a played file's
+  the file's own, since `--play` on a `glot: 1` file would otherwise record a contract the schema
+  refuses. A pilot team's `team_start` says the same.
+- **Over MCP the part rides on the file.** `robot_load_glotfile` returns a played file's
   paragraphs as `play`, worded for a chat, and a file that does not play loads exactly as before.
-- **Refused where nobody would read it:** a coordinator flock, with either flag or a played
+- **Refused where nobody would read it:** a coordinator team, with either flag or a played
   file, which the parser already refuses beside `allocation.method: auction`, and
   `--controller vla`, with `--play`, or with a played file unless `--no-play` turns its part off.
   Then the policy flies the file's instructions and the record says play was off.
@@ -83,7 +83,7 @@ one of them saying the robot is "capable of human or animal like capabilities".
   words, so a local LLM's text is never read for one in a turn that carries a refusal, or that
   a content filter cut short.
 - **The examples opt in where the task is to show something.** 118 of the 223 files under
-  `docs/examples/lerobot` are `duck: 4` with `play: true`, and lose the success line, the persona
+  `docs/examples/lerobot` are `glot: 4` with `play: true`, and lose the success line, the persona
   and the strategy step that made refusing a way to succeed. 27 of them keep the older second
   step, which asks for small, deliberate moves: those where the shoot's run sheet puts a person,
   a held prop, a camera or a thing within the arm's reach, has someone hold something up in the
@@ -100,7 +100,7 @@ one of them saying the robot is "capable of human or animal like capabilities".
 - **(a) Drop the system prompt.** It carries the Rules, the verbs, the budgets and the datasheet
   every verdict rests on. A pilot without them is refused by the executor more, not less.
 - **(b) An override file or flag.** The default stays exactly as it is, which is what (b) asked
-  for, but the words added are quackd's, reviewed and tested on every shipped body. Free operator
+  for, but the words added are Roboglot's, reviewed and tested on every shipped body. Free operator
   text would sit in the most trusted place in the prompt, could contradict the Rules there, and
   would make every measurement of play depend on a file on one machine. `--extra-body` already
   refuses `instructions` for that reason. An append-only `--prompt-note` remains possible later.
@@ -110,7 +110,7 @@ one of them saying the robot is "capable of human or animal like capabilities".
 - **An enum or a template name.** "mode" is already `--decision-mode` and the header's `mode`
   row, which says DRY RUN, and `mode: work` would rename a default that must stay byte-identical. A
   second framing, if one is ever wanted, is a new key under a new spec version.
-- **A keyword heuristic.** quackd cannot know what a sentence needs (#25), so nothing turns play
+- **A keyword heuristic.** Roboglot cannot know what a sentence needs (#25), so nothing turns play
   on from the words of a task.
 - **Rewording `ASSESS_TASK`, `own_sheet_objection` or the opening.** They are the gate's own
   words, shared with MCP and pinned by tests, and "You are the brain of" is ADR-0035's.
@@ -121,7 +121,7 @@ one of them saying the robot is "capable of human or animal like capabilities".
 
 ## Consequences
 
-- `duck: 4` files are refused by older quackd versions, which is the correct failure.
+- `glot: 4` files are refused by older Roboglot versions, which is the correct failure.
 - A played prompt is longer by one section, on every turn.
 - The act is prose. Whether a mime is reported as a real result is held only where a gate or a
   sidecar check reads the world, and otherwise by the record and whoever reads it. That no part

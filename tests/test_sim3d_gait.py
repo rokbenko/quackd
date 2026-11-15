@@ -1,4 +1,4 @@
-"""The gait floor: the arithmetic between a twist quackd sends and a duck that moves.
+"""The gait floor: the arithmetic between a twist Roboglot sends and a duck that moves.
 
 This is the one piece of the physics backend that decides whether a run is honest. The
 walking policy does not step below about 0.24 m/s, `move` defaults to 0.15 and `go_to` creeps
@@ -14,7 +14,7 @@ import math
 
 import pytest
 
-from quackd_microduck.sim3d.gait import GAIT_FLOOR_VX, GAIT_FLOOR_WZ, tilt_deg, usable_twist
+from roboglot_microduck.sim3d.gait import GAIT_FLOOR_VX, GAIT_FLOOR_WZ, tilt_deg, usable_twist
 
 
 def test_the_gait_floor_scales_a_twist_instead_of_dropping_or_lurching() -> None:

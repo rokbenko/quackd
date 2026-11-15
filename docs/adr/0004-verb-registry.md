@@ -4,7 +4,7 @@
 
 **Amended 2026-09-28 by [ADR-0048](0048-policies-are-the-arms-executor.md):** a learned policy on the arm is not a learned verb.
 `pick` and `manipulate` hand the SO-101 to a LeRobot policy, and both are the arm's own verbs
-(`quackd_lerobot.verbs`), declared in its manifest like every other extension and with
+(`roboglot_lerobot.verbs`), declared in its manifest like every other extension and with
 parameters of their own, a target and an instruction. `register_learned_verb` stays the
 reserved extension point it is below: a verb with no parameters, shaped for an ONNX policy the
 Microduck runs, and registered into a registry the connect rebuilds from the manifest, so it
@@ -13,13 +13,13 @@ policies, is still that point and nothing more ([learned-verbs.md](../concepts/l
 
 ## Context
 
-Four things need the same list of actions: the LLM's tool definitions, the `.duck`
+Four things need the same list of actions: the LLM's tool definitions, the `.glot`
 allowlist, the MCP tool list, and — in v2 — learned ONNX policies. Four lists drift; one
 does not.
 
 ## Decision
 
-A `Verb` (`quackd/verbs/registry.py`) is data plus one coroutine:
+A `Verb` (`roboglot/verbs/registry.py`) is data plus one coroutine:
 
 ```
 name · description (LLM-facing) · params: pydantic model · execute(ctx, params) -> VerbResult
@@ -35,12 +35,12 @@ timeout_s · safety_class: safe|confirm|dangerous · preconditions · done_condi
   (ONNX path + metadata) + `register_learned_verb()`. Interface, dummy test and docs only.
 - `Verb.tool_schema()` emits the provider-neutral `{name, description, input_schema}` shape
   (Anthropic's), which every provider translates. `additionalProperties: false` always.
-- Execution policy (allowlist, confirm, budget, dry-run) lives in `quackd/safety.py`, never
+- Execution policy (allowlist, confirm, budget, dry-run) lives in `roboglot/safety.py`, never
   in a verb. A verb that raises is caught, the duck is stopped, and the LLM is told.
 
 ## Consequences
 
 - Adding a verb is one function + one `registry.register(...)` — CONTRIBUTING documents it.
-- `quackd list-verbs`, the MCP server and the system prompt are all views of the registry.
+- `roboglot list-verbs`, the MCP server and the system prompt are all views of the registry.
 - Param validation errors are returned to the LLM as a failed `VerbResult`, not raised: a
   wrong argument is feedback, not a crash.

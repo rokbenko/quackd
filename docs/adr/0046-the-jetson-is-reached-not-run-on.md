@@ -1,81 +1,81 @@
 # ADR-0046: The Jetson is reached, not run on
 
-**Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put quackd on the board) · Extends [ADR-0014](0014-local-llms.md) (a local LLM is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the LLM's loop and the steering loop are quackd's and the fifty hertz loop is the robot's, so nothing requires quackd to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `quackd/host.py`, `quackd/adapters/host_camera.py`, `quackd/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
+**Status:** accepted, amended · **Date:** 2026-09-25 · Supersedes [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md) (which put Roboglot on the board) · Extends [ADR-0014](0014-local-llms.md) (a local LLM is the OpenAI provider at an address, and a preset's address can now move to the board) · Follows from [ADR-0003](0003-three-loops.md) (the LLM's loop and the steering loop are Roboglot's and the fifty hertz loop is the robot's, so nothing requires Roboglot to sit beside the robot's loop) · Implemented in `bridge/jetson/`, `roboglot/host.py`, `roboglot/adapters/host_camera.py`, `roboglot/perception/host.py` and doctor's host section ([page](../guides/jetson.md))
 
 **Amended 2026-10-29 by [ADR-0073](0073-a-robot-carries-its-own-passport-and-its-owner-signs-it.md):**
-one quackd command runs on a robot's own Jetson now, `quackd onboard`, Robot Passport's service,
+one Roboglot command runs on a robot's own Jetson now, `roboglot onboard`, Robot Passport's service,
 which drives the robot from there when the robot's file names an adapter, installed with
-`uv tool install "quackd[onboard]"` and run by systemd. Everything below still holds for every
+`uv tool install "roboglot[onboard]"` and run by systemd. Everything below still holds for every
 other command: `run`, `serve-mcp` and `doctor` stay on the laptop and reach the board with
 `--host`, `bridge/jetson/` is unchanged, and doctor reads nothing of the machine it runs on. The
-contention caveat now covers quackd's own service as well, a Bluetooth scanner, a pilot's requests
+contention caveat now covers Roboglot's own service as well, a Bluetooth scanner, a pilot's requests
 and a run driving the body, beside a robot's control loop, which nobody here has measured.
 
 ## Context
 
 0.13.0 answered "add a Jetson adapter" with [ADR-0044](0044-a-jetson-is-a-host-not-a-body.md):
-a Jetson is a host, not a body. It read "host" as the computer that runs quackd, so quackd
-went onto the board. `deploy/jetson/` held a Dockerfile that built quackd onto a plain Python
+a Jetson is a host, not a body. It read "host" as the computer that runs Roboglot, so Roboglot
+went onto the board. `deploy/jetson/` held a Dockerfile that built Roboglot onto a plain Python
 image and a compose file that gave the GPU to Ollama beside it.
-`.github/workflows/jetson-image.yml` built that image for arm64 and ran it. `quackd doctor`
+`.github/workflows/jetson-image.yml` built that image for arm64 and ran it. `roboglot doctor`
 gained a section that read the board it was running on: its device tree, its release file, its
 memory and swap, `nvpmodel` and Docker's default runtime.
 
 Two days later that is the wrong direction, for two reasons.
 
 The first is what a Jetson is for. On its own the board is already a robot's computer and its
-GPU. What quackd adds is using the board, and what is on it, from the laptop where the person
+GPU. What Roboglot adds is using the board, and what is on it, from the laptop where the person
 running the task already is: the LLM on its GPU, the board's health, frames from a camera on
-it, and detections computed on its GPU. None of that needs quackd on the board. The onboard work
-gave the first two only to a quackd running on the board, and a local preset could already reach
+it, and detections computed on its GPU. None of that needs Roboglot on the board. The onboard work
+gave the first two only to a Roboglot running on the board, and a local preset could already reach
 an LLM server on the board from anywhere with `--base-url`.
 
 The second is the arrangement the image existed for. ADR-0044 called it the interesting one: a
-ToddlerBot's own Jetson holding its control daemon, an LLM server and quackd, three processes
+ToddlerBot's own Jetson holding its control daemon, an LLM server and Roboglot, three processes
 on one board. It is also the risky one. An LLM server saturating the board's CPU and memory bus
 is exactly the load that can starve a fifty hertz control loop, and on a humanoid a starved loop
 is a fall. ADR-0044's Consequences named that as the first thing a person with a board should
-measure, and nobody here has a board. Moving quackd off the board does not end that contest,
-because an LLM server or a detector can still share a robot's board, but it takes quackd out of
+measure, and nobody here has a board. Moving Roboglot off the board does not end that contest,
+because an LLM server or a detector can still share a robot's board, but it takes Roboglot out of
 it and makes the sharing a choice rather than the page's headline.
 
 ## Decision
 
-**quackd stays on the laptop, and `--host` names the board.** `--host HOST[:PORT]` names a
-machine quackd uses and never runs on. `--robot` still names the body, and the flag is the same
-whatever the body is: no adapter, no extra, no `--robot jetson:...`. It is on `quackd run`,
+**Roboglot stays on the laptop, and `--host` names the board.** `--host HOST[:PORT]` names a
+machine Roboglot uses and never runs on. `--robot` still names the body, and the flag is the same
+whatever the body is: no adapter, no extra, no `--robot jetson:...`. It is on `roboglot run`,
 `serve-mcp`, `doctor`, `robot add` and `robot edit`, with `--host-token` beside it, and
-`QUACKD_HOST` and `QUACKD_HOST_TOKEN` are the rung below. The board is settled once, in
-`quackd.host.resolve_host`, in the order every quackd setting uses: the flag, then the host a
-registered robot stores, then `QUACKD_HOST`. The token climbs a ladder of its own, so
+`ROBOGLOT_HOST` and `ROBOGLOT_HOST_TOKEN` are the rung below. The board is settled once, in
+`roboglot.host.resolve_host`, in the order every Roboglot setting uses: the flag, then the host a
+registered robot stores, then `ROBOGLOT_HOST`. The token climbs a ladder of its own, so
 `--host 127.0.0.1` through an ssh tunnel still carries the token of the board the robot was
 registered with, and a robot's token rides only when that robot stores a board, so it is never
 sent to the environment's. `robots.json` keeps `host` and `host_token` for a robot, and
-`quackd robot edit NAME --clear host` forgets both.
+`roboglot robot edit NAME --clear host` forgets both.
 
-**One daemon answers on the board, and quackd ships it.** `bridge/jetson/quackd_jetson_hostd.py`
+**One daemon answers on the board, and Roboglot ships it.** `bridge/jetson/roboglot_jetson_hostd.py`
 is to the Jetson what the camera daemon in `bridge/open_duck/` is to the Open Duck Mini's Pi. It
 serves HTTP on port 9874, binds loopback unless told otherwise, and checks an optional token in
-the `X-Quackd-Token` header, in constant time, on every path. It answers `/hello` (the protocol,
+the `X-Roboglot-Token` header, in constant time, on every path. It answers `/hello` (the protocol,
 and what started: a camera, a detector, whether the board is a Tegra, and why anything did not),
 `/healthz`, `/board`, `/snapshot.jpg` and `POST /detect`, and nothing else. It has no control
 path, and a test that reads its source fails if one appears. It is written for Python 3.10,
-which is JetPack 6's system Python, imports nothing from quackd, and imports OpenCV, Pillow,
+which is JetPack 6's system Python, imports nothing from Roboglot, and imports OpenCV, Pillow,
 torch and ultralytics only where it uses them, so a board without one of them starts anyway and
 says in `/hello` what it lacks. The LLM server is still the person's own install, Ollama or
 another, as it was under ADR-0044.
 
-**The daemon ships raw text, and quackd does the reading.** `/board` is five files, three device
+**The daemon ships raw text, and Roboglot does the reading.** `/board` is five files, three device
 nodes, the output of `nvpmodel -q` and one line of `tegrastats`, as the board wrote them, and
-`quackd doctor` reads them with the parsers it already had for the board it used to run on.
-`/detect` answers with YOLO's own class names and pixel boxes, and quackd turns them into
+`roboglot doctor` reads them with the parsers it already had for the board it used to run on.
+`/detect` answers with YOLO's own class names and pixel boxes, and Roboglot turns them into
 labels, bearings and distances with `detections_from_boxes`, the function its in-process
 `YoloDetector` uses, so the same boxes are the same detections on either machine. The daemon is
-a file somebody copies onto a board by hand, and quackd is a release. A reading that is wrong on
+a file somebody copies onto a board by hand, and Roboglot is a release. A reading that is wrong on
 a board nobody here has seen is then fixed in the release, and the daemon never has to learn
-quackd's labels or its lens.
+Roboglot's labels or its lens.
 
-**HTTP for everything, and no ssh inside quackd.** quackd reaches the daemon and the LLM
+**HTTP for everything, and no ssh inside Roboglot.** Roboglot reaches the daemon and the LLM
 server over plain HTTP and holds no login to the board. ssh stays what it was in 0.13, the
 tunnel a person opens, now with the daemon's port in it, after which `--host 127.0.0.1` reaches
 both through it. `bridge/jetson/README.md` has the line.
@@ -90,15 +90,15 @@ the order:
 > 1. `base_url`, which is `--base-url`: a URL given for this run is used exactly as given.
 > 2. `host`, which is `--host` or the host a registered robot was stored with: the preset's
 >    address moved to that machine (`on_host`), port and path kept.
-> 3. `QUACKD_BASE_URL`, then 4. `OPENAI_BASE_URL`, each used exactly as given.
-> 5. `QUACKD_HOST`: the preset's address moved to that machine.
+> 3. `ROBOGLOT_BASE_URL`, then 4. `OPENAI_BASE_URL`, each used exactly as given.
+> 5. `ROBOGLOT_HOST`: the preset's address moved to that machine.
 > 6. The preset's own address, on localhost.
 >
 > A URL given anywhere is used as given, and a host only ever moves a preset. That is why
 > `local`, which has no preset address, refuses a host on its own and asks for
 > `--base-url`. The two hosts sit on different rungs on purpose. One typed for this run or
 > registered with this robot is a decision about this run, and beats a `.env` line naming an
-> LLM server's URL; `QUACKD_HOST` is the board you usually use, and must not.
+> LLM server's URL; `ROBOGLOT_HOST` is the board you usually use, and must not.
 
 `make_provider` hands the host to the local provider and to no vendor, and decision LLMs are not
 moved: `--decision-url` already reaches a server on the board.
@@ -122,7 +122,7 @@ the body is real. A simulated or mock backend keeps the colour detector, because
 see a cartoon ball and the colour detector is tuned for what a simulator draws.
 `--detector color` opts out. `--detector host` asks for the board's by name, on a simulator
 too, and is refused before anything connects when no board is named or its daemon cannot
-detect. `--detector yolo` is YOLO in this process, which needs `quackd[yolo]`.
+detect. `--detector yolo` is YOLO in this process, which needs `roboglot[yolo]`.
 
 A call that fails gives that frame no detections and keeps the reason, and the run keeps the
 detector. The colour detector does not label the same things on a real camera, so a quiet
@@ -146,8 +146,8 @@ detector from start to end, so that one field answers for every detection in the
 
 **A fleet is refused a board.** A host is one camera, one detector and one board's health, and a
 fleet is several bodies. `--host`, or a host stored with a member, is refused for `--robots`,
-`--flock`, a task file with a `flock:` block and several robots alike, in `run` and in
-`serve-mcp`, before anything connects. `QUACKD_HOST` is not refused. It is the board you usually
+`--team`, a task file with a `team:` block and several robots alike, in `run` and in
+`serve-mcp`, before anything connects. `ROBOGLOT_HOST` is not refused. It is the board you usually
 use rather than a claim about these bodies, and for a fleet it moves only the local presets'
 LLM server. `--detector` is refused for a fleet as well.
 
@@ -156,9 +156,9 @@ LLM server. `--detector` is refused for a fleet as well.
 because a run given `--host` was promised a camera or a detector it would not have. Somebody who
 wants only the LLM on the board keeps `--base-url`, which asks nothing of the daemon.
 
-**`quackd doctor` reads the board over the network, and never this machine's files.** The
+**`roboglot doctor` reads the board over the network, and never this machine's files.** The
 section appears only when a host is named, by the flag, by the robot `--robot` names or by
-`QUACKD_HOST`. It shows the daemon, its camera, its detector and the device the detector runs
+`ROBOGLOT_HOST`. It shows the daemon, its camera, its detector and the device the detector runs
 on, the daemon's health, and, parsed from `/board`, the board's model, the L4T release and which
 JetPack that is, the memory it shares with the GPU, whether the only swap is zram, the GPU
 device node, the power mode and the GPU's load from one `tegrastats` line. The four local
@@ -181,17 +181,17 @@ the 0.13.0 changelog entry links there.
 intents, and there is nothing for `send_intent()` to do on one. `--host` is one flag for every
 body, which is what lets a board's camera join an arm and a biped alike.
 
-**ssh from inside quackd.** quackd would hold a login to the board, and everything it asked
+**ssh from inside Roboglot.** Roboglot would hold a login to the board, and everything it asked
 would run with that account's reach. A daemon that answers five paths and can do nothing else
 is a smaller thing to let a laptop reach, and the tunnel a person opens keeps the wire private
-without quackd holding a key.
+without Roboglot holding a key.
 
 **A daemon that parses.** Two parsers for the same files are two answers that can disagree, and
-the one on the board is a file copied by hand that no upgrade of quackd reaches. Raw text also
+the one on the board is a file copied by hand that no upgrade of Roboglot reaches. Raw text also
 lets doctor show the `tegrastats` line whole, which is the line people with a board are asked to
 send.
 
-**A `/detections` endpoint that runs YOLO on the board's own camera.** quackd detects on the
+**A `/detections` endpoint that runs YOLO on the board's own camera.** Roboglot detects on the
 primary frame, which is the body's own camera whenever it has one, so such an endpoint would
 serve one of the two arrangements and add a second code path. It is the next step if the
 daemon's `ms` and a frame's `X-Frame-Age` show that the round trip is too slow.
@@ -222,20 +222,20 @@ ball. Asked for by name it runs, and the header row says it was asked for on a s
   line for the OOM killer (`OOMScoreAdjust=500`), which is a precaution and not a measurement.
   And whether a real board's files and `tegrastats` line look like the fixtures, which were
   written from NVIDIA's documentation.
-- **The contention caveat changes subject.** It was about quackd sharing a robot's board with an
-  LLM server. quackd is off the board now, and the caveat is about an LLM server or the
+- **The contention caveat changes subject.** It was about Roboglot sharing a robot's board with an
+  LLM server. Roboglot is off the board now, and the caveat is about an LLM server or the
   detector on a robot's own board. Of the seven bodies, the ToddlerBot is still the only one
   that carries a Jetson.
 - **A fleet cannot use a board.** `--host`, or a host stored with any member, refuses a fleet
   before anything connects. A fleet that wants the LLM server on a board still reaches it
-  through `QUACKD_HOST` or `--base-url`.
-- **`quackd doctor --json` moved the board.** It is `host.jetson` now, beside the hello, the
+  through `ROBOGLOT_HOST` or `--base-url`.
+- **`roboglot doctor --json` moved the board.** It is `host.jetson` now, beside the hello, the
   health and the presets asked at the host. A script that read 0.13's top-level `jetson` key
   finds no such key.
 - **`robots.json` gains `host` and `host_token`,** written only while they hold something, so
   a registry that never named a board stays readable by 0.12 to 0.14, which refuse unknown
   keys. One robot stored with a host makes the whole file unreadable to them, every robot in it
-  included, until this release clears it with `quackd robot edit NAME --clear host`.
+  included, until this release clears it with `roboglot robot edit NAME --clear host`.
   `--host-token` joins `--api-key` and `--token` among the flags whose value never reaches a
   run record's command line.
 - **A daemon on the board is a new surface.** Port 9874 joins 9871 and 9872 (the Open Duck
@@ -248,8 +248,8 @@ ball. Asked for by name it runs, and the header row says it was asked for on a s
   as `extras.host_camera` for every body, and as `camera` and the verbs it unlocks for a blind
   one. So serve-mcp's `robot_list` reports a different digest for a body with the board's camera
   than for the same body without one, whether or not the body has a camera of its own.
-  `quackd announce` takes no `--host`, and announces a body as its adapter describes it. Memory
+  `roboglot announce` takes no `--host`, and announces a body as its adapter describes it. Memory
   keys are `adapter:backend` or a registered name, so nothing a robot remembers moves.
 - **The JetPack table is still one fact written twice,** in `docs/jetson.md` and in
-  `_JETPACK_FOR_L4T` in `quackd/doctor.py`. The test that holds them together moved to
+  `_JETPACK_FOR_L4T` in `roboglot/doctor.py`. The test that holds them together moved to
   `tests/test_docs.py` when `tests/test_deploy_jetson.py` went with the image.

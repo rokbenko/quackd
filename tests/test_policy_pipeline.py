@@ -10,7 +10,7 @@ here with no pretrained backbone and saved naming LeRobot's default one, both pr
 put in a Hub cache of its own at a commit and a tag, and served with the Hub and torchvision
 offline by the real server to the real client and an arm behind it, and a tiny random X-VLA
 served the same way, with a tokenizer of a few words pinned at a commit. It is skipped where
-torch, LeRobot or transformers is missing, unless `QUACKD_REQUIRE_TORCH` is set, as it is in
+torch, LeRobot or transformers is missing, unless `ROBOGLOT_REQUIRE_TORCH` is set, as it is in
 that job, where a missing one fails the run rather than leaving it green having loaded nothing.
 It is what moves POLICY_PIPELINE to VERIFIED (`policy/upstream_api.py`), for those two on the
 CPU and nothing else, and a random policy says nothing about what a trained one does to an arm.
@@ -37,24 +37,24 @@ import numpy as np
 import pytest
 from typer.testing import CliRunner
 
-from quackd.cli import app
-from quackd.safety import Executor, allow_all
-from quackd.verbs.registry import registry_from_manifest
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.policy import pipeline as P
-from quackd_lerobot.policy import protocol as wire
-from quackd_lerobot.policy import server as S
-from quackd_lerobot.policy import upstream_api as up
-from quackd_lerobot.policy.client import RemoteRunner
-from quackd_lerobot.policy.runner import Observation
-from quackd_lerobot.real import LeRobotReal, joint_ranges, parse_camera_url
-from quackd_lerobot.verbs import JOINTS, RAN, TICK_S
+from roboglot.cli import app
+from roboglot.safety import Executor, allow_all
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.policy import pipeline as P
+from roboglot_lerobot.policy import protocol as wire
+from roboglot_lerobot.policy import server as S
+from roboglot_lerobot.policy import upstream_api as up
+from roboglot_lerobot.policy.client import RemoteRunner
+from roboglot_lerobot.policy.runner import Observation
+from roboglot_lerobot.real import LeRobotReal, joint_ranges, parse_camera_url
+from roboglot_lerobot.verbs import JOINTS, RAN, TICK_S
 from tests.test_lerobot_adapter import FakeCamera, _segment_arm
 from tests.test_policy_loop import STEP, LockstepClock
 
 TOKEN = "5f0c2a8e9d7b41c3a6e8f0d2b4c6a8e0f1d3b5c7a9e1f3d5b7c9a1e3f5d7b9c1"
-REPO = "quackd-test/tiny-act"
-DATASET = "quackd-test/tiny-data"
+REPO = "roboglot-test/tiny-act"
+DATASET = "roboglot-test/tiny-data"
 TAG = "v1"
 """The tag the checkpoint and its dataset are also cached under, beside their commits."""
 FPS = round(1.0 / TICK_S)
@@ -298,7 +298,7 @@ def test_a_step_that_could_trust_remote_code_is_told_not_to(tmp_path: Path) -> N
 def test_a_step_is_allowed_by_the_type_that_names_it_and_no_other(
     tmp_path: Path, policy_type: str, step: str
 ) -> None:
-    """Every step another type's processors use is one LeRobot registers, and one quackd read for
+    """Every step another type's processors use is one LeRobot registers, and one Roboglot read for
     that type alone: an ACT naming a tokenizer is code nobody read for an ACT. The refusal says
     what the type does allow, before any weight is fetched."""
     assert any(step in allowed for allowed in P.STEPS_BY_TYPE.values()), step
@@ -498,12 +498,12 @@ def test_a_json_too_deep_to_read_is_refused(tmp_path: Path) -> None:
     one such file, the checkpoint's own or a pinned model's, stopped the server with a
     traceback. It is refused as any file that is not JSON is."""
     deep = "[" * 100_000 + "]" * 100_000
-    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
+    with pytest.raises(P.PipelineRefused, match="is not JSON Roboglot can read"):
         _fetch(_hub(tmp_path / "own", config=deep), fps=float(FPS))
     hub = _smolvla(tmp_path / "pinned")
     where = hub.snapshot("SomeOrg/Some-VLM", PINNED, ())
     (where / "config.json").write_text(deep)
-    with pytest.raises(P.PipelineRefused, match="is not JSON quackd can read"):
+    with pytest.raises(P.PipelineRefused, match="is not JSON Roboglot can read"):
         _fetch(hub, fps=float(FPS), pins=(f"SomeOrg/Some-VLM@{PINNED}",))
 
 
@@ -766,7 +766,7 @@ def test_a_pi0_is_served_in_chunks_with_its_tokenizer_pinned(
         ),
     ],
 )
-def test_a_family_quackd_read_and_will_not_serve_is_refused_from_its_config_alone(
+def test_a_family_roboglot_read_and_will_not_serve_is_refused_from_its_config_alone(
     tmp_path: Path, config: dict[str, Any], needle: str
 ) -> None:
     """A type whose own code runs a repository's Python, whatever a checkpoint of it says, is
@@ -1254,7 +1254,7 @@ def test_nothing_is_loaded_where_transformers_would_run_kernels_from_the_hub(
     """transformers 5 fetches kernels from the Hub through the kernels package and runs them as
     it builds a model, for an attention or experts a config names, a flash attention flash_attn
     cannot run and some quantizers, at a revision no pin fixes, and without the package each of
-    those fails as the model is built. Nothing quackd serves needs it, so where it is installed
+    those fails as the model is built. Nothing Roboglot serves needs it, so where it is installed
     at a version transformers takes the server loads nothing, and asks the Hub for nothing first
     (`pipeline.kernels_would_load`)."""
     bounds = _kernels_transformers_takes()
@@ -1413,7 +1413,7 @@ def test_a_step_that_keeps_its_model_inside_the_checkpoint_is_refused_before_its
 ) -> None:
     """LeRobot 0.7.0 saves a tokenizer step's tokenizer into the checkpoint's own directory, names
     that copy in the step, and declares it in the step's `artifacts`, and a load puts that
-    directory in place of whatever the step names, from files quackd neither fetches nor checks
+    directory in place of whatever the step names, from files Roboglot neither fetches nor checks
     (`upstream_api.PROCESSOR_ARTIFACTS`). So a step that carries `artifacts` is refused, before a
     pin or a weight, whether the step names the copy as LeRobot 0.7.0 saves it, still names a
     Hub repository beside it, or names nothing and leaves the model to the copy alone, which
@@ -1441,9 +1441,9 @@ def test_a_step_that_keeps_its_model_inside_the_checkpoint_is_refused_before_its
 
 
 def test_whether_a_package_would_import_is_found_without_importing_it() -> None:
-    assert P.importable_module("json") and P.importable_module("quackd_lerobot.policy")
-    assert not P.importable_module("quackd_no_such_package")
-    assert not P.importable_module("quackd_no_such_package.inner")
+    assert P.importable_module("json") and P.importable_module("roboglot_lerobot.policy")
+    assert not P.importable_module("roboglot_no_such_package")
+    assert not P.importable_module("roboglot_no_such_package.inner")
     assert not P.importable_module("")
 
 
@@ -1670,7 +1670,7 @@ def test_the_hubs_tags_leave_out_its_branches_and_a_tag_a_branch_shares(
 ) -> None:
     """What `HubFetch` takes to be a tag: one the Hub lists as a tag, by its name or its ref,
     and not one whose name a branch has too, since which of the two a fetch would get is not
-    quackd's to guess."""
+    Roboglot's to guess."""
     hub_api = pytest.importorskip("huggingface_hub")
     from huggingface_hub.errors import OfflineModeIsEnabled
     from huggingface_hub.hf_api import GitRefInfo, GitRefs
@@ -1776,11 +1776,11 @@ def test_a_repository_is_named_in_ascii_at_a_revision(spec: str) -> None:
 
 TORCHLESS = importlib.util.find_spec("torch") is None or importlib.util.find_spec("lerobot") is None
 TRANSFORMERLESS = importlib.util.find_spec("transformers") is None
-if (TORCHLESS or TRANSFORMERLESS) and os.environ.get("QUACKD_REQUIRE_TORCH"):
+if (TORCHLESS or TRANSFORMERLESS) and os.environ.get("ROBOGLOT_REQUIRE_TORCH"):
     raise RuntimeError(
-        "QUACKD_REQUIRE_TORCH is set and torch, LeRobot or transformers is not installed here, so "
-        "the tiny ACT or the tiny X-VLA would be skipped and prove nothing: install them, as CI's "
-        "policy job does"
+        "ROBOGLOT_REQUIRE_TORCH is set and torch, LeRobot or transformers is not installed here, "
+        "so the tiny ACT or the tiny X-VLA would be skipped and prove nothing: install them, as "
+        "CI's policy job does"
     )
 NEEDS_TORCH = pytest.mark.skipif(
     TORCHLESS, reason="torch and LeRobot are CI's torch job's, not the default suite's"
@@ -2245,7 +2245,7 @@ def test_a_policy_that_answers_a_policy_output_is_served_its_action(
 ) -> None:
     """LeRobot 0.7.0 lets `predict_action_chunk` and `select_action` answer a `PolicyOutput`, the
     action beside what the policy predicts besides it (`upstream_api.POLICY_OUTPUT`). None of
-    the types quackd serves does, and one that did would be served its action, row for row, and
+    the types Roboglot serves does, and one that did would be served its action, row for row, and
     nothing of its prediction, in chunks and asked every tick alike."""
     import torch
 
@@ -2311,8 +2311,8 @@ def test_torch_gets_as_many_threads_however_often_a_checkpoint_loads(offline: Ti
 
 # ── a tiny random X-VLA, served for real (CI's torch job, with transformers) ────────────
 
-TINY_TOKENIZER = "quackd-test/tiny-tokenizer"
-TINY_XVLA = "quackd-test/tiny-xvla"
+TINY_TOKENIZER = "roboglot-test/tiny-tokenizer"
+TINY_XVLA = "roboglot-test/tiny-xvla"
 
 
 @dataclass(frozen=True)

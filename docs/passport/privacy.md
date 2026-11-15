@@ -1,7 +1,7 @@
 # Privacy: what a robot reveals, and to whom
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation. The beacon id is designed to rotate and the
+> Spec 1.0. Roboglot 0.29.0 is its first implementation. The beacon id is designed to rotate and the
 > wizard offers BlueZ address privacy, and neither has been tested on a real radio
 > ([roadmap.md](roadmap.md)).
 
@@ -19,7 +19,7 @@ to leave out, and how to take part while revealing as little as possible.
 | the passport | anybody near enough to say hello, with any passport at all, and anybody on its LAN | whatever its owner put in it, and the owner key that signed it |
 | talk | the robot it talks to, and anybody who can read the LAN or listen to the link | what it says |
 | the robot's brain | the provider of the LLM `brain:` names | what the brain is shown of the robots it meets |
-| quackd's own records | whoever can read the robot's folder | the robots it met, when, and what they said |
+| Roboglot's own records | whoever can read the robot's folder | the robots it met, when, and what they said |
 
 A beacon never carries an owner, a name of a person, or a place. What the passport carries beyond
 what the wizard requires is the owner's choice, member by member.
@@ -58,11 +58,11 @@ Anything stable that a robot broadcasts can be used to follow it. So:
   the address too, with `Privacy = device` in `/etc/bluetooth/main.conf`, and the wizard offers to
   set it: it asks first, backs the file up and restarts bluetoothd. Whether the adapter then really
   changes its address cannot be seen without root, and nobody has watched one do it on a Jetson.
-  `quackd onboard status` says plainly when the address is still public.
+  `roboglot onboard status` says plainly when the address is still public.
 - **The two change on separate clocks.** Exposure Notification changed a phone's address and its
   identifier at the same moment, so that a listener could not link the old pair to the new
-  ([prior-art.md](prior-art.md#exposure-notification)). quackd does not yet: the beacon id rotates
-  on quackd's clock and the address on BlueZ's, so a listener who hears one change while the other
+  ([prior-art.md](prior-art.md#exposure-notification)). Roboglot does not yet: the beacon id rotates
+  on Roboglot's clock and the address on BlueZ's, so a listener who hears one change while the other
   holds can tie the two together.
 - **On a LAN**, the DNS-SD record puts the robot's short id, which never changes, beside its current
   beacon id, so anybody on that LAN can tie each new beacon id to the same robot. They are the same
@@ -71,7 +71,7 @@ Anything stable that a robot broadcasts can be used to follow it. So:
   again, and every passport an owner signs names the same owner key, so anybody who reads two of
   your robots' passports knows they are both yours.
 
-## What quackd keeps about robots it meets
+## What Roboglot keeps about robots it meets
 
 On the robot, in its folder, and nowhere else:
 
@@ -85,7 +85,7 @@ Nothing is sent anywhere else, with one exception you choose: whatever the brain
 the LLM `brain:` names. With a cloud LLM, its provider sees the facts of the robots met and what
 known robots said. An LLM server you run yourself keeps all of it on your own network.
 
-quackd never sends a camera frame over talk: a `share` is a sentence, never a picture.
+Roboglot never sends a camera frame over talk: a `share` is a sentence, never a picture.
 
 ## Taking part without being discoverable
 
@@ -95,7 +95,7 @@ quackd never sends a camera frame over talk: a `share` is a sentence, never a pi
 | it to meet only the robots it hears | `radio.advertise: false` in `robot.yaml`: it dials the robots it hears and advertises nothing over the radio |
 | no person's name on record | an owner label for a role, a lab or a household, and a contact page rather than an address |
 | as little as possible in its passport | only what the wizard asks for: what other robots must know to stay safe around it |
-| nothing at all | `quackd onboard uninstall`: the service stops, and nothing advertises |
+| nothing at all | `roboglot onboard uninstall`: the service stops, and nothing advertises |
 
 ## A note on the law
 

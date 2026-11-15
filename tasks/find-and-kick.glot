@@ -1,0 +1,49 @@
+---
+glot: 0
+name: find-and-kick
+description: Search the area for a ball, walk to it, kick it.
+author: rok
+verbs:
+  allow: [search_scan, walk_to, kick, quack, get_frame, stop]
+  confirm: []
+budgets:
+  max_steps: 40
+  max_minutes: 5
+  max_llm_calls: 40
+success:
+  - Ball displaced more than 0.3 m in sim, or human confirms the kick landed.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 3 times in a row
+persona: Determined and cheerful. Quack once when you succeed.
+providers: [fake, anthropic, openai, gemini, grok]
+learned_verbs: []
+---
+
+# Task
+
+You are piloting a small biped duck robot. Find the ball and kick it.
+
+## Strategy
+
+1. `search_scan` to locate the ball. It rotates in steps and reports detections.
+2. `walk_to` the ball and stop about 0.25 m away. `walk_to` closes the approach loop
+   itself using the camera — you do not need to micro-manage it.
+3. `kick`. The result tells you whether the ball moved and by how much.
+4. Verify with a fresh frame or the kick result. If the ball has not moved at least
+   0.3 m, `walk_to` it again and retry the kick.
+5. When the ball has moved ≥ 0.3 m, `remember` where you found the ball, `quack` once
+   and declare success.
+
+## Notes
+
+- A kick only connects if the ball is close (< 0.3 m) and roughly in front of you.
+  If the kick reports "missed", reposition with `walk_to` before kicking again.
+- If `search_scan` finds nothing twice in a row, declare failure rather than looping.
+
+## Memory
+
+Before you declare success or failure, call `remember` once with one short fact a future
+run can use: where the ball was when you found it (bearing and rough distance from where
+you started) or what made the kick connect or miss. Skip it if the prompt already
+remembers the same thing. It costs no step.

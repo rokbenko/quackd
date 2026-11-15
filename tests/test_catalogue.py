@@ -1,7 +1,7 @@
 """The LLM catalogue, and the entries around it that have to agree.
 
 The catalogue is data, and data rots quietly: an id nobody validates is wrong for months, which
-is exactly how quackd came to ship `gpt-5`, `grok-4` and `gemini-2.5-pro` as defaults after all
+is exactly how Roboglot came to ship `gpt-5`, `grok-4` and `gemini-2.5-pro` as defaults after all
 three had been deprecated or retired. Nothing here can tell whether an id is still real, because
 that needs the network and a key and neither is available in CI. What it can do is hold the shape:
 one default per vendor and it is in its own list, ids unique so a wrong one can be traced to its
@@ -21,13 +21,13 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.providers import catalogue as cat
-from quackd.agent.providers.base import (
+from roboglot.agent.providers import catalogue as cat
+from roboglot.agent.providers.base import (
     ProviderError,
     ProviderMissingKey,
     ProviderNotInstalled,
 )
-from quackd.agent.providers.factory import (
+from roboglot.agent.providers.factory import (
     CLOUD_NAMES,
     DEFAULT_LLM,
     EXTRA_FOR,
@@ -48,10 +48,10 @@ from quackd.agent.providers.factory import (
     resolve_llm_id,
     vendor_of,
 )
-from quackd.agent.providers.local import PRESETS
+from roboglot.agent.providers.local import PRESETS
 from tests.conftest import REPO
 
-#: Ids quackd shipped, or nearly shipped, that the vendor has since retired or that never existed.
+#: Ids Roboglot shipped, or nearly shipped, that the vendor has since retired or that never existed.
 #: Kept as a list rather than a rule because there is no rule: the only thing that stops one of
 #: these coming back in a careless edit is a test that names them.
 GONE = {
@@ -108,7 +108,7 @@ TOOL_CHOICE = {
     "kimi": "auto",
     "glm": "auto",
     "meta": "auto",
-    # OpenRouter's default; its Claude rows and the ids it lists that quackd does not carry are
+    # OpenRouter's default; its Claude rows and the ids it lists that Roboglot does not carry are
     # asked with `auto` instead (`openrouter.py`, and the tests for it in test_providers.py)
     "openrouter": "required",
 }
@@ -253,7 +253,7 @@ def test_only_anthropic_marks_an_llm_by_how_it_takes_effort_or_thinking() -> Non
     `effort` and `effort_levels` are read for Anthropic's rows and OpenAI's, by `--effort`
     (`effort_refusal`), and by nothing for any other vendor's. A row that names levels names
     some of the flag's and not all of them, since all of them is what no levels means."""
-    from quackd.agent.providers.factory import EFFORTS
+    from roboglot.agent.providers.factory import EFFORTS
 
     for name in CLOUD_NAMES:
         for m in llms_for(name):
@@ -369,7 +369,7 @@ def test_an_unknown_provider_is_not_this_functions_business() -> None:
         "a-vendor-is-folded-and-trimmed",
         "an-openrouter-free-id-keeps-its-second-colon",
         "a-bare-openrouter-row-infers-openrouter",
-        "an-id-openrouter-lists-and-quackd-does-not",
+        "an-id-openrouter-lists-and-roboglot-does-not",
         "nothing-at-all",
         "an-empty-string",
         "blank-counts-as-absent",
@@ -423,7 +423,7 @@ def test_openrouter_takes_a_well_formed_id_it_does_not_list_without_the_network(
 ) -> None:
     """Its shape is all that can be known offline. The list is the provider's to read, when a
     run starts, and nothing here may reach for it: `--help`, TAB and `robot add` all parse."""
-    from quackd.agent.providers import openrouter
+    from roboglot.agent.providers import openrouter
 
     def no_network(*a: Any, **kw: Any) -> Any:  # pragma: no cover - the failure it reports
         raise AssertionError("resolve_llm_id fetched OpenRouter's list")
@@ -467,12 +467,14 @@ def test_openrouter_refuses_these_shapes_on_their_spelling(
     message = str(e.value)
     assert why in message and repr(llm_id) in message
     assert "robot duck-a (robots.json)" in message and "list-models --llm openrouter" in message
-    # It names the rows quackd carries and points at list-models, and says nothing of other ids.
+    # It names the rows Roboglot carries and points at list-models, and says nothing of other ids.
     # 0.17.0 said any other id with tool calling on the list works too, which the refused shape
     # in this very message contradicts when OpenRouter lists it, as it lists `~` aliases, its
     # routers and `:batch` ids.
     rows = ", ".join(llm_ids("openrouter"))
-    assert message.endswith(f". quackd lists {rows}. See `quackd list-models --llm openrouter`.")
+    assert message.endswith(
+        f". Roboglot lists {rows}. See `roboglot list-models --llm openrouter`."
+    )
     assert "works too" not in message and "other id" not in message.lower()
     with pytest.raises(ProviderError, match="is refused"):
         make_provider("openrouter", llm_id=llm_id)
@@ -480,7 +482,7 @@ def test_openrouter_refuses_these_shapes_on_their_spelling(
 
 def test_every_refusal_reason_is_reachable() -> None:
     """The table the guide quotes has no row the code cannot print."""
-    from quackd.agent.providers.factory import OPENROUTER_REFUSED, _open_ended_refusal
+    from roboglot.agent.providers.factory import OPENROUTER_REFUSED, _open_ended_refusal
 
     printed = {
         _open_ended_refusal(llm_id)
@@ -543,7 +545,7 @@ def test_a_bad_llm_is_refused_before_the_key_is_read(monkeypatch: pytest.MonkeyP
 def test_a_pinned_spec_from_the_wrong_vendor_is_caught(monkeypatch: pytest.MonkeyPatch) -> None:
     """The environment is read in exactly one place now, so this is a question for `resolve_llm`.
 
-    It used to be a question for the factory, which read `QUACKD_MODEL` itself. That meant two
+    It used to be a question for the factory, which read `ROBOGLOT_MODEL` itself. That meant two
     callers passing identical arguments could get different pilots depending on a shell, and a
     refusal could not say which of the two the reader needed to fix. One reader, one answer.
     """
@@ -598,7 +600,7 @@ def test_where_a_pilot_may_be_named_and_which_place_wins(
 def test_the_source_phrase_says_which_robot_when_one_was_named(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A flock resolves a pilot per member, so "robots.json" on its own would leave the reader
+    """A team resolves a pilot per member, so "robots.json" on its own would leave the reader
     to work out which of four entries is the broken one."""
     monkeypatch.delenv(LLM_ENV, raising=False)
     assert resolve_llm(None, "anthropic", robot="duck-a")[2] == "robot duck-a (robots.json)"
@@ -627,7 +629,7 @@ def test_the_local_branch_is_handed_exactly_what_it_was_before(
         self.name = "vllm"
         self.llm_id = llm_id
 
-    monkeypatch.setattr("quackd.agent.providers.local.LocalProvider.__init__", _record)
+    monkeypatch.setattr("roboglot.agent.providers.local.LocalProvider.__init__", _record)
     make_provider("vllm", llm_id="Qwen/Qwen3-8B", base_url="http://gpu:8000/v1", vision=True)
     assert recorded == {
         "model": "Qwen/Qwen3-8B",
@@ -672,10 +674,10 @@ def test_every_extra_exists_in_the_packaging_and_installs_the_right_sdk() -> Non
         if name == "fake":
             continue
         extra = EXTRA_FOR[name]
-        assert extra in extras, f"quackd[{extra}] is promised for {name} and is not declared"
+        assert extra in extras, f"roboglot[{extra}] is promised for {name} and is not declared"
         wanted = distribution[SDK_FOR[name]]
         assert any(req.startswith(wanted) for req in extras[extra]), (
-            f"quackd[{extra}] does not install {wanted}, which {name} imports"
+            f"roboglot[{extra}] does not install {wanted}, which {name} imports"
         )
 
 
@@ -686,7 +688,7 @@ def test_an_llm_that_takes_no_image_is_not_sent_one() -> None:
     local LLM already does, rather than a 400 on the first turn. The flag is a default, not a
     verdict: `--vision` and `--no-vision` still decide when a reader has an opinion.
     """
-    from quackd.agent.providers.mistral import MistralProvider
+    from roboglot.agent.providers.mistral import MistralProvider
 
     assert MistralProvider(llm_id="codestral-2508", client=FakeOpenAI()).supports_vision is False
     assert MistralProvider(llm_id="mistral-large-2512", client=FakeOpenAI()).supports_vision is True
@@ -698,9 +700,9 @@ def test_an_llm_that_takes_no_image_is_not_sent_one() -> None:
 
 def test_every_vendor_agrees_with_itself_about_images() -> None:
     """Whatever a vendor's entry claims, the provider it builds must report the same thing, or
-    `quackd list-models` and the run would disagree about what gets sent."""
+    `roboglot list-models` and the run would disagree about what gets sent."""
     for name in sorted(OPENAI_COMPATIBLE):
-        module = importlib.import_module(f"quackd.agent.providers.{name}")
+        module = importlib.import_module(f"roboglot.agent.providers.{name}")
         vendor = getattr(module, OPENAI_COMPATIBLE[name])
         for m in llms_for(name):
             assert vendor(llm_id=m.id, client=FakeOpenAI()).supports_vision is m.vision, m.id
@@ -708,7 +710,7 @@ def test_every_vendor_agrees_with_itself_about_images() -> None:
 
 @pytest.mark.parametrize("name", sorted(OPENAI_COMPATIBLE))
 def test_each_openai_shaped_vendor_is_wired_the_same_way(name: str) -> None:
-    module = importlib.import_module(f"quackd.agent.providers.{name}")
+    module = importlib.import_module(f"roboglot.agent.providers.{name}")
     vendor = getattr(module, OPENAI_COMPATIBLE[name])
     assert vendor.name == name
     assert vendor.key_env == KEY_ENV[name]
@@ -726,7 +728,7 @@ def test_each_openai_shaped_vendor_names_its_own_key(
 ) -> None:
     for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
         monkeypatch.delenv(env, raising=False)
-    module = importlib.import_module(f"quackd.agent.providers.{name}")
+    module = importlib.import_module(f"roboglot.agent.providers.{name}")
     vendor = getattr(module, OPENAI_COMPATIBLE[name])
     with pytest.raises(ProviderMissingKey, match=KEY_ENV[name]):
         vendor()
@@ -761,16 +763,18 @@ def test_a_vendor_with_neither_key_name_still_says_which_one_it_wants(
     """The other half: with nothing exported, the error names the variable the docs head with."""
     for env in set(KEY_ENV.values()) | set(KEY_FALLBACKS.values()):
         monkeypatch.delenv(env, raising=False)
-    module = importlib.import_module(f"quackd.agent.providers.{name}")
+    module = importlib.import_module(f"roboglot.agent.providers.{name}")
     with pytest.raises(ProviderMissingKey, match=KEY_ENV[name]):
         getattr(module, OPENAI_COMPATIBLE[name])()
 
 
 def test_the_catalogue_costs_nothing_to_import() -> None:
-    """`quackd --help` and every press of TAB import this module, so it may not drag in pydantic
+    """`roboglot --help` and every press of TAB import this module, so it may not drag in pydantic
     or an SDK. Read as source rather than by importing, because by the time this test runs the
-    suite has imported half of quackd already."""
-    source = (REPO / "quackd" / "agent" / "providers" / "catalogue.py").read_text(encoding="utf-8")
+    suite has imported half of Roboglot already."""
+    source = (REPO / "roboglot" / "agent" / "providers" / "catalogue.py").read_text(
+        encoding="utf-8"
+    )
     for forbidden in ("import pydantic", "from pydantic", "import openai", "import anthropic"):
         assert forbidden not in source
 
@@ -781,7 +785,7 @@ def test_every_vendor_file_is_reachable_from_the_factory() -> None:
     `vla` is plumbing rather than a vendor: `--controller vla` builds it, never `--llm`. So is
     `openai_headers`, the rule every client built on OpenAI's SDK is handed its headers by, and
     `sdk_warm`, what a client of either SDK asks before its first request, asked early."""
-    directory = REPO / "quackd" / "agent" / "providers"
+    directory = REPO / "roboglot" / "agent" / "providers"
     modules = {p.stem for p in directory.glob("*.py")}
     plumbing = {
         *("__init__", "base", "catalogue", "factory", "fake", "local", "openai", "pricing"),

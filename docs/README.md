@@ -1,41 +1,41 @@
 # Documentation
 
-The [README](../README.md) installs quackd and runs a first task. These pages are everything after
+The [README](../README.md) installs Roboglot and runs a first task. These pages are everything after
 that, sorted by what you came to do. What has run on a real robot and what has not is on one page,
 [adapters/status.md](adapters/status.md), and each robot's own page says it again for that body.
 
 ## Start here
 
 - [The first run on an SO-101 arm](adapters/lerobot/first-run.md): from an empty laptop to a
-  wave, written for somebody who has never run quackd or LeRobot.
+  wave, written for somebody who has never run Roboglot or LeRobot.
 - [FAQ](faq.md): the simulators, LLMs and providers, seeing what happened, real robots,
   driving it from somewhere else, security and privacy, what it can and cannot drive, and the
   name.
 - [Safety](concepts/safety.md): read it before anything with a motor.
-- [Models](models/README.md): which models quackd can fly a robot with, which can decide for
+- [Models](models/README.md): which models Roboglot can fly a robot with, which can decide for
   it and which can drive the arm, and how to name each one.
 
 ## Guides
 
-How to do one thing with quackd.
+How to do one thing with Roboglot.
 
 | Page | What it covers |
 |---|---|
-| [Driving a robot](guides/drive.md) | `quackd drive`: one robot driven a command at a time from the keyboard or a pipe, with an empty Enter as the brake |
-| [The page: quackd ui](guides/web-ui.md) | a goal or a chat from a browser or a phone, with every option of `run` and `drive`, the robot's questions and a Stop, and how a phone reaches it |
-| [Pilot your robots from Claude](guides/mcp.md) | `quackd serve-mcp`: a robot, or a flock of them, as MCP tools that Claude Code or Claude Desktop pilots |
+| [Driving a robot](guides/drive.md) | `roboglot drive`: one robot driven a command at a time from the keyboard or a pipe, with an empty Enter as the brake |
+| [The page: roboglot ui](guides/web-ui.md) | a goal or a chat from a browser or a phone, with every option of `run` and `drive`, the robot's questions and a Stop, and how a phone reaches it |
+| [Pilot your robots from Claude](guides/mcp.md) | `roboglot serve-mcp`: a robot, or a team of them, as MCP tools that Claude Code or Claude Desktop pilots |
 | [Local and open-source LLMs](guides/local-llms.md) | Ollama, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible server as the pilot |
-| [OpenRouter](guides/openrouter.md) | one key for other vendors' LLMs as the pilot: which ids quackd takes and refuses, where a prompt goes, and what a turn is billed |
-| [Decision LLMs](guides/decision-llms/README.md) | the optional discrete stepper in front of the pilot LLM, with a page for each one quackd names: [Jev](guides/decision-llms/jev.md), [OpenAI's Decisions API](guides/decision-llms/openai.md), [Kev](guides/decision-llms/kev.md), [OpenJev](guides/decision-llms/openjev.md), [OpenDecision](guides/decision-llms/opendecision.md), [local](guides/decision-llms/local.md) and [Laya](guides/decision-llms/laya.md) |
-| [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `quackd policy serve` |
-| [Registered robots and flocks](guides/registry.md) | a name for a robot, and for a flock, kept between runs |
+| [OpenRouter](guides/openrouter.md) | one key for other vendors' LLMs as the pilot: which ids Roboglot takes and refuses, where a prompt goes, and what a turn is billed |
+| [Decision LLMs](guides/decision-llms/README.md) | the optional discrete stepper in front of the pilot LLM, with a page for each one Roboglot names: [Jev](guides/decision-llms/jev.md), [OpenAI's Decisions API](guides/decision-llms/openai.md), [Kev](guides/decision-llms/kev.md), [OpenJev](guides/decision-llms/openjev.md), [OpenDecision](guides/decision-llms/opendecision.md), [local](guides/decision-llms/local.md) and [Laya](guides/decision-llms/laya.md) |
+| [Policies](guides/policies.md) | a learned policy as the arm's executor, served by `roboglot policy serve` |
+| [Registered robots and teams](guides/registry.md) | a name for a robot, and for a team, kept between runs |
 | [Memory](guides/memory.md) | what a robot keeps between runs |
 | [Exploring](guides/explore.md) | a duck in a simulated room exploring it and finding the ball, with the `find-the-ball` and `favourite-spot` starters, and checking a task against a room |
-| [Places](guides/places.md) | naming a spot a robot stands on and walking back to it, in a simulated room with its own map or on a real duck's odometry, and `quackd map` and `quackd places` from a shell |
+| [Places](guides/places.md) | naming a spot a robot stands on and walking back to it, in a simulated room with its own map or on a real duck's odometry, and `roboglot map` and `roboglot places` from a shell |
 | [Playing a part](guides/play.md) | a task that gives the pilot a part to play, an animal, a person or a character, acted out with the body it has |
-| [Flock mode](guides/flock.md) | several robots on one task, as pilots or under a coordinator |
+| [Team mode](guides/team.md) | several robots on one task, as pilots or under a coordinator |
 | [Robots on a LAN](guides/lan.md) | discovery and the MQTT bus |
-| [An NVIDIA Jetson](guides/jetson.md) | a board quackd reaches with `--host`, and the one `quackd onboard`, Robot Passport's service, runs on |
+| [An NVIDIA Jetson](guides/jetson.md) | a board Roboglot reaches with `--host`, and the one `roboglot onboard`, Robot Passport's service, runs on |
 
 ## Models
 
@@ -58,8 +58,8 @@ How to set each one up is a guide: [local LLMs](guides/local-llms.md),
 
 ## Robots
 
-One folder per body under [adapters/](adapters/). A robot's page is what quackd knows about it:
-what it is, what quackd can do with it, and its VERIFIED and UNVERIFIED tables, what quackd read
+One folder per body under [adapters/](adapters/). A robot's page is what Roboglot knows about it:
+what it is, what Roboglot can do with it, and its VERIFIED and UNVERIFIED tables, what Roboglot read
 from upstream at a pinned commit and what it had to assume. Its hardware checklist is the order
 to try a real one in.
 
@@ -77,16 +77,16 @@ to try a real one in.
 | An industrial arm on ROS 2: a UR5e, a KUKA LBR iisy or iiwa, a Yaskawa MotoMini | [adapters/rosarm/README.md](adapters/rosarm/README.md) | none, and refused until somebody names a date for its first run |
 
 - [Adapter status](adapters/status.md): what has run against its real target, and what has not.
-- [Described bodies](adapters/status.md#described-bodies): robots quackd describes from one file
+- [Described bodies](adapters/status.md#described-bodies): robots Roboglot describes from one file
   each, with their makers' figures, and drives no part of.
-- [Writing an adapter](adapters/writing-an-adapter.md): the recipe for a robot quackd does not
+- [Writing an adapter](adapters/writing-an-adapter.md): the recipe for a robot Roboglot does not
   know yet.
 - [Reading someone else's robot](adapters/reading-robots.md): the traps that recur when you read
   a robot's code without running it.
 
 ## Reference
 
-- [The `.duck` file](reference/duck-spec.md): the task format, spec v0 to v4. It is normative.
+- [The `.glot` file](reference/glot-spec.md): the task format, spec v0 to v4. It is normative.
 - [The robot manifest](reference/manifest-spec.md): what a connected robot is and can do, as data.
 - [Licenses](reference/licenses.md): the eleven distributions, every upstream they reach, and on
   what terms.
@@ -96,7 +96,7 @@ to try a real one in.
 - [Architecture](concepts/architecture.md): the three loops, the modules, a turn, the transcript
   and the log.
 - [Safety](concepts/safety.md): the layers and who owns each, the executor's rules, the heartbeat,
-  the kill switch and the dry run, what to do on each body's hardware, and what quackd does not
+  the kill switch and the dry run, what to do on each body's hardware, and what Roboglot does not
   protect against.
 - [Places](concepts/places.md): where a robot says it is, the places it keeps under names, and
   why a place belongs to the frame it was marked in.
@@ -106,9 +106,9 @@ to try a real one in.
 
 A small open protocol for two robots that have never met, from any maker, to say who they are, who
 owns them, what they can and cannot do and how a person stops them, before their brains say a
-word. Since 0.29.0 it runs on the robot it introduces, as `quackd onboard` on the robot's own
+word. Since 0.29.0 it runs on the robot it introduces, as `roboglot onboard` on the robot's own
 computer. It has a folder of its own, [passport/](passport/README.md), because it is written to
-leave quackd one day, whole.
+leave Roboglot one day, whole.
 
 | Page | What it covers |
 |---|---|
@@ -121,9 +121,9 @@ leave quackd one day, whole.
 | [Trust](passport/trust.md) | the owner's signature, the owner key sealed on the robot, pinning and the tiers |
 | [Talk](passport/talk.md) | the six messages, the three-step `hello` and its runtime block, courtesies, and the meeting task |
 | [Security](passport/security.md) | the threat model |
-| [Privacy](passport/privacy.md) | what each layer reveals, tracking and the radio's address, and what quackd keeps on the robot |
+| [Privacy](passport/privacy.md) | what each layer reveals, tracking and the radio's address, and what Roboglot keeps on the robot |
 | [Which robots carry one](passport/compatibility.md) | the robot's own computer, a Jetson first, the board plugins and the `sim` board, and why arms and toys carry none |
-| [In quackd](passport/quackd.md) | `quackd onboard`: the robot's file, the service, meetings, pins, the demo, and what has run |
+| [In Roboglot](passport/roboglot.md) | `roboglot onboard`: the robot's file, the service, meetings, pins, the demo, and what has run |
 | [Specification](passport/spec.md) | the normative text, version 1.0, with its [schemas](passport/schema/passport.schema.json) |
 | [Test vectors](passport/vectors/README.md) | the conformance suite, each vector with its expected result |
 | [Naming](passport/naming.md) | what the name means, and every identifier, the Bluetooth UUIDs among them |
@@ -154,17 +154,17 @@ How the project itself works is outside this folder: [CONTRIBUTING.md](../CONTRI
 
 ## Where a new page goes
 
-- `guides/` for how to do one thing with quackd.
+- `guides/` for how to do one thing with Roboglot.
 - `adapters/<name>/` for anything about one robot: `README.md` is its page, beside it its
   `hardware-checklist.md`.
 - `reference/` for something you look up rather than read through: a format, a schema, the
   licences.
-- `concepts/` for how quackd works, and why.
-- `models/` for which models quackd names, a page for each role and one for the companies.
+- `concepts/` for how Roboglot works, and why.
+- `models/` for which models Roboglot names, a page for each role and one for the companies.
   Their tables are rendered from the code by `scripts/models_docs.py`, so a row is changed
   there and never in a table. How to set a model up is a guide.
-- `passport/` for anything about Robot Passport, the protocol and quackd's part in it, kept in one
-  folder so it can leave quackd whole.
+- `passport/` for anything about Robot Passport, the protocol and Roboglot's part in it, kept in one
+  folder so it can leave Roboglot whole.
 - `adr/` for a decision, numbered after the last one.
 
 Then link it from this page. A test fails while any page under `guides/`, `adapters/`,

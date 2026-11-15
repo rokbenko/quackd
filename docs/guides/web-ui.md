@@ -1,11 +1,11 @@
-# The page: `quackd ui`
+# The page: `roboglot ui`
 
-`quackd ui` serves a page in your browser for what `quackd run` and `quackd drive` do. You choose
+`roboglot ui` serves a page in your browser for what `roboglot run` and `roboglot drive` do. You choose
 a robot and its pilot, turn any of their options on or off, then give the robot one goal or chat
 with it goal after goal, answer its questions and stop it. It works from a phone too.
 
-The page is a front for the CLI, not a second quackd. Every goal it starts is `quackd run` and
-every chat is `quackd drive`, each in a process of its own, so the flags, the refusals, the `.env`
+The page is a front for the CLI, not a second Roboglot. Every goal it starts is `roboglot run` and
+every chat is `roboglot drive`, each in a process of its own, so the flags, the refusals, the `.env`
 a run loads and the run directory it writes are the terminal's own. The Setup screen shows the
 command to type at a terminal for the same run, which makes the page a way to learn the CLI as
 well as a way around it.
@@ -17,33 +17,33 @@ well as a way around it.
 Streamlit, which draws the page, comes with the `ui` extra and nothing else installs it:
 
 ```bash
-uv pip install "quackd[ui]"
-quackd ui
+uv pip install "roboglot[ui]"
+roboglot ui
 ```
 
 Or with nothing installed, the page and the duck's cartoon simulator in one go:
 
 ```bash
-uvx --from "quackd[ui,microduck]" quackd ui
+uvx --from "roboglot[ui,microduck]" roboglot ui
 ```
 
 It opens the page in your browser and prints where it is. This is what it printed from
-`D:\quackd-demo`, everything above `quackd ui:` Streamlit's own, with the token left out here:
+`D:\roboglot-demo`, everything above `roboglot ui:` Streamlit's own, with the token left out here:
 
 ```
-$ quackd ui --no-browser
+$ roboglot ui --no-browser
 2026-10-27 03:24:21.204 Uvicorn server started on 127.0.0.1:8501
 
   You can now view your Streamlit app in your browser.
 
   URL: http://127.0.0.1:8501
 
-quackd ui: http://127.0.0.1:8501/?token=…
+roboglot ui: http://127.0.0.1:8501/?token=…
 Stop in the page is not an emergency stop. Ctrl-C here stops the page and its runs.
 ```
 
 The page asks every visitor for its token, this computer's own browser too, and the address
-`quackd ui` prints and opens carries it. Streamlit's own `URL:` line does not: opened as it is, it
+`roboglot ui` prints and opens carries it. Streamlit's own `URL:` line does not: opened as it is, it
 shows only the refusal.
 
 The folder you start it in is the page's working folder, shown in its sidebar. Runs start there,
@@ -61,15 +61,15 @@ shell's as a run from a terminal does.
 Without the extra it says what to install:
 
 ```
-✗ error: quackd ui needs Streamlit, which comes with the ui extra
-  uv pip install "quackd[ui]", or run uvx --from "quackd[ui]" quackd ui
+✗ error: roboglot ui needs Streamlit, which comes with the ui extra
+  uv pip install "roboglot[ui]", or run uvx --from "roboglot[ui]" roboglot ui
 ```
 
 ## A first goal, with no robot and no key
 
-1. Start `quackd ui`. The page opens on **Setup**.
+1. Start `roboglot ui`. The page opens on **Setup**.
 2. Under **Robot**, choose the adapter `microduck` and the backend `sim2d`, the duck's cartoon
-   simulator. It needs `quackd[microduck]`, and the page says so where it is missing.
+   simulator. It needs `roboglot[microduck]`, and the page says so where it is missing.
 3. Under **Pilot**, leave **An LLM** and choose the vendor `fake`, the scripted pilot, which needs
    no key and no network.
 4. Open **Goal**, type `find the ball and kick it` and press **Run**.
@@ -83,16 +83,16 @@ the outcome, the run's folder, the last frame it saved and, on a simulator that 
 `...` where the Goal screen's goal goes:
 
 ```bash
-quackd run --goal ... --llm fake --robot microduck:sim2d
+roboglot run --goal ... --llm fake --robot microduck:sim2d
 ```
 
 A goal can also be a task file: **A task file** on the Goal screen offers the ones that ship with
-quackd for one robot, or one of your own, which the page checks with `quackd validate` before it
+Roboglot for one robot, or one of your own, which the page checks with `roboglot validate` before it
 offers to run it.
 
 ## Chat
 
-**Start a chat** on the Chat screen starts `quackd drive` with the robot and the pilot on Setup,
+**Start a chat** on the Chat screen starts `roboglot drive` with the robot and the pilot on Setup,
 and the robot stays connected from one line to the next. Each line goes to the session the moment
 you send it, as a line typed at drive's own prompt does, and the reply says which lane took it:
 
@@ -121,9 +121,9 @@ Everything a line can be is in [Driving a robot](drive.md).
 
 ## The pilot
 
-**An LLM** is a vendor and an LLM: for a cloud vendor one of the rows `quackd list-models`
+**An LLM** is a vendor and an LLM: for a cloud vendor one of the rows `roboglot list-models`
 prints, and for a local server the id it serves, typed in. Beside it, the page says whether that
-vendor's key is set and where, masked as `quackd doctor` masks it:
+vendor's key is set and where, masked as `roboglot doctor` masks it:
 
 ```
 ANTHROPIC_API_KEY: set in the environment (sk-a…ef)
@@ -141,7 +141,7 @@ LLM.
 **A VLA policy** flies the LeRobot arm instead, through a policy server: its address, whether the
 arm keeps moving while the next chunk is on its way, and whether to accept a policy learned on an
 arm calibrated another way. Its pilot asks no LLM, so while it is chosen the pilot LLM's settings
-and the decision LLM leave the command, which `quackd run` would otherwise refuse. The
+and the decision LLM leave the command, which `roboglot run` would otherwise refuse. The
 [Policies screen](#runs-robots-memory-and-policies) starts a server on this computer and fills the
 address in. [Policies](policies.md) has the rest.
 
@@ -151,17 +151,17 @@ a line in a chat, whose goals have the stepper too only with a mode chosen
 
 ## Every other option
 
-Everything else `quackd run` and `quackd drive` take is under **Everything else**, grouped as
+Everything else `roboglot run` and `roboglot drive` take is under **Everything else**, grouped as
 `--help` groups it, each with the flag it sets and that flag's own help. An option one of the two
 commands does not take is marked *goal only* or *chat only*. Memory is one switch for both, on as
-a run keeps it, so a chat keeps a memory unless you turn it off, where `quackd drive` at a terminal
+a run keeps it, so a chat keeps a memory unless you turn it off, where `roboglot drive` at a terminal
 keeps none unless asked. An option that is on or off unless a task file says otherwise offers three
 choices: the default, on and off. Options that carry a secret are offered as key fields, which
 reach a run as keys do.
 
-The page reads these options from the commands themselves, so a flag added to `quackd run`
+The page reads these options from the commands themselves, so a flag added to `roboglot run`
 appears on the page with nothing changed in it. It leaves out the few it sets itself or cannot
-apply: `--front`, `--live`, `--verbose`, `--log`, `--log-prompt`, `--by-hand`, `--flock` and
+apply: `--front`, `--live`, `--verbose`, `--log`, `--log-prompt`, `--by-hand`, `--team` and
 `--robots`.
 
 **Same as**, at the bottom of Setup, is the command each mode would run, a goal's and a chat's,
@@ -175,7 +175,7 @@ running on the robot, what to do once before the first connect, and where its pa
 that takes a token gets a field for it, which reaches a run as a key does, under the variable its
 transport reads.
 
-**Check the connection** connects, asks the robot how it is and closes, as `quackd robot list
+**Check the connection** connects, asks the robot how it is and closes, as `roboglot robot list
 --probe` does for one robot. It drives the robot nowhere, and it runs in a process of its own, so
 no robot's SDK is ever loaded in the page.
 
@@ -184,26 +184,26 @@ no robot's SDK is ever loaded in the page.
 > check included. Hold an arm that is holding itself up before you check it. Setup says so above
 > the button.
 
-<!-- generated: connect-rows, by scripts/connect_docs.py from quackd/adapters/catalogue.py. Change a block there and run the script, not this table. -->
+<!-- generated: connect-rows, by scripts/connect_docs.py from roboglot/adapters/catalogue.py. Change a block there and run the script, not this table. -->
 
 | Robot | `--address` | For example | With none given | Token | More |
 |---|---|---|---|---|---|
-| `microduck:jsonrpc` | robotd's socket: `unix:///PATH` with quackd on the duck itself, or `tcp://HOST:PORT` for the socket forwarded over ssh | `tcp://127.0.0.1:9870` | `unix:///run/robotd.sock` | none | [microduck](../adapters/microduck/README.md) |
+| `microduck:jsonrpc` | robotd's socket: `unix:///PATH` with Roboglot on the duck itself, or `tcp://HOST:PORT` for the socket forwarded over ssh | `tcp://127.0.0.1:9870` | `unix:///run/robotd.sock` | none | [microduck](../adapters/microduck/README.md) |
 | `lerobot:real` | the arm's USB serial port on this computer: `COM5` or the like on Windows, `/dev/ttyACM0` elsewhere | `COM5` | refused: one must be given | none | [lerobot](../adapters/lerobot/README.md) |
 | `rosbridge:ws` | rosbridge_server's WebSocket, which carries the topics too: `ws://HOST:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed` | `ws://robot.local:9090?cmd_vel=/cmd_vel&odom=/odom&image=/camera/image/compressed` | `ws://localhost:9090` | none | [rosbridge](../adapters/rosbridge/README.md) |
-| `open_duck:bridge` | quackd's bridge daemon on the duck's Pi, `tcp://HOST:PORT` | `tcp://127.0.0.1:9871` | `tcp://open-duck.local:9871` | `--token` or `QUACKD_DUCK_TOKEN` | [open_duck](../adapters/open_duck/README.md) |
+| `open_duck:bridge` | Roboglot's bridge daemon on the duck's Pi, `tcp://HOST:PORT` | `tcp://127.0.0.1:9871` | `tcp://open-duck.local:9871` | `--token` or `ROBOGLOT_DUCK_TOKEN` | [open_duck](../adapters/open_duck/README.md) |
 | `xlerobot:zmq` | the robot's ZeroMQ host, `tcp://HOST:5555`, with `?variant=omni3`, `diff2` or `mecanum` | `tcp://192.168.1.42:5555` | `tcp://127.0.0.1:5555` | none | [xlerobot](../adapters/xlerobot/README.md) |
 | `alohamini:zmq` | the robot's ZeroMQ host, `tcp://HOST:5555`, with `?model=alohamini1`, `alohamini2` or `alohamini2pro` | `tcp://192.168.1.50:5555` | `tcp://127.0.0.1:5555` | none | [alohamini](../adapters/alohamini/README.md) |
-| `toddlerbot:bridge` | quackd's daemon on the robot's Jetson, `tcp://HOST:PORT` | `tcp://127.0.0.1:9873` | `tcp://toddlerbot.local:9873` | `--token` or `QUACKD_TODDLERBOT_TOKEN` | [toddlerbot](../adapters/toddlerbot/README.md) |
-| `huebot:jsonrpc` | the maker's shim, which speaks robotd's protocol: `tcp://HOST:PORT`, or `unix:///PATH` with quackd on the robot itself | `tcp://127.0.0.1:9870` | refused: one must be given | none | [huebot](../adapters/huebot/README.md) |
-| `moss:cockpit` | MOSS's cockpit on the rover, `http://HOST:8904`, with quackd's bridge port as `?bridge=9876` | `http://127.0.0.1:8904` | `http://127.0.0.1:8904?bridge=9876` | `--token` or `QUACKD_MOSS_TOKEN` | [moss](../adapters/moss/README.md) |
+| `toddlerbot:bridge` | Roboglot's daemon on the robot's Jetson, `tcp://HOST:PORT` | `tcp://127.0.0.1:9873` | `tcp://toddlerbot.local:9873` | `--token` or `ROBOGLOT_TODDLERBOT_TOKEN` | [toddlerbot](../adapters/toddlerbot/README.md) |
+| `huebot:jsonrpc` | the maker's shim, which speaks robotd's protocol: `tcp://HOST:PORT`, or `unix:///PATH` with Roboglot on the robot itself | `tcp://127.0.0.1:9870` | refused: one must be given | none | [huebot](../adapters/huebot/README.md) |
+| `moss:cockpit` | MOSS's cockpit on the rover, `http://HOST:8904`, with Roboglot's bridge port as `?bridge=9876` | `http://127.0.0.1:8904` | `http://127.0.0.1:8904?bridge=9876` | `--token` or `ROBOGLOT_MOSS_TOKEN` | [moss](../adapters/moss/README.md) |
 
 <!-- end generated: connect-rows -->
 
-A robot you have registered with `quackd robot add` is under **A registered robot**, with its
+A robot you have registered with `roboglot robot add` is under **A registered robot**, with its
 address, cameras and token already stored. The Robots screen registers one from the page, its
 token passed by the name of the variable that holds it (`--token-env`), so it is never on a command
-line. [Registered robots and flocks](registry.md) has the rest.
+line. [Registered robots and teams](registry.md) has the rest.
 
 ## On your phone
 
@@ -218,20 +218,20 @@ Nothing is installed on the phone.
 1. Start the page so the Wi-Fi can reach it:
 
    ```bash
-   quackd ui --bind 0.0.0.0
+   roboglot ui --bind 0.0.0.0
    ```
 
 2. It prints each address this computer has on its networks, with the page's token in it, and
    a QR code of the first. Among what it prints, with the addresses and the token made up here:
 
    ```
-   quackd ui: http://192.168.1.23:8501/?token=…
+   roboglot ui: http://192.168.1.23:8501/?token=…
               http://10.0.0.5:8501/?token=…
    Anyone who can reach this address and has the token can drive your robots. Keep the address to yourself.
    This is plain HTTP, so anyone who can read this network's traffic can read the token too: use a network you trust, and --new-token if it was not.
    ```
 
-   The QR code follows, drawn in the terminal, or saved as `ui-qr.png` in the quackd home where
+   The QR code follows, drawn in the terminal, or saved as `ui-qr.png` in the Roboglot home where
    the terminal cannot draw it.
 
 3. Scan the code with the phone's camera, or type the address. The phone has to be on the same
@@ -245,10 +245,10 @@ begun at a desk can be picked up on the phone.
 
 ![The Goal screen on a phone: the run asks whether to run walk, with a large Yes and No, and the Stop button floats at the bottom right](../assets/ui-phone-ask.png)
 
-**The token** is made the first time, kept in `ui.token` in the quackd home (`~/.quackd`, or
-wherever `QUACKD_REGISTRY_DIR` points in the shell, never where a `.env` points it) where only
+**The token** is made the first time, kept in `ui.token` in the Roboglot home (`~/.roboglot`, or
+wherever `ROBOGLOT_REGISTRY_DIR` points in the shell, never where a `.env` points it) where only
 you can read it, and is the same at every start, so a shortcut on the phone's home screen keeps
-working. `quackd ui --new-token` replaces it, and every address saved with the old one stops
+working. `roboglot ui --new-token` replaces it, and every address saved with the old one stops
 working.
 
 **A shortcut on the home screen** opens the page in the phone's browser: in Safari on an iPhone,
@@ -263,7 +263,7 @@ starting from any of them. The question a run puts has two large buttons. In a c
 and the page finds the run again, its questions and its Stop with it.
 
 **Away from home**, a private network that reaches both, such as Tailscale, works the same way:
-start the page on that network's address, `quackd ui --bind 100.x.y.z`, rather than on every
+start the page on that network's address, `roboglot ui --bind 100.x.y.z`, rather than on every
 network.
 
 > [!WARNING]
@@ -295,7 +295,7 @@ network.
   for the `stop button`, with its record closed.
 - **A page process that dies** ends each run's input, which stops the run as a stop nobody
   pressed. The verb ends, the robot stops and folds, and the record closes with `the page went
-  away`. On Windows that held with the page's process killed outright, both as `quackd.exe` and
+  away`. On Windows that held with the page's process killed outright, both as `roboglot.exe` and
   as `python`, while a run waited on a question.
 - **One robot, one job.** The page runs one goal, chat or check at a time on a robot, and refuses a
   second while the first holds it. It cannot see a run on the same robot started from a terminal.
@@ -310,11 +310,11 @@ page in your browser that points a name of its own at it
 ## Runs, Robots, Memory and Policies
 
 - **Runs** lists the run directories under the working folder's `runs/`, with how each ended, its
-  steps, its seconds and its cost. One replays as `quackd log` replays it, the system prompt shown
+  steps, its seconds and its cost. One replays as `roboglot log` replays it, the system prompt shown
   if you ask, with its frames, its `run.gif` and what its terminal showed, and a chat's goals one by
   one.
 - **Robots** is the registry, tokens never shown: register a robot, forget one after a second
-  click, and look for robots announcing themselves on the network, which needs `quackd[lan]`.
+  click, and look for robots announcing themselves on the network, which needs `roboglot[lan]`.
   Recording an arm's rest pose and releasing an arm need somebody at the arm, so the screen gives
   the terminal command for each.
 - **Memory** is what a robot remembers between runs: read it, add a note, or clear it after a
@@ -328,11 +328,11 @@ page in your browser that points a name of its own at it
 
 ## Troubleshooting
 
-**The port is taken.** Another `quackd ui`, or another program, listens on it:
+**The port is taken.** Another `roboglot ui`, or another program, listens on it:
 
 ```
-✗ error: port 8501 is already in use: another quackd ui, or another program, listens there
-  quackd ui --port 8502
+✗ error: port 8501 is already in use: another roboglot ui, or another program, listens there
+  roboglot ui --port 8502
 ```
 
 **The phone cannot reach the page.**
@@ -358,8 +358,8 @@ the same command under **Same as** reproduces it at a terminal.
 
 - `--by-hand`, and the questions at the end of a run about an arm that missed its rest pose: both
   wait for somebody at the arm to press Enter, and stay at the terminal.
-- Flocks: `--flock`, `--robots` and task files with a `flock:` block.
-- A GIF of a chat: `quackd drive` takes no `--gif`.
+- Teams: `--team`, `--robots` and task files with a `team:` block.
+- A GIF of a chat: `roboglot drive` takes no `--gif`.
 - `--live`, and a picture sent with a chat line.
-- HTTPS. Streamlit can serve it through its own settings, and quackd has no flag for it yet.
+- HTTPS. Streamlit can serve it through its own settings, and Roboglot has no flag for it yet.
 - An app to install on the phone.

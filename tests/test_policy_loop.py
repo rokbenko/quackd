@@ -27,13 +27,13 @@ from typing import Any
 import numpy as np
 import pytest
 
-from quackd.safety import Aborted, Executor, Heartbeat, allow_all
-from quackd.transport.base import HeartbeatError, Intent
-from quackd.verbs.registry import registry_from_manifest
-from quackd_lerobot import LeRobotAdapter
-from quackd_lerobot.arms import SO_HOT_C as HOT_C
-from quackd_lerobot.mock import LeRobotMock
-from quackd_lerobot.policy.loop import (
+from roboglot.safety import Aborted, Executor, Heartbeat, allow_all
+from roboglot.transport.base import HeartbeatError, Intent
+from roboglot.verbs.registry import registry_from_manifest
+from roboglot_lerobot import LeRobotAdapter
+from roboglot_lerobot.arms import SO_HOT_C as HOT_C
+from roboglot_lerobot.mock import LeRobotMock
+from roboglot_lerobot.policy.loop import (
     EXACT,
     FIRST_CHUNK_S,
     MAX_RATE_HZ,
@@ -50,10 +50,10 @@ from quackd_lerobot.policy.loop import (
     speed_cap,
     starved_each_chunk,
 )
-from quackd_lerobot.policy.runner import Chunk, Features, Observation
-from quackd_lerobot.policy.scripted import ScriptedRunner
-from quackd_lerobot.real import MAX_STEP_DEG, POLICY_HZ, LeRobotReal
-from quackd_lerobot.verbs import (
+from roboglot_lerobot.policy.runner import Chunk, Features, Observation
+from roboglot_lerobot.policy.scripted import ScriptedRunner
+from roboglot_lerobot.real import MAX_STEP_DEG, POLICY_HZ, LeRobotReal
+from roboglot_lerobot.verbs import (
     GRIPPER_OPEN,
     MANIPULATE_S,
     MANIPULATE_TIMEOUT_S,
@@ -73,7 +73,7 @@ RATE = 3 / TICK_S
 """A policy three times as fast as the verbs' tick, inside the band the loop paces."""
 PERIOD = 1 / RATE
 STEP = MAX_STEP_DEG / 2
-"""quackd's step cap in these tests: half its default, so nothing leans on the default."""
+"""Roboglot's step cap in these tests: half its default, so nothing leans on the default."""
 
 
 class LockstepClock(SteppedClock):
@@ -380,7 +380,7 @@ class _EndlessLatency(ScriptedRunner):
     ],
     ids=["features None", "features a dict", "a latency no number of ticks"],
 )
-async def test_a_runner_that_says_nothing_quackd_can_pace_is_refused_with_its_own_reason(
+async def test_a_runner_that_says_nothing_roboglot_can_pace_is_refused_with_its_own_reason(
     runner: type[ScriptedRunner], said: str
 ) -> None:
     """Refused before anything is sent, and in words about the runner, never as a stop that was
@@ -486,7 +486,7 @@ async def test_a_tick_that_overruns_skips_to_the_next_whole_period_and_counts_wh
 
 class RoundingClock(SteppedClock):
     """A clock that wakes only on whole steps of its own, the nearest number of them to what was
-    asked and at least one, as the simulator's flock clock does (`quackd.sim2d.clock`)."""
+    asked and at least one, as the simulator's team clock does (`roboglot.sim2d.clock`)."""
 
     def __init__(self, step: float) -> None:
         super().__init__()
@@ -826,7 +826,7 @@ async def test_a_long_chunk_is_asked_for_again_before_it_runs_out(latency: str) 
     an answer lands before the queue runs out, and the arm is starved only while a segment's
     first chunk is on its way. Over half, no rule could keep it fed, since the next request
     goes out no sooner than the last chunk lands: every chunk after the first starves what
-    `starved_each_chunk` says, which is what `quackd policy serve` refuses to declare. The
+    `starved_each_chunk` says, which is what `roboglot policy serve` refuses to declare. The
     lockstep clock and the wall's kind play the same goals at the same times either way."""
     k = LATENCIES[latency]
     ticks = 5 * LONG

@@ -1,7 +1,7 @@
 """The real backend over LeRobot 0.7.0's own follower and bus, with rustypot's `Bus` faked.
 
 Every other test of `lerobot:real` drives a fake arm that copies LeRobot's words, and a copy is
-only as good as its last reading: quackd read 0.6.1's `id_=<N>`, which LeRobot's main stopped
+only as good as its last reading: Roboglot read 0.6.1's `id_=<N>`, which LeRobot's main stopped
 saying on 2026-10-16 and 0.7.0 says nowhere, and over 0.7.0's bus it would have named no joint.
 Here the follower, its bus, the handshake, the calibration check, `configure()`, the torque calls
 and every error LeRobot raises are LeRobot's own code, with each motor's definition out of
@@ -18,7 +18,7 @@ No serial port is opened. `SerialMotorsBus._open_bus` is replaced for every test
 rather than open one. The port is `COM250`, which no machine has.
 
 These need LeRobot 0.7.0 with its `[feetech]` extra, which brings rustypot, and torch under it, so
-they run in CI's policy job and skip anywhere else (QUACKD_REQUIRE_LEROBOT_BUS makes a skip a
+they run in CI's policy job and skip anywhere else (ROBOGLOT_REQUIRE_LEROBOT_BUS makes a skip a
 failure, as CI sets it).
 """
 
@@ -31,8 +31,8 @@ from typing import Any
 
 import pytest
 
-from quackd.transport.base import TransportError
-from quackd_lerobot.real import (
+from roboglot.transport.base import TransportError
+from roboglot_lerobot.real import (
     CONNECT_ATTEMPTS,
     PORT_CLOSED_BY_THE_HANDSHAKE,
     PORT_CLOSED_WRITING_NOTHING,
@@ -43,7 +43,7 @@ from quackd_lerobot.real import (
     motor_in_error,
 )
 
-if os.environ.get("QUACKD_REQUIRE_LEROBOT_BUS"):
+if os.environ.get("ROBOGLOT_REQUIRE_LEROBOT_BUS"):
     import lerobot  # noqa: F401
     import rustypot
 else:
@@ -186,7 +186,7 @@ def port(monkeypatch: pytest.MonkeyPatch) -> FakePort:
 
 @pytest.fixture
 def arm(tmp_path: Path) -> SO101Follower:
-    """LeRobot's own SO-101 follower, built with quackd's config (`_config_kwargs`) and a
+    """LeRobot's own SO-101 follower, built with Roboglot's config (`_config_kwargs`) and a
     calibration file of its own, that every motor's registers agree with."""
     folder = tmp_path / "calibration"
     folder.mkdir()
@@ -296,7 +296,7 @@ async def test_an_overloaded_servo_answers_and_is_not_missing(
 ) -> None:
     """An sts3215's status byte is alarms only (rustypot's sts3215.rs line 19), so a servo
     answering with its overload bit set is found by the handshake and raises nothing anywhere,
-    where 0.6.1 listed it as missing. LeRobot surfaces no alarm, which is why quackd's own
+    where 0.6.1 listed it as missing. LeRobot surfaces no alarm, which is why Roboglot's own
     temperature read is its one heat guard."""
     port.alarms[4] = 0x20
     transport = _transport(arm)
@@ -389,9 +389,10 @@ async def test_a_disconnect_whose_torque_off_raised_still_releases_the_port(
     port: FakePort, arm: SO101Follower
 ) -> None:
     """LeRobot's bus disconnect closes the port in a `finally` whatever its torque-off did, and
-    passes over a port already shut without a word (motors_bus.py lines 440 to 461), so quackd's
+    passes over a port already shut without a word (motors_bus.py lines 440 to 461), so Roboglot's
     close between attempts never raises on one. Driven straight through the follower and the bus
-    here, as LeRobot's own disconnect is, and its error names the motor the way quackd reads it."""
+    here, as LeRobot's own disconnect is, and its error names the motor the way Roboglot reads
+    it."""
     arm.connect(False)
     port.silent.add(2)
     with pytest.raises(ConnectionError) as raised:

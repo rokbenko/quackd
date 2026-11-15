@@ -18,7 +18,7 @@ The seeded faults run over the simulator alone. A fake is told what to raise; th
 seed is that nobody tells the simulator, and the real backend still says what happened.
 
 No number here comes off an arm. The travel is a share of the stand-in's own stops, which are
-the manifest's joint limit, the cap is quackd's own default step, and the motor ids are
+the manifest's joint limit, the cap is Roboglot's own default step, and the motor ids are
 upstream's bus table in another order. Nothing is fetched: the arm is the stand-in.
 """
 
@@ -32,22 +32,22 @@ from typing import Any
 
 import pytest
 
-from quackd.transport.base import Intent, TransportError
-from quackd_lerobot import JOINTS, LeRobotAdapter
-from quackd_lerobot import upstream_api as lr
-from quackd_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
-from quackd_lerobot.real import (
+from roboglot.transport.base import Intent, TransportError
+from roboglot_lerobot import JOINTS, LeRobotAdapter
+from roboglot_lerobot import upstream_api as lr
+from roboglot_lerobot.arms import SO_ENCODER_TICKS as ENCODER_TICKS
+from roboglot_lerobot.real import (
     CONNECT_ATTEMPTS,
     MAX_STEP_DEG,
     TORQUE_RETRIES,
     LeRobotReal,
 )
-from quackd_lerobot.sim import standin
-from quackd_lerobot.sim.faults import CONFIGURE, HANDSHAKE, Fault, FaultPlan
-from quackd_lerobot.sim.follower import NO_STATUS, SimFollower, SimFollowerConfig
-from quackd_lerobot.sim.model import ArmModel, MotorCalibration, load
-from quackd_lerobot.sim.world import ArmWorld
-from quackd_lerobot.verbs import (
+from roboglot_lerobot.sim import standin
+from roboglot_lerobot.sim.faults import CONFIGURE, HANDSHAKE, Fault, FaultPlan
+from roboglot_lerobot.sim.follower import NO_STATUS, SimFollower, SimFollowerConfig
+from roboglot_lerobot.sim.model import ArmModel, MotorCalibration, load
+from roboglot_lerobot.sim.world import ArmWorld
+from roboglot_lerobot.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     TOL_DEG,
@@ -62,7 +62,7 @@ mujoco = pytest.importorskip("mujoco")
 BODY = JOINTS[:-1]
 GRIPPER = JOINTS[-1]
 STEP = MAX_STEP_DEG
-"""The cap on one send for both arms: quackd's own default step."""
+"""The cap on one send for both arms: Roboglot's own default step."""
 TRAVEL_SHARE = 0.5
 """Each body joint's calibrated travel, as a share of the stand-in's stops either side of zero:
 narrower than the stops, as a calibration that never saw the arm folded is, so there is room
@@ -288,9 +288,9 @@ async def test_the_step_cap_limits_one_send(rig: Callable[..., Rig]) -> None:
 async def test_a_goal_past_the_travel_stops_at_its_limit_and_the_send_does_not_say_so(
     rig: Callable[..., Rig], arm: ArmModel
 ) -> None:
-    """quackd never sends one (`_send` clips, a hold skips, take-hold refuses), because the
+    """Roboglot never sends one (`_send` clips, a hold skips, take-hold refuses), because the
     servo would clamp it without a word. Both arms have to clamp it all the same, so that a
-    goal that slips past quackd lands where it would on the arm. The cap is lifted, as
+    goal that slips past Roboglot lands where it would on the arm. The cap is lifted, as
     upstream's default None lifts it, so one send asks for the whole way."""
     r = rig()
     await r.transport.connect()

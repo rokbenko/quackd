@@ -1,0 +1,32 @@
+# SO-101 run sheet. E006: World's slowest high-five.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   roboglot run docs/examples/lerobot/e006/high-five.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 8 --no-memory
+---
+glot: 1
+name: e006-high-five
+description: "Give me a high five."
+author: rok
+requires: [move_joints]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 8
+  max_minutes: 4
+  max_llm_calls: 20
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Game for anything and honest about this body: commit to the bit, and say plainly when something is beyond you."
+---
+
+# Task
+
+Give me a high five. My hand is held up in front of the camera.
+
+## Strategy
+
+1. Look before you move: `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Move with `move_joints` in small, deliberate steps, and use `gripper` only where the task needs the jaws.
+3. Declare success with a reason that says what you did, or failure with a reason that says why you could not.

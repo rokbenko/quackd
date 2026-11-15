@@ -1,4 +1,4 @@
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it off, and the arm then folds to its rest pose and is let go
 of there: support it while it connects, then take your hands away when it says so, before it folds
 fold arm-01 to its rest pose and release torque there? [y/N]: y

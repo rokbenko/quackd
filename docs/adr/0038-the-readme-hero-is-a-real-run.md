@@ -7,10 +7,10 @@
 Every hero this project has had was a simulator recording driven by the scripted pilot, for the
 reason [ADR-0013](0013-hero-gif.md) gives: there was no key on the machine that built it, and
 tests must never touch the network. `docs/assets/hero.gif` was the cartoon, then
-`docs/assets/quackd-on-off.gif` was the same argument in MuJoCo, one duck with quackd and one
+`docs/assets/roboglot-on-off.gif` was the same argument in MuJoCo, one duck with Roboglot and one
 without.
 
-On 2026-09-15 an SO-101 follower arm ran quackd for an afternoon, twelve `--goal` runs piloted
+On 2026-09-15 an SO-101 follower arm ran Roboglot for an afternoon, twelve `--goal` runs piloted
 by OpenAI's `gpt-6-astra`, and the last of them was filmed on a phone. That recording answers
 the question the rendered pair was arguing about, and answers it with a real robot: you type a
 sentence, an LLM picks the arm's own verbs one at a time, and the arm waves. A reader who
@@ -34,7 +34,7 @@ two thirds of the wave. Neither is a hero.
   `tests/test_pypi_readme.py` asserts that the exclude names exactly this file, that the file
   is genuinely over the general cap (so the exception is not left behind once it stops being
   needed), and that it is under its own number. Everything else keeps the 2048 KB cap.
-- **`quackd-on-off.gif` stays in the README**, moved under *No robot yet? Try it in 60
+- **`roboglot-on-off.gif` stays in the README**, moved under *No robot yet? Try it in 60
   seconds*, where it is now arguing for the simulator rather than for the project. It is still
   the one file here under CC BY-NC-SA, and its caption says so where it now sits.
 - **The recording is not reproducible from this repository, and the catalogue says so.** The
@@ -54,6 +54,6 @@ two thirds of the wave. Neither is a hero.
   LLM in it, became false and was corrected with this change. `docs/assets/README.md` now
   distinguishes *simulator* recordings, which are all scripted, from the two that are not.
 - [ADR-0013](0013-hero-gif.md)'s open item, regenerating the hero with a real LLM, is closed
-  by a different route than it expected: not a keyed `quackd record` in a simulator, but a
+  by a different route than it expected: not a keyed `roboglot record` in a simulator, but a
   camera pointed at a bench. A real LLM recording in either simulator is still open, and is
   still listed under *Help wanted*.

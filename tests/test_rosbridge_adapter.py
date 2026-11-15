@@ -14,21 +14,21 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd.adapters.base import AdapterNotInstalled
-from quackd.adapters.factory import describe, make_adapter, parse_robot_spec
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor
-from quackd.space.places import Place, PlaceBook, PlaceStore
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.core import TICK_S, speed_limits
-from quackd.verbs.navigate import Gait
-from quackd.verbs.places import PLACE_VERBS, GoToPlaceParams
-from quackd.verbs.registry import VerbContext, VerbResult, registry_from_manifest
-from quackd_microduck import microduck_manifest
-from quackd_rosbridge import DATASHEET, RosbridgeAdapter, rosbridge_manifest
-from quackd_rosbridge.introspection import datasheet_from_introspection, parse_urdf
-from quackd_rosbridge.mock import MOCK_URDF, RosbridgeMock, mock_introspection
-from quackd_rosbridge.ws import (
+from roboglot.adapters.base import AdapterNotInstalled
+from roboglot.adapters.factory import describe, make_adapter, parse_robot_spec
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor
+from roboglot.space.places import Place, PlaceBook, PlaceStore
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.core import TICK_S, speed_limits
+from roboglot.verbs.navigate import Gait
+from roboglot.verbs.places import PLACE_VERBS, GoToPlaceParams
+from roboglot.verbs.registry import VerbContext, VerbResult, registry_from_manifest
+from roboglot_microduck import microduck_manifest
+from roboglot_rosbridge import DATASHEET, RosbridgeAdapter, rosbridge_manifest
+from roboglot_rosbridge.introspection import datasheet_from_introspection, parse_urdf
+from roboglot_rosbridge.mock import MOCK_URDF, RosbridgeMock, mock_introspection
+from roboglot_rosbridge.ws import (
     RosbridgeWs,
     decode_compressed_image,
     parse_address,
@@ -266,7 +266,7 @@ def test_message_helpers() -> None:
 @pytest.mark.skipif(not NO_ROSLIBPY, reason="roslibpy is installed here")
 async def test_ws_backend_without_the_extra_names_it() -> None:
     adapter = make_adapter("rosbridge:ws", address="ws://robot.local:9090")
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosbridge\]"):
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[rosbridge\]"):
         await adapter.connect()
 
 
@@ -278,27 +278,27 @@ def test_the_builder_both_transports_call_names_whichever_extra_asked(
     extra of the adapter that needed it."""
     import sys
 
-    from quackd_rosbridge.ws import RosbridgeWs, build_roslibpy
+    from roboglot_rosbridge.ws import RosbridgeWs, build_roslibpy
 
     monkeypatch.setitem(sys.modules, "roslibpy", None)
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosbridge\]"):
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[rosbridge\]"):
         RosbridgeWs(address="ws://robot.local:9090")._build()
-    with pytest.raises(AdapterNotInstalled, match=r"quackd\[rosarm\]"):
-        build_roslibpy("robot.local", 9090, False, adapter="rosarm", extra="quackd[rosarm]")
+    with pytest.raises(AdapterNotInstalled, match=r"roboglot\[rosarm\]"):
+        build_roslibpy("robot.local", 9090, False, adapter="rosarm", extra="roboglot[rosarm]")
 
 
 async def test_the_base_describes_itself_as_it_did_before_the_builder_moved() -> None:
     """`tests/golden/manifest_digests.json` holds the Microduck's and Huebot's descriptions only,
     so the base's are pinned here: each digest was computed on origin/main before the builders
     left `RosbridgeWs._build`, and is what it computes now."""
-    from quackd_rosbridge import describe, rosbridge_manifest
+    from roboglot_rosbridge import describe, rosbridge_manifest
 
-    assert describe("mock").digest() == "8de813ddee5118f7"
-    assert describe("ws").digest() == "9ccfdccc7ff2f196"
+    assert describe("mock").digest() == "8ab21e32ba85b7d0"
+    assert describe("ws").digest() == "a66b6376ea69717f"
     adapter = make_adapter("rosbridge:mock")
-    assert (await adapter.connect()).digest() == "8de813ddee5118f7"
+    assert (await adapter.connect()).digest() == "8ab21e32ba85b7d0"
     camera = rosbridge_manifest("ws", camera=True, image="/camera/compressed")
-    assert camera.digest() == "39671e48584ec5ff"
+    assert camera.digest() == "9694f069d41f767c"
 
 
 # ── what the bridge says about the body ─────────────────────────────────────────────────
@@ -701,9 +701,9 @@ async def test_odom_gone_quiet_holds_the_base_still_and_then_ends_the_walk() -> 
     assert sent[-1][1] == twist_message(0.0, 0.0, 0.0)
 
 
-async def test_the_period_is_the_streams_own_however_seldom_quackd_reads_it() -> None:
-    """quackd reads where the base is at each verb, seconds apart while a pilot thinks, and
-    /odom streams all the while. Taken only when read, the track measured how often quackd
+async def test_the_period_is_the_streams_own_however_seldom_roboglot_reads_it() -> None:
+    """Roboglot reads where the base is at each verb, seconds apart while a pilot thinks, and
+    /odom streams all the while. Taken only when read, the track measured how often Roboglot
     looked, and a walk sized its tolerance from that: a base its own joystick had driven three
     metres off in half a minute was said to be at its place already."""
     ws, adapter, topics = await _ws()

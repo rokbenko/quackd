@@ -1,10 +1,10 @@
-"""The two halves of quackd's MOSS bridge protocol, talking to each other.
+"""The two halves of Roboglot's MOSS bridge protocol, talking to each other.
 
 The bridge's own tests (`tests/test_moss_bridge.py`) drive it directly, and the client's
 (`tests/test_moss_cockpit.py`) run against a fake cockpit with no bridge at all. Two sides can
 each agree with a stand-in and still disagree with each other, so this file runs the REAL
 bridge, loaded by path the way the rover runs it, in `--fake`, served on port 0, against the
-REAL client in `quackd_moss.cockpit`, with the fake cockpit beside it. A change to either side
+REAL client in `roboglot_moss.cockpit`, with the fake cockpit beside it. A change to either side
 that breaks this is a change to both. What it cannot catch is anything about a rover.
 """
 
@@ -25,21 +25,21 @@ from typing import Any
 
 import pytest
 
-import quackd.cli as cli
-from quackd.duckfile.parser import parse_duck_text
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.safety import Executor, Heartbeat, allow_all
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.places import GO_TO_PLACE_MAX_S
-from quackd.verbs.registry import VerbContext, registry_from_manifest
-from quackd_moss import MossAdapter, describe
-from quackd_moss import cockpit as client
-from quackd_moss import mock as mock_module
-from quackd_moss import verbs as moss_verbs
+import roboglot.cli as cli
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.safety import Executor, Heartbeat, allow_all
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.places import GO_TO_PLACE_MAX_S
+from roboglot.verbs.registry import VerbContext, registry_from_manifest
+from roboglot_moss import MossAdapter, describe
+from roboglot_moss import cockpit as client
+from roboglot_moss import mock as mock_module
+from roboglot_moss import verbs as moss_verbs
 from tests.conftest import REPO
 from tests.fake_moss_cockpit import FakeCockpit
 
-BRIDGE = REPO / "bridge" / "moss" / "quackd_moss_bridge.py"
+BRIDGE = REPO / "bridge" / "moss" / "roboglot_moss_bridge.py"
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 GUARD_S = 1.0
 """The bridge's watch on the arm after a stop, short here so a test can wait it out."""
@@ -53,7 +53,7 @@ that had not ended early at all."""
 
 def _load() -> ModuleType:
     """Its own module name, so nothing patched here leaks into the bridge's own tests."""
-    spec = importlib.util.spec_from_file_location("quackd_moss_bridge_contract", BRIDGE)
+    spec = importlib.util.spec_from_file_location("roboglot_moss_bridge_contract", BRIDGE)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -254,7 +254,7 @@ async def test_a_bridge_of_another_protocol_version_is_refused_by_name(
     rover: Rover, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(B, "PROTOCOL_VERSION", B.PROTOCOL_VERSION + 1)
-    with pytest.raises(TransportError, match=r"copy bridge/moss/quackd_moss_bridge\.py"):
+    with pytest.raises(TransportError, match=r"copy bridge/moss/roboglot_moss_bridge\.py"):
         await rover.transport().connect()
 
 
@@ -468,7 +468,7 @@ async def test_a_stop_after_the_stack_restarted_touches_nothing_of_the_new_run(
     rover: Rover,
 ) -> None:
     """The owner restarted the base stack: the bridge reads another run, and says so in the
-    keepalive answer. quackd's stop names the run it connected to, so neither the bridge's
+    keepalive answer. Roboglot's stop names the run it connected to, so neither the bridge's
     stop nor the cockpit's soft stop touches the new run, and both say why."""
     from dataclasses import replace
 
@@ -494,7 +494,7 @@ async def test_a_stop_after_the_stack_restarted_touches_nothing_of_the_new_run(
 async def test_a_second_run_beside_the_connected_one_neither_fails_nor_skips_the_soft_stop(
     rover: Rover,
 ) -> None:
-    """A dimOS run of another blueprint started by hand is the newest, and the run quackd
+    """A dimOS run of another blueprint started by hand is the newest, and the run Roboglot
     connected to still runs behind it: the bridge says so in every keepalive answer, so the
     heartbeat goes on, and the stop's soft stop and the bridge's stop both reach the run it
     started its exploration on."""
@@ -635,14 +635,14 @@ def _closed_port() -> int:
 
 
 def _alive(transport: Any) -> Heartbeat:
-    """quackd's loop, beating: its own heartbeat, which sends the session's keepalives."""
+    """Roboglot's loop, beating: its own heartbeat, which sends the session's keepalives."""
     beat = Heartbeat(transport, asyncio.Event(), period_s=client.HEARTBEAT_S)
     beat.start()
     return beat
 
 
 async def _dies(beat: Heartbeat) -> None:
-    """quackd killed where it stands: its loop's heartbeat ends, and nothing else is sent."""
+    """Roboglot killed where it stands: its loop's heartbeat ends, and nothing else is sent."""
     await beat.stop()
 
 
@@ -650,7 +650,7 @@ WINDOW_S = B.SESSION_MISSES * B.MAX_KEEPALIVE_S
 """How long a session lives without a keepalive: each declares the bridge's own cap."""
 
 
-async def test_the_loops_heartbeat_feeds_the_bridge_and_its_death_halts_what_quackd_started(
+async def test_the_loops_heartbeat_feeds_the_bridge_and_its_death_halts_what_roboglot_started(
     rover: Rover,
 ) -> None:
     transport = rover.transport()
@@ -673,7 +673,7 @@ async def test_the_loops_heartbeat_feeds_the_bridge_and_its_death_halts_what_qua
 async def test_a_wedged_loop_has_what_its_session_started_halted_and_the_run_stopped(
     rover: Rover,
 ) -> None:
-    """quackd alive and its loop wedged, in a verb that never yields or a call that never
+    """Roboglot alive and its loop wedged, in a verb that never yields or a call that never
     returns: no heartbeat runs, so no keepalive goes, and the bridge halts the exploration it
     started three periods later. The heartbeat that runs once the loop is free hears of the
     halt, and fails the run with it rather than steer on as if nothing had happened."""
@@ -811,7 +811,7 @@ async def test_a_halt_that_halted_nothing_is_no_event_and_is_said_in_the_keepali
     await transport.close()
 
 
-async def test_close_ends_the_session_so_nothing_is_halted_after_quackd_has_gone(
+async def test_close_ends_the_session_so_nothing_is_halted_after_roboglot_has_gone(
     rover: Rover,
 ) -> None:
     transport = rover.transport()
@@ -845,7 +845,7 @@ async def test_a_doctor_beside_a_run_never_strips_the_runs_deadman(rover: Rover)
 
 
 async def test_a_start_is_said_to_the_bridge_before_it_goes_out(rover: Rover) -> None:
-    """A quackd killed the instant after its explore start: the bridge already has its word,
+    """A Roboglot killed the instant after its explore start: the bridge already has its word,
     because the keepalive that carried it went out first."""
     transport = rover.transport()
     await transport.connect()
@@ -861,7 +861,7 @@ async def test_a_start_is_said_to_the_bridge_before_it_goes_out(rover: Rover) ->
     start = Intent(kind="do", params={"skill": "explore", "action": "start"})
     assert (await transport.send_intent(start)).accepted
     assert seen == ["explore"], "the bridge knew before the cockpit was asked"
-    # no heartbeat beats here, so nothing goes after the start, as if quackd died with it
+    # no heartbeat beats here, so nothing goes after the start, as if Roboglot died with it
     bus = rover.bridge.bus
     _wait(lambda: "true /stop_explore_cmd#std_msgs.Bool" in bus.events, WINDOW_S + 2.0)
     await transport.close()
@@ -883,7 +883,7 @@ async def test_a_start_whose_answer_is_lost_is_kept_and_stopped(rover: Rover) ->
     rover.cockpit.command = lost  # type: ignore[method-assign]
     start = Intent(kind="do", params={"skill": "explore", "action": "start"})
     ack = await transport.send_intent(start)
-    assert not ack.accepted and "quackd sent a stop" in (ack.reason or ""), ack
+    assert not ack.accepted and "Roboglot sent a stop" in (ack.reason or ""), ack
     assert rover.cockpit.posted("stop"), "the stop went out for the start it could not see"
     assert not rover.cockpit.exploring
     await transport.close()
@@ -1103,7 +1103,7 @@ async def test_on_moss_litter_the_stop_ends_the_mission_and_it_stays_ended(rover
 async def test_on_moss_litter_a_stop_ends_the_missions_own_pick_and_the_arm_never_plays_it(
     rover: Rover,
 ) -> None:
-    """The mission is picking, its script still starting, when quackd stops. The stop ends
+    """The mission is picking, its script still starting, when Roboglot stops. The stop ends
     that script before it cancels, so the trajectory never goes out after the stop, and the
     close's word that the mission is stopped is true of its arm too."""
     adapter = MossAdapter(rover.transport())
@@ -1123,7 +1123,7 @@ async def test_on_moss_litter_a_stop_ends_the_missions_own_pick_and_the_arm_neve
 class _PersonReading:
     unanswered = None
     """The CLI's kill switch as a person at the terminal is: `ask` blocks the loop's own thread
-    until the line is typed (`quackd.safety.KillSwitch.ask`)."""
+    until the line is typed (`roboglot.safety.KillSwitch.ask`)."""
 
     def __init__(self, seconds: float) -> None:
         self.seconds = seconds
@@ -1143,8 +1143,8 @@ async def test_collect_litter_survives_a_person_reading_its_confirm(
     once the person answers."""
     monkeypatch.setattr(cli, "_SWITCH", _PersonReading(WINDOW_S))
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = parse_duck_text(
-        "---\nduck: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, report_state, "
+    duck = parse_glot_text(
+        "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, report_state, "
         "stop, collect_litter]\n  confirm: []\nsuccess: [x]\nabort_when: []\n---\n# Task\nx\n"
     ).frontmatter
     adapter = MossAdapter(rover.transport())
@@ -1172,7 +1172,7 @@ async def test_collect_litter_survives_a_person_reading_its_confirm(
 async def test_on_moss_litter_a_probe_that_started_nothing_leaves_the_mission_running(
     rover: Rover,
 ) -> None:
-    """What `quackd doctor` does: connect, ask the rover's health and close. It started nothing,
+    """What `roboglot doctor` does: connect, ask the rover's health and close. It started nothing,
     so it stops nothing and says nothing, and it keeps no session the bridge could halt however
     long it takes to close."""
     adapter = MossAdapter(rover.transport())

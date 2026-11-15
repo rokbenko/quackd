@@ -1,0 +1,31 @@
+# SO-101 run sheet. E005: Paid to do nothing.
+# Run from the root of this checkout, against the arm registered as arm-01:
+#   roboglot run docs/examples/lerobot/e005/do-nothing.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 10 --no-memory
+---
+glot: 1
+name: e005-do-nothing
+description: "Stay perfectly still for ten steps."
+author: rok
+requires: [report_state]
+verbs:
+  allow: [report_state, move_joints, gripper, place, stop]
+  confirm: []
+budgets:
+  max_steps: 10
+  max_minutes: 5
+  max_llm_calls: 24
+success:
+  - "You have done what the task asks, as best you can tell from your joints and any camera pictures, or said plainly why this body cannot."
+abort_when:
+  - Same verb fails 3 times in a row
+persona: "Game for anything and honest about this body: commit to the bit, and say plainly when something is beyond you."
+---
+
+# Task
+
+Stay perfectly still. Do not move any joint. You have ten steps.
+
+## Strategy
+
+1. `report_state` gives every joint in degrees, and any camera pictures arrive with each observation.
+2. Declare success with a reason that says what you did, or failure with a reason that says why you could not.

@@ -1,23 +1,23 @@
 # ADR-0045: A rest pose the calibration cannot reach
 
-**Status:** accepted, amended · **Date:** 2026-09-23 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (the range refusal, and `stop` as a hold of the five body joints) and [ADR-0039](0039-an-arm-placed-by-hand.md) (the one place quackd lets go, on the condition `close()` trusts) · Implemented in `adapters/lerobot/` (`verbs.py`, `real.py`, `mock.py`), `quackd/adapters/base.py`, `quackd/agent/loop.py` and `quackd/doctor.py` ([page](../adapters/lerobot/README.md#a-pose-past-the-travel), [first run](../adapters/lerobot/first-run.md#07-record-the-rest-pose))
+**Status:** accepted, amended · **Date:** 2026-09-23 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (the range refusal, and `stop` as a hold of the five body joints) and [ADR-0039](0039-an-arm-placed-by-hand.md) (the one place Roboglot lets go, on the condition `close()` trusts) · Implemented in `adapters/lerobot/` (`verbs.py`, `real.py`, `mock.py`), `roboglot/adapters/base.py`, `roboglot/agent/loop.py` and `roboglot/doctor.py` ([page](../adapters/lerobot/README.md#a-pose-past-the-travel), [first run](../adapters/lerobot/first-run.md#07-record-the-rest-pose))
 
-**Amended 2026-09-23, by `quackd robot release`:** the reachable rest pose is no longer the only
-place quackd releases an arm. A person at the arm can ask for its torque by name, wherever it
-stands: `quackd robot release NAME`, or Enter at the offer a run makes at its terminal when its
+**Amended 2026-09-23, by `roboglot robot release`:** the reachable rest pose is no longer the only
+place Roboglot releases an arm. A person at the arm can ask for its torque by name, wherever it
+stands: `roboglot robot release NAME`, or Enter at the offer a run makes at its terminal when its
 last rest move missed, which is the genuine miss this ADR keeps torque on for. The decision
-below is unchanged for everything quackd does on its own initiative. A genuine miss still keeps
+below is unchanged for everything Roboglot does on its own initiative. A genuine miss still keeps
 torque on, and taking it off is now a person's call, made after being told to hold the arm,
 where before the only call left to them was the power switch. The line a genuine miss ends on,
 `TORQUE_LEFT_ON`, names the ways out with the name the arm was registered under, and puts the
 hold before all of them, because both commands connect and connecting takes torque off every
-motor for a moment: hold the arm first, then run `quackd robot release`, or run
-`quackd doctor --robot` to try the rest move again, or cut its power. "It will not fall" is said
+motor for a moment: hold the arm first, then run `roboglot robot release`, or run
+`roboglot doctor --robot` to try the rest move again, or cut its power. "It will not fall" is said
 of the arm as it stands. [ADR-0039](0039-an-arm-placed-by-hand.md)'s second amendment has the
 rest.
 
 **Amended 2026-10-23 by [ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md):** `TORQUE_LEFT_ON` names one way out
-now: clear whatever is in the arm's way and run `quackd robot release NAME`, which folds it to
+now: clear whatever is in the arm's way and run `roboglot robot release NAME`, which folds it to
 this reachable rest pose and lets go there, supporting the arm while that connects, or cut its
 power. `doctor --robot` is no longer named, since the release parks the arm itself. And a genuine
 miss at a run's terminal is no longer released where it stands on the first Enter: it is folded
@@ -89,13 +89,13 @@ What followed, all of it in that afternoon's traces:
   position as its goal, unclipped. For a shoulder folded past its floor the servo clamped that
   goal to the limit and drove there at full speed. In one run the final state, recorded 15 ms
   after the run's last stop, read the shoulder at -107.6, and the close note, 0.34 s after that
-  stop, read it at -87, with no clamp warning from LeRobot in between because the goal quackd
+  stop, read it at -87, with no clamp warning from LeRobot in between because the goal Roboglot
   wrote was the reading itself, well inside the step cap. The stop was what moved it.
 - Three pilots shown `shoulder_lift` past its travel, at -104, -102 and -108, beside a prompt
   line giving that travel as -84.2 to 84.2, with nothing to reconcile the two, gave it as a
   reason not to move an arm in a state they could not explain.
 - Holding at about -87 against a goal clamped at -84.2 kept the shoulder's servo pushing
-  whenever torque was on. Its temperature, as quackd reads it off the bus, was 34 °C and 35 °C
+  whenever torque was on. Its temperature, as Roboglot reads it off the bus, was 34 °C and 35 °C
   on the first three runs of the afternoon and 37 °C to 40 °C on the runs after them, apart
   from one reading of 45 °C at the end of the second to last run and a single reading of 67 °C
   that the next one, 0.17 s later, put back at 37 °C.
@@ -121,7 +121,7 @@ the joint is at rest at `reading <= goal + TOL_DEG`, and where it lies above the
 `reading >= goal - TOL_DEG`. The side is read off the sign of `recorded - goal`, so a fold past
 the ceiling is the mirror of one past the floor. Every other joint keeps the band of `TOL_DEG`
 (5.0 degrees) either side of its recorded angle, and `at_rest` called with two arguments judges
-exactly as it always did. The reason is the servo's. Nothing quackd can write drives a joint
+exactly as it always did. The reason is the servo's. Nothing Roboglot can write drives a joint
 further past its limit than the few degrees a loaded joint sags there, so a joint that reads
 well past it was put there with torque off, by a hand or by its own weight settling: it is
 folded, not lost. A joint parked at the limit and sagging past it is at rest by the same rule.
@@ -153,7 +153,7 @@ the one that fell short.
 `stop` and every teardown, leaves out any joint reading strictly outside its travel
 (`_outside_travel`). Written to that joint, "stay where you are" arrives as "go to the limit"
 once the servo has clamped it, which is what hauled the shoulder up. What it costs is that the
-joint keeps whatever goal its servo already holds instead of a fresh one, and any goal quackd
+joint keeps whatever goal its servo already holds instead of a fresh one, and any goal Roboglot
 writes to a joint while it reads past its travel is the limit to the servo: a step from a
 reading past the travel is still past it, and the servo clamps it. So the skip avoids starting
 a rise out of a fold and cannot halt one already under way. A joint a move had begun lifting
@@ -167,7 +167,7 @@ it could do. The joints the hold left out are kept on the transport (`stop_skipp
 core `stop` verb names them and says they read past their travel.
 
 **A take-hold refuses a joint placed outside its travel, before it writes anything.** In
-`take_hold()` a skip would not keep the limit. The last goal quackd wrote to that joint is the
+`take_hold()` a skip would not keep the limit. The last goal Roboglot wrote to that joint is the
 rest move's, written while the joint sat inside its travel and before the person lifted the arm,
 and a person can place the joint past the far end of the travel from it, so the goal the servo
 keeps can be nearly the whole travel away. A goal written where the joint is would be clamped to
@@ -193,7 +193,7 @@ them to place, or, where its own read finds the arm still at its rest pose with 
 which is a fold recorded past the travel that nobody lifted the arm out of, whether the
 placement wait ended on Enter, on a Ctrl-C or unanswered, on the note for an arm limp at its
 rest pose (`LIMP_AT_REST`). The gripper is not in the check, because LeRobot bounds a gripper
-reading into its 0..100 range before quackd sees it. (This decision first said `take_hold()`
+reading into its 0..100 range before Roboglot sees it. (This decision first said `take_hold()`
 left such a joint out of both its writes, and that the goal it kept was the limit. That holds
 for a goal written while the joint read past its travel and not for the rest move's, and the
 skip it justified could turn a haul of a few degrees into a swing across the travel with a hand
@@ -212,7 +212,7 @@ reached or not, because it is a fact about the pose, and `note` only when the po
 The run says the note once, right after its first `at the rest pose`, because the rest move
 runs at both ends and the note is about the pose rather than the move. `doctor` prints it as
 advice under its table with the `rest pose` row green. The MCP session logs it when it parks at
-connect. `quackd robot rest-pose` prints it as a warning before it asks, through
+connect. `roboglot robot rest-pose` prints it as a warning before it asks, through
 `LeRobotAdapter.rest_pose_note()`, so the command neither knows the rule nor reimplements it,
 and it still records the pose. It is not a `close_note`, because everything that reads a close
 note reads it as torque left on: `doctor` fails its verdict on any close note, and
@@ -244,7 +244,7 @@ reason the old behaviour passed.
   note. A calibration that records a wider travel moves that joint's zero, because a joint's
   zero in degrees is the middle of the travel its calibration recorded, so a pose recorded
   under the old calibration names a different shape under the new one. The rest pose has to be
-  recorded again, and a `.duck` or a remembered note that names an angle names a different pose
+  recorded again, and a `.glot` or a remembered note that names an angle names a different pose
   afterwards. The note tells a person to calibrate folded and record the pose again. The first
   run guide and the checklist also say why the old pose goes stale, and the guide says the same
   of every task and remembered note that names an angle.
@@ -255,14 +255,14 @@ reason the old behaviour passed.
   starts from the edge rather than from the fold.
 - **Still unverified, and only the arm can settle it.** Nothing in this change has run on an
   arm yet. Whether a joint let go at the edge of its travel settles onto its fold, and whether
-  it does so gently, is the first thing a bench should watch, starting with `quackd doctor` on
+  it does so gently, is the first thing a bench should watch, starting with `roboglot doctor` on
   an arm whose pose lies past its travel: the note, a green `rest pose` row, and an arm released
   at the edge. `take_hold()` no longer rests on `TORQUE_ENABLE_HOLDS_PRESENT` for a joint
   placed past its travel, since it will not switch torque on under one. The row is still
   UNVERIFIED for every other re-enable, a connect's own included.
-- **Some readers do not say it yet.** `quackd robot show` prints the pose as recorded and not
+- **Some readers do not say it yet.** `roboglot robot show` prints the pose as recorded and not
   the reachable one, because it does not connect and so has no calibration to clip against. A
-  flock member's rest move does not narrate the note.
+  team member's rest move does not narrate the note.
 - [ADR-0036](0036-what-the-arm-does-not-say.md) and [ADR-0039](0039-an-arm-placed-by-hand.md)
   are amended rather than reversed, and each carries the amendment. The range refusal, the step
   cap and the rule that torque comes off only at the rest pose all stand. What changed is what

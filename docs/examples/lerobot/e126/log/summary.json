@@ -1,10 +1,10 @@
 {
-  "duck": "e126-monkey",
+  "glot": "e126-monkey",
   "run_name": null,
   "command": [
-    "quackd",
+    "roboglot",
     "run",
-    "D:/Development/quackd-shoot/docs/examples/lerobot/e126/monkey.duck",
+    "D:/Development/roboglot-shoot/docs/examples/lerobot/e126/monkey.glot",
     "--robot",
     "lerobot:mock",
     "--llm",

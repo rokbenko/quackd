@@ -15,8 +15,8 @@ from dataclasses import replace
 
 import pytest
 
-from quackd.passport.jws import b64url
-from quackd.passport.link import (
+from roboglot.passport.jws import b64url
+from roboglot.passport.link import (
     MAX_LINKS,
     Accept,
     CloseReason,
@@ -33,10 +33,10 @@ from quackd.passport.link import (
     new_tag,
     split,
 )
-from quackd.passport.talk import MAX_HELLO_BYTES
-from quackd.radio import PipeClosed
-from quackd.radio.fake import MemoryPipe
-from quackd.radio.links import (
+from roboglot.passport.talk import MAX_HELLO_BYTES
+from roboglot.radio import PipeClosed
+from roboglot.radio.fake import MemoryPipe
+from roboglot.radio.links import (
     Link,
     LinkChange,
     LinkDown,
@@ -49,7 +49,7 @@ from quackd.radio.links import (
     post_timeout,
     talk_inbox,
 )
-from quackd.radio.loop import LoopThread
+from roboglot.radio.loop import LoopThread
 
 A = "0001020304050607"  # dials, being the lower
 B = "08090a0b0c0d0e0f"
@@ -570,7 +570,7 @@ async def test_a_link_the_other_robot_opened_counts_for_nothing_until_a_hello_be
 
 
 async def test_a_link_this_robot_dialled_is_reported_at_once_and_its_drop_is_lost() -> None:
-    from quackd.radio.fake import FakeAir
+    from roboglot.radio.fake import FakeAir
 
     air = FakeAir()
     changes: list[LinkChange] = []

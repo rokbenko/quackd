@@ -1,4 +1,4 @@
-"""quackd's AlohaMini client against a fake host, over real loopback sockets.
+"""Roboglot's AlohaMini client against a fake host, over real loopback sockets.
 
 This is what the `zmq` backend's 🧪 in `docs/adapters/status.md` rests on. The tests that matter
 most are the ones about stopping, because this robot's own stop is incomplete: its watchdog
@@ -16,9 +16,9 @@ from collections.abc import Callable
 
 import pytest
 
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd_alohamini import AlohaMiniAdapter, zmq_host
-from quackd_alohamini.zmq_host import (
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot_alohamini import AlohaMiniAdapter, zmq_host
+from roboglot_alohamini.zmq_host import (
     LIFT_HEIGHT_KEY,
     LIFT_VEL_KEY,
     VEL_KEYS,
@@ -27,7 +27,7 @@ from quackd_alohamini.zmq_host import (
 )
 from tests.fake_alohamini_host import FakeAlohaMiniHost
 
-pytest.importorskip("zmq", reason="the alohamini zmq backend needs quackd[alohamini]")
+pytest.importorskip("zmq", reason="the alohamini zmq backend needs roboglot[alohamini]")
 
 
 async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
@@ -43,7 +43,7 @@ async def _lands(link: AlohaMiniZmq, host: FakeAlohaMiniHost, intent: Intent) ->
     """Send one intent and wait for the host to take it.
 
     The command socket is CONFLATE, so back-to-back sends collapse into the newest. That is
-    correct behaviour and quackd's merged payload survives it, but a test that wants to look
+    correct behaviour and Roboglot's merged payload survives it, but a test that wants to look
     at each payload has to let each one land."""
     seen = len(host.actions)
     ack = await link.send_intent(intent)
@@ -64,13 +64,13 @@ async def _connected(host: FakeAlohaMiniHost, **kwargs: object) -> AlohaMiniZmq:
 async def test_every_payload_carries_all_three_velocity_keys() -> None:
     """`send_action` indexes them with no default, so a payload missing one raises before the
     lift is touched and before any bus write: the entire action is discarded, arms included,
-    and the watchdog is never refreshed. Nothing quackd sends may be missing one."""
+    and the watchdog is never refreshed. Nothing Roboglot sends may be missing one."""
     with FakeAlohaMiniHost(watchdog_s=10.0) as host:
         link = await _connected(host)
         await _lands(link, host, Intent.move(vx=0.1))
         await _lands(link, host, Intent.joint({"arm_left_elbow_flex": 20.0}, 0.2))
         await _lands(link, host, Intent(kind="pose", params={"lift_height_mm": 200.0}))
-        assert host.rejected == [], "the host discarded a payload quackd sent"
+        assert host.rejected == [], "the host discarded a payload Roboglot sent"
         for action in host.actions:
             assert set(VEL_KEYS) <= set(action), f"payload without all three .vel keys: {action}"
         await link.close()
@@ -105,7 +105,7 @@ async def test_a_payload_missing_a_velocity_key_is_dropped_entirely() -> None:
 async def test_stop_zeroes_the_lift() -> None:
     """The test the plan for this adapter was built around. A stop that sends only the three
     base velocities leaves the lift's register latched, and upstream's own replay example does
-    exactly that. quackd's stop carries the lift velocity zero as well."""
+    exactly that. Roboglot's stop carries the lift velocity zero as well."""
     with FakeAlohaMiniHost(watchdog_s=10.0) as host:
         link = await _connected(host)
         await _lands(link, host, Intent(kind="pose", params={"lift_height_mm": 400.0}))
@@ -120,12 +120,12 @@ async def test_stop_zeroes_the_lift() -> None:
 
 async def test_connect_stops_before_it_does_anything_else() -> None:
     """Homing leaves full-speed descent in the lift's register and upstream's zeroing write is
-    commented out, so the lift is already travelling when quackd arrives."""
+    commented out, so the lift is already travelling when Roboglot arrives."""
     with FakeAlohaMiniHost() as host:
         assert host.lift_goal_velocity < 0, "the fake starts where home() leaves the robot"
         link = await _connected(host)
         await _until(lambda: host.lift_goal_velocity == 0)
-        assert host.actions[0][LIFT_VEL_KEY] == 0, "the first thing quackd says is stop"
+        assert host.actions[0][LIFT_VEL_KEY] == 0, "the first thing Roboglot says is stop"
         await link.close()
 
 
@@ -359,7 +359,7 @@ async def test_a_stale_reading_is_a_heartbeat_failure() -> None:
         await link.close()
 
 
-# ── what the wire tells quackd about the robot ─────────────────────────────────────────
+# ── what the wire tells Roboglot about the robot ─────────────────────────────────────────
 
 
 @pytest.mark.parametrize(("model", "expected"), [("alohamini1", 6), ("alohamini2", 7)])
@@ -404,7 +404,7 @@ async def test_a_host_with_no_cameras_loses_the_camera_verbs() -> None:
 
 async def test_a_stock_host_refuses_the_arm_verbs_instead_of_pretending() -> None:
     """As shipped, upstream disables arm torque and never re-enables it, so a joint command
-    would move nothing. quackd's own host wrapper is what turns it back on."""
+    would move nothing. Roboglot's own host wrapper is what turns it back on."""
     with FakeAlohaMiniHost(arm_torque=False) as host:
         link = await _connected(host)
         assert link.arm_torque is False

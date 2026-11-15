@@ -1,10 +1,10 @@
 """A third party's decision LLM, as one would actually ship.
 
 This is the whole contract a plugin has to meet, and it is short on purpose: the point of the
-entry point group is that quackd never has to know about you. A real one would declare itself
+entry point group is that Roboglot never has to know about you. A real one would declare itself
 in its own `pyproject.toml`:
 
-    [project.entry-points."quackd.decision_llms"]
+    [project.entry-points."roboglot.decision_llms"]
     stub = "tests.stub_decision_llm"
 
 and `tests/test_decision.py` stands in for that declaration by monkeypatching `entry_points`,

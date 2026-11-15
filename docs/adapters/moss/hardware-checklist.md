@@ -1,13 +1,13 @@
 # MOSS: the order to try it in
 
-quackd has never driven a MOSS rover. This is the order to find out in, written so that each
+Roboglot has never driven a MOSS rover. This is the order to find out in, written so that each
 step can only fail in a way you can recover from. The maker's own rule comes first: "Put it on
 blocks for the first run". **Tracks off the ground until step 6, and back on blocks for the
 arm.**
 
 MOSS is a prototype, 4.2 kg by the maker's figure for the V0.3 build with the V0.6 hull not yet
 weighed, with a lithium battery and, in the maker's words, no certified protection. A turn on the
-spot runs both tracks at full power whatever quackd asked, and the arm's torque goes off whenever
+spot runs both tracks at full power whatever Roboglot asked, and the arm's torque goes off whenever
 its run ends. Read [the adapter's page](README.md) first, the stop contract above all.
 
 ## Before you power anything
@@ -16,29 +16,29 @@ its run ends. Read [the adapter's page](README.md) first, the stop contract abov
   maker's cycle moves the arm out over the front and back over the bin, and nothing checks the
   scene on the way.
 - **Know where the emergency stop button is** (the LA16 in MOSS's BOM), and what it cuts on your
-  build. Nothing in quackd can tell you that.
+  build. Nothing in Roboglot can tell you that.
 - **Know what drops the arm.** `tools/moss-fly.sh stop` ends every dimOS run, the arm's included,
   and the arm's adapter turns its torque off as its run ends. The cockpit runs it when you stop
-  the stack from its page, and its idle stop runs it after 300 s idle. quackd never does. You
-  may have to, so support the arm first. quackd sends nothing while one of its prompts waits,
+  the stack from its page, and its idle stop runs it after 300 s idle. Roboglot never does. You
+  may have to, so support the arm first. Roboglot sends nothing while one of its prompts waits,
   the cockpit's idle keepalive included, so stow the arm before you leave a prompt open.
 
 ## The cockpit and the bridge, with nothing moving
 
 On the rover, start a stack first, `moss-explore` for now and without `EXPLORE=1`, then the arm's
-coordinator, then quackd's bridge, as [the adapter's page](README.md#before-it-will-answer) and
+coordinator, then Roboglot's bridge, as [the adapter's page](README.md#before-it-will-answer) and
 [`bridge/moss/README.md`](../../../bridge/moss/README.md) say. On the laptop, the token and the
 tunnel:
 
 ```bash
-export QUACKD_MOSS_TOKEN="$(ssh <rover> cat /etc/quackd/moss-bridge.token)"
+export ROBOGLOT_MOSS_TOKEN="$(ssh <rover> cat /etc/roboglot/moss-bridge.token)"
 ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 ```
 
-1. **The cockpit answers, and quackd connects.**
+1. **The cockpit answers, and Roboglot connects.**
 
    ```bash
-   quackd doctor --robot moss:cockpit --address http://127.0.0.1:8904
+   roboglot doctor --robot moss:cockpit --address http://127.0.0.1:8904
    ```
 
    `doctor` connects, `list-verbs` does not. Read back which verbs exist, the stack it found and
@@ -47,7 +47,7 @@ ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 2. **The bridge's own word.** Through the same tunnel:
 
    ```bash
-   curl -s -H "X-Quackd-Token: $QUACKD_MOSS_TOKEN" http://127.0.0.1:9876/hello
+   curl -s -H "X-Roboglot-Token: $ROBOGLOT_MOSS_TOKEN" http://127.0.0.1:9876/hello
    ```
 
    Check that `publisher.loaded` is true and names `/tele_cmd_vel` on `moss-explore`, that
@@ -58,27 +58,27 @@ ssh -L 8904:127.0.0.1:8904 -L 9876:127.0.0.1:9876 <rover>
 
 ## Talking to it, still on blocks
 
-There is no command that runs one verb. Either drive quackd from an MCP client
-(`quackd serve-mcp --robot moss:cockpit --address http://127.0.0.1:8904`, then
+There is no command that runs one verb. Either drive Roboglot from an MCP client
+(`roboglot serve-mcp --robot moss:cockpit --address http://127.0.0.1:8904`, then
 `robot_run_verb`, with `--yes` for a verb of the `confirm` class), which is what these steps
 assume, or give an LLM a goal narrow enough to reach one verb.
 
 3. **`moss-lookout`, which moves nothing.**
 
    ```bash
-   quackd run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904 --llm fake
+   roboglot run moss-lookout --robot moss:cockpit --address http://127.0.0.1:8904 --llm fake
    ```
 
    It should say what the nose camera sees and stop.
 4. **A soft stop mid goal.** `drive_to` with `x_m` 0.5. On blocks the tracks turn and the rover
    goes nowhere, so the planner keeps driving. Send `stop`: the tracks stop within the ramp,
    half a second with MOSS's launcher, and the cockpit's page shows the goal gone.
-5. **Kill quackd mid `move`.** `move` with `vx` 0.1 for ten seconds, then kill the quackd process
+5. **Kill Roboglot mid `move`.** `move` with `vx` 0.1 for ten seconds, then kill the Roboglot process
    outright (`kill -9`, or End task), so no clean stop goes out. The bridge's own deadman stops
    the tracks 0.3 s after the last twist, plus the ramp. If they keep turning, stop here. Watch
    which way they turn first: a positive `vx` is forward. If they turn the way that drives the
    rover backwards, as the maker's own rover did, the stack needs `MOSS_TRACK_SIGN=-1` in its
-   `robot.env`, and every twist quackd sends drives the other way until it has it.
+   `robot.env`, and every twist Roboglot sends drives the other way until it has it.
 
 ## On the floor
 
@@ -91,9 +91,9 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
    rover actually stopped.
 8. **`explore` for one minute,** in a room. The launcher keeps the explorer within 4 m of where
    exploring started unless you set `MOSS_EXPLORE_RADIUS_M`.
-9. **Kill quackd mid `explore`.** The bridge halts the exploration three missed keepalives
+9. **Kill Roboglot mid `explore`.** The bridge halts the exploration three missed keepalives
    after the last one, within three seconds, since every keepalive declares the bridge's own
-   1 s cap: `stop_explore_cmd`, `stop_movement` and a zero. A quackd alive but wedged sends no
+   1 s cap: `stop_explore_cmd`, `stop_movement` and a zero. A Roboglot alive but wedged sends no
    keepalive either, and is halted the same way. Without the bridge nothing would, and the
    explorer would go on to its radius.
 
@@ -112,7 +112,7 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
     The bridge then watches it for 12 s and refuses a cycle meanwhile, so `stow_arm` after that
     brings it home along the cycle's own return. A stop whose cancel finds nothing executing,
     the end of a `move` among them, starts no watch: `pick_and_drop` right after a `move` runs.
-12. **Kill quackd mid cycle.** The bridge cancels the cycle that session started three missed
+12. **Kill Roboglot mid cycle.** The bridge cancels the cycle that session started three missed
     keepalives later, and the arm holds. Then `stow_arm` from a fresh session, or support the
     arm and stop its run.
 
@@ -120,9 +120,9 @@ Tracks down, and a hand on the emergency stop for every step that moves the base
 
 13. **`collect_litter`, then stop it.** Start the stack with `tools/moss-fly.sh litter`, without
     `EXPLORE=1`, with the arm's coordinator running. `collect_litter` is `dangerous`, so it
-    needs a `.duck` of your own that allows it, run in a terminal where you answer its confirm
+    needs a `.glot` of your own that allows it, run in a terminal where you answer its confirm
     yourself. Give it a minute with one can in view, then press `q`, or Ctrl-C, in the terminal
-    the run is in: quackd's kill switch sends `stop`. The mission's stop goes out first and the
+    the run is in: Roboglot's kill switch sends `stop`. The mission's stop goes out first and the
     base stops at once, then its own pick script is ended and the arm holds, and the run ends
     with a note that the mission is stopped and runs again only after the stack restarts. If the
     note says the stop was not confirmed, stop the stack on the rover with the arm supported.
@@ -135,7 +135,7 @@ took to start in step 10, whether the arm held in steps 11 and 12, and whether t
 was confirmed in step 13. And anything that made the rover or the arm move in a way this page
 did not predict. The adapter page's "How to help" says where that goes.
 
-Attach `runs/<timestamp>-<name>/terminal.txt` from whichever `quackd run` you did. It is the
+Attach `runs/<timestamp>-<name>/terminal.txt` from whichever `roboglot run` you did. It is the
 whole session as plain text, opening with the command that started it and the version that ran
 it. Send `transcript.jsonl` beside it when the question is about one record rather than the
 session. The steps you drove from an MCP client have neither, and there the record is the chat

@@ -1,7 +1,7 @@
 # The passport, member by member
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
+> Spec 1.0. Roboglot 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
 > is built and what has run.
 
 A passport is one small JSON document about a robot, signed by its owner: who it is, whose it is,
@@ -27,7 +27,7 @@ Six members are required, and this is all of them, [vectors/minimal.json](vector
 }
 ```
 
-It is 240 bytes written compactly, the way quackd signs it. A reader learns there is a robot called
+It is 240 bytes written compactly, the way Roboglot signs it. A reader learns there is a robot called
 `g1-edu-01`, that its key is the `id`, that the key in `owner.id` vouches for it, and for how long.
 Everything else is optional, and a robot adds what its owner can say honestly.
 
@@ -132,14 +132,14 @@ without interpreting it, so a robot from next year never makes a passport unread
 
 Then the numbers: `mass_kg`, `height_m`, `length_m`, `width_m`, `payload_kg`, `reach_m`,
 `endurance_min` and `max_speed_mps`. Each is a **figure**: a number, or a number with how sure the
-writer is, `official`, `estimate` or `measured`, and optionally a source, the words quackd's datasheet
+writer is, `official`, `estimate` or `measured`, and optionally a source, the words Roboglot's datasheet
 has used since [ADR-0032](../adr/0032-datasheets-and-the-verdict.md), because a number without a
 source is a rumour. An absent figure is **not published**, never zero. Units are SI and live in the
 name, and `max_speed_mps` is the fastest the robot moves as its software is set up now.
 
 ### `skills`
 
-What the robot can do, as names. Eight mean the same on every robot that lists them, quackd's core
+What the robot can do, as names. Eight mean the same on every robot that lists them, Roboglot's core
 verbs: `stop`, `observe`, `report_state`, `move`, `go_to`, `search_scan`, `approach_and` and `say`
 ([spec section 2.4](spec.md#24-skills-and-courtesy)). Any other name is a label a reader may show and
 never interprets. A robot whose software can stop it should list `stop`.
@@ -176,7 +176,7 @@ to the robot.
 ### `issued` and `expires`
 
 When the owner signed the passport, and until when the signature holds: both required, `expires`
-at most 400 days after `issued`, and 365 days when quackd signs unless `--days` says otherwise. A
+at most 400 days after `issued`, and 365 days when Roboglot signs unless `--days` says otherwise. A
 reader refuses a passport past its `expires`, or with an `issued` more than five minutes ahead of its
 own clock, so a robot needs a roughly right clock ([trust.md](trust.md#the-owner-signs-the-passport)).
 
@@ -205,7 +205,7 @@ Measured from [the vectors](vectors/README.md).
 - **Live state**, where the robot is or what it is doing: what changes while it runs travels in the
   `hello`.
 - **Coordinates**, since two robots that have just met share no frame of reference
-  ([ADR-0020](../adr/0020-heterogeneous-flocks.md)).
+  ([ADR-0020](../adr/0020-heterogeneous-teams.md)).
 - **Personal data**, of which nothing is required ([privacy.md](privacy.md)).
 - **Secrets**, ever: a passport is shown to any robot that says hello.
 - **Free-form descriptions**, since text a stranger wrote is text another robot's LLM
@@ -213,10 +213,10 @@ Measured from [the vectors](vectors/README.md).
 
 ## From the robot's file
 
-<a id="from-a-quackd-manifest-to-a-passport"></a>
+<a id="from-a-roboglot-manifest-to-a-passport"></a>
 
-quackd builds the passport from the passport section of the robot's `robot.yaml`, which the wizard
-wrote and the owner signs ([quackd.md](quackd.md#robotyaml-the-one-file)):
+Roboglot builds the passport from the passport section of the robot's `robot.yaml`, which the wizard
+wrote and the owner signs ([roboglot.md](roboglot.md#robotyaml-the-one-file)):
 
 | `robot.yaml` | Passport |
 |---|---|
@@ -227,11 +227,11 @@ wrote and the owner signs ([quackd.md](quackd.md#robotyaml-the-one-file)):
 | `passport.skills`, `passport.cannot`, `passport.safety` | `skills`, `cannot`, `safety` |
 | the robot key the wizard made | `id` |
 | the owner key that signs | `owner.id` |
-| the board quackd found | `board` |
+| the board Roboglot found | `board` |
 | the moment of signing, and `--days` | `issued`, `expires` |
 
-When `robot.adapter` names a body quackd drives, its manifest supplies the body, the skills and
-the courtesies, as quackd has built passports from manifests since 0.23.0, and the file the rest. A
+When `robot.adapter` names a body Roboglot drives, its manifest supplies the body, the skills and
+the courtesies, as Roboglot has built passports from manifests since 0.23.0, and the file the rest. A
 body with no adapter, which only talks, offers no courtesy. A manifest's `carries_kg` stays out:
 `body` is what section 2.3 of the specification lists, and a back load is not one of its members
 yet ([ADR-0079](../adr/0079-what-rides-on-a-bodys-back-is-a-figure-and-an-unset-one-is-not-on-the-wire.md)).

@@ -1,5 +1,5 @@
 """The page itself, driven headlessly through Streamlit's AppTest: its screens, its token, and a
-goal, a chat and a Stop run through it end to end (`quackd.webui.app`).
+goal, a chat and a Stop run through it end to end (`roboglot.webui.app`).
 
 Skipped where Streamlit is not installed, which is every job of CI's test matrix: the CI job `ui`
 installs the extra and runs this file."""
@@ -19,10 +19,10 @@ pytest.importorskip("streamlit")
 
 from streamlit.testing.v1 import AppTest
 
-from quackd.webui import jobs, launch, state, widgets
+from roboglot.webui import jobs, launch, state, widgets
 from tests.test_front_run import _gated_duck
 
-APP = str(Path(__file__).resolve().parents[1] / "quackd" / "webui" / "app.py")
+APP = str(Path(__file__).resolve().parents[1] / "roboglot" / "webui" / "app.py")
 SCREENS = ("setup", "goal", "chat", "history", "robots", "memory", "policies")
 
 
@@ -30,7 +30,7 @@ def test_setup_keeps_the_llm_a_setup_saved_before_the_rename_chose(page: Path) -
     """Setup is where the page opens. It wrote the vendor's first LLM over a choice saved under
     the picker's old name, so the next goal or chat would have billed that LLM, with nothing
     said. The LLM here is the vendor's second, since the first would pass by accident."""
-    from quackd.webui import catalog
+    from roboglot.webui import catalog
 
     chosen = [llm.id for llm in catalog.llms("anthropic")][1]
     saved = {"_vendor": "anthropic", "_model": chosen, "llm": f"anthropic:{chosen}"}
@@ -42,7 +42,7 @@ def test_setup_keeps_the_llm_a_setup_saved_before_the_rename_chose(page: Path) -
 
 
 def test_history_says_turns_of_a_run_that_asked_no_llm() -> None:
-    from quackd.webui.screens.history import _caption
+    from roboglot.webui.screens.history import _caption
 
     run = {"outcome": "success", "steps": 3, "llm_calls": 5, "wall_s": 0.4, "cost_usd": 0.0}
     assert _caption({**run, "provider": "vla"}) == (
@@ -80,11 +80,11 @@ def page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
 def run_screen(name: str) -> None:
     import importlib
 
-    from quackd.webui import widgets
+    from roboglot.webui import widgets
 
     widgets.style()
     widgets.sync()
-    importlib.import_module(f"quackd.webui.screens.{name}").screen()
+    importlib.import_module(f"roboglot.webui.screens.{name}").screen()
     widgets.floating_stop()
 
 
@@ -146,7 +146,7 @@ def test_the_sidebar_gives_a_phone_the_address_with_its_token_and_says_how_on_lo
     at = AppTest.from_file(APP, default_timeout=120)
     at.run()
     (shown,) = [e for e in at.sidebar.expander if e.label == "Open on your phone"]
-    assert "start it with quackd ui --bind 0.0.0.0" in " ".join(c.value for c in shown.caption)
+    assert "start it with roboglot ui --bind 0.0.0.0" in " ".join(c.value for c in shown.caption)
     address = "http://192.168.1.23:8501/?token=s3cret"
     monkeypatch.setattr(
         launch,
@@ -229,7 +229,7 @@ def test_a_paid_endpoint_starts_only_once_its_box_is_ticked_and_then_with_yes(
 
 
 def test_setup_says_before_a_check_that_connecting_the_arm_drops_its_torque() -> None:
-    """The check is `quackd robot list --probe` for one robot, and the arm's connect takes torque
+    """The check is `roboglot robot list --probe` for one robot, and the arm's connect takes torque
     off every motor for a moment: an arm holding itself up can drop."""
     for name, value in (("_robot_from", "adapter"), ("_adapter", "lerobot"), ("_backend", "real")):
         state.setup().set(name, value)
@@ -241,11 +241,11 @@ def test_setup_says_before_a_check_that_connecting_the_arm_drops_its_torque() ->
 
 def test_the_same_as_line_names_only_what_was_chosen_and_a_vla_only_when_chosen() -> None:
     at = _screen("setup")
-    lines = [c.value for c in at.code if c.value.startswith("quackd ")]
+    lines = [c.value for c in at.code if c.value.startswith("roboglot ")]
     assert lines and not any("--controller" in line for line in lines), lines
     next(s for s in at.selectbox if s.label == "Vendor").select("anthropic").run()
     next(s for s in at.segmented_control if s.label == "Who flies it").set_value("vla").run()
-    goal = next(c.value for c in at.code if c.value.startswith("quackd run"))
+    goal = next(c.value for c in at.code if c.value.startswith("roboglot run"))
     assert "--controller vla" in goal
     assert "--llm" not in goal, "run refuses an LLM's flag beside --controller vla"
 
@@ -306,7 +306,7 @@ def test_a_goal_runs_from_the_page_to_its_outcome() -> None:
     next(b for b in at.button if b.label == "Run").click().run()
     table = jobs.table()
     (job,) = table.all()
-    assert job.kind == "goal" and job.argv[3:5] == ["quackd", "run"]
+    assert job.kind == "goal" and job.argv[3:5] == ["roboglot", "run"]
     _until(at, lambda: not job.running)
     at.run()
     assert [s.value for s in at.success] == ["success: ball displaced by the kick"]
@@ -353,7 +353,7 @@ def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:
     key.input("sk-ant-very-secret-key").run()
     assert state.setup().keys["ANTHROPIC_API_KEY"] == "sk-ant-very-secret-key"
     lines = " ".join(c.value for c in at.code)
-    assert "quackd run" in lines and "--llm anthropic" in lines
+    assert "roboglot run" in lines and "--llm anthropic" in lines
     assert "sk-ant-very-secret-key" not in lines
     assert "sk-ant-very-secret-key" not in (state.setup().path or Path()).read_text(
         encoding="utf-8"
@@ -364,14 +364,14 @@ def test_the_robots_screen_shows_a_robots_type_and_asks_for_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """An SO-100 and an SO-101 are both `lerobot:real`, so the page could neither show which a
-    robot is nor register one as the other: `quackd robot add --robot-type` had no field here."""
+    robot is nor register one as the other: `roboglot robot add --robot-type` had no field here."""
     import os
     import types
 
-    from quackd.registry import Registry, RobotEntry
-    from quackd.webui import jobs
+    from roboglot.registry import Registry, RobotEntry
+    from roboglot.webui import jobs
 
-    Registry(os.environ["QUACKD_REGISTRY_DIR"]).add_robot(
+    Registry(os.environ["ROBOGLOT_REGISTRY_DIR"]).add_robot(
         RobotEntry(name="small", spec="lerobot:real", address="COM6", robot_type="so100_follower")
     )
     sent: list[list[str]] = []

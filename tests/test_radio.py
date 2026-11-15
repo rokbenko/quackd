@@ -12,8 +12,8 @@ from typing import Any
 
 import pytest
 
-import quackd.radio as radio
-from quackd.radio import (
+import roboglot.radio as radio
+from roboglot.radio import (
     ONBOARD_INSTALL,
     NoRadio,
     RadioStatus,
@@ -82,10 +82,10 @@ def test_bluez_without_the_extra_names_the_extra_and_imports_nothing_bluetooth(
     with pytest.raises(RadioUnavailable) as refused:
         open_radio("bluez")
     assert refused.value.state == "not-installed"
-    assert refused.value.hint == ONBOARD_INSTALL == 'uv tool install "quackd[onboard]"'
+    assert refused.value.hint == ONBOARD_INSTALL == 'uv tool install "roboglot[onboard]"'
     for name in radio.BLUEZ_PACKAGES:
         assert name in str(refused.value)
-    assert not [m for m in set(sys.modules) - before if m.startswith("quackd.radio.bluez")]
+    assert not [m for m in set(sys.modules) - before if m.startswith("roboglot.radio.bluez")]
 
 
 def test_a_radio_nobody_wrote_is_a_value_error() -> None:
@@ -109,7 +109,7 @@ def test_on_linux_with_the_extra_bluez_is_the_real_radio_built_and_not_started(
     for name in radio.BLUEZ_PACKAGES:
         pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
     monkeypatch.setattr(platform, "system", lambda: "Linux")
-    from quackd.radio.bluez.radio import BlueZRadio
+    from roboglot.radio.bluez.radio import BlueZRadio
 
     built = open_radio("bluez", adapter="hci1", bus="session")
     assert isinstance(built, BlueZRadio) and built.kind == "bluez" and built.adapter == "hci1"
@@ -119,8 +119,8 @@ def test_on_linux_with_the_extra_bluez_is_the_real_radio_built_and_not_started(
 def test_a_central_gone_closes_only_the_links_this_robot_dialled_to_it() -> None:
     for name in radio.BLUEZ_PACKAGES:
         pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
-    from quackd.radio.bluez.core import ClientPipe
-    from quackd.radio.bluez.radio import BlueZRadio
+    from roboglot.radio.bluez.core import ClientPipe
+    from roboglot.radio.bluez.radio import BlueZRadio
 
     class Client:
         def __init__(self, address: str) -> None:
@@ -138,7 +138,7 @@ def test_a_central_gone_closes_only_the_links_this_robot_dialled_to_it() -> None
 def _bluez_radio() -> object:
     for name in radio.BLUEZ_PACKAGES:
         pytest.importorskip(name, reason="the onboard extra installs it, on Linux")
-    from quackd.radio.bluez.radio import BlueZRadio
+    from roboglot.radio.bluez.radio import BlueZRadio
 
     return BlueZRadio(bus="session")
 
@@ -147,7 +147,7 @@ async def test_every_advert_handed_in_while_one_registers_goes_out_the_newest_la
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     built: Any = _bluez_radio()
-    import quackd.radio.bluez.radio as bluez_radio
+    import roboglot.radio.bluez.radio as bluez_radio
 
     monkeypatch.setattr(bluez_radio, "ADVERT_EVERY_S", 0.0)
     gate, registered = asyncio.Event(), []
@@ -171,7 +171,7 @@ async def test_dials_at_once_pause_the_scanner_once_and_the_last_starts_it_again
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     built: Any = _bluez_radio()
-    import quackd.radio.bluez.radio as bluez_radio
+    import roboglot.radio.bluez.radio as bluez_radio
 
     calls: list[str] = []
     gates = [asyncio.Event(), asyncio.Event()]
@@ -210,7 +210,7 @@ async def test_dials_at_once_pause_the_scanner_once_and_the_last_starts_it_again
 
 
 async def test_closing_a_link_a_robot_opened_never_drops_one_this_robot_dialled_to_it() -> None:
-    from quackd.radio.bluez.core import ClientPipe
+    from roboglot.radio.bluez.core import ClientPipe
 
     built: Any = _bluez_radio()
     asked: list[str] = []

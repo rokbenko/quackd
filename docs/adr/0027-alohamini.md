@@ -1,4 +1,4 @@
-# ADR-0027: AlohaMini: quackd speaks the wire again, and ships the host that switches the arms on
+# ADR-0027: AlohaMini: Roboglot speaks the wire again, and ships the host that switches the arms on
 
 **Status:** accepted · **Date:** 2026-09-05 · Extends ADR-0017, ADR-0022 · Follows ADR-0026 · Contrasts with ADR-0024 · Implemented in 0.7 ([page](../adapters/alohamini/README.md))
 
@@ -12,7 +12,7 @@ behind for every read after it. The host's watchdog still leaves the arms alone.
 
 The AlohaMini is two follower arms on a motorised vertical lift, on a three-omniwheel
 holonomic base. Despite the name it is architecturally a LeKiwi descendant rather than an
-ALOHA one, which its own bill of materials says outright. It is quackd's second bimanual body
+ALOHA one, which its own bill of materials says outright. It is Roboglot's second bimanual body
 and its first with a vertical axis.
 
 Read from upstream source on 2026-09-05, at `liyiteng/lerobot_alohamini` commit `ab4462b`
@@ -42,7 +42,7 @@ would zero it is commented out.
 
 ## Decision
 
-- **quackd speaks the ZeroMQ host protocol and imports nothing**, for the same reason as
+- **Roboglot speaks the ZeroMQ host protocol and imports nothing**, for the same reason as
   ADR-0026 and a stronger one: there is no importable package here at all. The extra is
   `pyzmq`, shared with `xlerobot`.
 - **Speaking the wire is also the more correct choice, not merely the available one.**
@@ -57,21 +57,21 @@ would zero it is commented out.
   velocity zero the rest of the time. Neither key would leave the lift latched; both would
   freeze it. This is the single highest-value piece of defensive code in the adapter and it
   lives in one place so it cannot be got wrong twice.
-- **The first thing quackd says to this robot is a stop**, because homing left it descending.
+- **The first thing Roboglot says to this robot is a stop**, because homing left it descending.
 - **`stop` zeroes the wheels and the lift, repeats itself, and leaves every arm goal alone.**
   It repeats because `stop_base` writes with `num_retry=0` on a bus it shares with the lift. It
-  leaves the arm goals alone because the goals already held are what quackd last asked for,
+  leaves the arm goals alone because the goals already held are what Roboglot last asked for,
   while a hold rebuilt from the latest observation would be built from a reading several cycles
   old, and a stale position sent to a servo moves an arm rather than holding one. That lesson
   came from ADR-0026's own bring-up.
-- **quackd ships a host wrapper, and this is the second time.** `bridge/alohamini/` holds a
+- **Roboglot ships a host wrapper, and this is the second time.** `bridge/alohamini/` holds a
   ~120-line wrapper that runs upstream's own host loop with arm torque enabled, the lift
-  stopped, and three `quackd_` fields in every observation. It wraps rather than reimplements:
+  stopped, and three `roboglot_` fields in every observation. It wraps rather than reimplements:
   upstream's loop reads the cameras, the currents and the over-current trip, and transcribing
   that would mean owning a copy that drifts. This is not ADR-0024's situation, where upstream
   had no network API at all; here the API exists and only the torque is missing.
 - **`arm_torque` is a precondition, not an assumption.** Against a stock host the three arm
-  verbs refuse with a message naming the fix. quackd asserts torque from a field its own
+  verbs refuse with a message naming the fix. Roboglot asserts torque from a field its own
   wrapper puts on the wire, which is honest about what it actually knows, and the refusal is
   better than commanding joints that would not move.
 - **`say` and `gaze` are not declared, and neither is a battery or odometry.** No speaker, no
@@ -88,7 +88,7 @@ would zero it is commented out.
 
 ## Consequences
 
-- The wire is exercised end to end against a fake host quackd wrote from upstream's source, on
+- The wire is exercised end to end against a fake host Roboglot wrote from upstream's source, on
   real loopback sockets, on every CI platform. That fake reproduces the bugs deliberately, and
   it is what makes `test_stop_zeroes_the_lift` mean something: a naive three-key stop,
   which is the shape the driver invites, fails it.
@@ -96,15 +96,15 @@ would zero it is commented out.
   milliseconds on a request/reply wire, so it sent a request, gave up before a reply could
   arrive, and would have served a stale reading every single time. And `lift` sent once and let
   the watchdog end the travel.
-- quackd now depends on reading upstream correctly rather than on upstream's own client, so
+- Roboglot now depends on reading upstream correctly rather than on upstream's own client, so
   every wire fact is a VERIFIED `UpstreamRef` with a pinned line and the nine assumptions that
   remain are UNVERIFIED and named.
-- A second on-robot artifact exists, with its own version, and quackd can tell it from a stock
+- A second on-robot artifact exists, with its own version, and Roboglot can tell it from a stock
   host only by a field it adds itself. That is stated as UNVERIFIED rather than implied.
 - `alohamini:sim2d` earns the simulator row because the shared world already integrates a
   holonomic base; the lift and the arms are added in memory on top, and the manifest already
   says `holding` is commanded rather than sensed, so nothing is claimed that is not true.
-- Flock mode does not know this robot, and extending it stays out of scope.
-  Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-flocks.md): true of
-  the *coordinator* flock, whose runner is still Microduck-only. A **pilot** flock takes any
+- Team mode does not know this robot, and extending it stays out of scope.
+  Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md): true of
+  the *coordinator* team, whose runner is still Microduck-only. A **pilot** team takes any
   adapter and backend, so this robot can be a member of one today.

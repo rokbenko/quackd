@@ -11,11 +11,11 @@ the middle of a meeting, which ends for it after an hour. [discovery.md](discove
 **Bluetooth link.** A Bluetooth LE connection two robots open when they share no LAN, which carries
 their talk in small frames. [discovery.md](discovery.md#the-bluetooth-link)
 
-**Board.** The computer `quackd onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind
+**Board.** The computer `roboglot onboard` runs on: `jetson`, `generic`, `sim`, or a plugin's. Its kind
 goes into the passport as `board.kind`. [compatibility.md](compatibility.md#the-boards)
 
 **Brain.** The LLM a robot runs on, named under `brain:` in `robot.yaml`, which holds its
-meetings and its goals. [quackd.md](quackd.md#talking)
+meetings and its goals. [roboglot.md](roboglot.md#talking)
 
 **Channel.** A way two robots exchange talk: an HTTP inbox on a LAN, or a Bluetooth link.
 [talk.md](talk.md#channels)
@@ -64,7 +64,7 @@ every talk message. [spec section 4.4](spec.md#44-signed-passports)
 [trust.md](trust.md#the-tiers)
 
 **Meeting.** A short run a robot's brain holds with a robot that came close, while it has nothing
-else to do. [quackd.md](quackd.md#meeting-another-robot)
+else to do. [roboglot.md](roboglot.md#meeting-another-robot)
 
 **Near, far.** What a robot becomes once its median signal holds above the threshold for a second,
 and once it holds 6 dB under it for 5 seconds or goes unheard for 8. A hint, never proof.
@@ -73,8 +73,8 @@ and once it holds 6 dB under it for 5 seconds or goes unheard for 8. A hint, nev
 **Nonce.** 16 random bytes each side contributes to a `hello`, which make a replayed message fail.
 [talk.md](talk.md#hello-proving-who-you-are-in-three-steps)
 
-**Onboard service.** `quackd onboard serve`, which systemd runs on the robot as
-`quackd-onboard.service`. [quackd.md](quackd.md#the-service)
+**Onboard service.** `roboglot onboard serve`, which systemd runs on the robot as
+`roboglot-onboard.service`. [roboglot.md](roboglot.md#the-service)
 
 **Owner.** Whoever looks after a robot and signs its passport, named by the owner key, with a label
 and a contact that need no personal data. [privacy.md](privacy.md#what-to-put-in-owner)
@@ -97,10 +97,10 @@ use, the way SSH treats a server. [trust.md](trust.md#pinning-trust-on-first-use
 [trust.md](trust.md#two-keys-on-every-robot)
 
 **robot.yaml.** The one file the wizard writes: the passport section the owner signs, the brain, the
-meeting task, the pins and the radio. [quackd.md](quackd.md#robotyaml-the-one-file)
+meeting task, the pins and the radio. [roboglot.md](roboglot.md#robotyaml-the-one-file)
 
 **Robots nearby.** What a robot's brain sees, in its observation, about the robots near it.
-[quackd.md](quackd.md#talking)
+[roboglot.md](roboglot.md#talking)
 
 **RSSI.** Received signal strength, in dBm, which every advert arrives with.
 [discovery.md](discovery.md#near-signal-strength)
@@ -109,7 +109,7 @@ meeting task, the pins and the radio. [quackd.md](quackd.md#robotyaml-the-one-fi
 [trust.md](trust.md#two-robots-of-the-same-owner)
 
 **Session.** What a `hello` opens: the two ids and both nonces. It ends with `bye`, or after ten
-quiet minutes in quackd. [spec section 6.3](spec.md#63-hello)
+quiet minutes in Roboglot. [spec section 6.3](spec.md#63-hello)
 
 **Short id.** The first 8 bytes of the SHA-256 of a public key, as 16 hex characters: what a person
 names a robot by, and what a LAN record carries. A hint, never proof.

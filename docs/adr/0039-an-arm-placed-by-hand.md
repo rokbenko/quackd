@@ -1,6 +1,6 @@
-# ADR-0039: The one place quackd lets go of a robot
+# ADR-0039: The one place Roboglot lets go of a robot
 
-**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (which said quackd never disables torque) and [ADR-0012](0012-safety-executor.md) (the kill switch, and what a second Ctrl-C means) · Implemented in `quackd/agent/loop.py`, `quackd/safety.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
+**Status:** accepted, amended · **Date:** 2026-09-18 · Extends [ADR-0036](0036-what-the-arm-does-not-say.md) (which said Roboglot never disables torque) and [ADR-0012](0012-safety-executor.md) (the kill switch, and what a second Ctrl-C means) · Implemented in `roboglot/agent/loop.py`, `roboglot/safety.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 **Amended 2026-09-23 by [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md):** "the
 recorded rest pose" in the first decision below now means that pose as far as this arm's
@@ -20,16 +20,16 @@ and left to its servo, with the read-back to catch it, and that could be the lar
 motions. ADR-0045 has the whole of it.)
 
 **Amended 2026-09-24:** the rule for an arm a take-hold refused, whatever refused it. While an
-arm is, or may be, in a person's hands, quackd writes it no goal, does not move it and does not
+arm is, or may be, in a person's hands, Roboglot writes it no goal, does not move it and does not
 switch its torque on again on its own, and it tells the person torque is off only where nothing
 was sent or a read said so. A take-hold refused before its torque write went out (a joint placed
 past its travel, a closed transport, nothing to hold), or one whose read after that write found
-every motor off, left the arm as the release did, limp, and the person is told quackd did not
+every motor off, left the arm as the release did, limp, and the person is told Roboglot did not
 take hold and the arm is still in their hands, or, where the take-hold's own read found the
 whole arm at its rest pose with every motor off, that it is still limp at its rest pose and
-which joints to lift inside their travel for quackd to take hold. One refused after it (a torque
+which joints to lift inside their travel for Roboglot to take hold. One refused after it (a torque
 register that did not answer, a torque call that raised) may have left the arm energised, and
-the person is told quackd could not confirm whether it has torque, to hold it as though it may
+the person is told Roboglot could not confirm whether it has torque, to hold it as though it may
 move or drop, and to cut its power to be sure, and one whose read found motors on beside others
 off is told which joints hold and that the rest is limp, to keep hold of the arm and to cut its
 power (`HandResult.energised` says which, `torque_on` which motors). That speaks for every
@@ -50,7 +50,7 @@ amendment above said the teardown after a refusal "closes on the note for an arm
 hands, never on the one about torque left on", and a person who moved the joint back inside its
 travel had torque switched on under their hand by the stop or by the stall of the rest move,
 with nothing said, and the run closed on torque left on. And a torque register that did not
-answer at Enter was told as quackd never having taken hold, and the rest move then folded the
+answer at Enter was told as Roboglot never having taken hold, and the rest move then folded the
 energised arm under the hands it had just told to keep hold of it. (The first version of this
 amendment told an Enter over a fold nobody lifted as an arm in the person's hands to keep hold
 of, and a read that found motors on in part as one that could not be confirmed. It left the
@@ -58,8 +58,8 @@ stop's own refusal unsaid, in `stop_error`, and judged a read by where the corou
 heartbeat read that got the bus ahead of the torque write let the close call an energised arm
 limp.)
 
-**Amended again 2026-09-23, by `quackd robot release`:** the rest pose is no longer the only
-place quackd releases an arm. A person at the arm can now ask for its torque by name, wherever
+**Amended again 2026-09-23, by `roboglot robot release`:** the rest pose is no longer the only
+place Roboglot releases an arm. A person at the arm can now ask for its torque by name, wherever
 it stands, because on the bench that day every run that got to its end kept torque on at a pose
 it could not reach and finished at the power switch. `let_go(anywhere=True)` skips the two
 refusals about the pose and nothing else: the joints are read first, the release is read back
@@ -67,11 +67,11 @@ off every motor, and the arm is in somebody's hands afterwards, so the close say
 `LIMP_IN_HAND`, or, where that read-back found motors still on, names them and says to cut the
 power (`still_holding_in_hand`), or, where nothing read the release back, says that and to cut
 the power to be sure (`UNREAD_IN_HAND`). Two things open it, and both are a person at a
-terminal. `quackd robot release NAME` warns that connecting takes torque off for a moment and
+terminal. `roboglot robot release NAME` warns that connecting takes torque off for a moment and
 that the release lets the arm fall, asks, and only then connects. A run whose last rest move
 missed, over an arm that still answered, offers the same before its close, Enter within
 `AgentLoop.RELEASE_OFFER_S` (60 s), and only where the CLI could prompt (`RunConfig.person`,
-which is not `hand_off`): never on a dry run, over MCP or in a flock. The first decision below
+which is not `hand_off`): never on a dry run, over MCP or in a team. The first decision below
 stands for `--by-hand`, which still releases at the rest pose and nowhere else, because there
 the release comes before anybody's hands are on the arm, and here the hands come first. The last
 decision stands whole: no verb, no MCP tool, and not on the `RobotAdapter` protocol. One reading
@@ -83,19 +83,19 @@ leaves the arm in a hand instead of reporting it released in nobody's, and a rea
 over a joint that kept it.
 
 **Amended 2026-10-23 by [ADR-0058](0058-letting-go-of-the-arm-means-putting-it-down-first.md):** the second door no longer opens at a
-person's first word, because it drops the arm. `quackd robot release` folds the arm to its rest
+person's first word, because it drops the arm. `roboglot robot release` folds the arm to its rest
 pose and lets go there through the first door (`let_go(asked=True)`), and a fold that misses,
 there or at the end of a run, is settled by two questions in this order: clear the arm's way and
 press Enter to fold it once more, and only if that fold misses too, Enter at a question that says
 the arm will drop and to hold it first. `let_go(anywhere=True)` is that Enter, and Enter at the
 one question asked before connecting to an arm with no rest pose. Anything but Enter keeps torque
 on. `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are gone; the waits are
-`quackd.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`, 60 s each.
+`roboglot.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`, 60 s each.
 
 ## Context
 
-Every run of an SO-101 has started the same way since the arm had an adapter: quackd drives it
-to the pose recorded with `quackd robot rest-pose`, and the pilot takes it from there. That is
+Every run of an SO-101 has started the same way since the arm had an adapter: Roboglot drives it
+to the pose recorded with `roboglot robot rest-pose`, and the pilot takes it from there. That is
 the right default and it stays the default. It is also the wrong start for most of what an arm
 on a bench is actually for. Drawing needs a pencil already in the gripper. Stacking needs a
 block already held. Anything over a sheet of paper needs the arm leaning over the paper, not
@@ -111,7 +111,7 @@ tick, and ends somewhere approximate anyway.
 The obstacle is that an arm a person can move is an arm with no torque in it, and on a
 position-controlled arm torque is the only thing holding it up.
 [ADR-0036](0036-what-the-arm-does-not-say.md) closed its decision with the flat sentence that
-quackd never disables torque, and meant it: every gap that ADR closed was a gap between an LLM
+Roboglot never disables torque, and meant it: every gap that ADR closed was a gap between an LLM
 and a servo. This is not that. A person standing at the arm with both hands on it is a
 different situation from an LLM three seconds away, and it is the only situation in which
 letting go is a service rather than a drop.
@@ -122,7 +122,7 @@ letting go is a service rather than a drop.
   `close()` already trusts.** `let_go()` refuses anywhere else, naming what is out of place
   (`the arm is not at its rest pose (...), and an arm held up by torque alone falls when
   torque goes`). The test is `at_rest`, which is the same read `close()` makes before it lets
-  `disable_torque_on_disconnect` stay true: quackd has been dropping torque at that pose at
+  `disable_torque_on_disconnect` stay true: Roboglot has been dropping torque at that pose at
   the end of every ordinary run since [ADR-0036](0036-what-the-arm-does-not-say.md), so it is
   the one pose this repository already treats as safe to leave an arm in with nothing holding
   it. So `--by-hand` drives to the rest pose first and releases there, and the person lifts
@@ -147,7 +147,7 @@ letting go is a service rather than a drop.
   that arm as limp in somebody's hands would send a person to cut the power on a robot that
   needs nothing.
 - **Enter is read through the kill switch, never with an `input()` of its own.** The switch
-  already runs the only thread quackd points at stdin. A second reader would race it for the
+  already runs the only thread Roboglot points at stdin. A second reader would race it for the
   same keystroke and whichever lost would sit forever on a line the other had taken. So
   `KillSwitch` grew `entered`, `pressed`, a `presses` count and `wait_for_enter()`, and
   `_watch_keys` now loops until stdin ends instead of stopping at the first `q`: a run that
@@ -166,7 +166,7 @@ letting go is a service rather than a drop.
   cost of not waiting is a pencil driven into the bench as the arm folds.
 - **The second Ctrl-C is caught in that one window and nowhere else.**
   [ADR-0012](0012-safety-executor.md) hands SIGINT back after the first press on purpose, so a
-  human who is not convinced the first one worked is never holding a key quackd has swallowed,
+  human who is not convinced the first one worked is never holding a key Roboglot has swallowed,
   and a second press raises straight through the teardown. `_hand_back()` catches
   `CancelledError` and `KeyboardInterrupt` on its own wait, because there the press means
   "skip the question", not "abandon the arm energised with no record written". The gripper is
@@ -202,10 +202,10 @@ letting go is a service rather than a drop.
   budget after the person is done, because an arm can stand waiting while somebody goes to find
   a pencil and that used to be spent out of the `max_minutes` the LLM gets for the task.
 - [ADR-0036](0036-what-the-arm-does-not-say.md) is amended rather than reversed, and carries
-  the amendment. What that ADR said quackd never does is now one clause shorter and no more:
+  the amendment. What that ADR said Roboglot never does is now one clause shorter and no more:
   the adapter still never calibrates, still refuses an arm with no calibration file, and still
   keeps LeRobot's default of dropping torque on `disconnect()`.
-- **What is now UNVERIFIED, and only an arm can settle it.** Every release quackd has performed
+- **What is now UNVERIFIED, and only an arm can settle it.** Every release Roboglot has performed
   was against `lerobot:mock`, which cannot sag, cannot slip and cannot be lifted. Four things
   need a bench: what a Feetech servo does with its goal on re-enable
   (`TORQUE_ENABLE_HOLDS_PRESENT`); whether an SO-101 at its recorded fold really does stand
@@ -220,7 +220,7 @@ letting go is a service rather than a drop.
   that does not answer straight after the release is treated as a release that took: the other
   reading ends with `close()` telling a person holding a limp arm that it is holding itself up.
   A torque register that does not answer after `enable_torque()` is treated as no hold at all
-  and refuses, because the other reading ends with quackd telling that same person they can let
+  and refuses, because the other reading ends with Roboglot telling that same person they can let
   go. In both the rule is the same one: pick the answer that does not get the arm dropped, and
   never the one that sounds more decisive. Each costs something. A corrupt packet at the
   release can report an arm released that is still energised; a corrupt packet at the hold ends

@@ -1,6 +1,6 @@
-"""`quackd serve-mcp --flock NAME` and `--robot NAME`: the fleet, built from the registry.
+"""`roboglot serve-mcp --team NAME` and `--robot NAME`: the fleet, built from the registry.
 
-No new tools. A stored flock and `--robots name=spec` spell the same fleet; what the registry
+No new tools. A stored team and `--robots name=spec` spell the same fleet; what the registry
 adds is that each member brings its own address, token and camera, and its own memory file.
 """
 
@@ -12,9 +12,9 @@ from typing import Any
 
 import pytest
 
-from quackd.adapters.base import AdapterError
-from quackd.mcp_server import fleet_from_flags
-from quackd.registry import Registry, RobotEntry, StoredFlock
+from roboglot.adapters.base import AdapterError
+from roboglot.mcp_server import fleet_from_flags
+from roboglot.registry import Registry, RobotEntry, StoredTeam
 from tests.test_mcp_fleet import _data, connected
 
 
@@ -23,14 +23,14 @@ def _seed(tmp_path: Path, robots: dict[str, dict[str, Any]], members: list[str])
     for name, fields in robots.items():
         registry.add_robot(RobotEntry(name=name, **fields))
     if members:
-        registry.add_flock(StoredFlock(name="kitchen", members=members))
+        registry.add_team(StoredTeam(name="kitchen", members=members))
     return registry
 
 
 # ── building the fleet ──────────────────────────────────────────────────────────────────
 
 
-def test_a_stored_flock_gives_every_member_its_own_endpoint(tmp_path: Path) -> None:
+def test_a_stored_team_gives_every_member_its_own_endpoint(tmp_path: Path) -> None:
     _seed(
         tmp_path,
         {
@@ -43,9 +43,9 @@ def test_a_stored_flock_gives_every_member_its_own_endpoint(tmp_path: Path) -> N
         },
         ["duck-a", "duck-b"],
     )
-    plan = fleet_from_flags(flock="kitchen", registry_dir=str(tmp_path))
+    plan = fleet_from_flags(team="kitchen", registry_dir=str(tmp_path))
     assert list(plan.adapters) == ["duck-a", "duck-b"]
-    assert plan.default == "duck-a", "the flock's own order decides, not the first Microduck"
+    assert plan.default == "duck-a", "the team's own order decides, not the first Microduck"
     bridge = plan.adapters["duck-a"].transport
     assert bridge.address == "tcp://10.0.0.5:9871"
     assert bridge.token == "s3cret"
@@ -79,11 +79,11 @@ def test_a_registered_robot_brings_its_endpoint_and_a_flag_still_wins(tmp_path: 
 @pytest.mark.parametrize(
     ("kwargs", "needle"),
     [
-        ({"flock": "kitchen", "robot": "duck-a"}, "choose one"),
-        ({"flock": "kitchen", "robots": "a=microduck:mock"}, "choose one"),
-        ({"flock": "kitchen", "address": "tcp://x:1"}, "from the registry"),
-        ({"flock": "kitchen", "token": "x"}, "from the registry"),
-        ({"flock": "ghost"}, "no flock called 'ghost'"),
+        ({"team": "kitchen", "robot": "duck-a"}, "choose one"),
+        ({"team": "kitchen", "robots": "a=microduck:mock"}, "choose one"),
+        ({"team": "kitchen", "address": "tcp://x:1"}, "from the registry"),
+        ({"team": "kitchen", "token": "x"}, "from the registry"),
+        ({"team": "ghost"}, "no team called 'ghost'"),
     ],
 )
 def test_the_flags_that_contradict_each_other_are_refused(
@@ -94,18 +94,18 @@ def test_the_flags_that_contradict_each_other_are_refused(
         fleet_from_flags(registry_dir=str(tmp_path), **kwargs)
 
 
-def test_a_dangling_flock_is_refused_in_one_line(tmp_path: Path) -> None:
+def test_a_dangling_team_is_refused_in_one_line(tmp_path: Path) -> None:
     _seed(tmp_path, {"duck-a": {"spec": "microduck:mock"}}, ["duck-a"])
     (tmp_path / "robots.json").write_text(
         json.dumps({"version": 1, "robots": {}}), encoding="utf-8"
     )
     with pytest.raises(SystemExit, match="no longer registered"):
-        fleet_from_flags(flock="kitchen", registry_dir=str(tmp_path))
+        fleet_from_flags(team="kitchen", registry_dir=str(tmp_path))
 
 
-def test_a_flock_duck_is_still_refused_over_mcp(tmp_path: Path) -> None:
-    with pytest.raises(SystemExit, match="quackd run"):
-        fleet_from_flags(duckfile="flock-hello", registry_dir=str(tmp_path))
+def test_a_team_duck_is_still_refused_over_mcp(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit, match="roboglot run"):
+        fleet_from_flags(glotfile="team-hello", registry_dir=str(tmp_path))
 
 
 def test_two_cameras_on_a_one_camera_body_are_refused_before_the_server_starts(
@@ -121,12 +121,12 @@ def test_two_cameras_on_a_one_camera_body_are_refused_before_the_server_starts(
         )
 
 
-def test_a_flock_still_takes_its_cameras_from_the_registry(tmp_path: Path) -> None:
-    """The refusal above is about one body. A flock member's cameras are written down, so a
+def test_a_team_still_takes_its_cameras_from_the_registry(tmp_path: Path) -> None:
+    """The refusal above is about one body. A team member's cameras are written down, so a
     camera on the command line is refused for a different reason, and still refused."""
     _seed(tmp_path, {"scout": {"spec": "microduck:mock"}}, ["scout"])
     with pytest.raises(SystemExit, match="from the registry"):
-        fleet_from_flags(flock="kitchen", registry_dir=str(tmp_path), camera_url=["a://1", "b://2"])
+        fleet_from_flags(team="kitchen", registry_dir=str(tmp_path), camera_url=["a://1", "b://2"])
 
 
 def test_a_served_arm_is_built_with_the_rest_pose_it_was_registered_with(tmp_path: Path) -> None:
@@ -142,22 +142,22 @@ def test_a_served_arm_is_built_with_the_rest_pose_it_was_registered_with(tmp_pat
     plan = fleet_from_flags(robot="arm-01", registry_dir=str(tmp_path))
     assert plan.adapters["arm-01"].rest_pose == pose, "the registry's pose never reached the arm"
 
-    # a stored flock is the other door in, and a member's pose travels the same way
+    # a stored team is the other door in, and a member's pose travels the same way
     _seed(tmp_path, {"arm-02": {"spec": "lerobot:mock", "rest_pose": pose}}, ["arm-02"])
-    flock = fleet_from_flags(flock="kitchen", registry_dir=str(tmp_path))
-    assert flock.adapters["arm-02"].rest_pose == pose
+    team = fleet_from_flags(team="kitchen", registry_dir=str(tmp_path))
+    assert team.adapters["arm-02"].rest_pose == pose
 
 
 # ── serving it ──────────────────────────────────────────────────────────────────────────
 
 
-async def test_a_stored_flock_serves_and_names_its_members(tmp_path: Path) -> None:
+async def test_a_stored_team_serves_and_names_its_members(tmp_path: Path) -> None:
     _seed(
         tmp_path,
         {"duck-a": {"spec": "microduck:mock"}, "arm": {"spec": "lerobot:mock"}},
         ["duck-a", "arm"],
     )
-    plan = fleet_from_flags(flock="kitchen", registry_dir=str(tmp_path))
+    plan = fleet_from_flags(team="kitchen", registry_dir=str(tmp_path))
     async with connected(
         plan.adapters,
         manifests=plan.manifests,
@@ -190,19 +190,19 @@ async def test_an_unregistered_fleet_still_keys_memory_by_the_body(tmp_path: Pat
     assert not (tmp_path / "mem" / "a.jsonl").exists()
 
 
-def test_serve_mcp_forwards_the_flock_and_the_registry_dir(
+def test_serve_mcp_forwards_the_team_and_the_registry_dir(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from typer.testing import CliRunner
 
-    from quackd.cli import app
+    from roboglot.cli import app
 
     seen: dict[str, Any] = {}
-    monkeypatch.setattr("quackd.mcp_server.serve", lambda **kw: seen.update(kw))
+    monkeypatch.setattr("roboglot.mcp_server.serve", lambda **kw: seen.update(kw))
     result = CliRunner().invoke(
         app,
-        ["serve-mcp", "--flock", "kitchen", "--registry-dir", str(tmp_path)],
+        ["serve-mcp", "--team", "kitchen", "--registry-dir", str(tmp_path)],
     )
     assert result.exit_code == 0, result.output
-    assert seen["flock"] == "kitchen"
+    assert seen["team"] == "kitchen"
     assert seen["registry_dir"] == str(tmp_path)

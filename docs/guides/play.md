@@ -3,7 +3,7 @@
 A task can give the pilot a part to play: an animal, a person, a character, a feeling or a
 thing. The pilot acts it out with the body it has. On an arm, a cat's swipe can become a flick
 of the wrist, a T-rex's little arms a tucked elbow and a snapping gripper, and sleep a slow fold
-that stops short of the table. Play is opt-in, per task file or per run, and with it off quackd
+that stops short of the table. Play is opt-in, per task file or per run, and with it off Roboglot
 adds not a word to the prompt.
 
 It exists because the pilot's prompt says what the body is, "You are the brain of a six-joint
@@ -16,11 +16,11 @@ acting the part out with the body was the task. The decision and its history are
 
 ## Turning it on
 
-In a task file, `play: true` at `duck: 4` ([reference/duck-spec.md](../reference/duck-spec.md#play-v4)):
+In a task file, `play: true` at `glot: 4` ([reference/glot-spec.md](../reference/glot-spec.md#play-v4)):
 
 ```yaml
 ---
-duck: 4
+glot: 4
 name: t-rex
 description: Be a T-rex.
 verbs:
@@ -34,20 +34,20 @@ You are a T-rex. Show me.
 ```
 
 On the command line, `--play` turns it on for one run of any task file, a `--goal` included, and
-`--no-play` turns a file's `play: true` off for one run. Both work on `quackd run`, `quackd
-record` and `quackd preflight`, and the flag wins over the file. No environment variable and no
+`--no-play` turns a file's `play: true` off for one run. Both work on `roboglot run`, `roboglot
+record` and `roboglot preflight`, and the flag wins over the file. No environment variable and no
 field in `robots.json` sets it, so a robot never starts playing every task it is given.
 
 ```bash
-quackd run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake --play --no-memory
+roboglot run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake --play --no-memory
 ```
 
-Each member of a pilot flock plays, whether the task file or `--play` asked. These are refused,
+Each member of a pilot team plays, whether the task file or `--play` asked. These are refused,
 each with one line that says why:
 
-- a coordinator flock, `--flock N` or a task file with `flock.allocation.method: auction`, with
+- a coordinator team, `--team N` or a task file with `team.allocation.method: auction`, with
   either flag, and a task file that plays whatever the flags, since its members follow the
-  flock's plan and none of them is a pilot;
+  team's plan and none of them is a pilot;
 - `--controller vla` with `--play`, and with a file that plays, since its policy reads no prompt.
   `--no-play` turns that file's part off, and the policy then flies its `policy.instructions` as
   it would any file's.
@@ -92,7 +92,7 @@ the budgets, the confirm gates, the verdict gate with its check against the body
 the clamps, the joint travel, the heat gate and `stop`. A part unlocks nothing. What it changes is
 what the pilot chooses to do with the same verbs and limits, so a played run moves where a plain
 one might have stopped, and its rules about people, mimes and the record are prose that no gate
-reads ([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-against)).
+reads ([concepts/safety.md](../concepts/safety.md#what-roboglot-does-not-protect-against)).
 
 > [!WARNING]
 > Nothing keeps a played arm away from a person. The section asks the pilot to keep every move
@@ -104,14 +104,14 @@ reads ([concepts/safety.md](../concepts/safety.md#what-quackd-does-not-protect-a
 
 No gate holds that a played task whose real result the body cannot make still ends infeasible,
 a pack mule asked to carry a laundry basket on a Microduck. An opt-in live test asks it of a
-real LLM (`QUACKD_LIVE_LLM=1`), and that test has not run yet.
+real LLM (`ROBOGLOT_LIVE_LLM=1`), and that test has not run yet.
 
 ## Seeing it
 
 The run's header says so when play is on, and when a run turned a file's play off:
 
 ```console
-$ quackd run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake --play --no-memory
+$ roboglot run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake --play --no-memory
 +- goal --------------------------------------------------------------+
 | provider  fake (scripted:goal)                                      |
 | robot     lerobot:mock                                              |
@@ -121,21 +121,21 @@ $ quackd run --goal "You are a T-rex. Show me." --robot lerobot:mock --llm fake 
 ```
 
 The row reads `on, from the task file`, `on, from --play` or `off, from --no-play`, and a run that
-neither plays nor turned a file's play off has none. `quackd log RUN` opens with the same row,
-each member of a pilot flock says `play` in its `run` line, after its robot, and
-`quackd log RUN --prompt` shows the section. In the record, `run_start.play` holds whether the
+neither plays nor turned a file's play off has none. `roboglot log RUN` opens with the same row,
+each member of a pilot team says `play` in its `run` line, after its robot, and
+`roboglot log RUN --prompt` shows the section. In the record, `run_start.play` holds whether the
 pilot was told it may play and whose word that was, while `run_start.contract.play` stays the
-task file's own: `--play` on a `duck: 1` file plays without rewriting a contract that cannot say
+task file's own: `--play` on a `glot: 1` file plays without rewriting a contract that cannot say
 so.
 
 ## Over MCP
 
 A client's own system prompt frames an MCP pilot, so the section cannot be added to it. Loading
-a played file with `robot_load_duckfile` returns the same paragraphs as a `play` field, worded for
+a played file with `robot_load_glotfile` returns the same paragraphs as a `play` field, worded for
 a chat, and the result's `note` says to read it before the verdict. A file that does not play
 loads exactly as before. There is no `serve-mcp --play`, since it would make every file loaded in
-the session play, and a part typed into the chat gets nothing from quackd. A task file adopted at
-startup with `serve-mcp --duckfile` hands over neither its body nor its part.
+the session play, and a part typed into the chat gets nothing from Roboglot. A task file adopted at
+startup with `serve-mcp --glotfile` hands over neither its body nor its part.
 
 ## What a part cannot do
 
@@ -157,15 +157,15 @@ startup with `serve-mcp --duckfile` hands over neither its body nor its part.
   camera picture shows the arm and the space around it, so a blue thing in view can shrink every
   pose, while a person the pilot does not notice in a picture that shows that space gets no such
   care. Frame the arm and the space around it in a camera's view. Keep blue things out of the
-  primary camera's view, or use `--detector yolo` with `quackd[yolo]`, which reads a person as
+  primary camera's view, or use `--detector yolo` with `roboglot[yolo]`, which reads a person as
   `person` whatever they wear.
 - **Reach the stepper.** A decision LLM never reads the section. With `--decision-mode on` it may
   take a discrete turn such as `report_state` or `gripper`, and every pose stays the pilot's
   ([guides/decision-llms/README.md](decision-llms/README.md)).
 - **Stay out of memory.** A played run's notes and its ending are kept like any other run's, so
-  `--no-memory` on `quackd run` keeps a session of parts out of what the robot remembers.
-  `quackd record` has no such flag and keeps them in the Microduck simulator's memory unless
-  `QUACKD_MEMORY_DIR` points it elsewhere, and `quackd preflight` keeps none.
+  `--no-memory` on `roboglot run` keeps a session of parts out of what the robot remembers.
+  `roboglot record` has no such flag and keeps them in the Microduck simulator's memory unless
+  `ROBOGLOT_MEMORY_DIR` points it elsewhere, and `roboglot preflight` keeps none.
 
 > [!NOTE]
 > Played runs have not run on the arm. What they do there is measured on a bench session and

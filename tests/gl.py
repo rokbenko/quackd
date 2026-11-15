@@ -3,7 +3,7 @@
 Every rendering test in the physics suite needs one, and a bare CI runner has no GPU, no
 display and no `/dev/dri`. Skipping is right on a developer's machine. It is wrong in the job
 that exists to run these: a missing system library would turn that job green having proved
-nothing, which is the state it was added to end. `QUACKD_REQUIRE_GL=1` turns the skip into a
+nothing, which is the state it was added to end. `ROBOGLOT_REQUIRE_GL=1` turns the skip into a
 failure, and the exception text goes into the skip reason either way, so a real renderer
 regression names itself instead of disappearing.
 """
@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-REQUIRE_ENV = "QUACKD_REQUIRE_GL"
+REQUIRE_ENV = "ROBOGLOT_REQUIRE_GL"
 
 
 def require_render(world: Any, size: int = 64) -> None:

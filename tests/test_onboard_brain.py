@@ -17,8 +17,8 @@ from typing import Any
 
 import pytest
 
-from quackd.onboard import brain, config, control
-from quackd.onboard.brain import COOLDOWN_S, LINGER_S, RunSlot
+from roboglot.onboard import brain, config, control
+from roboglot.onboard.brain import COOLDOWN_S, LINGER_S, RunSlot
 
 
 class Executor:
@@ -106,7 +106,7 @@ def test_a_goal_takes_the_slot_from_a_meeting_and_never_from_a_goal() -> None:
     assert s.goal("Wait by the door.") is None
     assert meeting is not None and meeting.agent.stop_reason == brain.FOR_A_GOAL
     assert s.state()["run"] == "goal"
-    assert s.goal("Another errand.") == "a goal is running: quackd onboard stop ends it"
+    assert s.goal("Another errand.") == "a goal is running: roboglot onboard stop ends it"
     assert "joins the goal" in s.robot_near("did:c", "known")
     s.stop()
     wait_idle(s)
@@ -226,8 +226,8 @@ def test_a_stop_takes_back_the_question_a_goal_waits_on() -> None:
     slot.running = brain.Running("goal", "goal", 0.0, set(), None, front)
     slot.running.thread = thread
     try:
-        assert slot.stop("stopped by quackd onboard stop")
-        assert front.questions.closed == "stopped by quackd onboard stop"
+        assert slot.stop("stopped by roboglot onboard stop")
+        assert front.questions.closed == "stopped by roboglot onboard stop"
     finally:
         hold.set()
 

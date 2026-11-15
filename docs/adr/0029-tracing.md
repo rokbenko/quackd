@@ -2,20 +2,20 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-07 · Extends [ADR-0003](0003-three-loops.md) (the three loops are what the trace shows) and [ADR-0012](0012-safety-executor.md) (every gate the executor closes now says so) · Amends [ADR-0010](0010-providers.md) (the Anthropic request now carries a `thinking` parameter, so its reasoning has text to show) · Documented in [architecture.md](../concepts/architecture.md#trace)
 
-**Amended 2026-09-21 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** what this ADR calls the trace is now the log, because it holds every intent, every gate, three clocks, a cost per LLM call and the terminal session. `quackd/trace.py` is `quackd/log.py`, `TraceEvent` is `LogEvent`, the `Tracer` is an `EventLog`, `quackd trace` is `quackd log`, `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are `--log/--no-log` and `--log-prompt/--no-log-prompt`, the three `QUACKD_TRACE*` variables are `QUACKD_LOG`, `QUACKD_LOG_THINKING` and `QUACKD_LOG_PROMPT`, `trace_dropped` in the summary is `log_dropped`, and the MCP result's `trace` key is `log`. Every CLI and environment spelling below still works for one release and says what it is called now in a yellow line when it is read; all of them go in 0.12. The MCP key was replaced outright, because an LLM reads it off the tool description rather than a changelog, and every reader still takes `trace_dropped`, so a run directory recorded before the rename replays unchanged. Nothing else in this ADR changes.
+**Amended 2026-09-21 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** what this ADR calls the trace is now the log, because it holds every intent, every gate, three clocks, a cost per LLM call and the terminal session. `roboglot/trace.py` is `roboglot/log.py`, `TraceEvent` is `LogEvent`, the `Tracer` is an `EventLog`, `roboglot trace` is `roboglot log`, `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are `--log/--no-log` and `--log-prompt/--no-log-prompt`, the three `ROBOGLOT_TRACE*` variables are `ROBOGLOT_LOG`, `ROBOGLOT_LOG_THINKING` and `ROBOGLOT_LOG_PROMPT`, `trace_dropped` in the summary is `log_dropped`, and the MCP result's `trace` key is `log`. Every CLI and environment spelling below still works for one release and says what it is called now in a yellow line when it is read; all of them go in 0.12. The MCP key was replaced outright, because an LLM reads it off the tool description rather than a changelog, and every reader still takes `trace_dropped`, so a run directory recorded before the rename replays unchanged. Nothing else in this ADR changes.
 
 **Amended 2026-09-12 by [ADR-0033](0033-terminal-theme.md):** the "lines are ASCII first" decision below now applies where it was actually earned. The MCP tool result and every reader of `render_lines` still get exactly those bytes, frozen by `tests/golden/log_lines.json`. The terminal view renders the same events its own way, with glyphs, a rule per step and the system prompt as a block, and asks the stream it is writing to which half of the glyph table it can carry. A redirected stderr on Windows still gets `->` and `+`; a terminal that can draw an arrow gets one. Nothing else in this ADR changes.
 
-**Amended 2026-09-07:** flock mode is traced too. Each member records into its own `ducks/<name>/transcript.jsonl` and gets a view prefixed with its name; the coordinator's decisions and the planner's one LLM call print under `flock`. The decision below that deferred it is superseded; nothing else in this ADR changes.
+**Amended 2026-09-07:** team mode is traced too. Each member records into its own `robots/<name>/transcript.jsonl` and gets a view prefixed with its name; the coordinator's decisions and the planner's one LLM call print under `team`. The decision below that deferred it is superseded; nothing else in this ADR changes.
 
 ## Context
 
-Ask quackd to walk in a circle and the terminal said three things: a header, an outcome, and
+Ask Roboglot to walk in a circle and the terminal said three things: a header, an outcome, and
 a run directory. Everything in between — which prompt the LLM got, what it reasoned, which
 verb it picked, which rule refused it, what actually went down the wire to the robot, what
 came back — existed only in `runs/<ts>/transcript.jsonl`, and only after the run had ended.
 
-That was the wrong default for this project. quackd's whole claim is that an LLM's decisions
+That was the wrong default for this project. Roboglot's whole claim is that an LLM's decisions
 are *mediated*: a contract narrows them, an executor enforces them, a steering loop turns one
 decision into a hundred intents. A person watching a robot move and unable to see any of that
 has to take the claim on faith. Worse, the first real hardware run is the moment the
@@ -25,7 +25,7 @@ Four things were missing rather than merely hidden:
 
 - **The LLM's reasoning was never captured at all.** `ProviderTurn` had no field for it.
   Anthropic returns thinking blocks whose text is empty unless the request asks for a
-  display, and quackd asked for nothing. Gemini's thought parts were being appended to the
+  display, and Roboglot asked for nothing. Gemini's thought parts were being appended to the
   answer text, so they were replayed to the LLM next turn as things it had said.
 - **The executor's decisions were invisible.** A refusal reached the LLM as a sentence and
   reached the human as nothing. Which of the seven gates fired, and on what state, was not
@@ -38,7 +38,7 @@ Four things were missing rather than merely hidden:
 
 ## Decision
 
-- **One event stream, `quackd/trace.py`.** The loop, the executor, a wrapper around the
+- **One event stream, `roboglot/trace.py`.** The loop, the executor, a wrapper around the
   transport and the MCP server emit `TraceEvent(kind, t, data)` into a `Tracer`. Nothing
   renders at the emit site.
 - **The transcript is the record and is not optional.** It is the tracer's one *record* sink,
@@ -46,7 +46,7 @@ Four things were missing rather than merely hidden:
   terminal that cannot print must never stop a robot. `--no-trace` removes an observer, never
   the record. Existing transcript kinds keep their exact shape, so every reader still works;
   the new kinds are extra lines.
-- **On by default, off with `--no-trace` or `QUACKD_TRACE=0`.** The default is read when the
+- **On by default, off with `--no-trace` or `ROBOGLOT_TRACE=0`.** The default is read when the
   command runs rather than when the module is imported, so a `.env` line counts. This is the
   one call worth arguing about, and it goes to on: the person who most needs the trace is the
   one who does not yet know they need it.
@@ -54,9 +54,9 @@ Four things were missing rather than merely hidden:
   a second time, so the compact view stands down: `--verbose` is what you get with
   `--no-trace`, and on the MCP server the executor's log drops to DEBUG. Free-text lines are
   emitted as `note` events *in addition to* `log`, never instead of it, because `log` is a
-  contract the flock's member records, the MCP logger and several tests rely on.
+  contract the team's member records, the MCP logger and several tests rely on.
 - **Over MCP the trace rides in the tool result.** MCP's logging capability is deprecated in
-  the SDK quackd depends on and is a per-request opt-in, so it is not a channel. Every call
+  the SDK Roboglot depends on and is a per-request opt-in, so it is not a channel. Every call
   that reaches an executor comes back with a `trace` list, capped at thirty lines, and the
   uncapped version goes to stderr where Claude Desktop already keeps it. The tools that never
   touch a robot get no trace: there is nothing behind the scenes to show.
@@ -83,7 +83,7 @@ Four things were missing rather than merely hidden:
 ## Consequences
 
 - **The terminal is not the record.** The console truncates thinking at 2000 characters
-  (`QUACKD_TRACE_THINKING`) and the MCP result caps at thirty lines. The transcript has all
+  (`ROBOGLOT_TRACE_THINKING`) and the MCP result caps at thirty lines. The transcript has all
   of it, always. That split is deliberate and is what keeps the default affordable.
 - **The transcript is bigger.** A twenty second `go_to` adds roughly two hundred `intent`
   lines. The file already carried one `frame` line per captured frame at 10 Hz, so this is
@@ -91,16 +91,16 @@ Four things were missing rather than merely hidden:
   kinds.
 - **Anthropic runs now send a `thinking` parameter.** Display affects visibility only, not
   what is thought or billed, and raw chain of thought is never returned by any LLM.
-- **Tests set `QUACKD_TRACE=0`.** The trace goes to stderr, and `CliRunner` folds stderr into
+- **Tests set `ROBOGLOT_TRACE=0`.** The trace goes to stderr, and `CliRunner` folds stderr into
   `output`, so every CLI assertion would otherwise search a much larger haystack. One test
   each proves the default is on and that both switches turn it off.
-- **Flock mode is unchanged.** It builds its own executors with no tracer, keeps its own
-  `flock.jsonl` and its own `--verbose`. Tracing a many-robot run is future work.
+- **Team mode is unchanged.** It builds its own executors with no tracer, keeps its own
+  `team.jsonl` and its own `--verbose`. Tracing a many-robot run is future work.
   *Superseded in part by the amendment above: each member now records into its own
-  transcript, every terminal line names its robot, and `flock.jsonl` also carries the
+  transcript, every terminal line names its robot, and `team.jsonl` also carries the
   planner's `llm_request` and `llm`, because that one LLM call belongs to no member.
   `--verbose` stands down under the trace here exactly as it does in a solo run, and
   `--no-trace` is what brings it back.*
-- **The trace shows quackd's layer, not the wire.** An adapter's keepalive, a deadman resend
+- **The trace shows Roboglot's layer, not the wire.** An adapter's keepalive, a deadman resend
   inside a daemon and an adapter's own stop-on-close are its business and appear only in its
   logs.

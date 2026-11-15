@@ -21,14 +21,14 @@ expected: >
   `✗ error:` with the bus's own words and exit 1, and each leaves a `summary.json` beside a
   `transcript.jsonl` whose last record is `run_end`. Left alone, `outcome` is `error` and `robot` is
   null; with Ctrl-C pressed during the connect, `outcome` is `aborted` and `reason` starts `kill
-  switch;`. `quackd log` on either folder reads to its end. Before it gives up, the connect may say a
+  switch;`. `roboglot log` on either folder reads to its end. Before it gives up, the connect may say a
   motor is not answering and try again, which is what the press is for.
 showed:
   - >
     The arm's power supply was off in both takes, with the USB cable in, as the card asks. So the port
     opened and no motor answered on COM3: every attempt found `{}` where six motors were expected.
   - >
-    Left alone, quackd tried three times. After each of the first two it said LeRobot closed the port
+    Left alone, Roboglot tried three times. After each of the first two it said LeRobot closed the port
     behind its failed handshake, `which writes to no motor, and connect runs again`, and after the
     third it ended `✗ error: lerobot real: connect failed 3 times`, then the bus's own words and
     `Check the arm's cables and power, and that nothing else has COM3 open (a teleoperation, a
@@ -38,7 +38,7 @@ showed:
     reason, beside a `transcript.jsonl` whose one record, and so its last, is `run_end`, 8.0 s after
     the start.
   - >
-    With Ctrl-C pressed during the connect, quackd said `kill switch: Ctrl-C` and ended after the
+    With Ctrl-C pressed during the connect, Roboglot said `kill switch: Ctrl-C` and ended after the
     first attempt: `✗ error: lerobot real: connect stopped after attempt 1 of 3, because a stop was
     asked for`, then the bus's own words, and `connect was not tried again`.
   - >
@@ -49,7 +49,7 @@ showed:
     asked: both summaries count no LLM calls.
 did_not_show:
   - >
-    The exit code was not printed, so `exit 1` is not shown, and `quackd log` was not run on either
+    The exit code was not printed, so `exit 1` is not shown, and `roboglot log` was not run on either
     folder.
   - >
     Ctrl-C landed before the first attempt failed. The take does not show a press during a later

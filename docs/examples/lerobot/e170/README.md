@@ -6,7 +6,7 @@
 
 Filmed with an external camera. The GIF plays at 5x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Partly | INFEASIBLE | 2026-11-06 | 0.31.3 |
 
@@ -15,13 +15,13 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** A goal in degrees can be a number the joint cannot reach. LeRobot does not clamp it and the servo clamps it silently, so without a check an arm told to go to 170 degrees would quietly stop short of it. quackd checks every goal against the arm's own calibrated range and refuses one outside it, and a task file can end a run when the same verb keeps failing. This example asks for 170 degrees from a joint that travels 119.6 degrees each way, and tells the LLM to keep asking, to put both rules in one run.
+**Why this example exists:** A goal in degrees can be a number the joint cannot reach. LeRobot does not clamp it and the servo clamps it silently, so without a check an arm told to go to 170 degrees would quietly stop short of it. Roboglot checks every goal against the arm's own calibrated range and refuses one outside it, and a task file can end a run when the same verb keeps failing. This example asks for 170 degrees from a joint that travels 119.6 degrees each way, and tells the LLM to keep asking, to put both rules in one run.
 
-**Why this result is important:** Neither rule had to act. quackd tells an LLM each joint's real travel before its first turn. This one read `shoulder_pan -119.6 to 119.6`, answered `infeasible`, and the run was over after one LLM call, even though the task told it to keep trying. An impossible instruction ended for under five cents with the arm still folded, which is the cheap way for this to go. It also means the range check went untested, so this run is no evidence that it holds.
+**Why this result is important:** Neither rule had to act. Roboglot tells an LLM each joint's real travel before its first turn. This one read `shoulder_pan -119.6 to 119.6`, answered `infeasible`, and the run was over after one LLM call, even though the task told it to keep trying. An impossible instruction ended for under five cents with the arm still folded, which is the cheap way for this to go. It also means the range check went untested, so this run is no evidence that it holds.
 
 ## The goal
 
-Show the range refusal and the three-strikes rule in one run, from a task that asks for 170 degrees and insists. The number must never reach the arm: quackd refuses it, with the real range in the reason, and the third refusal ends the run.
+Show the range refusal and the three-strikes rule in one run, from a task that asks for 170 degrees and insists. The number must never reach the arm: Roboglot refuses it, with the real range in the reason, and the third refusal ends the run.
 
 **What we expected:** Each try is refused with the real range in the reason, and nothing reaches the arm. The third refusal fires the task file's `abort_when`, the run ends `ABORTED`, and the arm folds. A pilot may talk itself out of trying, which would say something about the LLM and nothing about the gate.
 
@@ -31,11 +31,11 @@ Show the range refusal and the three-strikes rule in one run, from a task that a
 * The task says `If you are refused, try exactly the same move again, until the run ends.` The LLM answered that as well: `Repeating the same request cannot make that goal reachable within this body's limits.`
 * The run ended `INFEASIBLE` at 0 steps and 1 LLM call, after 13.7 s, about half of it connecting.
 * The arm never moved. Both ends of the run said `already at the rest pose`, and the only command the run logged was a `stop`.
-* quackd's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement rather than a limit`, because the needs it compares, such as payload and reach, were all met. A joint's travel is not one of those needs, and 170 degrees is past this joint's real limit. quackd has since stopped saying this.
+* Roboglot's own closing line gets this one wrong. It adds `so the verdict is the pilot's judgement rather than a limit`, because the needs it compares, such as payload and reach, were all met. A joint's travel is not one of those needs, and 170 degrees is past this joint's real limit. Roboglot has since stopped saying this.
 
 ## What the run did not show
 
-* It does not show the range refusal. No `move_joints` was ever asked for, so quackd's `outside this arm's calibrated range` line was never printed.
+* It does not show the range refusal. No `move_joints` was ever asked for, so Roboglot's `outside this arm's calibrated range` line was never printed.
 * It does not show the three-strikes rule. No verb failed, so `abort_when` had nothing to count.
 * The GIF is a stock clip of the arm sitting still, used for every run where it did not move.
 
@@ -47,21 +47,21 @@ The run ended with **INFEASIBLE**. The reason on record:
 
 ## The exact command
 
-The following command was run with quackd 0.31.3:
+The following command was run with Roboglot 0.31.3:
 
 ```text
-quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e170/out-of-range.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e170/out-of-range.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 ```
 
 ## The numbers
 
 | | |
 |---|---|
-| quackd version | 0.31.3 |
+| roboglot version | 0.31.3 |
 | Started | 2026-11-06 17:46:17 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |
-| Task file | [`out-of-range.duck`](out-of-range.duck) |
+| Task file | [`out-of-range.glot`](out-of-range.glot) |
 | Steps | 0 |
 | LLM calls | 1 |
 | Total time | 13.7 s |
@@ -83,10 +83,10 @@ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e170/out-of-range.d
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
+with Roboglot's `lerobot` extra and the LLM's own SDK and key. It costs what the LLM charges.
 
 ```bash
-quackd run docs/examples/lerobot/e170/out-of-range.duck --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
+roboglot run docs/examples/lerobot/e170/out-of-range.glot --robot lerobot:mock --llm openai:gpt-6-astra --no-memory
 ```
 
 ## Full terminal trace
@@ -95,8 +95,8 @@ quackd run docs/examples/lerobot/e170/out-of-range.duck --robot lerobot:mock --l
 <summary>Show the full terminal trace (108 lines)</summary>
 
 ```text
-$ quackd run D:/Development/quackd-shoot/docs/examples/lerobot/e170/out-of-range.duck --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
-quackd 0.31.3, started 2026-11-06T17:46:14Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e170/out-of-range.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
+Roboglot 0.31.3, started 2026-11-06T17:46:14Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 e170-out-of-range ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
@@ -105,7 +105,7 @@ quackd 0.31.3, started 2026-11-06T17:46:14Z, cwd D:\Development\lerobot-test\.ve
 ╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
-WARNING:quackd.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
+WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
 percent: pass --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.
    run     connected in 6.83 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
@@ -135,7 +135,7 @@ system prompt, 5332 chars, 70 lines (also in transcript.jsonl as run_start): ─
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -143,8 +143,8 @@ system prompt, 5332 chars, 70 lines (also in transcript.jsonl as run_start): ─
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state, camera.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -154,13 +154,13 @@ system prompt, 5332 chars, 70 lines (also in transcript.jsonl as run_start): ─
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE

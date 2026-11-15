@@ -1,7 +1,7 @@
 """Two robots' radios in two processes on one sim air: each hears the other, the one with the lower
 beacon id dials, and a request and its answer cross the link between the processes.
 
-This is what `quackd onboard demo` stands on, so it runs everywhere the suite does, Windows
+This is what `roboglot onboard demo` stands on, so it runs everywhere the suite does, Windows
 first among them: the air is files replaced under readers, the link a loopback socket. Outcomes
 only, with a generous deadline, never a timing, so a slow runner passes too."""
 
@@ -13,8 +13,8 @@ import sys
 import time
 from pathlib import Path
 
-from quackd.passport.beacon import new_beacon_id
-from quackd.radio.sim import AirModel
+from roboglot.passport.beacon import new_beacon_id
+from roboglot.radio.sim import AirModel
 
 HELPER = Path(__file__).resolve().parent / "sim_robot.py"
 DEADLINE_S = 60.0

@@ -8,8 +8,8 @@ import math
 
 import pytest
 
-from quackd.radio import Sighting
-from quackd.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
+from roboglot.radio import Sighting
+from roboglot.radio.proximity import ProximityEvent, ProximityPolicy, Tracker
 
 POLICY = ProximityPolicy()
 PEER = "00112233aabbccdd"

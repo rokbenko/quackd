@@ -1,5 +1,5 @@
 name: Microduck hardware report
-description: You ran quackd against a real Microduck. Tell us what happened.
+description: You ran Roboglot against a real Microduck. Tell us what happened.
 labels: ["microduck", "hardware", "adapter-status"]
 body:
   - type: markdown
@@ -14,10 +14,10 @@ body:
         in it installs anything on the robot. The one step that can need `sudo`, putting your
         account in the robot's `robot` group, is marked as the owner's to allow.
   - type: input
-    id: quackd_version
+    id: roboglot_version
     attributes:
-      label: quackd version
-      description: Output of `quackd --version`
+      label: roboglot version
+      description: Output of `roboglot --version`
     validations:
       required: true
   - type: input
@@ -25,8 +25,8 @@ body:
     attributes:
       label: The robot's API version
       description: >-
-        What the handshake said: the `robotd` row under `quackd doctor`'s health names it, with
-        the release and the revision. quackd serves any robotd from API 23 up and warns when it
+        What the handshake said: the `robotd` row under `roboglot doctor`'s health names it, with
+        the release and the revision. Roboglot serves any robotd from API 23 up and warns when it
         is not the 41 it read, and a call whose shape moved fails the verb naming the call and
         both versions.
     validations:
@@ -35,7 +35,7 @@ body:
     id: release
     attributes:
       label: Robot release
-      description: "`robotctl version` on the duck, or the release in `quackd doctor`'s `robotd` row"
+      description: "`robotctl version` on the duck, or the release in `roboglot doctor`'s `robotd` row"
     validations:
       required: false
   - type: dropdown
@@ -60,7 +60,7 @@ body:
     attributes:
       label: Did `posture` track the real robot?
       description: >-
-        quackd reads the policy label `walk` or `stand` as standing and `sit` as sitting, and
+        Roboglot reads the policy label `walk` or `stand` as standing and `sit` as sitting, and
         every other label as `unknown`, as it does a duck somebody holds and a limp one, with
         `extras.posture_reason` saying why. The labels were read in robotd's source, and
         nobody has seen them on a robot.
@@ -91,10 +91,10 @@ body:
   - type: textarea
     id: pad
     attributes:
-      label: What did a connected pad nobody touched do to quackd's walks?
+      label: What did a connected pad nobody touched do to Roboglot's walks?
       description: >-
         Step 9. padd sends a stop every 100 ms while a pad's sticks are still, and robotd walks
-        on whichever twist came last, so the pad's stops land between quackd's. Whether the
+        on whichever twist came last, so the pad's stops land between Roboglot's. Whether the
         duck walked on, slowed or stuttered, and how often a verb failed with `robotd has not
         taken robot.move`, has not been seen on a duck.
     validations:
@@ -126,14 +126,14 @@ body:
       label: What did `robot.subscribe` list in `skills`?
       description: >-
         `Skill` is a free string now, and this list is where a client learns what a robot can
-        actually do. quackd reads it to tell a running skill from a gait when it reads posture,
+        actually do. Roboglot reads it to tell a running skill from a gait when it reads posture,
         and its verbs send the names a stock robot answers to.
     validations:
       required: false
   - type: textarea
     id: doctor
     attributes:
-      label: "`quackd doctor` output"
+      label: "`roboglot doctor` output"
       description: With `--robot microduck:jsonrpc --address ...`, so it includes the live probe.
       render: text
     validations:
@@ -145,7 +145,7 @@ body:
       description: >-
         The whole session as you saw it, opening with
         the command that started the run and the version that ran it. Check it before you
-        paste: quackd replaces the values of `--api-key` and `--token` and the credentials
+        paste: Roboglot replaces the values of `--api-key` and `--token` and the credentials
         in a `--base-url`, an `--address` or a `--camera-url`, and nothing else on that
         screen (see SECURITY.md).
       render: text
@@ -163,6 +163,6 @@ body:
     id: anything_else
     attributes:
       label: Anything that surprised you
-      description: Especially anything quackd claimed that turned out not to be true.
+      description: Especially anything Roboglot claimed that turned out not to be true.
     validations:
       required: false

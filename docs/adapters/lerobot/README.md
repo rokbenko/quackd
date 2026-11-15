@@ -6,7 +6,7 @@ manifest lists none of that: `move`, `go_to`, `search_scan`, `say` and `gaze` do
 on this robot. What it has is joints, a gripper, `place`, and, when a run names a policy
 server, or on the mock, which scripts its own, `pick` and `manipulate`, each one skill intent
 that the arm's own learned policy executes ([guides/policies.md](../../guides/policies.md)). The
-thesis holds: the LLM picks the verb, LeRobot moves the arm, quackd enforces the contract. (With the
+thesis holds: the LLM picks the verb, LeRobot moves the arm, Roboglot enforces the contract. (With the
 optional `--decision-llm`, some of the verbs that are a choice rather than a number can be picked by
 a decision LLM instead; every angle is still the pilot LLM's, and it is off unless you name one:
 [guides/decision-llms/README.md](../../guides/decision-llms/README.md).)
@@ -14,12 +14,12 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
 > [!NOTE]
 > **The `real` backend has run on an arm.** On 2026-09-15 an SO-101 follower, calibrated as
 > `arm-01` and reached with no registered name, ran `lerobot-lookout` and then free-form
-> `--goal` runs on Windows 11 with Python 3.12.12, lerobot 0.6.1 and quackd 0.9.0, piloted by
+> `--goal` runs on Windows 11 with Python 3.12.12, lerobot 0.6.1 and Roboglot 0.9.0, piloted by
 > OpenAI's `gpt-6-astra`. It also went limp and fell at the end of every one of those runs,
 > which is what [the rest pose](#the-rest-pose) exists to fix. On 2026-09-23 the same arm ran
 > again with a rest pose recorded, and the pose lay past the travel its calibration recorded,
 > where the servo will not be driven: [The rest pose](#the-rest-pose) says what that did and
-> what quackd does about it now. What ran, what went wrong and what that first afternoon did not
+> what Roboglot does about it now. What ran, what went wrong and what that first afternoon did not
 > measure is in [Status](#status); the account from the other end, an empty laptop to a waving
 > arm, is [adapters/lerobot/first-run.md](first-run.md).
 
@@ -44,7 +44,7 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [The rehearsal: `--dry-run`](#the-rehearsal---dry-run)
   * [What `pick` needs, and what it does not have](#what-pick-needs-and-what-it-does-not-have)
   * [`manipulate`, and the loop a policy runs in](#manipulate-and-the-loop-a-policy-runs-in)
-  * [A policy in a process of its own: `quackd policy serve`](#a-policy-in-a-process-of-its-own-quackd-policy-serve)
+  * [A policy in a process of its own: `roboglot policy serve`](#a-policy-in-a-process-of-its-own-roboglot-policy-serve)
   * [Serving a checkpoint](#serving-a-checkpoint)
   * [Whether the policy fits the arm](#whether-the-policy-fits-the-arm)
   * [A run with a policy server](#a-run-with-a-policy-server)
@@ -54,7 +54,7 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [What it renders](#what-it-renders)
   * [Time, and what a seed repeats](#time-and-what-a-seed-repeats)
   * [`--by-hand` on the simulator](#--by-hand-on-the-simulator)
-  * [Rehearsing a task file: `quackd preflight`](#rehearsing-a-task-file-quackd-preflight)
+  * [Rehearsing a task file: `roboglot preflight`](#rehearsing-a-task-file-roboglot-preflight)
   * [The sidecar](#the-sidecar)
   * [What it proves, and what it does not](#what-it-proves-and-what-it-does-not)
   * [When the simulator will not start](#when-the-simulator-will-not-start)
@@ -74,16 +74,16 @@ a decision LLM instead; every angle is still the pilot LLM's, and it is off unle
   * [Reported by owners, not by us](#reported-by-owners-not-by-us)
 - [Upstream API](#upstream-api)
   * [VERIFIED (read from source at the pin)](#verified-read-from-source-at-the-pin)
-  * [UNVERIFIED (our assumptions, and what quackd does about each)](#unverified-our-assumptions-and-what-quackd-does-about-each)
+  * [UNVERIFIED (our assumptions, and what Roboglot does about each)](#unverified-our-assumptions-and-what-roboglot-does-about-each)
 - [The simulator's upstream: SO-ARM100](#the-simulators-upstream-so-arm100)
   * [VERIFIED (read from the model and its README at the pin)](#verified-read-from-the-model-and-its-readme-at-the-pin)
-  * [UNVERIFIED (our assumptions about the model, and what quackd does about each)](#unverified-our-assumptions-about-the-model-and-what-quackd-does-about-each)
+  * [UNVERIFIED (our assumptions about the model, and what Roboglot does about each)](#unverified-our-assumptions-about-the-model-and-what-roboglot-does-about-each)
 - [The policies' upstream: LeRobot 0.7.0](#the-policies-upstream-lerobot-070)
   * [VERIFIED (read from source at the v0.7.0 tag)](#verified-read-from-source-at-the-v070-tag)
-  * [UNVERIFIED (our assumptions about policies, and what quackd does about each)](#unverified-our-assumptions-about-policies-and-what-quackd-does-about-each)
+  * [UNVERIFIED (our assumptions about policies, and what Roboglot does about each)](#unverified-our-assumptions-about-policies-and-what-roboglot-does-about-each)
 - [The endpoint's upstream: Hugging Face Inference Endpoints](#the-endpoints-upstream-hugging-face-inference-endpoints)
   * [VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)](#verified-read-on-the-days-above-from-the-api-hugging-faces-pages-and-huggingface_hub-240-and-1330)
-  * [UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)](#unverified-our-assumptions-about-hugging-face-and-what-quackd-does-about-each)
+  * [UNVERIFIED (our assumptions about Hugging Face, and what Roboglot does about each)](#unverified-our-assumptions-about-hugging-face-and-what-roboglot-does-about-each)
 - [Status](#status)
   * [What one afternoon proved, and what it did not](#what-one-afternoon-proved-and-what-it-did-not)
 - [How to help](#how-to-help)
@@ -105,7 +105,7 @@ steps, each written so that it can only fail in a way you can recover from.
 > **Cutting the servo supply is the only thing that stops this arm in every case.** It has no
 > e-stop and no deadman, and its five body joints have no torque cap. Keep people and anything
 > fragile out of its sweep, and keep a hand on the switch whenever it moves on a line you have not
-> run before. What quackd changed after 0.31.3, the last release an arm ran, has not met one yet,
+> run before. What Roboglot changed after 0.31.3, the last release an arm ran, has not met one yet,
 > so what differs on your bench is [worth reporting](first-run.md#14-what-to-report).
 
 ### Before the arm
@@ -122,37 +122,37 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
 
    ```bash
    git clone https://github.com/rokbenko/quackd
-   cd quackd
+   cd Roboglot
    uv venv --python 3.12
    ```
 
-   Then activate it, here and in every other terminal you open, or `quackd` and LeRobot's tools are
+   Then activate it, here and in every other terminal you open, or `roboglot` and LeRobot's tools are
    not found: `.venv\Scripts\activate` on Windows, `source .venv/bin/activate` elsewhere. If PowerShell
    answers that running scripts is disabled, as it does by default on a Windows desktop, allow them for
    your user as [Python's own venv page](https://docs.python.org/3/library/venv.html) says, and activate
    again: `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`.
 
-2. **Install quackd in that venv.** This brings the arm's adapter, LeRobot with its Feetech driver and
-   torch, the arm's simulator, [`quackd ui`](../../guides/web-ui.md), the OpenAI, Anthropic and Gemini
+2. **Install Roboglot in that venv.** This brings the arm's adapter, LeRobot with its Feetech driver and
+   torch, the arm's simulator, [`roboglot ui`](../../guides/web-ui.md), the OpenAI, Anthropic and Gemini
    SDKs and what the Jev lines use. `anthropic` and `gemini` can come out of the list if you have no key
    for them. `openai` stays, because the other vendors and the local servers run on its SDK.
 
    ```bash
-   uv pip install "quackd[lerobot,lerobot-sim,ui,openai,anthropic,gemini,decision]"
+   uv pip install "roboglot[lerobot,lerobot-sim,ui,openai,anthropic,gemini,decision]"
    ```
 
    Check it took. The first line prints the release you got, and this page and the task files are
    `main`'s, which can be ahead of it: [the changelog](../../../CHANGELOG.md) says what each release
    changed. The first row of the second must be `gpt-6.1-sol`, marked default, and the third must
    tick these three rows. The install takes LeRobot 0.7, whose new motor bus, rustypot, is the
-   second row, and no arm has run quackd on it yet: 0.6.1 is the version that has, and quackd no
+   second row, and no arm has run Roboglot on it yet: 0.6.1 is the version that has, and Roboglot no
    longer installs it. A `not installed` after an install that succeeded usually means the wrong
    Python, and [Installing it](#installing-it) says why.
 
    ```bash
-   quackd --version
-   quackd list-models --llm openai
-   quackd doctor
+   roboglot --version
+   roboglot list-models --llm openai
+   roboglot doctor
    ```
 
    ```
@@ -166,15 +166,15 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    scripted pilot needs no API key. It answers `assess_task`, calls `report_state`, and declares:
 
    ```bash
-   quackd run lerobot-lookout --robot lerobot:mock --llm fake
+   roboglot run lerobot-lookout --robot lerobot:mock --llm fake
    ```
 
    ```
    ✓  declare success: elbow_flex 90, gripper 100, shoulder_lift -90, shoulder_pan 0, wrist_flex 0, wrist_roll 0; torque on; nothing hot
    ```
 
-   Every run leaves a folder under `runs/`, in the folder you ran it from, and `quackd log` replays
-   it by name: `quackd log lerobot-lookout`. The mock runs the real backend's own code over an arm in
+   Every run leaves a folder under `runs/`, in the folder you ran it from, and `roboglot log` replays
+   it by name: `roboglot log lerobot-lookout`. The mock runs the real backend's own code over an arm in
    memory, with no physics under it and a scripted policy of its own. `lerobot:mujoco` runs the same
    code over a physics model of the arm, which is where a task file is rehearsed before it meets one.
    Its first connect fetches the maker's model.
@@ -182,7 +182,7 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    [what it proves](#what-it-proves-and-what-it-does-not) is short.
 
    ```bash
-   quackd run lerobot-lookout --robot lerobot:mujoco --llm fake
+   roboglot run lerobot-lookout --robot lerobot:mujoco --llm fake
    ```
 
 3. **Keys.** One line in a `.env` file, in the folder you run from or in the venv root:
@@ -192,16 +192,16 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    [E037](../../examples/lerobot/run-sheet.md#e037-make-a-decision-without-thinking) and
    [E158](../../examples/lerobot/run-sheet.md#e158-cheap-pilot--jev-vs-flagship-alone) to E161, and a
    vendor's key for its lines in E019, E020, E029, E030, E150 and E151. Each such line names the key it
-   needs. `quackd doctor` prints the key it found, masked, which is the quickest way to see that the
-   file was read at all, and `quackd list-models` lists the LLMs quackd carries.
+   needs. `roboglot doctor` prints the key it found, masked, which is the quickest way to see that the
+   file was read at all, and `roboglot list-models` lists the LLMs Roboglot carries.
 
    Then rehearse on the mock arm, so your first LLM call is not on hardware. This spends a few LLM
    calls on your key and moves nothing. The second line is the same rehearsal for Jev, in shadow: with
    no `TYPESAFE_API_KEY` it warns that it is running without Jev and goes on, so read its first line.
 
    ```bash
-   quackd run docs/examples/lerobot/e136/gripper-loop.duck --robot lerobot:mock --llm openai:gpt-6-sol --max-steps 6 --no-memory
-   quackd run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-sol --decision-llm jev --decision-mode shadow --no-memory
+   roboglot run docs/examples/lerobot/e136/gripper-loop.glot --robot lerobot:mock --llm openai:gpt-6-sol --max-steps 6 --no-memory
+   roboglot run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-sol --decision-llm jev --decision-mode shadow --no-memory
    ```
 
 4. **Free the name `arm-01`, if this machine has known another arm by it.** On a first install there is
@@ -209,25 +209,25 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
    last: a registry entry with its rest pose, any twin made from it, a calibration file, and a memory
    file for each of the two. None of that is true of your arm, and the calibration is a trap. With that
    file in place, `lerobot-calibrate` offers to use it, and Enter writes the old arm's travel into your
-   servos, after which quackd reads your arm as calibrated. Left in place, the rest does harm too: the
+   servos, after which Roboglot reads your arm as calibrated. Left in place, the rest does harm too: the
    next `doctor` or run drives your arm to the old arm's rest pose, and the pilot is told the old arm's
    history. The first two lines forget the registry entry and the twin, and the other three move the
-   files aside from where LeRobot and quackd keep them unless you pointed them elsewhere. A line about
+   files aside from where LeRobot and Roboglot keep them unless you pointed them elsewhere. A line about
    something that was never there fails and changes nothing.
 
    ```bash
-   quackd robot remove arm-01 --yes
-   quackd robot remove arm-01-sim --yes
+   roboglot robot remove arm-01 --yes
+   roboglot robot remove arm-01-sim --yes
    mv ~/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json ~/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.old.json
-   mv ~/.quackd/memory/arm-01.jsonl ~/.quackd/memory/arm-01.old.jsonl
-   mv ~/.quackd/memory/arm-01-sim.jsonl ~/.quackd/memory/arm-01-sim.old.jsonl
+   mv ~/.roboglot/memory/arm-01.jsonl ~/.roboglot/memory/arm-01.old.jsonl
+   mv ~/.roboglot/memory/arm-01-sim.jsonl ~/.roboglot/memory/arm-01-sim.old.jsonl
    ```
 
 5. **Check every task file, then print.** This checks each file against the arm's manifest, connects
    nothing, and must end `✓ 247 files valid`:
 
    ```bash
-   quackd validate "docs/examples/lerobot/*/*.duck" --robot lerobot:real
+   roboglot validate "docs/examples/lerobot/*/*.glot" --robot lerobot:real
    ```
 
    Print these, large, for the experiments you mean to run:
@@ -251,25 +251,25 @@ Five steps with the arm unplugged. Step 3 spends a little on an LLM, and the oth
 
 ### At the arm, first
 
-Arm clamped to the desk, the sweep clear, webcams plugged in. quackd sends the arm no goal until the
+Arm clamped to the desk, the sweep clear, webcams plugged in. Roboglot sends the arm no goal until the
 last step here, as long as it stays where step 7 records its rest pose: move it by hand after that,
 and the next run or `doctor` drives it back there. Connecting takes torque off every motor for a moment
 and then switches it on, so an arm holding itself up needs a hand under it for every command that
 connects. Whether a servo then holds where it is or drives to the goal it was last told is the
-firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd-does-about-each), and
+firmware's business and [unverified](#unverified-our-assumptions-and-what-roboglot-does-about-each), and
 [E207](../../examples/lerobot/run-sheet.md#e207-what-a-servo-does-with-an-old-goal) is how you find out.
 
 1. **Clamp the base, and give it the right supply, on a switch.** An SO-101 is light for its reach, so a
    quick move can tip a base nothing holds: clamp it to the desk before anything else. Its follower
-   comes in 7.4 V and 12 V builds, and neither LeRobot nor quackd reads the voltage:
+   comes in 7.4 V and 12 V builds, and neither LeRobot nor Roboglot reads the voltage:
    [the parts list](https://github.com/TheRobotStudio/SO-ARM100) for your build is the authority. Put
    an inline switch on the servo supply, on your side of the desk. There is no e-stop on this arm and
-   quackd cannot give it one, so this switch is the only thing that stops it in every case.
+   Roboglot cannot give it one, so this switch is the only thing that stops it in every case.
 
 2. **Same setup as before.** In the checkout, with the venv activated in this terminal:
 
    ```bash
-   quackd doctor
+   roboglot doctor
    ```
 
 3. **Find the port, with the supply on.** USB does not power the controller board, so no supply can
@@ -301,7 +301,7 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
 
    Type `c`, which runs the calibration again. Anything else, Enter included, writes the file's
    travel into the servos and records nothing, and on an arm the file did not come from that is
-   another arm's travel, after which quackd reads the arm as calibrated.
+   another arm's travel, after which Roboglot reads the arm as calibrated.
 
 5. **Name the arm.** The name is the calibration id, and a registered name is the only place a rest
    pose can live. There is no `--camera-url` here on purpose: with none stored, a command without one
@@ -309,34 +309,34 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
    [E154](../../examples/lerobot/run-sheet.md#e154-the-camera-tax)).
 
    ```bash
-   quackd robot add arm-01 lerobot:real --address COM5 --llm openai:gpt-6-sol
+   roboglot robot add arm-01 lerobot:real --address COM5 --llm openai:gpt-6-sol
    ```
 
-   If you mean to run [E168](../../examples/lerobot/run-sheet.md#e168-a-connect-quackd-refuses-lets-go),
-   the connect quackd refuses, now is its moment: before the fold.
+   If you mean to run [E168](../../examples/lerobot/run-sheet.md#e168-a-connect-roboglot-refuses-lets-go),
+   the connect Roboglot refuses, now is its moment: before the fold.
 
 6. **Read it.** Support the arm while this starts. With no rest pose yet, `doctor` keeps the arm
    powered where it stands, and before it prints its report it asks whether to drop it into your hands:
    hold it and press Enter, and it is limp for folding. Leave it, and after 60 s torque stays on, and
-   `quackd robot release arm-01` is how to get it into your hands for the next step. Then read four
+   `roboglot robot release arm-01` is how to get it into your hands for the next step. Then read four
    things off the report: that the calibration file is the one you just wrote, that each joint's range
    looks like what you swept, that torque read on, which it read before any drop, and what the servos
    say with the arm cold. That temperature is the baseline for
    [E185](../../examples/lerobot/run-sheet.md#e185-how-warm-does-it-get).
 
    ```bash
-   quackd doctor --robot arm-01
+   roboglot doctor --robot arm-01
    ```
 
 7. **Record the rest pose.** Fold the arm low by hand, let go, watch that it stays, then run this. It
    sends no goal: it reads every joint, prints them and asks, and only a yes lets go of the arm where
    it lies. A warning naming a joint past its travel means the fold is outside what you swept, so
    calibrate again with that joint taken all the way in and record again. **Every new calibration
-   needs a new rest pose**, because quackd does not know the old one has gone stale, and `doctor` and
+   needs a new rest pose**, because Roboglot does not know the old one has gone stale, and `doctor` and
    every run go on driving the arm to it.
 
    ```bash
-   quackd robot rest-pose arm-01
+   roboglot robot rest-pose arm-01
    ```
 
    From now on every run drives the arm there before the LLM gets it, and folds it back there at the
@@ -349,7 +349,7 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
 
    ```bash
    lerobot-find-cameras opencv
-   quackd doctor --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top"
+   roboglot doctor --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top"
    ```
 
 9. **Rehearse on the arm's twin.** It runs the real backend over a physics model, on this arm's own
@@ -359,14 +359,14 @@ firmware's business and [unverified](#unverified-our-assumptions-and-what-quackd
    code survived the file, not that the task was done. Rehearse anything you are unsure of the same way.
 
    ```bash
-   quackd robot twin arm-01
-   quackd run lerobot-lookout --robot arm-01-sim --llm fake --max-steps 4 --no-memory --run-name twin-check
-   quackd preflight "docs/examples/lerobot/e00[1-5]/*.duck" --robot arm-01-sim --llm openai:gpt-6-sol --camera-url "opencv://1?name=front" --seeds 2
+   roboglot robot twin arm-01
+   roboglot run lerobot-lookout --robot arm-01-sim --llm fake --max-steps 4 --no-memory --run-name twin-check
+   roboglot preflight "docs/examples/lerobot/e00[1-5]/*.glot" --robot arm-01-sim --llm openai:gpt-6-sol --camera-url "opencv://1?name=front" --seeds 2
    ```
 
 10. **First runs, in this order: E119's first line, E136, E166, E207, E119's second line, E164.** The
     first moves nothing but the rest move, so it shows a connect, a heartbeat and a close on this arm
-    before anything else. Then which way the gripper goes, which everything quackd believes about
+    before anything else. Then which way the gripper goes, which everything Roboglot believes about
     holding something rests on. Then the switch, because everything after leans on it. Then the old
     goal, which says how far to trust a connect. Then the hand-off, which every by-hand line depends
     on, and the two cameras, which every drawing and most by-hand lines use.
@@ -382,15 +382,15 @@ The six commands of step 10, with a hand on the switch. Each one is the proof th
    there and is let go of, and a fold that misses asks before anything drops.
 
    ```bash
-   quackd run lerobot-lookout --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-rest-pose
+   roboglot run lerobot-lookout --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-rest-pose
    ```
 
-2. **Which way the gripper goes**, [E136](../../examples/lerobot/run-sheet.md#e136-gripper-loop). quackd assumes 100 is open and 0 is closed, and that is a fact about
-   how this arm was assembled and calibrated. If it runs the other way, stop: everything quackd
+2. **Which way the gripper goes**, [E136](../../examples/lerobot/run-sheet.md#e136-gripper-loop). Roboglot assumes 100 is open and 0 is closed, and that is a fact about
+   how this arm was assembled and calibrated. If it runs the other way, stop: everything Roboglot
    believes about holding something rests on it.
 
    ```bash
-   quackd run docs/examples/lerobot/e136/gripper-loop.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
+   roboglot run docs/examples/lerobot/e136/gripper-loop.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory
    ```
 
 3. **The power switch, on purpose**, [E166](../../examples/lerobot/run-sheet.md#e166-the-power-switch-first). Everything after this leans on it. Foam under the forearm, and one
@@ -403,7 +403,7 @@ The six commands of step 10, with a hand on the switch. Each one is the proof th
    and turn the supply back on.
 
    ```bash
-   quackd run docs/examples/lerobot/e166/raise-for-the-switch.duck --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name cut
+   roboglot run docs/examples/lerobot/e166/raise-for-the-switch.glot --robot arm-01 --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 6 --no-memory --run-name cut
    ```
 
 4. **The old goal**, [E207](../../examples/lerobot/run-sheet.md#e207-what-a-servo-does-with-an-old-goal). Run the first command again, so the servos last heard from a run that ended
@@ -416,7 +416,7 @@ The six commands of step 10, with a hand on the switch. Each one is the proof th
    connects, or lift it inside a by-hand wait, which writes the goal first.
 
    ```bash
-   quackd doctor --robot arm-01
+   roboglot doctor --robot arm-01
    ```
 
 5. **The hand-off**, [E119](../../examples/lerobot/run-sheet.md#e119-rest-pose-and-hand-off-first-time-on-hardware), which every by-hand line depends on. At the prompt, lift the limp arm into any pose
@@ -425,13 +425,13 @@ The six commands of step 10, with a hand on the switch. Each one is the proof th
    asks.
 
    ```bash
-   quackd run lerobot-lookout --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-by-hand
+   roboglot run lerobot-lookout --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --llm openai:gpt-6-sol --max-steps 4 --no-memory --run-name e119-by-hand
    ```
 
 6. **Both cameras**, [E164](../../examples/lerobot/run-sheet.md#e164-two-cameras), which every drawing and most by-hand lines use.
 
    ```bash
-   quackd run docs/examples/lerobot/e164/two-cameras.duck --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
+   roboglot run docs/examples/lerobot/e164/two-cameras.glot --robot arm-01 --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 10 --no-memory
    ```
 
 After these, [driving it](#driving-it) is three commands depending on who is choosing the verbs: a task
@@ -442,27 +442,27 @@ file, a one-line goal, or you from an MCP client.
 The commands in the task files have one shape, so a line that looks different is different on purpose.
 
 ```bash
-quackd run docs/examples/lerobot/e001/circle.duck --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 16 --no-memory
+roboglot run docs/examples/lerobot/e001/circle.glot --robot arm-01 --by-hand --camera-url "opencv://1?name=front" --camera-url "opencv://2?name=top" --llm openai:gpt-6-sol --max-steps 16 --no-memory
 ```
 
 | Part | Why |
 |---|---|
-| `quackd run docs/examples/lerobot/e001/circle.duck` | The task file: the prompt, what the arm may do, and the budgets in steps, minutes and LLM calls. Its name goes into the run folder, `runs/<stamp>-e001-circle`, under the folder you ran it from, so you always know which experiment a folder was. The stamp is UTC |
+| `roboglot run docs/examples/lerobot/e001/circle.glot` | The task file: the prompt, what the arm may do, and the budgets in steps, minutes and LLM calls. Its name goes into the run folder, `runs/<stamp>-e001-circle`, under the folder you ran it from, so you always know which experiment a folder was. The stamp is UTC |
 | `--robot arm-01` | The registered name brings the port and the rest pose. A real arm named by its spec has no rest pose, so it is refused before anything connects |
 | `--by-hand` | You place the arm and whatever it holds before the LLM starts. The run folds, goes limp, waits for your Enter, then holds your pose and prints the angles you set. Keep a hand on a link, fingers off the jaws and the joints, until it prints `you can let go`: torque comes back on under your hand, and if a joint is refused the arm stays limp. At the end it asks about the gripper while the arm holds still. Take hold of what the jaws hold and press Enter once, with nothing typed: they open all the way, it says it is about to fold, and 3 s later it folds and they close again, so clear your hands in that time. Press it twice, or within 2 s of the last one, and it answers nothing and says so. A Ctrl-C or `q` in the opening, those seconds or the fold holds the arm where it is. No press quits such a run, and closing the window is what kills it. Left alone, it counts and folds after two minutes with the jaws shut. [Placing it by hand](#placing-it-by-hand) has the rest |
 | `--camera-url` once, twice or not at all | One, the front view, on most lines. Both on the drawings, on most by-hand lines and where a run has to find something on the desk. None where no camera is the test or the line has no use for one |
 | `--image docs/examples/lerobot/e034/bad-code.png` | A task picture: sent once, on the first turn, and kept for the whole run. Used where the pilot LLM must read something exactly, rather than off a 640×480 frame |
 | `--llm openai:gpt-6-sol` | The pilot. Lines that compare LLMs name theirs |
-| `--decision-llm jev --decision-mode shadow` | Only on the decision LLM lines: `jev` with `quackd[decision]` and its own key, `TYPESAFE_API_KEY`, or `openai` with yours. The "off" legs say `--decision-mode off`, so a setting in your environment cannot leak into them |
+| `--decision-llm jev --decision-mode shadow` | Only on the decision LLM lines: `jev` with `roboglot[decision]` and its own key, `TYPESAFE_API_KEY`, or `openai` with yours. The "off" legs say `--decision-mode off`, so a setting in your environment cannot leak into them |
 | `--max-steps 16` | The step budget, the same number as in the task file. A step is one verb, and the verdict and the declarations are free. Raise it on the line if a run needs more room: the file's minutes and LLM calls are sized with room to spare |
 | `--no-memory` | Every run starts fresh: nothing from earlier runs in the prompt, and no extra turn at the end to write a note. `e110`, the failed take run before it, and `e194` use memory on purpose |
 | `--no-play` | 118 of the task files give the pilot a part to play, with `play: true` in the file. Add this to any of those lines to see the same task without it ([guides/play.md](../../guides/play.md)) |
 | `--dry-run` | Add it to any line without `--by-hand` to see what the LLM would do: reads run, nothing that moves is sent, and the arm does not even go to its rest pose |
 | `--effort low` | Only where it is the test. How hard the pilot's LLM reasons before each answer, for a vendor and LLM that take it |
-| `--run-name trial-01` | Only where one task file runs more than once, so those folders differ too: `runs/<stamp>-e149-wave-trial-01`. `quackd log e149-wave-trial-01` replays it |
-| A second terminal | Activate the environment there first, or it has no `quackd` |
-| `quackd robot release arm-01` | Puts down an arm left holding itself up: it folds to the rest pose, closes the gripper and lets go there. If the fold misses it asks twice before anything drops, and anything but Enter keeps torque on. Support the arm while it connects, and take your hands away when it says so |
-| `quackd drive --robot arm-01` | One command at a time, with the arm held between them. A verb by name runs with no LLM (`report_state`, `gripper true`), any other line is a goal for the pilot, and an empty Enter brakes at once. A move with your own numbers is written out: `move_joints(positions={"shoulder_pan": 20}, duration_s=2)` |
+| `--run-name trial-01` | Only where one task file runs more than once, so those folders differ too: `runs/<stamp>-e149-wave-trial-01`. `roboglot log e149-wave-trial-01` replays it |
+| A second terminal | Activate the environment there first, or it has no `roboglot` |
+| `roboglot robot release arm-01` | Puts down an arm left holding itself up: it folds to the rest pose, closes the gripper and lets go there. If the fold misses it asks twice before anything drops, and anything but Enter keeps torque on. Support the arm while it connects, and take your hands away when it says so |
+| `roboglot drive --robot arm-01` | One command at a time, with the arm held between them. A verb by name runs with no LLM (`report_state`, `gripper true`), any other line is a goal for the pilot, and an empty Enter brakes at once. A move with your own numbers is written out: `move_joints(positions={"shoulder_pan": 20}, duration_s=2)` |
 
 > [!NOTE]
 > A rough clock and bill, from the last of twelve real-pilot runs on the lab's arm on 2026-09-15, with
@@ -484,7 +484,7 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 | [The gates, hand on the power switch](../../examples/lerobot/run-sheet.md#the-gates-hand-on-the-power-switch) | Each is one small run. A dry run and a refusal cost almost nothing, and these say whether what follows is safe to try |
 | [Putting it down](../../examples/lerobot/run-sheet.md#putting-it-down) | An arm left raised, then every way of folding it, stopping the fold or having it miss, all at E171's slow step. Foam, not fingers, wherever foam will do. E177 clears the pose, so it comes last, and you record the pose again after it |
 | [What a press does](../../examples/lerobot/run-sheet.md#what-a-press-does) | Every place a press used to go past the close, or used to quit, one small run each, most with no LLM and no key. Same slow step as the block above, and the same hand on the switch. E212 is the one with the arm in your hands |
-| [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing LLMs, cost and speed, with a lot of LLM switching, so batch them. The Jev lines need `quackd[decision]` and `TYPESAFE_API_KEY` |
+| [Numbers before claims](../../examples/lerobot/run-sheet.md#numbers-before-claims) | Comparing LLMs, cost and speed, with a lot of LLM switching, so batch them. The Jev lines need `roboglot[decision]` and `TYPESAFE_API_KEY` |
 | [Hazard block, hand on the power switch](../../examples/lerobot/run-sheet.md#hazard-block-hand-on-the-power-switch) | Speed, the cable pull, Ctrl-C and the hard kill, the brake, the network, a camera pulled, a call cut off |
 | [Gates and the red team](../../examples/lerobot/run-sheet.md#gates-and-the-red-team) | E110 straight after a failed take run with `--memory`: that take, E110 and E194 are the only uses of memory today |
 | [Marker and pen, together](../../examples/lerobot/run-sheet.md#marker-and-pen-together) | One marker, one pad, every drawing in a row |
@@ -492,13 +492,13 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 | [By hand and contact](../../examples/lerobot/run-sheet.md#by-hand-and-contact) | Most start where you put the arm |
 | [Over MCP](../../examples/lerobot/run-sheet.md#over-mcp) | Claude as the pilot. Set the server up once (E145), and remove it when you are done. Read E196 first: in a chat the switch is the stop. E192 last, because it replaces the server |
 | [A policy, scripted first](../../examples/lerobot/run-sheet.md#a-policy-scripted-first) | No torch and no checkpoint. Then the arm against its twin, joint by joint |
-| [From the page](../../examples/lerobot/run-sheet.md#from-the-page) | `quackd ui`, and from a phone if you can |
+| [From the page](../../examples/lerobot/run-sheet.md#from-the-page) | `roboglot ui`, and from a phone if you can |
 | [Last](../../examples/lerobot/run-sheet.md#last) | Sand at the very end, the bill once there is a bill to show, and ten minutes of warming the servos |
 
 ### Things people forget
 
 - **Ctrl-C once, not twice.** Once, or `q`, stops the arm and folds it to the rest pose. Twice quits at
-  once and can leave it holding wherever it stopped, and then `quackd robot release` puts it down. A
+  once and can leave it holding wherever it stopped, and then `roboglot robot release` puts it down. A
   first press during the fold of a run that already ended stops the fold instead.
 - **No press quits a `--by-hand` run.** A press while you are placing the arm ends the run, turns torque
   back on under your hands and folds the arm, so keep hold of it with your fingers out of the jaws. A
@@ -513,7 +513,7 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
   a person: no gate reads what the section asks. Keep people beyond its reach, and frame the arm and the
   space around it in a camera's view. Keep blue things out of the front camera's view too, because the
   colour detector reads blue as a person and shrinks the poses for it.
-- **Let the servos cool between blocks.** quackd refuses `move_joints` and `pick` at 60 °C, and the
+- **Let the servos cool between blocks.** Roboglot refuses `move_joints` and `pick` at 60 °C, and the
   servos cut out at 70 °C.
 - **Check the front camera frames the arm's full raised position.** On 2026-09-15 it was framed on the
   gripper, and the LLM checked its wave against joint angles because it could not see it.
@@ -521,7 +521,7 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
   arm's. Yours may read otherwise, and yours are the numbers to keep.
 - **A by-hand run holds your pose, not a grip.** The jaws stay where your fingers left them, and the arm
   says it is holding nothing until the LLM closes the gripper itself.
-- **Keep every run folder**, failures included. `quackd log e001-circle` replays one.
+- **Keep every run folder**, failures included. `roboglot log e001-circle` replays one.
 - **Disk.** Every LLM turn saves one frame per camera, so a two-camera session of a few hundred turns
   is several hundred pictures.
 - **Write down anything that surprised you** the moment it happens, and
@@ -530,30 +530,30 @@ for, what to expect, how to set it up and the lines to run, and it takes them in
 ## If you already own one
 
 You have LeRobot, and LeRobot already does what this arm is known for: teleoperation from a
-leader, recording episodes, training a policy, evaluating one. quackd does none of that and
+leader, recording episodes, training a policy, evaluating one. Roboglot does none of that and
 is not trying to. It does the one thing LeRobot leaves to you, which is deciding what the arm
 should do next, and it does it by putting an LLM in that seat under a contract the
 LLM cannot exceed.
 
 | What you want | What does it |
 |---|---|
-| drive the follower from a leader arm, record a dataset, train a policy | LeRobot's own tools. quackd never calls them and never writes to your datasets |
-| have an LLM choose the next verb, inside limits you wrote down, with every refusal recorded | quackd |
-| hand the arm to a policy you trained, one short subtask at a time, under the LLM and inside those limits | quackd's policy server, `quackd policy serve`, which loads a LeRobot checkpoint in a process of its own ([guides/policies.md](../../guides/policies.md)) |
-| run one verb by hand, right now | quackd over MCP (`robot_run_verb`), or LeRobot's own Python API |
+| drive the follower from a leader arm, record a dataset, train a policy | LeRobot's own tools. Roboglot never calls them and never writes to your datasets |
+| have an LLM choose the next verb, inside limits you wrote down, with every refusal recorded | Roboglot |
+| hand the arm to a policy you trained, one short subtask at a time, under the LLM and inside those limits | Roboglot's policy server, `roboglot policy serve`, which loads a LeRobot checkpoint in a process of its own ([guides/policies.md](../../guides/policies.md)) |
+| run one verb by hand, right now | Roboglot over MCP (`robot_run_verb`), or LeRobot's own Python API |
 
-The contract is a `.duck` file: the verbs the LLM may use, the budget in steps and minutes,
-and what counts as success ([reference/duck-spec.md](../../reference/duck-spec.md)). The LLM never
-emits a motor command. It picks a verb, and quackd checks the allowlist, the preconditions, this
+The contract is a `.glot` file: the verbs the LLM may use, the budget in steps and minutes,
+and what counts as success ([reference/glot-spec.md](../../reference/glot-spec.md)). The LLM never
+emits a motor command. It picks a verb, and Roboglot checks the allowlist, the preconditions, this
 arm's calibrated range and the step cap before anything reaches the bus.
 
 Three things are true of this body, and on a desk rather than in a simulator they are what can
 hurt somebody. They shape everything below:
 
 - **The five body joints have no torque cap.** LeRobot writes a torque and current cap on the
-  gripper and on nothing else, so a stalled elbow has nothing to save it or your finger. quackd
+  gripper and on nothing else, so a stalled elbow has nothing to save it or your finger. Roboglot
   reads each servo's temperature off the bus and refuses to move a joint at or above 60 °C.
-- **A goal in degrees is not clamped by LeRobot.** quackd computes each joint's travel from
+- **A goal in degrees is not clamped by LeRobot.** Roboglot computes each joint's travel from
   your calibration file and refuses a goal outside it, rather than passing the number down.
 - **There is no e-stop and no deadman.** Nothing in LeRobot stops the arm when the controlling
   process goes quiet, and a position-controlled servo holds the last goal it was given. Cutting
@@ -564,42 +564,42 @@ hurt somebody. They shape everything below:
 | `--robot` | Status | What it is |
 |---|---|---|
 | `lerobot:mock` | ✅ | `lerobot:real`'s own code over an arm in memory: a goal lands a step of the cap at a time, the gripper stops on the object, a scripted policy answers `pick` and `manipulate` in the real backend's policy loop, and every refusal, hand-off and close line is the real backend's own, since it is that backend's code, though with no rest pose recorded its close lets go of the arm, as the simulator's does, where the arm's keeps its torque and says so |
-| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `quackd[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm, on 2026-09-15 on quackd 0.9.0, on 2026-09-23 on quackd 0.12.0, and on 2026-11-04 and 2026-11-06 on quackd 0.31.1 and 0.31.3, with lerobot 0.6.1 and no policy. What changed after 0.31.3 has not run on an arm yet, LeRobot 0.7.0's bus, which quackd installs now, included, and the backend has run over that bus's own code with rustypot's `Bus`, the part that talks to the port, replaced by a fake (`tests/test_lerobot_real_bus.py`) |
-| `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `quackd[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `quackd preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
+| `lerobot:real` | ✅ | an SO-101 follower through LeRobot (extra `roboglot[lerobot]`, Python 3.12 or newer, torch), and as many USB webcams as `--camera-url` names; every name VERIFIED at the pin, exercised against a fake arm and a fake camera, and run on one real arm, on 2026-09-15 on Roboglot 0.9.0, on 2026-09-23 on Roboglot 0.12.0, and on 2026-11-04 and 2026-11-06 on Roboglot 0.31.1 and 0.31.3, with lerobot 0.6.1 and no policy. What changed after 0.31.3 has not run on an arm yet, LeRobot 0.7.0's bus, which Roboglot installs now, included, and the backend has run over that bus's own code with rustypot's `Bus`, the part that talks to the port, replaced by a fake (`tests/test_lerobot_real_bus.py`) |
+| `lerobot:mujoco` | ✅ | [the arm's simulator](#the-simulator-lerobotmujoco): `lerobot:real`'s own code over a physics model of the SO-101 in MuJoCo, the maker's model fetched at a pinned commit, with the cameras rendered from the scene (extra `roboglot[lerobot-sim]`, Python 3.11 or newer, no LeRobot and no torch). A seeded grasp sweep and `roboglot preflight` sweeps pass on the maker's model, and nothing has compared it against an arm, so it never raises `lerobot:real`'s status ([adapters/status.md](../status.md)) |
 
 From a terminal:
 
 ```bash
 # offline, the default
-uv run quackd run lerobot-lookout --robot lerobot:mock --llm fake
+uv run roboglot run lerobot-lookout --robot lerobot:mock --llm fake
 
-uvx --from "quackd[lerobot]" quackd list-verbs --robot lerobot:mock
-uvx --from "quackd[lerobot]" quackd validate ducks/find-and-kick.duck --robot lerobot:mock     # exit 1: requires ... does not provide it
-uvx --from "quackd[lerobot,microduck]" quackd serve-mcp --robots arm=lerobot:mock,duck=microduck:sim2d   # an arm and a duck behind one MCP server
+uvx --from "roboglot[lerobot]" roboglot list-verbs --robot lerobot:mock
+uvx --from "roboglot[lerobot]" roboglot validate tasks/find-and-kick.glot --robot lerobot:mock     # exit 1: requires ... does not provide it
+uvx --from "roboglot[lerobot,microduck]" roboglot serve-mcp --robots arm=lerobot:mock,duck=microduck:sim2d   # an arm and a duck behind one MCP server
 
 # the arm's simulator: the real backend's own code over a physics model of the arm, no arm needed
-uvx --from "quackd[lerobot-sim]" quackd run lerobot-lookout --robot lerobot:mujoco --llm fake
+uvx --from "roboglot[lerobot-sim]" roboglot run lerobot-lookout --robot lerobot:mujoco --llm fake
 
 # a real arm, after LeRobot's own calibration (see the checklist)
-uv pip install "quackd[lerobot]" && quackd doctor --robot lerobot:real --address /dev/ttyACM0   # Python 3.12+
+uv pip install "roboglot[lerobot]" && roboglot doctor --robot lerobot:real --address /dev/ttyACM0   # Python 3.12+
 ```
 
-`--address` is the arm's serial port (`/dev/ttyACM0`, `COM5`), and quackd checks that it
+`--address` is the arm's serial port (`/dev/ttyACM0`, `COM5`), and Roboglot checks that it
 looks like one before LeRobot opens anything. The `real` backend calls
 `connect(calibrate=False)` and refuses an uncalibrated arm, in these words:
 
 ```
 lerobot real: the arm is not calibrated; run LeRobot's calibration first
-(it is interactive, quackd never triggers it)
+(it is interactive, Roboglot never triggers it)
 ```
 
-Calibration is upstream's own interactive step, under the id quackd will use, and it writes
+Calibration is upstream's own interactive step, under the id Roboglot will use, and it writes
 the file every joint's range is read from: step 5 of
 [adapters/lerobot/hardware-checklist.md](hardware-checklist.md).
 
 ## Which arms
 
-`--robot-type` on `quackd robot add` and `quackd robot edit` says which of LeRobot's robot
+`--robot-type` on `roboglot robot add` and `roboglot robot edit` says which of LeRobot's robot
 types a registered arm is. It settles what the manifest calls the arm and whose figures a pilot
 judges a task against. The verbs and the code that drive the arm are the same on each
 ([ADR-0075](../../adr/0075-an-adapter-is-a-family-a-body-file-and-a-binding.md)). An arm
@@ -607,17 +607,17 @@ registered without one is an SO-101, which is every arm registered before there 
 
 | `--robot-type` | Arm | Tier | What that means |
 |---|---|---|---|
-| `so101_follower` | SO-101 | 🤖 verified · rok · 2026-09-15 | the arm quackd has driven, on 2026-09-15 and again on 2026-09-23 |
-| `so100_follower` | SO-100, the SO-101's predecessor | 🧪 bound · rok · 2026-09-15 | the same LeRobot class as the SO-101 at the commit quackd read, so it runs the code that drove the SO-101. No SO-100 has run it |
-| none: a Koch v1.1 | Koch v1.1 | 📄 described | its maker's figures, its servos' encoder resolution and its motor ids are in `quackd_lerobot/arms.py`, and nothing is registered as one. LeRobot drives it over a Dynamixel bus, and how that bus fails and what differs from an SO arm's has been read at LeRobot 0.7.0 and rustypot 1.13.1, in the [Upstream API](#upstream-api) rows below; its heat limit is still unset. Nobody has named a date to run one ([ADR-0076](../../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) |
+| `so101_follower` | SO-101 | 🤖 verified · rok · 2026-09-15 | the arm Roboglot has driven, on 2026-09-15 and again on 2026-09-23 |
+| `so100_follower` | SO-100, the SO-101's predecessor | 🧪 bound · rok · 2026-09-15 | the same LeRobot class as the SO-101 at the commit Roboglot read, so it runs the code that drove the SO-101. No SO-100 has run it |
+| none: a Koch v1.1 | Koch v1.1 | 📄 described | its maker's figures, its servos' encoder resolution and its motor ids are in `roboglot_lerobot/arms.py`, and nothing is registered as one. LeRobot drives it over a Dynamixel bus, and how that bus fails and what differs from an SO arm's has been read at LeRobot 0.7.0 and rustypot 1.13.1, in the [Upstream API](#upstream-api) rows below; its heat limit is still unset. Nobody has named a date to run one ([ADR-0076](../../adr/0076-every-backend-has-a-tier-and-bound-code-names-its-owner.md)) |
 
 ```bash
-uv run quackd robot add desk-arm lerobot:real --address COM5 --robot-type so100_follower
+uv run roboglot robot add desk-arm lerobot:real --address COM5 --robot-type so100_follower
 ```
 
-`quackd robot show desk-arm` then names the body `lerobot-so100` and the robot type
+`roboglot robot show desk-arm` then names the body `lerobot-so100` and the robot type
 `so100_follower`, and the SO-101, the default, is stored as no type at all, so a registry that
-names none stays one an older quackd reads. Calibrate it as LeRobot calibrates an SO-100, under
+names none stays one an older Roboglot reads. Calibrate it as LeRobot calibrates an SO-100, under
 the name you gave it: an
 SO-100 and an SO-101 keep their calibration in the same place,
 `HF_LEROBOT_CALIBRATION/robots/so_follower/`, since at that commit they are one class.
@@ -626,56 +626,56 @@ Two refusals, both at `robot add`. A type the adapter does not build is refused 
 does, a Koch's among them, rather than registered and then refused at the first run in words about
 something else. And `lerobot:mujoco` takes no type but the SO-101's, since the simulator is a
 physics model of an SO-101 and a rehearsal on it would say nothing about another arm's reach, and
-`quackd robot twin` refuses an SO-100 for the same reason. The mock takes either, with that arm's
-figures. `quackd ui` neither sets nor shows a type yet, and a passport made on the robot carries
+`roboglot robot twin` refuses an SO-100 for the same reason. The mock takes either, with that arm's
+figures. `roboglot ui` neither sets nor shows a type yet, and a passport made on the robot carries
 the SO-101's figures whichever arm it is.
 
 ## Installing it
 
-A bare `uv pip install quackd` brings no robot at all, this arm included. The adapter is its
-own distribution, `quackd-lerobot`, and the extra is what pulls it in:
+A bare `uv pip install roboglot` brings no robot at all, this arm included. The adapter is its
+own distribution, `roboglot-lerobot`, and the extra is what pulls it in:
 
 ```bash
-uv pip install "quackd[lerobot]"
-uv run quackd doctor
+uv pip install "roboglot[lerobot]"
+uv run roboglot doctor
 ```
 
-That is two packages: quackd's own adapter, which is where all three backends live, and
+That is two packages: Roboglot's own adapter, which is where all three backends live, and
 `lerobot[feetech]`, the SDK `real` drives the arm with. The adapter announces
-itself through the `quackd.adapters` entry point group, so there is nothing to register by
-hand. `uv pip install quackd-lerobot` is that adapter without the SDK, which is enough for
+itself through the `roboglot.adapters` entry point group, so there is nothing to register by
+hand. `uv pip install roboglot-lerobot` is that adapter without the SDK, which is enough for
 `lerobot:mock` and for reading the manifest, and enough for nothing else.
 
 Two rows in `doctor` decide whether a serial port can be opened at all:
 
 ```
-· lerobot                    not installed (quackd[lerobot])
-· lerobot (feetech bus)      not installed (quackd[lerobot])
+· lerobot                    not installed (roboglot[lerobot])
+· lerobot (feetech bus)      not installed (roboglot[lerobot])
 ```
 
 The second one is the trap. rustypot, the library that drives the motors and opens the port,
 lives in LeRobot's own `[feetech]` extra rather than in its base dependencies, so a
 `pip install lerobot` gives you a package that imports perfectly and then cannot build a
-follower. `quackd[lerobot]` asks for `lerobot[feetech]` for that reason. Both rows have to be
+follower. `roboglot[lerobot]` asks for `lerobot[feetech]` for that reason. Both rows have to be
 green before `lerobot:real` can do anything, and the second shows rustypot's version.
 
 The SDK carries a `python_version >= '3.12'` marker, because that is LeRobot's floor while
-quackd's own is 3.11. On 3.11 the extra installs the adapter and the SDK resolves to nothing,
+Roboglot's own is 3.11. On 3.11 the extra installs the adapter and the SDK resolves to nothing,
 so `lerobot:mock` works and `doctor` keeps saying `not installed` however many times you
 install it: check `python --version` first.
 
 > [!NOTE]
 > The extra asks for LeRobot 0.7.0, below 0.7.1, with rustypot below 1.14, and
-> `quackd[lerobot-vla]` asks for the same LeRobot. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
-> `rustypot`, under one bus for every Feetech and Dynamixel servo, and quackd was read again
-> against it, but no arm has run quackd on it yet: 0.6.1 is the release that has. rustypot
+> `roboglot[lerobot-vla]` asks for the same LeRobot. 0.7.0 replaced `feetech-servo-sdk`, the library that talked to the motors, with
+> `rustypot`, under one bus for every Feetech and Dynamixel servo, and Roboglot was read again
+> against it, but no arm has run Roboglot on it yet: 0.6.1 is the release that has. rustypot
 > opens the port for one program at a time on every system, so a second program on the arm's
-> port, a teleoperation, a recording, a serial monitor or another quackd, is refused as it
+> port, a teleoperation, a recording, a serial monitor or another Roboglot, is refused as it
 > opens it, where on Linux and macOS it used to open it and talk over the first, unless it
-> runs as root and takes no lock. quackd is refused the same way on a port another program
+> runs as root and takes no lock. Roboglot is refused the same way on a port another program
 > holds for itself, which on Linux and macOS is a program that locked it, as LeRobot 0.7.0's
-> own tools do: one that opened it with no lock does not stop quackd there, so close it first.
-> LeRobot 0.7.0 also reports no overload and no overheat from a servo at all, so quackd's own
+> own tools do: one that opened it with no lock does not stop Roboglot there, so close it first.
+> LeRobot 0.7.0 also reports no overload and no overheat from a servo at all, so Roboglot's own
 > temperature read is the one heat guard. What else is unconfirmed is under Known limitations
 > in the [changelog](../../../CHANGELOG.md).
 
@@ -684,18 +684,18 @@ Without the extra, every real-arm command ends the same way, and this is what it
 ```
 +- x FAILURE ------------------------------------------------------------------+
 | lerobot:real at COM5: adapter 'lerobot' needs an extra: uv pip install       |
-| 'quackd[lerobot]'                                                            |
+| 'roboglot[lerobot]'                                                          |
 +------------------------------------------------------------------------------+
 ```
 
 The simulator is a third extra, and it needs neither LeRobot nor torch:
 
 ```bash
-uv pip install "quackd[lerobot-sim]"   # the adapter and MuJoCo, on Python 3.11 or newer
+uv pip install "roboglot[lerobot-sim]"   # the adapter and MuJoCo, on Python 3.11 or newer
 ```
 
-It is `quackd-lerobot[sim]`, the same adapter with MuJoCo beside it, so it installs on 3.11 as
-well, where `quackd[lerobot]` leaves you only the mock. `doctor` gives it a row of its own,
+It is `roboglot-lerobot[sim]`, the same adapter with MuJoCo beside it, so it installs on 3.11 as
+well, where `roboglot[lerobot]` leaves you only the mock. `doctor` gives it a row of its own,
 `lerobot-sim (mujoco)`, and a line in its transports table saying whether the SO-101's model is
 in the cache yet:
 
@@ -708,10 +708,10 @@ The policy server is a fourth, installed where a policy runs, on the laptop besi
 on a rented GPU, and never needed by the process that drives the arm:
 
 ```bash
-uv pip install "quackd[lerobot-vla]"   # LeRobot, torch and transformers, on Python 3.12
+uv pip install "roboglot[lerobot-vla]"   # LeRobot, torch and transformers, on Python 3.12
 ```
 
-It is `quackd-lerobot[vla]`, which is `lerobot[smolvla,pi,xvla]` with LeRobot's own pin of
+It is `roboglot-lerobot[vla]`, which is `lerobot[smolvla,pi,xvla]` with LeRobot's own pin of
 diffusers and with dm-tree, which a GR00T answers with, rather than LeRobot's
 `[groot]`, whose datasets, pyarrow, pandas, av, torchcodec, decord, peft and timm are for
 training (`GROOT_INFERENCE_PACKAGES`), and with no `[feetech]`, since the server never opens a
@@ -725,14 +725,14 @@ This catches people once, and the symptom is an arm that refuses to connect afte
 calibration you watched succeed.
 
 LeRobot stores a calibration under an **id** you choose, at
-`<calibration dir>/robots/so_follower/<id>.json`. quackd asks LeRobot for the arm under the
+`<calibration dir>/robots/so_follower/<id>.json`. Roboglot asks LeRobot for the arm under the
 id the manifest carries, and that id comes from the name you used:
 
 | How you name it | The manifest id, and the calibration file LeRobot must have |
 |---|---|
 | `--robot lerobot:real` | `arm-01`, the default |
 | `--robots arm=lerobot:real` | `arm` |
-| `quackd robot add lab-arm lerobot:real --address COM5`, then `--robot lab-arm` | `lab-arm` |
+| `roboglot robot add lab-arm lerobot:real --address COM5`, then `--robot lab-arm` | `lab-arm` |
 
 So calibrate under the name you intend to use:
 
@@ -744,7 +744,7 @@ Two arms sharing an id share one file, and nothing in it says which arm it came 
 prints the path it actually loaded, which is the fastest way to see that you calibrated `arm`
 and are connecting as `arm-01`.
 
-Registering the arm is worth it beyond the id: `quackd robot add` stores the address, every
+Registering the arm is worth it beyond the id: `roboglot robot add` stores the address, every
 camera url and the token, so `--robot lab-arm` carries all of them and you stop retyping a COM
 port ([guides/registry.md](../../guides/registry.md)). It is also the only place a
 [rest pose](#the-rest-pose) can live, and a run or an MCP session refuses a real arm with none
@@ -778,10 +778,10 @@ the arm accepts (`wrist_roll` included, where that travel is the whole turn upst
 records rather than anything swept, see Safety), `extras.calibration_file`, the path that came
 from, `extras.rest_pose_clipped` when the recorded rest pose lies past that travel
 ([A pose past the travel](#a-pose-past-the-travel)), `limits.step_deg`,
-how far one action may move a joint (`QUACKD_LEROBOT_MAX_STEP_DEG` sets it), and
+how far one action may move a joint (`ROBOGLOT_LEROBOT_MAX_STEP_DEG` sets it), and
 `extras.camera` with `limits.camera_fov_deg` when there is a camera. With more than one camera
 it also carries `extras.cameras`, their names in the order the urls were given, primary first.
-That key is written only when there are two or more: a single camera's name is quackd's own
+That key is written only when there are two or more: a single camera's name is Roboglot's own
 default rather than anything you chose, and a pilot told its one view is called `front` starts
 naming it in sentences nobody needs.
 
@@ -818,7 +818,7 @@ The step cap stays the ceiling. One action moves a joint at most 5 degrees and t
 second, so nothing moves faster than 50 degrees a second, whatever `duration_s` says. A time too
 short for the distance is neither refused nor obeyed: the goal runs ahead of the arm, LeRobot
 clips every send to one step from where the joint is, and the joint travels at the cap until it
-is there, later than asked. Those are the defaults: `QUACKD_LEROBOT_MAX_STEP_DEG` sets another
+is there, later than asked. Those are the defaults: `ROBOGLOT_LEROBOT_MAX_STEP_DEG` sets another
 step, above 0 and up to 180 degrees.
 
 A small move is walked like a long one: a nudge of three degrees asked to take four seconds
@@ -842,7 +842,7 @@ Four exceptions, each on purpose:
   sent whole for the backend to refuse, and the backend let it through at the step cap, unpaced.
 - **A joint that reads past its travel starts its ramp at the edge of it.** The servo clamps
   every goal to the travel its calibration wrote into it, so such a joint first rises to that
-  edge at the servo's own speed, whatever quackd sends, and is paced from there. That first
+  edge at the servo's own speed, whatever Roboglot sends, and is paced from there. That first
   stretch is the one part of a move `duration_s` cannot slow down: support the arm or place it
   inside its travel if that matters ([A pose past the travel](#a-pose-past-the-travel)).
 - **`gripper` is not ramped.** It sends open or shut, which each backend maps to 100 or 0, and
@@ -878,9 +878,9 @@ And what it cannot do whatever the task says, which is the half a refusal usuall
   stopping short of shut, which an empty hand that binds also does
 - know its own mass: vendor listings disagree by a factor of three
 
-A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.duck` file can correct any of it for the build in front of you ([reference/duck-spec.md](../../reference/duck-spec.md)).
+A figure nobody published is listed as not published, and the pilot is told to answer `uncertain` and name it, rather than guess, where a task turns on it. A `.glot` file can correct any of it for the build in front of you ([reference/glot-spec.md](../../reference/glot-spec.md)).
 
-**Where the reach comes from.** Nobody publishes a reach for the SO-101, and up to 0.13.0 the sheet said so, which told the pilot to decline whatever turned on reaching: every task an arm has. The maker's URDF gives every link, so the figure is quackd's arithmetic on the maker's file. From the `shoulder_lift` joint outwards the joint origins are 0.116 m to `elbow_flex`, 0.135 m to `wrist_flex`, 0.064 m to `wrist_roll` and 0.098 m to the gripper frame, 0.413 m in all, which is an upper bound because links only add up in full when they are in a line. A grid sweep of the elbow and both wrist joints through their URDF limits puts the farthest the gripper frame gets from the shoulder axis at about 0.41 m. The sheet says 0.4, as an estimate, and the adapter's source (`REACH` in `quackd_lerobot/__init__.py`) keeps the four vectors so anyone can check them. It is measured from the shoulder joint rather than the base, and to the gripper frame rather than the fingertips.
+**Where the reach comes from.** Nobody publishes a reach for the SO-101, and up to 0.13.0 the sheet said so, which told the pilot to decline whatever turned on reaching: every task an arm has. The maker's URDF gives every link, so the figure is Roboglot's arithmetic on the maker's file. From the `shoulder_lift` joint outwards the joint origins are 0.116 m to `elbow_flex`, 0.135 m to `wrist_flex`, 0.064 m to `wrist_roll` and 0.098 m to the gripper frame, 0.413 m in all, which is an upper bound because links only add up in full when they are in a line. A grid sweep of the elbow and both wrist joints through their URDF limits puts the farthest the gripper frame gets from the shoulder axis at about 0.41 m. The sheet says 0.4, as an estimate, and the adapter's source (`REACH` in `roboglot_lerobot/__init__.py`) keeps the four vectors so anyone can check them. It is measured from the shoulder joint rather than the base, and to the gripper frame rather than the fingertips.
 
 **What the pilot is told about a pen.** The payload line used to end "and nothing whose weight is not known", which is nearly every object a task names: nobody tells the pilot what a pen weighs. It keeps the half kilogram, itself an estimate from one vendor's listing, and gives the pilot objects to judge by instead.
 
@@ -889,10 +889,10 @@ A figure nobody published is listed as not published, and the pilot is told to a
 No SO-101 has a camera in it. Whatever the kit's listing said, the arm is six servos and a
 serial board, and every camera on one is a USB webcam that plugs into the *computer*: the
 arm's own USB cable carries motor traffic and no video. So a camera here is a separate thing
-you point quackd at, one of them or [several](#several-cameras).
+you point Roboglot at, one of them or [several](#several-cameras).
 
 ```bash
-uv run quackd doctor --robot lerobot:real --address COM5 --camera-url "opencv://0"
+uv run roboglot doctor --robot lerobot:real --address COM5 --camera-url "opencv://0"
 ```
 
 The index is OpenCV's, and `lerobot-find-cameras opencv` is what tells you which is which:
@@ -913,8 +913,8 @@ scan position and not an identity: it can move when you replug or reboot.
 
 Anything else in the query is refused, with the shape, before LeRobot is even imported.
 
-**The camera is quackd's, not the arm's.** LeRobot lets you give a follower its cameras, and
-quackd deliberately does not: a follower's `is_connected` is the bus *and* every camera, and
+**The camera is Roboglot's, not the arm's.** LeRobot lets you give a follower its cameras, and
+Roboglot deliberately does not: a follower's `is_connected` is the bus *and* every camera, and
 `send_action` and `disconnect()` are gated on it, so one unplugged webcam would make every
 move and every hold raise while the arm itself was perfectly fine. Beside the follower, a
 camera that dies costs you `observe`, and a `pick` already running, and nothing else: the
@@ -932,7 +932,7 @@ What that means at the bench:
   at that moment is stopped with the arm held, because the policy sees through it. The moving
   verbs carry on. `report_state` keeps working and gains a `CAMERA DOWN:` clause with the
   reason, and the health goes into the arm's state, which is what puts a dead webcam in the
-  transcript on a run that has no `observe` to call. `quackd doctor` shows the same thing
+  transcript on a run that has no `observe` to call. `roboglot doctor` shows the same thing
   under `camera`. With several cameras a stall costs that camera's picture and nothing else,
   and both places name it: `CAMERA DOWN: side: ...` rather than a clause that does not say
   which eye closed, and one `camera <name>` row per camera in `doctor`.
@@ -952,16 +952,16 @@ refuses a second rather than opening the first and dropping the rest, and says w
 several.
 
 ```bash
-quackd robot add arm-01 lerobot:real --address COM5 \
+roboglot robot add arm-01 lerobot:real --address COM5 \
     --camera-url "opencv://1?name=top" --camera-url "opencv://2?name=side"
 ```
 
 ```
 ✓ added arm-01: lerobot:real at COM5
-  quackd run <duck> --robot arm-01
+  roboglot run <task> --robot arm-01
 ```
 
-`quackd robot show arm-01` lists them back in the order they were given (the top of it):
+`roboglot robot show arm-01` lists them back in the order they were given (the top of it):
 
 ```
 name       arm-01
@@ -993,7 +993,7 @@ What happens when one of them dies mid-run depends on which one:
 | Which camera stopped | What the LLM still gets |
 |---|---|
 | a secondary | every other view, and the `camera:` detections line unchanged. The failure is named in `report_state` and in `doctor`'s `camera <name>` row |
-| the primary | the other views still arrive as pictures, and the detections line reports nothing seen. A bearing read off a different lens would point somewhere else, so quackd reports nothing rather than something from the wrong camera |
+| the primary | the other views still arrive as pictures, and the detections line reports nothing seen. A bearing read off a different lens would point somewhere else, so Roboglot reports nothing rather than something from the wrong camera |
 
 Either way the pictures that did arrive keep their names, on the wire and in
 `frames/NNNN-<name>.png`. Whether a picture is named is decided by how many cameras the arm
@@ -1030,7 +1030,7 @@ written by 0.9 loads unchanged:
 "camera_url": ["opencv://1?name=top", "opencv://2?name=side"]
 ```
 
-**What a `.duck` may ask of this arm, and where.** `quackd run` and `quackd validate` check
+**What a `.glot` may ask of this arm, and where.** `roboglot run` and `roboglot validate` check
 a task against the *static* manifest, before anything is connected, and that manifest claims
 no camera for `lerobot:real` because nothing knows whether you plugged one in until the arm
 has answered. Both `requires:` and the allowlist are checked against it, the allowlist as a
@@ -1046,7 +1046,7 @@ driven before that is the better question anyway: whether it answers at all, whe
 on, and how warm it is. It is what ran first on the bench on 2026-09-15, and it is what ran
 again with `--llm fake` to separate the arm from the LLM.
 
-Over MCP it is the other way, and better. `robot_load_duckfile` validates against the manifest
+Over MCP it is the other way, and better. `robot_load_glotfile` validates against the manifest
 of the robot **already connected**, so the same task loads cleanly on a session started with
 `--camera-url` and is refused on one without. If you want a contract that allows `observe` on
 this arm, that is where it works today.
@@ -1070,30 +1070,30 @@ wherever it stopped. A spec on its own carries no name to keep a pose under, and
 same way:
 
 ```
-$ quackd run lerobot-lookout --robot lerobot:real --address COM5 --llm fake
+$ roboglot run lerobot-lookout --robot lerobot:real --address COM5 --llm fake
 x error: lerobot:real names no registered arm, so it has no rest pose, and at the end of a run, a
 dry one included, there is nothing to fold it to, and it would be left holding itself up wherever
 it stopped
-  quackd robot add NAME lerobot:real --address COM5, then quackd robot rest-pose NAME
+  roboglot robot add NAME lerobot:real --address COM5, then roboglot robot rest-pose NAME
 ```
 
-**A task file**, which is the one with guard rails. The `.duck` names the allowlist, the
-budgets and the success test, and quackd enforces all three:
+**A task file**, which is the one with guard rails. The `.glot` names the allowlist, the
+budgets and the success test, and Roboglot enforces all three:
 
 ```bash
-quackd run lerobot-lookout --robot arm-01 --llm anthropic
+roboglot run lerobot-lookout --robot arm-01 --llm anthropic
 ```
 
-`lerobot-lookout` ships with quackd and moves no joint: it reads the arm back and says what
+`lerobot-lookout` ships with Roboglot and moves no joint: it reads the arm back and says what
 it found. It is the first thing to point at a real arm. Writing your own is a file and a
-`requires:` line, and `quackd validate <file> --robot lerobot:real` refuses it before a run
+`requires:` line, and `roboglot validate <file> --robot lerobot:real` refuses it before a run
 if this arm does not provide a verb it asks for.
 
 **A one-line goal**, for when you want a single verb and there is no file for it. The LLM
 still has to pass `assess_task`, and everything else still applies:
 
 ```bash
-quackd run --goal "roll the wrist ten degrees and stop" --robot arm-01 --llm anthropic \
+roboglot run --goal "roll the wrist ten degrees and stop" --robot arm-01 --llm anthropic \
   --max-steps 3
 ```
 
@@ -1109,7 +1109,7 @@ one verb and stop:
   "mcpServers": {
     "arm": {
       "command": "uvx",
-      "args": ["--from", "quackd[lerobot]", "quackd", "serve-mcp", "--robot", "arm-01"]
+      "args": ["--from", "roboglot[lerobot]", "roboglot", "serve-mcp", "--robot", "arm-01"]
     }
   }
 }
@@ -1129,7 +1129,7 @@ session. A spec in the arm's place, `"--robot", "lerobot:real", "--address", "CO
 before it connects, as a run is, and the server exits 1 with this on its stderr:
 
 ```
-lerobot:real names no registered arm, so it has no rest pose, and at the end of an MCP session, there is nothing to fold it to, and it would be left holding itself up wherever it stopped: quackd robot add NAME lerobot:real --address COM5, then quackd robot rest-pose NAME
+lerobot:real names no registered arm, so it has no rest pose, and at the end of an MCP session, there is nothing to fold it to, and it would be left holding itself up wherever it stopped: roboglot robot add NAME lerobot:real --address COM5, then roboglot robot rest-pose NAME
 ```
 
 **A picture that comes with the task** is `--image PATH`, repeatable, and it is the flag that
@@ -1143,7 +1143,7 @@ camera, both go out together, task pictures first and then the frames, each name
 can tell the drawing it is copying from the desk it is copying onto:
 
 ```bash
-quackd run --goal "draw what is in the picture" --robot arm-01 --image sketch.png --llm anthropic
+roboglot run --goal "draw what is in the picture" --robot arm-01 --image sketch.png --llm anthropic
 ```
 
 Every request line says what actually went out, so a picture that never arrived is something
@@ -1169,13 +1169,13 @@ and the only sign of why would be a line in a transcript nobody reads twice:
 
 ```
 ✗ error: fake scripted:goal does not take images, so it cannot be given 1 picture
-  quackd list-models marks the LLMs that take no frames; --vision overrides it where
+  roboglot list-models marks the LLMs that take no frames; --vision overrides it where
 the vendor does take them, and a local LLM needs --vision
 ```
 
-And `--image` is refused with `--flock` or `--robots`, because one picture handed to several
+And `--image` is refused with `--team` or `--robots`, because one picture handed to several
 bodies is a task to write as several runs rather than one, and dropping the flag quietly on
-the way into a flock would be a task about a picture that never arrived.
+the way into a team would be a task about a picture that never arrived.
 
 ### The rehearsal: `--dry-run`
 
@@ -1202,7 +1202,7 @@ nothing drove it there. That is [the rest pose](#the-rest-pose)'s rule and not a
 it.
 
 A dry run needs the arm and moves none of it. The other rehearsal needs no arm and moves all of
-it, in a model: [the simulator](#the-simulator-lerobotmujoco), which `quackd preflight` runs a
+it, in a model: [the simulator](#the-simulator-lerobotmujoco), which `roboglot preflight` runs a
 task file on seed after seed.
 
 ### What `pick` needs, and what it does not have
@@ -1211,7 +1211,7 @@ task file on seed after seed.
 that reason. On `lerobot:real` and `lerobot:mujoco` they are **in the manifest only when the run
 names a policy server** with `--policy-url` ([below](#a-run-with-a-policy-server)), or when a
 policy object is handed to the backend in Python. A checkpoint loads in
-[a policy server of its own](#a-policy-in-a-process-of-its-own-quackd-policy-serve), and the arm
+[a policy server of its own](#a-policy-in-a-process-of-its-own-roboglot-policy-serve), and the arm
 reaches it through `RemoteRunner`, the server's client. Setting a server up, on the laptop or on
 a rented GPU, is [guides/policies.md](../../guides/policies.md).
 
@@ -1262,7 +1262,7 @@ it runs its time unless a stop, a release, a rest move or the next segment ends 
 verb that sends a goal meanwhile is refused, as on the arm.
 
 - **A task file can hold it to its own words and its own time.** A v3 file's `policy` section
-  ([reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)) lists the instructions
+  ([reference/glot-spec.md](../../reference/glot-spec.md#policy-v3)) lists the instructions
   `manipulate` may give, and the verb then takes those and no others. It sets `segment_s`, which the
   run tells the backend before the first segment (`set_segment_s`), and the executor's timeout for
   the verb becomes that plus 10 s. On the simulator it adds the wall time the clock stands still
@@ -1289,7 +1289,7 @@ verb that sends a goal meanwhile is refused, as on the arm.
   the executor's rule for verbs that keep failing still stops a run that does.
 - **The rate is the policy's own.** A policy declares its rate and where the number came from,
   and a rate that is not a finite number between 1 and 60 Hz refuses the segment before
-  anything is sent. quackd never measures one.
+  anything is sent. Roboglot never measures one.
 - **The pace is the arm's clock.** Tick `k` is due at the segment's start plus `k` periods,
   counted from the tick's number rather than summed, so a tick that runs long costs only its
   own time. A tick that runs past the next one's deadline skips to the next whole period,
@@ -1297,7 +1297,7 @@ verb that sends a goal meanwhile is refused, as on the arm.
   its deadline, on the simulator's clock either, which wakes only on whole steps of its own.
 - **The speed cap is the verbs'.** A verb moves a joint at most `limits.step_deg` a tick of
   0.1 s, and a policy moves it no faster: per send that speed over the policy's rate, and never
-  more than one verb step, so `QUACKD_LEROBOT_MAX_STEP_DEG` governs both. At the default 5
+  more than one verb step, so `ROBOGLOT_LEROBOT_MAX_STEP_DEG` governs both. At the default 5
   degrees a policy at 30 Hz is capped at 1.7 degrees a send. The cap is written on the
   follower for the segment and put back to the verbs' step when the segment ends, however it
   ends, and written again before every stop, rest move and verb's goal.
@@ -1335,11 +1335,11 @@ verb that sends a goal meanwhile is refused, as on the arm.
   within a tick, and one that declares a longer latency is refused before anything is sent,
   on the simulator as on the arm.
 
-### A policy in a process of its own: `quackd policy serve`
+### A policy in a process of its own: `roboglot policy serve`
 
 A checkpoint's processors are code: loading one imports whatever class its JSON names
 (`PROCESSOR_CLASS_IMPORT` in [the policies' table](#the-policies-upstream-lerobot-070)). So no
-quackd command loads a checkpoint in the process that owns the arm's serial bus
+Roboglot command loads a checkpoint in the process that owns the arm's serial bus
 ([ADR-0048](../../adr/0048-policies-are-the-arms-executor.md)), and
 [guides/policies.md](../../guides/policies.md) is how to set one up, with the licences of the ones
 there are. The policy runs in a server you start, in a terminal of its own, on the laptop or on a
@@ -1349,24 +1349,24 @@ It serves a LeRobot checkpoint named as `REPO@REVISION`
 ([below](#serving-a-checkpoint)), and two scripted policies that need no torch either:
 `scripted:hold` holds the arm where it reads, so a `manipulate` of it ends on a stall, and
 `scripted:sweep` swings `wrist_flex` 5 degrees either side of where it started, one swing every
-2 s. `quackd run`, `quackd preflight` and `quackd serve-mcp` point the arm at a server with
-`--policy-url` ([below](#a-run-with-a-policy-server)), and `quackd policy check` asks one what it
+2 s. `roboglot run`, `roboglot preflight` and `roboglot serve-mcp` point the arm at a server with
+`--policy-url` ([below](#a-run-with-a-policy-server)), and `roboglot policy check` asks one what it
 serves.
 
 ```bash
-quackd policy serve --policy scripted:sweep
+roboglot policy serve --policy scripted:sweep
 ```
 
 It prints where it serves, the token file it wrote or read and the rate, and serves until
 Ctrl+C. In a second terminal on the same machine:
 
 ```bash
-quackd policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
+roboglot policy check --policy-url http://127.0.0.1:9875 --bench --seconds 3
 ```
 
 ```text
   http://127.0.0.1:9875
-policy           scripted:sweep (quackd-policy 1, quackd 0.34.0)
+policy           scripted:sweep (roboglot-policy 1, Roboglot 0.34.0)
 features         whatever the arm has (a scripted policy)
 rate             10 Hz, from scripted:sweep's own, the verbs' tick
 chunks           10 actions, 10 played from each
@@ -1403,7 +1403,7 @@ for its first chunk, or longer than half a chunk's actions, rounded down, take t
 (`latency_too_long`), is given no latency, since `serve` would refuse any that covered them: the
 bench says it answers too slowly to drive an arm from that machine, and to serve it on a GPU.
 `--bench` is one of the two places a rate is measured, the other being the bench with the arm.
-`quackd policy check --policy NAME` serves the policy in its own process for the length of the
+`roboglot policy check --policy NAME` serves the policy in its own process for the length of the
 check, with a token that lives only that long.
 
 `--latency-s` declares how long the policy takes to answer a step, which the simulator holds
@@ -1413,16 +1413,16 @@ than half a chunk's actions, rounded down, take to play. A segment asks for the 
 once the last has landed, so past half a chunk the arm has nothing to play for part of every
 chunk, on the simulator as on the arm, and as long as a chunk every chunk lands after its last
 action's tick and none plays. Each refusal says the longest latency the policy's chunk allows.
-`check` of a server started with such a latency by an earlier quackd says so in its latency row,
+`check` of a server started with such a latency by an earlier Roboglot says so in its latency row,
 its bench says so rather than that the latency covers what it timed, and the arm refuses to
 connect to it, before any torque ([below](#whether-the-policy-fits-the-arm)). Where the latency
 a server declares covers what a bench timed but the slowest step took longer than half a chunk,
 the bench says a step that slow can leave the arm holding still, since no answer later than that
 is sure to land before the queue runs out.
 
-- **A token, always.** With no `--token-file` the server writes one to `~/.quackd/policy.token`
+- **A token, always.** With no `--token-file` the server writes one to `~/.roboglot/policy.token`
   the first time, readable by you alone where the OS allows, and reads it after that. The
-  client reads `--policy-token`, then `QUACKD_POLICY_TOKEN`, then that file. It rides in one
+  client reads `--policy-token`, then `ROBOGLOT_POLICY_TOKEN`, then that file. It rides in one
   header, never in a URL, and is compared in constant time. Both ends refuse a token shorter
   than 16 characters, or with a space or a line break inside it, and say where it came from
   without quoting it: `openssl rand -hex 32` makes one.
@@ -1473,12 +1473,12 @@ server's extra, which is LeRobot, torch and transformers and nothing the arm's o
 imports:
 
 ```bash
-uv pip install "quackd[lerobot-vla]"
-quackd policy serve --policy OWNER/NAME@REVISION --fps 30
+uv pip install "roboglot[lerobot-vla]"
+roboglot policy serve --policy OWNER/NAME@REVISION --fps 30
 ```
 
 It serves ACT, SmolVLA, pi05, pi0, X-VLA and GR00T N1.7 checkpoints, the types whose
-processors quackd has read at LeRobot 0.7.0, an X-VLA in its `auto` action mode alone
+processors Roboglot has read at LeRobot 0.7.0, an X-VLA in its `auto` action mode alone
 ([guides/policies.md](../../guides/policies.md#x-vla)) and a GR00T whose every action group is
 joints ([guides/policies.md](../../guides/policies.md#gr00t-n17)), and refuses pi0-FAST, whose
 policy runs its tokenizer's own code
@@ -1526,7 +1526,7 @@ Loading one reads before it builds, and refuses rather than guesses:
   to a kernel on the Hub, code transformers would fetch and run while it builds from that config
   once the `kernels` package is installed, a flash attention whenever flash_attn cannot run, and
   some experts and quantizers always. The server's extra does not install `kernels` and nothing
-  quackd serves needs it, so a server where it is installed at a version transformers takes
+  Roboglot serves needs it, so a server where it is installed at a version transformers takes
   loads no checkpoint at all, and says to uninstall it.
 - **The rate.** No checkpoint carries one (`CONFIG_HAS_NO_RATE`), so it is `--fps`, or else the
   fps in `meta/info.json` of the dataset `train_config.json` names, at the revision it names.
@@ -1538,7 +1538,7 @@ Loading one reads before it builds, and refuses rather than guesses:
   device LeRobot picks, a GPU where there is one. Every weight in `model.safetensors` is loaded
   into the model and none is left as it was built, or the server refuses to start: LeRobot's
   loader only logs a weight it did not find, and pi05's and pi0's hand back a random network
-  when their weights do not load, so quackd asks the one to be strict and loads the others'
+  when their weights do not load, so Roboglot asks the one to be strict and loads the others'
   itself. An ACT's ImageNet backbone is never fetched, since the checkpoint's own weights
   replace it, and torch gets one thread fewer than it would take, unless `--threads` says how
   many. An ACT that ensembles its chunks over time is asked every tick and is refused without a
@@ -1558,15 +1558,15 @@ ACT CI's job builds, put in a Hub cache on a laptop's CPU the way that job puts 
 `HF_HUB_OFFLINE=1` and `HF_HUB_CACHE` pointing at it:
 
 ```bash
-quackd policy check --policy quackd-test/tiny-act@v1 --bench --seconds 3
+roboglot policy check --policy roboglot-test/tiny-act@v1 --bench --seconds 3
 ```
 
 ```text
   served here for the check, at http://127.0.0.1:53804
-policy           quackd-test/tiny-act@v1 (quackd-policy 1, quackd 0.34.0)
+policy           roboglot-test/tiny-act@v1 (roboglot-policy 1, Roboglot 0.34.0)
 features         state 6, action 6, images observation.images.front 64x48
 rate             10 Hz, from
-                 quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
+                 roboglot-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
                  meta/info.json
 chunks           8 actions, 4 played from each
 latency          0 s declared
@@ -1578,9 +1578,9 @@ state q01..q99   -32.4835..32.4835, -47.5165..47.5165, 25..75,
                  -42.5055..42.5055, -62.5055..62.5055, -37.4945..37.4945
 action q01..q99  -32.4835..32.4835, -47.5165..47.5165, 25..75,
                  -42.5055..42.5055, -62.5055..62.5055, -37.4945..37.4945
-loaded           checkpoint quackd-test/tiny-act@v1, commit 0b812cabb86d;
+loaded           checkpoint roboglot-test/tiny-act@v1, commit 0b812cabb86d;
                  dataset
-                 quackd-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
+                 roboglot-test/tiny-data@ed2440c0bf574309f37e0a639e02d7b34cb2939c
                  , its fps
 achieved    10.0 Hz of 10: 30 of the 30 ticks in 3.0 s sent an action
 starved     0 ticks with nothing to send
@@ -1619,15 +1619,15 @@ each camera's size is a frame it just gave, and the travel is the calibration fi
   goals that pin this one at its limits, so it is refused, naming each joint with its
   percentiles and its travel. A checkpoint that reports no percentiles is let through, and the
   record says it was not checked.
-- **The latency** the server declares. `quackd policy serve` refuses one longer than half a
+- **The latency** the server declares. `roboglot policy serve` refuses one longer than half a
   chunk's actions, rounded down, take to play
-  ([above](#a-policy-in-a-process-of-its-own-quackd-policy-serve)), and a server an earlier
-  quackd started may still declare one. The connect refuses it, saying how many ticks of every
+  ([above](#a-policy-in-a-process-of-its-own-roboglot-policy-serve)), and a server an earlier
+  Roboglot started may still declare one. The connect refuses it, saying how many ticks of every
   chunk the arm would have nothing to play for and the longest `--latency-s` to start the server
   again with. Nothing overrides it.
 
-**`--accept-other-frame`** overrides the frame of reference, on `quackd run`, `quackd preflight`
-and `quackd serve-mcp`, beside `--policy-url`, and is refused without it. It lets a policy
+**`--accept-other-frame`** overrides the frame of reference, on `roboglot run`, `roboglot preflight`
+and `roboglot serve-mcp`, beside `--policy-url`, and is refused without it. It lets a policy
 learned on an arm calibrated another way connect, and nothing else: every goal it answers is
 still clipped to this arm's calibrated travel before it is sent, so it changes what drives the
 arm and never where the arm may go. Give it when you know the two arms' frames match. The
@@ -1648,20 +1648,20 @@ in the record, and the same policy starts none once it no longer fits.
 ### A run with a policy server
 
 `--policy-url` hands the arm's `pick` and `manipulate` to a server that is running, on
-`quackd run`, `quackd preflight` and `quackd serve-mcp`:
+`roboglot run`, `roboglot preflight` and `roboglot serve-mcp`:
 
 ```bash
-quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-url http://127.0.0.1:9875
+roboglot run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-url http://127.0.0.1:9875
 ```
 
 - **Only the flag names it.** No variable and no registered robot carries the address, so a
   policy drives the arm only on a command that says so. The token is `--policy-token`, else
-  `QUACKD_POLICY_TOKEN`, else the file `quackd policy serve` wrote, and an address the client
+  `ROBOGLOT_POLICY_TOKEN`, else the file `roboglot policy serve` wrote, and an address the client
   refuses, or a token found nowhere, is refused as the arm is built, before anything connects.
   A task that allows `pick` or `manipulate` on the arm, run without the flag, is refused with a
   line saying to start a server and give the command its address.
 - **One arm.** `lerobot:real` and `lerobot:mujoco` take it. The mock runs its own scripted
-  policy and refuses one, every other body refuses it naming these two, and a flock refuses it,
+  policy and refuses one, every other body refuses it naming these two, and a team refuses it,
   because one server drives one arm.
 - **Asked before the arm connects.** The server is asked what it serves before anything
   connects, so a server that is not there is one sentence with nothing energised, and the run
@@ -1675,7 +1675,7 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
   latency the server declares, as LeRobot's own loop plays chunks. The simulator holds each
   back the declared latency, and a server that declares none is rehearsed as answering within
   a tick. It is slower by a round trip a chunk, and is there to compare against or to fall
-  back on. `quackd policy check --bench --no-async-chunks` paces a bench the same way, and the
+  back on. `roboglot policy check --bench --no-async-chunks` paces a bench the same way, and the
   `policy` block of `run_start` and `summary.json` says which it was (`async_chunks`).
 - **A goal run asks at a terminal before each segment.** A `--goal` allows only verbs that are
   safe, and `manipulate` is not one. With a policy server it is allowed all the same, behind a
@@ -1706,12 +1706,12 @@ quackd run --goal "put the block in the bowl" --robot lerobot:mujoco --policy-ur
 
 `--controller llm`, the default, is the LLM `--llm` names deciding each subtask. With
 `--controller vla` there is no LLM at all. A scripted pilot hands the policy each instruction
-the task file lists under `policy.instructions` (a `duck: 3` file,
-[reference/duck-spec.md](../../reference/duck-spec.md#policy-v3)), in order, one `manipulate`
+the task file lists under `policy.instructions` (a `glot: 3` file,
+[reference/glot-spec.md](../../reference/glot-spec.md#policy-v3)), in order, one `manipulate`
 segment each, or the `--goal` text as the only one:
 
 ```bash
-quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 --controller vla
+roboglot run stack-blocks.glot --robot lerobot:mujoco --policy-url http://127.0.0.1:9875 --controller vla
 ```
 
 - **You are its verdict, twice.** Its `assess_task` is always `uncertain`, so you are asked
@@ -1729,12 +1729,12 @@ quackd run stack-blocks.duck --robot lerobot:mujoco --policy-url http://127.0.0.
   same narrowed verb, confirm gate and `policy.total_s`. A budget that runs out before the last
   instruction ends the run on its budget, and you are still asked about the segments that ran.
 - **It reads nothing but the verb's result and your answer.** The simulator's own truth about
-  the table never reaches it: `quackd preflight` judges a rehearsal on its own.
+  the table never reaches it: `roboglot preflight` judges a rehearsal on its own.
 - **It costs nothing.** No LLM is asked, so the counter line counts `turns` where a run with an
   LLM counts `LLM calls`, and reads `tokens 0+0` and `cost $0`.
 - **It is refused before anything connects** without `--policy-url`, with `--yes`, with no
   terminal to ask on, with `--dry-run`, beside `--decision-llm` or a decision LLM
-  `QUACKD_DECISION_LLM` names, with a flag for a pilot LLM or a picture it would ignore (`--llm`,
+  `ROBOGLOT_DECISION_LLM` names, with a flag for a pilot LLM or a picture it would ignore (`--llm`,
   `--base-url`, `--api-key`, `--extra-body`, `--vision`, `--image`), with `--play`, for a task
   file whose `policy.instructions` is empty, and for a task file that gives its pilot a part to
   play unless `--no-play` turns it off ([guides/play.md](../../guides/play.md)). A `--goal` has
@@ -1763,8 +1763,8 @@ extended arm`, on a bare `--robot lerobot:mujoco` with the `front` camera, pilot
 ### Running it
 
 ```bash
-uv pip install "quackd[lerobot-sim]"
-quackd run lerobot-lookout --robot lerobot:mujoco --llm fake
+uv pip install "roboglot[lerobot-sim]"
+roboglot run lerobot-lookout --robot lerobot:mujoco --llm fake
 ```
 
 The first connect fetches the model, the maker's own, one file at a time at a pinned commit,
@@ -1772,7 +1772,7 @@ each checked against its sha256 ([its upstream](#the-simulators-upstream-so-arm1
 so once:
 
 ```
-fetching the SO-101 model (16 files, about 16 MB) from https://github.com/TheRobotStudio/SO-ARM100 into /home/you/.quackd/cache/so-arm100/5f6d2b876a53a4872e405b991dd925556c9e38a4. Apache-2.0, never shipped with quackd
+fetching the SO-101 model (16 files, about 16 MB) from https://github.com/TheRobotStudio/SO-ARM100 into /home/you/.roboglot/cache/so-arm100/5f6d2b876a53a4872e405b991dd925556c9e38a4. Apache-2.0, never shipped with Roboglot
 ```
 
 A bare `--robot lerobot:mujoco` names no arm, so there is no calibration of yours to read, and
@@ -1782,7 +1782,7 @@ the connect says what it used instead:
 -  note    no arm was named, so this rehearsal runs on the generic arm, whose travel is the model's own range on every joint and not any arm's calibration; give --address the file lerobot-calibrate wrote for an arm to rehearse that arm's travel
 ```
 
-It never reads the file LeRobot keeps under `arm-01`, the id quackd gives an arm nobody named,
+It never reads the file LeRobot keeps under `arm-01`, the id Roboglot gives an arm nobody named,
 which on a machine that has calibrated an arm is somebody's real travel under a name this run
 never gave. To rehearse your own arm, name its calibration: `--address` takes the file
 `lerobot-calibrate` wrote, and a registered `lerobot:mujoco` robot with no address reads the one
@@ -1792,21 +1792,21 @@ before anything opens it:
 ```
 x error: lerobot mujoco: --address 'COM5' is a serial port, and the address of a lerobot:mujoco
 robot is the calibration file the arm's runs read, never the arm's port, so nothing was opened
-there. Give --address the file lerobot-calibrate wrote for the arm, which quackd robot twin finds
+there. Give --address the file lerobot-calibrate wrote for the arm, which roboglot robot twin finds
 for a registered one, or leave it out to rehearse on the generic arm.
 ```
 
-**The easy way is a twin of the arm you registered.** `quackd robot twin arm-01` registers
+**The easy way is a twin of the arm you registered.** `roboglot robot twin arm-01` registers
 `arm-01-sim` on the calibration file `arm-01`'s runs read, with its rest pose, its pilot and
 each camera the simulator can render:
 
 ```
-$ quackd robot twin arm-01
+$ roboglot robot twin arm-01
 + added arm-01-sim: lerobot:mujoco, a simulator of arm-01 on
 /home/you/.cache/huggingface/lerobot/calibration/robots/so_follower/arm-01.json
   copied from arm-01: rest pose, pilot openai:gpt-6-sol, 2 camera urls
-! robots.json now holds a lerobot:mujoco robot, and quackd 0.14 and earlier cannot read the file at all: quackd robot remove arm-01-sim before going back to one
-  quackd preflight <duck> --robot arm-01-sim
+! robots.json now holds a lerobot:mujoco robot, and Roboglot 0.14 and earlier cannot read the file at all: roboglot robot remove arm-01-sim before going back to one
+  roboglot preflight <task> --robot arm-01-sim
 ```
 
 `--robot arm-01-sim` is then the same travel starting from the same fold, and its memory is its
@@ -1864,7 +1864,7 @@ A close that finds the simulated arm away from its rest pose keeps torque on, as
 does, and says there is nothing to hold, release or park, since the simulated arm ends with the
 run. A run at a terminal is not asked the questions a real arm's is, for the same reason.
 
-`quackd doctor --robot arm-01-sim` connects it, which renders one small frame as every connect
+`roboglot doctor --robot arm-01-sim` connects it, which renders one small frame as every connect
 does, so it tells you before any run whether this machine can draw the scene, and it says first
 what it is:
 
@@ -1880,7 +1880,7 @@ The arm's own camera flags work here unchanged, because the simulator reads the 
 three mounts, `front`, `top` or `wrist`, and `width`, `height`, `rotation` and `fov` apply,
 `fov` being the horizontal view in degrees, 90 unless you give one. `wrist` is rendered from the
 wrist camera mount on upstream's model, which may not be where yours sits. `front` and `top` are
-quackd's own views of the table and not where any real camera stands, and a connect note and
+Roboglot's own views of the table and not where any real camera stands, and a connect note and
 the state's assumptions both say so. A name the scene has no mount for is refused before
 anything connects:
 
@@ -1903,7 +1903,7 @@ clock, and the physics steps while every such wait is parked and stops the momen
 wakes. So a pilot's thinking costs no sim time, and a run's `max_minutes` counts the arm's time,
 not yours. One step of that clock is 0.01 s, five of the model's physics steps. `--seed` lays
 out the table, and under one seed the simulator does the same again on a run through
-`quackd run` or `quackd preflight`, which make one call at a time, though an LLM may not choose
+`roboglot run` or `roboglot preflight`, which make one call at a time, though an LLM may not choose
 the same verbs twice. An MCP session runs tool calls at once, so it is not seeded. `--live` holds
 each step until the wall has caught up, for a person watching, and it is the same lockstep clock,
 so nothing timed on it is a rate.
@@ -1911,7 +1911,7 @@ so nothing timed on it is a rate.
 ### `--by-hand` on the simulator
 
 `--by-hand` runs here as it does on the desk, up to the moment somebody would place the arm.
-quackd releases it at its rest pose and asks you to place it, and nobody can. So when you press
+Roboglot releases it at its rest pose and asks you to place it, and nobody can. So when you press
 Enter the take-hold first lets the limp arm fall for a second of sim time, and then takes hold
 of whatever pose the table, the model's stops and its own weight have left it in, or refuses in
 the arm's own words where a joint has fallen past its travel or moved under the hold
@@ -1922,28 +1922,28 @@ holds it up, because how a released joint settles is the model's answer (`SERVO_
 and which way gravity pulls each joint rests on signs and zeros nobody has checked against an
 arm (`JOINT_SIGN`, `JOINT_ZERO`). Only the bench gives the arm's.
 
-### Rehearsing a task file: `quackd preflight`
+### Rehearsing a task file: `roboglot preflight`
 
-`quackd preflight` is what the simulator is for. It rehearses task files on a simulator, never on
+`roboglot preflight` is what the simulator is for. It rehearses task files on a simulator, never on
 an arm, and refuses anything else before it builds it:
 
 ```
 x error: arm-01 (lerobot:real) is not a simulator, and preflight runs only on
-one, since it drives the robot through every task file seed after seed: quackd
+one, since it drives the robot through every task file seed after seed: Roboglot
 robot twin NAME registers a lerobot:mujoco simulator of a registered arm to
 rehearse on
-  then quackd preflight FILES --robot NAME-sim
+  then roboglot preflight FILES --robot NAME-sim
 ```
 
 It also refuses to rehearse with a pilot nobody named, because the scripted one rehearses nothing
-an LLM would do. The pilot is `--llm`, else the robot's registered one, else `QUACKD_LLM`, and
+an LLM would do. The pilot is `--llm`, else the robot's registered one, else `ROBOGLOT_LLM`, and
 the scripted pilot runs only when typed as `--llm fake`. Each file is checked against the robot
 as `validate` checks it, the simulator is connected and closed `--connect-cycles` times, and the
 task is run `--seeds` times, three of each unless you say, with memory off:
 
 ```
-$ quackd preflight lerobot-lookout --robot arm-01-sim --llm fake
-quackd preflight lerobot-lookout
+$ roboglot preflight lerobot-lookout --robot arm-01-sim --llm fake
+roboglot preflight lerobot-lookout
 +--------------------------------------------------------------------+
 | seed | outcome | steps | close            | checks | cost | result |
 |------+---------+-------+------------------+--------+------+--------|
@@ -2042,7 +2042,7 @@ It does not prove that the arm can do the task. The dynamics are the model's, a 
 another robot's servo properties, not anything measured on an SO-101, so a grasp that holds here
 is evidence about the model (`SERVO_DYNAMICS`, below). Which way each joint turns and where its
 zero sits are assumed to match the model until a bench checks them (`JOINT_SIGN`, `JOINT_ZERO`).
-The cameras' placement is quackd's, the servos never warm, and no rate measured here is the real
+The cameras' placement is Roboglot's, the servos never warm, and no rate measured here is the real
 bus's. So `lerobot:mujoco`'s status never raises `lerobot:real`'s, and what only the bench can
 settle is listed in [PLAN.md](../../../PLAN.md).
 
@@ -2050,15 +2050,15 @@ settle is listed in [PLAN.md](../../../PLAN.md).
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot-sim]'` | MuJoCo is not installed here. The connect says so before anything is fetched | install the extra |
-| `lerobot mujoco: --address 'COM5' is a serial port, ...` | the address of a simulated arm is a calibration file, never a port, and nothing was opened | give `--address` the calibration file, or use `quackd robot twin`, or leave it out for the generic arm |
+| `adapter 'lerobot' needs an extra: uv pip install 'roboglot[lerobot-sim]'` | MuJoCo is not installed here. The connect says so before anything is fetched | install the extra |
+| `lerobot mujoco: --address 'COM5' is a serial port, ...` | the address of a simulated arm is a calibration file, never a port, and nothing was opened | give `--address` the calibration file, or use `roboglot robot twin`, or leave it out for the generic arm |
 | `lerobot mujoco: --camera-url '...' names '...', and the scene has no camera by that name; its cameras are front, top, wrist.` | a `?name=` the scene has no mount for | name `front`, `top` or `wrist` |
-| `lerobot mujoco: the rest pose puts ... on the model, and 1 s of settling still leaves ..., so the simulated arm cannot start there` | the rest pose puts the model into its table or into itself, and a second of settling leaves a part more than a millimetre in, held there by a stop or by a joint that cannot move. An arm started there would stall on its first move | give the robot a rest pose the model can start at: `quackd robot rest-pose NAME` records the model's zero, where the simulated arm starts without one. A twin's rest pose is its own, so the arm it copies keeps its pose |
+| `lerobot mujoco: the rest pose puts ... on the model, and 1 s of settling still leaves ..., so the simulated arm cannot start there` | the rest pose puts the model into its table or into itself, and a second of settling leaves a part more than a millimetre in, held there by a stop or by a joint that cannot move. An arm started there would stall on its first move | give the robot a rest pose the model can start at: `roboglot robot rest-pose NAME` records the model's zero, where the simulated arm starts without one. A twin's rest pose is its own, so the arm it copies keeps its pose |
 | `lerobot mujoco: with shoulder_lift at the edge of the travel its calibration recorded, where the close's rest move parks the arm, the rest pose puts ... on the model, and 1 s of settling leaves ..., so the simulated arm could not come back to rest` | with a joint recorded past its travel parked at the edge of it, as every close after a move of that joint parks it, the model is in its table or in itself, and a second of settling leaves that joint pushed back into its travel further than a reached pose may miss by, or the arm's start in the table or in itself | the same: give the robot a rest pose the model can start at, or calibrate again with the arm folded so the fold is inside the travel ([A pose past the travel](#a-pose-past-the-travel)) |
 | `lerobot mujoco: the scene lays block between the jaws, and as the arm starts its fixed finger ends ... above the table, over the top of block, ...` | a sidecar placed an object between the jaws, and the rest pose holds the jaws above it | give the robot a rest pose whose open jaws point down at the table around the object, or lay the object on the table instead |
 | `lerobot mujoco: the scene lays block between the jaws, and as the arm starts they are open narrower than block, ...` | the rest pose's jaws are shut, or open narrower than the object, which would start inside a finger | the same: a rest pose whose open jaws point down at the table around the object. A gripper merely left open is not enough, as the next row says |
 | `lerobot mujoco: the scene lays block between the jaws, and as the arm starts, closing the gripper stops its moving finger ... mm clear of block, which it never touches on the way. ...` | the fixed finger stands at the object's side, but closing the gripper swings the moving finger past it, over its top from a hand tilted at the wrist: the connect closes the gripper on a copy of the physics as it lays the object out, and the moving finger never touched it | the same: a rest pose whose open jaws point down at the table around the object, or lay the object on the table instead |
-| `QUACKD_LEROBOT_SIM_ASSETS=... has no so101_new_calib_camera.xml.` | the variable points somewhere without the model | point it at the `Simulation/SO101` directory of an SO-ARM100 checkout, or unset it to let quackd fetch the pinned model |
+| `ROBOGLOT_LEROBOT_SIM_ASSETS=... has no so101_new_calib_camera.xml.` | the variable points somewhere without the model | point it at the `Simulation/SO101` directory of an SO-ARM100 checkout, or unset it to let Roboglot fetch the pinned model |
 
 ## Which of this arm's verbs are a choice
 
@@ -2081,7 +2081,7 @@ against `JOINTS`, so there is nothing for a decision LLM to enumerate even in pr
 version of this could be talked into offering one.
 
 `pick` is out on both counts, being a free string and confirm gated. `manipulate` is a free
-string too, unless a `duck: 3` task file lists its instructions, which makes it one choice per
+string too, unless a `glot: 3` task file lists its instructions, which makes it one choice per
 instruction. The stepper is then shown each of them and never takes one, in either mode: under
 `--yes` nobody is asked at a confirm gate, so a stepper that cleared its floor would start the
 arm's policy with no person and no pilot involved. Its answer is recorded beside the pilot LLM's
@@ -2090,14 +2090,14 @@ arm's policy with no person and no pilot involved. Its answer is recorded beside
 the hot-servo precondition apply to a stepper-authored call exactly as they apply to the pilot LLM's,
 because both go through the same executor.
 
-[`ducks/arm-grip-check.duck`](../../../ducks/arm-grip-check.duck) is the task built out of the
+[`tasks/arm-grip-check.glot`](../../../tasks/arm-grip-check.glot) is the task built out of the
 first row alone, and it is the worked example on that page.
 
 ## Safety
 
-Each of these exists because upstream could not answer a question quackd has to ask; the
+Each of these exists because upstream could not answer a question Roboglot has to ask; the
 reasoning is in [ADR-0036](../../adr/0036-what-the-arm-does-not-say.md). What stops each body in
-quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
+Roboglot, side by side, is [concepts/safety.md](../../concepts/safety.md).
 
 - **The heartbeat reads the arm.** `is_connected` is the serial port's open flag and stays
   `True` with the cable pulled, so the heartbeat is a round trip to the motors, and a dead arm
@@ -2111,7 +2111,7 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
 - **A goal outside the calibrated range is refused, on four joints of the five.** LeRobot
   does not clamp a degrees goal and the servo does, silently, to the travel calibration wrote
   into it (`up.POSITION_LIMITS_CLAMP_GOALS`), so a goal let through would be one the arm quietly
-  stops short of. quackd computes each joint's travel from the calibration file and refuses
+  stops short of. Roboglot computes each joint's travel from the calibration file and refuses
   instead. `wrist_roll` is the exception, and it is upstream's: its
   calibration deliberately does not sweep that joint, printing *move all joints except
   'wrist_roll'* and recording a full encoder turn for it instead
@@ -2119,11 +2119,11 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   that cannot be narrower than the whole turn cannot catch anything. Treat `wrist_roll` as
   unguarded and give it small goals.
 - **One action moves a joint at most one step.** `max_relative_target` is unset upstream;
-  quackd sets it to 5 degrees, re-sent at 10 Hz, so 50 degrees a second at most. That is a
+  Roboglot sets it to 5 degrees, re-sent at 10 Hz, so 50 degrees a second at most. That is a
   ceiling and not a pace: `move_joints` walks its goal across the `duration_s` it is given, and
   only a time too short for the distance runs at the cap.
 - **No deadman.** Nothing in LeRobot's `Robot` stops an arm when the client goes quiet: read
-  from the class, not assumed. quackd's `stop` re-sends the present position as the goal and
+  from the class, not assumed. Roboglot's `stop` re-sends the present position as the goal and
   never calls `disable_torque()`, the same principle as never sending `robot.relax` to a
   Microduck. A joint that reads past its travel gets no goal from a stop at all, because the
   servo would clamp "stay here" to its limit and drive there
@@ -2144,15 +2144,15 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   does not join, so the verdict prints and the process ends.
 - **Torque is released only where the arm is known to be at its recorded rest pose, unless a
   person holding it asks.** `disconnect()` disables it where LeRobot's config asks, which is
-  LeRobot's default, and quackd asks for it over an arm at rest, because an arm at rest should
-  be limp: that is what "at rest" means. So before the disconnect quackd reads the joints one
+  LeRobot's default, and Roboglot asks for it over an arm at rest, because an arm at rest should
+  be limp: that is what "at rest" means. So before the disconnect Roboglot reads the joints one
   last time, and where they are not the pose you recorded, or as near it as the calibrated
   travel lets the servo go, it asks for torque to be kept instead and leaves the arm holding
   itself up, with one line saying so and naming the ways out:
 
   ```
   the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-  stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which
+  stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which
   folds it to its rest pose and lets go of it there: support the arm while that connects,
   because connecting takes torque off every motor for a moment. Or hold it and cut its power
   ```
@@ -2162,8 +2162,8 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   clear the arm's way and press Enter, and it folds once more; and only if that fold misses too,
   hold it and press Enter, and torque comes off where it stands, which drops it into your hands.
   The line above is what follows when nobody presses Enter, and what `doctor`, a dry run, an MCP
-  session or a flock member says without asking. With no rest pose recorded there is nothing to
-  check against, so a run, a dry run, an MCP session and a flock each refuse a real arm with
+  session or a team member says without asking. With no rest pose recorded there is nothing to
+  check against, so a run, a dry run, an MCP session and a team each refuse a real arm with
   none before anything connects, and a probe, `doctor` or `robot list --probe`, keeps its torque
   on where it stands and says so, where 0.23 and before let go of it there, as every session did
   in 0.9. At a terminal `doctor` first asks whether to drop it into your hands, which is how an
@@ -2173,11 +2173,11 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
 
   An exit that never reaches that read, a second Ctrl-C during the rest move or a crash, leaves
   the arm holding too. LeRobot can still disconnect an arm nobody closed as the process lets go
-  of it, and quackd builds the arm asking that disconnect to keep torque, so the release is
-  asked for only by quackd's own close, or by a connect it refused because the arm is not
+  of it, and Roboglot builds the arm asking that disconnect to keep torque, so the release is
+  asked for only by Roboglot's own close, or by a connect it refused because the arm is not
   calibrated, has no calibration file or has no motors bus. In 0.14 and before the arm was built
   asking that disconnect for the release, so it could fall wherever it stood. Clear its way and
-  run `quackd robot release NAME`, supporting it while that connects, or cut its power. A
+  run `roboglot robot release NAME`, supporting it while that connects, or cut its power. A
   connect that fails any other way once the
   arm is energised keeps its torque as well, and says so
   ([When it will not work](#when-it-will-not-work)).
@@ -2204,7 +2204,7 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   status packet the bus drops, or that comes back garbled, still fails the whole connect and
   leaves the port open behind it. On 2026-09-23, on LeRobot 0.6.1, that ended three of 26 runs
   on an SO-101 before they began, on a different motor each time, and the next connect went
-  through every time. quackd now closes the port through the bus without writing to any motor
+  through every time. Roboglot now closes the port through the bus without writing to any motor
   (`up.BUS_DISCONNECT` with `disable_torque` False: the follower's own `disconnect()` would first
   switch torque off on every motor again, on the bus that has just lost a packet), waits half a
   second and connects again, up to three attempts in all. Each retry is a WARNING line while it
@@ -2237,7 +2237,7 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   since one joint's cable would be a guess, and sends you to the arm's cables and power, as
   does a torque call that reached none of them.
 
-  A stop asked for while a connect is failing ends it: a Ctrl-C during a `quackd run`, whose
+  A stop asked for while a connect is failing ends it: a Ctrl-C during a `roboglot run`, whose
   first press sets the run's abort flag, is looked for once an attempt has failed and throughout
   the pause before the next, and the connect is refused on the spot with no further attempt, and
   so no further torque switched off and on
@@ -2246,12 +2246,12 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   rest move that opens it.
 
   The port opens for one program at a time (`up.PORT_OPENED_EXCLUSIVELY`), so a connect while a
-  teleoperation, a recording, a serial monitor or another quackd holds it fails before anything
+  teleoperation, a recording, a serial monitor or another Roboglot holds it fails before anything
   is sent, and its note says the port never opened. On Linux and macOS that takes a program that
-  locked the port, as another quackd and LeRobot 0.7.0's own tools do: one that opened it with no
+  locked the port, as another Roboglot and LeRobot 0.7.0's own tools do: one that opened it with no
   lock, as an older LeRobot or a serial monitor may, does not stop the connect, and the two then
   talk over each other, so close it first. Nor does the lock keep out a program run as root that
-  takes none, after quackd has the port.
+  takes none, after Roboglot has the port.
 - **`pick` and `manipulate` are confirm-gated**: a learned policy moves the whole arm. Its
   actions are capped at the verbs' own speed, per second rather than per send, so a policy
   faster than the verbs' tick takes smaller steps rather than moving faster, and a goal past the
@@ -2259,10 +2259,10 @@ quackd, side by side, is [concepts/safety.md](../../concepts/safety.md).
   ([What `pick` needs](#what-pick-needs-and-what-it-does-not-have)). A joint that reads past
   its travel is left out of every goal a policy sends, because the servo would take any goal
   for it as the end of the travel and drive there at its own speed, which no cap slows, and
-  quackd cannot halt that rise once a move has started it. Under `--yes`, or with a pipe or file
+  Roboglot cannot halt that rise once a move has started it. Under `--yes`, or with a pipe or file
   on stdin, the gate asks nobody, so a segment the pilot calls goes ahead without anybody
   being asked, and over MCP both verbs need `--yes`. The policy itself runs in a server of its
-  own, and no quackd command loads a checkpoint in the process that holds the bus
+  own, and no Roboglot command loads a checkpoint in the process that holds the bus
   ([guides/policies.md](../../guides/policies.md)).
 
 ## The rest pose
@@ -2273,7 +2273,7 @@ bench on
 2026-09-15 that meant the arm fell at the end of every single run. Runs also started from wherever the previous one had left the
 arm, so the pose an LLM was improvising from was different every time.
 
-A rest pose fixes both. You fold the arm by hand, tell quackd where that is, and quackd drives
+A rest pose fixes both. You fold the arm by hand, tell Roboglot where that is, and Roboglot drives
 it there at both ends of every run. A real arm without one is refused a run, a dry run and an
 MCP session, before anything connects, because there would be nothing to fold it to at the
 end, and its close, which no longer lets go of an arm with none where it stands, would leave it
@@ -2282,11 +2282,11 @@ holding itself up wherever it stopped
 scratch registry with `arm-01` registered as `lerobot:real` and no pose recorded:
 
 ```
-$ quackd run lerobot-lookout --robot arm-01 --llm fake
+$ roboglot run lerobot-lookout --robot arm-01 --llm fake
 x error: arm-01 (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one
 included, there is nothing to fold it to, and it would be left holding itself up wherever it
 stopped
-  quackd robot rest-pose arm-01
+  roboglot robot rest-pose arm-01
 ```
 
 > [!IMPORTANT]
@@ -2297,7 +2297,7 @@ stopped
 > position limits, and the servo clamps every goal to them. So the rest move drove the shoulder
 > to the limit, stalled there and called the arm lost: runs aborted before their first LLM
 > call, every run that got to its end kept torque on and finished at the power switch, and the
-> `stop` at the end of a run hauled a folded shoulder up out of its fold. What quackd does with
+> `stop` at the end of a run hauled a folded shoulder up out of its fold. What Roboglot does with
 > a pose past the travel now is [A pose past the travel](#a-pose-past-the-travel), below, and
 > the whole account is [ADR-0045](../../adr/0045-a-rest-pose-the-calibration-cannot-reach.md).
 > That answer has run against a fake arm that clamps the way the servo does and against
@@ -2308,7 +2308,7 @@ stopped
 ### Recording it
 
 ```
-quackd robot rest-pose NAME [--clear] [--yes] [--address ADDR] [--registry-dir DIR] [--json]
+roboglot robot rest-pose NAME [--clear] [--yes] [--address ADDR] [--registry-dir DIR] [--json]
 ```
 
 **Calibrate with the arm folded, before you record.** A servo will not be driven past the
@@ -2325,7 +2325,7 @@ different pose too.
 
 Then fold the arm, with nothing connected, so the pose you record is one it can hold with
 torque off, and run the command: it connects, reads every joint, prints them, asks, and keeps
-the pose in `~/.quackd/robots.json` beside the address and the cameras. Only a yes, or `--yes`,
+the pose in `~/.roboglot/robots.json` beside the address and the cameras. Only a yes, or `--yes`,
 lets go of the arm, where it lies, since that is the pose now recorded: a no, or a read that
 fails, keeps a real arm powered in its fold, and its close says how to put it down. Until 0.24
 the close let go of it before the question was answered. It opens no camera,
@@ -2333,7 +2333,7 @@ because reading joints needs none, and it drives the arm nowhere, because the po
 go of it at the pose you are choosing now rather than the one you are replacing.
 
 ```
-$ quackd robot rest-pose arm-01 --yes     # without --yes it prints the joints and asks
+$ roboglot robot rest-pose arm-01 --yes     # without --yes it prints the joints and asks
 arm-01 (lerobot:mock) is at
 shoulder_pan   0.0
 shoulder_lift  -90.0
@@ -2342,27 +2342,27 @@ wrist_flex     0.0
 wrist_roll     0.0
 gripper        100.0
 ✓ recorded arm-01's rest pose (6 joints)
-  quackd run <duck> --robot arm-01 starts from it and returns to it before letting go
+  roboglot run <task> --robot arm-01 starts from it and returns to it before letting go
 ```
 
 Those numbers are the **mock** arm's, which is where that transcript was captured. A real
 SO-101 folded on a desk reports its own, and they will not look like these.
 
-`quackd robot show NAME` prints the pose back in a `rest pose` row, and `--json` puts it under
+`roboglot robot show NAME` prints the pose back in a `rest pose` row, and `--json` puts it under
 `rest_pose`. `--clear` forgets it:
 
 ```
-$ quackd robot rest-pose arm-01 --clear
+$ roboglot robot rest-pose arm-01 --clear
 ✓ cleared arm-01's rest pose
   a run, a dry run or an MCP session of arm-01 is now refused until a pose is recorded again
-  quackd robot rest-pose arm-01
+  roboglot robot rest-pose arm-01
 ```
 
 That is a real arm's line. A mock or a simulator, neither of which is refused a run, says instead
 that a run now leaves the arm where it stands, and torque drops there.
 
 A rest pose belongs to a **registered** robot, because it is read off the arm and kept under
-its name. There is no `--rest-pose` flag on `quackd run`.
+its name. There is no `--rest-pose` flag on `roboglot run`.
 
 ### What a run does with it
 
@@ -2370,7 +2370,7 @@ its name. There is no `--rest-pose` flag on `quackd run`.
 |---|---|
 | the start of every run | the arm is driven to the pose before the pilot gets control, so what the LLM improvises from is the same arm every time. A run that cannot get there aborts **before the first LLM call** |
 | the end of every run | between the `stop` and the disconnect, which is the only window in which putting the arm down changes whether it falls. On every exit path there is: success, failure, infeasible, a spent budget, an abort, an error and Ctrl-C. Where that rest move misses, a run at a terminal asks you to clear the arm's way and folds it once more, and only if that fold misses too, releases it into your hands on Enter at a question that says it will drop ([Releasing it](#releasing-it)) |
-| a `--by-hand` run | the rest move still happens first, and then the arm is released **at** that pose for somebody to place, at the edge of the travel for a joint recorded past it. The pose is what makes the release safe rather than something the flag skips, and the run ends back at it unless quackd refuses to take hold of what you left. It refuses while any joint reads past its travel, a fold nobody lifted the arm out of included, so lift every joint inside its travel before you press Enter. After a refused take-hold nothing moves the arm again, and the run ends with it where it is rather than folding it: in your hands, or still at its rest pose if you never lifted it ([Placing it by hand](#placing-it-by-hand)) |
+| a `--by-hand` run | the rest move still happens first, and then the arm is released **at** that pose for somebody to place, at the edge of the travel for a joint recorded past it. The pose is what makes the release safe rather than something the flag skips, and the run ends back at it unless Roboglot refuses to take hold of what you left. It refuses while any joint reads past its travel, a fold nobody lifted the arm out of included, so lift every joint inside its travel before you press Enter. After a refused take-hold nothing moves the arm again, and the run ends with it where it is rather than folding it: in your hands, or still at its rest pose if you never lifted it ([Placing it by hand](#placing-it-by-hand)) |
 | a dry run | nothing. `--dry-run` never moves the arm, and that includes the rest move |
 | an MCP session | the same at both ends, and the session refuses to start if it cannot get there |
 | a pose past the travel | the arm is driven as near the pose as its servos go, which is the edge of the travel, and that counts as getting there. Torque is released at the edge, and the run says once which joint is free to settle the rest of the way ([A pose past the travel](#a-pose-past-the-travel)) |
@@ -2393,14 +2393,14 @@ end. So a pose recorded off a hand-folded arm can lie past the travel, and a goa
 is one the arm drives to the limit, stops at, and never reaches. That is the bench of
 2026-09-23 in the box above.
 
-quackd now plans for it, on any joint, at either end of its travel, from the numbers this
+Roboglot now plans for it, on any joint, at either end of its travel, from the numbers this
 arm's own calibration gives it at connect:
 
 - **The rest move drives to the reachable pose.** Each body joint of the recorded pose is
   clipped into its travel. The pose in `robots.json` stays exactly as you recorded it, because
   the clip is a fact about this calibration and not about your fold.
 - **A clipped joint is at rest anywhere from 5 degrees short of the edge of its travel out
-  past it**, on the side its fold lies. Nothing quackd sends can drive a joint past its limit,
+  past it**, on the side its fold lies. Nothing Roboglot sends can drive a joint past its limit,
   so a joint that reads well past it was put there with torque off: it is folded, not lost.
   Every other joint keeps the ordinary rule of within 5 degrees of its recorded angle.
 - **So the arm parks at the edge, which counts as arriving, and torque is released there.** The
@@ -2415,14 +2415,14 @@ arm's own calibration gives it at connect:
   summary names each joint it wrote no goal for and says why, so the pilot and the record can
   tell a stop that held all five from one that held some. If every body joint reads past its
   travel, nothing is sent at all. What the skip does is avoid *starting* a rise, and that is
-  all: any goal quackd writes to a joint while it reads past its travel is the limit to the
+  all: any goal Roboglot writes to a joint while it reads past its travel is the limit to the
   servo, so a joint a move had already begun lifting out of its fold keeps rising to that limit
   whatever a stop writes or leaves out. Only the power switch stops that stretch
   ([concepts/safety.md](../../concepts/safety.md)).
 - **A move out of the fold starts at the edge.** `move_joints` on a joint that reads past its
   travel paces its ramp from the edge of the travel, not from the reading: any goal between the
   two is, to the servo, the edge, so the joint rises to it at the servo's own speed first,
-  whatever quackd sends. Only the rest of the move is paced by `duration_s`
+  whatever Roboglot sends. Only the rest of the move is paced by `duration_s`
   ([The manifest](#the-manifest)).
 - **A joint that stops short *inside* its travel is still a miss.** A hand, the desk or a
   tripped servo in the way keeps torque on, as it did in 0.13.0, and prints the line in
@@ -2435,14 +2435,14 @@ numbers. Captured on `lerobot:mock`, whose `shoulder_lift` travels -100 to 100, 
 ```
 ·  note    moving to the rest pose
 ·  note    at the rest pose
-·  note    shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (quackd robot rest-pose arm-01) to make the fold reachable
+·  note    shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (roboglot robot rest-pose arm-01) to make the fold reachable
 ```
 
 The end of that run's transcript reads `already at the rest pose`, and says nothing more,
 because the note is about the pose rather than about either move. The same sentence is what
 `doctor` prints as advice under its table, with the `rest pose` row still green
 ([doctor](#doctor-and-robot-list---probe)), what an MCP session logs when it parks at connect,
-and what `quackd robot rest-pose` warns before it asks. It names only a joint clipped by more
+and what `roboglot robot rest-pose` warns before it asks. It names only a joint clipped by more
 than 5 degrees, since a smaller clip is inside the tolerance any reached pose may miss by. The
 run's first record names every clipped joint, whatever the amount, in the manifest:
 
@@ -2477,11 +2477,11 @@ degrees past its travel.
 
 A rest pose is a fold, and a fold is the wrong place to begin some tasks from. A drawing run
 starts with a pencil in the gripper and its tip near the paper, and nothing the arm can be
-driven to from a folded start puts it there: the pencil has to be handed to it. `quackd run
+driven to from a folded start puts it there: the pencil has to be handed to it. `roboglot run
 --by-hand` gives you the arm for exactly that moment and takes it back when you are done:
 
 ```bash
-quackd run --goal "draw the circle in the picture" --robot arm-01 --by-hand \
+roboglot run --goal "draw the circle in the picture" --robot arm-01 --by-hand \
   --image circle.png --llm anthropic --max-steps 12
 ```
 
@@ -2501,17 +2501,17 @@ The order below is the whole of the feature, and none of it is a step you can sk
    would release the motors before it and not the ones after, so the release asks for the five
    retries LeRobot's own `disconnect()` gives the same writes, and so does the take-hold in
    step 4.
-3. **You are told the arm is yours, and quackd waits for Enter.** There is no timeout on this
+3. **You are told the arm is yours, and Roboglot waits for Enter.** There is no timeout on this
    wait. The arm is limp at a pose it holds by its own shape, so nothing is being spent by
    waiting, and somebody who has gone to find a pencil should come back to a run that is still
    there.
-4. **quackd takes hold of whatever you left.** The present position is written as the goal
+4. **Roboglot takes hold of whatever you left.** The present position is written as the goal
    *before* torque comes on, written again after, and then the arm is read back. A joint that
    moved more than the same **5 degrees** every other goal on this page is judged by is a
    refusal and the run ends, because a run that started from a pose nobody chose is a run whose
    first observation is a lie. A joint you placed past its calibrated travel is refused before
    any of that: nothing is written, torque stays off, and the run ends with the arm still in
-   your hands. Nothing quackd can do would keep that joint where you put it. A goal written
+   your hands. Nothing Roboglot can do would keep that joint where you put it. A goal written
    where it is lies past the travel and is pulled to the end of it, so torque would drive the
    joint there under your hand, and with no goal written its servo keeps the last one it had,
    the rest move's, which can be the far end of the travel from where you put it. The refusal
@@ -2522,7 +2522,7 @@ The order below is the whole of the feature, and none of it is a step you can sk
    is still limp at its rest pose, with the joint to lift inside its travel, rather than that it
    is in your hands. A take-hold refused after torque was asked for, because the torque
    register did not answer or the call failed on the way, is a different arm: it may be holding
-   itself up, all of it or part of it, and you are told quackd could not confirm whether it has
+   itself up, all of it or part of it, and you are told Roboglot could not confirm whether it has
    torque, to hold it as though it may move or drop, and to cut its power to be sure. Where the
    read after the torque write found motors on, some of them or every one, you are told what
    it found instead: which joints hold, that any joint it does not name is limp, and to keep
@@ -2542,7 +2542,7 @@ The order below is the whole of the feature, and none of it is a step you can sk
    gripper all the way open, every send of it through the logged transport, so it is in the record
    like every other intent. A gripper that cannot get
    there is said out loud, and the arm stays where it is, because you have just been told to
-   reach in. Then, however the question ended, quackd says it is about to fold and gives your
+   reach in. Then, however the question ended, Roboglot says it is about to fold and gives your
    hands 3 seconds. A Ctrl-C or `q` during the opening, those seconds or the fold holds the arm
    where it is, with nothing released. Otherwise the rest move folds the arm and torque drops at
    the fold exactly as it would have without the flag, after one more thing: a gripper this step
@@ -2618,10 +2618,10 @@ switch's own line and the record of the question left out):
 ```
 ·  hand    released: torque is off at the rest pose
 →  send    stop
-·  hand    hold refused: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes hold of the arm only once shoulder_lift is lifted inside its travel
-·  note    the arm did not take hold: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes hold of the arm only once shoulder_lift is lifted inside its travel
-quackd did not take hold of the arm when the run stopped and the arm is still limp at its rest
-pose: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes
+·  hand    hold refused: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes hold of the arm only once shoulder_lift is lifted inside its travel
+·  note    the arm did not take hold: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes hold of the arm only once shoulder_lift is lifted inside its travel
+Roboglot did not take hold of the arm when the run stopped and the arm is still limp at its rest
+pose: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes
 hold of the arm only once shoulder_lift is lifted inside its travel
 ·  note    already at the rest pose
 ·  note    the arm is limp at its rest pose, where it was let go of for you to place and where it still reads: it rests there with no torque, as it does at the end of every run
@@ -2629,12 +2629,12 @@ hold of the arm only once shoulder_lift is lifted inside its travel
 
 With the arm lifted and a joint placed past its travel, the line said to you at the stop gives
 the joint, its reading and its travel in the same words as the refusal at Enter below, after
-`quackd did not take hold of the arm when the run stopped and the arm is still in your hands:`,
+`roboglot did not take hold of the arm when the run stopped and the arm is still in your hands:`,
 and the close is the one for an arm limp in your hands.
 
 A wait that ends any other way lands in the same teardown and says so rather than blaming a
 key nobody touched. There is no clock on the first wait, so that ending means the keyboard
-itself went away: the terminal was closed, or the input it was reading finished. quackd
+itself went away: the terminal was closed, or the input it was reading finished. Roboglot
 notices, because a wait for a keystroke that nothing can deliver has to end rather than hold an
 arm limp for ever (captured on `lerobot:mock`, where nobody had moved the arm out of the fold
 either, so the rest move had nothing to do, with the invitation and the record of the question
@@ -2702,16 +2702,16 @@ close ends on the line for an arm in your hands. Captured on `lerobot:mock` regi
 the mock's 100, before the Enter, and with the log's copy of the second line said to you left out:
 
 ```
-·  hand    hold refused: wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so quackd left torque off: a goal written where that joint is lies past its travel and the servo would pull it to the end of its travel, and with none written the servo may drive it to the last goal it was given, with a hand on the arm either way. quackd takes hold of the arm only with wrist_flex inside its travel
-·  note    the arm did not take hold: wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so quackd left torque off: a goal written where that joint is lies past its travel and the servo would pull it to the end of its travel, and with none written the servo may drive it to the last goal it was given, with a hand on the arm either way. quackd takes hold of the arm only with wrist_flex inside its travel
-quackd did not take hold of the arm, so the run stops here and the arm is still in your hands:
-wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so quackd left torque off:
+·  hand    hold refused: wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so Roboglot left torque off: a goal written where that joint is lies past its travel and the servo would pull it to the end of its travel, and with none written the servo may drive it to the last goal it was given, with a hand on the arm either way. Roboglot takes hold of the arm only with wrist_flex inside its travel
+·  note    the arm did not take hold: wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so Roboglot left torque off: a goal written where that joint is lies past its travel and the servo would pull it to the end of its travel, and with none written the servo may drive it to the last goal it was given, with a hand on the arm either way. Roboglot takes hold of the arm only with wrist_flex inside its travel
+Roboglot did not take hold of the arm, so the run stops here and the arm is still in your hands:
+wrist_flex reads 112.0, outside its calibrated travel of -100.0..100.0, so Roboglot left torque off:
 a goal written where that joint is lies past its travel and the servo would pull it to the end of
 its travel, and with none written the servo may drive it to the last goal it was given, with a hand
-on the arm either way. quackd takes hold of the arm only with wrist_flex inside its travel
+on the arm either way. Roboglot takes hold of the arm only with wrist_flex inside its travel
 →  send    stop
 ·  hand    skipped: the arm is still in your hands
-quackd never took hold of the arm, so it does not open the gripper for you: take out whatever is in
+Roboglot never took hold of the arm, so it does not open the gripper for you: take out whatever is in
 it by hand, and keep hold of the arm
 ·  note    the arm is in your hands, so it is not folded
 ·  note    the arm is limp and in your hands (it was let go of for you to place and never taken hold of again): put it down before you let go of it, because nothing is holding it up
@@ -2730,15 +2730,15 @@ in your hands and to keep hold of it, and the close's own read says the same. Ca
 nothing lifted, and with the log's copies of the lines said to you left out:
 
 ```
-·  hand    hold refused: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes hold of the arm only once shoulder_lift is lifted inside its travel
-·  note    the arm did not take hold: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes hold of the arm only once shoulder_lift is lifted inside its travel
-quackd did not take hold of the arm, so the run stops here and the arm is still limp at its rest
-pose: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and quackd takes
+·  hand    hold refused: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes hold of the arm only once shoulder_lift is lifted inside its travel
+·  note    the arm did not take hold: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes hold of the arm only once shoulder_lift is lifted inside its travel
+Roboglot did not take hold of the arm, so the run stops here and the arm is still limp at its rest
+pose: shoulder_lift reads -110.0, outside its calibrated travel of -100.0..100.0, and Roboglot takes
 hold of the arm only once shoulder_lift is lifted inside its travel
 →  send    stop
 ·  hand    skipped: the arm is still limp at its rest pose
-quackd never took hold of the arm, which is still limp at its rest pose, so it does not open the
-gripper for you: take out whatever is in it by hand. quackd takes hold of the arm only once
+Roboglot never took hold of the arm, which is still limp at its rest pose, so it does not open the
+gripper for you: take out whatever is in it by hand. Roboglot takes hold of the arm only once
 shoulder_lift is lifted inside its travel
 ·  note    already at the rest pose
 ·  note    the arm is limp at its rest pose, where it was let go of for you to place and where it still reads: it rests there with no torque, as it does at the end of every run
@@ -2759,21 +2759,21 @@ left out:
 ```
 ·  hand    hold refused: the arm did not say whether torque came back on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold
 ·  note    the arm did not take hold: the arm did not say whether torque came back on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold
-quackd could not confirm whether the arm has torque (the arm did not say whether torque came back
+Roboglot could not confirm whether the arm has torque (the arm did not say whether torque came back
 on (ConnectionError: Incorrect status packet!), and a hold nothing confirmed is not a hold), so the
 run stops here: keep hold of the arm as though it may move or drop, and cut its power to be sure
 →  send    stop
 ·  hand    skipped: the arm is still in your hands
-quackd could not confirm whether the arm has torque, so it does not open the gripper or fold the
+Roboglot could not confirm whether the arm has torque, so it does not open the gripper or fold the
 arm: keep hold of it as though it may move or drop, and cut its power before you take out whatever
 is in the gripper
 ·  note    the arm is in your hands, so it is not folded
-·  note    the arm is in your hands, and quackd asked its motors for torque to take hold of it and nothing read back what they did, so it may hold itself up or be limp, all of it or part of it: keep hold of it as though it may move or drop, and cut its power to be sure
+·  note    the arm is in your hands, and Roboglot asked its motors for torque to take hold of it and nothing read back what they did, so it may hold itself up or be limp, all of it or part of it: keep hold of it as though it may move or drop, and cut its power to be sure
 ```
 
 > [!WARNING]
 > There is one window in which you are holding an arm that nothing is holding up, and it runs
-> from the release to the moment quackd takes hold again. A run that ends inside it goes into
+> from the release to the moment Roboglot takes hold again. A run that ends inside it goes into
 > a teardown that tries to pick the arm back up once, and only where no take-hold has been
 > refused since the release. Where one has, nothing touches the arm again, and the close says
 > what it reads in its own words rather than printing the line about torque being left on,
@@ -2791,11 +2791,11 @@ connects and before a run directory exists:
 
 | What you see | Why |
 |---|---|
-| `--by-hand is one person placing one arm, and this run has several robots` | one pair of hands and one terminal. Dropping `--flock` and `--robots` is the fix, and the flag is refused rather than quietly applied to the first body |
+| `--by-hand is one person placing one arm, and this run has several robots` | one pair of hands and one terminal. Dropping `--team` and `--robots` is the fix, and the flag is refused rather than quietly applied to the first body |
 | `--by-hand and --dry-run ask for opposite things: one takes torque off the arm, the other moves nothing` | a dry run moves nothing at either end, and taking torque off an arm is the one thing here that is not a command to the robot but a change to it. Rehearse with `--dry-run`, then run it again with `--by-hand` |
 | `--by-hand waits for you to press Enter, and there is no terminal to ask on` | the wait reads a real keystroke. With nobody to ask, the release would happen and nothing would ever pick the arm back up |
-| `microduck:mock is not a body a person places by hand: only the LeRobot arm is` | a body declares `supports_hand_off`, and nine of the ten do not. `quackd list-adapters` |
-| `--by-hand releases the arm at its recorded rest pose, and this arm has none recorded` | the release refuses anywhere but the recorded pose, so an arm without one could never be handed over at all. Said here rather than after it has connected: `quackd robot rest-pose NAME`. A real arm never gets this far, because every run of one with no rest pose is refused first, `--by-hand` or not ([The rest pose](#the-rest-pose)), so this line is the mock's and the simulator's |
+| `microduck:mock is not a body a person places by hand: only the LeRobot arm is` | a body declares `supports_hand_off`, and nine of the ten do not. `roboglot list-adapters` |
+| `--by-hand releases the arm at its recorded rest pose, and this arm has none recorded` | the release refuses anywhere but the recorded pose, so an arm without one could never be handed over at all. Said here rather than after it has connected: `roboglot robot rest-pose NAME`. A real arm never gets this far, because every run of one with no rest pose is refused first, `--by-hand` or not ([The rest pose](#the-rest-pose)), so this line is the mock's and the simulator's |
 
 > [!NOTE]
 > The hand-off is exercised against `lerobot:mock` and in the test suite, and not yet on a
@@ -2812,12 +2812,12 @@ it as its calibration lets the servos go. A joint is at its recorded angle when 
 the pose has to be reported and within it. A joint recorded past its travel is at rest within
 the same 5 degrees of the edge of that travel, or anywhere beyond the edge on the side its fold
 lies, for the reasons in [A pose past the travel](#a-pose-past-the-travel). Where that does not
-hold, quackd writes LeRobot's `disable_torque_on_disconnect` as False on the config instance
+hold, Roboglot writes LeRobot's `disable_torque_on_disconnect` as False on the config instance
 before the call, closes the port with every motor still holding its goal, and prints one line:
 
 ```
 the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which
+stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which
 folds it to its rest pose and lets go of it there: support the arm while that connects,
 because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
@@ -2834,34 +2834,34 @@ motor's torque off for a moment, so "it will not fall" is true of the arm as it 
 nothing that connects to it. Two closes say something else, because this line would be wrong in
 them. An arm that did not answer the close's own read may be one whose supply you have just cut,
 limp in your hands, as easily as one whose cable came out in front of live servos, so its line
-says quackd cannot tell whether the arm is holding itself up, and to hold it and cut its power.
+says Roboglot cannot tell whether the arm is holding itself up, and to hold it and cut its power.
 And an arm whose release you have just asked for and been refused is not sent back to that
 release ([Releasing it](#releasing-it)).
 
-`NAME` is the name the arm was registered under wherever quackd built it from the registry,
-which is a run, an MCP session, a flock, `doctor --robot NAME` and the `robot` commands. A bare
+`NAME` is the name the arm was registered under wherever Roboglot built it from the registry,
+which is a run, an MCP session, a team, `doctor --robot NAME` and the `robot` commands. A bare
 spec such as `doctor --robot lerobot:real` builds the arm with no name, and leaves `NAME` as it
 is rather than offering the calibration id as a name nobody may have registered. Captured from a
 `--dry-run` on `lerobot:mock` registered as `arm-01` with its pose's `shoulder_pan` at 30, which
 a dry run never drives it to, so the parenthesis ends on nothing having moved it there:
 
 ```
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 > [!CAUTION]
 > This is a behaviour change. A probe or a dry run on an arm away from its recorded rest pose
 > now leaves torque **on** where it used to drop it. The arm is holding itself up and the
 > servos are drawing current until something stops them: clear its way and run
-> `quackd robot release NAME`, which folds it and lets go at the pose, or cut its power. The
+> `roboglot robot release NAME`, which folds it and lets go at the pose, or cut its power. The
 > command connects, and connecting drops torque for a moment, so support the arm while it does.
 > An arm with no rest pose recorded keeps its torque too, at the end of a probe, `doctor` or
 > `robot list --probe`, where 0.23 and before let go of it where it stood, and a run or a dry
 > run of one is refused before it connects. At a terminal `doctor` asks first whether to drop
 > it into your hands ([doctor](#doctor-and-robot-list---probe)).
 
-**The exceptions are a person asking for it, out loud.** Everything above is about quackd's own
-initiative, and on its own initiative quackd still de-energises nothing: no verb disables
+**The exceptions are a person asking for it, out loud.** Everything above is about Roboglot's own
+initiative, and on its own initiative Roboglot still de-energises nothing: no verb disables
 torque, no LLM can reach it, and `stop` is a hold rather than a release. `let_go()` is the
 single call in the project that takes torque off a robot, and it has two doors, both opened by
 a person at a terminal and neither by anything else.
@@ -2872,13 +2872,13 @@ pose; the release refuses where the arm is not at it. Both are the same question
 somewhere it can be let go of*, asked of the same joint reading with the same 5 degrees of
 slack, and the answer that leaves an arm holding itself up is also the answer that will not let
 go of it. [`--by-hand`](#placing-it-by-hand) opens it to hand you the arm to place, and
-[`quackd robot release`](#releasing-it) opens it once it has folded the arm there, because you
+[`roboglot robot release`](#releasing-it) opens it once it has folded the arm there, because you
 asked for torque off.
 
 The second releases the arm wherever it stands, which drops it, so it opens only on Enter at a
 question that says so, put after two folds to the rest pose missed, or before connecting to an
 arm with no rest pose to fold to: [Releasing it](#releasing-it), below, which is
-`quackd robot release` and the same two questions a run puts at a terminal when its rest move
+`roboglot robot release` and the same two questions a run puts at a terminal when its rest move
 missed.
 
 <a id="releasing-it-where-it-stands"></a>
@@ -2887,13 +2887,13 @@ missed.
 
 On 2026-09-23 every run that got to its end kept torque on, because its rest pose could not be
 reached, and every one of them finished at the power switch: `let_go()` refused anywhere but the
-rest pose, and nothing else in quackd would take torque off. 0.14.0 added a command for that arm
+rest pose, and nothing else in Roboglot would take torque off. 0.14.0 added a command for that arm
 which took torque off wherever it stood, and an SO-101 has no brake: let go of where it stands,
 it drops. Releasing the arm now means putting it down first
 ([ADR-0058](../../adr/0058-letting-go-of-the-arm-means-putting-it-down-first.md)):
 
 ```
-quackd robot release NAME [--yes] [--address ADDR] [--registry-dir DIR]
+roboglot robot release NAME [--yes] [--address ADDR] [--registry-dir DIR]
 ```
 
 It says what it will do before it touches anything. Connecting takes torque off every motor for
@@ -2901,7 +2901,7 @@ a moment, since LeRobot's `configure()` runs inside `torque_disabled()`, so a wa
 after the connect would come after the arm had already been limp once, and you support it while
 it connects. Then the arm folds to its recorded rest pose, so you take your hands away before it
 moves. Then it asks, and only then connects, with no camera and with the registered rest pose. It
-prints the joints and says it folds in 3 seconds (`quackd.release.HANDS_AWAY_S`), which is when
+prints the joints and says it folds in 3 seconds (`roboglot.release.HANDS_AWAY_S`), which is when
 you take your hands away, and a Ctrl-C or `q` in those seconds stops it with nothing moved. Then
 it folds the arm to its rest pose as a run's teardown does, closes its gripper, lets go of it
 there through the first door, reads `Torque_Enable` back off every motor, and says what it read.
@@ -2929,7 +2929,7 @@ where it still reads: it rests there with no torque, as it does at the end of ev
 ```
 
 The gripper closes last, while there is torque to close it with, and only over an arm its fold
-put down. A run's fold and `quackd doctor`'s leave the jaws as they are, because what is in them
+put down. A run's fold and `roboglot doctor`'s leave the jaws as they are, because what is in them
 at the end of a run is somebody's, and this command is you putting the arm away. The one run that
 closes them is a [`--by-hand`](#placing-it-by-hand) run, and only after its own hand-back opened
 them. It is sent shut
@@ -2987,14 +2987,14 @@ the arm will drop: hold it first, or it can be damaged. Leave it, and after 60 s
 it): put it down before you let go of it, because nothing is holding it up
 ```
 
-Each question waits 60 seconds (`quackd.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`). Anything
+Each question waits 60 seconds (`roboglot.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`). Anything
 but Enter, at either one, is never a drop: a wait that runs out, a Ctrl-C, a `q` or a terminal
 with nothing to read leaves torque on and the arm holding itself up where its fold stopped, and
 the command says so and exits 1, the close's line after it naming the way out:
 
 ```
 ✗ error: torque stays on and nothing was released: no key could be read
-  clear its way and run quackd robot release arm-01 again, or hold it and cut its power
+  clear its way and run roboglot robot release arm-01 again, or hold it and cut its power
 ```
 
 `--yes` does not answer either question, because each is the person at the arm deciding with
@@ -3002,7 +3002,7 @@ their own hands. With no terminal, a fold that arrives lets go at the pose, as e
 does, and one that misses tries nothing more and keeps torque on:
 `the arm did not reach its rest pose (...), so torque stays on, and with no terminal to ask on
 nothing more is tried`. Over an arm that stopped answering during a fold, which is what cutting
-its supply looks like, nothing is asked at all: quackd cannot tell whether it is holding itself
+its supply looks like, nothing is asked at all: Roboglot cannot tell whether it is holding itself
 up, and says to hold it and cut its power.
 
 **An arm with no rest pose** has nothing to fold to, so letting go of it where it stands is
@@ -3027,7 +3027,7 @@ it stands drops it, which only Enter at a terminal may do`.
 
 There is no flag that skips the fold. It would be the 0.14.0 command behind a flag a shell's
 history hands back to the next person, and every case it would serve has a way out already: the
-second question, a Ctrl-C that keeps torque on, `quackd robot rest-pose NAME --clear` for a
+second question, a Ctrl-C that keeps torque on, `roboglot robot rest-pose NAME --clear` for a
 recorded pose that is itself wrong (the command then asks before it connects), or the power
 switch with a hand under the arm.
 
@@ -3037,14 +3037,14 @@ said 0, and the command exits 0 only then. Everything else exits 1 and says whic
 | What you see | What it means |
 |---|---|
 | `torque still reads on for <joints>: cut the power` | those motors kept their torque through the release, or every motor did and nothing was released. The ones not named are limp, and the close's line after it says which case it was: below |
-| `torque was taken off and could not be read back: ...` | the release went out and the read that would confirm it failed, or the release call itself raised or did not come back. A torque call that raised has tried every motor, and the line names each joint whose write LeRobot could not confirm, which may still hold, or says it could confirm none; one that raised anything else, or did not come back, may have stopped anywhere. quackd reads that silence as a release, so hold the arm as though nothing holds it, and cut its power to be sure. The close's line after it says what its own read of the arm finds, when it takes one, which it does on an arm with a rest pose, and that read answers: the arm limp in your hands, or the joints still on by name. Only when no read answers does it say that nothing read the release back |
-| `nothing was released: ...` | the arm did not answer before the release, so nothing was sent. Whether it is holding itself up is not something quackd could read, so hold it |
+| `torque was taken off and could not be read back: ...` | the release went out and the read that would confirm it failed, or the release call itself raised or did not come back. A torque call that raised has tried every motor, and the line names each joint whose write LeRobot could not confirm, which may still hold, or says it could confirm none; one that raised anything else, or did not come back, may have stopped anywhere. Roboglot reads that silence as a release, so hold the arm as though nothing holds it, and cut its power to be sure. The close's line after it says what its own read of the arm finds, when it takes one, which it does on an arm with a rest pose, and that read answers: the arm limp in your hands, or the joints still on by name. Only when no read answers does it say that nothing read the release back |
+| `nothing was released: ...` | the arm did not answer before the release, so nothing was sent. Whether it is holding itself up is not something Roboglot could read, so hold it |
 | `torque stays on and nothing was released: ...` | no Enter at a question about a fold that missed: the arm holds itself up where the fold stopped. Clear its way and run the command again, or hold it and cut its power |
 | `the fold was stopped where it was, and nothing was released: ...` | Ctrl-C or `q` during a fold |
 | `lerobot:real at COM5: ...` and `keep hold of the arm` | the connect failed, and a connect that fails part way can leave some motors limp ([When it will not work](#when-it-will-not-work)) |
-| `... is not a body quackd takes torque off: only the LeRobot arm is` | the name is a body that does not declare `supports_hand_off` |
+| `... is not a body Roboglot takes torque off: only the LeRobot arm is` | the name is a body that does not declare `supports_hand_off` |
 
-After `torque still reads on`, the close's last line says what quackd then did, and never sends
+After `torque still reads on`, the close's last line says what Roboglot then did, and never sends
 you back to the command that has just failed. Some motors held and the rest let go, and the close
 keeps whatever torque there is. Let go of at its rest pose, the arm lies in its fold with those
 joints still energised, and the line says to leave it where it rests. Captured on `lerobot:mock`
@@ -3113,7 +3113,7 @@ and cut its power to be sure
 
 **The same two questions at the end of a run.** A run with you at its terminal puts them itself,
 between its last rest move and the close, when that rest move missed: never on a dry run, never
-over MCP, never in a flock and never on the simulator. And never over an arm that stopped
+over MCP, never in a team and never on the simulator. And never over an arm that stopped
 answering: a rest move that failed because the arm went quiet is what cutting the servo supply
 looks like, nothing read says that arm is holding itself up, and the release would refuse at its
 first read anyway. The same goes for a rest move that left a call which never came back, a goal
@@ -3159,7 +3159,7 @@ And left alone at the first question:
 ```
 ·  release kept: nobody pressed Enter
 ·  note    nobody pressed Enter, so torque stays on and the arm holds itself up
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 The record says which of those ended each wait. A Ctrl-C at a question, the first of the run or a
@@ -3175,7 +3175,7 @@ release begins with, nothing was sent, and that is all you are told, with torque
 move left it: "the arm may be limp" would be said of a release that never happened. Whether the
 arm is holding itself up is the close's line, from a read of its own, and it comes next. On the
 arm the read the Ctrl-C landed on may not have come back by then, and while it is out the
-close's read is refused and its line says quackd cannot tell. Captured on `lerobot:mock`
+close's read is refused and its line says Roboglot cannot tell. Captured on `lerobot:mock`
 registered as `arm-01`, with the same pose and the same scripted misses as above, Enter at both
 questions, and the interrupt landing there:
 
@@ -3183,13 +3183,13 @@ questions, and the interrupt landing there:
 ·  release kept: interrupted before the release was sent
 ·  note    the release was interrupted before anything was sent, so torque is as it was
 the release was interrupted before anything was sent, so torque is as it was
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 Either way the close, the summary and the rest of the teardown still happen. When the release is
 refused, what you are told follows what was read: every motor reading torque on says the arm is
 still holding itself up and to cut its power, and a release refused before anything was read
-says quackd cannot tell whether torque is on, to keep holding the arm, and to cut its power.
+says Roboglot cannot tell whether torque is on, to keep holding the arm, and to cut its power.
 
 The questions and what came of them are said to you directly whether or not the log is on, and
 the record keeps them as `release` events (`refold`, `folded`, `released`, `kept`,
@@ -3208,7 +3208,7 @@ that drops it says "hold it first" before anything happens, which is the whole d
 `--by-hand`, where the release comes first and the person's hands second.
 
 > [!WARNING]
-> Of this, the fold before the release and `quackd robot release` itself have run on an arm: in
+> Of this, the fold before the release and `roboglot robot release` itself have run on an arm: in
 > [E117](../../examples/lerobot/e117/README.md) and [E171](../../examples/lerobot/e171/README.md)
 > the release folded the arm to its rest pose and let go of it there. Both questions and a Ctrl-C
 > during a fold have not, and are exercised only against `lerobot:mock`, a fake arm and the
@@ -3224,7 +3224,7 @@ never commanded, for the same reason `stop` omits it: LeRobot writes only the ke
 so leaving the gripper out keeps whatever squeeze is already commanded, and a rest move that
 re-sent the gripper would open a hand that is holding something.
 
-The rest move goes out **clipped** into the travel, like every other goal quackd sends. Until
+The rest move goes out **clipped** into the travel, like every other goal Roboglot sends. Until
 2026-09-23 it was the one move sent unclipped, on the belief that a servo sent the angle of a
 fold outside its recorded travel would drive the arm back into that fold. The bench showed it
 does not: it clamps the goal to its limit and stops there
@@ -3242,7 +3242,7 @@ stopped. Either of those is an arm that keeps its torque.
 
 ### doctor, and `robot list --probe`
 
-`quackd doctor` returns a probed arm to its rest pose too, and says so in a `rest pose` row.
+`roboglot doctor` returns a probed arm to its rest pose too, and says so in a `rest pose` row.
 That matters because a `doctor` probe disconnects like anything else, and a disconnect is what
 dropped torque and put the bench arm on the desk:
 
@@ -3254,8 +3254,8 @@ dropped torque and put the bench arm on the desk:
 |---|---|
 | `at it already` | the arm was within tolerance when `doctor` looked, and nothing moved |
 | `returned to it` | `doctor` drove it back, and torque dropped at the end |
-| `none recorded (quackd robot rest-pose <name>)` | nothing to park to. On a real arm the probe keeps its torque on where it stands rather than let it fall, where 0.23 and before let it go limp there, and says so under the table, with the ways to put it down and to give it a pose. The mock and the simulator go limp as before |
-| `not reached: ...` | the probe **fails**, the arm kept its torque, and the torque-left-on line comes out as an advisory under the table, naming the way out: clear its way and run `quackd robot release NAME`, which folds it and lets go at the pose, supporting the arm while that connects, or cut its power |
+| `none recorded (roboglot robot rest-pose <name>)` | nothing to park to. On a real arm the probe keeps its torque on where it stands rather than let it fall, where 0.23 and before let it go limp there, and says so under the table, with the ways to put it down and to give it a pose. The mock and the simulator go limp as before |
+| `not reached: ...` | the probe **fails**, the arm kept its torque, and the torque-left-on line comes out as an advisory under the table, naming the way out: clear its way and run `roboglot robot release NAME`, which folds it and lets go at the pose, supporting the arm while that connects, or cut its power |
 
 A pose past the travel is parked at the edge of it, and the row says `returned to it` or
 `at it already` as it would for any pose, because the arm reached the pose it can be driven to
@@ -3263,7 +3263,7 @@ and was let go of there. What the fold means comes out as advice under the table
 verdict stays green.
 
 Before it folds a real arm, doctor gives the hands that supported it through the connect time
-to come away, as `quackd robot release` does, terminal or not, `--json` saying it on stderr: it
+to come away, as `roboglot robot release` does, terminal or not, `--json` saying it on stderr: it
 says `folding NAME to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops
 it before it moves`, waits those seconds, then folds. Ctrl-C or `q` while the arm connects, in
 the wait or during the fold stops it, with the arm held where it is and the row saying so, and
@@ -3279,21 +3279,21 @@ can be damaged. Leave it, and after 60 s torque stays on
 ```
 
 Hold the arm and press Enter, and it is limp in your hands, which is how to fold it by hand for
-its first `quackd robot rest-pose`. Anything else, `--json`, or no terminal, and it stays
+its first `roboglot robot rest-pose`. Anything else, `--json`, or no terminal, and it stays
 powered, with the close's line under the table naming the ways to put it down. Neither is asked
 on the mock or the simulator.
 
 A pose past the travel, captured on `lerobot:mock` registered with `shoulder_lift` at -118, against
 the mock's travel of -100 to 100 for that joint
-(`quackd doctor --robot arm-01 --address mock://arm`):
+(`roboglot doctor --robot arm-01 --address mock://arm`):
 
 ```
 │ rest pose         │ returned to it                                                              │
 └───────────────────┴─────────────────────────────────────────────────────────────────────────────┘
-shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (quackd robot rest-pose arm-01) to make the fold reachable
+shoulder_lift is recorded at -118 in the rest pose and this calibration lets its servo be driven to -100 and no further, so it parks there and is let go of there, free to settle the rest of the way on its own. Calibrate again with the arm folded (lerobot-calibrate) and record the pose again (roboglot robot rest-pose arm-01) to make the fold reachable
 ```
 
-`quackd robot list --probe` does **not** move the arm. It reads, lets go, and where the arm was
+`roboglot robot list --probe` does **not** move the arm. It reads, lets go, and where the arm was
 not already at its pose it keeps torque and says so on the same line that says the arm
 answered, as it does for a real arm with no pose recorded, which ends the cell on
 `torque left on: no rest pose recorded`:
@@ -3307,7 +3307,7 @@ answered, as it does for a real arm with no pose recorded, which ends the cell o
 ```
 
 A real arm that stopped answering before the probe let go of it ends that cell on
-`torque unknown: the arm did not answer the close` instead: quackd cannot tell whether it is
+`torque unknown: the arm did not answer the close` instead: Roboglot cannot tell whether it is
 holding itself up, so it kept whatever torque there is. Hold it, and cut its power. One whose
 own last read found torque off on some of its joints, servos that browned out and came back
 limp, ends it on `torque reads OFF: the arm may have dropped`. And one at its rest pose whose
@@ -3321,40 +3321,40 @@ Every other body refuses a rest pose rather than accepting one and ignoring it, 
 joints or not:
 
 ```
-$ quackd robot rest-pose duck --yes
+$ roboglot robot rest-pose duck --yes
 ✗ error: duck (microduck:mock) has no joints, so there is no rest pose to record
-  a rest pose is for an arm: quackd list-adapters
+  a rest pose is for an arm: roboglot list-adapters
 
-$ quackd robot rest-pose cart --yes     # xlerobot:mock, which HAS joints
-✗ error: cart (xlerobot:mock) has joints, and quackd does not drive it to a rest pose yet:
+$ roboglot robot rest-pose cart --yes     # xlerobot:mock, which HAS joints
+✗ error: cart (xlerobot:mock) has joints, and Roboglot does not drive it to a rest pose yet:
 only the LeRobot arm does today
 ```
 
 ## When it will not work
 
-Every message below is quackd's own, quoted from the code that raises it. The arm is not
+Every message below is Roboglot's own, quoted from the code that raises it. The arm is not
 touched by anything in the first block: these all happen before or during connect.
 
 | What you see | What it means | What to do |
 |---|---|---|
-| `adapter 'lerobot' needs an extra: uv pip install 'quackd[lerobot]'` | either the adapter package or LeRobot itself is missing from the environment you are running from | install the extra, and check `python --version` is 3.12 or newer, because the SDK's marker silently resolves to nothing below that |
-| `doctor` shows `lerobot` green and `lerobot (feetech bus)` missing | LeRobot is installed without its `[feetech]` extra, so it imports and cannot open a serial port | `uv pip install "quackd[lerobot]"`, which asks for `lerobot[feetech]` |
-| `lerobot real: --address must be the arm's serial port` | no `--address` at all | pass the port. `--address needs --robot, so quackd knows what it is connecting to` means the opposite mistake, an address with no robot to apply it to |
+| `adapter 'lerobot' needs an extra: uv pip install 'roboglot[lerobot]'` | either the adapter package or LeRobot itself is missing from the environment you are running from | install the extra, and check `python --version` is 3.12 or newer, because the SDK's marker silently resolves to nothing below that |
+| `doctor` shows `lerobot` green and `lerobot (feetech bus)` missing | LeRobot is installed without its `[feetech]` extra, so it imports and cannot open a serial port | `uv pip install "roboglot[lerobot]"`, which asks for `lerobot[feetech]` |
+| `lerobot real: --address must be the arm's serial port` | no `--address` at all | pass the port. `--address needs --robot, so Roboglot knows what it is connecting to` means the opposite mistake, an address with no robot to apply it to |
 | `lerobot real: --address 'x' is not a serial port; it looks like COM5 on Windows or /dev/ttyACM0 elsewhere` | the address is not port-shaped | on Windows find it in Device Manager under Ports; on Linux it is usually `/dev/ttyACM0` |
-| `lerobot real: connect failed 3 times: Could not connect on port ...` | the port is wrong, or another program holds it for itself: it opens for one program at a time on every system, Linux and macOS included since LeRobot 0.7.0, where that takes a program that locked it. It is tried three times like any connect failure, since a port busy for a moment is as passing as a lost packet | LeRobot's own words come through, and they name `lerobot-find-port`, which is the way to be sure. Close any teleoperation, recording, serial monitor or other quackd still holding it, and on Linux check that your user can open the port (upstream's own line is `sudo chmod 666 /dev/ttyACM0`; the port's group, usually `dialout`, is the version that survives a reboot). No attempt opened the port, so nothing was written to a motor, every note says the port never opened, and the message says nothing about torque |
-| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to enable torque after 1 tries on '<joint>' (motor ID <N>): ...` (or `disable`), and the session carries on | a status packet on one of the torque writes LeRobot's connect makes (`Lock` or `Torque_Enable`) was lost or came back garbled. LeRobot tried every other motor and named each one it could not switch, and quackd names every joint it named, closed the port without writing anything and connected again. Seen three times on 2026-09-23, on LeRobot 0.6.1, each on the first connect after the power had been off | nothing, once. The same joint named session after session is a cable to reseat: the one into that servo, and its connectors |
+| `lerobot real: connect failed 3 times: Could not connect on port ...` | the port is wrong, or another program holds it for itself: it opens for one program at a time on every system, Linux and macOS included since LeRobot 0.7.0, where that takes a program that locked it. It is tried three times like any connect failure, since a port busy for a moment is as passing as a lost packet | LeRobot's own words come through, and they name `lerobot-find-port`, which is the way to be sure. Close any teleoperation, recording, serial monitor or other Roboglot still holding it, and on Linux check that your user can open the port (upstream's own line is `sudo chmod 666 /dev/ttyACM0`; the port's group, usually `dialout`, is the version that survives a reboot). No attempt opened the port, so nothing was written to a motor, every note says the port never opened, and the message says nothing about torque |
+| `connect attempt 1 of 3 failed on <joint> (id <N>): Failed to enable torque after 1 tries on '<joint>' (motor ID <N>): ...` (or `disable`), and the session carries on | a status packet on one of the torque writes LeRobot's connect makes (`Lock` or `Torque_Enable`) was lost or came back garbled. LeRobot tried every other motor and named each one it could not switch, and Roboglot names every joint it named, closed the port without writing anything and connected again. Seen three times on 2026-09-23, on LeRobot 0.6.1, each on the first connect after the power had been off | nothing, once. The same joint named session after session is a cable to reseat: the one into that servo, and its connectors |
 | `lerobot real: connect failed 3 times, the last on <joint> (id <N>): Failed to enable torque ...` (or `disable torque`, or `Failed to write ...`) | every attempt failed, the last one on that servo, or on each servo it names. The torque writes may have stopped part way, so some motors can be holding and others limp, which the message says | keep a hand under the arm. Check that joint's cable and connectors, or each named joint's, that the servo supply is on, and that nothing else has the port open, then connect again. A message that names no joint says to check the arm's cables and power instead, and so does one whose torque call reached none of the motors |
 | `lerobot real: connect failed 3 times, the last on <joint> (id <N>): SerialMotorsBus motor check failed on port '...': Missing motor IDs: - <N> ...` | the servo at that address did not answer its ping on any attempt: a cable out, or a servo with no power. An overloaded or overheated servo answers its ping and is not listed, because LeRobot 0.7.0 reports neither alarm. `Motors with incorrect model numbers` in the same place is a servo that answered as another model. LeRobot's handshake reports it before anything is written and closes the port behind it, which each note says, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors and that the servo supply is on, then connect again |
 | `lerobot real: connect failed 3 times: SerialMotorsBus motor check failed on port '...': Missing motor IDs: - <N> ...` with every motor listed and `Full found motor list (id: model_number): {}` | no servo answered its ping on any attempt. That is what a servo supply that is switched off looks like, which is how the arm is after a power cut, and a cable out between the board and the first servo looks the same, so no joint is named | check that the servo supply is on, then the arm's cables and their connectors, and that nothing else has the port open, then connect again. Nothing was written, so the message says nothing about torque unless an earlier attempt got as far as writing |
 | `lerobot real: connect failed 3 times, the last on <joint> (id <N>), the first that did not answer: Failed to sync read 'Min_Position_Limit' from motor IDs [1, 2, 3, 4, 5, 6] after 1 tries. motor <N>: ...` (or `Max_Position_Limit`, `Homing_Offset`) | every attempt lost a reply in the calibration check LeRobot's connect makes after the handshake and before `configure()`. The joint named is the first whose reply did not come, and a cable that breaks there silences the motors after it too, as a supply cut after the handshake does from the first motor on. It reads the motors and writes nothing, so the message says nothing about torque unless an earlier attempt got as far as writing | check that joint's cable and connectors, that the servo supply is on, and that nothing else has the port open, then connect again |
-| `lerobot real: connect stopped after attempt <k> of 3, because a stop was asked for. ...` | a Ctrl-C, or `q`, while the connect was failing. The attempt's own failure follows, LeRobot's words and the joints they name, then what became of the port, closed by quackd with no write, closed by LeRobot behind its handshake, or never opened, and that connect was not tried again | nothing to fix for the stop. Read the failure as the rows above, and where the message says some motors may be left with torque on and others off, keep a hand under the arm |
-| `lerobot real: connect failed: a LeRobot call (connect) has not come back within 30 s; ...` with `keep a hand under the arm` | the connect ran past its 30 second deadline, or LeRobot timed out itself and its own words follow `connect failed:`. It is never tried again, because its thread may still be on the bus, and it may have stopped anywhere in the torque writes | keep a hand under the arm, and cut its power to let go of it: whatever torque the connect switched on stays on once quackd has exited. Once the process has exited the port is free again; check the USB cable and that nothing else has the port open, then connect again |
-| `lerobot real: the arm is not calibrated; run LeRobot's calibration first` | LeRobot read the motors back and they do not match a calibration | run `lerobot-calibrate` under the id quackd will use, and see [the id section](#the-name-you-give-the-arm-is-its-calibration-id) |
+| `lerobot real: connect stopped after attempt <k> of 3, because a stop was asked for. ...` | a Ctrl-C, or `q`, while the connect was failing. The attempt's own failure follows, LeRobot's words and the joints they name, then what became of the port, closed by Roboglot with no write, closed by LeRobot behind its handshake, or never opened, and that connect was not tried again | nothing to fix for the stop. Read the failure as the rows above, and where the message says some motors may be left with torque on and others off, keep a hand under the arm |
+| `lerobot real: connect failed: a LeRobot call (connect) has not come back within 30 s; ...` with `keep a hand under the arm` | the connect ran past its 30 second deadline, or LeRobot timed out itself and its own words follow `connect failed:`. It is never tried again, because its thread may still be on the bus, and it may have stopped anywhere in the torque writes | keep a hand under the arm, and cut its power to let go of it: whatever torque the connect switched on stays on once Roboglot has exited. Once the process has exited the port is free again; check the USB cable and that nothing else has the port open, then connect again |
+| `lerobot real: the arm is not calibrated; run LeRobot's calibration first` | LeRobot read the motors back and they do not match a calibration | run `lerobot-calibrate` under the id Roboglot will use, and see [the id section](#the-name-you-give-the-arm-is-its-calibration-id) |
 | `lerobot real: the arm reports no calibration file, so nothing knows how far each joint travels` | there is no file for this id | the same fix, and check the path `doctor` prints |
-| `lerobot real: connect failed once the arm was energised: ... Nothing has read where the arm is, so quackd kept whatever torque connecting switched on rather than let it go where it stands: hold the arm, and cut its power.` | LeRobot's connect went through and switched torque on, and then something that is not one of the refusals above failed: the first read of the joints, the calibration check, or the travel read out of the calibration. LeRobot's own words follow `energised:`. No read has said where the arm stands, so the port is closed with every motor still holding. In 0.14 and before this was left to the disconnect LeRobot makes as the process lets go of the arm, which could drop it | hold the arm, and cut its power. `quackd robot release` connects the same way, so it fails in the same place. Then check the cables and the servo supply for a read that failed, or run LeRobot's calibration again for a calibration quackd could not read the travel out of |
-| `lerobot real: only so101_follower is wired` / `this robot has no motors bus` | the config is not an SO-101 follower | quackd drives this one body; an SO-100 shares the calibration directory but is not wired here |
+| `lerobot real: connect failed once the arm was energised: ... Nothing has read where the arm is, so Roboglot kept whatever torque connecting switched on rather than let it go where it stands: hold the arm, and cut its power.` | LeRobot's connect went through and switched torque on, and then something that is not one of the refusals above failed: the first read of the joints, the calibration check, or the travel read out of the calibration. LeRobot's own words follow `energised:`. No read has said where the arm stands, so the port is closed with every motor still holding. In 0.14 and before this was left to the disconnect LeRobot makes as the process lets go of the arm, which could drop it | hold the arm, and cut its power. `roboglot robot release` connects the same way, so it fails in the same place. Then check the cables and the servo supply for a read that failed, or run LeRobot's calibration again for a calibration Roboglot could not read the travel out of |
+| `lerobot real: only so101_follower is wired` / `this robot has no motors bus` | the config is not an SO-101 follower | Roboglot drives this one body; an SO-100 shares the calibration directory but is not wired here |
 | `lerobot real: --camera-url 'opencv://7' did not open: ...` | the index is wrong, or the camera will not open under this backend | try the index `lerobot-find-cameras opencv` printed, add `?backend=msmf` on Windows, or drop a `width`/`height`/`fps` you pinned. The arm was not touched |
-| `lerobot real: --camera-url '...': fps='abc' is not a whole number` | a query key or value quackd does not accept | the message lists every key; this is refused before LeRobot is imported |
+| `lerobot real: --camera-url '...': fps='abc' is not a whole number` | a query key or value Roboglot does not accept | the message lists every key; this is refused before LeRobot is imported |
 | `lerobot real: --camera-url 'opencv://2': it has no ?name= and 2 cameras were given` | several cameras, and one of them is unnamed | add `?name=` to every url. The message shows the shape, `opencv://1?name=top --camera-url opencv://2?name=side`, and says what the name is for |
 | `lerobot real: --camera-url 'opencv://2?name=top': name='top' is already the name of 'opencv://1?name=top'` | two cameras with one name | rename one. Two views the LLM cannot tell apart are worse than one view |
 | `lerobot real: --camera-url 'opencv://1?name=side': 1 is already 'opencv://1?name=top'` | the same index given twice | drop the duplicate, or find the other camera's index with `lerobot-find-cameras opencv`. Two handles on one webcam is not two views |
@@ -3366,18 +3366,18 @@ And once it is running:
 |---|---|---|
 | `move_joints: shoulder_pan=170.0 is outside this arm's calibrated range -100.0..100.0` | the goal is outside the travel in your calibration file | aim inside it, or recalibrate if the file does not match the arm's real travel. Nothing was sent. On `wrist_roll` this refusal will never fire, because upstream records a full turn for that joint rather than a sweep |
 | `cannot move_joints: elbow_flex reads 61°C: let the arm cool before moving it ...` | the heat gate, below the servo's own 70 °C cut-off | let it cool. A joint that trips its own protection goes slack without announcing it |
-| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint was still moving when the verb's limit came: the time asked for, or the time the step cap needs if that is longer, plus 2.5 s, and never more than 18 s. A lowered `QUACKD_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
+| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint was still moving when the verb's limit came: the time asked for, or the time the step cap needs if that is longer, plus 2.5 s, and never more than 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
 | `the camera gave no frame: TimeoutError: ... too old` | the webcam stalled or was unplugged | only `observe` is affected, and a `pick` in flight. The arm carries on, and `report_state` starts saying `CAMERA DOWN:` with the reason, so a run that cannot call `observe` still records it |
-| `cannot move_joints: the arm's torque is off, so a goal would reach a limp servo` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so torque still off after one points at a tripped servo or the supply. On a `--by-hand` run this is also what the arm reads like between the release and the moment quackd takes hold again, which is before the first turn |
+| `cannot move_joints: the arm's torque is off, so a goal would reach a limp servo` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so torque still off after one points at a tripped servo or the supply. On a `--by-hand` run this is also what the arm reads like between the release and the moment Roboglot takes hold again, which is before the first turn |
 | `cannot place: nothing is held: pick something first` | the `holding` precondition | holding is inferred from the gripper stopping short of shut, so an empty hand reads as nothing held. After a `--by-hand` start it is also what a pilot gets for the pencil you put between the jaws yourself: closing the gripper by hand sets a position and not a grip, and the pilot has to close on the object itself first |
 | the run ends saying the arm did not answer | the heartbeat's round trip to the motors failed, and the words after `TimeoutError:` name the call and its budget. Before 0.15.0 there was one more cause: the event loop's thread busy past the deadline, parsing a pilot's first response or encoding a frame, while the arm answered in time, and the answer was thrown away. That was found in the simulator and never measured on an arm. An answer that came back in time is now kept, and a probe queued behind a call which came back in time keeps its place and goes out rather than failing | the cable, the power, or a servo that has tripped. The arm holds its last goal under torque |
-| `NAME (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped` | a run, a dry run, an MCP session and a flock refuse a real arm with no rest pose before anything connects, and a spec such as `--robot lerobot:real` the same way, saying it `names no registered arm`, since a pose lives only under a name | fold the arm by hand and record one: `quackd robot rest-pose NAME`. For a spec, register the arm first: `quackd robot add NAME lerobot:real --address PORT`. A spec in `--robots` or a task file's `robots:` runs from a stored flock once registered, since neither reads the registry: `quackd flock create FLOCK --robot NAME`, one `--robot` for each member, then `--flock FLOCK` |
-| `NAME has no rest pose recorded, so torque was left on rather than let go of where the arm stands, where it would fall` | a probe, `doctor` or `robot list --probe`, read a real arm with no rest pose and kept it powered where it stands, which 0.23 and before let go of there | hold it and cut its power, or press Enter at doctor's question holding the arm, or run `quackd robot release <name>` and press Enter when it asks. Then fold it by hand and record the pose: `quackd robot rest-pose <name>` |
-| `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run quackd robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so quackd kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `quackd robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
+| `NAME (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped` | a run, a dry run, an MCP session and a team refuse a real arm with no rest pose before anything connects, and a spec such as `--robot lerobot:real` the same way, saying it `names no registered arm`, since a pose lives only under a name | fold the arm by hand and record one: `roboglot robot rest-pose NAME`. For a spec, register the arm first: `roboglot robot add NAME lerobot:real --address PORT`. A spec in `--robots` or a task file's `robots:` runs from a stored team once registered, since neither reads the registry: `roboglot team create TEAM --robot NAME`, one `--robot` for each member, then `--team TEAM` |
+| `NAME has no rest pose recorded, so torque was left on rather than let go of where the arm stands, where it would fall` | a probe, `doctor` or `robot list --probe`, read a real arm with no rest pose and kept it powered where it stands, which 0.23 and before let go of there | hold it and cut its power, or press Enter at doctor's question holding the arm, or run `roboglot robot release <name>` and press Enter when it asks. Then fold it by hand and record the pose: `roboglot robot rest-pose <name>` |
+| `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so Roboglot kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `roboglot robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
 | `the close was letting go of the arm and its disconnect did not finish, so some motors may have torque and some not: hold it, and cut its power to be sure` | the disconnect that takes torque off at a close raised, naming no joint or every one, or had not come back in 15 s. The exit does not wait for it after that, so what the motors are doing is not known | hold it, and cut the servo supply |
 | `the close took torque off, at the rest pose, on every joint but <joint>, whose write LeRobot could not confirm (...), so it may still hold: hold the arm as though nothing holds it, and cut its power to be sure` | the disconnect that takes torque off at a close tried every motor, and LeRobot could not confirm the write to the joint it names, so that joint may still have torque and every other one let go. With several, the line names each of them, `whose writes` and `they may still hold` | hold the arm, and cut the servo supply |
-| `quackd cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |
-| `torque still reads on for <joints>: cut the power` from `quackd robot release` | those motors kept their torque through the release | cut the servo supply while you hold the arm. The motors not named are limp, and the line after it says what the close then did ([Releasing it](#releasing-it)) |
+| `roboglot cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |
+| `torque still reads on for <joints>: cut the power` from `roboglot robot release` | those motors kept their torque through the release | cut the servo supply while you hold the arm. The motors not named are limp, and the line after it says what the close then did ([Releasing it](#releasing-it)) |
 | a run aborts with `the arm did not reach its rest pose: ...` before any LLM call | the run could not start from the recorded pose | something is in the way, or the pose no longer matches the arm, which is what a new calibration does to a pose recorded before it. Record it again, or move whatever is blocking the fold. A fold past the calibrated travel no longer ends a run here: the arm parks at the edge |
 | `<joint> is recorded at <angle> in the rest pose and this calibration lets its servo be driven to <limit> and no further, so it parks there and is let go of there ...` | the fold you recorded lies past the travel in your calibration file, so the arm parks at the edge of it and is let go of there. Not a fault: the run carries on | calibrate again with every joint taken all the way into the fold, then record the pose again ([A pose past the travel](#a-pose-past-the-travel)) |
 | `report_state` says `<joint> reads <angle>, past the <limit> its servo can be driven to` | that joint was folded or placed past its travel with torque off, which is where a rest pose past the travel leaves it, or it was parked at its limit and has sagged a few degrees past it under its own weight | nothing. It is said so the pilot does not take the reading for a fault, and goals are still limited to the travel |
@@ -3385,7 +3385,7 @@ And once it is running:
 ### Reported by owners, not by us
 
 One SO-101 has been on a desk here, on 2026-09-15 and again on 2026-09-23, and the list above
-is still what quackd's own code does. These are things SO-101 owners report, collected while
+is still what Roboglot's own code does. These are things SO-101 owners report, collected while
 writing this page and **not verified against hardware by anyone in this repo**. They are here
 because they are the failures that cost an afternoon, not because we can vouch for them.
 
@@ -3427,22 +3427,22 @@ from serialport-rs at
 [`2a62b22`](https://github.com/serialport/serialport-rs/tree/2a62b225b2dd043fa982f91d0fb54c7e26fb221e)
 (`v4.9.0`, the version rustypot's lock file pins). The rows were first read on 2026-09-02 and
 2026-09-13 at `main` of 2026-09-01, and every one was read again at the tag. An SO-101 has run
-the rows read at that old pin, on LeRobot 0.6.1, and none has run these. Every name quackd
+the rows read at that old pin, on LeRobot 0.6.1, and none has run these. Every name Roboglot
 spells for the arm lives in
-[`adapters/lerobot/src/quackd_lerobot/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/upstream_api.py),
+[`adapters/lerobot/src/roboglot_lerobot/upstream_api.py`](../../../adapters/lerobot/src/roboglot_lerobot/upstream_api.py),
 and why the adapter is shaped the way it is is
 [ADR-0036](../../adr/0036-what-the-arm-does-not-say.md).
 
 ### VERIFIED (read from source at the pin)
 
-| Name | Why quackd relies on it |
+| Name | Why Roboglot relies on it |
 |---|---|
 | `lerobot` | PyPI and import name |
-| `>=3.12` | requires-python; quackd's floor is 3.11, so the extra carries a marker |
+| `>=3.12` | requires-python; Roboglot's floor is 3.11, so the extra carries a marker |
 | `0.7.0` | the release the pin is, and PyPI's |
-| `lerobot[feetech]` | the extra that brings rustypot, which drives the motors and opens the port, and pyserial, neither of them a base dependency of lerobot. A plain `lerobot` imports and then builds no follower, so `quackd[lerobot]` asks for it, and `doctor` has a row for rustypot |
+| `lerobot[feetech]` | the extra that brings rustypot, which drives the motors and opens the port, and pyserial, neither of them a base dependency of lerobot. A plain `lerobot` imports and then builds no follower, so `roboglot[lerobot]` asks for it, and `doctor` has a row for rustypot |
 | `lerobot.robots.Robot` | the abstract base every robot implements |
-| `Robot.connect(calibrate=True)` | quackd passes False; connect() then writes no calibration into the motors |
+| `Robot.connect(calibrate=True)` | Roboglot passes False; connect() then writes no calibration into the motors |
 | `Robot.disconnect()` | |
 | `Robot.get_observation() -> dict` | flat: `'<motor>.pos'` floats plus one array per camera |
 | `Robot.send_action(action: dict) -> dict` | `'<motor>.pos'` goals; returns what was actually sent |
@@ -3450,14 +3450,14 @@ and why the adapter is shaped the way it is is
 | `Robot.action_features` | |
 | `Robot.is_connected` | |
 | `Robot.is_calibrated` | |
-| `Robot.calibrate() is interactive` | it calls `input()`; quackd never triggers it |
+| `Robot.calibrate() is interactive` | it calls `input()`; Roboglot never triggers it |
 | `Robot.configure()` | |
 | `Robot.__enter__/__exit__` | connect on enter, disconnect on exit |
-| `Robot.__del__ disconnects a robot still connected` | a follower collected while still connected is disconnected, and anything that raises is swallowed. So an exit that skipped quackd's close can still end in the follower's `disconnect()`, and what that does to torque is whatever the config holds by then, which is why quackd builds the follower asking to keep it |
+| `Robot.__del__ disconnects a robot still connected` | a follower collected while still connected is disconnected, and anything that raises is swallowed. So an exit that skipped Roboglot's close can still end in the follower's `disconnect()`, and what that does to torque is whatever the config holds by then, which is why Roboglot builds the follower asking to keep it |
 | `RobotAction = dict[str, Any]; RobotObservation = dict[str, Any]` | |
 | `Robot.calibration` | motor name -> MotorCalibration, loaded from the file; where joint ranges come from |
 | `Robot.calibration_fpath` | `calibration_dir / '<id>.json'`; reported so a wrong id is visible |
-| `calibrate() records wrist_roll as a full turn` | upstream sweeps every joint except that one and writes 0..4095 for it, so quackd's range refusal is real on four body joints and inert on the fifth |
+| `calibrate() records wrist_roll as a full turn` | upstream sweeps every joint except that one and writes 0..4095 for it, so Roboglot's range refusal is real on four body joints and inert on the fifth |
 | `HF_LEROBOT_CALIBRATION/robots/so_follower/` | the default calibration directory: `$HF_LEROBOT_CALIBRATION`, else `$HF_LEROBOT_HOME/calibration`, else `lerobot/calibration` under `$HF_HOME`, which is huggingface_hub's own `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface` when unset, and a variable set to nothing still counts as set. The arm simulator walks the same search without importing LeRobot. Two arms sharing an id share a file |
 | `a calibration file is draccus JSON of motor name -> MotorCalibration` | one object with a key per motor, each holding exactly the five integer fields. The arm simulator reads it with the json module and refuses a file that names other motors or leaves a field out |
 | `draccus>=0.11.6,<0.12.0` | how LeRobot decodes each field of a calibration file: a float is refused and anything else goes through `int()`, so `true` reads as 1 and `"3"` as 3, and a null passes through. The arm simulator decodes the fields the same way, so a twin loads the file its arm loads, and refuses a null, because it builds the travel from every field |
@@ -3469,24 +3469,24 @@ and why the adapter is shaped the way it is is
 | `koch_follower` | another class, on another bus: described here, and built by nothing |
 | `lerobot.robots.koch_follower.KochFollowerConfig` | its `use_degrees` defaults to False, where the SO's defaults to True |
 | `shoulder_pan to gripper on a SerialMotorsBus: xl430-w250 on the first two, xl330-m288 on the other four` | the Koch's bus: the SO-101's six joint names, on servos of another maker, on the one bus class the SO-101 uses too |
-| `Torque_Enable (64, 1) and Present_Temperature (146, 1)` | the two registers quackd reads off a bus, in rustypot's XL430 and XL330 tables. How a Dynamixel bus fails has been read, and the rows after this one say what differs |
-| `SerialMotorsBus is one class for Feetech and Dynamixel, so its failures read alike` | the sentences quackd reads to name a joint and place a failed connect were written for a Feetech bus, and hold on a Koch's: they are one class's, rustypot words both protocols alike, and a Koch's connect goes through the same named steps. The rows below say where it differs |
+| `Torque_Enable (64, 1) and Present_Temperature (146, 1)` | the two registers Roboglot reads off a bus, in rustypot's XL430 and XL330 tables. How a Dynamixel bus fails has been read, and the rows after this one say what differs |
+| `SerialMotorsBus is one class for Feetech and Dynamixel, so its failures read alike` | the sentences Roboglot reads to name a joint and place a failed connect were written for a Feetech bus, and hold on a Koch's: they are one class's, rustypot words both protocols alike, and a Koch's connect goes through the same named steps. The rows below say where it differs |
 | `a Dynamixel bus's handshake is its Model_Number reads, with no firmware check` | an XL430 or XL330 has neither of the two firmware registers LeRobot's check reads, so a Koch's handshake is its six reads of `Model_Number` and writes nothing, as an SO arm's does, and the two firmware sync reads an SO's makes are not there to fail |
-| `an XL430 or XL330 leaves the factory at 57600 baud` | where an sts3215 leaves at the 1000000 LeRobot opens every bus at, so a Koch whose servos were never set up answers no ping and the handshake lists every motor as missing, which quackd reads as the arm's cables or power |
-| `a Dynamixel can refuse an instruction, and LeRobot raises on it` | an error number in a protocol 2 status is a refusal, which never comes from an sts3215, and the alert bit alone is not. quackd's patterns still name the joint, a refused write still counts as a write that failed, and LeRobot's words are quoted as they stand |
-| `a torque call writes only Torque_Enable to a Dynamixel` | one write a motor where an sts3215 takes two, so the deadline quackd gives a torque call on an SO arm would only be longer than a Koch needs |
-| `is_calibrated also compares Drive_Mode on a Dynamixel` | the twin of the check on an sts3215: an XL servo has `Drive_Mode` and `Homing_Offset`, so the check reads both, and a file that disagrees with either reads as not calibrated, which quackd refuses as any other mismatch. It writes nothing, as on an SO arm |
-| `a Dynamixel that refuses the handshake's read is listed as missing` | `ping()` gives a refusal the same None as a silence, so a Koch servo that answered with an error number reads as one that did not answer, and quackd sends a person to its cable |
+| `an XL430 or XL330 leaves the factory at 57600 baud` | where an sts3215 leaves at the 1000000 LeRobot opens every bus at, so a Koch whose servos were never set up answers no ping and the handshake lists every motor as missing, which Roboglot reads as the arm's cables or power |
+| `a Dynamixel can refuse an instruction, and LeRobot raises on it` | an error number in a protocol 2 status is a refusal, which never comes from an sts3215, and the alert bit alone is not. Roboglot's patterns still name the joint, a refused write still counts as a write that failed, and LeRobot's words are quoted as they stand |
+| `a torque call writes only Torque_Enable to a Dynamixel` | one write a motor where an sts3215 takes two, so the deadline Roboglot gives a torque call on an SO arm would only be longer than a Koch needs |
+| `is_calibrated also compares Drive_Mode on a Dynamixel` | the twin of the check on an sts3215: an XL servo has `Drive_Mode` and `Homing_Offset`, so the check reads both, and a file that disagrees with either reads as not calibrated, which Roboglot refuses as any other mismatch. It writes nothing, as on an SO arm |
+| `a Dynamixel that refuses the handshake's read is listed as missing` | `ping()` gives a refusal the same None as a silence, so a Koch servo that answered with an error number reads as one that did not answer, and Roboglot sends a person to its cable |
 | `a Koch's body motors ignore Min_Position_Limit and Max_Position_Limit` | they run in `extended_position`, where LeRobot says both registers are ignored, so the firmware clamp an SO arm's rest pose relies on is not there for a Koch's body joints. Whoever wires a Koch owes that part of the rest logic another read |
 | `a Koch's get_observation reads with no retries` | an SO follower reads with `num_read_retries`, 2 by default, and a Koch has no such field, so one lost packet fails a Koch's position read where an SO's takes three |
 | `xl430-w250 and xl330-m288 resolution 4096` | the turn of a Koch's servos in ticks, as `sts3215 resolution 4096` is an SO arm's |
-| `xl430-w250 model number 1060, xl330-m288 model number 1200` | what a Koch's servos answer a ping with, printed beside each id the handshake lists; quackd reads the ids and not these |
+| `xl430-w250 model number 1060, xl330-m288 model number 1200` | what a Koch's servos answer a ping with, printed beside each id the handshake lists; Roboglot reads the ids and not these |
 | `lerobot.robots.so_follower.SO101Follower` | an alias of SOFollower |
 | `SOFollower.name is so_follower` | the calibration subdirectory, shared by SO-100 and SO-101 |
-| `SO101FollowerConfig(port, disable_torque_on_disconnect=True, max_relative_target=None, cameras={}, use_degrees=True, position_p_coefficient=16, position_i_coefficient=0, position_d_coefficient=32, num_read_retries=2)` | every safety-shaped field is passed explicitly rather than inherited, and `disable_torque_on_disconnect` is passed as False, the opposite of upstream's default, so a disconnect quackd did not ask for keeps torque |
+| `SO101FollowerConfig(port, disable_torque_on_disconnect=True, max_relative_target=None, cameras={}, use_degrees=True, position_p_coefficient=16, position_i_coefficient=0, position_d_coefficient=32, num_read_retries=2)` | every safety-shaped field is passed explicitly rather than inherited, and `disable_torque_on_disconnect` is passed as False, the opposite of upstream's default, so a disconnect Roboglot did not ask for keeps torque |
 | `shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper` | six Feetech sts3215 motors, ids 1..6 in the bus table, which are the ids the arm simulator gives the generic arm it builds when no calibration file is named |
 | `'<motor>.pos'` | the observation and action keys |
-| `get_observation() reads Present_Position and nothing else` | no torque, current, temperature or fault: why quackd reads registers |
+| `get_observation() reads Present_Position and nothing else` | no torque, current, temperature or fault: why Roboglot reads registers |
 | `camera name -> array` | `cam.read_latest()` under each configured camera's name |
 | `max_relative_target caps each step` | clips a goal to present +/- the cap per send_action, reading the cap off the config on every call, which is where a policy segment writes its own |
 | `max_relative_target must be a float or a dict per motor` | an int raises; a dict must name exactly the action's joints |
@@ -3494,89 +3494,89 @@ and why the adapter is shaped the way it is is
 | `send_action() returns the goal actually sent` | the clipped goal, not the measured position |
 | `use_degrees=True -> body joints in degrees` | |
 | `gripper is 0..100` | whatever use_degrees says |
-| `disconnect() disables torque by default` | `disable_torque_on_disconnect` defaults to True, so LeRobot lets the arm go limp at every disconnect, the one it makes of a follower nobody closed included. Under that default an exit that skipped quackd's close, a second Ctrl-C during the rest move or a crash, could drop the arm, so quackd builds the follower with it False and its close writes it every time: True over an arm at its recorded rest pose, which is the limp end of every clean session, and False over one that did not reach the pose it was recorded resting in, and over a real arm with none recorded, which only a probe such as `doctor` reaches, a run of one being refused: 0.23 and before wrote True there and let it fall where it stood. The one exception is `quackd robot rest-pose`, whose read of an arm with no pose takes the pose it reads for its rest, so the arm a person has just folded is let go of where it lies. A connect quackd refuses once the arm is energised (not calibrated, no calibration file, no motors bus) writes True before its own disconnect, and one that fails any other way closes the port and keeps torque. Nothing runs when the process is killed |
-| `disconnect() reads config.disable_torque_on_disconnect when it runs` | the flag is read off the config instance inside `disconnect()` rather than copied at construction, and the config is a plain dataclass, so the value on the instance when `disconnect()` runs is what it does, whoever calls it. The config is built asking for False and every connect asks again, so a disconnect quackd did not make keeps torque, and quackd writes True immediately before its own only over an arm that may be let go. Read first against lerobot 0.6.1, the version the first real arm ran, and the same at the tag |
+| `disconnect() disables torque by default` | `disable_torque_on_disconnect` defaults to True, so LeRobot lets the arm go limp at every disconnect, the one it makes of a follower nobody closed included. Under that default an exit that skipped Roboglot's close, a second Ctrl-C during the rest move or a crash, could drop the arm, so Roboglot builds the follower with it False and its close writes it every time: True over an arm at its recorded rest pose, which is the limp end of every clean session, and False over one that did not reach the pose it was recorded resting in, and over a real arm with none recorded, which only a probe such as `doctor` reaches, a run of one being refused: 0.23 and before wrote True there and let it fall where it stood. The one exception is `roboglot robot rest-pose`, whose read of an arm with no pose takes the pose it reads for its rest, so the arm a person has just folded is let go of where it lies. A connect Roboglot refuses once the arm is energised (not calibrated, no calibration file, no motors bus) writes True before its own disconnect, and one that fails any other way closes the port and keeps torque. Nothing runs when the process is killed |
+| `disconnect() reads config.disable_torque_on_disconnect when it runs` | the flag is read off the config instance inside `disconnect()` rather than copied at construction, and the config is a plain dataclass, so the value on the instance when `disconnect()` runs is what it does, whoever calls it. The config is built asking for False and every connect asks again, so a disconnect Roboglot did not make keeps torque, and Roboglot writes True immediately before its own only over an arm that may be let go. Read first against lerobot 0.6.1, the version the first real arm ran, and the same at the tag |
 | `Max_Torque_Limit 500 on the gripper` | with Protection_Current 250 and Overload_Torque 25: the native authority. The line's own comment calls 500 half the maximum, so the arm simulator gives its model gripper half of that model's force range |
 | `the five body joints get no torque or current cap` | the caps sit inside a check for the gripper's name |
 | `configure_motors() writes Return_Delay_Time 0 and Acceleration 254` | called inside torque_disabled(), so connecting drops torque briefly |
 | `SOFollower.is_connected is the serial port plus the cameras` | |
 | `SOFollower.connect() refuses while the port is open` | `check_if_already_connected`, and `is_connected` is the port's flag. connect() opens the port first and configures last. A failed handshake shuts the port itself, and nothing shuts it when the calibration check or configure() raises, so a retried connect has to close it first (`SerialMotorsBus.disconnect(False)`) |
-| `configure() switches torque off and on again with no retry` | `torque_disabled()` calls `disable_torque()` and `enable_torque()` with `num_retry` 0, each a `Torque_Enable` then a `Lock` write per motor, every motor tried and each that failed named, so one status packet lost or garbled fails the whole connect with the port left open. Lost on the way in, it leaves every motor but the ones named limp, since nothing switches them back on; lost on the way back on, the ones named may be limp and the rest hold. The bench arm did this on three connects on 2026-09-23, on LeRobot 0.6.1; quackd connects again, up to three attempts |
+| `configure() switches torque off and on again with no retry` | `torque_disabled()` calls `disable_torque()` and `enable_torque()` with `num_retry` 0, each a `Torque_Enable` then a `Lock` write per motor, every motor tried and each that failed named, so one status packet lost or garbled fails the whole connect with the port left open. Lost on the way in, it leaves every motor but the ones named limp, since nothing switches them back on; lost on the way back on, the ones named may be limp and the rest hold. The bench arm did this on three connects on 2026-09-23, on LeRobot 0.6.1; Roboglot connects again, up to three attempts |
 | `SOFollower.bus is a SerialMotorsBus` | the attribute registers are read through, and the class LeRobot's refusals name for the bus. `FeetechMotorsBus` is a deprecated alias of it that the follower does not use |
 | `no deadman: nothing stops the arm when the client goes quiet` | the class has no thread, timer or timeout; a goal stands until the next write |
-| `RobotKinematics sets a URDF joint to np.deg2rad(degrees)` | LeRobot's own kinematics helper puts a reading on a model of the arm in radians with no offset and no sign, in forward and inverse kinematics alike. The arm simulator follows it for the five arm joints, which is what [`JOINT_ZERO` and `JOINT_SIGN`](#unverified-our-assumptions-about-the-model-and-what-quackd-does-about-each) assume |
-| `SerialMotorsBus.disable_torque()` | never called on quackd's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `quackd run --by-hand`'s, and `quackd robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `quackd robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `quackd doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no LLM can ask for it. On an sts3215 it writes `Torque_Enable` 0 then `Lock` 0 to each motor in turn, through rustypot, the pair tried `num_retry` + 1 times a motor and every motor tried even after one fails, and quackd asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
+| `RobotKinematics sets a URDF joint to np.deg2rad(degrees)` | LeRobot's own kinematics helper puts a reading on a model of the arm in radians with no offset and no sign, in forward and inverse kinematics alike. The arm simulator follows it for the five arm joints, which is what [`JOINT_ZERO` and `JOINT_SIGN`](#unverified-our-assumptions-about-the-model-and-what-roboglot-does-about-each) assume |
+| `SerialMotorsBus.disable_torque()` | never called on Roboglot's own initiative. The one call is `let_go()`, and it has two doors, each opened by a person at a terminal. `let_go()` is `roboglot run --by-hand`'s, and `roboglot robot release`'s once its fold has arrived (`let_go(asked=True)`, which changes only what the close then says), and refuses anywhere but the arm's recorded rest pose, the same condition `close()` uses to decide that letting go will not drop it. `let_go(anywhere=True)` is Enter at the question `roboglot robot release` and the end of a run put after two folds missed, or before connecting to an arm with no rest pose, or the one `roboglot doctor` puts at a terminal before it lets go of a real arm with none, each of which says the arm will drop and to hold it first, and releases wherever the arm stands, with or without a rest pose recorded. No verb reaches either and no LLM can ask for it. On an sts3215 it writes `Torque_Enable` 0 then `Lock` 0 to each motor in turn, through rustypot, the pair tried `num_retry` + 1 times a motor and every motor tried even after one fails, and Roboglot asks for `num_retry=5`, the count upstream's own `disconnect()` uses |
 | `SerialMotorsBus.enable_torque()` | called by `take_hold()`, to pick up an arm a person has just placed, with `num_retry=5` as for the release. It writes `Torque_Enable` 1 **and then `Lock` 1** to each motor, two writes a motor rather than one, every motor tried, and connect makes the same call with no retry at all |
-| `Failed to <enable\|disable> torque after <k> tries on '<joint>' (motor ID <N>): <error>, ...` | the one error a torque call raises, once rustypot has tried every motor and handed back each that still failed: one `'<joint>' (motor ID <N>): <error>` a motor, joined by commas. So a torque call that raised has reached every motor it does not name, and those took the write, while each it names may not have, where the old pin's call stopped at the first write that failed. quackd names every joint it names, through the bus's motor table, and counts it as a failed write. A release that raised says which joints may still hold, or that it could confirm the write to no motor where the error names them all, and a connect whose error names every motor of the arm is said as the arm's cables and power |
-| `rustypot's Bus.set_torque tries every motor and hands back each that still failed` | rustypot's half of the row above: each motor's `Torque_Enable` and then its `Lock` in one try, retried together, a failure kept by id and the next motor tried. A try ends at its first write that gets no reply, so a motor that does not answer never gets its `Lock`. Its own row so the nightly compares it with rustypot's newest release, since LeRobot 0.7.0 allows any rustypot below 2: a `set_torque` that stopped at its first failure would have quackd say joints let go that still hold |
+| `Failed to <enable\|disable> torque after <k> tries on '<joint>' (motor ID <N>): <error>, ...` | the one error a torque call raises, once rustypot has tried every motor and handed back each that still failed: one `'<joint>' (motor ID <N>): <error>` a motor, joined by commas. So a torque call that raised has reached every motor it does not name, and those took the write, while each it names may not have, where the old pin's call stopped at the first write that failed. Roboglot names every joint it names, through the bus's motor table, and counts it as a failed write. A release that raised says which joints may still hold, or that it could confirm the write to no motor where the error names them all, and a connect whose error names every motor of the arm is said as the arm's cables and power |
+| `rustypot's Bus.set_torque tries every motor and hands back each that still failed` | rustypot's half of the row above: each motor's `Torque_Enable` and then its `Lock` in one try, retried together, a failure kept by id and the next motor tried. A try ends at its first write that gets no reply, so a motor that does not answer never gets its `Lock`. Its own row so the nightly compares it with rustypot's newest release, since LeRobot 0.7.0 allows any rustypot below 2: a `set_torque` that stopped at its first failure would have Roboglot say joints let go that still hold |
 | `SerialMotorsBus.disconnect(disable_torque=True)` | the `disable_torque()` call is inside `if disable_torque`, so False closes the port and leaves every motor holding the goal it was last written: what an arm that missed its rest pose gets instead of falling, and how the port is closed between two connect attempts without a write to any motor. A bus already closed returns without a word |
 | `SerialMotorsBus.disconnect() releases the port whatever its torque-off did` | the torque-off runs in a `try` whose `finally` closes the port, so a disconnect that raised has still shut it, and has tried every motor: the ones its error names may still hold. On the old pin a torque-off that raised left the port open |
-| `the bus holds rustypot's Bus and no port handler` | rustypot's `Bus` while the port is open, and nothing otherwise, is the whole of the connection. There is no port handler and no busy flag that a serial error in the middle of a packet could leave raised: rustypot flushes whatever is waiting on the line before every instruction, up to three times 5 ms apart, and fails with `Timeout error` when bytes keep coming. quackd's close used to lower that flag after its own, and has nothing to lower now |
+| `the bus holds rustypot's Bus and no port handler` | rustypot's `Bus` while the port is open, and nothing otherwise, is the whole of the connection. There is no port handler and no busy flag that a serial error in the middle of a packet could leave raised: rustypot flushes whatever is waiting on the line before every instruction, up to three times 5 ms apart, and fails with `Timeout error` when bytes keep coming. Roboglot's close used to lower that flag after its own, and has nothing to lower now |
 | `SerialMotorsBus.motors: name -> Motor(id, model, norm_mode)` | the table that gives each servo its bus address; a bus error's id is turned into a joint through it, never through an assumed order |
-| `Failed to write <value> to '<register>' of motor ID <N> after <k> tries. <error>` | what a single write that got no good reply raises, and a single read says `Failed to read '<register>' from motor ID <N> after <k> tries. <error>`. quackd reads `motor ID <N>` out of it to name the joint. The error a motor that refused an instruction would raise never comes from an sts3215, whose status byte is alarms only |
-| `_handshake` | what `SerialMotorsBus.connect()` runs once the port is open: a ping per motor and the firmware reads, and no write. `configure()`, where every write of a connect is, comes after it, and so does the calibration check, which reads the motors and writes nothing, so a connect refused in either left every motor's torque as it was, and its refusal does not tell you to keep a hand under the arm. quackd tells either from a connect that failed in `configure()` by its frames in the error's traceback, this one's or the calibration check's |
-| `a failed handshake closes the port behind it` | LeRobot catches whatever the handshake raises, closes the port and raises it again, so a connect refused there, a servo that did not answer among them, leaves the port shut, where the old pin left it open. A failure in the calibration check or in `configure()` still leaves it open. So a port shut after a failed connect either never opened or was closed by this, and quackd's note says which, by the handshake's frame |
-| `Missing motor IDs: / Motors with incorrect model numbers: - <N> (...)` | what the handshake raises, headed `SerialMotorsBus motor check failed on port '<port>':`, for a servo that did not answer its ping, or answered as another model: one line per motor. A servo answering with an alarm set, an overload say, answers its ping and is not listed, where the old pin listed it as missing. quackd names the joint of the first id listed, through the bus's motor table, and names none when every motor is listed |
-| `Failed to sync read '<register>' from motor IDs [<N>, ...] after <k> tries. motor <M>: <error>` | what a read of several motors at once raises when no good reply came back, listing every motor it read, and a sync write says `Failed to sync write '<register>' to motor IDs [<N>, ...]` only when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The words after the list are rustypot's: `motor <M>: ` and why, M being the first motor whose own reply did not come back whole, and every motor after it not known to be fine, since a cable that breaks at one motor silences the ones after it. `Operation timed out` is serialport-rs's for a reply that never came, and `Timeout error` rustypot's for a packet that could not go out. quackd names motor M as the first that did not answer, and names no joint for a sync write. The arm simulator fails its reads and goal writes in these words. A read that ends a run says `the arm did not answer: ConnectionError: ` in front of them |
+| `Failed to write <value> to '<register>' of motor ID <N> after <k> tries. <error>` | what a single write that got no good reply raises, and a single read says `Failed to read '<register>' from motor ID <N> after <k> tries. <error>`. Roboglot reads `motor ID <N>` out of it to name the joint. The error a motor that refused an instruction would raise never comes from an sts3215, whose status byte is alarms only |
+| `_handshake` | what `SerialMotorsBus.connect()` runs once the port is open: a ping per motor and the firmware reads, and no write. `configure()`, where every write of a connect is, comes after it, and so does the calibration check, which reads the motors and writes nothing, so a connect refused in either left every motor's torque as it was, and its refusal does not tell you to keep a hand under the arm. Roboglot tells either from a connect that failed in `configure()` by its frames in the error's traceback, this one's or the calibration check's |
+| `a failed handshake closes the port behind it` | LeRobot catches whatever the handshake raises, closes the port and raises it again, so a connect refused there, a servo that did not answer among them, leaves the port shut, where the old pin left it open. A failure in the calibration check or in `configure()` still leaves it open. So a port shut after a failed connect either never opened or was closed by this, and Roboglot's note says which, by the handshake's frame |
+| `Missing motor IDs: / Motors with incorrect model numbers: - <N> (...)` | what the handshake raises, headed `SerialMotorsBus motor check failed on port '<port>':`, for a servo that did not answer its ping, or answered as another model: one line per motor. A servo answering with an alarm set, an overload say, answers its ping and is not listed, where the old pin listed it as missing. Roboglot names the joint of the first id listed, through the bus's motor table, and names none when every motor is listed |
+| `Failed to sync read '<register>' from motor IDs [<N>, ...] after <k> tries. motor <M>: <error>` | what a read of several motors at once raises when no good reply came back, listing every motor it read, and a sync write says `Failed to sync write '<register>' to motor IDs [<N>, ...]` only when its packet could not go out: it waits for no reply, so a lost one cannot fail it. The words after the list are rustypot's: `motor <M>: ` and why, M being the first motor whose own reply did not come back whole, and every motor after it not known to be fine, since a cable that breaks at one motor silences the ones after it. `Operation timed out` is serialport-rs's for a reply that never came, and `Timeout error` rustypot's for a packet that could not go out. Roboglot names motor M as the first that did not answer, and names no joint for a sync write. The arm simulator fails its reads and goal writes in these words. A read that ends a run says `the arm did not answer: ConnectionError: ` in front of them |
 | `sts3215 model number 777` | what an SO-101 servo answers a ping with, and what the handshake prints beside each id it lists. The arm simulator's handshake fault prints it where the arm's would |
 | `check_if_not_connected refuses a call on a port that is not open` | ``<class> is not connected. Run `.connect()` first.``, a ConnectionError, on the follower's observation, send and disconnect and on every bus read and write, and its twin says `<class> is already connected.` for a connect. The arm simulator refuses in the same words under upstream's class names |
 | `SerialMotorsBus.is_connected is whether it holds rustypot's Bus` | whether the port is open, not a reply: an unplugged arm stays connected until somebody closes the bus, which is why the heartbeat reads the arm |
 | `SerialMotorsBus.is_calibrated reads the motors back` | `Min_Position_Limit`, `Max_Position_Limit` and `Homing_Offset` off every motor, in sync reads with no retry, compared with the file: a missing, stale or foreign file all read as not calibrated. LeRobot's connect makes this check between the handshake and `configure()`, so a lost reply in it fails a connect that has written nothing |
-| `write_calibration() is reached only through calibrate()` | quackd cannot move an arm's zero by accident |
+| `write_calibration() is reached only through calibrate()` | Roboglot cannot move an arm's zero by accident |
 | `SerialMotorsBus.sync_read(data_name, motors=None, *, normalize=True, num_retry=0)` | one transaction for every motor named, on an SO-101, and a retry sends it again |
-| `normalized_data is goal_position and present_position, matched without case` | every other register comes back raw, and quackd asks for raw anyway |
+| `normalized_data is goal_position and present_position, matched without case` | every other register comes back raw, and Roboglot asks for raw anyway |
 | `MotorCalibration(id, drive_mode, homing_offset, range_min, range_max)` | raw encoder ticks, not degrees |
 | `Invalid calibration for motor '<motor>': min and max are equal.` | LeRobot loads a file whose range_min equals its range_max and refuses the first reading or goal through that motor. The arm simulator refuses the file as it reads it |
 | `degrees = (raw - mid) * 360 / 4095` | how a calibration file becomes a range in degrees, centred on zero |
-| `a degrees goal is not clamped to the calibrated range` | the two 0..100 modes are clamped and DEGREES is not, so the servo's own clamp is what stops a goal past the travel, silently: why quackd refuses |
+| `a degrees goal is not clamped to the calibrated range` | the two 0..100 modes are clamped and DEGREES is not, so the servo's own clamp is what stops a goal past the travel, silently: why Roboglot refuses |
 | `write_calibration() writes Min_Position_Limit and Max_Position_Limit, and the servo clamps Goal_Position to them` | the servo clamps every goal to the calibrated travel and never a reading, seen on an SO-101 on 2026-09-23: why a rest pose is clipped into the travel and a joint past it gets no goal |
 | `sts3215 resolution 4096` | one tick is about 0.088 degrees |
-| `Torque_Enable (40, 1) and Present_Temperature (63, 1)` | the two registers quackd reads, in rustypot's STS3215 table; upstream reads neither. `Present_Load`, `Present_Voltage`, `Status`, `Present_Current` and `Max_Temperature_Limit` are in the same table, and quackd reads none of them yet |
-| `an sts3215's status byte is alarms only, and nothing raises on one` | rustypot's STS3215 definition says `status_alarms_only: true`, so no status an sts3215 sends counts as a refusal, and LeRobot drops the status byte. An overloaded or overheated servo answers reads and writes as any other and passes the handshake, where the old pin's single reads, writes and pings raised on any error bit. So LeRobot 0.7.0 surfaces no overload and no overheat at all, and quackd's own temperature read, refused at 60, is the only heat guard it has. The `Status` register holds the alarms, and quackd does not read it. What a servo's own protection does to its torque meanwhile is its firmware's, and nobody here has measured it |
-| `rustypot opens the port exclusively, on every platform` | serialport-rs opens it with no sharing on Windows, and with `TIOCEXCL` and an exclusive `flock` that fails rather than waits on Linux and macOS, its default there. A second program opening the arm's port while quackd holds it is refused at open, and so is quackd opening one another program holds for itself, which LeRobot says as `Could not connect on port ...`. On Linux and macOS a program that opened the port first with no lock, as pyserial does unless asked, does not stop quackd opening it too: serialport-rs's own comment says its lock holds only against programs that lock as well. Nor does `TIOCEXCL` stop root, so a program run as root that takes no lock opens the port beside quackd. The old SDK's pyserial locked the port on Windows alone, so on Linux and macOS two programs could talk over each other on one bus |
-| `each attempt waits 50 ms for a status packet` | LeRobot's default timeout, longer than a USB adapter's 16 ms latency timer, handed to rustypot as the port's read timeout, and a retry waits again. A release or a take-hold with `num_retry=5` spends some 300 ms on each motor that does not answer, every motor tried, so some 1.8 s over six silent motors, past the 1 s quackd gives most calls: their torque calls get a deadline of their own, worked out from these numbers |
+| `Torque_Enable (40, 1) and Present_Temperature (63, 1)` | the two registers Roboglot reads, in rustypot's STS3215 table; upstream reads neither. `Present_Load`, `Present_Voltage`, `Status`, `Present_Current` and `Max_Temperature_Limit` are in the same table, and Roboglot reads none of them yet |
+| `an sts3215's status byte is alarms only, and nothing raises on one` | rustypot's STS3215 definition says `status_alarms_only: true`, so no status an sts3215 sends counts as a refusal, and LeRobot drops the status byte. An overloaded or overheated servo answers reads and writes as any other and passes the handshake, where the old pin's single reads, writes and pings raised on any error bit. So LeRobot 0.7.0 surfaces no overload and no overheat at all, and Roboglot's own temperature read, refused at 60, is the only heat guard it has. The `Status` register holds the alarms, and Roboglot does not read it. What a servo's own protection does to its torque meanwhile is its firmware's, and nobody here has measured it |
+| `rustypot opens the port exclusively, on every platform` | serialport-rs opens it with no sharing on Windows, and with `TIOCEXCL` and an exclusive `team` that fails rather than waits on Linux and macOS, its default there. A second program opening the arm's port while Roboglot holds it is refused at open, and so is Roboglot opening one another program holds for itself, which LeRobot says as `Could not connect on port ...`. On Linux and macOS a program that opened the port first with no lock, as pyserial does unless asked, does not stop Roboglot opening it too: serialport-rs's own comment says its lock holds only against programs that lock as well. Nor does `TIOCEXCL` stop root, so a program run as root that takes no lock opens the port beside Roboglot. The old SDK's pyserial locked the port on Windows alone, so on Linux and macOS two programs could talk over each other on one bus |
+| `each attempt waits 50 ms for a status packet` | LeRobot's default timeout, longer than a USB adapter's 16 ms latency timer, handed to rustypot as the port's read timeout, and a retry waits again. A release or a take-hold with `num_retry=5` spends some 300 ms on each motor that does not answer, every motor tried, so some 1.8 s over six silent motors, past the 1 s Roboglot gives most calls: their torque calls get a deadline of their own, worked out from these numbers |
 | `Camera.async_read(timeout_ms)` | the most recent new frame |
 | `Camera.read()` | |
 | `OpenCVCamera converts BGR to RGB when color_mode is RGB` | channel order is a config choice |
-| `OpenCVCameraConfig.color_mode defaults to ColorMode.RGB` | quackd passes RGB explicitly anyway |
-| `lerobot.cameras.opencv.OpenCVCamera(config)` | the camera quackd builds and owns, beside the follower |
+| `OpenCVCameraConfig.color_mode defaults to ColorMode.RGB` | Roboglot passes RGB explicitly anyway |
+| `lerobot.cameras.opencv.OpenCVCamera(config)` | the camera Roboglot builds and owns, beside the follower |
 | `OpenCVCameraConfig(index_or_path, fps=None, width=None, height=None, color_mode=ColorMode.RGB, rotation=Cv2Rotation.NO_ROTATION, warmup_s=1, fourcc=None, backend=Cv2Backends.ANY)` | what `--camera-url`'s query keys fill in |
-| `lerobot.cameras exports Camera, CameraConfig, ColorMode, Cv2Backends, Cv2Rotation` | the config is deliberately not among them, so quackd imports from both |
+| `lerobot.cameras exports Camera, CameraConfig, ColorMode, Cv2Backends, Cv2Rotation` | the config is deliberately not among them, so Roboglot imports from both |
 | `Cv2Backends: ANY, V4L2, DSHOW, PVAPI, ANDROID, AVFOUNDATION, MSMF` | the backend is a config field, so `?backend=msmf` needs no patched source. `--camera-url` takes the five that name a platform you could be on; the other two would only ever be a refusal |
 | `Camera.connect(warmup=True)` | it reads frames before returning, so a camera that opens and never delivers fails here |
-| `connect() raises ConnectionError on an index that will not open` | quackd passes its words through, and they name `lerobot-find-cameras opencv` |
-| `a requested fps or size that the camera refuses raises RuntimeError` | why quackd asks for no mode unless you name one |
+| `connect() raises ConnectionError on an index that will not open` | Roboglot passes its words through, and they name `lerobot-find-cameras opencv` |
+| `a requested fps or size that the camera refuses raises RuntimeError` | why Roboglot asks for no mode unless you name one |
 | `an unset fps, width or height keeps the camera's own mode` | what makes an unknown webcam in a lab drawer work |
 | `Camera.read_latest(max_age_ms=500)` | the newest buffered frame; it raises when the camera has stalled, and `get_frame` turns that into a reason |
 | `Camera.disconnect()` | |
-| `a follower's cameras are part of its connected state` | `is_connected`, `send_action` and `disconnect()` all include them, which is why quackd's camera is not the follower's |
+| `a follower's cameras are part of its connected state` | `is_connected`, `send_action` and `disconnect()` all include them, which is why Roboglot's camera is not the follower's |
 | `lerobot-find-cameras opencv` | how an owner learns which index is which: it saves a frame per camera |
 | `lerobot-find-port` | upstream's own port finder: it names the port that disappears when you unplug the arm, which is the only way to be sure which one it is |
 
-### UNVERIFIED (our assumptions, and what quackd does about each)
+### UNVERIFIED (our assumptions, and what Roboglot does about each)
 
 A policy's names, and the one assumption about running one, are in
 [the policies' table](#the-policies-upstream-lerobot-070) below, read at the version a policy
 server runs.
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
-| `TORQUE_ENABLE_HOLDS_PRESENT` | what a servo does with the goal it was last told when torque comes back on. `enable_torque()` writes `Torque_Enable` and then `Lock` on each motor, neither of them a goal, so whether the motor then holds where it is or drives to that stale goal is the firmware's business and is documented nowhere quackd can read. It matters because the goal last written before a hand-off is the rest pose the arm has since been lifted out of by hand, so a snap back to it would happen with somebody's fingers in the way. `take_hold()` writes the present position as the goal **before** enabling torque, writes it again after, and reads the arm back to check it stayed, so the assumption is never relied on in either direction. A joint placed past its calibrated travel is where that cannot work: a goal written there is clamped to the limit (`POSITION_LIMITS_CLAMP_GOALS`), and no goal leaves the servo the last one it had, the rest move's, which only this row could say it ignores. So `take_hold()` leaves torque off and refuses while any body joint reads outside its travel |
+| `TORQUE_ENABLE_HOLDS_PRESENT` | what a servo does with the goal it was last told when torque comes back on. `enable_torque()` writes `Torque_Enable` and then `Lock` on each motor, neither of them a goal, so whether the motor then holds where it is or drives to that stale goal is the firmware's business and is documented nowhere Roboglot can read. It matters because the goal last written before a hand-off is the rest pose the arm has since been lifted out of by hand, so a snap back to it would happen with somebody's fingers in the way. `take_hold()` writes the present position as the goal **before** enabling torque, writes it again after, and reads the arm back to check it stayed, so the assumption is never relied on in either direction. A joint placed past its calibrated travel is where that cannot work: a goal written there is clamped to the limit (`POSITION_LIMITS_CLAMP_GOALS`), and no goal leaves the servo the last one it had, the rest move's, which only this row could say it ignores. So `take_hold()` leaves torque off and refuses while any body joint reads outside its travel |
 | `GRIPPER_OPEN_VALUE` | 100 is assumed open; which end is open is how the arm was calibrated, and the checklist asks for it by hand |
 | `HOLDING_INFERRED` | holding is the gripper told to close, settled, and short of shut; listed in `extras.assumptions`. A gripper a person closed by hand is a position and not a grip, so an arm placed with `--by-hand` reports nothing held until the pilot closes the gripper itself |
-| `TEMPERATURE_C` | the register is read raw and treated as Celsius; the 60 °C refusal and the 70 °C cut-off are Feetech's numbers, not measured. LeRobot 0.7.0 surfaces no overheat alarm, so this read is the only heat guard quackd has |
-| `DYNAMIXEL_LATCHED_FAULT` | a Dynamixel's status alert bit means a hardware fault is latched, and rustypot leaves which one to its Hardware Error Status register, which LeRobot and quackd read nowhere. What the servo then does is its firmware's and nothing here has read it, so quackd would say what it says of any arm, that torque reads off, and name no fault |
+| `TEMPERATURE_C` | the register is read raw and treated as Celsius; the 60 °C refusal and the 70 °C cut-off are Feetech's numbers, not measured. LeRobot 0.7.0 surfaces no overheat alarm, so this read is the only heat guard Roboglot has |
+| `DYNAMIXEL_LATCHED_FAULT` | a Dynamixel's status alert bit means a hardware fault is latched, and rustypot leaves which one to its Hardware Error Status register, which LeRobot and Roboglot read nowhere. What the servo then does is its firmware's and nothing here has read it, so Roboglot would say what it says of any arm, that torque reads off, and name no fault |
 | `JOINT_RANGES` | each joint's travel is computed from the calibration file and a goal outside it is refused. It is not the mechanical limit on every arm: a calibration that never saw a joint folded all the way leaves the fold past it, as the bench arm's did on 2026-09-23, which is why a rest pose is clipped into the travel. Whether it is the mechanical limit on any given arm is unverified |
 | `SERIAL_PORT` | `--address` is checked for shape and nothing more. The port opens for one program at a time, so whatever else holds it for itself is a refusal at connect, and on Linux and macOS a program that opened it with no lock is not |
-| `THREAD_SAFETY` | every call is serialised under one lock in a worker thread with a deadline; a blown deadline wedges the transport. Under LeRobot, rustypot's `Bus` serialises its calls on a lock of its own and lets go of the GIL while it talks, and its close takes that lock holding the GIL, so a close made while another thread's call is on the wire would hold up every Python thread until the call ends. quackd makes no close over a call it has lost. It opens the port holding the GIL too, so an open that blocks, a Bluetooth port's say, holds up every Python thread, quackd's deadlines and Ctrl-C among them, until it returns |
-| `CAMERA_INDEX_MOVES` | an index is a scan position, not an identity: it can move on a replug or a reboot, and a laptop's own webcam usually holds 0. quackd records the index it opened and cannot tell you it is the camera you meant |
-| `WINDOWS_CAMERA_BACKEND` | which backend a Windows machine needs for a given webcam is not knowable in advance, so quackd keeps upstream's ANY and gives the owner `?backend=msmf` |
+| `THREAD_SAFETY` | every call is serialised under one lock in a worker thread with a deadline; a blown deadline wedges the transport. Under LeRobot, rustypot's `Bus` serialises its calls on a lock of its own and lets go of the GIL while it talks, and its close takes that lock holding the GIL, so a close made while another thread's call is on the wire would hold up every Python thread until the call ends. Roboglot makes no close over a call it has lost. It opens the port holding the GIL too, so an open that blocks, a Bluetooth port's say, holds up every Python thread, Roboglot's deadlines and Ctrl-C among them, until it returns |
+| `CAMERA_INDEX_MOVES` | an index is a scan position, not an identity: it can move on a replug or a reboot, and a laptop's own webcam usually holds 0. Roboglot records the index it opened and cannot tell you it is the camera you meant |
+| `WINDOWS_CAMERA_BACKEND` | which backend a Windows machine needs for a given webcam is not knowable in advance, so Roboglot keeps upstream's ANY and gives the owner `?backend=msmf` |
 
 ## The simulator's upstream: SO-ARM100
 
 [The simulator](#the-simulator-lerobotmujoco), `lerobot:mujoco`, is the `real` backend's own
 code over a physics model of the SO-101, and this is where that model comes from. The model is
-set in a scene of quackd's own, a table, lights, the cameras and the objects on it, and CI's
+set in a scene of Roboglot's own, a table, lights, the cameras and the objects on it, and CI's
 `physics` job runs the same code over a primitives-only stand-in arm (`sim/standin.py`) on every
 push, because nothing a pull request waits on fetches the model. The nightly `lerobot-sim-assets` job fetches it the way a
 first run does and runs the sweeps on it.
@@ -3593,56 +3593,56 @@ runs the `real` backend over it and over the fake arm its own tests use, side by
 The model is the maker's own, [TheRobotStudio/SO-ARM100](https://github.com/TheRobotStudio/SO-ARM100),
 pinned at
 [`5f6d2b8`](https://github.com/TheRobotStudio/SO-ARM100/tree/5f6d2b876a53a4872e405b991dd925556c9e38a4)
-(`main`, 2026-09-23) and read on 2026-09-26. Every name quackd spells from it lives in
-[`adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/sim/upstream_api.py).
+(`main`, 2026-09-23) and read on 2026-09-26. Every name Roboglot spells from it lives in
+[`adapters/lerobot/src/roboglot_lerobot/sim/upstream_api.py`](../../../adapters/lerobot/src/roboglot_lerobot/sim/upstream_api.py).
 
 **The model and its meshes are fetched at run time and never shipped.** Neither the wheel, the
 repository nor a test fixture carries a byte of them, although their Apache-2.0 licence would
 allow it, because no upstream asset is ever committed here.
-[`sim/assets.py`](../../../adapters/lerobot/src/quackd_lerobot/sim/assets.py) fetches
+[`sim/assets.py`](../../../adapters/lerobot/src/roboglot_lerobot/sim/assets.py) fetches
 `so101_new_calib_camera.xml` and the meshes it names one file at a time from
 raw.githubusercontent.com at the pin, rather than the whole repository, and checks each one
 against the sha256 recorded for it. Only once every file matches does it install the set in
-`~/.quackd/cache/so-arm100/<pin>/`, with a licence notice beside it. `QUACKD_CACHE_DIR` moves
-the cache. `QUACKD_LEROBOT_SIM_ASSETS` points at the `Simulation/SO101` directory of a checkout
+`~/.roboglot/cache/so-arm100/<pin>/`, with a licence notice beside it. `ROBOGLOT_CACHE_DIR` moves
+the cache. `ROBOGLOT_LEROBOT_SIM_ASSETS` points at the `Simulation/SO101` directory of a checkout
 of your own instead. A file there that differs from the pin is a warning rather than an error,
 because a newer model is what a checkout is for, and the model is then reported as not pinned.
 Line endings in the model do not count, because Git for Windows checks it out with CRLF.
 
 ### VERIFIED (read from the model and its README at the pin)
 
-| Name | Why quackd relies on it |
+| Name | Why Roboglot relies on it |
 |---|---|
-| `the repository's LICENSE is the Apache License 2.0` | no other licence file sits beside the simulation files and neither README names one, so the model and its meshes are under it. quackd fetches them rather than shipping them all the same |
-| `so101_new_calib_camera.xml` | the model quackd loads: new_calib, the default calibration and the one LeRobot recommends, plus upstream's wrist camera mount. It includes no other file, so it needs nothing of upstream's but its meshes |
-| `no <option>, <camera>, <light> or table in the model` | the arm and nothing around it, so the physics settings, the table, the lights and every camera the simulator renders from are quackd's and not upstream's, and a seeded grasp sweep is what proves the settings. Upstream's `scene.xml` wraps the variant without the camera mount, and quackd does not use it |
-| `<compiler angle="radian" meshdir="assets" autolimits="true"/>` | every range in the file is in radians, and quackd reads each one from the loaded model rather than copying a number out of the file |
+| `the repository's LICENSE is the Apache License 2.0` | no other licence file sits beside the simulation files and neither README names one, so the model and its meshes are under it. Roboglot fetches them rather than shipping them all the same |
+| `so101_new_calib_camera.xml` | the model Roboglot loads: new_calib, the default calibration and the one LeRobot recommends, plus upstream's wrist camera mount. It includes no other file, so it needs nothing of upstream's but its meshes |
+| `no <option>, <camera>, <light> or table in the model` | the arm and nothing around it, so the physics settings, the table, the lights and every camera the simulator renders from are Roboglot's and not upstream's, and a seeded grasp sweep is what proves the settings. Upstream's `scene.xml` wraps the variant without the camera mount, and Roboglot does not use it |
+| `<compiler angle="radian" meshdir="assets" autolimits="true"/>` | every range in the file is in radians, and Roboglot reads each one from the loaded model rather than copying a number out of the file |
 | `15 STL meshes under Simulation/SO101/assets` | every mesh the model names and nothing else from that directory, each fetched on its own and checked against its hash |
-| `wrist_camera_mount and wrist_camera` | two bodies under the gripper, meshes only, with no camera element in either: where a wrist view is rendered from is quackd's |
-| `the fingers are part of the meshes wrist_roll_follower_so101_v1 and moving_jaw_so101_v1` | the fixed finger is one printed part with the wrist housing, and each part collides as the whole of its mesh. MuJoCo collides a mesh as its convex hull, so the fixed part's hull fills the opening the other finger closes into and throws a pen out of the grasp. quackd turns both off and collides the two fingers and the palm as boxes cut from the meshes' own vertices when the model loads |
+| `wrist_camera_mount and wrist_camera` | two bodies under the gripper, meshes only, with no camera element in either: where a wrist view is rendered from is Roboglot's |
+| `the fingers are part of the meshes wrist_roll_follower_so101_v1 and moving_jaw_so101_v1` | the fixed finger is one printed part with the wrist housing, and each part collides as the whole of its mesh. MuJoCo collides a mesh as its convex hull, so the fixed part's hull fills the opening the other finger closes into and throws a pen out of the grasp. Roboglot turns both off and collides the two fingers and the palm as boxes cut from the meshes' own vertices when the model loads |
 | `joints and actuators named shoulder_pan, shoulder_lift, elbow_flex, wrist_flex, wrist_roll, gripper` | exactly LeRobot's motor names in LeRobot's order, so a `'<motor>.pos'` key reaches its joint and its actuator by name |
 | `new_calib: each joint's zero is the middle of its range` | the README's words, which the file bears out for the five arm joints: four ranges are symmetric about zero, and `wrist_roll`'s middle is a few degrees from it. LeRobot's degrees for those joints are centred on the middle of the calibrated travel too, which is why the two zeros are expected to meet. Not for the gripper: its hinge has its zero near one end of its range and LeRobot's gripper is 0..100, so it is `GRIPPER_MAP`'s |
-| `<position kp="998.22" kv="2.731" forcerange="-2.94 2.94"/>` | the gains every joint uses, which the file says were calculated following [RBE501-RL-arm-project](https://github.com/Gregory119/RBE501-RL-arm-project/blob/main/gymnasium_env/README.md) with the servo's proportional gain assumed to be 16, LeRobot's default, and which it says are not a one to one mapping of LeRobot's servo gains. Each of the six actuators overrides the force range with -3.35 3.35. quackd uses them as written |
+| `<position kp="998.22" kv="2.731" forcerange="-2.94 2.94"/>` | the gains every joint uses, which the file says were calculated following [RBE501-RL-arm-project](https://github.com/Gregory119/RBE501-RL-arm-project/blob/main/gymnasium_env/README.md) with the servo's proportional gain assumed to be 16, LeRobot's default, and which it says are not a one to one mapping of LeRobot's servo gains. Each of the six actuators overrides the force range with -3.35 3.35. Roboglot uses them as written |
 | `STS3215 motor properties adapted from the Open Duck Mini project` | the README's account of where the servo properties in the model came from: another robot |
-| `LeRobot's gripper 0..100 is not yet reflected in the URDF and MuJoCo files` | the model's gripper is a hinge in radians, so the map from LeRobot's 0..100 is quackd's (`GRIPPER_MAP`) |
+| `LeRobot's gripper 0..100 is not yet reflected in the URDF and MuJoCo files` | the model's gripper is a hinge in radians, so the map from LeRobot's 0..100 is Roboglot's (`GRIPPER_MAP`) |
 
-### UNVERIFIED (our assumptions about the model, and what quackd does about each)
+### UNVERIFIED (our assumptions about the model, and what Roboglot does about each)
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
-| `SERVO_DYNAMICS` | the gains, damping and friction are a calculation and another robot's properties, not a measurement of an SO-101. quackd treats the simulated dynamics as the model's and never as the arm's: a settle time, a push or a grasp that holds in the simulator is evidence about the model, and only the bench can say it about an arm |
-| `JOINT_ZERO` | whether a real arm's calibrated middle of travel is the model's zero, on the five arm joints. A calibration records the travel one person swept on one arm, and nothing says that matches the CAD. quackd assumes an offset of zero on each of them until the bench measures one, as LeRobot's own kinematics helper does (`RobotKinematics sets a URDF joint to np.deg2rad(degrees)`, in the LeRobot table above). A bench measures it by nudging each joint and reading each stop against the model's. The gripper is `GRIPPER_MAP`'s |
-| `JOINT_SIGN` | whether a positive degree turns the model's joint the positive way. That depends on how each servo was mounted and calibrated, which the model cannot know. quackd assumes it does on the five arm joints, as LeRobot's kinematics helper does, until the same bench checks it. Which end of the gripper is closed is `GRIPPER_MAP`'s, found from the model |
+| `SERVO_DYNAMICS` | the gains, damping and friction are a calculation and another robot's properties, not a measurement of an SO-101. Roboglot treats the simulated dynamics as the model's and never as the arm's: a settle time, a push or a grasp that holds in the simulator is evidence about the model, and only the bench can say it about an arm |
+| `JOINT_ZERO` | whether a real arm's calibrated middle of travel is the model's zero, on the five arm joints. A calibration records the travel one person swept on one arm, and nothing says that matches the CAD. Roboglot assumes an offset of zero on each of them until the bench measures one, as LeRobot's own kinematics helper does (`RobotKinematics sets a URDF joint to np.deg2rad(degrees)`, in the LeRobot table above). A bench measures it by nudging each joint and reading each stop against the model's. The gripper is `GRIPPER_MAP`'s |
+| `JOINT_SIGN` | whether a positive degree turns the model's joint the positive way. That depends on how each servo was mounted and calibrated, which the model cannot know. Roboglot assumes it does on the five arm joints, as LeRobot's kinematics helper does, until the same bench checks it. Which end of the gripper is closed is `GRIPPER_MAP`'s, found from the model |
 | `GRIPPER_MAP` | LeRobot's 0..100 is mapped linearly over the model's gripper hinge, with the closed end found from the loaded model rather than assumed, and a reading is clipped to 0..100 |
-| `WRIST_CAMERA_POSE` | whether upstream's printed mount sits where your wrist camera sits. quackd renders the wrist view from the mount as the model places it and never claims it is your camera's view |
+| `WRIST_CAMERA_POSE` | whether upstream's printed mount sits where your wrist camera sits. Roboglot renders the wrist view from the mount as the model places it and never claims it is your camera's view |
 
 <a id="the-policies-upstream-lerobot-061"></a>
 
 ## The policies' upstream: LeRobot 0.7.0
 
-`pick` and `manipulate` hand the arm to a learned policy, and a quackd command loads a LeRobot
-checkpoint only in [a policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve),
-never in the process that owns the arm's bus. The names quackd relies on here are read
+`pick` and `manipulate` hand the arm to a learned policy, and a Roboglot command loads a LeRobot
+checkpoint only in [a policy server](#a-policy-in-a-process-of-its-own-roboglot-policy-serve),
+never in the process that owns the arm's bus. The names Roboglot relies on here are read
 against lerobot 0.7.0, at the commit its tag names,
 [`410c095`](https://github.com/huggingface/lerobot/tree/410c095eacc0011d998a73383eb94abed2715af0)
 (`v0.7.0`), the commit [the arm's own table](#upstream-api) is pinned to as well. They
@@ -3650,9 +3650,9 @@ were first read at 0.6.1 and read again at 0.7.0 on 2026-11-08, when the install
 0.7.0 wheel and the tag were compared file by file, and every file these rows cite that the
 wheel carries was the same; `pyproject.toml` and `remote_inference/README.md`, which it does not
 carry, were read at the tag. Every name lives in
-[`adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/upstream_api.py).
+[`adapters/lerobot/src/roboglot_lerobot/policy/upstream_api.py`](../../../adapters/lerobot/src/roboglot_lerobot/policy/upstream_api.py).
 
-**No trained checkpoint has been loaded by quackd in CI or on a GPU.** CI's `policy` job loads a
+**No trained checkpoint has been loaded by Roboglot in CI or on a GPU.** CI's `policy` job loads a
 tiny random ACT and a tiny random X-VLA through the real server, on the CPU and offline, on
 LeRobot 0.7.0, which is what `POLICY_PIPELINE` below rests on. Trained checkpoints have been
 loaded only on one laptop's CPU, where an ACT from the Hub drove a twin of the lab's arm on the
@@ -3662,7 +3662,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 
 ### VERIFIED (read from source at the v0.7.0 tag)
 
-| Name | Why quackd relies on it |
+| Name | Why Roboglot relies on it |
 |---|---|
 | `lerobot.policies.pretrained.PreTrainedPolicy` | |
 | `lerobot.configs.policies.PreTrainedConfig` | a checkpoint's own config, read before the policy class is built; the one policy name that is not in the factory. Since 0.7.0 it carries a `dtype`, which a name in `config.json` decodes to, and `from_pretrained` sets the path it was read from, which no code of the six served types reads |
@@ -3670,7 +3670,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `PreTrainedPolicy.from_pretrained(path, *, config=None, local_files_only=False, revision=None, strict=False)` | a local directory or a Hub repo id, at a revision, and the policy comes back in eval mode; since 0.7.0 a config with no device raises, which the server never meets, since it sets one. Left lenient, a weight the file lacks is only logged and the model keeps what it was built with, so the server asks for `strict=True` and refuses a checkpoint whose weights are not its model's |
 | `PreTrainedPolicy.select_action(batch: dict[str, Tensor]) -> Tensor, or PolicyOutput` | one action per call, or since 0.7.0 a `PolicyOutput` holding it beside what the policy predicts besides |
 | `PreTrainedPolicy.predict_action_chunk(batch: dict[str, Tensor]) -> Tensor, or PolicyOutput` | the whole chunk for one observation, which is what a step is answered with, or since 0.7.0 a `PolicyOutput` holding it |
-| `PolicyOutput, {"action": Tensor, "prediction": ...}, which select_action and predict_action_chunk may answer in place of a tensor` | new at 0.7.0: the action, and what the policy predicts besides it. Of LeRobot's policies g05 answers one when it predicts something besides its action, and lingbot_va when it is told to return its predicted video; none of the six quackd serves does. The server takes the `action` of one all the same, so a policy that answered one would be served its action and nothing of its prediction |
+| `PolicyOutput, {"action": Tensor, "prediction": ...}, which select_action and predict_action_chunk may answer in place of a tensor` | new at 0.7.0: the action, and what the policy predicts besides it. Of LeRobot's policies g05 answers one when it predicts something besides its action, and lingbot_va when it is told to return its predicted video; none of the six Roboglot serves does. The server takes the `action` of one all the same, so a policy that answered one would be served its action and nothing of its prediction |
 | `PreTrainedPolicy.reset()` | |
 | `lerobot.policies.factory.get_policy_class(name)` | |
 | `lerobot.policies.factory.make_pre_post_processors(policy_cfg, pretrained_path=None, pretrained_revision=None)` | the observation and the action tensor each go through one, loaded at the revision given. Since 0.7.0 it first asks a type for processors of its own, which GR00T alone of the served types has, and GR00T's builds them from its config only for a checkpoint whose `config.json` names no `type`, which the server refuses: every served type loads the processor JSONs the server checked |
@@ -3679,9 +3679,9 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `lerobot.policies.utils.make_robot_action(action_tensor, ds_features)` | one action row to a dict by name, so a chunk is turned into actions a row at a time |
 | `ACTConfig.chunk_size and n_action_steps` | how many actions one inference predicts and how many of them are played, 100 and 100 for ACT and 50 and 50 for SmolVLA. The server reports both |
 | `ACTConfig.temporal_ensemble_coeff` | set, ACT is asked every step with `n_action_steps` 1, which is the loop's tick mode |
-| `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no quackd command loads a checkpoint beside the arm's bus |
+| `a processor step named by class is imported by its module path` | a step without a registry name is imported from whatever module its `class` key names, so loading a checkpoint's processors can run any code the checkpoint points at: why no Roboglot command loads a checkpoint beside the arm's bus |
 | `ActionTokenizerProcessorStep.trust_remote_code defaults to True` | the action tokenizer trusts a repository's code unless told not to, the observation tokenizer loads one by name at no revision, and SmolVLA names its backbone by an unpinned Hub name. The server allows no action tokenizer, tells any step that could trust remote code not to, and pins every such name at a commit or a tag or refuses it, and it refuses a step that keeps its tokenizer inside the checkpoint instead (the artifacts row below). A SmolVLA config with no backbone gets LeRobot's default, so it is refused. SmolVLA's build asks transformers for its backbone without saying `trust_remote_code` either way, or which attention to build it with, so a pinned model whose files map a class to code, name a repository or a flash attention as their attention, name experts or carry a `quantization_config`, each a way to a kernel on the Hub that transformers would run once the `kernels` package is installed, or whose cached directory holds anything but configs, tokenizer files and safetensors, is refused. A server with `kernels` installed at a version transformers takes loads no checkpoint at all |
-| `a processor step's artifacts: directories inside the checkpoint that LeRobot loads in place of the config keys they name` | new at 0.7.0: a save writes what a step saved, a tokenizer step's tokenizer every time, into a directory inside the checkpoint, names that directory in the step's config and declares it in the step's `artifacts`, and a load puts the directory in place of whatever the step names. Every SmolVLA, pi05, pi0 and X-VLA that LeRobot 0.7.0 saves names its tokenizer this way. quackd fetches no such directory and checks none, so the server refuses any step that carries `artifacts`, before a pin or a weight, and a checkpoint LeRobot 0.7.0 saved with a tokenizer step is refused until quackd fetches and checks a checkpoint's own artifact directories |
+| `a processor step's artifacts: directories inside the checkpoint that LeRobot loads in place of the config keys they name` | new at 0.7.0: a save writes what a step saved, a tokenizer step's tokenizer every time, into a directory inside the checkpoint, names that directory in the step's config and declares it in the step's `artifacts`, and a load puts the directory in place of whatever the step names. Every SmolVLA, pi05, pi0 and X-VLA that LeRobot 0.7.0 saves names its tokenizer this way. Roboglot fetches no such directory and checks none, so the server refuses any step that carries `artifacts`, before a pin or a weight, and a checkpoint LeRobot 0.7.0 saved with a tokenizer step is refused until Roboglot fetches and checks a checkpoint's own artifact directories |
 | `config.json, model.safetensors, policy_preprocessor.json, policy_postprocessor.json, train_config.json` | the files a checkpoint is read from, each fetched at the revision named, the config and the processors before anything else, and nothing else of the repository |
 | `train_config.json's dataset.repo_id and dataset.revision; meta/info.json's fps` | where a checkpoint's rate is read when the server is given no `--fps`, and only at a commit or a tag, since the checkpoint chose that revision and a branch would give a rate that could change between two serves |
 | `observation.state, observation.images.<name>, action` | the keys a policy's state, images and action go by. An image's frame is handed over under its key with `observation.images.` cut off, which is why each camera is the image of its own name |
@@ -3696,7 +3696,7 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `X-VLA's action_mode: ee6d, joint, agibot_ee6d, franka_joint7, auto, so101_bimanual` | what an X-VLA's answer means, set in its config, `ee6d` unless it says otherwise. `auto` is the dataset's own action, an SO-101's joints, and the server serves it alone, refusing every other mode before a pin or a weight |
 | `groot_n1_7_pack_inputs_v1, groot_n1_7_vlm_encode_v1, groot_n1_7_action_decode_v1, groot_action_unpack_unnormalize_v2, relative_actions_processor, absolute_actions_processor` | the steps GR00T N1.7's processors are built from besides the default ones: the pack step, the backbone's encoder, one of two decode steps, and the relative and absolute steps one that learned relative actions without grouped statistics adds. With the row above, the only steps a GR00T may name |
 | `GrootConfig.base_model_path, nvidia/GR00T-N1.7-3B unless it says otherwise` | the base a GR00T is built from before its own weights replace it, filled with LeRobot's own when a config names none, so that is refused, and pinned otherwise. Its backbone is built from a config LeRobot carries only while the base names `nvidia/Cosmos-Reason2-2B`, so the pinned base's `config.json` is read before any weight and another backbone refused. The rest of the base is fetched at the commit that read found, so a tag that moves in between cannot hand the build a `config.json` nobody read. The backbone takes `flash_attention_2` when the checkpoint's own `use_flash_attention` is true and flash_attn imports, which transformers swaps for a kernel from the Hub when flash_attn cannot run and the `kernels` package is installed, so such a checkpoint is refused |
-| `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust. A step that names no `model_name` gets LeRobot's own backbone, `nvidia/Cosmos-Reason2-2B`, loaded at no revision, so the server refuses one, as it refuses a SmolVLA config with no backbone; LeRobot 0.6.1 filled it the same way, and until this release quackd let such a step through with no pin |
+| `GrootN17VLMEncodeStep loads its tokenizer and processors with trust_remote_code=True` | hard-wired, the first time the step runs. The server pins its `model_name`, fetches no `.py` and no weight of it, and refuses a directory that maps a class to code, so there is nothing of the repository's own to trust. A step that names no `model_name` gets LeRobot's own backbone, `nvidia/Cosmos-Reason2-2B`, loaded at no revision, so the server refuses one, as it refuses a SmolVLA config with no backbone; LeRobot 0.6.1 filled it the same way, and until this release Roboglot let such a step through with no pin |
 | `groot_n1_7_action_decode_v1 unnormalises each action group and makes a relative one absolute against the state the pack step cached` | the decode of a checkpoint whose statistics come grouped, beside the one for a checkpoint that took its dataset's. An EEF group, LIBERO's gripper and a decode with no statistics are each refused, since the arm would take its actions as joints it never meant |
 | `a relative GR00T's chunk is decoded whole, against the state it was predicted from` | LeRobot refuses to decode one an action at a time, and the server decodes every chunk whole |
 | `a relative GR00T keeps its state's percentiles in the pack step's raw_stats` | where LeRobot's normaliser keeps none, so the server reads the state's and the action's q01 and q99 from there, group by group, and reports them for the arm's frame check |
@@ -3718,22 +3718,22 @@ simulator and `lerobot/smolvla_base` never answered a step in time
 | `PI0Policy.from_pretrained returns the model without its weights when they do not load` | pi0's loader is pi05's, and it kept 0.6.1's shape at 0.7.0, so the server loads a pi0's weights the same way, with pi0's own key fixes |
 | `PreTrainedPolicy renames a state dict's vision_tower.vision_model. keys to vision_tower. as it loads one` | new at 0.7.0, for a checkpoint saved before transformers 5.6 flattened SigLIP's vision tower: every LeRobot policy renames those weights as it loads them, so the server's own strict load of a pi05 or a pi0 takes such a checkpoint as LeRobot's loaders do, and still refuses a weight the policy lacks |
 | `PI0FastPolicy loads the FAST tokenizer with trust_remote_code=True` | hard-wired in the policy rather than in a processor step an override could reach, so serving a pi0-FAST would run its tokenizer's repository's own Python. The server refuses the type on its `config.json` |
-| `LeRobot 0.6.1's async inference unpickled what it was sent, and 0.7.0's remote inference, which replaced it, decodes bounded MessagePack` | 0.6.1's policy server and robot client `pickle.loads` what they received, over an insecure port, which is why quackd has a protocol of its own. 0.7.0 removed that module, and the remote inference that replaced it, over zenoh, decodes bounded MessagePack with its extensions refused; quackd has read no more of it than that and runs neither |
-| `LeRobot 0.6.1's async robot client imported torch, and 0.7.0's remote client does too` | and the arm's process is the one quackd keeps free of torch, which 0.7.0's remote client imports as 0.6.1's async one did |
-| `LeRobot 0.6.1's async server skipped an observation near the last one, and 0.7.0's remote inference takes the newest observation each time it asks for a chunk` | 0.6.1's async server skipped an observation near the last one it ran; 0.7.0's remote engine keeps the newest and compares none, and quackd's server runs every step it is asked |
-| `LeRobot 0.6.1's async server took SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"], and 0.7.0's remote server takes any type it can build` | 0.6.1's async server loaded those and refused anything else, an X-VLA among them; 0.7.0's remote server builds whatever type a checkpoint names, against no list of its own. quackd's server takes the types it read, through allowlists of its own |
+| `LeRobot 0.6.1's async inference unpickled what it was sent, and 0.7.0's remote inference, which replaced it, decodes bounded MessagePack` | 0.6.1's policy server and robot client `pickle.loads` what they received, over an insecure port, which is why Roboglot has a protocol of its own. 0.7.0 removed that module, and the remote inference that replaced it, over zenoh, decodes bounded MessagePack with its extensions refused; Roboglot has read no more of it than that and runs neither |
+| `LeRobot 0.6.1's async robot client imported torch, and 0.7.0's remote client does too` | and the arm's process is the one Roboglot keeps free of torch, which 0.7.0's remote client imports as 0.6.1's async one did |
+| `LeRobot 0.6.1's async server skipped an observation near the last one, and 0.7.0's remote inference takes the newest observation each time it asks for a chunk` | 0.6.1's async server skipped an observation near the last one it ran; 0.7.0's remote engine keeps the newest and compares none, and Roboglot's server runs every step it is asked |
+| `LeRobot 0.6.1's async server took SUPPORTED_POLICIES = ["act", "smolvla", "diffusion", "tdmpc", "vqbet", "pi0", "pi05", "groot"], and 0.7.0's remote server takes any type it can build` | 0.6.1's async server loaded those and refused anything else, an X-VLA among them; 0.7.0's remote server builds whatever type a checkpoint names, against no list of its own. Roboglot's server takes the types it read, through allowlists of its own |
 | `POLICY_PIPELINE: build_inference_frame, the pre-processor, predict_action_chunk, the post-processor over the chunk, make_robot_action a row at a time` | exercised, not only read: CI's `policy` job serves a tiny random ACT from a Hub cache at a commit and a tag, offline and with torchvision unable to fetch the backbone its config names, through the real server and client and an arm behind them, and checks every action of a chunk against what LeRobot's own `select_action` plays from the same files (`tests/test_policy_pipeline.py`). Beside it a tiny random X-VLA, its Florence-2 built from its config and a tokenizer of a few words pinned at a commit, fetched from the cache alone and served through the same server and client. ACT and X-VLA on the CPU and nothing else, and random ones, so nothing about what a trained policy does to an arm follows from it. The job runs LeRobot 0.7.0 with torch 2.15 on the CPU, transformers 5.22.2 and huggingface-hub 2.4.0 |
 
-### UNVERIFIED (our assumptions about policies, and what quackd does about each)
+### UNVERIFIED (our assumptions about policies, and what Roboglot does about each)
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
-| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by quackd's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is how training made the chunk relative, and since 0.7.0 what LeRobot's own loop does too (`RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it while a policy bound to it still plays the chunk predicted from it`), so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `quackd policy check --bench` |
+| `VLA_PIPELINE` | that SmolVLA, pi05, pi0 and X-VLA run through the same pipeline as ACT: their tokenizer step, the nested models pinned with `--pin`, the missing images padded, their weights loaded strictly (a SmolVLA's and an X-VLA's by LeRobot's own loaders, a pi05's and a pi0's by Roboglot's copy of theirs), so a checkpoint saved with weights its model does not have would be refused, and pi05's and pi0's relative actions made absolute over a whole chunk, against the state it was predicted from. That last one is how training made the chunk relative, and since 0.7.0 what LeRobot's own loop does too (`RelativeActionsProcessorStep caches the state the absolute step adds back, and holds it while a policy bound to it still plays the chunk predicted from it`), so a trained pi05 or pi0 is taken to want it. That GR00T N1.7 runs through it too, with its processors' own decoding, its pinned base and its backbone's pinned tokenizer, and its frame read from its processors' grouped statistics. No job runs a SmolVLA, a pi05, a pi0 or a GR00T, and the X-VLA CI serves is a tiny random one, so no trained one of the five has run anywhere. An X-VLA is served in its `auto` action mode alone, taken to answer in the joints of the arm it learned from. They load through the allowlist each type has and the pins and refusals ACT's go through, and a first run belongs on the simulator after `roboglot policy check --bench` |
 | `TICK_MODE` | that an ACT with temporal ensembling, asked through `select_action` every tick, answers what upstream's own loop would play. The server refuses one without a GPU, so CI's CPU job cannot run it, and no bench has |
 
 ## The endpoint's upstream: Hugging Face Inference Endpoints
 
-`quackd policy endpoint` starts [the policy server](#a-policy-in-a-process-of-its-own-quackd-policy-serve)
+`roboglot policy endpoint` starts [the policy server](#a-policy-in-a-process-of-its-own-roboglot-policy-serve)
 on a Hugging Face Inference Endpoint, a GPU rented by the hour behind Hugging Face's proxy, and a
 run reaches it with `--policy-url hf:NAME`
 ([guides/policies.md](../../guides/policies.md#on-a-hugging-face-endpoint)). The names it relies
@@ -3749,60 +3749,60 @@ the one CI's policy job runs, at the commit its tag names,
 (`v1.33.0`), the version `uv.lock` holds, where diffusers 0.39.0 keeps the hub below 2. Of the
 17 lines the rows cited at 1.33.0, 16 read the same at 2.4.0, most at other line numbers, and
 the other named a fourth endpoint type, `protected`, which 2.4.0 has dropped and refuses. The
-rows cite 19 lines now, that one among them, and quackd's endpoint code imports neither
+rows cite 19 lines now, that one among them, and Roboglot's endpoint code imports neither
 release. Every file of huggingface_hub's these rows cite was compared with each release's wheel
 that day and was the same. Every name lives in
-[`adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/quackd_lerobot/policy/endpoint_upstream_api.py).
+[`adapters/lerobot/src/roboglot_lerobot/policy/endpoint_upstream_api.py`](../../../adapters/lerobot/src/roboglot_lerobot/policy/endpoint_upstream_api.py).
 
-**quackd has never created a Hugging Face Endpoint.** `quackd policy endpoint` and
+**Roboglot has never created a Hugging Face Endpoint.** `roboglot policy endpoint` and
 `--policy-url hf:NAME` have run against the test suite's stand-ins for the API, the proxy and the
 container on 127.0.0.1 alone, with a scripted policy behind them
 ([tests/fake_hugging_face.py](../../../tests/fake_hugging_face.py)), and nothing was paid for.
 The UNVERIFIED rows are what a first real endpoint settles, and each is designed for at its
-worst: quackd's own token on the server is the lock, whatever the proxy in front does.
+worst: Roboglot's own token on the server is the lock, whatever the proxy in front does.
 
 <a id="verified-read-on-the-day-from-the-api-hugging-faces-pages-and-huggingface_hub-1290"></a>
 
 ### VERIFIED (read on the days above from the API, Hugging Face's pages and huggingface_hub 2.4.0 and 1.33.0)
 
-| Name | Why quackd relies on it |
+| Name | Why Roboglot relies on it |
 |---|---|
-| `GET /v2/provider` | the one route that wants no token. It lists every compute with its price an hour, its accelerator and its status, so quackd reads it with none, for the price the confirmation quotes and to refuse an instance that is not a GPU |
-| `POST and GET /v2/endpoint/{namespace}; GET and DELETE /v2/endpoint/{namespace}/{name}; POST /v2/endpoint/{namespace}/{name}/pause, /resume and /scale-to-zero; GET /v2/endpoint/{namespace}/{name}/logs` | create, list, read, delete, pause and resume an endpoint, and the last lines of its log, each with the account's token. The list is filtered by quackd's own tag, `quackd-policy` |
+| `GET /v2/provider` | the one route that wants no token. It lists every compute with its price an hour, its accelerator and its status, so Roboglot reads it with none, for the price the confirmation quotes and to refuse an instance that is not a GPU |
+| `POST and GET /v2/endpoint/{namespace}; GET and DELETE /v2/endpoint/{namespace}/{name}; POST /v2/endpoint/{namespace}/{name}/pause, /resume and /scale-to-zero; GET /v2/endpoint/{namespace}/{name}/logs` | create, list, read, delete, pause and resume an endpoint, and the last lines of its log, each with the account's token. The list is filtered by Roboglot's own tag, `roboglot-policy` |
 | `GET /v2/provider/quotas/{namespace}` | an instance type the account has no room left on is refused before anything is created |
 | `lower-case letters, digits and '-', 32 characters at most` | an endpoint's name, the NAME of `hf:NAME`, and any other is refused before Hugging Face is asked anything |
-| `"public", "authenticated", "private"` | an endpoint's type. quackd creates `authenticated` and nothing else. huggingface_hub 1.33.0 kept `protected` as a deprecated name for it, and 2.4.0 refuses it |
-| `Authenticated: anyone with a Hugging Face account` | the configuration page's words for who reaches an `authenticated` endpoint, so the proxy keeps out only somebody with no account, and the lock on the server is quackd's own token |
+| `"public", "authenticated", "private"` | an endpoint's type. Roboglot creates `authenticated` and nothing else. huggingface_hub 1.33.0 kept `protected` as a deprecated name for it, and 2.4.0 refuses it |
+| `Authenticated: anyone with a Hugging Face account` | the configuration page's words for who reaches an `authenticated` endpoint, so the proxy keeps out only somebody with no account, and the lock on the server is Roboglot's own token |
 | `"pending", "initializing", "updating", "updateFailed", "running", "paused", "failed", "scaledToZero"` | an endpoint's states. `up` waits through the first two, pauses one that fails, wakes one at zero with a request and resumes one that is paused |
-| `Endpoint: name, type, provider {vendor, region}, compute {accelerator, instanceType, instanceSize, scaling {minReplica, maxReplica, scaleToZeroTimeout}}, model {repository, revision, framework, image {custom {url, port, healthRoute}}, env, secrets, command, args}, tags` | the body an endpoint is created from: one replica at most, scaled to zero when idle, uv's image running `uvx` to install this quackd's release and `quackd policy serve` behind the proxy's TLS |
-| `model.secrets: secret environment variables, encrypted at rest` | where the server's token goes, as `QUACKD_POLICY_TOKEN`, and a Hub token for a gated checkpoint, as `HF_TOKEN`. The account's own token never goes into an endpoint |
-| `compute.scaling.scaleToZeroTimeout: minutes of inactivity before scaling to zero, with minReplica 0` | `--idle-minutes`, 15 unless told, from 15 to 720, as the autoscaling page offers. The API and the page disagree on the default, so quackd always sends one, and never none |
+| `Endpoint: name, type, provider {vendor, region}, compute {accelerator, instanceType, instanceSize, scaling {minReplica, maxReplica, scaleToZeroTimeout}}, model {repository, revision, framework, image {custom {url, port, healthRoute}}, env, secrets, command, args}, tags` | the body an endpoint is created from: one replica at most, scaled to zero when idle, uv's image running `uvx` to install this Roboglot's release and `roboglot policy serve` behind the proxy's TLS |
+| `model.secrets: secret environment variables, encrypted at rest` | where the server's token goes, as `ROBOGLOT_POLICY_TOKEN`, and a Hub token for a gated checkpoint, as `HF_TOKEN`. The account's own token never goes into an endpoint |
+| `compute.scaling.scaleToZeroTimeout: minutes of inactivity before scaling to zero, with minReplica 0` | `--idle-minutes`, 15 unless told, from 15 to 720, as the autoscaling page offers. The API and the page disagree on the default, so Roboglot always sends one, and never none |
 | `billed while initializing and running, by the minute` | what the confirmation says an endpoint costs, and that it bills nothing paused or scaled to zero |
 | `status.url: https://<id>.endpoints.huggingface.cloud` | the address an endpoint is reached at, the shape the client holds a bearer to, and the one address the account's token goes to once `up` has recorded it |
 | `a readiness probe asks the container's health route every second` | why the server's `GET /v1/health` needs no token: nothing says the probe holds one |
 | `POST .../resume on a running endpoint answers 400 'already running'` | taken as no error, as huggingface_hub takes it |
 | `InferenceEndpoint.wait(timeout=None, refresh_every=5)` | `up` reads the endpoint every 5 s until it is running with an address, as huggingface_hub does, then asks the server's own health route there |
-| `HF_TOKEN, then HUGGING_FACE_HUB_TOKEN, then the file HF_TOKEN_PATH names, $HF_HOME/token by default` | where the account's token is found, as huggingface_hub finds it, and nothing more: no OIDC exchange, no Colab vault, and never `HF_ENDPOINT`, since no variable moves where quackd sends it |
+| `HF_TOKEN, then HUGGING_FACE_HUB_TOKEN, then the file HF_TOKEN_PATH names, $HF_HOME/token by default` | where the account's token is found, as huggingface_hub finds it, and nothing more: no OIDC exchange, no Colab vault, and never `HF_ENDPOINT`, since no variable moves where Roboglot sends it |
 | `GET https://huggingface.co/api/whoami-v2` | the account a token belongs to, which is the namespace an endpoint is created in unless one is named. It is rate limited on purpose, so `up` asks it once |
 | `GET https://huggingface.co/api/models/{repo}/revision/{revision}` | whether a checkpoint or a `--pin` is gated or private, which `up` refuses without a `--hub-token-from` before anything is created |
 | `GET https://huggingface.co/{repo}/raw/{revision}/config.json` | the checkpoint's config, read and checked as the server would check it on a GPU, before an endpoint exists to fail on it |
-| `GET https://pypi.org/pypi/{project}/{version}/json: urls[].upload_time_iso_8601` | a quackd that is not a release on PyPI is refused, and the container's `--exclude-newer` is set an hour after the release's last file |
+| `GET https://pypi.org/pypi/{project}/{version}/json: urls[].upload_time_iso_8601` | a Roboglot that is not a release on PyPI is refused, and the container's `--exclude-newer` is set an hour after the release's last file |
 | `uvx --exclude-newer: an RFC 3339 timestamp, compared with each file's upload time` | every start of an endpoint, the first and one a month later from zero, resolves the same torch and transformers |
 | `ghcr.io/astral-sh/uv:{major}.{minor}.{patch}-python3.12-trixie-slim` | the image the container runs, uv 0.13.5's by its digest. Debian's tags have been trixie since uv 0.10.0, and no bookworm tag has been published since 0.9.30 |
 
-### UNVERIFIED (our assumptions about Hugging Face, and what quackd does about each)
+### UNVERIFIED (our assumptions about Hugging Face, and what Roboglot does about each)
 
-| Name | What quackd does |
+| Name | What Roboglot does |
 |---|---|
 | `AUTHORIZATION_FORWARDED` | whether the proxy passes a client's `Authorization` header, the account's token, on to the container. The server never reads that header, warns once in its log when one arrives, and wants its own token on every route but its health route either way |
-| `GHCR_PULLS` | that an endpoint pulls a public image from ghcr.io, by its tag and digest, with no credentials. huggingface_hub's own example of a custom image is on ghcr.io, and Hugging Face's custom container page names Docker Hub, ECR, ACR and GCR and not ghcr.io. quackd keeps the same image by the same digest on Docker Hub for the day ghcr.io will not do |
+| `GHCR_PULLS` | that an endpoint pulls a public image from ghcr.io, by its tag and digest, with no credentials. huggingface_hub's own example of a custom image is on ghcr.io, and Hugging Face's custom container page names Docker Hub, ECR, ACR and GCR and not ghcr.io. Roboglot keeps the same image by the same digest on Docker Hub for the day ghcr.io will not do |
 | `PROXY_WHILE_STARTING` | what the proxy answers while a replica starts: 503 on the autoscaling guide, 502 on an older page. The client says 500, 502, 503 and 504 that are not its server's own as an endpoint not serving, and sends no `X-Scale-Up-Timeout` |
-| `PRIVATE_TYPE` | what a `private` endpoint admits: the account and its organisation alone, as the configuration page has it, or a cloud's private link alone, as an older page has it. quackd creates `authenticated` until a real endpoint tries `private` |
+| `PRIVATE_TYPE` | what a `private` endpoint admits: the account and its organisation alone, as the configuration page has it, or a cloud's private link alone, as an older page has it. Roboglot creates `authenticated` until a real endpoint tries `private` |
 | `PAUSED_ANSWERS` | what the proxy answers for a paused or a deleted endpoint. The client says any 5xx as not serving and a 404 as gone, and `list` reads the state from the API |
-| `LOGS_BODY` | what the log route answers, which the API's document leaves out. quackd takes a JSON list of entries when it is one and text when not, bounded, scrubbed of both tokens and cut to a few lines |
+| `LOGS_BODY` | what the log route answers, which the API's document leaves out. Roboglot takes a JSON list of entries when it is one and text when not, bounded, scrubbed of both tokens and cut to a few lines |
 | `QUOTA_LISTING` | whether the quota listing names every instance type or only those with quota. A type it names with no room is refused, and one it does not name is left to Hugging Face to refuse |
 | `NAMESPACE_READS` | that the API answers a read of an account's endpoints only to that account's token, or an organisation member's, which its document does not say. A run reads the recorded endpoint first and sends the bearer only to an address the answer confirms, carrying the tags `up` gave it, so a record planted in the registry naming another account's endpoint is refused while this holds, and the registry is one the shell or `--registry-dir` names, never one a project's `.env` named. An organisation the account belongs to is trusted as the account is |
-| `ADDRESS_KEPT` | that an endpoint keeps its `status.url` for its life, through a pause, a resume and a scale to zero, which the API's document does not say. quackd records the first address it is given and sends the account's token to no other: a run refuses an endpoint the API gives another address, and `up` pauses one whose address changes while it waits. Which endpoint is the record's is told by a tag `up` gives it, not by its address |
+| `ADDRESS_KEPT` | that an endpoint keeps its `status.url` for its life, through a pause, a resume and a scale to zero, which the API's document does not say. Roboglot records the first address it is given and sends the account's token to no other: a run refuses an endpoint the API gives another address, and `up` pauses one whose address changes while it waits. Which endpoint is the record's is told by a tag `up` gives it, not by its address |
 | `GPU_IN_CONTAINER` | that torch from PyPI finds the endpoint's GPU in the container, which a CUDA build newer than the host's driver would not. `up` asks the server whether it has one and pauses an endpoint that has none, quoting its log |
 
 ## Status
@@ -3817,9 +3817,9 @@ job, with rustypot's `Bus`, the part that talks to the port, replaced by a fake 
 rustypot's words (`tests/test_lerobot_real_bus.py`), and no arm has run it on 0.7.0, whose motor
 bus is new from the port it opens to the words a failure raises.
 
-The 2026-09-23 afternoon ran quackd 0.12.0, so what quackd does about that afternoon has not run
+The 2026-09-23 afternoon ran Roboglot 0.12.0, so what Roboglot does about that afternoon has not run
 on an arm yet: parking a rest pose at the edge of its travel, `stop` leaving out a joint that
-reads past its travel, `quackd robot release` and the questions at the end of a run, the connect's
+reads past its travel, `roboglot robot release` and the questions at the end of a run, the connect's
 retries, a `move_joints` paced over its `duration_s`, and the take-hold refusing a joint past
 its travel. The [checklist](hardware-checklist.md) is the order to find out in.
 
@@ -3827,7 +3827,7 @@ its travel. The [checklist](hardware-checklist.md) is the order to find out in.
 on a primitives-only stand-in arm, and on the maker's model in sweeps run by hand on 2026-09-27,
 which the nightly `lerobot-sim-assets` job is there to repeat. On that model a grasp driven
 through the real backend's own verbs lifts a cube clear of the table between both finger pads on
-ten seeds of ten, judged by the world's truth, and `quackd preflight` passes the bundled
+ten seeds of ten, judged by the world's truth, and `roboglot preflight` passes the bundled
 `lerobot-lookout` on the generic arm, which has no rest pose to return to, and a grasp task
 with a sidecar from a rest pose its close has to reach, each on ten seeds of ten. The job's
 first run on GitHub, dispatched on `main` on 2026-09-29 at the commit tagged `v0.16.0`, passed
@@ -3840,8 +3840,8 @@ compared against one, and the ✅ it carries never raises `lerobot:real`'s.
 
 On 2026-09-15 an SO-101 follower, calibrated as `arm-01` and reached as `--robot lerobot:real
 --address COM3` with no registered name, ran on Windows 11 with
-Python 3.12.12, lerobot 0.6.1 and quackd 0.9.0, piloted by OpenAI's `gpt-6-astra`. This is the
-only one of quackd's ten bodies that has been on hardware at all.
+Python 3.12.12, lerobot 0.6.1 and Roboglot 0.9.0, piloted by OpenAI's `gpt-6-astra`. This is the
+only one of Roboglot's ten bodies that has been on hardware at all.
 
 What ran:
 
@@ -3891,13 +3891,13 @@ server postdate both, and none of them has driven an arm.
 If you have an SO-101 on a desk, work through
 [adapters/lerobot/hardware-checklist.md](hardware-checklist.md) in order: nothing moves
 until step 10. `lerobot-lookout` is the first task to point at it; it asks for `report_state`
-rather than `observe`, because a `.duck` is checked against the static manifest, which
+rather than `observe`, because a `.glot` is checked against the static manifest, which
 cannot know whether you brought a webcam. What most needs a real arm is that checklist's
 *What to report*, and the four unmeasured things above are the top of it. One afternoon on one
 arm is a sample of one: what differs on yours is the part worth writing down. Open an issue
 with the transcript.
 
-A task file that passes `quackd preflight` on your arm's twin and then does something else on the
+A task file that passes `roboglot preflight` on your arm's twin and then does something else on the
 arm is worth an issue of its own, with both transcripts. Nobody has compared the simulator
 against an arm yet, and that comparison is the only thing that can move its assumptions from
 UNVERIFIED.

@@ -99,8 +99,8 @@ def test_pyproject_declares_the_hook_and_ships_it() -> None:
 def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
     """The one rule keeping a non-Apache asset out of a published package.
 
-    `docs/assets/quackd-on-off.gif` renders upstream's model and carries its meshes' CC BY-NC-SA 4.0
-    terms, and `docs/reference/licenses.md` promises that neither the wheel nor the repository's
+    `docs/assets/roboglot-on-off.gif` renders upstream's model and carries its meshes' CC BY-NC-SA
+    4.0 terms, and `docs/reference/licenses.md` promises that neither the wheel nor the repository's
     published artefacts carry a byte of it. The README serves every image from
     raw.githubusercontent, so no artefact needed any of them anyway. Nothing checked this.
     """

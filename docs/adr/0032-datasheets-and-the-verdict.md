@@ -1,21 +1,21 @@
 # ADR-0032: Datasheets, and a pilot that refuses what its body cannot do
 
-**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (the manifest gains a datasheet), [ADR-0012](0012-safety-executor.md) (a gate before motion) and [ADR-0019](0019-duck-spec-v1.md) (`duck: 2`)
+**Status:** accepted, amended · **Date:** 2026-09-13 · Extends [ADR-0017](0017-robot-adapters-and-manifest.md) (the manifest gains a datasheet), [ADR-0012](0012-safety-executor.md) (a gate before motion) and [ADR-0019](0019-glot-spec-v1.md) (`glot: 2`)
 
-**Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-flocks.md):** the
-consequence below that no flock quackd can start has two different bodies in it is now true of
-the *auction* only. A pilot flock takes any bodies, so the datasheet vocabulary this ADR
+**Amended 2026-09-13 by [ADR-0034](0034-registered-robots-and-pilot-teams.md):** the
+consequence below that no team Roboglot can start has two different bodies in it is now true of
+the *auction* only. A pilot team takes any bodies, so the datasheet vocabulary this ADR
 defines is finally read by something that moves: each pilot's `assess_task` judges its own part
-of a shared goal against its own sheet, and the "Your flock" section of every pilot's prompt
+of a shared goal against its own sheet, and the "Your team" section of every pilot's prompt
 carries `body_summary` for each of its peers, which is the same paragraph this ADR renders for
-the pilot's own body. A pilot flock uses no `flock.roles`, so role `needs` is still exercised
+the pilot's own body. A pilot team uses no `team.roles`, so role `needs` is still exercised
 only at the coordinator and in unit tests.
 
 **Amended 2026-09-17 by [#26](https://github.com/rokbenko/quackd/pull/26):** the gate reads one
 thing beside `BEFORE_VERDICT`, the verb's own `read_only` flag, which an adapter already sets so
-that a sensing verb runs under `--dry-run`. The set below names the verbs quackd ships, and the
+that a sensing verb runs under `--dry-run`. The set below names the verbs Roboglot ships, and the
 test that holds every shipped verb to it also rejects a name no shipped adapter offers, so the
-set is closed to a body quackd never shipped: such a body's own sensing verb was refused as
+set is closed to a body Roboglot never shipped: such a body's own sensing verb was refused as
 "moves the body", and its pilot was denied the one verb that answers the question the gate is
 waiting for. Measured on a humanoid sim offering `locate` and `reach`, a local 14B LLM judged
 the task infeasible twice without a single look. A verb that sends no intent cannot move the
@@ -24,7 +24,7 @@ body, so the flag is a sound thing to open the gate on, and it was already trust
 closed and every shipped read-only verb is in it, which a second test now pins in both
 directions; a stranger's verb that speaks or turns a head is motion and still waits; and a
 learned verb never carries the flag, so it is refused until somebody classifies it on purpose.
-The sentence below that anything not in the set waits is true of everything quackd ships and of
+The sentence below that anything not in the set waits is true of everything Roboglot ships and of
 every verb that is not read-only.
 
 **Amended 2026-09-17 by [#24](https://github.com/rokbenko/quackd/pull/24):** a `feasible`
@@ -51,7 +51,7 @@ against": the check reads what the pilot declared about the task, so a pilot tha
 the figure its plan hinges on passes exactly as before. It rewards honesty and cannot catch
 silence, and a pilot that names a figure this body's maker never published is asked to answer
 again rather than allowed to proceed. The route out of that for a person who knows the figure
-is the `duck: 2` `datasheet:` block above, which is the only thing that makes a sheet say
+is the `glot: 2` `datasheet:` block above, which is the only thing that makes a sheet say
 something new.
 
 **Amended 2026-09-23, after the first SO-101 bench runs of the shoot examples:** the check
@@ -67,7 +67,7 @@ above it as `(it does not move)`, and every field in the tool schema says what i
 two exceptions of the amendment above are four. One reading is also kinder to a pilot's own
 sheet than to anybody else's: an unpublished working height band does not refuse the pilot's
 own verdict, because the prompt never lists a working height as missing, while the
-coordinator, a flock role and the list of bodies that could stay strict, since there an
+coordinator, a team role and the list of bodies that could stay strict, since there an
 unknown is still not a yes.
 
 The prompt's "Not published" line no longer says to decline any task that hinges on one of
@@ -89,15 +89,15 @@ and its words are what they were. The pilot reads this only in a played run, in 
 that run's prompt gains.
 
 **Amended 2026-10-13:** the Microduck's note that the decision below describes was wrong about
-where its cap is. robotd clamps no twist at any release quackd has read: what limits a tick in
+where its cap is. robotd clamps no twist at any release Roboglot has read: what limits a tick in
 its `robot.state` is the deadman, a joint target past the actuator's travel, or one that is not
 finite, and nothing caps the speed of the twist its policy is handed. The caps, 0.3 m/s forward,
-0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's `manifest.limits`, which quackd
-holds every twist a verb sends to (`speed_limits` in `quackd/verbs/core.py`), as the decision
+0.2 m/s sideways and 1.5 rad/s of turn, are the Microduck's `manifest.limits`, which Roboglot
+holds every twist a verb sends to (`speed_limits` in `roboglot/verbs/core.py`), as the decision
 says of every body. The note says so now, and the numbers are as they were.
 
 **Amended 2026-10-26 by [ADR-0066](0066-a-persons-command-is-the-verdict-for-its-own-call.md):**
-a call a person named in `quackd drive` clears the gate before motion by itself, for that call
+a call a person named in `roboglot drive` clears the gate before motion by itself, for that call
 and the verbs it runs, and the record says whose word it was, a person's at the keyboard or a
 pipe's. No verdict is written, so every other call, a goal's pilot's among them, is gated as the
 decision below says.
@@ -113,7 +113,7 @@ attempt rather than a judgement about the body.
 
 What physical facts did exist were scattered: a few numbers inside blurb prose ("25 cm,
 800 g"), a warning inside a verb description ("this is a 12 kg cart"), and hand-written
-paragraphs in individual `.duck` bodies that the next task file had to write again. None of
+paragraphs in individual `.glot` bodies that the next task file had to write again. None of
 it was data, so nothing could match a task against a body, and nothing could say which other
 body could do what this one could not.
 
@@ -132,22 +132,22 @@ body could do what this one could not.
 - **Categorical constraints come before numbers.** `cannot` is a list of sentences, and the
   highest-value ones need no precision at all: an SO-101 cannot go anywhere, an Open Duck Mini
   cannot pick anything up. These prevent the errors that numbers cannot.
-- **Speeds are not in it.** `manifest.limits` is what quackd clamps to, which is a rule about
-  what quackd sends, not a fact about the body. The prompt renders those separately, as
+- **Speeds are not in it.** `manifest.limits` is what Roboglot clamps to, which is a rule about
+  what Roboglot sends, not a fact about the body. The prompt renders those separately, as
   clamps, and the Microduck's note says its cap is a software clamp in `robotd` rather than a
   measured maximum.
 - **One sheet per body, whatever the backend.** sim2d, mock or real, the body is the body.
   This is also what keeps a robot's `digest()` equal across its backends. The one exception is
   `rosbridge`, below, which names a transport rather than a body.
 - `manifest: 1` is unchanged: the field is optional and additive, and no wire consumer parses
-  a whole manifest across versions (mDNS carries a digest, the flock bus carries verb names,
+  a whole manifest across versions (mDNS carries a digest, the team bus carries verb names,
   MCP returns per-field payloads).
 
-**A task file can correct the sheet for the build in front of it.** `duck: 2` adds a
+**A task file can correct the sheet for the build in front of it.** `glot: 2` adds a
 `datasheet:` block: a figure given there replaces the adapter's and is rendered as coming from
 the task file, so a reader can tell the maker's numbers from yours. The sentence lists extend
 and never delete: a task file can add a `cannot`, it cannot remove one. A correction the body
-contradicts is refused by `validate` before anything connects. A flock duck cannot carry one,
+contradicts is refused by `validate` before anything connects. A team task cannot carry one,
 because it describes one body.
 
 **Nothing moves until the pilot has judged the task against it.**
@@ -161,11 +161,11 @@ because it describes one body.
   verb that moves the body until a feasible verdict exists. `BEFORE_VERDICT` names what runs
   first: `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look` and
   `introspect`. A pilot has to be able to look at the thing before judging whether it can lift
-  it. Anything not in that set waits, including a verb quackd has never heard of, and a test
+  it. Anything not in that set waits, including a verb Roboglot has never heard of, and a test
   asserts every verb every shipped adapter offers was classified deliberately, in both
   directions.
 - **`infeasible` is its own outcome**, not a `failure`. `failure` means the robot tried;
-  `infeasible` means nothing moved and another body should be asked. `quackd run` exits 3 for
+  `infeasible` means nothing moved and another body should be asked. `roboglot run` exits 3 for
   it, which is what a script trying one body after another branches on, and the run's reason
   carries which shipped bodies could do it, read from their static datasheets.
 - **`uncertain` asks a person.** At a terminal that is a y/N prompt, and a no ends the run
@@ -176,7 +176,7 @@ because it describes one body.
   rather than being cleared by default.
 - **An LLM cannot clear its own doubt.** `assess_task` has no `human` field, and a verdict
   that arrives with one is refused rather than quietly stripped.
-- **A flock member is never asked.** It is a state machine with no pilot, so
+- **A team member is never asked.** It is a state machine with no pilot, so
   `Executor.require_verdict` is off by default and only the agent loop and an MCP session turn
   it on.
 - **The scripted pilot answers the gate as a rule** and says so in its reason, because a rule
@@ -193,10 +193,10 @@ deadline covers the whole look and a failure never fails a connect: a bridge wit
 leaves the sheet saying nothing was discovered, with the reason. A new verb, `introspect`,
 asks again.
 
-**A flock role can ask for a body.** `duck: 2` adds `needs` to a role, in the same vocabulary
+**A team role can ask for a body.** `glot: 2` adds `needs` to a role, in the same vocabulary
 as a verdict's, so a refusal and a role say the same thing. An unpublished figure counts as
 not met. It is checked three times in the same words: by `validate`, by the member before it
-bids, and by the coordinator from what the bid itself carried, so a robot quackd does not run
+bids, and by the coordinator from what the bid itself carried, so a robot Roboglot does not run
 is held to the same standard.
 
 ## Consequences
@@ -204,8 +204,8 @@ is held to the same standard.
 - Every shipped manifest's digest changes. Nothing pinned a digest value, and the tests that
   compare digests compare them *between backends of one robot*, which still hold because a
   sheet is constant per adapter.
-- Both schema files are regenerated (`python -m quackd.adapters.export`,
-  `python -m quackd.duckfile.export`), and older quackd versions refuse a `duck: 2` file,
+- Both schema files are regenerated (`python -m roboglot.adapters.export`,
+  `python -m roboglot.glotfile.export`), and older Roboglot versions refuse a `glot: 2` file,
   which is the correct failure.
 - The numbers were read from the makers' pages, repositories and one paper on 2026-09-13.
   **None of them were measured here.** That is what the confidence labels are for, and a body
@@ -217,6 +217,6 @@ is held to the same standard.
   URDF is believed, and the assumption is recorded as such.
 - The browser demo (`web/`) has its own loop and its own hardcoded prompt, and has neither a
   datasheet nor the gate. It is noted in `PLAN.md` rather than left to be inferred.
-- A `duck: 2` flock role with `needs` validates and matches, but `flock/runner.py` still knows
-  only the Microduck, so no flock quackd can start has two different bodies in it. The words
+- A `glot: 2` team role with `needs` validates and matches, but `team/runner.py` still knows
+  only the Microduck, so no team Roboglot can start has two different bodies in it. The words
   are in place for the day it does, and the matching is tested at the coordinator.

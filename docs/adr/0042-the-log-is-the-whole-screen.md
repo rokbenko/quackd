@@ -1,14 +1,14 @@
 # ADR-0042: The log is the whole screen
 
-**Status:** accepted, amended · **Date:** 2026-09-21 · Renames what [ADR-0029](0029-tracing.md) called the trace and widens it to what the terminal showed · Extends [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the record carries the run's clocks and its money) · Retires the old spellings over one release the way [ADR-0017](0017-robot-adapters-and-manifest.md) retired `--transport` · Implemented in `quackd/log.py` (was `quackd/trace.py`), `quackd/ui.py`, `quackd/command.py`, `quackd/safety.py` and `quackd/cli.py` ([architecture.md](../concepts/architecture.md#log))
+**Status:** accepted, amended · **Date:** 2026-09-21 · Renames what [ADR-0029](0029-tracing.md) called the trace and widens it to what the terminal showed · Extends [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (the record carries the run's clocks and its money) · Retires the old spellings over one release the way [ADR-0017](0017-robot-adapters-and-manifest.md) retired `--transport` · Implemented in `roboglot/log.py` (was `roboglot/trace.py`), `roboglot/ui.py`, `roboglot/command.py`, `roboglot/safety.py` and `roboglot/cli.py` ([architecture.md](../concepts/architecture.md#log))
 
-**Amended 2026-09-22:** the promise below was kept. 0.12 removes `quackd trace`, both
-`--trace` flag pairs and the three `QUACKD_TRACE*` variables, along with the `sys.argv` scan in
-`quackd/cli.py` and the environment fallback in `quackd/log.py` that existed only to carry
+**Amended 2026-09-22:** the promise below was kept. 0.12 removes `roboglot trace`, both
+`--trace` flag pairs and the three `ROBOGLOT_TRACE*` variables, along with the `sys.argv` scan in
+`roboglot/cli.py` and the environment fallback in `roboglot/log.py` that existed only to carry
 them. The subcommand and the flags are refused the way any unknown one is, and a refusal writes
 no run directory. The variables do not simply go quiet, which is the failure the fallback
-existed to prevent: a `QUACKD_TRACE*` name still set is ignored and named in one yellow line
-before the header, the line 0.12 gives `QUACKD_MODEL`. Because that check moved to the app
+existed to prevent: a `ROBOGLOT_TRACE*` name still set is ignored and named in one yellow line
+before the header, the line 0.12 gives `ROBOGLOT_MODEL`. Because that check moved to the app
 callback, where the command line is read, rather than staying where each value was consulted,
 a run now names every old line in a `.env` at once rather than only the one it would have
 read, which lifts the limit the "Two spellings of six things" bullet under Consequences
@@ -17,8 +17,8 @@ directory outlives the release that wrote it. Nothing else in this ADR changes.
 
 **Amended 2026-09-29:** the new key that "One field is not held to that" below leaves to
 whoever next opens the `assess` event is there. `answered_by` names what answered the pilot's
-doubt, a person, `--yes`, a flock's standing answer, a pipe or any other standing answer, held
-to the rule a `prompt` row is (`quackd.log.who_answered`), and `human` stays the gate's state.
+doubt, a person, `--yes`, a team's standing answer, a pipe or any other standing answer, held
+to the rule a `prompt` row is (`roboglot.log.who_answered`), and `human` stays the gate's state.
 The line drawn from the event names `answered_by` and no longer says `(the human said go)`. A
 run recorded before the key existed is drawn as `(answered go, and the record does not say by
 whom)`. A prompt that raised answered nothing, and the event carries `raised`, what it raised,
@@ -51,13 +51,13 @@ environment variables, the field on disk and the key on the wire. That those las
 contracts was said before the call was made rather than discovered afterwards. The answer was
 to rename them anyway and pay for it in the open, which is what most of the decision below is.
 
-The second thing has nothing to do with the name. `transcript.jsonl` holds everything quackd
+The second thing has nothing to do with the name. `transcript.jsonl` holds everything Roboglot
 did and nothing of what a person saw while it did it, and those differ by more than colour. The
 screen is where a run's questions are put: the confirm gate, the feasibility verdict, an
 acknowledgement, and the two halves of a `--by-hand` handover. The record kept what each answer
 caused (`gate.answer`, `assess.human`, the `hand_off` stages) and never the exchange itself, and
 it could not have caught the answer anyway: the question is written to stderr and the answer is
-echoed by the terminal, so no view of quackd's ever prints it and no pipe ever sees it. A run
+echoed by the terminal, so no view of Roboglot's ever prints it and no pipe ever sees it. A run
 also knew nothing about what it had been asked to do. Which robot, which LLM, which budget,
 whether it was a dry run: half the story of any run is in the flags, and reading a directory a
 month later meant guessing at them. Both gaps close the same way the wall clock's did in
@@ -65,10 +65,10 @@ ADR-0041, by writing the thing down once at the top.
 
 ## Decision
 
-- **The record is the log, and the module is `quackd/log.py`.** `TraceEvent` is `LogEvent`,
+- **The record is the log, and the module is `roboglot/log.py`.** `TraceEvent` is `LogEvent`,
   `TraceLine` is `LogLine`, `TracedTransport` is `LoggedTransport`, `ConsoleTrace` and
   `LineTrace` are `ConsoleLog` and `LineLog`, `trace_enabled_default`, `intent_trace_line` and
-  `MCP_TRACE_MAX_LINES` follow their module, and `quackd trace` is `quackd log`. The rename
+  `MCP_TRACE_MAX_LINES` follow their module, and `roboglot trace` is `roboglot log`. The rename
   changed no kind, no order and nothing about the transcript being the record rather than an
   observer. One kind is new in this release, `prompt`, and it is the feature work below rather
   than anything the rename did.
@@ -76,46 +76,46 @@ ADR-0041, by writing the thing down once at the top.
 - **The name `log` was already taken, so the rename routed around it instead of through it.**
   `RunConfig.log` and `Executor.log` are the `--verbose` callback, and
   [ADR-0029](0029-tracing.md) says so in as many words: free text is emitted as a `note` event
-  *in addition to* `log`, never instead of it, "because `log` is a contract the flock's member
+  *in addition to* `log`, never instead of it, "because `log` is a contract the team's member
   records, the MCP logger and several tests rely on". `member_log` is a record kind in
-  `flock.jsonl` and is what a flock member's free text lands in. And inside `quackd/`, `log` was
+  `team.jsonl` and is what a team member's free text lands in. And inside `roboglot/`, `log` was
   the name bound to a `logging.getLogger` in four places, three of them module globals. So the
   callback keeps it,
   the emitter became `EventLog` and the attribute on everything that holds one is `.event_log`,
   the live view became `RunConfig.view` because that is what it is, and the four logging
-  bindings in `quackd/` became `logger`. Inside `quackd/` one word now means one thing in each
+  bindings in `roboglot/` became `logger`. Inside `roboglot/` one word now means one thing in each
   layer, which is the whole return on the rename and is worth more than the churn it cost.
-  `quackd/` is the honest scope and it is worth saying rather than implying: seven more
+  `roboglot/` is the honest scope and it is worth saying rather than implying: seven more
   `log = logging.getLogger` bindings sit in this workspace, four under `adapters/microduck` and
   three under `bridge/`, and this rename reached none of them.
 
 - **Every reader takes both spellings of the dropped counter; every writer emits one.**
   `trace_dropped` became `log_dropped` where it is written, and the one place that reads it
-  back, the `run_end` a replay parses in `quackd log`, takes either. A run directory recorded
+  back, the `run_end` a replay parses in `roboglot log`, takes either. A run directory recorded
   before this rename replays exactly as it did, which is the only promise that matters about a
   file somebody already has.
 
-- **The old CLI and environment spellings live exactly one release.** `quackd trace` is a hidden
-  alias of `quackd log`; `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are second
+- **The old CLI and environment spellings live exactly one release.** `roboglot trace` is a hidden
+  alias of `roboglot log`; `--trace/--no-trace` and `--trace-prompt/--no-trace-prompt` are second
   spellings on the same `typer.Option` as `--log/--no-log` and `--log-prompt/--no-log-prompt`;
-  `QUACKD_TRACE`, `QUACKD_TRACE_THINKING` and `QUACKD_TRACE_PROMPT` are read when the
-  `QUACKD_LOG*` name is unset. Each says so once per process and the command runs, subject to
+  `ROBOGLOT_TRACE`, `ROBOGLOT_TRACE_THINKING` and `ROBOGLOT_TRACE_PROMPT` are read when the
+  `ROBOGLOT_LOG*` name is unset. Each says so once per process and the command runs, subject to
   one limit on the environment names that has a bullet of its own below. The
   subcommand and the flags print a yellow line through `ui.err_console`, off `sys.argv` rather
   than off the parsed value, because Click hands both spellings to the same parameter and by
   then they are indistinguishable; the environment fallback prints through `ui.err_console` as
-  well, inside a `try` that falls back to `sys.stderr`, because `quackd/log.py` is imported long
+  well, inside a `try` that falls back to `sys.stderr`, because `roboglot/log.py` is imported long
   before the consoles are configured and a warning that raised on its way out would take the run
   with it. All of it goes in 0.12. This is the shape
   [ADR-0017](0017-robot-adapters-and-manifest.md) set when `--robot` replaced `--transport`: one
   release of grace, one line per process, a date on the removal, and the removal happened.
 
 - **An environment name warns only where it is read, and that is a limit somebody's `.env`
-  depends on knowing.** `QUACKD_TRACE=0` beside `QUACKD_TRACE_PROMPT=0` warns about the first
+  depends on knowing.** `ROBOGLOT_TRACE=0` beside `ROBOGLOT_TRACE_PROMPT=0` warns about the first
   and says nothing about the second. Turning the log off means no `ConsoleLog` is built, so the
   prompt setting is never consulted, and a name nobody reads cannot announce that it was
   renamed. A flag does the same thing one level up: `--log` and `--no-log` answer the question
-  `QUACKD_LOG` would have answered, so a run passing either never reads it and is never told
+  `ROBOGLOT_LOG` would have answered, so a run passing either never reads it and is never told
   that name moved. All three are named on a run that has the log on and passed no flag, and the
   same file is told about one of them on a run with the log off. Reading all three eagerly to warn about them would mean reading
   settings the run has no use for, which is a worse thing to own than a warning that arrives
@@ -133,7 +133,7 @@ ADR-0041, by writing the thing down once at the top.
   text block opening `log:` and a client looking there for a key of either spelling finds none.
 
 - **The terminal is kept by a console that tees, `ui.TeeConsole`.** `make_console()` returns one,
-  so everything quackd prints through `ui.console` or `ui.err_console` is also printed into the
+  so everything Roboglot prints through `ui.console` or `ui.err_console` is also printed into the
   open capture. The forward happens *after* `super().print` rather than before, because
   `rich.rule.Rule` truncates its title `Text` in place at the width it is drawn at, and whichever
   console renders first decides what the other one gets: the terminal renders first, so the file
@@ -141,11 +141,11 @@ ADR-0041, by writing the thing down once at the top.
   with `color_system=None` and `no_color=True`, so `terminal.txt` carries no escape codes and no
   terminal hyperlinks and stays greppable.
 
-- **That settles the escapes quackd would write, and the sink settles the ones it would carry.**
+- **That settles the escapes Roboglot would write, and the sink settles the ones it would carry.**
   Every C0 control except tab and newline, and DEL, is dropped on the way into the file. Rich
   strips a list of its own and ESC is not on it, so an escape that arrived inside *text* rather
   than from a style went straight through, and the text here is not ours: it is the goal
-  somebody typed, the body of a `.duck` fetched off the internet, whatever the LLM said it was
+  somebody typed, the body of a `.glot` fetched off the internet, whatever the LLM said it was
   thinking and an error message from a robot. `ESC[2J` in any of those clears the screen of
   whoever reads the file with `cat`, `ESC]0;...BEL` retitles their window. Dropped rather than
   escaped, because this file is read by a person and not parsed, and nothing is lost by it:
@@ -172,9 +172,9 @@ ADR-0041, by writing the thing down once at the top.
   stop a robot, which is [ADR-0029](0029-tracing.md)'s rule about observers applied to one more
   observer.
 
-- **The command is recorded, with the secrets taken out of it, in `quackd/command.py`.**
+- **The command is recorded, with the secrets taken out of it, in `roboglot/command.py`.**
   `run_start.command` and `summary.json` carry the argv as a list with `argv[0]` replaced by the
-  literal `quackd`, so the record says what was run rather than which interpreter path ran it,
+  literal `roboglot`, so the record says what was run rather than which interpreter path ran it,
   and `version` goes beside it. `--api-key` and `--token` have their values replaced by `***` in
   both spellings a shell allows, `--api-key sk-…` and `--api-key=sk-…`. The flag stays, because
   *that a key was passed* is usually the thing a reader is checking. A trailing
@@ -200,7 +200,7 @@ ADR-0041, by writing the thing down once at the top.
   is left exactly as it was typed rather than guessed at, because a mangled value in the record
   sends a reader after the wrong bug. `--extra-body` is the other one, and it is
   the one no argv redaction could have reached, because the same object also arrives as
-  `QUACKD_EXTRA_BODY` and a variable is not in `sys.argv` at all: it is walked on the way into
+  `ROBOGLOT_EXTRA_BODY` and a variable is not in `sys.argv` at all: it is walked on the way into
   `run_start` and every credential-named key replaced, at any depth, because an `authorization`
   header is precisely the kind of field a vendor asks to have passed through.
 
@@ -214,7 +214,7 @@ ADR-0041, by writing the thing down once at the top.
   `{what, question, answer}` with `what` one of `confirm`, `decide`, `acknowledge` or `hand_off`.
   The emitter reads `asks_a_person` off the asker, and the CLI sets that mark on
   `_confirm_prompt`, `_decide_prompt`, `_acknowledge_prompt` and `_TerminalHandOff`. `allow_all`,
-  `deny_all`, `_yes_to_go` and a flock's standing answers carry no mark, so a `--yes` run writes
+  `deny_all`, `_yes_to_go` and a team's standing answers carry no mark, so a `--yes` run writes
   no `prompt` row. A record claiming a question was put to somebody who was not there is worse
   than no record, and worst precisely where it matters: the confirm gate is the one place the
   file would say a human authorised something.
@@ -222,19 +222,19 @@ ADR-0041, by writing the thing down once at the top.
 - **The mark is a question asked at the moment of asking, not a fact settled at import.** A mark
   that is callable is called, and the one the CLI gives its three askers is `_a_person_is_there`,
   which looks `_can_prompt` up by name and calls it, so what is read is whether stdin is a
-  terminal right now. The reason is `yes | quackd run` and `quackd run < answers.txt`: they reach
+  terminal right now. The reason is `yes | roboglot run` and `roboglot run < answers.txt`: they reach
   those same three callables, `input()` reads a pipe as happily as a person, and a flat `True`
   would have left a record saying somebody cleared a verb on a robot nobody was standing next to.
-  The gate still opens on a pipe, because that is what the pipe asked for and it is what quackd
+  The gate still opens on a pipe, because that is what the pipe asked for and it is what Roboglot
   has always done. What is withheld is only the testimony: no `prompt` row, and the gate's own
   `reason` stopped saying `a human said yes` where nobody was asked, saying
   `the confirm gate was allowed` or `the confirm gate was denied` instead. `_TerminalHandOff`
   keeps a flat `asks_a_person = True` because it is only wired in where `_can_prompt()` has
   already said yes.
 
-- **Both flock runners call back the moment their directory exists.** `run_pilot_flock` and
-  `run_flock` take `on_run_dir: Callable[[Path], None] | None`, called before any member writes
-  a file, and the CLI passes `ui.attach_capture`. A flock's screen is kept once at the run root,
+- **Both team runners call back the moment their directory exists.** `run_pilot_team` and
+  `run_team` take `on_run_dir: Callable[[Path], None] | None`, called before any member writes
+  a file, and the CLI passes `ui.attach_capture`. A team's screen is kept once at the run root,
   because the terminal was one terminal however many robots were narrating into it.
 
 ## Why not
@@ -247,7 +247,7 @@ ADR-0041, by writing the thing down once at the top.
 
 - **Free the name by renaming the `--verbose` callback instead.** It looks like the smaller
   change and it is the larger one. `log` there is a contract by ADR-0029's own words, it is the
-  sink behind `member_log` in `flock.jsonl`, and several tests read what it produced. Renaming
+  sink behind `member_log` in `team.jsonl`, and several tests read what it produced. Renaming
   the emitter cost an attribute nobody outside this repo names; renaming the callback would have
   cost a record kind on disk in exchange for nothing a reader ever sees.
 
@@ -258,7 +258,7 @@ ADR-0041, by writing the thing down once at the top.
 
 - **A tee at the stream level, wrapping `sys.stdout` and `sys.stderr`.** It survives anything
   that prints, including a library that never heard of Rich, and it buys that by losing the
-  interleaving: two wrappers cannot tell you which of two writes came first, and quackd puts its
+  interleaving: two wrappers cannot tell you which of two writes came first, and Roboglot puts its
   answers on one stream and its narration on the other on purpose. It also still never sees a
   typed answer, because the terminal echoes that and no process writes it.
 
@@ -274,11 +274,11 @@ this is the only spelling in the rename with no transition. A client that indexe
 one that uses `.get` silently shows an empty log, which is the worse of the two, so it is said
 here and in [mcp.md](../guides/mcp.md) rather than left to be noticed.
 
-**Old run directories replay unchanged, and new ones replay on an old quackd with the new parts
+**Old run directories replay unchanged, and new ones replay on an old Roboglot with the new parts
 missing.** `log_dropped` is what gets written now, `trace_dropped` is still read, and the replay
 that parses a `run_end` is where that fallback lives. Nothing was taught to read forwards and
 nothing had to be: 0.10 does not know `command`, `version`, `prompt` or `log_dropped`, and
-`quackd trace` on 0.10 replays a record written here without complaining, printing the three
+`roboglot trace` on 0.10 replays a record written here without complaining, printing the three
 counters it has always had, skipping the `prompt` row it has no renderer for and taking the
 dropped counter, which it looks for under the old name, as zero. That was run against v0.10.0
 rather than reasoned about. Losing four fields is not the same thing as being unreadable, and
@@ -292,11 +292,11 @@ than the rule: a key in an environment variable that an error message echoed, a 
 `--extra-body`, an LLM's reasoning about a private task, a path with somebody's name in it are
 all on the screen and therefore in the file. `terminal.txt` is the screen rather than the
 record, so `--no-log` takes the narration out of the file exactly as it takes it off the
-terminal, and a run that prints outside quackd's two consoles, a bare `print` or a library
+terminal, and a run that prints outside Roboglot's two consoles, a bare `print` or a library
 writing straight to a stream, is on the screen and not in the file.
 
-**Two spellings of six things, until 0.12.** `quackd trace`, `--trace/--no-trace`,
-`--trace-prompt/--no-trace-prompt` and the three `QUACKD_TRACE*` variables all work. The
+**Two spellings of six things, until 0.12.** `roboglot trace`, `--trace/--no-trace`,
+`--trace-prompt/--no-trace-prompt` and the three `ROBOGLOT_TRACE*` variables all work. The
 subcommand and the flags warn whenever they are typed; a variable warns only on a run that reads
 it, which is the limit above, so a `.env` with the log switched off hears about one of its three
 old names and not the other two. The warning is one line per spelling per process on stderr, and
@@ -313,7 +313,7 @@ inventing a human. Anything added beside `_confirm_prompt`, `_decide_prompt`,
 never be given one.
 
 **One field is not held to that, and it is the one field that cannot simply be.** `assess.human`
-is set to `go` whenever the decide callable answered yes, including `--yes`, a flock's standing
+is set to `go` whenever the decide callable answered yes, including `--yes`, a team's standing
 answer and a pipe on stdin, and the console draws it as `(the human said go)`. Blanking it where
 nobody was asked is not available: `Verdict.go` is `feasible or (uncertain and human == "go")`,
 so the field is what lets an uncertain verdict proceed at all, and emptying it would refuse every
@@ -341,5 +341,5 @@ opened UTF-8 and the console writes whatever the terminal's encoding can carry w
 is the more faithful of the two, which is the better direction for this to fail in, and it is
 still a difference between two things this ADR keeps calling copies of each other. The sink
 borrows the printing console's `encoding` so that Rich picks the same glyphs for both, which
-settles the box drawing and the ticks quackd chooses; it does not settle a character that came in
+settles the box drawing and the ticks Roboglot chooses; it does not settle a character that came in
 from a goal, an LLM or a robot.

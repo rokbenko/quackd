@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import pytest
 
-from quackd.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
-from quackd.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
-from quackd.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
-from quackd.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
-from quackd.verbs.core import speed_limits
-from quackd_microduck import MICRODUCK_VERBS, microduck_manifest
-from quackd_microduck import upstream_api as up
-from quackd_xlerobot import xlerobot_manifest
+from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
+from roboglot.adapters.factory import ADAPTER_NAMES, BACKENDS, RobotSpec, describe
+from roboglot.adapters.manifest import Datasheet, Figure, RobotManifest, VerbSpec
+from roboglot.agent.prompts import BODY_HEADING, body_lines, body_section, body_summary
+from roboglot.verbs.core import speed_limits
+from roboglot_microduck import MICRODUCK_VERBS, microduck_manifest
+from roboglot_microduck import upstream_api as up
+from roboglot_xlerobot import xlerobot_manifest
 
 SPECS = [RobotSpec(adapter, backend) for adapter in ADAPTER_NAMES for backend in BACKENDS[adapter]]
 # the described bodies (ADR-0077) are held to the same honesty as the ten: a source per figure
@@ -97,9 +97,9 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
 
     From daemon-v0.16.2 `limp_fall` is on by default again, and robotd hands the duck back to a
     walking policy upstream says gets it up (`up.LIMP_FALL`), which nobody has seen under
-    quackd. The sheet said only what daemon-v0.16.1 does, so it says what daemon-v0.16.1 and
+    Roboglot. The sheet said only what daemon-v0.16.1 does, so it says what daemon-v0.16.1 and
     daemon-v0.16.2 onwards do now, the get-up as upstream's word. robotd catches no fall during
-    a skill, a ground pick or a sit, and quackd's kick and grab are two of those, so the sheet
+    a skill, a ground pick or a sit, and Roboglot's kick and grab are two of those, so the sheet
     says which falls it catches rather than that it catches every one. The release is spelled
     out here rather than taken from `up.RELEASE`, which moves with the pin: a later pin would
     have the test ask the sheet to say that release does nothing about a fall."""
@@ -116,18 +116,18 @@ def test_the_microduck_does_not_promise_to_get_itself_up() -> None:
     assert "which upstream says gets it up" in said
 
 
-def test_the_microduck_says_its_speed_caps_are_quackds_own_clamp() -> None:
+def test_the_microduck_says_its_speed_caps_are_roboglots_own_clamp() -> None:
     """The sheet said the speed caps were a software clamp in robotd. robotd clamps no twist at
-    any release quackd has read (`up.NO_TWIST_CLAMP`): the caps are the manifest's own limits,
-    which quackd holds every twist a verb sends to and the prompt renders as quackd's clamp, so
+    any release Roboglot has read (`up.NO_TWIST_CLAMP`): the caps are the manifest's own limits,
+    which Roboglot holds every twist a verb sends to and the prompt renders as Roboglot's clamp, so
     the note contradicted a line above it. It says whose clamp it is now. The turn is 1.0 rad/s
     from 0.21.0, the turn upstream's walking task was trained on and its pad asks for."""
     manifest = microduck_manifest("sim2d")
     text = body_section(manifest)
     assert "software clamp in robotd" not in text
-    assert "The speed caps are quackd's own clamp on the twists it sends" in text
+    assert "The speed caps are Roboglot's own clamp on the twists it sends" in text
     assert up.NO_TWIST_CLAMP.name in text
-    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in text
+    assert "Roboglot clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in text
     assert speed_limits(manifest) == (0.3, 0.2, 1.0)
 
 
@@ -185,7 +185,7 @@ def test_a_body_with_legs_it_cannot_walk_on_here_is_not_told_it_has_none() -> No
     there; the walk is what is missing. "It does not move" stays, because the verdict gate quotes
     it back to a body that stays put and publishes no terrain, and only a body that really has
     neither legs nor a base is told it has none."""
-    from quackd_toddlerbot import toddlerbot_manifest
+    from roboglot_toddlerbot import toddlerbot_manifest
 
     said = "It does not move: it has legs, but no verb on this connection walks it"
     for grounded in (
@@ -216,10 +216,10 @@ def test_a_body_with_legs_it_cannot_walk_on_here_is_not_told_it_has_none() -> No
 
 def test_a_body_no_verb_moves_is_told_no_speed_cap() -> None:
     """toddlerbot:bridge carries its walk's caps in `limits` until its daemon reports a
-    checkpoint that can walk it, and its prompt said `quackd clamps you to 0.2 m/s forward` two
+    checkpoint that can walk it, and its prompt said `roboglot clamps you to 0.2 m/s forward` two
     lines under "It does not move". A speed cap is a rule about a verb that moves the body, so
     only a body that has one is told its caps."""
-    from quackd_toddlerbot import toddlerbot_manifest
+    from roboglot_toddlerbot import toddlerbot_manifest
 
     for grounded in (
         describe(RobotSpec("toddlerbot", "bridge")),  # before the daemon has said anything
@@ -237,9 +237,9 @@ def test_a_body_no_verb_moves_is_told_no_speed_cap() -> None:
 
 
 def test_speed_clamps_come_from_the_limits_never_from_the_datasheet() -> None:
-    """`limits` is quackd's own rule about what it sends. The datasheet never repeats it."""
+    """`limits` is Roboglot's own rule about what it sends. The datasheet never repeats it."""
     duck = body_section(microduck_manifest("sim2d"))
-    assert "quackd clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in duck
+    assert "Roboglot clamps you to 0.3 m/s forward, 0.2 m/s sideways, 1 rad/s turning." in duck
 
     strafing = body_section(xlerobot_manifest("mock"))
     assert "0.2 m/s sideways" in strafing

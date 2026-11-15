@@ -1,6 +1,6 @@
 # ADR-0050: A router is a vendor whose list is read on the day
 
-**Status:** accepted · **Date:** 2026-10-06 · Amends [ADR-0031](0031-llm-catalogue.md) (one vendor's tuple is a selection rather than all `--llm` takes after the colon, and its rows carry a price date of their own), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (a turn's cost can be what the vendor says it billed rather than rate times tokens) and [ADR-0010](0010-providers.md) (one call per turn holds on this vendor without `parallel_tool_calls`) · Implemented in `quackd/agent/providers/openrouter.py`, with changes in the factory, the catalogue, pricing, the loop, the flock planner and the browser demo · Documented in [docs/guides/openrouter.md](../guides/openrouter.md)
+**Status:** accepted · **Date:** 2026-10-06 · Amends [ADR-0031](0031-llm-catalogue.md) (one vendor's tuple is a selection rather than all `--llm` takes after the colon, and its rows carry a price date of their own), [ADR-0041](0041-the-record-says-when-it-ran-and-what-it-cost.md) (a turn's cost can be what the vendor says it billed rather than rate times tokens) and [ADR-0010](0010-providers.md) (one call per turn holds on this vendor without `parallel_tool_calls`) · Implemented in `roboglot/agent/providers/openrouter.py`, with changes in the factory, the catalogue, pricing, the loop, the team planner and the browser demo · Documented in [docs/guides/openrouter.md](../guides/openrouter.md)
 
 ## Context
 
@@ -20,19 +20,19 @@ lab, and it breaks three things ADR-0031 assumed of every vendor.
   outside a short list would take away the one thing OpenRouter is for.
 
 It also offers two things no other vendor here does. Every response carries what the call was
-billed (`usage.cost`), and it fronts the very LLMs whose quirks quackd already encodes per
+billed (`usage.cost`), and it fronts the very LLMs whose quirks Roboglot already encodes per
 vendor: OpenRouter's own migration guide says a forced `tool_choice` on Claude Opus 5.5 "fails at
 routing with no compatible endpoint rather than reaching the provider".
 
 ## Decision
 
-- **`--llm openrouter`, `OPENROUTER_API_KEY`, `quackd[openrouter]`**, which is the `openai`
+- **`--llm openrouter`, `OPENROUTER_API_KEY`, `roboglot[openrouter]`**, which is the `openai`
   package, at `https://openrouter.ai/api/v1`. One subclass of `OpenAIProvider`, as Grok is, and
   five hooks on the base that are inert for every other vendor: default headers, whether a run may
   move to Responses, `--extra-body` keys refused per vendor, fields added to a replayed assistant
   message, and how a chat response is read.
 - **Six rows, and any other id OpenRouter's list carries.** `OPEN_ENDED = ("openrouter",)` marks a
-  tuple that is a selection. The six are LLMs from vendors quackd already drives natively,
+  tuple that is a selection. The six are LLMs from vendors Roboglot already drives natively,
   served by their own makers, whose list entries named `tools` and `tool_choice`, took `image` and
   carried no `expiration_date`; the first, `openai/gpt-6-sol`, is the default, chosen with Rok.
   Their prices carry `checked=OPENROUTER_PRICES_CHECKED`, which `Price.record()` writes in place of
@@ -50,8 +50,8 @@ routing with no compatible endpoint rather than reaching the provider".
   forced call: `forced_tools` is read for OpenRouter's rows now as well as Anthropic's. An id the
   tuple does not carry is asked (`auto`), or sent no `tool_choice` where its entry names none,
   ADR-0014's bargain rather than a 400 reader written against a refusal nobody here has seen.
-  The run stays on Chat Completions whatever `QUACKD_OPENAI_API` says, does not read
-  `QUACKD_OPENAI_REASONING_EFFORT`, and refuses `models` in `--extra-body`, OpenRouter's fallback
+  The run stays on Chat Completions whatever `ROBOGLOT_OPENAI_API` says, does not read
+  `ROBOGLOT_OPENAI_REASONING_EFFORT`, and refuses `models` in `--extra-body`, OpenRouter's fallback
   list, for the reason `model` is refused everywhere.
 - **The answer as OpenRouter shapes it.** An LLM's `reasoning_details` go back verbatim on the
   assistant turn that produced them, carrying Claude's signed thinking and Gemini's signatures.
@@ -62,13 +62,13 @@ routing with no compatible endpoint rather than reaching the provider".
 - **A turn costs what it was billed.** `ProviderTurn.billed_usd` is `usage.cost`, plus
   `cost_details.upstream_inference_cost` on a bring-your-own-key call and only there, and None
   where the call says nothing usable. `pricing.turn_cost` costs a call at a rate a person named
-  (`--price`, `QUACKD_PRICE`), else the bill, else the rate times the tokens, and the loop and the
-  flock planner both use it. A billed call's `llm` record says `billed: true` and the summary
+  (`--price`, `ROBOGLOT_PRICE`), else the bill, else the rate times the tokens, and the loop and the
+  team planner both use it. A billed call's `llm` record says `billed: true` and the summary
   counts them in `billed_calls`, both written only when there are any. A run's total becomes null
   from the first call that came back with neither a bill nor a rate.
 - **Attribution.** Every request, the list's included, carries
-  `HTTP-Referer: https://github.com/rokbenko/quackd` and `X-OpenRouter-Title: quackd`, decided
-  with Rok: they credit quackd on OpenRouter's public app rankings and carry nothing about the
+  `HTTP-Referer: https://github.com/rokbenko/quackd` and `X-OpenRouter-Title: roboglot`, decided
+  with Rok: they credit Roboglot on OpenRouter's public app rankings and carry nothing about the
   person running it.
 - **The browser offers the six rows**, its preflight having answered `204` with
   `Access-Control-Allow-Origin: *` from both of the page's origins on 2026-10-06, and asks them as
@@ -102,11 +102,11 @@ routing with no compatible endpoint rather than reaching the provider".
 - An id the tuple does not carry costs one public GET per process, with a ten-second ceiling,
   before the first paid call, and a machine that cannot reach `openrouter.ai` is refused with
   the host named rather than started.
-- A turn's `cost_usd` can be the vendor's bill rather than quackd's arithmetic. The `price`
+- A turn's `cost_usd` can be the vendor's bill rather than Roboglot's arithmetic. The `price`
   record still says the rate, and `billed: true` says which calls it did not decide. A run's
   total can now become null partway, which it could not before.
 - The guide's UNVERIFIED table lists what rests on OpenRouter's word alone, the default row's
   tool calls through Chat Completions first among them. **No OpenRouter LLM has answered a real
-  quackd request.** What ran was the real `openai` SDK through a real `quackd run` against a
+  Roboglot request.** What ran was the real `openai` SDK through a real `roboglot run` against a
   stand-in on 127.0.0.1 (`tests/fake_openrouter.py`), the browser demo's client under Node against
   the same stand-in, and the LLM list check against OpenRouter's real public list, with no key.

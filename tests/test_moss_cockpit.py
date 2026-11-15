@@ -1,7 +1,7 @@
 """The real cockpit client against a fake of MOSS's cockpit, over loopback.
 
 `tests/fake_moss_cockpit.py` is written from `tools/moss_cockpit.py` at the pin, and every test
-here drives quackd's own client and transport against it: the state, the nose stream, goals and
+here drives Roboglot's own client and transport against it: the state, the nose stream, goals and
 a goal_reached that belongs to someone else, the explorer, the soft stop, and the idle keepalive
 whose cadence comes from the cockpit's own idle limit. No bridge runs in this file: its port
 points at nothing, which is a rover with no bridge, so the manifest is the cockpit's alone.
@@ -20,11 +20,11 @@ from typing import Any
 import pytest
 from PIL import Image
 
-from quackd.transport.base import HeartbeatError, Intent, TransportError
-from quackd.verbs.registry import VerbContext
-from quackd_moss import MossAdapter
-from quackd_moss import cockpit as moss_client
-from quackd_moss.cockpit import (
+from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.verbs.registry import VerbContext
+from roboglot_moss import MossAdapter
+from roboglot_moss import cockpit as moss_client
+from roboglot_moss.cockpit import (
     CMD_HEADER_NAME,
     CMD_HEADER_VALUE,
     CockpitClient,
@@ -32,7 +32,7 @@ from quackd_moss.cockpit import (
     MjpegReader,
     MossCockpit,
 )
-from quackd_moss.verbs import DriveToParams, MinutesParams, drive_to, explore
+from roboglot_moss.verbs import DriveToParams, MinutesParams, drive_to, explore
 from tests.fake_moss_cockpit import FakeCockpit
 
 
@@ -209,10 +209,10 @@ async def test_moss_nav_with_no_bridge_has_nothing_that_moves(cockpit: FakeCockp
         ({"blueprint": "moss-gamepad"}, "the pad and the base alone"),
         ({"blueprint": "moss-arm"}, "reads only the newest dimOS run, and that is moss-arm"),
         ({"transport": "zenoh"}, "speak LCM only"),
-        ({"blueprint": "moss-litter"}, "only quackd's bridge"),
+        ({"blueprint": "moss-litter"}, "only Roboglot's bridge"),
     ],
 )
-async def test_a_rover_quackd_cannot_drive_is_refused_at_connect(
+async def test_a_rover_roboglot_cannot_drive_is_refused_at_connect(
     cockpit: FakeCockpit, change: dict[str, Any], said: str
 ) -> None:
     for key, value in change.items():
@@ -359,8 +359,8 @@ async def test_close_ends_a_goal_it_started_and_posts_nothing_when_it_started_no
 async def test_with_no_bridge_a_stop_after_the_stack_restarted_sends_no_soft_stop(
     cockpit: FakeCockpit,
 ) -> None:
-    """The owner restarted the stack since quackd connected, and the cockpit names another
-    run, whose explorer quackd's soft stop would end: none is sent, and the stop says why.
+    """The owner restarted the stack since Roboglot connected, and the cockpit names another
+    run, whose explorer Roboglot's soft stop would end: none is sent, and the stop says why.
     A moss-arm run the cockpit shows over the base tells nothing of the base's run, so that
     stop goes out."""
     transport = _transport(cockpit)
@@ -382,7 +382,7 @@ async def test_with_no_bridge_a_newer_run_of_another_blueprint_is_stopped_all_th
     cockpit: FakeCockpit,
 ) -> None:
     """The cockpit shows only the newest run: one of another blueprint, started by hand, says
-    nothing of whether the run quackd connected to still runs behind it, so the soft stop goes
+    nothing of whether the run Roboglot connected to still runs behind it, so the soft stop goes
     out all the same."""
     transport = _transport(cockpit)
     await transport.connect()
@@ -395,7 +395,7 @@ async def test_with_no_bridge_a_newer_run_of_another_blueprint_is_stopped_all_th
 async def test_with_no_bridge_close_after_a_restart_leaves_the_new_runs_goal_alone(
     cockpit: FakeCockpit,
 ) -> None:
-    """A goal quackd started went with the run it was sent to. Its close sends the new run
+    """A goal Roboglot started went with the run it was sent to. Its close sends the new run
     no soft stop, which would end that run's own goal, and its note says why."""
     transport = _transport(cockpit)
     await transport.connect()
@@ -499,7 +499,7 @@ async def test_one_pose_read_again_keeps_its_date_and_its_places() -> None:
     """The same /odom message read either side of the cockpit's rounding of its age dates a few
     milliseconds apart, the second earlier: read as two readings, it began the frame again and
     orphaned the place marked on the first."""
-    from quackd.space.places import PlaceBook, PlaceStore
+    from roboglot.space.places import PlaceBook, PlaceStore
 
     with FakeCockpit() as fake:
         t = _transport(fake)
@@ -522,7 +522,7 @@ async def test_a_date_going_back_never_begins_the_runs_frame_again(tmp_path: Any
     """The run is the frame. A date going back began it again within one connection, and the
     next connection to the same run began at the first again: a place marked in between was
     orphaned for good, while the ones before it came back."""
-    from quackd.space.places import PlaceBook, PlaceStore
+    from roboglot.space.places import PlaceBook, PlaceStore
 
     with FakeCockpit() as fake:
         t = _transport(fake)
@@ -564,7 +564,7 @@ class _UpstreamDated(FakeCockpit):
 
 async def test_a_standing_rover_read_by_heartbeat_and_verbs_keeps_its_places() -> None:
     """Reads in pairs a few milliseconds apart, as a heartbeat and a verb's poll fall."""
-    from quackd.space.places import PlaceBook, PlaceStore
+    from roboglot.space.places import PlaceBook, PlaceStore
 
     with _UpstreamDated() as fake:
         t = _transport(fake)

@@ -17,16 +17,16 @@ from pathlib import Path
 
 import pytest
 
-from quackd.adapters.factory import make_adapter
-from quackd.agent.loop import RunConfig, run_duck
-from quackd.agent.providers.fake import FakeProvider
-from quackd.agent.transcript import Transcript
-from quackd.duckfile.parser import load_duck
-from quackd.perception.color_blob import ColorBlobDetector
-from quackd.transport.base import Intent
+from roboglot.adapters.factory import make_adapter
+from roboglot.agent.loop import RunConfig, run_glot
+from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
+from roboglot.glotfile.parser import load_glot
+from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.transport.base import Intent
 
 SEEDS = range(10)
-MIN_SUCCESSES = 10 if os.environ.get("QUACKD_STRICT_SEEDS") == "1" else 8
+MIN_SUCCESSES = 10 if os.environ.get("ROBOGLOT_STRICT_SEEDS") == "1" else 8
 
 #: Anything that would move this body rather than only its head.
 NOT_ON_A_SAFETY_STAND = {
@@ -42,7 +42,7 @@ NOT_ON_A_SAFETY_STAND = {
 
 
 async def test_toddlerbot_lookout_acceptance(tmp_path: Path) -> None:
-    duck = load_duck("toddlerbot-lookout")
+    duck = load_glot("toddlerbot-lookout")
     successes = 0
     report = []
     for seed in SEEDS:
@@ -50,10 +50,10 @@ async def test_toddlerbot_lookout_acceptance(tmp_path: Path) -> None:
         body = adapter.world.ducks[adapter.duck_index]
         start = (body.x, body.y, body.theta)
         t0 = time.perf_counter()
-        result = await run_duck(
+        result = await run_glot(
             RunConfig(
                 duck=duck,
-                provider=FakeProvider.for_duck("toddlerbot-lookout"),
+                provider=FakeProvider.for_glot("toddlerbot-lookout"),
                 transport=adapter,
                 detector=ColorBlobDetector(),
                 runs_dir=tmp_path,
@@ -86,10 +86,10 @@ async def test_the_lookout_reports_without_a_voice_and_without_a_battery(tmp_pat
     assert "battery" not in manifest.sensors
     assert (await adapter.get_state()).battery_percent is None
 
-    result = await run_duck(
+    result = await run_glot(
         RunConfig(
-            duck=load_duck("toddlerbot-lookout"),
-            provider=FakeProvider.for_duck("toddlerbot-lookout"),
+            duck=load_glot("toddlerbot-lookout"),
+            provider=FakeProvider.for_glot("toddlerbot-lookout"),
             transport=adapter,
             detector=ColorBlobDetector(),
             runs_dir=tmp_path,

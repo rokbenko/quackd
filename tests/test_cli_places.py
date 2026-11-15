@@ -1,4 +1,4 @@
-"""`quackd map` and `quackd places list|add|rm`: a robot's map and its places, for a person.
+"""`roboglot map` and `roboglot places list|add|rm`: a robot's map and its places, for a person.
 
 `map` and `places add` connect to the robot and read it as the `map` and `mark_place` verbs do;
 `list` and `rm` read the place file with nothing connected. A wipe is a person's alone: asked at
@@ -15,10 +15,10 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
-import quackd.cli as cli
-from quackd.cli import app
-from quackd.space.places import PlaceStore
-from quackd.verbs.places import MapParams
+import roboglot.cli as cli
+from roboglot.cli import app
+from roboglot.space.places import PlaceStore
+from roboglot.verbs.places import MapParams
 
 runner = CliRunner()
 ROOM = ["--robot", "microduck:sim2d", "--room", "two-rooms"]
@@ -51,7 +51,7 @@ def test_a_place_marked_where_the_duck_stands_is_listed_with_its_frame_and_forgo
     )
     assert listed.exit_code == 0, listed.output
     assert "1 place" in listed.output and "the grey one" in listed.output
-    assert place.frame in listed.output and "quackd map says which" in listed.output
+    assert place.frame in listed.output and "roboglot map says which" in listed.output
     removed = runner.invoke(
         app, ["places", "rm", "SOFA", "--robot", "microduck:sim2d", *_dirs(tmp_path)]
     )
@@ -91,11 +91,11 @@ def test_a_body_that_says_nowhere_keeps_no_places_and_is_told_where_it_would(
     assert _store(tmp_path).frames() == [], "nothing connected, so no frame was seen"
 
 
-def test_a_name_quackd_keeps_for_itself_or_one_too_long_is_refused_in_one_line(
+def test_a_name_roboglot_keeps_for_itself_or_one_too_long_is_refused_in_one_line(
     tmp_path: Path,
 ) -> None:
     reserved = _add(tmp_path, "start")
-    assert reserved.exit_code == 1 and "quackd marks itself" in reserved.output, reserved.output
+    assert reserved.exit_code == 1 and "Roboglot marks itself" in reserved.output, reserved.output
     long = _add(tmp_path, "x" * 40)
     assert long.exit_code == 1 and long.output.count("\n") <= 3, long.output
     assert _store(tmp_path).places() == []

@@ -1,7 +1,7 @@
-"""robot.yaml, the passport it describes, the body quackd only talks for, and the meeting task.
+"""robot.yaml, the passport it describes, the body Roboglot only talks for, and the meeting task.
 
 The file is the one thing an owner writes, so it is read strictly and every refusal names where
-it is. What the owner signs is built from it here, the board from what quackd found and never from
+it is. What the owner signs is built from it here, the board from what Roboglot found and never from
 the file, and a change to the file after signing is named member by member.
 """
 
@@ -12,20 +12,20 @@ from pathlib import Path
 
 import pytest
 
-from quackd.adapters.factory import parse_robot_spec
-from quackd.agent.providers.fake import STRATEGIES
-from quackd.onboard import config, facts
-from quackd.onboard.body import VERBS, described_manifest
-from quackd.onboard.meeting import NAME, meeting_duck
-from quackd.passport import document, strict
+from roboglot.adapters.factory import parse_robot_spec
+from roboglot.agent.providers.fake import STRATEGIES
+from roboglot.onboard import config, facts
+from roboglot.onboard.body import VERBS, described_manifest
+from roboglot.onboard.meeting import NAME, meeting_glot
+from roboglot.passport import document, strict
 from tests.passport_helpers import OWNER, A
 
-DEMO = Path(__file__).resolve().parents[1] / "quackd" / "onboard" / "demo"
+DEMO = Path(__file__).resolve().parents[1] / "roboglot" / "onboard" / "demo"
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
 NOW = datetime.now(UTC).replace(microsecond=0)
 
 
-def test_the_body_robot_yaml_shows_as_its_example_is_one_quackd_has() -> None:
+def test_the_body_robot_yaml_shows_as_its_example_is_one_roboglot_has() -> None:
     """A person uncomments it, and a backend its adapter does not have is refused at signing."""
     assert f"#   adapter: {config.ADAPTER_EXAMPLE}\n" in template()
     assert parse_robot_spec(config.ADAPTER_EXAMPLE).backend
@@ -111,7 +111,7 @@ def test_an_arm_is_refused_with_the_reason_it_carries_no_passport() -> None:
     ],
 )
 def test_a_wrong_key_or_value_is_refused_by_its_path(edit: tuple[str, str], where: str) -> None:
-    """The board is what quackd finds, never what a file claims, so the file cannot set it."""
+    """The board is what Roboglot finds, never what a file claims, so the file cannot set it."""
     old, new = edit
     text = template()
     assert old in text
@@ -132,8 +132,8 @@ def test_a_change_after_signing_is_named_member_by_member() -> None:
     assert facts.unsigned_changes(edited, reading, board=SIM) == ["body", "owner", "safety"]
 
 
-def test_a_robot_quackd_only_talks_for_offers_no_courtesy() -> None:
-    """A peer's pause stops what quackd moves, and quackd moves nothing of a described body."""
+def test_a_robot_roboglot_only_talks_for_offers_no_courtesy() -> None:
+    """A peer's pause stops what Roboglot moves, and Roboglot moves nothing of a described body."""
     reading = signed(config.loads(template()))
     assert reading.courtesy() == []
     assert reading.document["owner"] == {
@@ -176,7 +176,7 @@ def test_a_tracked_body_is_shown_to_a_pilot_as_wheeled_and_signed_as_tracked() -
 
 
 def test_the_meeting_task_moves_nothing_and_carries_the_owners_words() -> None:
-    duck = meeting_duck("Say hello and that you deliver parcels.")
+    duck = meeting_glot("Say hello and that you deliver parcels.")
     assert duck.frontmatter.name == NAME
     assert duck.frontmatter.verbs.allow == ["report_state", "stop"]
     assert "deliver parcels" in duck.body

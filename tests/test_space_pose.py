@@ -1,4 +1,4 @@
-"""A pose, the frame it belongs to, and the one shape a reading takes outside quackd.space."""
+"""A pose, the frame it belongs to, and the one shape a reading takes outside roboglot.space."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import math
 
 import pytest
 
-from quackd.space.pose import Fix, FrameRef, Pose2D, where_record, where_summary, wrap_angle
+from roboglot.space.pose import Fix, FrameRef, Pose2D, where_record, where_summary, wrap_angle
 
 
 def _same(a: Pose2D, b: Pose2D) -> bool:

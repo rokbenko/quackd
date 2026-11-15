@@ -27,8 +27,8 @@ from typing import Any
 
 import pytest
 
-from quackd import keys as keys_module
-from quackd.keys import (
+from roboglot import keys as keys_module
+from roboglot.keys import (
     ESCAPE_GAP_S,
     POLL_S,
     PosixKeys,
@@ -36,7 +36,7 @@ from quackd.keys import (
     console_keys,
     is_a_console,
 )
-from quackd.safety import (
+from roboglot.safety import (
     ENTER_ALONE_S,
     ENTER_QUIET_S,
     TYPED_AHEAD_S,
@@ -319,7 +319,7 @@ async def test_a_slow_habit_answers_nothing_either() -> None:
 async def test_a_later_enter_is_a_bare_one(monkeypatch: pytest.MonkeyPatch) -> None:
     """`q` is no part of its line at a console: the question that comes a minute later takes this
     Enter as the bare one it is, rather than a line with `q` typed on it, which is a no."""
-    monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.05)
+    monkeypatch.setattr("roboglot.safety.ENTER_BEHIND_Q_S", 0.05)
     ks, _, _ = await press("q", 0.1, "\r")
     assert ks.entered.is_set()
     assert heard(ks) == [""]
@@ -330,8 +330,8 @@ async def test_an_enter_held_down_behind_a_q_answers_nothing_when_the_habit_is_o
 ) -> None:
     """The Enters passed by behind a `q` were not counted as Enters at all, so the first past the
     window looked as though it had come out of a long quiet, and it opened the jaws."""
-    monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.5)  # room for a loaded runner's sleeps
+    monkeypatch.setattr("roboglot.safety.ENTER_BEHIND_Q_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.5)  # room for a loaded runner's sleeps
     repeats = [key for _ in range(20) for key in ("\r", 0.02)]
     ks, _, _ = await press("q", *repeats)
     assert len(heard(ks)) > 5, "the window has passed, and they go to a wait"
@@ -344,7 +344,7 @@ async def test_an_enter_passed_by_behind_a_q_is_still_the_enter_before_the_next(
 ) -> None:
     """The second of two quick Enters, the first inside the window and the second just past it, is
     no answer. Were the first never counted, the second would seem to come out of a long quiet."""
-    monkeypatch.setattr("quackd.safety.ENTER_BEHIND_Q_S", 0.05)
+    monkeypatch.setattr("roboglot.safety.ENTER_BEHIND_Q_S", 0.05)
     ks, _, _ = await press("q", "\r", 0.1, "\r")
     first, second = ks._enters
     assert not first.answers and second.answers, "the first passed by, the second to a wait"
@@ -453,7 +453,7 @@ async def test_a_stray_key_from_before_the_question_is_no_answer_to_it(
 ) -> None:
     """Press `x` mid-run, and the Enter that opens the jaws ten minutes later read as a line with
     something typed on it: a no, with a hand on the pencil and the arm folding 3 s on."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.02)
     answer, ks = await _asked_and_pressed("x", 0.3, "\r", ENTER_ALONE_S * 3, key_first=True)
     assert answer is True and ks.declined is False
 
@@ -461,7 +461,7 @@ async def test_a_stray_key_from_before_the_question_is_no_answer_to_it(
 async def test_what_is_typed_after_the_question_is_still_a_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.02)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.02)
     answer, ks = await _asked_and_pressed(0.3, "n", "\r", 0.5)
     assert answer is False and ks.declined is True
 
@@ -470,7 +470,7 @@ async def test_a_key_typed_just_before_the_question_is_still_a_no(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Too close to it to be a stray press from long ago, and a no is the safe reading."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.8)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.8)
     answer, ks = await _asked_and_pressed("n", 1.2, "\r", 0.5, key_first=True)
     assert answer is False and ks.declined is True
 
@@ -512,9 +512,9 @@ async def test_a_key_thread_held_up_after_the_first_repeat_hears_no_yes_in_it(
     way, to the question that drops an arm. Now nothing stands alone while the key is down whenever
     any of this runs, since a look finds the console empty only once every repeat in it is read.
     The wait lasts as long as the key thread takes to get through it all, on any machine."""
-    monkeypatch.setattr("quackd.safety.TYPED_AHEAD_S", 0.1)
-    monkeypatch.setattr("quackd.safety.ENTER_ALONE_S", 0.3)
-    monkeypatch.setattr("quackd.safety.ENTER_QUIET_S", 0.5)
+    monkeypatch.setattr("roboglot.safety.TYPED_AHEAD_S", 0.1)
+    monkeypatch.setattr("roboglot.safety.ENTER_ALONE_S", 0.3)
+    monkeypatch.setattr("roboglot.safety.ENTER_QUIET_S", 0.5)
     now = time.monotonic()
     repeats = [(now + 0.65 + n * 0.03, "\r") for n in range(25)]
     console = Arriving([(now + 0.05, "\r"), *repeats], held_up_after={2: 0.6})
@@ -620,7 +620,7 @@ def test_the_saved_terminal_says_why_a_question_went_unanswered(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """It said `(Enter)` of a `[y/N]` a press had ended, which nobody pressed."""
-    from quackd import cli
+    from roboglot import cli
 
     class Ended:
         unanswered: str | None = "(the kill switch ended the question: no)"
@@ -856,15 +856,15 @@ def test_esc_on_its_own_leaves_the_next_key_alone(pty_pair: Any, sent: bytes, ke
 
 BEHIND = """
 import asyncio, os, sys
-from quackd.keys import in_the_background
-from quackd.safety import KillSwitch
+from roboglot.keys import in_the_background
+from roboglot.safety import KillSwitch
 
 async def main():
     ks = KillSwitch(asyncio.Event())
     ks.install()
     print(in_the_background(sys.stdin), ks._thread is None, ks.keys_ended.is_set(), flush=True)
     print(repr(ks.ask("")), flush=True)
-    from quackd import cli
+    from roboglot import cli
     print(cli._can_prompt(), flush=True)
 
 pid = os.fork()
@@ -901,7 +901,7 @@ def test_a_terminal_this_process_is_behind_is_not_read(pty_pair: Any) -> None:
         assert child.stdout is not None
         assert child.stdout.readline().strip() == "True True True"
         assert child.stdout.readline().strip() == "''", "a question there is a no, unread"
-        assert child.stdout.readline().strip() == "False", "and quackd has nobody there to ask"
+        assert child.stdout.readline().strip() == "False", "and Roboglot has nobody there to ask"
         assert child.wait(timeout=20) == 0
     finally:
         child.kill()
@@ -986,13 +986,13 @@ def test_a_key_is_not_read_while_this_process_is_behind_the_terminal(
     keys = PosixKeys(slave)
     try:
         os.write(master, b"q")
-        monkeypatch.setattr("quackd.keys._behind_the_terminal", lambda _fd: True)
+        monkeypatch.setattr("roboglot.keys._behind_the_terminal", lambda _fd: True)
         got: list[str] = []
         reading = threading.Thread(target=lambda: got.append(keys.read()), daemon=True)
         reading.start()
         time.sleep(POLL_S * 5)
         assert not got, "read from behind the terminal"
-        monkeypatch.setattr("quackd.keys._behind_the_terminal", lambda _fd: False)
+        monkeypatch.setattr("roboglot.keys._behind_the_terminal", lambda _fd: False)
         reading.join(2)
         assert got == ["q"]
     finally:
@@ -1014,7 +1014,7 @@ def test_closing_a_terminal_ends_a_read_that_is_waiting(pty_pair: Any) -> None:
 
 CHILD = """
 import asyncio, atexit, os, signal, sys
-from quackd.safety import KillSwitch
+from roboglot.safety import KillSwitch
 
 async def main():
     ks = KillSwitch(asyncio.Event())
@@ -1520,7 +1520,7 @@ def test_anything_that_fails_out_of_line_mode_puts_the_terminal_back(
 
     _, slave = pty_pair
     before = _settings(slave)
-    monkeypatch.setattr("quackd.keys._for_drawing", fails)
+    monkeypatch.setattr("roboglot.keys._for_drawing", fails)
     with pytest.raises(OSError, match="no descriptors"):
         PosixKeys(slave)
     assert _settings(slave) == before
@@ -1581,7 +1581,7 @@ def test_the_mode_is_not_taken_back_from_the_background_or_after_a_close(
     before = termios.tcgetattr(slave)
     keys = PosixKeys(slave)
     termios.tcsetattr(slave, termios.TCSANOW, before)
-    monkeypatch.setattr("quackd.keys._behind_the_terminal", lambda _fd: True)
+    monkeypatch.setattr("roboglot.keys._behind_the_terminal", lambda _fd: True)
     keys._keep_the_mode()
     assert _lflag(slave) & termios.ICANON, "it changed the mode from behind the terminal"
     monkeypatch.undo()

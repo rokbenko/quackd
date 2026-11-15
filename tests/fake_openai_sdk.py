@@ -10,10 +10,10 @@ a request is not its business: a test that sends one hands the provider a client
 drives the real SDK (`tests/test_openai_headers_wire.py`).
 
 What one installed SDK does with the headers it is handed is a property of that SDK rather than of
-quackd, and only a test that drives the real one can show it, wherever it is installed, which is
+Roboglot, and only a test that drives the real one can show it, wherever it is installed, which is
 the locked release and no other. So this also carries a model of what each kind of release the
 extras allow puts on a request (`RELEASES`, `sent`), read from the releases themselves, so that CI
-holds quackd's rule to all of them and not only to the one a developer happens to have. The SDK's
+holds Roboglot's rule to all of them and not only to the one a developer happens to have. The SDK's
 own account headers are modelled beside the variable's lines, because what reaches a vendor that
 is not OpenAI is the point here, and so are the headers the SDK writes on every request by
 itself, `Accept`, `Content-Type`, `User-Agent` and its `X-Stainless-` lines, because a line of the
@@ -74,7 +74,7 @@ class DefaultAsyncHttpxClient:
 # the real releases with the network patched shut, and agreed with all eleven, on 2026-10-12 with
 # the SDK's own headers modelled as well. One thing it does not model: what the HTTP library adds
 # to a request that lacks one of the SDK's own headers, its own `User-Agent`, and in 1.66.0 and
-# 1.83.0 a `Content-Type` for a JSON body. Nothing quackd hands leaves that gap, since a line of
+# 1.83.0 a `Content-Type` for a JSON body. Nothing Roboglot hands leaves that gap, since a line of
 # the variable that names one of those headers carries the SDK's own value
 # (`openai_headers.own_headers`). 3.43.0 and 3.46.0, the releases the lock has held since, were
 # run against this model on 2026-11-09 and are the kind 3.22.1 is.

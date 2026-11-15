@@ -1,6 +1,6 @@
 # ADR-0058: Letting go of the arm means putting it down first
 
-**Status:** accepted · **Date:** 2026-10-23 · Amends [ADR-0039](0039-an-arm-placed-by-hand.md) (its second door, which released the arm wherever it stood) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (the ways out its torque line names) · Implemented in `quackd/release.py`, `quackd/cli.py` (`robot release`, and `run`'s refusal), `quackd/agent/loop.py` (`_offer_release`), `quackd/registry.py` (`no_rest_pose_refusal`), `quackd/adapters/factory.py` (`needs_rest_pose`), `quackd/mcp_server.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md#releasing-it), [first run](../adapters/lerobot/first-run.md), [checklist](../adapters/lerobot/hardware-checklist.md))
+**Status:** accepted · **Date:** 2026-10-23 · Amends [ADR-0039](0039-an-arm-placed-by-hand.md) (its second door, which released the arm wherever it stood) and [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md) (the ways out its torque line names) · Implemented in `roboglot/release.py`, `roboglot/cli.py` (`robot release`, and `run`'s refusal), `roboglot/agent/loop.py` (`_offer_release`), `roboglot/registry.py` (`no_rest_pose_refusal`), `roboglot/adapters/factory.py` (`needs_rest_pose`), `roboglot/mcp_server.py` and `adapters/lerobot/` ([page](../adapters/lerobot/README.md#releasing-it), [first run](../adapters/lerobot/first-run.md), [checklist](../adapters/lerobot/hardware-checklist.md))
 
 **Amended 2026-10-23:** the follow-ups this record left open were made the same day, at Rok's
 word, and three of them change what is decided below.
@@ -25,28 +25,28 @@ word, and three of them change what is decided below.
 - **A first press stops the fold at the end of a run that ended by itself.** "What does not
   change" below still holds for a run the press ended. A run that ended on success, failure or a
   spent budget used to make its fold deaf to a first press. It is stopped now where the arm is,
-  held there with torque on (`FOLD_STOPPED`). A flock stopping its members, or a heartbeat that
+  held there with torque on (`FOLD_STOPPED`). A team stopping its members, or a heartbeat that
   fails, does not stop it.
 
-Three smaller ones correct what quackd says over an arm its own reads contradict. A fold that
+Three smaller ones correct what Roboglot says over an arm its own reads contradict. A fold that
 missed over joints whose torque read finds them off, servos that browned out, puts neither
 question and says what the read found (`RestResult.limp`, `LIMP_AFTER_A_MISS`, and the close's
 `torque_reads_off`), rather than saying the arm holds itself up. A release asked for at the rest
 pose no longer tells the person to put down from their hands an arm lying in its fold
 (`UNREAD_AT_REST`, `still_holding_at_rest`). And the consequence below that a core beside an
-older adapter lets such a run through is closed: one of quackd's own adapters from another
+older adapter lets such a run through is closed: one of Roboglot's own adapters from another
 release than the core is refused wherever a body is described or built (`factory._same_release`).
 None of it has run on an arm either.
 
 ## Context
 
 An SO-101 has no brake. Torque is the only thing holding it up, so an arm let go of where it
-stands falls onto whatever is under it, and that is why quackd lets go of the arm, on its own
+stands falls onto whatever is under it, and that is why Roboglot lets go of the arm, on its own
 initiative, only at its recorded rest pose ([ADR-0039](0039-an-arm-placed-by-hand.md),
 [ADR-0045](0045-a-rest-pose-the-calibration-cannot-reach.md)).
 
 On the bench of 2026-09-23 every run that got to its end kept torque on at a pose it could not
-reach, and finished at the power switch. 0.14.0 answered that with a second door: `quackd robot
+reach, and finished at the power switch. 0.14.0 answered that with a second door: `roboglot robot
 release NAME`, and an offer a run made at its terminal when its last fold missed, both of which
 told the person to hold the arm and then took torque off wherever it stood. That was a way out
 short of the power switch, and a way out that dropped the arm into whoever was holding it, or
@@ -72,7 +72,7 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
 
 ## Decision
 
-1. **`quackd robot release` folds the arm first.** It connects, folds the arm to its recorded
+1. **`roboglot robot release` folds the arm first.** It connects, folds the arm to its recorded
    rest pose as a run's teardown does, and lets go there through the first door,
    `let_go(asked=True)`, which refuses anywhere but that pose and so can never drop the arm. Its
    warning, printed before it connects, tells the person to support the arm while it connects,
@@ -83,7 +83,7 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
 
 2. **A fold that misses is settled by two questions, in this order, in both places.** The end
    of a run asks them itself instead of its old offer, and the command asks the same ones, from
-   one function (`quackd.release.settle_missed_fold`), so the two cannot come to say different
+   one function (`roboglot.release.settle_missed_fold`), so the two cannot come to say different
    things to a person at the same arm. In Rok's words: try to clear the way and try again first,
    and only if that is unsuccessful after one try, hold it and press Enter to drop it.
    - The first asks the person to clear whatever is in the arm's way and press Enter, and the
@@ -95,7 +95,7 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
      terminal with nothing to read, keeps torque on and leaves the arm holding itself up where its
      fold stopped. Nothing ever drops an arm but that one Enter.
    - Neither question is put where nobody can act on it, as the old offer was not: on a dry run,
-     over MCP, in a flock, on the simulator, over an arm still in somebody's hands, or over an arm
+     over MCP, in a team, on the simulator, over an arm still in somebody's hands, or over an arm
      that stopped answering, whose second fold may not even have reached it.
 
 3. **A fold a person asked for stops when they say so.** It runs raced against a fresh Ctrl-C or
@@ -116,7 +116,7 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
 
 6. **No flag skips the fold.** A `--where-it-stands` would be the 0.14.0 command behind a flag a
    shell's history hands back to the next person, and every case it would serve has a way out
-   already: the second question, a Ctrl-C that keeps torque on, `quackd robot rest-pose NAME
+   already: the second question, a Ctrl-C that keeps torque on, `roboglot robot rest-pose NAME
    --clear` for a recorded pose that is itself wrong (the command then asks before it connects),
    and the power switch.
 
@@ -137,17 +137,17 @@ which is how the arm of 2026-09-15 fell at the end of every run, and a bare
 9. **A real arm with no rest pose is refused a run, a dry run and an MCP session.** Rok's call,
    out of the three that were asked: refuse, keep torque on at the end of such a run, or leave
    it as it had been since 0.9. A dry run is refused too, because it connects and closes like
-   any other. `quackd run`, `quackd serve-mcp` and a flock refuse a `lerobot:real` arm with no
+   any other. `roboglot run`, `roboglot serve-mcp` and a team refuse a `lerobot:real` arm with no
    recorded rest pose before anything is built or connected, a run once its task file has been
    judged against the body, so that a task that could never run there says so first. The refusal
-   names the robot and `quackd robot rest-pose NAME`. A spec on its own is refused the same way,
+   names the robot and `roboglot robot rest-pose NAME`. A spec on its own is refused the same way,
    with the registration to do first, and a spec in a fleet, from `--robots` or a task file's
-   `robots:`, with a stored flock to run it from after that, since neither spelling reads the
-   registry. A pilot flock's member named by `--robot NAME` is built as that registered robot,
+   `robots:`, with a stored team to run it from after that, since neither spelling reads the
+   registry. A pilot team's member named by `--robot NAME` is built as that registered robot,
    with its address, cameras and pose, where it used to be built as a bare spec of its kind with
    none of them. The adapter declares which of its backends this applies to
-   (`REST_POSE_BACKENDS`, read by `quackd.adapters.factory.needs_rest_pose`), so no LeRobot name
-   enters the core, and `run_pilot_flock` refuses one as well, for a library caller. Not
+   (`REST_POSE_BACKENDS`, read by `roboglot.adapters.factory.needs_rest_pose`), so no LeRobot name
+   enters the core, and `run_pilot_team` refuses one as well, for a library caller. Not
    refused: `doctor` and `robot list --probe`, which on an arm with no pose move nothing and are
    run with a person supporting the arm; `rest-pose`, which is how a pose comes to exist;
    `robot release`, which asks before it connects (5); the mock; and the simulator, which drops
@@ -160,7 +160,7 @@ and the last decision of ADR-0039: no verb, no MCP tool, and not on the `RobotAd
 
 ## Consequences
 
-- `quackd robot release` now moves the arm, at the step cap (5 degrees a send at 10 Hz by
+- `roboglot robot release` now moves the arm, at the step cap (5 degrees a send at 10 Hz by
   default). A rest pose recorded before a recalibration can fold the arm toward a shape that is
   no longer its fold. The warning before the connect, the fold's own stall stop and a Ctrl-C are
   what stand between that and the arm, and the bench is owed a run of it.
@@ -168,13 +168,13 @@ and the last decision of ADR-0039: no verb, no MCP tool, and not on the `RobotAd
   `kept` reasons (`interrupted during the fold`, `the arm did not answer the second fold`), and a
   `prompt` row per question.
 - `AgentLoop.RELEASE_OFFER` and `RELEASE_OFFER_S` are gone. The waits are
-  `quackd.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`.
+  `roboglot.release.CLEAR_THE_WAY_S` and `ENTER_DROPS_S`.
 - Every connect still takes torque off for a moment, because LeRobot configures the motors inside
   `torque_disabled()`. A command run after a crash has to connect, so that moment stays, and so
   does the warning about it.
 - A real arm is no longer run by its spec. `--robot lerobot:real --address PORT` reaches it for
-  `doctor`, and a run, a session or a flock wants the name it was registered under, with a pose
-  recorded there. `quackd robot rest-pose NAME --clear` on a real arm says so.
+  `doctor`, and a run, a session or a team wants the name it was registered under, with a pose
+  recorded there. `roboglot robot rest-pose NAME --clear` on a real arm says so.
 - The declaration is read from the installed adapter, so a core from this release beside an
   adapter from an older one, a mixed install pip warns about and goes ahead with, has no backend
   to refuse and lets such a run through as before.

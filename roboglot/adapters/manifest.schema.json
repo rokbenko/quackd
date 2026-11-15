@@ -1,0 +1,525 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rokbenko/quackd/blob/main/roboglot/adapters/manifest.schema.json",
+  "$defs": {
+    "Datasheet": {
+      "additionalProperties": false,
+      "description": "The body as numbers, with how sure Roboglot is of each, and the things it cannot do.\n\nSpeeds are not here: `RobotManifest.limits` is what Roboglot clamps to, and the prompt\nrenders those as clamps. `None` means not published, and the prompt says so in those words\nand tells the pilot to answer `uncertain` where a task turns on it, and the verdict gate\nrefuses a `feasible` that names it (refuse by default). The same datasheet describes a\nbody on every backend: sim2d, mock or real, the body is the body, which is what keeps\ndigests equal across backends.",
+      "properties": {
+        "mass_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "height_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dof": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Actuated joints, counted."
+        },
+        "payload_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What one hand, the beak or the whole body can hold; the note says which."
+        },
+        "carries_kg": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What rides on its back or deck as it moves, with no hand holding it; a standing figure or a maximum goes in the note. Needs no manipulator, and is left out of a dump where nobody said it, so a body that says nothing keeps its digest (ADR-0079)."
+        },
+        "reach_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Arm base to fingertips."
+        },
+        "workspace_height_m": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Span"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The band of heights the hands can work at."
+        },
+        "endurance_min": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Figure"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Minutes on a charge."
+        },
+        "manipulator": {
+          "description": "What Roboglot can command that touches an object.",
+          "enum": [
+            "none",
+            "beak",
+            "gripper",
+            "arms"
+          ],
+          "title": "Manipulator",
+          "type": "string"
+        },
+        "arms": {
+          "default": 0,
+          "maximum": 4,
+          "minimum": 0,
+          "title": "Arms",
+          "type": "integer"
+        },
+        "tethered": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "True: mains powered, nothing to run down. False: a battery. None: not published.",
+          "title": "Tethered"
+        },
+        "terrain": {
+          "anyOf": [
+            {
+              "enum": [
+                "indoor_flat",
+                "indoor",
+                "outdoor"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "What it is rated for. None: not published; the prompt says to assume a flat indoor floor and decline the rest.",
+          "title": "Terrain"
+        },
+        "not_rated": {
+          "description": "What it is not rated for: stairs, steps, slopes.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Not Rated",
+          "type": "array"
+        },
+        "cannot": {
+          "description": "Categorical: what it cannot do whatever the task says, one sentence each.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Cannot",
+          "type": "array"
+        },
+        "notes": {
+          "description": "Worth reading before planning, one sentence each.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "manipulator"
+      ],
+      "title": "Datasheet",
+      "type": "object"
+    },
+    "Figure": {
+      "additionalProperties": false,
+      "description": "One physical number, how sure Roboglot is of it, and who says so.\n\nA figure without a source is a rumour, so `source` is required. The pilot reads all three:\n\"0.5 kg (estimate: one vendor's listing)\" is a different instruction from \"0.5 kg\n(official: the maker's datasheet)\".",
+      "properties": {
+        "value": {
+          "minimum": 0,
+          "title": "Value",
+          "type": "number"
+        },
+        "confidence": {
+          "enum": [
+            "official",
+            "estimate",
+            "measured"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "source": {
+          "description": "Who says so: 'Pollen Robotics README', 'arXiv:2502.00893', 'the task file'.",
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "description": "Read with the number: 'per arm', 'a software cap'.",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value",
+        "confidence",
+        "source"
+      ],
+      "title": "Figure",
+      "type": "object"
+    },
+    "Frame": {
+      "additionalProperties": false,
+      "properties": {
+        "reference": {
+          "default": "body",
+          "enum": [
+            "body",
+            "head",
+            "base",
+            "world"
+          ],
+          "title": "Reference",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "title": "Frame",
+      "type": "object"
+    },
+    "SafetyAuthority": {
+      "additionalProperties": false,
+      "description": "Who stops the body when Roboglot goes quiet. Honesty matters more than the enum.",
+      "properties": {
+        "native": {
+          "default": "none",
+          "enum": [
+            "robotd_deadman",
+            "lease",
+            "torque_limit",
+            "estop",
+            "none"
+          ],
+          "title": "Native",
+          "type": "string"
+        },
+        "deadman": {
+          "default": false,
+          "description": "The robot zeroes motion on silence.",
+          "title": "Deadman",
+          "type": "boolean"
+        },
+        "heartbeat_hz": {
+          "default": 2.0,
+          "exclusiveMinimum": 0,
+          "maximum": 50,
+          "title": "Heartbeat Hz",
+          "type": "number"
+        }
+      },
+      "title": "SafetyAuthority",
+      "type": "object"
+    },
+    "Span": {
+      "additionalProperties": false,
+      "description": "A band rather than a point: the heights the hands can work at.",
+      "properties": {
+        "low": {
+          "minimum": 0,
+          "title": "Low",
+          "type": "number"
+        },
+        "high": {
+          "minimum": 0,
+          "title": "High",
+          "type": "number"
+        },
+        "confidence": {
+          "enum": [
+            "official",
+            "estimate",
+            "measured"
+          ],
+          "title": "Confidence",
+          "type": "string"
+        },
+        "source": {
+          "minLength": 1,
+          "title": "Source",
+          "type": "string"
+        },
+        "note": {
+          "default": "",
+          "title": "Note",
+          "type": "string"
+        }
+      },
+      "required": [
+        "low",
+        "high",
+        "confidence",
+        "source"
+      ],
+      "title": "Span",
+      "type": "object"
+    },
+    "VerbSpec": {
+      "additionalProperties": false,
+      "description": "One verb a robot provides. `name` is canonical (never an alias).",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "core": {
+          "default": false,
+          "description": "A core verb: the same on every robot.",
+          "title": "Core",
+          "type": "boolean"
+        },
+        "description": {
+          "default": "",
+          "description": "LLM-facing text. Empty means the implementation's default.",
+          "title": "Description",
+          "type": "string"
+        },
+        "params_schema": {
+          "additionalProperties": true,
+          "description": "JSON schema of the parameters (informational).",
+          "title": "Params Schema",
+          "type": "object"
+        },
+        "safety_class": {
+          "default": "safe",
+          "enum": [
+            "safe",
+            "confirm",
+            "dangerous"
+          ],
+          "title": "Safety Class",
+          "type": "string"
+        },
+        "timeout_s": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 600,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeout S"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "VerbSpec",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "manifest": {
+      "const": 1,
+      "default": 1,
+      "description": "Manifest schema version.",
+      "title": "Manifest",
+      "type": "integer"
+    },
+    "id": {
+      "description": "Slug, unique within a run or team (e.g. arm-01).",
+      "title": "Id",
+      "type": "string"
+    },
+    "vendor": {
+      "title": "Vendor",
+      "type": "string"
+    },
+    "model": {
+      "title": "Model",
+      "type": "string"
+    },
+    "embodiment": {
+      "enum": [
+        "biped",
+        "quadruped",
+        "wheeled",
+        "arm",
+        "humanoid"
+      ],
+      "title": "Embodiment",
+      "type": "string"
+    },
+    "mobility": {
+      "enum": [
+        "none",
+        "legged",
+        "wheeled"
+      ],
+      "title": "Mobility",
+      "type": "string"
+    },
+    "intents": {
+      "items": {
+        "enum": [
+          "twist",
+          "skill",
+          "gaze",
+          "sound",
+          "joint",
+          "pose",
+          "gripper"
+        ],
+        "type": "string"
+      },
+      "title": "Intents",
+      "type": "array"
+    },
+    "sensors": {
+      "items": {
+        "enum": [
+          "camera",
+          "battery",
+          "odometry",
+          "imu",
+          "tof",
+          "microphone",
+          "joint_state"
+        ],
+        "type": "string"
+      },
+      "title": "Sensors",
+      "type": "array"
+    },
+    "verbs": {
+      "items": {
+        "$ref": "#/$defs/VerbSpec"
+      },
+      "title": "Verbs",
+      "type": "array"
+    },
+    "preconditions": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "Verb -> condition names. The adapter supplies the predicates by name.",
+      "title": "Preconditions",
+      "type": "object"
+    },
+    "safety_authority": {
+      "$ref": "#/$defs/SafetyAuthority"
+    },
+    "frame": {
+      "$ref": "#/$defs/Frame"
+    },
+    "limits": {
+      "additionalProperties": {
+        "type": "number"
+      },
+      "title": "Limits",
+      "type": "object"
+    },
+    "backend": {
+      "default": "",
+      "description": "Which backend produced this (informational).",
+      "title": "Backend",
+      "type": "string"
+    },
+    "blurb": {
+      "default": "",
+      "description": "Prompt intro: 'a small biped duck robot ...'.",
+      "title": "Blurb",
+      "type": "string"
+    },
+    "datasheet": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Datasheet"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Physical facts with a confidence and a source each (docs/reference/manifest-spec.md). None: the adapter published none, and the prompt says so."
+    },
+    "extras": {
+      "additionalProperties": true,
+      "title": "Extras",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "vendor",
+    "model",
+    "embodiment",
+    "mobility",
+    "intents",
+    "verbs"
+  ],
+  "title": "roboglot robot manifest v1",
+  "type": "object"
+}

@@ -1,11 +1,11 @@
-"""quackd's AlohaMini host wrapper: the thing that makes the arms real.
+"""Roboglot's AlohaMini host wrapper: the thing that makes the arms real.
 
-Upstream's own host leaves the arms limp, so quackd ships a wrapper that turns torque back on
+Upstream's own host leaves the arms limp, so Roboglot ships a wrapper that turns torque back on
 and says so in every observation. The adapter refuses the arm verbs unless it can see that
 field, so this file is what makes that refusal meaningful rather than superstitious.
 
-The wrapper runs on the robot, in upstream's environment, and must never import quackd. These
-tests drive its two pure functions with fakes, and prove it imports with quackd absent.
+The wrapper runs on the robot, in upstream's environment, and must never import roboglot. These
+tests drive its two pure functions with fakes, and prove it imports with Roboglot absent.
 """
 
 from __future__ import annotations
@@ -17,12 +17,12 @@ from types import ModuleType
 
 from tests.conftest import REPO
 
-WRAPPER = REPO / "bridge" / "alohamini" / "quackd_alohamini_host.py"
+WRAPPER = REPO / "bridge" / "alohamini" / "roboglot_alohamini_host.py"
 
 
 def load_wrapper() -> ModuleType:
-    """It lives outside the package on purpose: quackd's core must never import it."""
-    spec = importlib.util.spec_from_file_location("quackd_alohamini_host", WRAPPER)
+    """It lives outside the package on purpose: Roboglot's core must never import it."""
+    spec = importlib.util.spec_from_file_location("roboglot_alohamini_host", WRAPPER)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -89,7 +89,7 @@ def test_a_robot_with_no_bus_at_all_reports_failure_rather_than_raising() -> Non
     assert module.enable_arm_torque(_Bare()) is False
 
 
-def test_every_observation_carries_the_three_fields_quackd_looks_for() -> None:
+def test_every_observation_carries_the_three_fields_roboglot_looks_for() -> None:
     module = load_wrapper()
     robot = _FakeRobot()
     obs = module.annotate({"x.vel": 0.0}, robot, torque=True)
@@ -142,13 +142,13 @@ def test_it_says_what_to_install_when_upstream_is_absent() -> None:
     assert "lerobot_alohamini" in result.stderr
 
 
-def test_the_wrapper_never_imports_quackd() -> None:
-    """quackd's dependencies do not belong on a robot, and this file is the proof."""
+def test_the_wrapper_never_imports_roboglot() -> None:
+    """Roboglot's dependencies do not belong on a robot, and this file is the proof."""
     source = WRAPPER.read_text(encoding="utf-8")
     for line in source.splitlines():
         stripped = line.strip()
         if stripped.startswith(("import ", "from ")):
-            assert "quackd" not in stripped, f"the wrapper imports quackd: {stripped}"
+            assert "roboglot" not in stripped, f"the wrapper imports Roboglot: {stripped}"
 
 
 def test_it_ships_in_the_sdist_and_never_in_the_wheel() -> None:
@@ -156,5 +156,5 @@ def test_it_ships_in_the_sdist_and_never_in_the_wheel() -> None:
 
     pyproject = tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))
     build = pyproject["tool"]["hatch"]["build"]["targets"]
-    assert build["wheel"]["packages"] == ["quackd"], "the wheel carries the package only"
+    assert build["wheel"]["packages"] == ["roboglot"], "the wheel carries the package only"
     assert "bridge" in build["sdist"]["include"]

@@ -1,5 +1,5 @@
-"""Talk for the robot quackd runs on: two robots meeting over real HTTP inboxes or a Bluetooth link,
-the tier each puts the other in, and what of it a pilot is shown
+"""Talk for the robot Roboglot runs on: two robots meeting over real HTTP inboxes or a Bluetooth
+link, the tier each puts the other in, and what of it a pilot is shown
 (docs/passport/security.md#prompt-injection).
 
 A stranger reaches a pilot as closed vocabularies under a name made from its key, and its words
@@ -19,10 +19,10 @@ from typing import Any
 
 import pytest
 
-from quackd.passport import PassportError, SigningKey, document, strict
-from quackd.passport.document import MAX_VALIDITY_S
-from quackd.passport.serve import INBOX_PATH, PassportServer, Served
-from quackd.passport.talk import (
+from roboglot.passport import PassportError, SigningKey, document, strict
+from roboglot.passport.document import MAX_VALIDITY_S
+from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
+from roboglot.passport.talk import (
     MAX_HELLO_BYTES,
     Endpoint,
     envelope,
@@ -30,8 +30,8 @@ from quackd.passport.talk import (
     read_message,
     seal,
 )
-from quackd.passport_talk import HEADING, Heard, Send, Talker
-from quackd.passport_trust import Judgement, Pin, judge
+from roboglot.passport_talk import HEADING, Heard, Send, Talker
+from roboglot.passport_trust import Judgement, Pin, judge
 from tests.passport_helpers import INTRUDER, OWNER, OWNER_B, RUNTIME, A, B, passport
 
 DUCK, CART = A, B
@@ -89,7 +89,7 @@ def lan() -> Iterator[Callable[..., Robot]]:
         server = PassportServer(None, host="127.0.0.1", inbox_limit=MAX_HELLO_BYTES)
         servers.append(server)
         token = passport(key, owner, name, **CLAIMS)
-        runtime: dict[str, Any] = {"software": "quackd/test"}
+        runtime: dict[str, Any] = {"software": "roboglot/test"}
         if beacon is not None:
             runtime["beacon"] = beacon
         if reach:
@@ -372,7 +372,7 @@ def test_a_link_that_closes_ends_the_sessions_it_carried_at_both_ends() -> None:
 
 
 def test_a_session_that_fills_at_one_end_ends_at_both(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("quackd.passport.talk.REMEMBERED_PER_SESSION", 2)
+    monkeypatch.setattr("roboglot.passport.talk.REMEMBERED_PER_SESSION", 2)
     link = Link()
     duck, duck_heard = on_link(link, DUCK, OWNER, "duck-01")
     cart, cart_heard = on_link(link, CART, OWNER_B, "cart-01")
@@ -427,7 +427,7 @@ def test_the_inbox_takes_a_hello_for_this_robot_or_anyone_and_refuses_the_rest()
 def test_a_message_in_another_major_version_is_answered_with_the_versions_read(
     version: str,
 ) -> None:
-    """0.1 is what quackd 0.23 to 0.28 spoke: answered, not dropped (spec 6.7). Over a link,
+    """0.1 is what Roboglot 0.23 to 0.28 spoke: answered, not dropped (spec 6.7). Over a link,
     which is near by construction, the answer is signed; over HTTP, from a robot nobody has
     heard yet, it is text, so no host on the LAN gets this robot's signature for the asking."""
     old = envelope("say", CART.did, {"text": "hi"})
@@ -494,7 +494,7 @@ def test_nothing_nearby_is_no_block_at_all() -> None:
 
 
 def test_a_pin_taken_back_makes_an_open_session_a_strangers_from_its_next_word() -> None:
-    """A tier was judged once and kept on its session, so `quackd onboard forget` left a robot
+    """A tier was judged once and kept on its session, so `roboglot onboard forget` left a robot
     known for as long as it kept talking. The service judges every open session again when
     robot.yaml changes."""
     link = Link()

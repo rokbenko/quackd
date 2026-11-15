@@ -1,26 +1,26 @@
 # ADR-0062: The model tables are rendered from the catalogues
 
-**Status:** accepted · **Date:** 2026-10-25 · Extends [ADR-0031](0031-llm-catalogue.md) (the catalogue is the one source of LLM names), [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (a decision LLM is a data row) and [ADR-0060](0060-hugging-face-serves-many-vlas.md) (what the policy server serves is data in the core) · Implemented in `scripts/models_docs.py`, `docs/models/`, `quackd/agent/providers/catalogue.py` (`KEY_FALLBACKS`) and `quackd list-models --kind` in `quackd/cli.py` ([docs/models/](../models/README.md))
+**Status:** accepted · **Date:** 2026-10-25 · Extends [ADR-0031](0031-llm-catalogue.md) (the catalogue is the one source of LLM names), [ADR-0043](0043-decision-llms-are-a-wire-format-and-a-data-row.md) (a decision LLM is a data row) and [ADR-0060](0060-hugging-face-serves-many-vlas.md) (what the policy server serves is data in the core) · Implemented in `scripts/models_docs.py`, `docs/models/`, `roboglot/agent/providers/catalogue.py` (`KEY_FALLBACKS`) and `roboglot list-models --kind` in `roboglot/cli.py` ([docs/models/](../models/README.md))
 
 **Amended 2026-11-05, and undone 2026-11-14:** on 2026-11-05 the folder became `docs/llms/` and
-the command `quackd list-llms`, and the policies' page moved to `docs/guides/vlas.md` and their
-rows to `quackd policy list`, because a policy is no LLM. The folder and the command hold every
+the command `roboglot list-llms`, and the policies' page moved to `docs/guides/vlas.md` and their
+rows to `roboglot policy list`, because a policy is no LLM. The folder and the command hold every
 kind of model, so on 2026-11-14 both took back the names decisions 1 and 5 give them, with the
-policies in each again. `quackd policy list` prints the policy rows as well.
+policies in each again. `roboglot policy list` prints the policy rows as well.
 
 ## Context
 
 On 2026-10-25 Rok asked for one clear place that says which pilot LLMs, which decision LLMs and
-which VLAs quackd supports, and how to use each. What the README and the guides said about
+which VLAs Roboglot supports, and how to use each. What the README and the guides said about
 them was spread over about twenty-five places: one vendor table in the README's Usage section,
-the decision LLMs in a guide of their own and nowhere a terminal could list them but `quackd
+the decision LLMs in a guide of their own and nowhere a terminal could list them but `roboglot
 doctor`, and the policies in the policies guide alone. The README, the FAQ and the architecture
 page each carried the catalogue's size, 123, typed by hand, and nothing read it back. The Gemini
 provider had read `GOOGLE_API_KEY` since 0.1.0, and no page said so.
 
-Each of the three already has a catalogue in code that decides what quackd takes:
+Each of the three already has a catalogue in code that decides what Roboglot takes:
 `providers/catalogue.py` and `factory.py` for the pilots, `decision/catalogue.py` for the
-decision LLMs and `quackd/adapters/policies.py` for the policy types. A table typed beside one of
+decision LLMs and `roboglot/adapters/policies.py` for the policy types. A table typed beside one of
 them is the kind that drifts, as the hand-copied counts show.
 
 ## Decision
@@ -37,11 +37,11 @@ them is the kind that drifts, as the hand-copied counts show.
    work, and the Usage section's vendor table moved there whole rather than being copied.
 4. **The counts that are still typed are held by tests:** the catalogue's ids, the ones priced and
    the ones not, wherever a living page states them, and the policy types.
-5. **`quackd list-models --kind`** prints the decision LLMs and the policy types as well as the
+5. **`roboglot list-models --kind`** prints the decision LLMs and the policy types as well as the
    pilots, from the same data, so the terminal and the pages cannot disagree. Its default prints
    what the command always has.
 6. **The second name a vendor's key is read from is one table, `KEY_FALLBACKS`**, which the
-   providers, `quackd doctor` and the pages read.
+   providers, `roboglot doctor` and the pages read.
 
 ## Why not
 
@@ -63,6 +63,6 @@ them in a table each, and the vendors page turns the same rows around.
   run in the failure.
 - The pages carry no hand-written row, so a fact a catalogue does not hold, such as a run on
   record, is prose beside the table, and the tests that hold the never-run sentences hold it.
-- The script imports the catalogues, so it runs where quackd's own environment does, and it reads
-  no environment variable, so a developer's `QUACKD_LLM` or `OPENAI_BASE_URL` changes nothing it
+- The script imports the catalogues, so it runs where Roboglot's own environment does, and it reads
+  no environment variable, so a developer's `ROBOGLOT_LLM` or `OPENAI_BASE_URL` changes nothing it
   writes.

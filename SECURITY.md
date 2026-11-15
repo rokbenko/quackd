@@ -3,44 +3,44 @@
 ## Reporting
 
 Please **do not** open a public issue for vulnerabilities. Email
-**ksjeno@gmail.com** with "quackd security" in the subject, or use GitHub's private
+**ksjeno@gmail.com** with "Roboglot security" in the subject, or use GitHub's private
 vulnerability reporting on the repository if enabled. You will get an acknowledgement
 within 72 hours.
 
 ## What "security" means when an LLM commands a robot
 
-quackd sends *intents* to a robot. How much of the stopping the robot itself does depends
+Roboglot sends *intents* to a robot. How much of the stopping the robot itself does depends
 on the body, and each adapter declares it in its manifest's `safety_authority`
 (see `docs/concepts/safety.md`). On a Microduck, `robotd` is the safety authority: it holds
 joint targets inside the actuators' travel, detects falls, and zeroes the velocity when
-commands stall. On an Open Duck Mini the deadman is quackd's own daemon, running on the
+commands stall. On an Open Duck Mini the deadman is Roboglot's own daemon, running on the
 robot and zeroing the velocity inside the 50 Hz loop, so it is code we ship and therefore
 code we are answerable for. On a Huebot it will be the shim its maker is writing, which is
 asked to keep robotd's deadman and which nobody has seen. The protocol has no
 authentication, so the shim is asked to listen on a unix socket or on the robot's own
-loopback, never on the network, and quackd reaches it through an ssh forward. On a MOSS rover the
-firmware stops the tracks 300 ms after its last command, and quackd's own bridge on the rover sends
-a twist only while quackd keeps asking for one and halts what quackd started when the heartbeat
+loopback, never on the network, and Roboglot reaches it through an ssh forward. On a MOSS rover the
+firmware stops the tracks 300 ms after its last command, and Roboglot's own bridge on the rover sends
+a twist only while Roboglot keeps asking for one and halts what Roboglot started when the heartbeat
 stops, so that too is code we ship. On the other
 five bodies upstream has no deadman that covers the whole body. A rosbridge base declares
 `native: none`, and a LeRobot arm has a torque limit on its gripper alone and holds its last goal.
 An XLeRobot's host watchdog zeroes its wheels and leaves the arms holding, and an
 AlohaMini's covers the base and the lift and never the arms, so both are partial by
 construction. A ToddlerBot has no watchdog, timeout or e-stop anywhere upstream at all, and
-cannot get up if it falls, so its only deadman is the one quackd's own daemon runs. On all
-five, quackd's own heartbeat and `stop` are most or all of what stops them. That makes the client-side
+cannot get up if it falls, so its only deadman is the one Roboglot's own daemon runs. On all
+five, Roboglot's own heartbeat and `stop` are most or all of what stops them. That makes the client-side
 layer (verb allowlists, confirm gates, budgets, the heartbeat, the kill switch)
 security-relevant, not just a convenience. A bug that lets an LLM or an MCP client bypass
 it is a security issue.
 
-quackd also ships code that runs **on a robot**, or on the board beside one, which is a different
+Roboglot also ships code that runs **on a robot**, or on the board beside one, which is a different
 kind of surface from everything above. Everything under `bridge/` is in scope in its own right:
 two daemons for an Open Duck Mini v2's Raspberry Pi, a host wrapper for an AlohaMini, a daemon
 that walks a ToddlerBot, a bridge beside MOSS's cockpit that drives its tracks and plays its arm's
-cycle, and a daemon for an NVIDIA Jetson that `--host` reaches. So is `quackd policy serve`, which
+cycle, and a daemon for an NVIDIA Jetson that `--host` reaches. So is `roboglot policy serve`, which
 is not under `bridge/` and is the first network service whose answers move an arm: it serves a
 learned policy's goals to a LeRobot arm, from a checkpoint that is code. And so is
-`quackd onboard`, the one part of quackd that runs on a robot's own computer, Robot Passport's
+`roboglot onboard`, the one part of Roboglot that runs on a robot's own computer, Robot Passport's
 service, which listens over Bluetooth and on the LAN for robots it has never met and drives the
 robot's body when its file names an adapter (below).
 
@@ -51,8 +51,8 @@ Also in scope:
   ([docs/guides/decision-llms/jev.md](docs/guides/decision-llms/jev.md)), is one of these, and so
   is `OPENAI_API_KEY` when the `openai` preset reads it
   ([docs/guides/decision-llms/openai.md](docs/guides/decision-llms/openai.md)). No other decision
-  LLM quackd names wants a key at all: the rest are servers you run yourself or a checkpoint in this
-  process, and quackd hands those a placeholder in the key field rather than whatever hosted key
+  LLM Roboglot names wants a key at all: the rest are servers you run yourself or a checkpoint in this
+  process, and Roboglot hands those a placeholder in the key field rather than whatever hosted key
   happens to be sitting in the same `.env`. The `openai` preset sends `OPENAI_API_KEY` to OpenAI's
   own API alone, `https://api.openai.com` or one of the regional hosts OpenAI list for the
   endpoint (`us.api.openai.com`, `eu.api.openai.com`, `au.api.openai.com`, `ca.api.openai.com`,
@@ -70,8 +70,8 @@ Also in scope:
   of its own out of the environment and adds them to every request, wherever the client points:
   `OPENAI_CUSTOM_HEADERS`, one header per line, which is where a gateway's own credential lives for
   somebody who reaches OpenAI through one, and `OPENAI_ORG_ID` and `OPENAI_PROJECT_ID`, which it
-  sends as `OpenAI-Organization` and `OpenAI-Project`. quackd decides where they go
-  (`quackd/agent/providers/openai_headers.py`), and the rule is that they follow the SDK's own
+  sends as `OpenAI-Organization` and `OpenAI-Project`. Roboglot decides where they go
+  (`roboglot/agent/providers/openai_headers.py`), and the rule is that they follow the SDK's own
   address variable. All three go, exactly as the SDK sends them by itself, to OpenAI's own API,
   `api.openai.com` or one of the regional hosts OpenAI list, over https, and to the address
   `OPENAI_BASE_URL` gives `--llm openai` when no `--base-url` is given, which is the address the SDK
@@ -90,26 +90,26 @@ Also in scope:
   `OPENAI_API_KEY`. The vendor's own headers still go, OpenRouter's two among them. The client
   follows no redirect, so a turn answered with one fails instead of sending the request on to
   wherever it points, and says where it pointed. And once a client is built its headers and its
-  address are read back: a release of the SDK that would still send an authorization quackd did not
-  write, or any other value under a name quackd answered, or whose client reads its address as
+  address are read back: a release of the SDK that would still send an authorization Roboglot did not
+  write, or any other value under a name Roboglot answered, or whose client reads its address as
   OpenAI's where the address it was handed is not, or the other way round, is refused before the
   robot connects, naming the release and never the value. The key itself goes wherever the pilot is
   pointed, which is what `--base-url` is for, and `--llm openai` sends its key to whatever
   `OPENAI_BASE_URL` names, as the SDK always has, so a board named there is sent `OPENAI_API_KEY` in
   the clear: an LLM server you run is reached with a local preset, which sends it no hosted key.
-  Where a project's `.env` chose that address and the key came from your shell, quackd says so on
+  Where a project's `.env` chose that address and the key came from your shell, Roboglot says so on
   stderr, naming the variable and the host, and goes on: it is your call and it may be on purpose.
   What would be a security issue: a line of `OPENAI_CUSTOM_HEADERS`, or `OPENAI_ORG_ID` or
   `OPENAI_PROJECT_ID`, reaching an address that is neither OpenAI's own API nor the one
   `OPENAI_BASE_URL` gives `--llm openai`, an authorization other than the provider's own key on any
   request to such an address, `OPENAI_API_KEY` reaching a local preset's server, a redirect
-  followed, or a client built on OpenAI's SDK anywhere in quackd that does not go through that
+  followed, or a client built on OpenAI's SDK anywhere in Roboglot that does not go through that
   module.
 - **The command line, which the run record now holds.** A solo run writes down what it was
   started with, in three places: `command` in the transcript's `run_start`, `command` in
-  `summary.json`, and the first line of `terminal.txt`. A flock root has no `run_start`, so
-  both flock runners write `command` and `version` into the root `summary.json` themselves,
-  and the root `terminal.txt` opens with the same line; a pilot flock's members each keep a
+  `summary.json`, and the first line of `terminal.txt`. A team root has no `run_start`, so
+  both team runners write `command` and `version` into the root `summary.json` themselves,
+  and the root `terminal.txt` opens with the same line; a pilot team's members each keep a
   `run_start` of their own besides. The values of `--api-key`, `--token`, `--host-token` and
   `--policy-token` are replaced with `***` everywhere that line is written, so a reader sees
   that a key was passed and never what it was. The five flags that take a URL, `--base-url`,
@@ -117,20 +117,20 @@ Also in scope:
   needs and lose the half that has to be rotated: the scheme, the host, the port, the path and
   the username stay, a password in the URL becomes `***`, and so does any query parameter named
   like a credential (`api_key`, `token`, `sig` and the rest of `SECRET_QUERY_KEYS`).
-  `--extra-body`, and `QUACKD_EXTRA_BODY` behind it, is a JSON object a vendor asked for and
-  quackd never reads, which makes it exactly where an `authorization` header ends up; it reaches
+  `--extra-body`, and `ROBOGLOT_EXTRA_BODY` behind it, is a JSON object a vendor asked for and
+  Roboglot never reads, which makes it exactly where an `authorization` header ends up; it reaches
   the transcript's `run_start` as `extra_body`, and it is walked to the bottom on the way in
   with every credential-named key replaced. All of that is redaction **by name**, of flag names
   and of key names and nothing cleverer, which is worth stating plainly because it decides what
   is safe to paste into an issue. A secret typed as the value of some **other** flag is written
   down in full, and so is a credential a vendor asked for under a name these lists do not carry.
   A key handed to the provider through its own environment variable, which is the normal way and
-  the right one, is in no part of the record, and `QUACKD_EXTRA_BODY` is the one environment
+  the right one, is in no part of the record, and `ROBOGLOT_EXTRA_BODY` is the one environment
   variable that reaches it at all. What would be a security issue: the value of any of the four
   secret flags reaching any of the places above, a password or a named credential surviving a
   URL flag, a credential-named key surviving `extra_body`, or a new flag that takes a secret and
-  is in neither `SECRET_FLAGS` nor `URL_FLAGS` (`quackd/command.py`).
-- **What the discrete stepper is sent** (`quackd run --decision-llm`, off unless you name one,
+  is in neither `SECRET_FLAGS` nor `URL_FLAGS` (`roboglot/command.py`).
+- **What the discrete stepper is sent** (`roboglot run --decision-llm`, off unless you name one,
   [docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). Whichever one answers
   is sent the same thing, once a turn: the task's goal, the robot's own description of itself and
   its last few results. Where that goes is the part that differs, and it is worth knowing which of
@@ -150,9 +150,9 @@ Also in scope:
   ([docs/guides/decision-llms/laya.md](docs/guides/decision-llms/laya.md)). None of them is ever
   sent a system prompt, and none is sent an API key but its own vendor's, at that vendor's address.
   The one way round that is the SDK's own: with no `--decision-url`, TypeSafe's client sends `jev`'s
-  key wherever its own `TYPESAFE_BASE_URL` points, a variable quackd neither reads nor sets, so
+  key wherever its own `TYPESAFE_BASE_URL` points, a variable Roboglot neither reads nor sets, so
   setting it is choosing where that key goes. A camera frame reaches a decision LLM only with
-  `--decision-frames` (or `QUACKD_DECISION_FRAMES`), only for a row that can see, which is `openai`
+  `--decision-frames` (or `ROBOGLOT_DECISION_FRAMES`), only for a row that can see, which is `openai`
   alone, and only at OpenAI's own hosts, the ones its key goes to: then that row is shown the
   robot's primary camera beside the state on each turn it is asked about, as one JPEG at most 512
   pixels on its longest side
@@ -180,17 +180,17 @@ Also in scope:
   not, so a reader auditing what left the machine is reading a size and a shape rather than the
   words. That holds when a turn fails as well: its `error` is the exception's type, with its HTTP
   status where it carries one, and never the message, which can quote the request back. The only
-  words kept are quackd's own: that the stepper's own second ran out, and what quackd says about a
+  words kept are Roboglot's own: that the stepper's own second ran out, and what Roboglot says about a
   reply it could not read, which names the type of what came back and nothing it said. The address
   is on the record too, in `run_start.decision_llm`, with a password in it or a credential-named
   query parameter already replaced by `***`, because that url can arrive through
-  `QUACKD_DECISION_URL` where argv redaction would never see it. What would be a security issue: a
+  `ROBOGLOT_DECISION_URL` where argv redaction would never see it. What would be a security issue: a
   picture reaching a decision LLM on a run that did not ask for frames, or reaching any row but
   `openai` or any address but OpenAI's own hosts, a frame handed over with no line on the record
   naming it, image bytes in the state or in the record, a credential reaching any of them but its
   own vendor at its own address, a credential surviving that recorded url, a hosted key being sent
   to a server you run, or a stepper-authored call bypassing the executor.
-- **What `quackd drive` sends with a line you type** (`--decision-llm` or `QUACKD_DECISION_LLM`,
+- **What `roboglot drive` sends with a line you type** (`--decision-llm` or `ROBOGLOT_DECISION_LLM`,
   off unless you name one, [docs/guides/drive.md](docs/guides/drive.md)). A line the exact lane
   cannot read is sent as you typed it to the decision LLM the session names, as one question,
   which a System One client may send twice within its second, and never with a camera frame.
@@ -198,39 +198,39 @@ Also in scope:
   whatever lane took that line, and the body's one-line description. It goes where that row's
   state goes on a run, above. A brake, the session's own words and a line the exact lane reads
   are sent nowhere of their own. A goal goes to the pilot the session flies goals with, as
-  `quackd run --goal`'s goal does. The session's `transcript.jsonl` keeps every line typed as a
+  `roboglot run --goal`'s goal does. The session's `transcript.jsonl` keeps every line typed as a
   command as it was typed, and each answer to a question in the row of the call it answered.
-- **The memory file** (`~/.quackd/memory/<adapter>-<backend>.jsonl`). It holds
+- **The memory file** (`~/.roboglot/memory/<adapter>-<backend>.jsonl`). It holds
   sentences an LLM wrote about a place it has been, it persists between runs, and it is
   read back into the next system prompt. It never leaves the machine and the executor never
   reads it, so a note cannot widen an allowlist, lift a budget or open a confirm gate. What
   would be a security issue: memory reaching the executor, a note from one robot appearing
   in another robot's prompt, or the file escaping the directory `--memory-dir` names.
-  `--no-memory` writes nothing at all, and `quackd memory clear` deletes the file.
-- **The robot registry** (`~/.quackd/robots.json`, `~/.quackd/flocks.json`). `quackd robot
+  `--no-memory` writes nothing at all, and `roboglot memory clear` deletes the file.
+- **The robot registry** (`~/.roboglot/robots.json`, `~/.roboglot/teams.json`). `roboglot robot
   add --token ...` writes that token to disk **in plain text**, and `--host-token ...` does the
   same with a board's, which is the honest trade for not having either in shell history on
   every run. It is a file in your home directory, not a secret store: if that is not good
-  enough for your robot, keep passing `--token` on the line or through `QUACKD_DUCK_TOKEN`,
-  and `--host-token` or `QUACKD_HOST_TOKEN` for a board. quackd masks both in everything it
+  enough for your robot, keep passing `--token` on the line or through `ROBOGLOT_DUCK_TOKEN`,
+  and `--host-token` or `ROBOGLOT_HOST_TOKEN` for a board. Roboglot masks both in everything it
   prints, `--json` included, which reports only whether each is set (`token_set` and
   `host_token_set`). What would be a security issue: a token reaching a transcript, a log
   line, a run directory or an MCP tool result, or either file escaping the directory
   `--registry-dir` names.
-- The MCP server executing verbs a loaded `.duck` contract does not allow.
-- Anything that lets a `.duck` file (untrusted input — people will share them) execute
+- The MCP server executing verbs a loaded `.glot` contract does not allow.
+- Anything that lets a `.glot` file (untrusted input — people will share them) execute
   code, read files, or reach the network.
 - An adapter sending a body's "go limp" call (`robot.relax`, `disable_motors`,
   `disable_torque`, an XLeRobot `disconnect()`, a ToddlerBot torque-off) as if it were
   `stop`. Stop means stop, never collapse.
-- Anything that lets an LLM, an MCP client or a `.duck` file take torque off a LeRobot arm.
-  `quackd robot release` and the offer a run makes at its own terminal when its last rest move
+- Anything that lets an LLM, an MCP client or a `.glot` file take torque off a LeRobot arm.
+  `roboglot robot release` and the offer a run makes at its own terminal when its last rest move
   missed both release the arm wherever it stands, and exist only for a person holding it: the
   command asks at a terminal unless `--yes` is on its command line, and the offer waits for
-  Enter and is never made on a dry run, over MCP or in a flock. Neither is a verb, an MCP tool
+  Enter and is never made on a dry run, over MCP or in a team. Neither is a verb, an MCP tool
   or on the `RobotAdapter` protocol. A way round any of that is in scope.
 - **The browser demo** (`web/`), which is now publicly reachable at
-  <https://www.quackd.org/simulator> rather than only a directory you serve yourself. That
+  <https://www.roboglot.org/simulator> rather than only a directory you serve yourself. That
   changes the assessment: anybody can be linked to a page that asks them to paste an API key.
   The key is read from an input, sent from the browser straight to the vendor, and never
   stored, never logged and never proxied: there is no server here to proxy it through, and
@@ -244,22 +244,22 @@ Also in scope:
   subresource integrity and no content security policy, and any script running in the page can
   read that input. Google Fonts serves CSS and font files rather than script, so it cannot
   execute in the document the way the jsDelivr tags can — but it is still an origin that sees
-  every visit. So the risk is not quackd holding your key, it is a third party executing in the
+  every visit. So the risk is not Roboglot holding your key, it is a third party executing in the
   same document as it: a bad CDN response, an injected script, or a copy of the page served
-  from somewhere you do not control. <https://www.quackd.org/simulator> is the one copy quackd
+  from somewhere you do not control. <https://www.roboglot.org/simulator> is the one copy Roboglot
   controls, and `/simulator/source.json` names the commit it was built from, so you can check
   it against this repository; the same files served from anywhere else are somebody else's and
   can differ from what is here. Being deployed adds nowhere for a key to be kept: the deployed
-  copy is the same static files, fetched into quackd-web's build at a pinned commit, so no
-  quackd server sits between the input and the vendor there either. Anthropic's
+  copy is the same static files, fetched into roboglot-web's build at a pinned commit, so no
+  Roboglot server sits between the input and the vendor there either. Anthropic's
   `anthropic-dangerous-direct-browser-access` header, which the page sends, is opting out of
   the vendor's own guard against exactly this. OpenRouter is a router, so what a visitor
-  sends it also reaches the provider it picks for the LLM, and the page names quackd to it
+  sends it also reaches the provider it picks for the LLM, and the page names Roboglot to it
   in two headers (`HTTP-Referer` and `X-OpenRouter-Title`) and says nothing about the visitor.
   Use a key with a spend cap, or pick Local and
   nothing leaves the machine. What the demo cannot do: it is a simulation with no transport to
   any robot, so nothing in it moves hardware.
-- **The model and the policies the physics backend fetches** (`adapters/microduck/src/quackd_microduck/sim3d/assets.py`).
+- **The model and the policies the physics backend fetches** (`adapters/microduck/src/roboglot_microduck/sim3d/assets.py`).
   `--robot microduck:mujoco` downloads upstream's MJCF and 38 meshes from codeload.github.com
   and two ONNX policies from huggingface.co, both pinned, and then runs the policy. The defences
   are worth naming because they are the answer: only paths in a fixed allowlist are extracted
@@ -268,38 +268,38 @@ Also in scope:
   or policy fails the run instead of loading. Both are tested rather than merely claimed:
   `tests/test_sim3d_assets.py` builds hostile archives — a traversal path, a sibling directory,
   a symlink, a tampered mesh — and asserts that none of them lands. An ONNX file is data that
-  onnxruntime parses, not Python that quackd executes, so the exposure is that parser and not
+  onnxruntime parses, not Python that Roboglot executes, so the exposure is that parser and not
   arbitrary code. The one
-  path around the hashes is deliberate: `QUACKD_MICRODUCK_ASSETS` warns rather than refuses,
+  path around the hashes is deliberate: `ROBOGLOT_MICRODUCK_ASSETS` warns rather than refuses,
   because a newer export from your own checkout is the point of it. Point it at a checkout you
   built, never at one you were sent.
-- **The model the arm's simulator fetches** (`adapters/lerobot/src/quackd_lerobot/sim/assets.py`).
-  `--robot lerobot:mujoco`, and any robot `quackd robot twin` registered, downloads the SO-101's
+- **The model the arm's simulator fetches** (`adapters/lerobot/src/roboglot_lerobot/sim/assets.py`).
+  `--robot lerobot:mujoco`, and any robot `roboglot robot twin` registered, downloads the SO-101's
   model from TheRobotStudio/SO-ARM100 the first time it connects: `so101_new_calib_camera.xml`
   and the 15 STL meshes it names, about 16 MB, one file at a time from raw.githubusercontent.com
   at a pinned commit. There is no archive to unpack. Every URL is built from a fixed list of names
-  quackd holds, every file is written under a name on that list, so nothing upstream sends can
+  Roboglot holds, every file is written under a name on that list, so nothing upstream sends can
   choose a path, and each is checked against a recorded sha256 as it arrives, so the first file
   that does not match stops the fetch and nothing is installed. A reply larger than 16 MiB, or
   shorter than the length it declared, is refused as well. The set is checked again, installed
-  into `~/.quackd/cache/so-arm100/<pin>` in one rename under a lock, and checked against the same
+  into `~/.roboglot/cache/so-arm100/<pin>` in one rename under a lock, and checked against the same
   hashes every time it is used, so a file changed on disk is fetched again rather than loaded.
-  `QUACKD_CACHE_DIR` moves the cache. The model includes no other file, and MJCF and STL are data
-  that MuJoCo parses rather than code quackd runs, so the exposure is MuJoCo's parser.
+  `ROBOGLOT_CACHE_DIR` moves the cache. The model includes no other file, and MJCF and STL are data
+  that MuJoCo parses rather than code Roboglot runs, so the exposure is MuJoCo's parser.
   `tests/test_lerobot_sim_assets.py` drives all of it with the network stubbed, a file that does
   not match its pin and an oversized reply among the cases. The one path around the hashes is
-  deliberate, as it is for the duck: `QUACKD_LEROBOT_SIM_ASSETS` points at the `Simulation/SO101`
+  deliberate, as it is for the duck: `ROBOGLOT_LEROBOT_SIM_ASSETS` points at the `Simulation/SO101`
   directory of a checkout of your own, and warns rather than refuses when it differs from the
   pin. Point it at a checkout you made, never at one you were sent. The simulator itself opens no
   port and imports no LeRobot, and an address shaped like a serial port is refused before
   anything looks at it, so nothing it is given reaches a real arm.
-- The LAN surfaces behind `quackd[lan]`: zeroconf TXT records advertise a robot's identity
-  to anything on the network, and the MQTT flock bus carries messages that command robots
+- The LAN surfaces behind `roboglot[lan]`: zeroconf TXT records advertise a robot's identity
+  to anything on the network, and the MQTT team bus carries messages that command robots
   with no authentication of its own. Both are off by default and neither has a threat model
   yet, so treat them as trusted-network only.
 - **Robot Passport** ([docs/passport/security.md](docs/passport/security.md) is its whole threat
-  model). It runs in `quackd onboard`, a service on a robot's own computer, and in nothing else,
-  since `quackd passport check` only reads a passport. A read follows no redirects, reads no more
+  model). It runs in `roboglot onboard`, a service on a robot's own computer, and in nothing else,
+  since `roboglot passport check` only reads a passport. A read follows no redirects, reads no more
   than 12 KB in five seconds however slowly a host sends, and prints whatever a passport says as
   text, so a passport cannot drive the terminal. The service has four surfaces. The Bluetooth advert
   it builds is 31 bytes with no name and no key in it, under a random beacon id that changes every
@@ -342,13 +342,13 @@ Also in scope:
   `stop` and `say`, a body moving while a granted pause holds, a reply sent anywhere but back the
   way its message came, a fetch to any host but the one named, or a passport's text acting on the
   terminal it is shown on.
-- **The Jetson host daemon** (`bridge/jetson/quackd_jetson_hostd.py`,
+- **The Jetson host daemon** (`bridge/jetson/roboglot_jetson_hostd.py`,
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
-  quackd reaches with `--host` from the laptop. It serves a live view from a camera on the board,
+  Roboglot reaches with `--host` from the laptop. It serves a live view from a camera on the board,
   runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
   `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default and warns when it is
   bound wider with no token. A token, once one is configured, is required on every path, read
-  from the `X-Quackd-Token` header and never from the query string, and compared with
+  from the `X-Roboglot-Token` header and never from the query string, and compared with
   `hmac.compare_digest`. A `--token-file` that is named and missing, unreadable or empty refuses
   to start rather than run with authentication off. A request without the token is refused on
   its headers alone, and what any client can make the board hold is bounded: 16 connections at
@@ -359,9 +359,9 @@ Also in scope:
   worst a peer the daemon lets in can do is watch the room and keep the board busy, and
   `POST /detect` is that second thing: it spends the board's GPU on whatever it is sent, for
   anyone who can reach the port when there is no token, and on a robot's own board that is the
-  GPU and the memory its control loop shares. On the laptop, quackd never puts the token in a
+  GPU and the memory its control loop shares. On the laptop, Roboglot never puts the token in a
   URL, a transcript, a run's command line or `--json`, it scrubs the token out of every reply
-  before an error or `quackd doctor` can repeat it, and it ignores `HTTP_PROXY` and follows no
+  before an error or `roboglot doctor` can repeat it, and it ignores `HTTP_PROXY` and follows no
   redirect, since either would carry the token header somewhere other than the board. The
   LLM server that `--host` also reaches is your own install on the board and authenticates
   nothing: keep Ollama's `OLLAMA_HOST` on `127.0.0.1:11434` and reach it and the daemon from
@@ -372,16 +372,16 @@ Also in scope:
   record on the laptop, or a password in a camera pipeline reaching a reply or a log. None of
   it has been run on a Jetson by this project, so treat the arrangement as reviewed rather
   than proven.
-- **The policy server** (`quackd policy serve`, `adapters/lerobot/src/quackd_lerobot/policy/`,
+- **The policy server** (`roboglot policy serve`, `adapters/lerobot/src/roboglot_lerobot/policy/`,
   [docs/guides/policies.md](docs/guides/policies.md)), an HTTP server on port 9875 whose answers
   move an arm: it serves the goals a learned policy chooses, and the arm's process sends them. It
   runs as a process of its own, never the one that owns the arm's serial bus, because a LeRobot
   checkpoint's processors can name code to import. It binds `127.0.0.1` or `::1`, and refuses
   any other address, the rest of 127/8 included, unless `--behind-tls` says a TLS proxy stands
   in front of it. A token is always required: with no `--token-file` it writes one to
-  `~/.quackd/policy.token`, readable by its owner alone where the OS allows, and a named file
+  `~/.roboglot/policy.token`, readable by its owner alone where the OS allows, and a named file
   that is missing, unreadable or empty refuses to start, as does a `--token-env` variable that
-  holds none. The token is read from the `X-Quackd-Token` header only and compared with
+  holds none. The token is read from the `X-Roboglot-Token` header only and compared with
   `hmac.compare_digest`, a request without it is refused on its headers alone, and what a client
   can make it hold is bounded as the Jetson host daemon bounds it, plus a cap on a request's
   body. The one route answered without it is `GET /v1/health`, which says whether the server
@@ -412,7 +412,7 @@ Also in scope:
   GR00T whose VLM step names no backbone, whose default LeRobot loads trusting its repository's
   code, and a step that keeps what it loads, a tokenizer say, in a directory inside the
   checkpoint (`artifacts`), which LeRobot 0.7.0 would load in place of what the step names, from
-  files quackd neither fetches nor checks. Every weight is loaded strictly, so a checkpoint is
+  files Roboglot neither fetches nor checks. Every weight is loaded strictly, so a checkpoint is
   never served as a random network. Only a tiny
   random ACT has been loaded by it, in CI. The arm checks at connect, before any torque, that
   what the server says it serves fits the arm, and again as every segment starts, so a server
@@ -423,23 +423,23 @@ Also in scope:
   token making the server keep what it sent or a thread past its bounds, a checkpoint getting
   code imported by a path it chose or a repository's own code trusted, a model a checkpoint
   names loading at a revision nobody pinned, or a policy the arm's connect did not check
-  starting a segment. No quackd command loads a checkpoint in the arm's own process.
-- **The policy server on a Hugging Face Endpoint** (`quackd policy endpoint`,
-  `adapters/lerobot/src/quackd_lerobot/policy/endpoint.py`,
+  starting a segment. No Roboglot command loads a checkpoint in the arm's own process.
+- **The policy server on a Hugging Face Endpoint** (`roboglot policy endpoint`,
+  `adapters/lerobot/src/roboglot_lerobot/policy/endpoint.py`,
   [docs/guides/policies.md](docs/guides/policies.md#on-a-hugging-face-endpoint)), which rents a
-  GPU that bills by the hour and runs that same server on it. quackd has never created one: it
+  GPU that bills by the hour and runs that same server on it. Roboglot has never created one: it
   has run against the test suite's stand-ins alone. It asks before it creates, resumes or wakes
   one, and with no terminal and no `--yes` it refuses before anything exists. The endpoint is
   `authenticated`, which Hugging Face's own page says any Hugging Face account can reach, so the
-  lock is the server's own token, made by quackd and sent only as the endpoint's secret
-  `QUACKD_POLICY_TOKEN` and kept in `~/.quackd/endpoints.json`, readable by its owner alone where
+  lock is the server's own token, made by Roboglot and sent only as the endpoint's secret
+  `ROBOGLOT_POLICY_TOKEN` and kept in `~/.roboglot/endpoints.json`, readable by its owner alone where
   the OS allows. The account's Hugging Face token goes to huggingface.co and
   api.endpoints.huggingface.cloud, to manage the account's endpoints, and as the bearer to the one
   endpoint address that machine's `up` recorded, whose whole authority has to be an endpoint's,
   over https on port 443, and only once the API, asked with that token, has said the endpoint by
-  that name on the recorded account carries the tags `up` gave it, quackd's and one made from the
+  that name on the recorded account carries the tags `up` gave it, Roboglot's and one made from the
   record's token that no other endpoint carries, at that address. A run reads the record only from
-  a registry the shell or `--registry-dir` names: a `QUACKD_REGISTRY_DIR` that came from a
+  a registry the shell or `--registry-dir` names: a `ROBOGLOT_REGISTRY_DIR` that came from a
   project's `.env` is refused before anything is asked, since that `.env` could set an account
   token of its own beside a record of its own and choose which endpoint's policy drives the arm. A
   record outlives an endpoint deleted on huggingface.co, so whatever record is read, the token
@@ -457,20 +457,20 @@ Also in scope:
   account's token reaching any other host, an address the API has not confirmed, the endpoint, a
   record or the terminal, the server's token reaching a URL, a run's record or the terminal, an
   endpoint created, resumed or woken by `up` without a yes, or resumed, paused or deleted when
-  quackd did not start it, created `public` or with more than one replica, or one that never
+  Roboglot did not start it, created `public` or with more than one replica, or one that never
   scales to zero.
-- **The bridge daemon** (`bridge/open_duck/quackd_duck_bridge.py`), a TCP listener on port
+- **The bridge daemon** (`bridge/open_duck/roboglot_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
   `hmac.compare_digest`, but a token is only required if one is configured, and binding it
   wide only warns. Anything that lets an unauthenticated peer move the robot, defeat the
   300 ms deadman, exceed the clamps, or reach past the seven floats the protocol exposes is
   a security issue. Going limp is currently unreachable by construction, and it should stay
   that way: there is no method in the protocol that touches torque.
-- **The camera daemon** (`bridge/open_duck/quackd_duck_camd.py`), an HTTP server on port
+- **The camera daemon** (`bridge/open_duck/roboglot_duck_camd.py`), an HTTP server on port
   9872 that serves a live view of wherever the robot is, with **no authentication at all**.
   It binds loopback by default and warns when told otherwise. Reach it through an ssh
   tunnel. If you bind it wide, everyone on that network can watch your home.
-- **The ToddlerBot daemon** (`bridge/toddlerbot/quackd_toddlerbot_bridge.py`), a TCP
+- **The ToddlerBot daemon** (`bridge/toddlerbot/roboglot_toddlerbot_bridge.py`), a TCP
   listener on port 9873 that drives a 3 kg humanoid which cannot get up if it falls. It
   binds loopback by default, compares its token with `hmac.compare_digest`, and requires one
   only if one is configured. It is a larger surface than the Open Duck's because it owns the
@@ -479,17 +479,17 @@ Also in scope:
   reach past the methods the protocol exposes is a security issue. As with the Open Duck,
   going limp is unreachable by construction and must stay that way, and here it matters
   more: torque off on this body means the robot falls over.
-- **The MOSS bridge** (`bridge/moss/quackd_moss_bridge.py`), an HTTP server on port 9876 that
+- **The MOSS bridge** (`bridge/moss/roboglot_moss_bridge.py`), an HTTP server on port 9876 that
   drives a tracked rover, 4.2 kg by its maker's figure for the V0.3 build, and plays the cycle
   of its arm. It binds loopback by default, compares its token with `hmac.compare_digest`,
   refuses to start on a named token file that is missing or empty, and warns when it is bound
   wide with no token. On `moss-litter` its stop also ends the mission's own run of the maker's
-  arm script, with SIGTERM and then SIGKILL, and it signals no other process. Each quackd session
+  arm script, with SIGTERM and then SIGKILL, and it signals no other process. Each Roboglot session
   is named by an id its client draws at random, and its keepalive, end and halt touch only that
   session. Anything that lets an unauthenticated peer move the tracks or the arm, defeat its
   twist deadman or a session's halt, or reach past the routes its protocol exposes is a security
   issue, and so is any path that sends MOSS's own `/cmd/stack`, whose stop ends every dimOS run
-  and turns the arm's torque off. MOSS's own cockpit, on port 8904, is not quackd's code and has
+  and turns the arm's torque off. MOSS's own cockpit, on port 8904, is not Roboglot's code and has
   **no authentication at all**: it binds `0.0.0.0`, and anything that reaches it reads the rover
   and commands it. Reach both through an ssh tunnel.
 - **A web page in the operator's browser can reach a tunnel.** `127.0.0.1` is where the tunnel
@@ -511,16 +511,16 @@ Also in scope:
 
 Only the latest released minor version receives fixes.
 
-The artifacts quackd ships for a robot or a board carry their own versions and live on
-someone else's computer, so they can drift from the quackd that talks to them:
+The artifacts Roboglot ships for a robot or a board carry their own versions and live on
+someone else's computer, so they can drift from the Roboglot that talks to them:
 `BRIDGE_VERSION` and `CAMD_VERSION` on an Open Duck Mini's Raspberry Pi, `VERSION` in the
 ToddlerBot daemon on its Jetson, `HOSTD_VERSION` in the host daemon on a Jetson that
-`--host` names, `BRIDGE_VERSION` in quackd's bridge on a MOSS rover, and the AlohaMini host
-wrapper's `quackd_host_version` field. The two robot daemons' handshakes carry a protocol
+`--host` names, `BRIDGE_VERSION` in Roboglot's bridge on a MOSS rover, and the AlohaMini host
+wrapper's `roboglot_host_version` field. The two robot daemons' handshakes carry a protocol
 version and refuse a mismatch rather than guessing, and so do the MOSS bridge's `/hello` and the
 host daemon's `/hello` (the AlohaMini wrapper only stamps its version into every
-observation, and quackd does not read it yet), but a daemon you installed months ago is a
-daemon that has not had your fixes. `quackd doctor --robot <adapter>:<backend> --address ...`
+observation, and Roboglot does not read it yet), but a daemon you installed months ago is a
+daemon that has not had your fixes. `roboglot doctor --robot <adapter>:<backend> --address ...`
 connects and shows what the robot reports about itself, though none of the robot side's
-version strings is in that table yet. `quackd doctor --host` does show the host daemon's, in
+version strings is in that table yet. `roboglot doctor --host` does show the host daemon's, in
 its `daemon` row.

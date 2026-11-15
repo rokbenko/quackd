@@ -1,12 +1,12 @@
 # E171: Let go means put it down first
 
-**A hard kill left the arm holding itself up. `quackd robot release` then folded it to its rest pose and only let go once it was there.**
+**A hard kill left the arm holding itself up. `roboglot robot release` then folded it to its rest pose and only let go once it was there.**
 
 ![E171, filmed with an external camera](log/run.gif)
 
 Filmed with an external camera. The GIF plays at 10x speed.
 
-| Category | Goal met | The run ended with | Date | quackd |
+| Category | Goal met | The run ended with | Date | Roboglot |
 |---|---|---|---|---|
 | Safety | Yes | KILLED | 2026-11-11 | 0.34.0 |
 
@@ -15,30 +15,30 @@ The numbers and the trace below are copied from the run's own record.
 
 ## Why this matters
 
-**Why this example exists:** When a quackd run is killed, nothing is left to put the arm down. The SO-101's servos hold their last goal under torque until something cuts the torque or the power, so a raised arm stays raised. `quackd robot release` is the way back, and how it lets go matters: before 0.24.0 it took torque off wherever the arm stood, so a raised arm fell. Since 0.24.0 it folds the arm to its rest pose first and lets go there. This example leaves the arm raised on purpose, kills the run, and checks that the release puts the arm down.
+**Why this example exists:** When a roboglot run is killed, nothing is left to put the arm down. The SO-101's servos hold their last goal under torque until something cuts the torque or the power, so a raised arm stays raised. `roboglot robot release` is the way back, and how it lets go matters: before 0.24.0 it took torque off wherever the arm stood, so a raised arm fell. Since 0.24.0 it folds the arm to its rest pose first and lets go there. This example leaves the arm raised on purpose, kills the run, and checks that the release puts the arm down.
 
 **Why this result is important:** The release put the arm down rather than dropping it. It warned that connecting takes torque off every motor for a moment, asked first, read the arm within a degree of the pose it had been left holding, counted 3 s for hands to come away, folded the arm to its rest pose and only then let go, checking that every joint read torque off with the arm still at rest. For anyone whose run was killed with the arm up, that is the way back: support the arm while the release connects, then let it fold the arm down.
 
 ## The goal
 
-Show `quackd robot release` on an arm left holding itself up after its run was killed. Since 0.24.0 the release folds the arm to its rest pose and lets go there, where 0.14.0's release took torque off wherever the arm stood and let it fall. It is the first of the nine bench steps 0.24.0 left for a real arm.
+Show `roboglot robot release` on an arm left holding itself up after its run was killed. Since 0.24.0 the release folds the arm to its rest pose and lets go there, where 0.14.0's release took torque off wherever the arm stood and let it fall. It is the first of the nine bench steps 0.24.0 left for a real arm.
 
-**What we expected:** The scripted pilot finishes at once, and the run waits up to two minutes, holding the arm, for a person to press Enter and take whatever is in the gripper, after which it folds the arm itself. `taskkill` ends the run during that wait, nothing runs any more, and the arm keeps holding. The release then warns that connecting takes torque off every motor for a moment, asks, connects, prints the joints, says `folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`, folds, closes its gripper, and ends with `✓ torque reads off on every joint of arm-01` and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`. The card set `QUACKD_LEROBOT_MAX_STEP_DEG` to 1 for this, a fold at 10 degrees a second, and asked whether it folds and whether it then rests there limp.
+**What we expected:** The scripted pilot finishes at once, and the run waits up to two minutes, holding the arm, for a person to press Enter and take whatever is in the gripper, after which it folds the arm itself. `taskkill` ends the run during that wait, nothing runs any more, and the arm keeps holding. The release then warns that connecting takes torque off every motor for a moment, asks, connects, prints the joints, says `folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`, folds, closes its gripper, and ends with `✓ torque reads off on every joint of arm-01` and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it`. The card set `ROBOGLOT_LEROBOT_MAX_STEP_DEG` to 1 for this, a fold at 10 degrees a second, and asked whether it folds and whether it then rests there limp.
 
 ## What the run showed
 
-* With no LLM and no key, `--llm fake` flew the task's scripted pilot. quackd connected in 5.92 s, found the arm already at its rest pose, took its torque off and handed it over: `the arm is yours`.
-* The arm was lifted by hand into a raised pose and Enter pressed, and quackd held it there, `holding the pose you set, you can let go`, at shoulder_pan -8, shoulder_lift -14, elbow_flex 23, wrist_flex 49, wrist_roll 0 and gripper 1.
+* With no LLM and no key, `--llm fake` flew the task's scripted pilot. Roboglot connected in 5.92 s, found the arm already at its rest pose, took its torque off and handed it over: `the arm is yours`.
+* The arm was lifted by hand into a raised pose and Enter pressed, and Roboglot held it there, `holding the pose you set, you can let go`, at shoulder_pan -8, shoulder_lift -14, elbow_flex 23, wrist_flex 49, wrist_roll 0 and gripper 1.
 * The scripted pilot's three calls, `assess_task`, `report_state` and `declare_success`, were over about 0.2 s after the Enter, and the run began its wait to hand the arm back: `the run is over and the arm is holding where it ended`.
-* During that wait `taskkill /F /IM quackd.exe`, from a second terminal, ended two quackd.exe processes. Nothing ran after it: no fold and no `summary.json`, and the run's terminal stops at the wait's message.
-* The arm kept holding under torque. When `quackd robot release arm-01` connected, it read shoulder_pan -8.4, shoulder_lift -13.3, elbow_flex 23.4, wrist_flex 48.8, wrist_roll 0.5 and gripper 1.0, within a degree of the pose it had been set to hold.
+* During that wait `taskkill /F /IM roboglot.exe`, from a second terminal, ended two roboglot.exe processes. Nothing ran after it: no fold and no `summary.json`, and the run's terminal stops at the wait's message.
+* The arm kept holding under torque. When `roboglot robot release arm-01` connected, it read shoulder_pan -8.4, shoulder_lift -13.3, elbow_flex 23.4, wrist_flex 48.8, wrist_roll 0.5 and gripper 1.0, within a degree of the pose it had been set to hold.
 * First the release warned that `connecting takes torque off every motor for a moment`, saying to support the arm while it connects, and asked `fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]`. Once connected it printed the joints and counted down: `folding arm-01 to its rest pose in 3 s: take your hands away from it now. Ctrl-C or q stops it before it moves`.
-* It folded the arm to its rest pose. On the way LeRobot printed 27 warnings that it had clamped a goal, because quackd has it hold each send to 5 degrees from where the arm stands. Then `✓ torque reads off on every joint of arm-01`, and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and where it still reads`.
+* It folded the arm to its rest pose. On the way LeRobot printed 27 warnings that it had clamped a goal, because Roboglot has it hold each send to 5 degrees from where the arm stands. Then `✓ torque reads off on every joint of arm-01`, and `the arm is limp at its rest pose, where it was folded and let go of because you asked for it, and where it still reads`.
 * In the video the arm comes down to the folded pose it started the take in, and is still there when the video ends.
 
 ## What the run did not show
 
-* It did not run at the card's slow step. The card sets `QUACKD_LEROBOT_MAX_STEP_DEG` to 1 for this, a fold at 10 degrees a second with each goal 1 degree ahead. It was not set: the run's record gives the cap as 5 degrees per send, quackd's default and a ceiling of 50 degrees a second, and LeRobot's clamp warnings in the release show goals 5 degrees ahead.
+* It did not run at the card's slow step. The card sets `ROBOGLOT_LEROBOT_MAX_STEP_DEG` to 1 for this, a fold at 10 degrees a second with each goal 1 degree ahead. It was not set: the run's record gives the cap as 5 degrees per send, Roboglot's default and a ceiling of 50 degrees a second, and LeRobot's clamp warnings in the release show goals 5 degrees ahead.
 * The card asks for a low raised pose, and this one was not low: shoulder_lift stood at -14, against -100.8 at the rest pose, so the fold had nearly 87 degrees to come down.
 * The card asks for the arm to be supported while the release connects, and nobody did: in the video both hands stay at the laptop, and the arm stays up until the fold.
 * It does not show the gripper closing: the jaws were already all but shut, at 1 of 100, when the release began.
@@ -46,7 +46,7 @@ Show `quackd robot release` on an arm left holding itself up after its run was k
 * It does not show how long the arm would hold after a kill: the release came within the same take.
 * The run's numbers stop at the kill. Its total time is not recorded, and the run itself moved nothing, so it has no first motion: the arm was lifted by hand, and the fold was the release's.
 * No LLM read anything. The table's three LLM calls are the scripted pilot's turns, and its tokens are that pilot's own estimate, a quarter of the characters in the system prompt and the observation it was shown, with 16 out each turn. Nothing was billed.
-* It does not show which quackd.exe processes the taskkill ended besides the run's own. It ends every one on the machine, and the card warns that an editor's MCP server can be among them.
+* It does not show which roboglot.exe processes the taskkill ended besides the run's own. It ends every one on the machine, and the card warns that an editor's MCP server can be among them.
 * The GIF plays at 10x, so the countdown and the fold look far quicker than they were.
 
 ## How the run ended
@@ -56,23 +56,23 @@ reason. What it did record up to then is in the numbers and the trace.
 
 ## The exact command
 
-The following command was run with quackd 0.34.0:
+The following command was run with Roboglot 0.34.0:
 
 ```text
-quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
-taskkill /F /IM quackd.exe
-quackd robot release arm-01
+roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+taskkill /F /IM roboglot.exe
+roboglot robot release arm-01
 ```
 
 ## The numbers
 
 | | |
 |---|---|
-| quackd version | 0.34.0 |
+| roboglot version | 0.34.0 |
 | Started | 2026-11-11 10:37:18 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `fake:scripted:lerobot-lookout` |
-| Task file | `lerobot-lookout`, which ships with quackd |
+| Task file | `lerobot-lookout`, which ships with Roboglot |
 | Steps | 1 |
 | LLM calls | 3 |
 | Total time | not recorded |
@@ -92,11 +92,11 @@ This run used no camera.
 
 This runs the same task file with no arm attached, on `lerobot:mock`, an arm that lives in memory.
 It shows the rules a run is held to and not the physics. Run it from a checkout of this repository
-with quackd's `lerobot` extra.
-Its pilot is a script that ships with quackd in place of an LLM, so it needs no key and costs nothing.
+with Roboglot's `lerobot` extra.
+Its pilot is a script that ships with Roboglot in place of an LLM, so it needs no key and costs nothing.
 
 ```bash
-quackd run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
+roboglot run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 ```
 
 ## Full terminal trace
@@ -105,8 +105,8 @@ quackd run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 <summary>Show the full terminal trace (321 lines)</summary>
 
 ```text
-$ quackd run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
-quackd 0.34.0, started 2026-11-11T10:37:17Z, cwd D:\Development\lerobot-test\.venv
+$ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
+Roboglot 0.34.0, started 2026-11-11T10:37:17Z, cwd D:\Development\lerobot-test\.venv
 
 ╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  fake (scripted:lerobot-lookout)                                                                                                                │
@@ -138,7 +138,7 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - `stop`: Stop moving immediately (zero velocity). Always allowed.
 
    ## Your body: what it can and cannot do
-   Each number says how sure quackd is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
+   Each number says how sure Roboglot is of it and who says so (official: the maker or a paper says so; estimate: one vendor, a community number or a reading off a photo; measured: somebody measured it and said how).
    - Height: 0.53 m (estimate: one vendor's listing; reaching straight up)
    - Actuated joints: 6 (official: the LeRobot SO-101 docs; five joints and a gripper)
    - Payload: 0.5 kg (estimate: one vendor's listing)
@@ -146,8 +146,8 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - Manipulator: one arm with a gripper.
    - Not published: mass. Where a task turns on it, say uncertain and name it rather than guessing; do not decline on it alone.
    - Mains powered, so nothing runs down. It does not move: no base and no legs.
-   - quackd clamps you to gripper 0 to 100.
-   - Each joint's travel in degrees, read from its own calibration, and the only goals quackd will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
+   - Roboglot clamps you to gripper 0 to 100.
+   - Each joint's travel in degrees, read from its own calibration, and the only goals Roboglot will send: shoulder_pan -119.6 to 119.6, shoulder_lift -100.7 to 100.7, elbow_flex -96.7 to 96.7, wrist_flex -101.4 to 101.4, wrist_roll -180 to 180, gripper 0 to 100. A joint can read past its travel when it was folded or placed there with torque off, which is where a rest pose usually is; goals are still limited to the travel.
    - Senses: joint_state.
    Whatever the task says, this body cannot:
    - go anywhere: it is bolted to a table and has no base
@@ -157,12 +157,12 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    - know its own mass: vendor listings disagree by a factor of three
    Worth knowing:
    - How wide the gripper opens and how hard it grips are not published
-   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which quackd reads off the bus because LeRobot does not
+   - No sensors beyond the servo positions unless a camera is configured, and the servo temperature, which Roboglot reads off the bus because LeRobot does not
    - Vendor listings give the mass as anything from 0.8 to 2.5 kg and nobody official publishes one, so it is listed as not published rather than picked from a hat
-   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something quackd can ask
+   - There are 7.4 V and 12 V builds of the same arm, with different stall torque and different supplies. Which one is on the desk is not something Roboglot can ask
 
    ## Where this run starts
-   A person placed this body by hand before your first turn, and quackd is holding it exactly
+   A person placed this body by hand before your first turn, and Roboglot is holding it exactly
    where they left it. This run does **not** start from the recorded rest pose, so do not assume
    a folded arm or a known shape: read `report_state` and work from the joint angles it gives you. They
    are where somebody decided the work should begin.
@@ -171,11 +171,11 @@ system prompt, 7232 chars, 100 lines (also in transcript.jsonl as run_start): �
    reported as held, and nothing should be: this task cannot work the gripper, so whatever is between the jaws is held at the squeeze the person left and you cannot tighten it.
 
    When the run ends, the arm is handed back the same way: it holds where you left it, the person
-   is asked to take whatever is in the gripper, and only then does quackd fold the arm up.
+   is asked to take whatever is in the gripper, and only then does Roboglot fold the arm up.
 
    ## What is a stand-in on this robot
    The robot reported these itself, and they are in `extras.assumptions` in every observation.
-   Each is something quackd stands in for or assumes, not something this robot does. Do not
+   Each is something Roboglot stands in for or assumes, not something this robot does. Do not
    report one as the robot's own work, and do not read a success from one as evidence that the
    real skill works.
    - GRIPPER_OPEN_VALUE
@@ -258,11 +258,11 @@ step 1/4 · LLM calls 2/12, 0.0/3 min ──────────────
 the run is over and the arm is holding where it ended. Take hold of whatever is in the gripper and press Enter: the gripper opens all the way, and 3 s later
 the arm folds up and the gripper closes again, so take your hands away as soon as it is open. Leave it and the arm folds up with the gripper shut
 
-(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM quackd.exe
-SUCCESS: The process "quackd.exe" with PID 40448 has been terminated.
-SUCCESS: The process "quackd.exe" with PID 9212 has been terminated.
+(lerobot-test) PS D:\Development\lerobot-test\.venv> taskkill /F /IM roboglot.exe
+SUCCESS: The process "roboglot.exe" with PID 40448 has been terminated.
+SUCCESS: The process "roboglot.exe" with PID 9212 has been terminated.
 (lerobot-test) PS D:\Development\lerobot-test\.venv>
-(lerobot-test) PS D:\Development\lerobot-test\.venv> quackd robot release arm-01
+(lerobot-test) PS D:\Development\lerobot-test\.venv> roboglot robot release arm-01
 ⚠ connecting takes torque off every motor for a moment, because LeRobot configures them with it off, and the arm then folds to its rest pose, closes its
 gripper and is let go of there: support it while it connects, then take your hands away when it says so, before it folds
 fold arm-01 to its rest pose, close its gripper and release torque there? [y/N]: y

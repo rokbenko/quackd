@@ -1,0 +1,57 @@
+# EXPERIMENTAL: team mode is simulator only in v0.3. The coordinator, not an LLM,
+# drives each duck. The planner (one LLM call at most, none with --llm fake) may
+# tune the task parameters. See docs/guides/team.md.
+---
+glot: 0
+name: team-kick
+description: Three ducks split the search for a ball. The closest one kicks it.
+author: rok
+verbs:
+  allow: [search_scan, walk_to, walk, kick, quack, get_frame, stop]
+  confirm: []
+budgets:
+  max_steps: 60
+  max_minutes: 10
+  max_llm_calls: 5
+success:
+  - Ball displaced more than 0.3 m, judged by the coordinator from sim telemetry.
+abort_when:
+  - Battery below 15%
+  - Same verb fails 5 times in a row
+persona: A small, well-drilled football team. Quack when you spot the ball.
+providers: [fake, anthropic, openai, gemini, grok]
+team:
+  members: 3
+  allocation:
+    method: auction
+    bid: ball_distance
+    tie_break: duck_id
+    hysteresis_pct: 20
+    claim_lease_s: 6
+  safety:
+    min_separation_m: 0.4
+    one_claimant: true
+    per_duck_heartbeat_s: 1.0
+  search:
+    partition: heading
+    restart_s: 8
+---
+
+# Task
+
+Three ducks, one ball. Split the arena, find it, and let the closest duck kick it until
+it has moved at least 0.3 m.
+
+## How this runs (honesty section)
+
+The strategy below is executed by the team coordinator, deterministically. An LLM is
+consulted at most once, before anything moves, to tune parameters like the approach
+distance. Each duck still enforces this file's allowlist and budgets on itself.
+
+## Strategy
+
+1. Each duck owns a heading sector and runs `search_scan` inside it.
+2. A duck that sees the ball quacks and reports its estimated distance on the bus.
+3. The auction gives the claim to the lowest bid. The claimant runs `walk_to` then `kick`.
+4. Everyone else yields and keeps clear of the claimant.
+5. If the kick falls short, the team re-searches the full circle and re-auctions.

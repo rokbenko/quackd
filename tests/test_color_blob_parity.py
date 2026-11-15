@@ -1,7 +1,7 @@
 """The default detector, held to OpenCV. It used to ask OpenCV for all of this, and what it asks
 numpy for now has to give the same answers to the last bit, because a detection's area sets its
 distance and a run's next move. OpenCV is here as the oracle, in `dev` and imported by nothing in
-a wheel quackd ships.
+a wheel Roboglot ships.
 
 OpenCV gives one answer on x86 and two on Apple Silicon and Linux on Arm, so the conversion is held
 to the x86 one, which numpy's integers give on any of them, and on Arm what the difference can reach
@@ -24,11 +24,11 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from quackd.perception.base import Detection
-from quackd.perception.blobs import Candidates, biggest_blobs, rgb_to_hsv
-from quackd.perception.color_blob import DEFAULT_TARGETS, ColorBlobDetector, HSVRange, Target
-from quackd.sim2d.render import render_duckcam
-from quackd.sim2d.world import World
+from roboglot.perception.base import Detection
+from roboglot.perception.blobs import Candidates, biggest_blobs, rgb_to_hsv
+from roboglot.perception.color_blob import DEFAULT_TARGETS, ColorBlobDetector, HSVRange, Target
+from roboglot.sim2d.render import render_duckcam
+from roboglot.sim2d.world import World
 
 REPO = Path(__file__).resolve().parents[1]
 ON_ARM = platform.machine().lower() in ("arm64", "aarch64")
@@ -72,13 +72,13 @@ def _within(hsv: np.ndarray, target: Target) -> np.ndarray:
 
 @pytest.mark.skipif(not ON_ARM, reason="OpenCV gives one answer at any width off Arm")
 @pytest.mark.parametrize("width", [256, 1, 17])
-def test_opencvs_rounding_on_arm_moves_no_pixel_of_any_target_quackd_ships(width: int) -> None:
+def test_opencvs_rounding_on_arm_moves_no_pixel_of_any_target_roboglot_ships(width: int) -> None:
     """On Apple Silicon and Linux on Arm, OpenCV does not read a colour as it does on x86, and not
     always the same way twice: its NEON code reads 6,582 colours a saturation step lower, and the
     code for what is left of a row, the last columns of a frame no multiple of 8 wide, reads 123,444
     a step either way. numpy keeps the x86 answer everywhere. So what has to hold here is what that
     can reach, which is nothing: hue and value agree, saturation is a step off at most, and no
-    colour crosses the threshold of a target quackd ships. A mask is a pixel's colour and nothing
+    colour crosses the threshold of a target Roboglot ships. A mask is a pixel's colour and nothing
     else, so the masks are the same, and what is made from a mask is held to OpenCV further down."""
     moved = 0
     for red in range(256):
@@ -387,11 +387,11 @@ def _imports(tree: ast.AST) -> list[str]:
     return found
 
 
-def test_nothing_quackd_ships_to_a_laptop_imports_opencv() -> None:
+def test_nothing_roboglot_ships_to_a_laptop_imports_opencv() -> None:
     """The daemons under `bridge/` run on a robot or a board, on that machine's own OpenCV, and a
     robot's SDK may bring its own. Nothing else asks for it, because the default install has none:
     the import would pass in this suite, where `dev` carries it, and fail for everybody else."""
-    shipped = [*(REPO / "quackd").rglob("*.py"), *(REPO / "adapters").rglob("src/**/*.py")]
+    shipped = [*(REPO / "roboglot").rglob("*.py"), *(REPO / "adapters").rglob("src/**/*.py")]
     assert len(shipped) > 200
     offenders = [
         str(path.relative_to(REPO))

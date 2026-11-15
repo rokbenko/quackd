@@ -3,33 +3,33 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd-huebot"
+name = "roboglot-huebot"
 dynamic = ["version"]
-description = "The Huebot adapter for quackd. Install it as quackd[huebot]."
+description = "The Huebot adapter for Roboglot. Install it as roboglot[huebot]."
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.11"
 authors = [{ name = "Rok Benko" }]
 # A body of the Microduck's family (ADR-0075): its verbs and its transport are that package's, so
 # both move with this one, and scripts/set_version.py moves both windows.
-dependencies = ["quackd>=0.34.0,<0.35", "quackd-microduck>=0.34.0,<0.35"]
+dependencies = ["roboglot>=0.34.0,<0.35", "roboglot-microduck>=0.34.0,<0.35"]
 
-[project.entry-points."quackd.adapters"]
-huebot = "quackd_huebot"
+[project.entry-points."roboglot.adapters"]
+huebot = "roboglot_huebot"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
 Documentation = "https://github.com/rokbenko/quackd/blob/main/docs/adapters/huebot/README.md"
 
 [tool.hatch.version]
-path = "src/quackd_huebot/__init__.py"
+path = "src/roboglot_huebot/__init__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/quackd_huebot"]
+packages = ["src/roboglot_huebot"]
 
 [tool.hatch.build.targets.sdist]
 include = ["src", "README.md", "pyproject.toml"]
 
 [tool.uv.sources]
-quackd = { workspace = true }
-quackd-microduck = { workspace = true }
+roboglot = { workspace = true }
+roboglot-microduck = { workspace = true }

@@ -3,9 +3,9 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "quackd"
+name = "roboglot"
 dynamic = ["version", "readme"]
-description = "One CLI for all your robots. Connect them, command them, and let them work together, each with an LLM for a brain. Microduck, Huebot, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot, MOSS, ROS bases and industrial arms on ROS 2."
+description = "The communication layer between people and robots, and between robots. Talk to any robot in your own words, with an LLM for its brain. Robots that have never met check each other's passports and share the work. Microduck, Huebot, Open Duck Mini, LeRobot arms, XLeRobot carts, AlohaMini, ToddlerBot, MOSS, ROS bases and industrial arms on ROS 2."
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 requires-python = ">=3.11"
@@ -15,6 +15,7 @@ keywords = [
   "rosarm", "industrial-arm", "ur5e", "kuka", "motoman",
   # "robot-fleet" is a PyPI search term people type, and the one place the retired word stays on purpose.
   "robotics", "embodied-ai", "physical-ai", "llm-agents", "multi-robot", "robot-fleet",
+  "robot-communication", "human-robot-interaction", "robot-to-robot", "robot-passport",
   "mcp", "model-context-protocol", "mujoco",
   "claude", "openai", "gemini", "grok", "mistral", "deepseek", "cohere", "qwen", "kimi", "glm", "meta",
   "openrouter",
@@ -31,7 +32,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-# The default install must stay light so `uvx quackd` is fast.
+# The default install must stay light so `uvx roboglot` is fast.
 # Provider SDKs, YOLO and the live window are extras.
 dependencies = [
   "typer>=0.12",
@@ -41,19 +42,19 @@ dependencies = [
   "numpy>=1.26",
   # 13.0.0 is the first release with the fixes for the advisories CHANGELOG.md's 0.31.3 names,
   # in the decoders a camera's picture reaches, and LeRobot 0.7.0 allows it, so no install of
-  # quackd takes an older one any more.
+  # Roboglot takes an older one any more.
   "pillow>=13",
-  # `quackd ui`'s QR code for a phone (quackd/webui/launch.py), and imported nowhere else: pure
+  # `roboglot ui`'s QR code for a phone (roboglot/webui/launch.py), and imported nowhere else: pure
   # Python, a 77 KB wheel and about 300 KB on disk, with nothing under it. Here rather than in the
   # `ui` extra so that the code survives an upgrade that keeps Streamlit and forgets the extra.
   "segno>=1.6",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
-  # Robot Passport signs and verifies with Ed25519 (quackd/passport/). mcp already brings it
+  # Robot Passport signs and verifies with Ed25519 (roboglot/passport/). mcp already brings it
   # in through pyjwt[crypto], and a module that imports it says so here rather than leaning
   # on somebody else's dependency staying put.
   "cryptography>=42",
-  # `quackd drive`'s keyboard (quackd/drive/terminal.py), and imported nowhere else. 3.0.42 is
+  # `roboglot drive`'s keyboard (roboglot/drive/terminal.py), and imported nowhere else. 3.0.42 is
   # the release that fixed `patch_stdout`'s line wrapping on Windows, which drive keeps Rich's
   # lines above the prompt with; its pipe input became a context manager earlier, in 3.0.29.
   "prompt-toolkit>=3.0.42",
@@ -68,7 +69,7 @@ anthropic = ["anthropic>=1.0,<2"]
 openai = ["openai>=1.66,<4"]
 gemini = ["google-genai>=1.0,<3"]
 # Nine vendors, one wheel. Each speaks OpenAI's API at its own address, so the extra exists
-# to name the install a reader of `quackd doctor` or a ProviderNotInstalled actually wants,
+# to name the install a reader of `roboglot doctor` or a ProviderNotInstalled actually wants,
 # not because there is a second package to fetch (see EXTRA_FOR in agent/providers/factory.py).
 grok = ["openai>=1.66,<4"]
 mistral = ["openai>=1.66,<4"]
@@ -80,8 +81,8 @@ glm = ["openai>=1.66,<4"]
 meta = ["openai>=1.66,<4"]
 openrouter = ["openai>=1.66,<4"]
 # The System One protocol client: the optional discrete stepper in front of the pilot LLM
-# (`quackd run --decision-llm`, `quackd/agent/decision/`, docs/guides/decision-llms/README.md).
-# Every decision LLM quackd knows that is a System One server is reached by repointing its base
+# (`roboglot run --decision-llm`, `roboglot/agent/decision/`, docs/guides/decision-llms/README.md).
+# Every decision LLM Roboglot knows that is a System One server is reached by repointing its base
 # URL, so this one wheel covers Jev, Kev, OpenJev, OpenDecision and whatever else answers
 # at `--decision-url`. That is why the extra is named for the protocol and not for a vendor.
 # `--decision-llm openai` speaks OpenAI's own format instead, through the `openai` extra above.
@@ -89,7 +90,7 @@ openrouter = ["openai>=1.66,<4"]
 # generates nothing, so it cannot pilot a robot and does not belong in `--llm`. Nothing here
 # is imported unless a run names a decision LLM.
 # Pinned under 1.0 the way every vendor SDK here is: the format is young, and
-# `quackd/agent/decision/systemone.py` reads its answers tolerantly for that reason. A 0.x
+# `roboglot/agent/decision/systemone.py` reads its answers tolerantly for that reason. A 0.x
 # minor is allowed to break it.
 decision = ["typesafe-sdk>=0.7,<1"]
 # The one decision LLM that runs in this process rather than behind a server: no port, no key,
@@ -106,34 +107,34 @@ live = ["pygame>=2.5"]
 # onnxruntime is what runs alpha_walking and alpha_stand, the walk Pollen trained before the
 # velstand a stock robot runs; the Microduck's meshes and those policies are fetched at run time
 # and never shipped here (docs/reference/licenses.md).
-mujoco = ["quackd-microduck[mujoco]>=0.34.0,<0.35"]
-microduck = ["quackd-microduck>=0.34.0,<0.35"]
-# Every robot quackd publishes, each with the SDK its real backend needs. The honest "all":
+mujoco = ["roboglot-microduck[mujoco]>=0.34.0,<0.35"]
+microduck = ["roboglot-microduck>=0.34.0,<0.35"]
+# Every robot Roboglot publishes, each with the SDK its real backend needs. The honest "all":
 # it pulls torch on Python 3.12 because the arm does.
 robots = [
-  "quackd-microduck>=0.34.0,<0.35",
-  "quackd-lerobot[sdk]>=0.34.0,<0.35",
-  "quackd-rosbridge[sdk]>=0.34.0,<0.35",
-  "quackd-open-duck>=0.34.0,<0.35",
-  "quackd-xlerobot>=0.34.0,<0.35",
-  "quackd-alohamini>=0.34.0,<0.35",
-  "quackd-toddlerbot>=0.34.0,<0.35",
-  "quackd-huebot>=0.34.0,<0.35",
-  "quackd-moss>=0.34.0,<0.35",
-  "quackd-rosarm[sdk]>=0.34.0,<0.35",
+  "roboglot-microduck>=0.34.0,<0.35",
+  "roboglot-lerobot[sdk]>=0.34.0,<0.35",
+  "roboglot-rosbridge[sdk]>=0.34.0,<0.35",
+  "roboglot-open-duck>=0.34.0,<0.35",
+  "roboglot-xlerobot>=0.34.0,<0.35",
+  "roboglot-alohamini>=0.34.0,<0.35",
+  "roboglot-toddlerbot>=0.34.0,<0.35",
+  "roboglot-huebot>=0.34.0,<0.35",
+  "roboglot-moss>=0.34.0,<0.35",
+  "roboglot-rosarm[sdk]>=0.34.0,<0.35",
 ]
-# LAN: zeroconf discovery and the MQTT flock bus (docs/guides/lan.md). Never imported by default.
+# LAN: zeroconf discovery and the MQTT team bus (docs/guides/lan.md). Never imported by default.
 lan = ["zeroconf>=0.132", "paho-mqtt>=2,<3"]
-# The page `quackd ui` serves, in a browser or on a phone (docs/guides/web-ui.md). Streamlit
+# The page `roboglot ui` serves, in a browser or on a phone (docs/guides/web-ui.md). Streamlit
 # brings pyarrow and pandas, so it is never core. 1.61 is the floor because the page polls its
 # runs through `st.fragment(run_every=...)`: 1.59 and 1.61 each fixed a TypeError it raised, and
 # 1.60 stopped it rerunning twice a tick. CI tests the version uv.lock pins.
 ui = ["streamlit>=1.61,<2"]
-# Robot Passport on the robot's own computer (`quackd onboard`): zeroconf for the LAN half on
+# Robot Passport on the robot's own computer (`roboglot onboard`): zeroconf for the LAN half on
 # every platform, an OpenAI-compatible client for the robot's brain, and bleak and dbus-fast for
 # the Bluetooth half, which is BlueZ and so Linux only. On Windows and macOS the last two are
-# left out by their markers, and `quackd onboard serve --board sim` needs neither. Kept out of
-# `dev` and `all`: a laptop that only drives robots never imports any of it (quackd/radio/).
+# left out by their markers, and `roboglot onboard serve --board sim` needs neither. Kept out of
+# `dev` and `all`: a laptop that only drives robots never imports any of it (roboglot/radio/).
 onboard = [
   "zeroconf>=0.132",
   "openai>=1.66,<4",
@@ -145,42 +146,42 @@ onboard = [
 # pyserial, which `lerobot-find-port` lists the ports with, neither of them a base dependency of
 # lerobot). Without it `import lerobot` succeeds and opening the arm's port fails, so it belongs
 # in the extra rather than in a paragraph somebody has to read.
-lerobot = ["quackd-lerobot[sdk]>=0.34.0,<0.35"]
+lerobot = ["roboglot-lerobot[sdk]>=0.34.0,<0.35"]
 # The arm's simulator (`--robot lerobot:mujoco`): the real backend's code over a physics model
 # of the SO-101, with MuJoCo and no LeRobot, so no torch and no 3.12 floor. The model is
 # fetched at run time and never shipped (docs/reference/licenses.md).
-lerobot-sim = ["quackd-lerobot[sim]>=0.34.0,<0.35"]
-# The arm's policy server (`quackd policy serve`), which loads LeRobot checkpoints in a process
+lerobot-sim = ["roboglot-lerobot[sim]>=0.34.0,<0.35"]
+# The arm's policy server (`roboglot policy serve`), which loads LeRobot checkpoints in a process
 # of its own: LeRobot, torch and transformers on Python 3.12, and nothing the arm's own process
 # imports. Install it where the policy runs, on the laptop beside the arm or on a rented GPU.
-lerobot-vla = ["quackd-lerobot[vla]>=0.34.0,<0.35"]
-rosbridge = ["quackd-rosbridge[sdk]>=0.34.0,<0.35"]
+lerobot-vla = ["roboglot-lerobot[vla]>=0.34.0,<0.35"]
+rosbridge = ["roboglot-rosbridge[sdk]>=0.34.0,<0.35"]
 # An industrial arm on ROS 2 through rosbridge: a family over the rosbridge package's binding, so
 # it brings that package and, through its extra, the same roslibpy. Rehearsed only: its ws backend
 # refuses every arm until an owner names a date for its first hardware run (ADR-0076).
-rosarm = ["quackd-rosarm[sdk]>=0.34.0,<0.35"]
+rosarm = ["roboglot-rosarm[sdk]>=0.34.0,<0.35"]
 # XLeRobot is not an installable package: its own install is copying files into a lerobot
-# tree. So quackd speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
+# tree. So Roboglot speaks its ZeroMQ host protocol instead and needs only pyzmq, which keeps
 # the 3.11 floor and works on Windows (ADR-0026, docs/adapters/xlerobot/README.md).
-xlerobot = ["quackd-xlerobot>=0.34.0,<0.35"]
+xlerobot = ["roboglot-xlerobot>=0.34.0,<0.35"]
 # AlohaMini is a fork of LeRobot that calls itself lerobot and is not published, so it
-# cannot be a dependency at all. quackd speaks its ZeroMQ host protocol instead.
-alohamini = ["quackd-alohamini>=0.34.0,<0.35"]
-open_duck = ["quackd-open-duck>=0.34.0,<0.35"]
-toddlerbot = ["quackd-toddlerbot>=0.34.0,<0.35"]
+# cannot be a dependency at all. Roboglot speaks its ZeroMQ host protocol instead.
+alohamini = ["roboglot-alohamini>=0.34.0,<0.35"]
+open_duck = ["roboglot-open-duck>=0.34.0,<0.35"]
+toddlerbot = ["roboglot-toddlerbot>=0.34.0,<0.35"]
 # Huebot's own API is closed. Its maker is writing a shim for the robot that is to answer the
-# Microduck's JSON-RPC, which quackd speaks with the standard library, so there is no robot
+# Microduck's JSON-RPC, which Roboglot speaks with the standard library, so there is no robot
 # library to pull.
-huebot = ["quackd-huebot>=0.34.0,<0.35"]
-# MOSS runs dimOS on the rover, which quackd does not import. It speaks MOSS's own cockpit, and
-# a bridge quackd ships for the rover, over HTTP with the standard library, so there is no robot
+huebot = ["roboglot-huebot>=0.34.0,<0.35"]
+# MOSS runs dimOS on the rover, which Roboglot does not import. It speaks MOSS's own cockpit, and
+# a bridge Roboglot ships for the rover, over HTTP with the standard library, so there is no robot
 # library to pull.
-moss = ["quackd-moss>=0.34.0,<0.35"]
+moss = ["roboglot-moss>=0.34.0,<0.35"]
 # The Microduck's WebRTC camera: mediad's H.264 video track, which takes being a WebRTC peer.
 # mediad also serves one PNG per GET /frame, which needs nothing installed, so this is for the
 # stream. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not pulling the
 # track off a real Microduck, and never imported unless --camera-url says webrtc://.
-microduck-camera = ["quackd-microduck[camera]>=0.34.0,<0.35"]
+microduck-camera = ["roboglot-microduck[camera]>=0.34.0,<0.35"]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py
   # can import the metadata hook that rewrites the README for PyPI.
@@ -194,29 +195,29 @@ dev = [
   "mypy>=1.10",
   "types-PyYAML",
   # every adapter, without the SDKs: the suite drives each one against fakes and a mock
-  "quackd-microduck",
-  "quackd-lerobot",
-  "quackd-rosbridge",
-  "quackd-open-duck",
-  "quackd-xlerobot",
-  "quackd-alohamini",
-  "quackd-toddlerbot",
-  "quackd-huebot",
-  "quackd-moss",
-  "quackd-rosarm",
+  "roboglot-microduck",
+  "roboglot-lerobot",
+  "roboglot-rosbridge",
+  "roboglot-open-duck",
+  "roboglot-xlerobot",
+  "roboglot-alohamini",
+  "roboglot-toddlerbot",
+  "roboglot-huebot",
+  "roboglot-moss",
+  "roboglot-rosarm",
   # The one robot SDK dev carries, because it is the only way the xlerobot wire protocol is
-  # exercised for real: tests/test_xlerobot_host.py runs quackd's client against a fake host
+  # exercised for real: tests/test_xlerobot_host.py runs Roboglot's client against a fake host
   # over loopback sockets. It is a small pure wheel on every platform CI runs, unlike torch
   # or onnxruntime, and docs/adapters/status.md claims that test, so CI has to be able to
   # run it.
   "pyzmq>=26",
-  # The oracle quackd/perception/blobs.py is held to (tests/test_color_blob_parity.py), and what
-  # reads the QR codes back (tests/test_webui_launch.py). Nothing in a quackd wheel imports it.
+  # The oracle roboglot/perception/blobs.py is held to (tests/test_color_blob_parity.py), and what
+  # reads the QR codes back (tests/test_webui_launch.py). Nothing in a Roboglot wheel imports it.
   "opencv-python-headless>=4.9",
 ]
 
 [project.scripts]
-quackd = "quackd.cli:main"
+roboglot = "roboglot.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/rokbenko/quackd"
@@ -225,24 +226,24 @@ Issues = "https://github.com/rokbenko/quackd/issues"
 Changelog = "https://github.com/rokbenko/quackd/blob/main/CHANGELOG.md"
 
 # One repository, several distributions. The adapters are their own packages so that
-# `uv pip install quackd` brings no robot and you choose the one you own.
+# `uv pip install roboglot` brings no robot and you choose the one you own.
 [tool.uv.workspace]
 members = ["adapters/*"]
 
 [tool.uv.sources]
-quackd-microduck = { workspace = true }
-quackd-lerobot = { workspace = true }
-quackd-rosbridge = { workspace = true }
-quackd-open-duck = { workspace = true }
-quackd-xlerobot = { workspace = true }
-quackd-alohamini = { workspace = true }
-quackd-toddlerbot = { workspace = true }
-quackd-huebot = { workspace = true }
-quackd-moss = { workspace = true }
-quackd-rosarm = { workspace = true }
+roboglot-microduck = { workspace = true }
+roboglot-lerobot = { workspace = true }
+roboglot-rosbridge = { workspace = true }
+roboglot-open-duck = { workspace = true }
+roboglot-xlerobot = { workspace = true }
+roboglot-alohamini = { workspace = true }
+roboglot-toddlerbot = { workspace = true }
+roboglot-huebot = { workspace = true }
+roboglot-moss = { workspace = true }
+roboglot-rosarm = { workspace = true }
 
 [tool.hatch.version]
-path = "quackd/__init__.py"
+path = "roboglot/__init__.py"
 
 # README.md is the PyPI long description, and its links are relative because that is
 # what is correct on GitHub. `hatch_build.py` absolutises them at build time so they
@@ -251,27 +252,27 @@ path = "quackd/__init__.py"
 path = "hatch_build.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["quackd"]
+packages = ["roboglot"]
 
-# The starter .duck files live at the repo root (that is the community funnel)
+# The starter .glot files live at the repo root (that is the community funnel)
 # but ship inside the core wheel so a task file needs no checkout. The body it runs on is a
-# separate install: `uvx --from "quackd[microduck]" quackd run find-and-kick`.
+# separate install: `uvx --from "roboglot[microduck]" roboglot run find-and-kick`.
 [tool.hatch.build.targets.wheel.force-include]
-"ducks" = "quackd/ducks"
+"tasks" = "roboglot/tasks"
 
-# `bridge/` is the code quackd ships for another machine: the Open Duck Mini v2's daemons on its
+# `bridge/` is the code Roboglot ships for another machine: the Open Duck Mini v2's daemons on its
 # Raspberry Pi, the AlohaMini's host on that robot, the ToddlerBot's daemon on its Jetson, MOSS's
 # bridge beside its cockpit on the rover, and the Jetson host daemon (`bridge/jetson/`), which
-# serves a board's camera, detections and health to a quackd running elsewhere. All of it ships
-# in the sdist and the repository, never in the wheel: quackd must not import it, and a robot or
-# a board copies the file it needs rather than installing quackd's whole dependency tree.
+# serves a board's camera, detections and health to a Roboglot running elsewhere. All of it ships
+# in the sdist and the repository, never in the wheel: Roboglot must not import it, and a robot or
+# a board copies the file it needs rather than installing Roboglot's whole dependency tree.
 [tool.hatch.build.targets.sdist]
 include = [
-  "quackd", "ducks", "bridge", "docs", "tests",
+  "roboglot", "tasks", "bridge", "docs", "tests",
   "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "hatch_build.py",
 ]
 # The README's images are served from raw.githubusercontent, so no published artefact ever
-# needed them. Keeping them out matters for one of them: `quackd-on-off.gif` renders
+# needed them. Keeping them out matters for one of them: `roboglot-on-off.gif` renders
 # upstream's model
 # and carries its meshes' CC BY-NC-SA 4.0 terms, and a published package must stay wholly
 # Apache-2.0. An
@@ -288,21 +289,21 @@ target-version = "py311"
 # builds the README's simulator figure. Only the binaries are excluded now.
 extend-exclude = ["runs"]
 
-# The adapter packages are quackd's own code in their own distributions, so they sort with
+# The adapter packages are Roboglot's own code in their own distributions, so they sort with
 # the core rather than with somebody else's library.
 [tool.ruff.lint.isort]
 known-first-party = [
-  "quackd",
-  "quackd_alohamini",
-  "quackd_huebot",
-  "quackd_microduck",
-  "quackd_moss",
-  "quackd_lerobot",
-  "quackd_open_duck",
-  "quackd_rosarm",
-  "quackd_rosbridge",
-  "quackd_toddlerbot",
-  "quackd_xlerobot",
+  "roboglot",
+  "roboglot_alohamini",
+  "roboglot_huebot",
+  "roboglot_microduck",
+  "roboglot_moss",
+  "roboglot_lerobot",
+  "roboglot_open_duck",
+  "roboglot_rosarm",
+  "roboglot_rosbridge",
+  "roboglot_toddlerbot",
+  "roboglot_xlerobot",
   "tests",
 ]
 
@@ -311,8 +312,8 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "ASYNC", "T20"]
 ignore = ["RUF012", "B008"]
 
 [tool.ruff.lint.per-file-ignores]
-"quackd/cli.py" = ["T20"]
-"quackd/mcp_server.py" = ["T20"]
+"roboglot/cli.py" = ["T20"]
+"roboglot/mcp_server.py" = ["T20"]
 "tests/**" = ["T20"]
 # The scripts that build the README's assets are run by hand and report as they go.
 "docs/assets/*.py" = ["T20"]
@@ -326,11 +327,11 @@ ignore = ["RUF012", "B008"]
 "web/serve.py" = ["T20"]
 # The same, for the generator beside it: it is run by hand and reports what it wrote.
 "web/build_catalogue.py" = ["T20"]
-# And the third: it cuts the mark out of quackd-web's duck and says where it put it.
+# And the third: it cuts the mark out of roboglot-web's duck and says where it put it.
 "web/make_mark.py" = ["T20"]
 # Prose-heavy files: upstream citations and LLM-facing prompt text read better unwrapped.
-"adapters/microduck/src/quackd_microduck/upstream_api.py" = ["E501"]
-"quackd/agent/prompts.py" = ["E501"]
+"adapters/microduck/src/roboglot_microduck/upstream_api.py" = ["E501"]
+"roboglot/agent/prompts.py" = ["E501"]
 
 [tool.ruff.format]
 line-ending = "lf"
@@ -341,7 +342,7 @@ line-ending = "lf"
 # `bridge/` is the code that runs on the robot, and it was the only Python here that nothing
 # type-checked. mypy takes packages OR files, not both, so both are listed as paths.
 files = [
-    "quackd",
+    "roboglot",
     "adapters",
     "bridge",
     "docs/assets",
@@ -372,19 +373,19 @@ markers = [
     "real_duck: needs upstream's Microduck model and policies already cached",
     # The arm simulator's counterpart: the SO-101's model from SO-ARM100, fetched at run time
     # and never shipped. The conftest leaves them the real cache too, and they never fetch
-    # either: an empty cache, with no QUACKD_LEROBOT_SIM_ASSETS checkout, skips them.
+    # either: an empty cache, with no ROBOGLOT_LEROBOT_SIM_ASSETS checkout, skips them.
     "so101_model: needs the SO-101's MuJoCo model from SO-ARM100 already fetched",
-    # Cost money and reach the network. Opt-in twice: this marker and QUACKD_LIVE_LLM=1, so a
+    # Cost money and reach the network. Opt-in twice: this marker and ROBOGLOT_LIVE_LLM=1, so a
     # bare `pytest -m live_llm` on a machine with a key still skips until it is asked for.
-    "live_llm: calls a real LLM over the network (needs OPENAI_API_KEY and QUACKD_LIVE_LLM=1)",
+    "live_llm: calls a real LLM over the network (needs OPENAI_API_KEY and ROBOGLOT_LIVE_LLM=1)",
     # The same bargain for the stepper, and the only tests that can measure how long a real
     # decision LLM takes: four of the eight publish a figure for their own hardware and their
     # own task, OpenAI only a ratio to its own Responses API, and none of those is a measurement
-    # of answering a robot through quackd. This marker and live_llm are what tests/conftest.py
+    # of answering a robot through Roboglot. This marker and live_llm are what tests/conftest.py
     # reads before it lets a request through the real openai SDK reach a host under openai.com, or
     # leaves a test its OPENAI_API_KEY: any other test that tries fails.
     """live_decision: calls a real decision LLM over the network (needs that preset's key, \
-TYPESAFE_API_KEY for jev or OPENAI_API_KEY for openai, and QUACKD_LIVE_DECISION=1)""",
+TYPESAFE_API_KEY for jev or OPENAI_API_KEY for openai, and ROBOGLOT_LIVE_DECISION=1)""",
 ]
 # A single test that runs five minutes has hung: the slowest here, a ten-seed sweep, takes
 # well under one. pytest then dumps every thread's stack to stderr and carries on, so the

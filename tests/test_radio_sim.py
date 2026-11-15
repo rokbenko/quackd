@@ -14,19 +14,19 @@ from pathlib import Path as FilePath
 
 import pytest
 
-from quackd.lan.lookup import LanRecord
-from quackd.lan.passports import LanRecord as ExportedLanRecord
-from quackd.passport.beacon import (
+from roboglot.lan.lookup import LanRecord
+from roboglot.lan.passports import LanRecord as ExportedLanRecord
+from roboglot.passport.beacon import (
     FLAG_LAN,
     FLAG_LINK,
     advertising_data,
     ble_service_data,
     new_beacon_id,
 )
-from quackd.passport.link import Media
-from quackd.radio import Pipe, Sighting, open_radio, sim
-from quackd.radio.links import LinkInbox, LinkTable
-from quackd.radio.sim import (
+from roboglot.passport.link import Media
+from roboglot.radio import Pipe, Sighting, open_radio, sim
+from roboglot.radio.links import LinkInbox, LinkTable
+from roboglot.radio.sim import (
     OP_WRITE_ACK,
     OP_WRITE_REQ,
     STALE_S,
@@ -374,7 +374,7 @@ def reads_of(
         reads.append(record)
         return record
 
-    monkeypatch.setattr("quackd.radio.sim.read_radio", counted)
+    monkeypatch.setattr("roboglot.radio.sim.read_radio", counted)
     return reads
 
 
@@ -390,7 +390,7 @@ async def test_a_dial_does_not_take_a_lost_read_for_a_radio_that_has_gone(
     a = SimRadio(SimOptions(air=tmp_path, t0=t0))
     await a.start(advert=bytes(10), on_sighting=lambda s: None, on_link=lambda p, a: None)
     try:
-        monkeypatch.setattr("quackd.radio.sim.TICK_S", STALE_S)
+        monkeypatch.setattr("roboglot.radio.sim.TICK_S", STALE_S)
         reads = reads_of(monkeypatch, b.radio.token, lose=2)
         pipe = await a.connect(b.radio.address, timeout=5)
         assert reads[:2] == [None, None] and len(reads) > 2
@@ -447,7 +447,7 @@ async def test_the_looking_comes_out_of_the_dials_own_timeout(
         return held[0]
 
     try:
-        monkeypatch.setattr("quackd.radio.sim.read_radio", slow)
+        monkeypatch.setattr("roboglot.radio.sim.read_radio", slow)
         with pytest.raises(TimeoutError):
             await a.connect(b.radio.address, timeout=timeout)
     finally:
@@ -469,7 +469,7 @@ async def test_a_radio_that_stops_ends_a_dial_still_looking_and_can_start_again(
     }
     await a.start(**start)
     try:
-        monkeypatch.setattr("quackd.radio.sim.TICK_S", STALE_S)
+        monkeypatch.setattr("roboglot.radio.sim.TICK_S", STALE_S)
         reads = reads_of(monkeypatch, b.radio.token, lose=10**6)
         dial = asyncio.create_task(a.connect(b.radio.address, timeout=5))
         await until(lambda: reads)

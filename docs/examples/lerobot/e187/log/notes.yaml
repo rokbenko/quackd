@@ -8,10 +8,10 @@ why_example: >
   run has a limit on each, and reaching one is meant to end the run cleanly with the arm put down. This
   example sets both low, three calls in one run and thirty seconds in the other, to watch them do that.
 why_result: >
-  The clock did its job. At thirty seconds quackd cut off an LLM call still in progress and folded the
+  The clock did its job. At thirty seconds Roboglot cut off an LLM call still in progress and folded the
   arm, and the LLM had no say in it. Of those thirty seconds, 23.6 went on waiting for the LLM and about
   6.1 on moving, so in this run the limit mostly measured the wait for the LLM. The call limit never got
-  its turn. quackd tells an LLM its budgets before its first turn and this task's description named the
+  its turn. Roboglot tells an LLM its budgets before its first turn and this task's description named the
   budget as well, and this one did the sum and declared failure on its last call with the arm still
   folded. A limit an LLM can see is one it may decide not to reach.
 goal: >
@@ -34,7 +34,7 @@ showed:
     degrees, then swung it to -12. The first motion came about 14 s into the thirty seconds, which is
     21.1 s after the start counting the connect, and after 3 LLM calls.
   - >
-    At thirty seconds quackd cut off the sixth LLM call, 3.0 s after it was sent: `ERROR BudgetExceeded:
+    At thirty seconds Roboglot cut off the sixth LLM call, 3.0 s after it was sent: `ERROR BudgetExceeded:
     max_minutes (0.5) exceeded after 3.0 s`. The run ended `BUDGET`, and the arm was `at the rest pose`
     2.3 s later.
   - >

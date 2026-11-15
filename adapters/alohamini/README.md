@@ -1,10 +1,10 @@
-# quackd-alohamini
+# roboglot-alohamini
 
-The `alohamini` robot adapter for [quackd](https://github.com/rokbenko/quackd). Install it through
-quackd rather than directly:
+The `alohamini` robot adapter for [Roboglot](https://github.com/rokbenko/quackd). Install it through
+Roboglot rather than directly:
 
 ```bash
-uv pip install "quackd[alohamini]"
+uv pip install "roboglot[alohamini]"
 ```
 
 Every upstream name it relies on is read from upstream source at a pinned commit and listed in

@@ -1,7 +1,7 @@
 # Security: the threat model
 
 > [!NOTE]
-> Spec 1.0. quackd 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
+> Spec 1.0. Roboglot 0.29.0 is its first implementation, and [roadmap.md](roadmap.md) says what of it
 > is built and what has run. Every Bluetooth row below is designed and tested in the suite and on
 > the sim board, and none of it has run over a real radio.
 
@@ -11,7 +11,7 @@ whom, every threat considered and what stops it, and, as plainly, what nothing h
 
 The stance underneath all of it: **a passport is a claim its owner signed, a signature proves who
 made it, and no message from a peer can move a robot except through a short, bounded rule its owner
-chose.** quackd adds its own: the executor has never trusted the LLM, and it does not start
+chose.** Roboglot adds its own: the executor has never trusted the LLM, and it does not start
 trusting peers.
 
 ## What is worth protecting
@@ -51,7 +51,7 @@ an owner's passphrase.
 | Duplicate members | make two parsers read two documents under one signature | Refused. | [spec rule 2](spec.md#3-reading-a-passport) |
 | A fetch aimed at the network | make a robot request internal addresses | Fetch only from the host that advertised, no redirects, no address a passport or message names, and replies only the way a message came. | [discovery.md](discovery.md#fetch-rules) |
 | An oversized document, or a slow host | exhaust a reader's memory, or hold it for minutes | 8,192 bytes a passport, 12,288 on the wire, 8,192 of headers, and 5 seconds for the whole exchange. | [discovery.md](discovery.md#fetch-rules) |
-| A client that holds the server | keep the robot's HTTP server busy | 5 seconds a read, 10 a connection, 32 connections at once. | [quackd.md](quackd.md#the-service) |
+| A client that holds the server | keep the robot's HTTP server busy | 5 seconds a read, 10 a connection, 32 connections at once. | [roboglot.md](roboglot.md#the-service) |
 | Escape sequences in a passport | redraw what a person reads | Every string printed as text, control characters and bidi overrides as escapes. | [spec rule 12](spec.md#3-reading-a-passport) |
 | A key nobody holds | pass a forged signature with a small-order key | Refused, as is any key that is no point on the curve. | [spec 4.1](spec.md#41-the-id) |
 | A lookalike name | pass as a robot or an owner a person trusts | Names and owner labels compared the way a person reads them, a match under another key warned about, and trust never by name. | [trust.md](trust.md#a-name-that-looks-like-another) |
@@ -60,9 +60,9 @@ an owner's passphrase.
 | A wrong clock | keep an expired passport alive | A passport outside `issued` and `expires` is refused, and a robot whose clock reads before its own `issued` stops talking. | [trust.md](trust.md#the-owner-signs-the-passport) |
 | A flood of pauses, from keys that cost nothing | freeze a robot | Every pause bounded, 5 s for a stranger and 10 s for a known robot, out of one budget for every peer, never one per peer. | [trust.md](trust.md#the-tiers) |
 | A message flood | burn a robot's CPU, logs or tokens | Size caps, `429` when a budget is spent, 64 sessions at most, and a budget per turn on what reaches a brain. | [talk.md](talk.md#after-the-hello) |
-| A bill run up by strangers | make a brain hold meeting after meeting | Strangers met only with `with_strangers`, `per_hour` meetings at most, and ten minutes between two with one robot. | [quackd.md](quackd.md#meeting-another-robot) |
+| A bill run up by strangers | make a brain hold meeting after meeting | Strangers met only with `with_strangers`, `per_hour` meetings at most, and ten minutes between two with one robot. | [roboglot.md](roboglot.md#meeting-another-robot) |
 | Prompt injection | steer a brain with a passport or a `say` | A stranger's free text never reaches a brain, a known robot's is quoted as data, and the executor never trusted the brain. | [below](#prompt-injection) |
-| A peer driving the robot | ask for `move`, `go_to` or anything that moves | A fixed handler runs only the tier's short list, through every gate the executor has. | [talk.md](talk.md#what-quackd-does-with-an-ask) |
+| A peer driving the robot | ask for `move`, `go_to` or anything that moves | A fixed handler runs only the tier's short list, through every gate the executor has. | [talk.md](talk.md#what-roboglot-does-with-an-ask) |
 | A peer that keeps a robot from stopping | outlast or override its stop | A peer never calls `stop`, a pause ends by itself, and the robot's own stop stays above any request. | [spec 6.5](spec.md#65-ask-and-answer) |
 | A stolen robot | talk as the robot, or sign as its owner | The robot key talks only until the passport expires, with no revocation in 1.0. The owner key is sealed, so the passphrase has to be guessed offline against scrypt. | [trust.md](trust.md#a-robot-is-stolen) |
 | A stolen owner key and passphrase | sign the thief's robots as the owner's | Severe: a new owner key, every robot signed again, and every pin of the old key removed by hand. | [trust.md](trust.md#the-owner-key-is-lost) |
@@ -84,10 +84,10 @@ passport's `name`, its `cannot` lines and every `say` are text a stranger wrote.
   other robots made, never instructions, turn by turn and within a size budget.
 - **A meeting can do almost nothing.** Its brain may report the robot's state, stop it, and speak, and
   a goal's brain is told never to move because a robot asked.
-- **The brain was never trusted.** quackd's executor has refused anything outside the allowlist, the
+- **The brain was never trusted.** Roboglot's executor has refused anything outside the allowlist, the
   budget and the gates since [ADR-0012](../adr/0012-safety-executor.md), whatever the LLM asked.
 
-## How the passport sits on quackd's executor
+## How the passport sits on Roboglot's executor
 
 The passport layer and the executor do different jobs, and neither does the other's:
 
@@ -98,10 +98,10 @@ a peer's ask ──> passport layer: is this peer allowed to ask this, now?   (t
                  executor: may this verb run, now?   (allowlist, peer, paused, verdict, confirm, budget, preconditions)
                      │ yes
                      v
-                 the body, under its own deadman and quackd's kill switch
+                 the body, under its own deadman and Roboglot's kill switch
 ```
 
-The passport layer, quackd's courtesy handler, can only say no, or pass a request on. The executor
+The passport layer, Roboglot's courtesy handler, can only say no, or pass a request on. The executor
 then applies every gate it always has, and two that read the source `peer` on the request: `peer`,
 which admits only the `stop` a pause begins with and the `say` an identify is, and `paused`, which
 admits nothing that moves any part of the body while a granted pause holds, whoever asks
@@ -128,4 +128,4 @@ any of it.
 
 ## Reporting a vulnerability
 
-The same way as anything else in quackd: privately, as [SECURITY.md](../../SECURITY.md) says.
+The same way as anything else in Roboglot: privately, as [SECURITY.md](../../SECURITY.md) says.

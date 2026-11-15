@@ -1,4 +1,4 @@
-"""A policy server from the command line to the record: the flags, the factory, the goal duck,
+"""A policy server from the command line to the record: the flags, the factory, the goal task,
 the pilot's prompt and the run's policy block.
 
 `--policy-url` and `--policy-token` reach the arm through `make_adapter(policy=...)`, which the
@@ -6,7 +6,7 @@ LeRobot adapter turns into the client of the server (`RemoteRunner`) and every o
 refuses, and through `describe(policy=...)`, which lets a task that allows `manipulate` be
 judged before anything connects. The server here is the real one, in-process on loopback,
 serving a scripted policy, as in `tests/test_policy_contract.py`, and the end-to-end run is
-`quackd run --goal` on `lerobot:mujoco` over the stand-in model with the scripted pilot taught
+`roboglot run --goal` on `lerobot:mujoco` over the stand-in model with the scripted pilot taught
 to call `manipulate` once.
 
 No number here comes off an arm: the travel is the stand-in's generic calibration, the policy
@@ -27,24 +27,24 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from quackd.adapters import factory
-from quackd.adapters.base import (
+from roboglot.adapters import factory
+from roboglot.adapters.base import (
     POLICY_SPECS,
     AdapterError,
     PolicyChoice,
     policy_choice,
     policy_hint,
 )
-from quackd.adapters.factory import describe, make_adapter, parse_robot_spec, registry_for
-from quackd.agent.prompts import build_system_prompt, executor_section
-from quackd.cli import _policy_counter, app, run_counters
-from quackd.command import HIDDEN, redacted_url
-from quackd.duckfile.parser import duck_from_goal
-from quackd.duckfile.validate import validate_duck
-from quackd_lerobot.policy import protocol as wire
-from quackd_lerobot.policy import server as S
-from quackd_lerobot.policy.client import RemoteRunner, policy_address
-from quackd_lerobot.verbs import MANIPULATE_S
+from roboglot.adapters.factory import describe, make_adapter, parse_robot_spec, registry_for
+from roboglot.agent.prompts import build_system_prompt, executor_section
+from roboglot.cli import _policy_counter, app, run_counters
+from roboglot.command import HIDDEN, redacted_url
+from roboglot.glotfile.parser import glot_from_goal
+from roboglot.glotfile.validate import validate_glot
+from roboglot_lerobot.policy import protocol as wire
+from roboglot_lerobot.policy import server as S
+from roboglot_lerobot.policy.client import RemoteRunner, policy_address
+from roboglot_lerobot.verbs import MANIPULATE_S
 from tests.gl import REQUIRE_ENV
 from tests.test_policy_contract import TOKEN, Serving, _arm_on, _as_checkpoint, _serving
 
@@ -52,7 +52,7 @@ runner = CliRunner()
 
 DEAD = "http://127.0.0.1:1"
 """A loopback address nothing listens on: port 1 is privileged and never a policy server."""
-UNANSWERED = "quackd policy serve"
+UNANSWERED = "roboglot policy serve"
 """What the client's refusal of a server that is not there says to start, in both of its
 sentences: a refused connection where the OS refuses one at once, and on Windows, which tries
 a refused loopback connect again for about two seconds, a connect that timed out."""
@@ -62,7 +62,7 @@ KEYS = ("instruction", "seconds", "ended", "chunks", "clips", "hz", "skipped", "
 
 @pytest.fixture
 def held() -> Iterator[Serving]:
-    """`quackd policy serve --policy scripted:hold`, on loopback, with a token: a `manipulate`
+    """`roboglot policy serve --policy scripted:hold`, on loopback, with a token: a `manipulate`
     of it ends on a stall, which is a segment that ran and is ok."""
     serving = _serving(S.ServeOptions(policy="scripted:hold"))
     try:
@@ -101,7 +101,7 @@ def test_an_address_redaction_cannot_read_is_refused_without_being_quoted(
 ) -> None:
     """`redacted_url` hands back what it cannot parse as it was typed, so an address with no
     host it can find would be held, printed and refused with its password in it. It is refused
-    before anything holds it, by the run, by the choice and by the client `quackd policy check`
+    before anything holds it, by the run, by the choice and by the client `roboglot policy check`
     builds, in a sentence that does not quote it."""
     assert redacted_url(typed) == typed, "the premise: redaction leaves this one alone"
     for build in (PolicyChoice, policy_address):
@@ -119,7 +119,7 @@ def test_an_address_redaction_cannot_read_is_refused_without_being_quoted(
 def test_no_variable_names_a_policy_server(monkeypatch: pytest.MonkeyPatch) -> None:
     """One line in a `.env` would otherwise put a policy in charge of every run: the address
     comes from the flag alone, and a run without it describes the arm without a policy."""
-    for name in ("QUACKD_POLICY_URL", "QUACKD_POLICY"):
+    for name in ("ROBOGLOT_POLICY_URL", "ROBOGLOT_POLICY"):
         monkeypatch.setenv(name, "http://127.0.0.1:9875")
     adapter = make_adapter("lerobot:real", address="COM5")
     assert adapter.transport.policy_loop is None  # type: ignore[attr-defined]
@@ -146,7 +146,7 @@ def test_the_arm_is_built_with_the_servers_client(held: Serving) -> None:
     adapter = make_adapter("lerobot:mujoco", policy=PolicyChoice(held.url, TOKEN), seed=0)
     loop = adapter.transport.policy_loop  # type: ignore[attr-defined]
     assert isinstance(loop.runner, RemoteRunner) and loop.runner.url == held.url
-    # asked what it serves, as `quackd run` asks it before the header, and named as the
+    # asked what it serves, as `roboglot run` asks it before the header, and named as the
     # record names it, with nothing asked when the record is read
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["server"] == held.url and said["policy"] == "scripted:hold"
@@ -200,7 +200,7 @@ def test_a_token_found_nowhere_is_refused_as_the_arm_is_built(
 def _plugin(monkeypatch: pytest.MonkeyPatch, make: Any) -> str:
     """A third party's adapter, installed here as `toybot` with one backend, whose `make()` is
     `make` and whose `describe()` takes no policy either."""
-    module = ModuleType("quackd_toybot")
+    module = ModuleType("roboglot_toybot")
     module.BACKENDS = ("sim",)  # type: ignore[attr-defined]
     module.make = make  # type: ignore[attr-defined]
 
@@ -208,8 +208,8 @@ def _plugin(monkeypatch: pytest.MonkeyPatch, make: Any) -> str:
         return factory.describe(parse_robot_spec("lerobot:mock"))
 
     module.describe = describe  # type: ignore[attr-defined]
-    monkeypatch.setitem(sys.modules, "quackd_toybot", module)
-    installed = {**factory._installed(), "toybot": "quackd_toybot"}
+    monkeypatch.setitem(sys.modules, "roboglot_toybot", module)
+    installed = {**factory._installed(), "toybot": "roboglot_toybot"}
     monkeypatch.setattr(factory, "_installed", lambda: installed)
     return "toybot:sim"
 
@@ -263,7 +263,7 @@ def test_an_adapter_that_swallows_every_keyword_is_not_handed_a_policy_to_drop(
     assert taken == []
 
 
-# ── the goal duck and the prompt ────────────────────────────────────────────────────────
+# ── the goal task and the prompt ────────────────────────────────────────────────────────
 
 
 def _safe(spec: str, **kw: Any) -> list[str]:
@@ -277,13 +277,13 @@ def test_a_goal_with_a_policy_allows_manipulate_behind_a_person() -> None:
     choice = PolicyChoice("http://127.0.0.1:9875", TOKEN)
     safe = _safe("lerobot:real", policy=choice)
     assert "manipulate" not in safe and "pick" not in safe
-    duck = duck_from_goal("stack the blocks", safe, confirm=["manipulate"])
+    duck = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
     assert "manipulate" in duck.frontmatter.verbs.allow
     assert duck.frontmatter.verbs.confirm == ["manipulate"]
     manifest = describe(parse_robot_spec("lerobot:real"), policy=choice)
-    assert validate_duck(duck, [manifest]) == []
+    assert validate_glot(duck, [manifest]) == []
     # without a policy nothing changes: the safe verbs and stop, and nothing gated
-    plain = duck_from_goal("stack the blocks", _safe("lerobot:real"))
+    plain = glot_from_goal("stack the blocks", _safe("lerobot:real"))
     assert plain.frontmatter.verbs.confirm == []
     assert "manipulate" not in plain.frontmatter.verbs.allow
 
@@ -310,12 +310,12 @@ def test_the_prompt_of_a_goal_run_with_a_policy_tells_the_pilot_its_executor() -
     robot = parse_robot_spec("lerobot:real")
     registry = registry_for(robot, describe(robot, policy=choice))
     safe = _safe("lerobot:real", policy=choice)
-    duck = duck_from_goal("stack the blocks", safe, confirm=["manipulate"])
+    duck = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
     verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
     prompt = build_system_prompt(duck, verbs, "real", manifest=describe(robot, policy=choice))
     assert "## Your executor" in prompt
     assert "Verbs marked confirm (manipulate) ask a human" in prompt
-    plain = duck_from_goal("stack the blocks", _safe("lerobot:real"))
+    plain = glot_from_goal("stack the blocks", _safe("lerobot:real"))
     verbs = [registry.view(n) for n in plain.frontmatter.verbs.allow]
     assert "## Your executor" not in build_system_prompt(plain, verbs, "real")
 
@@ -325,13 +325,13 @@ def test_a_pilot_that_sees_the_arms_camera_judges_the_frame_after_each_segment()
     With a camera and a pilot that can see, every observation brings the frames, so the pilot
     is sent to the one after the segment, and only a pilot with nothing to see is sent to
     `report_state`."""
-    from quackd_lerobot import lerobot_manifest
+    from roboglot_lerobot import lerobot_manifest
 
     choice = PolicyChoice("http://127.0.0.1:9875", TOKEN)
     robot = parse_robot_spec("lerobot:mujoco")
     registry = registry_for(robot, describe(robot, policy=choice))
     safe = _safe("lerobot:mujoco", policy=choice)
-    duck = duck_from_goal("put the block in the bowl", safe, confirm=["manipulate"])
+    duck = glot_from_goal("put the block in the bowl", safe, confirm=["manipulate"])
     verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
     assert "observe" not in {v.name for v in verbs} and "manipulate" in {v.name for v in verbs}
 
@@ -352,16 +352,16 @@ def test_a_run_tells_the_prompt_whether_its_pilot_sees_the_frames(
     """The loop says whether the pilot is shown the frames it reads, as `_observe` decides it.
     On the mock arm, which has a camera and its own scripted policy, the scripted pilot told it
     can see is sent to the frame after a segment, and told it cannot, to `report_state`."""
-    from quackd.agent.providers import fake
-    from quackd.agent.providers.base import ToolCall
+    from roboglot.agent.providers import fake
+    from roboglot.agent.providers.base import ToolCall
 
     def strategy(_obs: Any, _step: int, _history: Any) -> ToolCall:
         return ToolCall(name="declare_success", arguments={"reason": "nothing to do"})
 
     monkeypatch.setitem(fake.STRATEGIES, "hand-off", strategy)
-    duck = tmp_path / "hand-off.duck"
+    duck = tmp_path / "hand-off.glot"
     duck.write_text(
-        "---\nduck: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
+        "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
         encoding="utf-8",
@@ -529,18 +529,18 @@ def test_a_run_refuses_a_policy_it_cannot_use_before_anything_connects(
 def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(tmp_path: Path) -> None:
     """`--policy-url` is the only way the arm has `pick` or `manipulate`, so a task that allows
     either, run, validated or served without it, is refused with a line saying how to give it
-    one, rather than only sent to `quackd list-verbs`, which never lists them. Nothing else
+    one, rather than only sent to `roboglot list-verbs`, which never lists them. Nothing else
     gains the line."""
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
-    duck = tmp_path / "hand-off.duck"
+    duck = tmp_path / "hand-off.glot"
     duck.write_text(
-        "---\nduck: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
+        "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
         encoding="utf-8",
     )
-    said = "manipulate on lerobot:mujoco comes from a policy server: start one with quackd"
+    said = "manipulate on lerobot:mujoco comes from a policy server: start one with roboglot"
     ran = runner.invoke(
         app,
         [
@@ -550,15 +550,15 @@ def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(tmp_path:
     )
     out = _flat(ran.output)
     assert ran.exit_code == 1 and "manipulate is not provided by" in out, ran.output
-    assert said in out and "give quackd run its address with --policy-url" in out, out
+    assert said in out and "give roboglot run its address with --policy-url" in out, out
     checked = runner.invoke(app, ["validate", str(duck), "--robot", "lerobot:mujoco"])
     assert checked.exit_code == 1 and said in _flat(checked.output), checked.output
-    with pytest.raises(SystemExit, match="give quackd serve-mcp its address with --policy-url"):
-        fleet_from_flags(robot="lerobot:mujoco", duckfile=str(duck))
+    with pytest.raises(SystemExit, match="give roboglot serve-mcp its address with --policy-url"):
+        fleet_from_flags(robot="lerobot:mujoco", glotfile=str(duck))
     # a verb no policy gives, and a body that runs no policy, are refused as they always were
-    assert policy_hint(["observe"], ["lerobot:mujoco"], "quackd run") is None
-    assert policy_hint(["manipulate"], ["microduck:sim2d"], "quackd run") is None
-    both = policy_hint(["pick", "manipulate"], ["lerobot:real"], "quackd run")
+    assert policy_hint(["observe"], ["lerobot:mujoco"], "roboglot run") is None
+    assert policy_hint(["manipulate"], ["microduck:sim2d"], "roboglot run") is None
+    both = policy_hint(["pick", "manipulate"], ["lerobot:real"], "roboglot run")
     assert both is not None and both.startswith("pick and manipulate on lerobot:real come from")
 
 
@@ -568,13 +568,13 @@ def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path) -> None:
     )
     out = _flat(result.output)
     assert result.exit_code == 1 and UNANSWERED in out, result.output
-    assert f"quackd policy check --policy-url {DEAD} asks it what it serves" in out
+    assert f"roboglot policy check --policy-url {DEAD} asks it what it serves" in out
 
 
 def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_fleet(
     held: Serving,
 ) -> None:
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
     with pytest.raises(SystemExit, match="a fleet has several bodies"):
         fleet_from_flags(
@@ -599,15 +599,15 @@ def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
     """The connect's refusal of a policy that does not fit the arm is raised as the server
     starts, inside the task group the MCP SDK serves in, and used to print as a traceback with
     the sentence buried in it while the client saw only a closed connection. It is said as
-    `quackd run` says it, one sentence and exit 1. The policy here learned from an arm whose
+    `roboglot run` says it, one sentence and exit 1. The policy here learned from an arm whose
     shoulder_lift went past this one's ceiling, by twice the slack a reading is forgiven."""
     pytest.importorskip("mujoco")
-    from quackd_lerobot.real import OUT_OF_RANGE_DEG, joint_ranges
-    from quackd_lerobot.sim import standin
-    from quackd_lerobot.sim.model import generic_calibration, load
-    from quackd_lerobot.verbs import JOINTS
+    from roboglot_lerobot.real import OUT_OF_RANGE_DEG, joint_ranges
+    from roboglot_lerobot.sim import standin
+    from roboglot_lerobot.sim.model import generic_calibration, load
+    from roboglot_lerobot.verbs import JOINTS
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
     travel = joint_ranges(generic_calibration(load(standin.mjcf(), seed=0)))
     q01, q99 = [], []
     for motor in JOINTS:
@@ -682,7 +682,7 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
     assert isinstance(client, RemoteRunner) and client.accept_other_frame
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["accept_other_frame"] is True
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
     plan = fleet_from_flags(
         robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN, accept_other_frame=True
@@ -730,7 +730,7 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
     assert adapter.transport.policy_loop.async_chunks is False  # type: ignore[attr-defined]
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["async_chunks"] is False
-    from quackd.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import fleet_from_flags
 
     plan = fleet_from_flags(
         robot="lerobot:mujoco", policy_url=held.url, policy_token=TOKEN, async_chunks=False
@@ -742,9 +742,9 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
 
 
 def test_preflight_refuses_a_policy_server_that_is_not_there(tmp_path: Path) -> None:
-    duck = tmp_path / "hold.duck"
+    duck = tmp_path / "hold.glot"
     duck.write_text(
-        "---\nduck: 2\nname: hold\ndescription: hold\nverbs:\n  allow: [report_state, stop]\n"
+        "---\nglot: 2\nname: hold\ndescription: hold\nverbs:\n  allow: [report_state, stop]\n"
         "success: [the arm is still]\n---\nHold still.\n",
         encoding="utf-8",
     )
@@ -774,17 +774,17 @@ def test_preflight_refuses_a_policy_server_that_is_not_there(tmp_path: Path) -> 
 def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, held: Serving
 ) -> None:
-    """`quackd run --goal` on the simulator's stand-in, with `--policy-url`: the header names
+    """`roboglot run --goal` on the simulator's stand-in, with `--policy-url`: the header names
     the server and its checkpoint, the goal allows `manipulate` behind a person's yes (`--yes`
     here), the prompt tells the pilot its executor, the pilot calls `manipulate` once, and the
     summary's policy block counts the segment the server drove and says the run took a policy
     learned on another arm's frame (`--accept-other-frame`), which this one never needed."""
     pytest.importorskip("mujoco")
-    from quackd.agent.providers import fake
-    from quackd.agent.providers.base import ToolCall
-    from quackd_lerobot.sim import standin
+    from roboglot.agent.providers import fake
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot_lerobot.sim import standin
 
-    monkeypatch.setattr("quackd_lerobot.sim.transport.default_model", standin.mjcf)
+    monkeypatch.setattr("roboglot_lerobot.sim.transport.default_model", standin.mjcf)
 
     def strategy(_obs: Any, step: int, _history: Any) -> ToolCall:
         if step == 0:
@@ -849,10 +849,10 @@ ENDPOINT_URL = "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud"
 
 
 def _recorded(tmp_path: Path, **kw: Any) -> Any:
-    """A record of an endpoint `arm`, as `quackd policy endpoint up` keeps one, at its address."""
+    """A record of an endpoint `arm`, as `roboglot policy endpoint up` keeps one, at its address."""
     from dataclasses import replace
 
-    from quackd_lerobot.policy import endpoint
+    from roboglot_lerobot.policy import endpoint
 
     record = replace(
         endpoint.new_record(
@@ -888,7 +888,7 @@ def test_hf_name_is_taken_on_the_flag_alone_and_a_name_hugging_face_would_refuse
 
 @pytest.fixture
 def hf_api(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
-    """The stand-in for Hugging Face's API, with quackd pointed at it and the plumbing's own
+    """The stand-in for Hugging Face's API, with Roboglot pointed at it and the plumbing's own
     account token, which a run's `hf:NAME` asks before it builds the arm's client."""
     from tests.fake_hugging_face import FakeAPI, point
 
@@ -901,10 +901,10 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, hf_api: Any
 ) -> None:
     """The address and the token are the record's, the bearer the account's, and
-    `QUACKD_POLICY_TOKEN`, which is another server's, is not read. `--policy-token` beats the
+    `ROBOGLOT_POLICY_TOKEN`, which is another server's, is not read. `--policy-token` beats the
     record, as it beats everything on any server. Each build asks Hugging Face's API first,
     here its stand-in, which has the endpoint at the recorded address."""
-    from quackd_lerobot.policy import endpoint
+    from roboglot_lerobot.policy import endpoint
 
     record = _recorded(tmp_path)
     hf_api.seed("rok", "arm", url=ENDPOINT_URL, mark=endpoint.mark(record))
@@ -930,20 +930,22 @@ def test_hf_name_builds_the_client_from_the_record_and_never_another_servers_tok
 def test_a_run_reads_hf_name_from_no_registry_a_dotenv_names(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run --policy-url hf:arm` in a project whose `.env` names the registry, and so the
+    """`roboglot run --policy-url hf:arm` in a project whose `.env` names the registry, and so the
     record, refuses the arm before anything connects: it says so, and asks nobody anything,
     which the suite's guard on Hugging Face's hosts would otherwise have written down."""
     planted = tmp_path / "planted"
     _recorded(planted)
     project = tmp_path / "project"
     project.mkdir()
-    (project / ".env").write_text(f"QUACKD_REGISTRY_DIR={planted.as_posix()}\n", encoding="utf-8")
+    (project / ".env").write_text(f"ROBOGLOT_REGISTRY_DIR={planted.as_posix()}\n", encoding="utf-8")
     monkeypatch.chdir(project)
-    monkeypatch.delenv("QUACKD_REGISTRY_DIR")
+    monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
     monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
     result = _run(tmp_path, "--robot", "lerobot:mujoco", "--policy-url", "hf:arm")
     said = _flat(result.output)
-    assert result.exit_code == 1 and "QUACKD_REGISTRY_DIR comes from a .env file here" in said, said
+    assert result.exit_code == 1 and "ROBOGLOT_REGISTRY_DIR comes from a .env file here" in said, (
+        said
+    )
 
 
 @pytest.mark.parametrize("case", ["no record", "no account token"])

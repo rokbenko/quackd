@@ -1,9 +1,9 @@
 """E216: a `stop` sent beside a running move over MCP, on a clock rather than from a chat.
 
-Standard library only. It starts `quackd serve-mcp` on the robot it is given and speaks the server's
-own protocol to it, one JSON line at a time: the verdict on the task, `move_joints` for 12 seconds,
-and `stop` while that is still running. A chat waits for one tool before it sends the next, which is
-why E196 can only show this when the LLM happens to send both at once.
+Standard library only. It starts `roboglot serve-mcp` on the robot it is given and speaks the
+server's own protocol to it, one JSON line at a time: the verdict on the task, `move_joints` for 12
+seconds, and `stop` while that is still running. A chat waits for one tool before it sends the next,
+which is why E196 can only show this when the LLM happens to send both at once.
 
     python stop_beside.py --robot arm-01 --after 2
 
@@ -24,11 +24,12 @@ from typing import Any
 
 
 class Server:
-    """`quackd serve-mcp`, and the answers to what it was asked, by the number each was asked by."""
+    """`roboglot serve-mcp`, and the answers to what it was asked, by the number each was asked
+    by."""
 
     def __init__(self, robot: str) -> None:
         self.process = subprocess.Popen(
-            ["quackd", "serve-mcp", "--robot", robot],
+            ["roboglot", "serve-mcp", "--robot", robot],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,

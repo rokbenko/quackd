@@ -1,14 +1,14 @@
 /**
  * The Microduck, in the browser: upstream's MuJoCo model on upstream's walking policy.
  *
- * This is the Python `quackd/sim3d/` package with the same numbers and the same honesty,
+ * This is the Python `roboglot/sim3d/` package with the same numbers and the same honesty,
  * compiled to WebAssembly instead of C. MuJoCo comes from `@mujoco/mujoco` (Google
  * DeepMind's official WASM bindings, Apache-2.0), the policy runs in onnxruntime-web, and
  * both the model and the policy are fetched from upstream at run time and never served
- * from this site: the meshes are CC BY-NC-SA 4.0, and quackd redistributes nothing.
+ * from this site: the meshes are CC BY-NC-SA 4.0, and Roboglot redistributes nothing.
  *
  * The control loop is upstream's own `scripts/infer_policy.py`, cited fact by fact in
- * `quackd/sim3d/upstream_api.py`: a 61-value observation, a 14-value action, 50 Hz, and
+ * `roboglot/sim3d/upstream_api.py`: a 61-value observation, a 14-value action, 50 Hz, and
  * position targets of `default_pose + action`. Two numbers here were measured rather than
  * read, and are marked where they are used: the gait floor and the fraction of a command
  * the duck actually achieves.
@@ -50,18 +50,18 @@ const DECIMATION = 4;
 const OBS = 61, NJ = 14, CMD = 13;
 const STAND_SWITCH = 0.05;        // upstream's --switch-threshold
 
-// ── measured here, not read from upstream (quackd/sim3d/upstream_api.py GAIT_THRESHOLD) ──
+// ── measured here, not read from upstream (roboglot/sim3d/upstream_api.py GAIT_THRESHOLD) ──
 export const GAIT_FLOOR = { vx: 0.24, vy: 0.30, wz: 1.2 };
 // What fraction of a commanded twist the body actually delivers. Python holds the same
-// number in quackd/sim3d/gait.py; the prompt quotes it rather than rounding it to "half".
+// number in roboglot/sim3d/gait.py; the prompt quotes it rather than rounding it to "half".
 export const ACHIEVED_FRACTION = 0.38;
-// What the world accepts before the gait floor sees it, from quackd/sim3d/world.py. The verb
+// What the world accepts before the gait floor sees it, from roboglot/sim3d/world.py. The verb
 // schemas advertise the same numbers; this is the floor under an LLM that ignores them.
 export const MAX_VX = 0.3, MAX_VY = 0.2, MAX_WZ = 1.5;
 const CMD_MAX = { vx: 0.40, vy: 0.30, wz: 1.50 };
 const DEAD_FRACTION = 1 / 3;
 
-// ── the arena: quackd/sim3d/scene.py's dimensions, not its scene ───────────────────────
+// ── the arena: roboglot/sim3d/scene.py's dimensions, not its scene ───────────────────────
 // Same half-width, same walls, same ball. Not the same look: sim3d builds upstream's own
 // scene*.xml palette, a blue-grey edge-marked checker under a gradient skybox, and this
 // fetches robot_walk.xml alone and draws a flat plane under a headlight.
@@ -100,13 +100,13 @@ function rng(seed) {
 function arenaXml(ball) {
   const lim = ARENA_HALF + 0.02;
   const wall = (n, px, py, sx, sy) =>
-    `<geom name="quackd_wall_${n}" type="box" pos="${px} ${py} ${WALL_H}" size="${sx} ${sy} ${WALL_H}" rgba="0.55 0.55 0.58 1"/>`;
-  return `<mujoco model="quackd arena">
+    `<geom name="roboglot_wall_${n}" type="box" pos="${px} ${py} ${WALL_H}" size="${sx} ${sy} ${WALL_H}" rgba="0.55 0.55 0.58 1"/>`;
+  return `<mujoco model="Roboglot arena">
   <include file="robot_walk.xml"/>
   <option timestep="${PHYSICS_DT}" gravity="0 0 -9.81"/>
   <visual><headlight ambient="0.5 0.5 0.5" diffuse="0.6 0.6 0.6" specular="0 0 0"/></visual>
   <worldbody>
-    <geom name="quackd_floor" type="plane" size="${ARENA_HALF + 0.5} ${ARENA_HALF + 0.5} 0.1"
+    <geom name="roboglot_floor" type="plane" size="${ARENA_HALF + 0.5} ${ARENA_HALF + 0.5} 0.1"
           rgba="0.82 0.82 0.80 1" friction="0.8 0.005 0.0001"/>
     ${wall("east", lim, 0, 0.02, lim)}
     ${wall("west", -lim, 0, 0.02, lim)}
@@ -148,7 +148,7 @@ export class Microduck {
   static async load({ onProgress = () => {}, seed = 6 } = {}) {
     // The URL is a variable so the same module can be exercised under Node, where an https
     // import is not a thing. In a browser nobody sets it and it is the CDN.
-    const wasmModule = globalThis.QUACKD_MUJOCO_MODULE
+    const wasmModule = globalThis.ROBOGLOT_MUJOCO_MODULE
       ?? "https://cdn.jsdelivr.net/npm/@mujoco/mujoco@3.12.0/mujoco.js";
     const loadMujoco = (await import(wasmModule)).default;
     onProgress({ phase: "MuJoCo", loaded: 0, total: 1 });
@@ -285,7 +285,7 @@ export class Microduck {
   }
 
   /**
-   * The kick is quackd's, not upstream's: `ball_kick_left.onnx` did nothing from a
+   * The kick is Roboglot's, not upstream's: `ball_kick_left.onnx` did nothing from a
    * standing pose when it was tried, so this is the cartoon's rule — an impulse on the
    * ball when it is inside 0.30 m of the head and within a 35 degree cone.
    */

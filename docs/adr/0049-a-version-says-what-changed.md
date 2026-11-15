@@ -4,9 +4,9 @@
 
 ## Context
 
-quackd shipped sixteen releases between 2026-08-28 and 2026-09-29, from 0.1.0 to 0.16.0, and
+Roboglot shipped sixteen releases between 2026-08-28 and 2026-09-29, from 0.1.0 to 0.16.0, and
 every one was a minor. Some held a new body or a new command. Some broke what people had: 0.10.0
-made `uv pip install quackd` install no robot, which ADR-0037 calls breaking for anybody who
+made `uv pip install roboglot` install no robot, which ADR-0037 calls breaking for anybody who
 installed the bare package, and 0.15.0 removed the Jetson container and could write a
 `robots.json` that 0.12 to 0.14 refuse to read. Twice two of them shipped on one day, 0.12.0
 and 0.13.0 on 2026-09-23 and 0.15.0 and 0.16.0 on 2026-09-29. A number that moved the same way
@@ -25,17 +25,17 @@ release is a patch, when it is a minor, and when it will be a major.
 
 ## Decision
 
-**A version speaks about quackd's public surface and about nothing else.** The surface is what
+**A version speaks about Roboglot's public surface and about nothing else.** The surface is what
 a person, a script or another program relies on without reading the source: the CLI and its
-exit codes, task files, what quackd keeps between runs, the MCP server, the adapter interface a
+exit codes, task files, what Roboglot keeps between runs, the MCP server, the adapter interface a
 third party implements, run records, the wire protocols that carry a version of their own,
 packaging and the safety behaviour. The README, the docs, the examples, the images, the tests,
 `scripts/` and the web demo are not part of it.
 
-**While quackd is 0.x, a patch changes nothing a user has to act on and adds nothing to learn,
+**While Roboglot is 0.x, a patch changes nothing a user has to act on and adds nothing to learn,
 and a minor is everything else.** A removal or a rename is a minor, announced a minor ahead
 where that is practical. Apart from a safety fix, what worked before a patch works after it,
-so a patch may refuse what the release before accepted only when that never did what quackd
+so a patch may refuse what the release before accepted only when that never did what Roboglot
 said it would. A safety fix that tightens what could move a body in a way the docs never
 promised is a patch, even when a script relied on the looser behaviour.
 
@@ -69,7 +69,7 @@ counter beside it anyway.
 
 **1.0.0 now.** A 1.0.0 promises that the surface holds until 2.0.0. Much of the surface has no
 test that holds a change to it. No body has finished its bench checklist, and the arm has not
-run quackd since 2026-09-23. The registry carries a version and has never moved it, while
+run Roboglot since 2026-09-23. The registry carries a version and has never moved it, while
 0.15.0 wrote files older releases refuse. And there is no path yet by which something is
 deprecated, warned about and then removed. Declaring 1.0.0 now would promise what nothing
 checks.
@@ -104,6 +104,6 @@ own.
   before it is tagged.
 - The release checklist left PLAN.md, which keeps a line pointing at RELEASING.md, and
   ADR-0037 carries a note that points here.
-- Nothing in quackd's code changed. `scripts/set_version.py` writes each window's floor as the
+- Nothing in Roboglot's code changed. `scripts/set_version.py` writes each window's floor as the
   whole version where it wrote the major and the minor alone, and reads a window written either
   way, and `ci.yml` gained the release branches.

@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from quackd import cli, preflight, preflight_defaults
+from roboglot import cli, preflight, preflight_defaults
 
 REPO = Path(__file__).resolve().parents[1]
-HEAVY = ("numpy", "asyncio", "pydantic", "yaml", "quackd.preflight")
+HEAVY = ("numpy", "asyncio", "pydantic", "yaml", "roboglot.preflight")
 
 
 def _inside(script: str, *argv: str) -> dict:
@@ -37,10 +37,10 @@ def _inside(script: str, *argv: str) -> dict:
 
 def test_importing_the_cli_loads_none_of_what_only_a_command_needs() -> None:
     loaded = _inside(
-        "import json, sys\nimport quackd.cli\n"
+        "import json, sys\nimport roboglot.cli\n"
         f"print(json.dumps({{m: m in sys.modules for m in {HEAVY!r}}}))"
     )
-    assert not any(loaded.values()), f"quackd.cli pulled in {loaded}"
+    assert not any(loaded.values()), f"roboglot.cli pulled in {loaded}"
 
 
 @pytest.mark.parametrize(
@@ -49,13 +49,13 @@ def test_importing_the_cli_loads_none_of_what_only_a_command_needs() -> None:
 )
 def test_asking_for_help_loads_none_of_it(argv: list[str]) -> None:
     script = (
-        "import json, sys\nimport quackd.cli\n"
-        "sys.argv = ['quackd', *sys.argv[1:]]\n"
-        "try:\n    quackd.cli.main()\nexcept SystemExit:\n    pass\n"
+        "import json, sys\nimport roboglot.cli\n"
+        "sys.argv = ['roboglot', *sys.argv[1:]]\n"
+        "try:\n    roboglot.cli.main()\nexcept SystemExit:\n    pass\n"
         f"print('\\n' + json.dumps({{m: m in sys.modules for m in {HEAVY!r}}}))"
     )
     loaded = _inside(script, *argv)
-    assert not any(loaded.values()), f"quackd {' '.join(argv)} pulled in {loaded}"
+    assert not any(loaded.values()), f"roboglot {' '.join(argv)} pulled in {loaded}"
 
 
 @pytest.mark.parametrize(
@@ -65,11 +65,11 @@ def test_a_real_command_has_all_of_it_before_the_command_starts(argv: list[str])
     """Measured where it matters: at the moment `app()` would begin, which is before anything can
     read stdin. `app` is replaced so that nothing actually runs."""
     script = (
-        "import json, sys\nimport quackd.cli\n"
-        "sys.argv = ['quackd', *sys.argv[1:]]\n"
+        "import json, sys\nimport roboglot.cli\n"
+        "sys.argv = ['roboglot', *sys.argv[1:]]\n"
         "seen = {}\n"
-        f"quackd.cli.app = lambda: seen.update({{m: m in sys.modules for m in {HEAVY!r}}})\n"
-        "quackd.cli.main()\n"
+        f"roboglot.cli.app = lambda: seen.update({{m: m in sys.modules for m in {HEAVY!r}}})\n"
+        "roboglot.cli.main()\n"
         "print(json.dumps(seen))"
     )
     loaded = _inside(script, *argv)
@@ -96,12 +96,12 @@ def test_a_real_command_has_all_of_it_before_the_command_starts(argv: list[str])
 def test_only_an_invocation_that_can_only_print_skips_the_imports(
     argv: list[str], only_help: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("_QUACKD_COMPLETE", raising=False)
+    monkeypatch.delenv("_ROBOGLOT_COMPLETE", raising=False)
     assert cli._asks_only_for_help(argv) is only_help
 
 
 def test_the_shell_completing_a_word_skips_them_too(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("_QUACKD_COMPLETE", "complete_bash")
+    monkeypatch.setenv("_ROBOGLOT_COMPLETE", "complete_bash")
     assert cli._asks_only_for_help(["run"]) is True
 
 

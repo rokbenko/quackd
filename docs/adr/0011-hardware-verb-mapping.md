@@ -3,14 +3,14 @@
 **Status:** accepted, amended · **Date:** 2026-08-28
 
 **Amended 2026-09-02 by [ADR-0017](0017-robot-adapters-and-manifest.md) and
-[ADR-0018](0018-core-verbs-extensions-aliases.md):** this table was written when quackd had one
+[ADR-0018](0018-core-verbs-extensions-aliases.md):** this table was written when Roboglot had one
 robot and one hardcoded map. A verb's route to a body is now the adapter's business, declared in
 its manifest, and the skills a robot answers to are read from it rather than assumed. The
 signatures here are also the 0.3 spellings: `get_frame`, `walk_to` and `walk` are aliases of
 `observe`, `go_to` and `move` today. The live per-method table, VERIFIED against upstream, is
 [adapter-status.md](../adapters/microduck/README.md).
 
-**Amended 2026-10-09:** quackd's re-read of robotd at `daemon-v0.16.1`, on 2026-10-08, overtook
+**Amended 2026-10-09:** Roboglot's re-read of robotd at `daemon-v0.16.1`, on 2026-10-08, overtook
 three rows below. robotd does not recover from falls itself there: `limp_fall`, its stand-up
 after a fall, is off by default, so `stand_up` asks the policy to drive with no promise that the
 duck gets up, and reads the duck before it asks. The policy labels posture is read from were
@@ -22,7 +22,7 @@ And `get_frame`'s missing socket method is settled: robotd's socket carries no p
 is off by default. From `daemon-v0.16.2`, released on 2026-10-12, it is on again: robotd goes
 limp as it predicts a fall while the duck walks or stands, though not during a kick, a grab or a
 sit, poses the duck and hands it back to its walking policy, whose `v8` upstream says gets up
-from a fall. Nobody has seen that under quackd, so `stand_up` still asks the policy to drive
+from a fall. Nobody has seen that under Roboglot, so `stand_up` still asks the policy to drive
 with no promise that the duck gets up. A duck robotd still has in that sequence when `stand_up`
 reads it again, three seconds after its request, is told so, where one that read as fallen was
 told it may need a hand and one that did not that its posture was unknown. The sequence is over
@@ -38,8 +38,8 @@ unsafe or dishonest.
 
 | Verb | Intent | Upstream (VERIFIED unless noted) | Notes |
 |---|---|---|---|
-| `walk(vx, vy, wz, duration_s)` | `move` ×N then `stop` | `robot.move` notification every 100 ms, then `robot.stop` | Re-sending feeds robotd's deadman; a stalled quackd → robot stops on its own. `wz` → `vyaw`. |
-| `stop` | `stop` | `robot.stop` | Zero velocity, **not** limp. quackd never sends `robot.relax`. |
+| `walk(vx, vy, wz, duration_s)` | `move` ×N then `stop` | `robot.move` notification every 100 ms, then `robot.stop` | Re-sending feeds robotd's deadman; a stalled Roboglot → robot stops on its own. `wz` → `vyaw`. |
+| `stop` | `stop` | `robot.stop` | Zero velocity, **not** limp. Roboglot never sends `robot.relax`. |
 | `kick(leg)` | `do kick_left/right` | `robot.do{skill}` | Result carries `ball_moved_m` only in sim; on hardware it is `None` and the LLM must verify with a frame. |
 | `grab` | `do ground_pick` | `robot.do` | Open-loop scoop; `holding` is sim-only telemetry. |
 | `sit` / `stand` | `do sit_toggle` | `robot.do` | Toggle, so the verb reads posture first. Posture-from-`robot.state.policy` is **UNVERIFIED**. |
@@ -54,6 +54,6 @@ error → `stop` + abort. `battery.percent` from the same call feeds `abort_when
 ## Consequences
 
 - `find-and-kick` is honest on hardware: the kick result cannot claim displacement, so the
-  `.duck` body tells the LLM to verify with a fresh frame.
+  `.glot` body tells the LLM to verify with a fresh frame.
 - The `jsonrpc` transport can be exercised end-to-end against a fake robotd over TCP in CI,
   because every method it uses is VERIFIED and simple.

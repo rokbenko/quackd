@@ -16,12 +16,12 @@ model of each, and the last test here holds that model to whichever release is i
 No key and no network. The SDK's own `DefaultAsyncHttpxClient` is handed a mock transport that
 records every request and answers it, so a request is built and sent by the real SDK and the real
 HTTP client exactly as it would be, and stops where the socket would have been; every lookup and
-every connection to another machine raises besides. So what this proves is what quackd puts on the
-wire through the SDK, and what the SDK adds to a request or leaves off it once quackd has told it.
+every connection to another machine raises besides. So what this proves is what Roboglot puts on the
+wire through the SDK, and what the SDK adds to a request or leaves off it once Roboglot has told it.
 Nothing here proves anything about any vendor.
 
 No request here is built for a host of OpenAI's, not even into the recorder. Where a test needs
-OpenAI's own API, quackd's rule is told that a stand-in address is OpenAI's (`_as_openai`), which
+OpenAI's own API, Roboglot's rule is told that a stand-in address is OpenAI's (`_as_openai`), which
 is the one thing that decides what goes there, and the request goes to the stand-in. Where the SDK's
 own variables go, the request is held to what the SDK sends by itself, a client built as 0.17.1
 built every pilot's, `AsyncOpenAI(api_key=key, base_url=address)`, sending the same request
@@ -29,7 +29,7 @@ built every pilot's, `AsyncOpenAI(api_key=key, base_url=address)`, sending the s
 
 Every test runs with the variables the SDK reads for itself set the way somebody who reaches
 OpenAI through a gateway might have them in a `.env`, beside an OpenAI key of their own, so every
-test shows what quackd does about each of them.
+test shows what Roboglot does about each of them.
 """
 
 from __future__ import annotations
@@ -47,13 +47,13 @@ pytest.importorskip("openai")
 import openai
 from typer.testing import CliRunner
 
-from quackd.agent.providers import openai as openai_provider
-from quackd.agent.providers import openai_headers
-from quackd.agent.providers.base import ProviderError
-from quackd.agent.providers.catalogue import LOCAL_NAMES
-from quackd.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
-from quackd.agent.providers.openrouter import ATTRIBUTION
-from quackd.cli import app
+from roboglot.agent.providers import openai as openai_provider
+from roboglot.agent.providers import openai_headers
+from roboglot.agent.providers.base import ProviderError
+from roboglot.agent.providers.catalogue import LOCAL_NAMES
+from roboglot.agent.providers.factory import KEY_ENV, OPENAI_COMPATIBLE, make_provider
+from roboglot.agent.providers.openrouter import ATTRIBUTION
+from roboglot.cli import app
 from tests import fake_openai_sdk as fake_sdk
 from tests.fake_openrouter import SCRIPTS, completion
 
@@ -72,7 +72,7 @@ ADMIN = "sk-admin-not-a-real-key"
 endpoints. No request a pilot makes is to one, and none may carry it."""
 
 STAND_IN = "https://openai.stand-in.invalid/v1"
-"""Where a test that needs OpenAI's own API sends its requests, with quackd's rule told that this
+"""Where a test that needs OpenAI's own API sends its requests, with Roboglot's rule told that this
 is OpenAI's (`_as_openai`). `.invalid` is reserved, so no name under it resolves anywhere."""
 GATEWAY = "https://gateway.stand-in.invalid/v1"
 """A gateway's address, as `OPENAI_BASE_URL` or `--base-url` gives it."""
@@ -217,12 +217,12 @@ def _a_gateway(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENAI_ORG_ID", ORG)
     monkeypatch.setenv("OPENAI_PROJECT_ID", PROJECT)
     monkeypatch.setenv("OPENAI_BASE_URL", "")
-    monkeypatch.setenv("QUACKD_BASE_URL", "")
+    monkeypatch.setenv("ROBOGLOT_BASE_URL", "")
     monkeypatch.setenv("LOCAL_API_KEY", "")
 
 
 def _as_openai(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Tell quackd's rule that `STAND_IN` is OpenAI's own API, so what goes to OpenAI goes there,
+    """Tell Roboglot's rule that `STAND_IN` is OpenAI's own API, so what goes to OpenAI goes there,
     and nothing is ever built for a host of OpenAI's. Told where the rule decides which address
     is the SDK's own and where the provider reads its client's address back."""
     real = openai_headers.is_openai_host
@@ -306,7 +306,7 @@ async def test_at_openais_own_api_the_pilot_sends_exactly_what_the_sdk_sends(
 ) -> None:
     """The variables are OpenAI's SDK's own, and at OpenAI's own API they go exactly as that SDK
     sends them by itself: the request carries every line the SDK alone puts on it, the gateway's
-    `Authorization` wherever the release puts it, and nothing of quackd's beside. Never the admin
+    `Authorization` wherever the release puts it, and nothing of Roboglot's beside. Never the admin
     key, which the SDK keeps for endpoints no pilot asks."""
     monkeypatch.setenv(
         "OPENAI_CUSTOM_HEADERS", f"{spelling}: {GATEWAY_AUTH}\nX-Gateway-Key: {GATEWAY_KEY}"
@@ -398,7 +398,7 @@ async def test_through_openai_base_url_a_gateway_is_sent_what_the_sdk_sends_it(
 async def test_a_local_preset_that_reads_openai_base_url_is_sent_nothing_ambient(
     wire: Wire, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A local preset reads `OPENAI_BASE_URL` as one rung of quackd's own ladder, for a server you
+    """A local preset reads `OPENAI_BASE_URL` as one rung of Roboglot's own ladder, for a server you
     run, and it is not the SDK's own address: a `.env` that names a board there is sent the board's
     placeholder key and nothing the SDK reads for itself, never the gateway's credential in the
     clear."""
@@ -422,7 +422,7 @@ async def test_a_local_preset_that_reads_openai_base_url_is_sent_nothing_ambient
 async def test_an_address_given_with_base_url_is_sent_the_key_alone(
     preset: str, base_url: str, wire: Wire, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`--base-url` is an address quackd was told, not the SDK's own, so whatever is behind it is
+    """`--base-url` is an address Roboglot was told, not the SDK's own, so whatever is behind it is
     sent the key and none of the variable's lines: not a gateway's own authorization, and not an
     access proxy's pair of headers, which a server behind Cloudflare Access wants. This is the
     limitation the change leaves, and the way round it is `OPENAI_BASE_URL` with `--llm openai`,
@@ -474,7 +474,7 @@ async def test_a_board_with_no_local_key_is_sent_the_placeholder_and_never_opena
 def test_a_whole_run_on_a_board_sends_the_key_on_every_turn_and_nothing_ambient(
     wire: Wire, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """`quackd run` end to end, through the CLI, with a local LLM on a Jetson over plain HTTP:
+    """`roboglot run` end to end, through the CLI, with a local LLM on a Jetson over plain HTTP:
     every turn the run asked carried the key once and nothing the SDK read for itself."""
     script = SCRIPTS["hello-world"]
     wire.script = lambda n: completion(n, *script[n - 1], "qwen3", {})
@@ -551,7 +551,7 @@ async def test_a_line_naming_one_of_openrouters_own_headers_leaves_openrouters_v
     """OpenRouter's two headers are OpenRouter's, and a line of the variable that names either is
     somebody else's. Named in OpenRouter's own spelling and then in another, the locked release
     sent neither the line nor OpenRouter's value: it merges in the variable's order without regard
-    to case, and the `Omit` quackd handed under the second spelling took OpenRouter's value away
+    to case, and the `Omit` Roboglot handed under the second spelling took OpenRouter's value away
     from the first. Every spelling the variable gives now carries OpenRouter's value, so the
     request is the one sent with no such line, header for header, wherever the variable names the
     header once or the release merges spellings, and a release that keeps them apart sends

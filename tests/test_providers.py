@@ -11,15 +11,15 @@ from typing import Any
 
 import pytest
 
-from quackd.agent.providers.anthropic import (
+from roboglot.agent.providers.anthropic import (
     ADAPTIVE_REFUSED,
     BINDING_BETA,
     BINDING_TRIM_PERIOD,
     FALLBACK_BETA,
     AnthropicProvider,
 )
-from quackd.agent.providers.anthropic import render_messages as a_messages
-from quackd.agent.providers.base import (
+from roboglot.agent.providers.anthropic import render_messages as a_messages
+from roboglot.agent.providers.base import (
     Decision,
     Exchange,
     NamedPng,
@@ -28,25 +28,25 @@ from quackd.agent.providers.base import (
     ProviderTurn,
     ToolCall,
 )
-from quackd.agent.providers.catalogue import default_llm_for, find_llm, llms_for
-from quackd.agent.providers.factory import make_provider
-from quackd.agent.providers.gemini import (
+from roboglot.agent.providers.catalogue import default_llm_for, find_llm, llms_for
+from roboglot.agent.providers.factory import make_provider
+from roboglot.agent.providers.gemini import (
     UNSUPPORTED_SCHEMA_KEYS,
     GeminiProvider,
     clean_schema,
     render_contents,
 )
-from quackd.agent.providers.grok import GrokProvider
-from quackd.agent.providers.openai import OpenAIProvider, parse_extra_body, parse_responses
-from quackd.agent.providers.openai import render_input as o_input
-from quackd.agent.providers.openai import render_messages as o_messages
-from quackd.agent.providers.openrouter import OpenRouterProvider
-from quackd.verbs.registry import default_registry
+from roboglot.agent.providers.grok import GrokProvider
+from roboglot.agent.providers.openai import OpenAIProvider, parse_extra_body, parse_responses
+from roboglot.agent.providers.openai import render_input as o_input
+from roboglot.agent.providers.openai import render_messages as o_messages
+from roboglot.agent.providers.openrouter import OpenRouterProvider
+from roboglot.verbs.registry import default_registry
 
 PNG = b"\x89PNG\r\n\x1a\nfake"
 PNG_TOP = b"\x89PNG\r\n\x1a\ntop"
 PNG_SIDE = b"\x89PNG\r\n\x1a\nside"
-#: Pictures that came with the task (`quackd run --image`) rather than with a step. Distinct
+#: Pictures that came with the task (`roboglot run --image`) rather than with a step. Distinct
 #: from every camera's bytes so a label in front of the wrong picture fails an assertion.
 PNG_SKETCH = b"\x89PNG\r\n\x1a\nsketch"
 PNG_PLAN = b"\x89PNG\r\n\x1a\nplan"
@@ -234,10 +234,10 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
     then messages, so one breakpoint on the system block caches the rules, the verbs, the
     datasheet and the task, which are the bulk of every call and the same on every call. The
     marked block is byte for byte the same from call to call, or the cache could never be read.
-    `QUACKD_ANTHROPIC_CACHE=0` sends the string as it always was."""
+    `ROBOGLOT_ANTHROPIC_CACHE=0` sends the string as it always was."""
     import json
 
-    monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
+    monkeypatch.delenv("ROBOGLOT_ANTHROPIC_CACHE", raising=False)
     client = FakeAnthropic(anthropic_response())
     p = AnthropicProvider(llm_id="claude-opus-5", client=client)
     sent = []
@@ -250,7 +250,7 @@ async def test_anthropic_marks_the_system_prompt_for_its_cache_the_same_on_every
     ]
 
     for off in ("0", "false", "no"):
-        monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
+        monkeypatch.setenv("ROBOGLOT_ANTHROPIC_CACHE", off)
         plain = FakeAnthropic(anthropic_response())
         await AnthropicProvider(llm_id="claude-opus-5", client=plain).step("SYS", history(), TOOLS)
         assert plain.kwargs["system"] == "SYS", off
@@ -261,19 +261,19 @@ async def test_anthropic_opted_out_of_its_cache_marks_none_of_the_points_the_loo
 ) -> None:
     """The loop marks the history only for a provider whose `caches` is True, and the provider
     holds to the same switch itself, so a history marked anyway, by a caller other than the loop,
-    goes out unmarked as well. With `QUACKD_ANTHROPIC_CACHE=0` nothing in the request carries a
+    goes out unmarked as well. With `ROBOGLOT_ANTHROPIC_CACHE=0` nothing in the request carries a
     marker, the system prompt's nor one in the history, and with it on each half named carries
     one."""
     first, second = history()
     marked = [first.model_copy(update={"cache_points": ("observation", "decision")}), second]
 
-    monkeypatch.delenv("QUACKD_ANTHROPIC_CACHE", raising=False)
+    monkeypatch.delenv("ROBOGLOT_ANTHROPIC_CACHE", raising=False)
     on = FakeAnthropic(anthropic_response())
     await AnthropicProvider(llm_id="claude-opus-5", client=on).step("SYS", marked, TOOLS)
     assert json.dumps(on.kwargs, default=str).count('"cache_control"') == 3
 
     for off in ("0", "false", "no"):
-        monkeypatch.setenv("QUACKD_ANTHROPIC_CACHE", off)
+        monkeypatch.setenv("ROBOGLOT_ANTHROPIC_CACHE", off)
         plain = FakeAnthropic(anthropic_response())
         await AnthropicProvider(llm_id="claude-opus-5", client=plain).step("SYS", marked, TOOLS)
         assert "cache_control" not in json.dumps(plain.kwargs, default=str), off
@@ -463,7 +463,7 @@ class RefusesToolsOnChat:
 @pytest.fixture
 def _no_effort_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """The knob is also an env var, and a developer who has set it must not fail this file."""
-    monkeypatch.delenv("QUACKD_OPENAI_REASONING_EFFORT", raising=False)
+    monkeypatch.delenv("ROBOGLOT_OPENAI_REASONING_EFFORT", raising=False)
 
 
 #: An OpenAI LLM the catalogue does not route to Responses, so the 400 reader is what moves
@@ -476,7 +476,7 @@ async def test_openai_switches_to_responses_when_chat_refuses_function_tools(
 ) -> None:
     """An LLM that will not take function tools on Chat Completions at any effort.
 
-    Every verb quackd has is a function tool, so this is not a degraded path, it is no path.
+    Every verb Roboglot has is a function tool, so this is not a degraded path, it is no path.
     The provider must take the API at its word, move to Responses, and STAY there: retrying
     chat every turn would pay a failed call per step for the length of the run.
 
@@ -529,15 +529,15 @@ async def test_an_explicit_api_outranks_the_catalogue_and_the_environment(
 ) -> None:
     """`api=` wins over the hint, and the hint wins over the environment.
 
-    That order is not arbitrary. `QUACKD_OPENAI_API=chat` set for one LLM must not send an LLM
+    That order is not arbitrary. `ROBOGLOT_OPENAI_API=chat` set for one LLM must not send an LLM
     with no Chat Completions at all to an endpoint that will refuse it, so the environment loses
     to the catalogue. A caller who passes `api=` is holding something more specific than either.
     """
-    monkeypatch.setenv("QUACKD_OPENAI_API", "chat")
+    monkeypatch.setenv("ROBOGLOT_OPENAI_API", "chat")
     assert OpenAIProvider(llm_id="gpt-6-astra", client=FakeOpenAI(None)).api == "responses"
     assert OpenAIProvider(llm_id="gpt-6-astra", client=FakeOpenAI(None), api="chat").api == "chat"
     assert OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(None)).api == "chat"
-    monkeypatch.setenv("QUACKD_OPENAI_API", "responses")
+    monkeypatch.setenv("ROBOGLOT_OPENAI_API", "responses")
     assert OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(None)).api == "responses"
 
 
@@ -809,7 +809,7 @@ async def test_openai_reasoning_effort_can_be_set_by_hand() -> None:
     assert client.kwargs["reasoning_effort"] == "low"
 
 
-# ── extra_body: a field the server wants and quackd never sends (#12) ────────────────────
+# ── extra_body: a field the server wants and Roboglot never sends (#12) ────────────────────
 
 BODY = {"chat_template_kwargs": {"enable_thinking": False}}
 BODY_JSON = '{"chat_template_kwargs": {"enable_thinking": false}}'
@@ -841,13 +841,13 @@ async def test_extra_body_survives_the_switch_to_responses(_no_effort_env: None)
 
 
 async def test_extra_body_from_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", BODY_JSON)
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", BODY_JSON)
     client = FakeOpenAI(openai_response("stop", "{}"))
     await OpenAIProvider(llm_id="gpt-5", client=client).step("SYS", history(), TOOLS)
     assert client.kwargs["extra_body"] == BODY
 
     # blanked rather than deleted, which is what a commented-out `.env` line leaves behind
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", "   ")
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", "   ")
     client = FakeOpenAI(openai_response("stop", "{}"))
     await OpenAIProvider(llm_id="gpt-5", client=client).step("SYS", history(), TOOLS)
     assert "extra_body" not in client.kwargs
@@ -857,7 +857,7 @@ async def test_the_flag_outranks_the_environment(monkeypatch: pytest.MonkeyPatch
     """The flag reaches a provider as the dict the factory parsed, so a dict beats the
     variable. An empty one is not None, so it skips the variable and sends nothing: that is
     how a `.env` line is silenced for a single run."""
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", '{"from": "the environment"}')
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", '{"from": "the environment"}')
     client = FakeOpenAI(openai_response("stop", "{}"))
     await OpenAIProvider(llm_id="gpt-5", client=client, extra_body=BODY).step(
         "SYS", history(), TOOLS
@@ -873,11 +873,11 @@ async def test_the_flag_outranks_the_environment(monkeypatch: pytest.MonkeyPatch
 def test_extra_body_must_be_a_json_object(bad: str, monkeypatch: pytest.MonkeyPatch) -> None:
     """Both doors refuse it, and each says which one it was: a flag somebody has just typed
     and a line in a `.env` they have forgotten want different answers."""
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", bad)
-    with pytest.raises(ProviderError, match="QUACKD_EXTRA_BODY"):
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", bad)
+    with pytest.raises(ProviderError, match="ROBOGLOT_EXTRA_BODY"):
         OpenAIProvider(llm_id="gpt-5", client=FakeOpenAI(None))
 
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", "")
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", "")
     with pytest.raises(ProviderError, match="--extra-body"):
         # the parse is what fails, before the SDK this machine does not have is imported
         make_provider("vllm", llm_id="m", base_url="http://gpu:8000/v1", extra_body=bad)
@@ -902,7 +902,7 @@ def test_extra_body_reaches_every_provider_that_speaks_openais_api(
 
 
 @pytest.mark.parametrize("key", ["model", "messages", "input", "instructions", "tools", "stream"])
-def test_extra_body_refuses_the_keys_quackd_owns(key: str) -> None:
+def test_extra_body_refuses_the_keys_roboglot_owns(key: str) -> None:
     """`model` would put an LLM on the wire that `run_start` does not name, and `stream`
     changes the shape of the reply without telling the SDK, which then fails on the content
     type long after the robot has connected."""
@@ -912,7 +912,7 @@ def test_extra_body_refuses_the_keys_quackd_owns(key: str) -> None:
         )
 
 
-def test_extra_body_lets_you_override_what_quackd_sends() -> None:
+def test_extra_body_lets_you_override_what_roboglot_sends() -> None:
     """The refusal list is short on purpose. Replacing `tool_choice` is the escape hatch the
     passthrough exists to be, and the SDK merges last, so it wins."""
     body = parse_extra_body('{"tool_choice": "auto"}', source="--extra-body")
@@ -1150,12 +1150,12 @@ def test_gemini_drops_the_bounds_google_genai_refuses() -> None:
 
 def test_gemini_cleans_the_real_verbs_not_only_a_written_one() -> None:
     """The test above proves `clean_schema` works on a schema written here. This one proves it
-    on the schemas quackd actually sends, which is where the bug was: `move` and `go_to` are
+    on the schemas Roboglot actually sends, which is where the bug was: `move` and `go_to` are
     core verbs, both bound with `gt=0`, so the 400 was every robot rather than some of them.
 
     The first assertion is the one that matters. Without it this test passes for the wrong
     reason the day no verb carries a bound any more, and stops guarding the agreement between
-    `quackd/verbs/core.py` and `UNSUPPORTED_SCHEMA_KEYS` that it exists to guard.
+    `roboglot/verbs/core.py` and `UNSUPPORTED_SCHEMA_KEYS` that it exists to guard.
     """
     schemas = default_registry().tool_schemas()
     carriers = [t["name"] for t in schemas if "exclusiveM" in json.dumps(t)]
@@ -1367,9 +1367,9 @@ async def test_a_type_error_inside_the_request_is_not_an_old_sdk() -> None:
 
 
 def test_anthropic_thinking_display_is_configurable(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_THINKING_DISPLAY", "")
+    monkeypatch.setenv("ROBOGLOT_THINKING_DISPLAY", "")
     assert AnthropicProvider(client=FakeAnthropic(None)).thinking_display is None
-    monkeypatch.setenv("QUACKD_THINKING_DISPLAY", "omitted")
+    monkeypatch.setenv("ROBOGLOT_THINKING_DISPLAY", "omitted")
     assert AnthropicProvider(client=FakeAnthropic(None)).thinking_display == "omitted"
 
 
@@ -1405,7 +1405,7 @@ def test_the_claude_llms_that_refuse_a_forced_call_are_marked() -> None:
 
 @pytest.mark.parametrize("spec", llms_for("anthropic"), ids=lambda m: m.id)
 async def test_effort_goes_only_to_the_claude_rows_that_take_it(spec: Any) -> None:
-    """Haiku 4.5 is not on Anthropic's list of LLMs that take `output_config.effort`, and quackd
+    """Haiku 4.5 is not on Anthropic's list of LLMs that take `output_config.effort`, and Roboglot
     once sent it to Haiku 4.5 on every call."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
     await AnthropicProvider(llm_id=spec.id, client=client, effort="medium").step(
@@ -1493,7 +1493,7 @@ async def test_a_binding_llm_whose_thinking_is_refused_is_told_not_quietly_unbou
 
 
 async def test_a_binding_llm_asks_to_bind_even_with_no_thinking_display() -> None:
-    """`QUACKD_THINKING_DISPLAY=` sends no display, and the LLM thinks anyway; the field that
+    """`ROBOGLOT_THINKING_DISPLAY=` sends no display, and the LLM thinks anyway; the field that
     keeps a stale block from being a 400 has to go out regardless."""
     client = FakeAnthropic(anthropic_response(tool_use_block()))
     p = AnthropicProvider(llm_id="claude-opus-5-5", client=client, thinking_display="")
@@ -1578,7 +1578,7 @@ async def test_an_sdk_too_old_for_betas_refuses_a_binding_llm_up_front() -> None
 async def test_deepseek_turns_thinking_off_and_insists_on_its_one_call() -> None:
     """Thinking mode refuses `required` and wants every earlier turn's reasoning sent back, and
     it is DeepSeek's default. With thinking off the forced call is accepted again."""
-    from quackd.agent.providers.deepseek import DeepSeekProvider
+    from roboglot.agent.providers.deepseek import DeepSeekProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
     await DeepSeekProvider(llm_id="deepseek-flash", client=client).step("S", history(), TOOLS)
@@ -1588,7 +1588,7 @@ async def test_deepseek_turns_thinking_off_and_insists_on_its_one_call() -> None
 
 
 async def test_a_deepseek_extra_body_goes_over_the_thinking_default_not_instead_of_it() -> None:
-    from quackd.agent.providers.deepseek import DeepSeekProvider
+    from roboglot.agent.providers.deepseek import DeepSeekProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
     p = DeepSeekProvider(llm_id="deepseek-flash", client=client, extra_body={"top_p": 0.5})
@@ -1605,7 +1605,7 @@ async def test_a_deepseek_extra_body_goes_over_the_thinking_default_not_instead_
 
 async def test_meta_is_asked_for_one_call_per_turn() -> None:
     """Meta documents `parallel_tool_calls` and defaults it to allowing several."""
-    from quackd.agent.providers.meta import MetaProvider
+    from roboglot.agent.providers.meta import MetaProvider
 
     client = FakeOpenAI(openai_response("walk", "{}"))
     await MetaProvider(llm_id="muse-spark-1.3", client=client).step("S", history()[:1], TOOLS)
@@ -1757,7 +1757,7 @@ async def test_mistral_content_chunks_are_read_as_text_and_thinking(as_objects: 
     always on Z.ai GLM 5.3. The list was joined as text, which raised, so a run on such an LLM
     ended on its first turn. The call is kept, the text chunk is the text and the thinking chunk
     the thinking."""
-    from quackd.agent.providers.mistral import MistralProvider
+    from roboglot.agent.providers.mistral import MistralProvider
 
     response = openai_response("walk", "{}")
     response.choices[0].message.content = _mistral_chunks(as_objects=as_objects)
@@ -1772,7 +1772,7 @@ async def test_mistral_content_chunks_are_read_as_text_and_thinking(as_objects: 
 def test_content_that_is_a_string_reads_as_it_always_did() -> None:
     """The chunk reader changes nothing for the vendors that answer with a string, and reads
     no chunk type it was not written for."""
-    from quackd.agent.providers.openai import content_parts
+    from roboglot.agent.providers.openai import content_parts
 
     assert content_parts("walking") == ("walking", None)
     assert content_parts(None) == (None, None)
@@ -1786,7 +1786,7 @@ def test_content_that_is_a_string_reads_as_it_always_did() -> None:
 def test_text_chunks_are_one_answer_joined_as_they_came() -> None:
     """Text chunks are pieces of one answer: a newline between two of them would cut a sentence
     in two, and a chunk of nothing but spaces is part of the answer rather than a missing one."""
-    from quackd.agent.providers.openai import content_parts
+    from roboglot.agent.providers.openai import content_parts
 
     split = [{"type": "text", "text": "The ball is "}, {"type": "text", "text": "to the left."}]
     assert content_parts(split) == ("The ball is to the left.", None)
@@ -1802,7 +1802,7 @@ def test_text_chunks_are_one_answer_joined_as_they_came() -> None:
 async def test_local_splits_inline_think_tags_out_of_the_answer() -> None:
     """A server with no reasoning separation leaves `<think>` in `content`, where it would be
     shown as the answer and replayed to the LLM next turn as something it said."""
-    from quackd.agent.providers.local import LocalProvider
+    from roboglot.agent.providers.local import LocalProvider
 
     response = openai_response("walk", "{}", content="<think>ball is left</think>turning left")
     p = LocalProvider("m", preset="ollama", client=FakeOpenAI(response))
@@ -1878,7 +1878,7 @@ async def test_gemini_does_not_retry_a_rate_limit_that_mentions_thinking() -> No
 
 
 def test_gemini_thoughts_can_be_turned_off(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("QUACKD_GEMINI_THOUGHTS", "0")
+    monkeypatch.setenv("ROBOGLOT_GEMINI_THOUGHTS", "0")
     p = GeminiProvider(client=NS())
     assert not p.include_thoughts and "thinking_config" not in p._config("S", TOOLS)
 
@@ -1939,7 +1939,7 @@ def test_usage_adds_reasoning_tokens_too() -> None:
     that reaches `summary.json`, and a sixth bucket added later without a line in `__add__`
     should fail here rather than quietly report zero for the length of a run.
     """
-    from quackd.agent.providers.base import Usage
+    from roboglot.agent.providers.base import Usage
 
     total = Usage(
         input_tokens=1,
@@ -2014,7 +2014,7 @@ async def test_anthropic_reasoning_tokens_are_a_slice_of_an_output_total_already
 
 async def test_openai_chat_keeps_the_prompt_total_and_names_its_cached_slices() -> None:
     """`prompt_tokens_details` is a breakdown of `prompt_tokens`, not an addition to it, so the
-    total passes through as quackd's whole prompt and only the slices are new. Adding them the
+    total passes through as Roboglot's whole prompt and only the slices are new. Adding them the
     way the Anthropic adapter must would count every cached token twice.
 
     The slices are what make the bill come out right: from the second turn of a run most of the
@@ -2049,7 +2049,7 @@ async def test_openai_responses_names_the_cached_slices_under_its_own_spelling(
 async def test_gemini_bills_the_thoughts_beside_the_answer_and_names_its_cached_prompt() -> None:
     """Google's own reference defines the total as prompt plus thoughts plus response
     candidates, three addends, so `candidates_token_count` cannot already contain the thinking.
-    quackd's `output_tokens` is everything generated at the output rate, so the two are summed
+    Roboglot's `output_tokens` is everything generated at the output rate, so the two are summed
     here and nowhere else: before that, a thinking Gemini run under-reported its output by
     however much it thought, which on a reasoning LLM is most of what it generated.
 
@@ -2209,7 +2209,7 @@ def test_one_camera_and_no_task_picture_still_sends_one_bare_frame() -> None:
 
     `picture_parts` decides to name a frame from `cameras` or from the attachments, and both
     are empty here, so the single picture is the one bare part every provider has always sent.
-    A label added to it would be quackd telling a pilot with one lens that the lens is called
+    A label added to it would be Roboglot telling a pilot with one lens that the lens is called
     `camera`, in a sentence nobody asked for.
     """
     assert a_messages(history())[0]["content"] == [
@@ -2326,7 +2326,7 @@ class Listing(list[dict[str, Any]]):
 
 @pytest.fixture
 def or_list(monkeypatch: pytest.MonkeyPatch) -> Listing:
-    from quackd.agent.providers import openrouter
+    from roboglot.agent.providers import openrouter
 
     entries = Listing(or_entry())
 
@@ -2338,7 +2338,7 @@ def or_list(monkeypatch: pytest.MonkeyPatch) -> Listing:
     return entries
 
 
-def test_openrouter_builds_its_client_with_quackds_attribution(
+def test_openrouter_builds_its_client_with_roboglots_attribution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The two headers OpenRouter credits an app by, on the client itself so every request
@@ -2346,7 +2346,7 @@ def test_openrouter_builds_its_client_with_quackds_attribution(
     what it is built with, and Grok built the same way must get its key and none of OpenRouter's:
     the hook is inert for every other vendor. Each names its key as `Authorization` and omits
     OpenAI's account headers, which `tests/test_openai_headers.py` is about."""
-    from quackd.agent.providers.openrouter import ATTRIBUTION, BASE_URL
+    from roboglot.agent.providers.openrouter import ATTRIBUTION, BASE_URL
     from tests import fake_openai_sdk as fake_sdk
 
     for name in ("OPENAI_CUSTOM_HEADERS", "OPENAI_ORG_ID", "OPENAI_PROJECT_ID"):
@@ -2360,7 +2360,7 @@ def test_openrouter_builds_its_client_with_quackds_attribution(
     assert openrouter.kwargs["base_url"] == BASE_URL == "https://openrouter.ai/api/v1"
     assert ATTRIBUTION == {
         "HTTP-Referer": "https://github.com/rokbenko/quackd",
-        "X-OpenRouter-Title": "quackd",
+        "X-OpenRouter-Title": "roboglot",
     }
     sent = {k: v for k, v in openrouter.handed.items() if not isinstance(v, fake_sdk.Omit)}
     assert sent == {"Authorization": "Bearer sk-or-v1-test", **ATTRIBUTION}
@@ -2378,7 +2378,7 @@ def test_a_curated_openrouter_row_never_asks_the_network(spec: Any) -> None:
 
 
 def test_an_unlisted_id_takes_its_images_and_its_price_from_the_list(or_list: Listing) -> None:
-    or_list.append(or_entry("quackd-stub/text-only", architecture={"input_modalities": ["text"]}))
+    or_list.append(or_entry("roboglot-stub/text-only", architecture={"input_modalities": ["text"]}))
     p = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     assert p.supports_vision is True
     price = p.listed_price
@@ -2389,10 +2389,10 @@ def test_an_unlisted_id_takes_its_images_and_its_price_from_the_list(or_list: Li
     assert price.checked is not None and len(price.checked) == 10, "today's date, ISO"
     assert or_list.fetched == ["https://openrouter.ai/api/v1"]
 
-    blind = OpenRouterProvider(llm_id="quackd-stub/text-only", client=FakeOpenAI(None))
+    blind = OpenRouterProvider(llm_id="roboglot-stub/text-only", client=FakeOpenAI(None))
     assert blind.supports_vision is False, "a text-only entry is sent no frames"
     assert OpenRouterProvider(
-        llm_id="quackd-stub/text-only", client=FakeOpenAI(None), vision=True
+        llm_id="roboglot-stub/text-only", client=FakeOpenAI(None), vision=True
     ).supports_vision, "--vision still wins over the list"
 
 
@@ -2402,9 +2402,9 @@ def test_an_unlisted_id_the_list_lacks_is_refused_with_the_nearest_it_has(
     """Before the key: an LLM that does not exist is the reader's to fix first."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError) as e:
-        OpenRouterProvider(llm_id="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+        OpenRouterProvider(llm_id="qwen/qwen3.8-flsh", source="ROBOGLOT_LLM")
     message = str(e.value)
-    assert "'qwen/qwen3.8-flsh' from QUACKD_LLM is not on OpenRouter's LLM list" in message
+    assert "'qwen/qwen3.8-flsh' from ROBOGLOT_LLM is not on OpenRouter's LLM list" in message
     assert "Nearest on the list: qwen/qwen3.8-flash" in message
     assert "OPENROUTER_API_KEY" not in message
 
@@ -2450,7 +2450,7 @@ def test_an_unreachable_list_names_the_host_before_any_key_is_read(
 
 
 def test_the_list_is_read_once_per_process_and_per_address(or_list: Listing) -> None:
-    """Preflight builds a provider for every file and seed, and a flock one per member."""
+    """Preflight builds a provider for every file and seed, and a team one per member."""
     for _ in range(3):
         OpenRouterProvider(llm_id="qwen/qwen3.8-flash", client=FakeOpenAI(None))
     OpenRouterProvider(
@@ -2459,22 +2459,22 @@ def test_the_list_is_read_once_per_process_and_per_address(or_list: Listing) -> 
     assert or_list.fetched == ["https://openrouter.ai/api/v1", "http://elsewhere/api/v1"]
 
 
-def test_the_list_is_asked_for_by_quackd_with_no_key() -> None:
-    """A real request to a stand-in. quackd's own User-Agent, because OpenRouter answers one that
+def test_the_list_is_asked_for_by_roboglot_with_no_key() -> None:
+    """A real request to a stand-in. Roboglot's own User-Agent, because OpenRouter answers one that
     looks like Anthropic's client with a list in Anthropic's shape; the attribution headers; and
     no key, which has not been read yet and which the list does not need."""
-    from quackd import __version__
-    from quackd.agent.providers.openrouter import fetch_llms
+    from roboglot import __version__
+    from roboglot.agent.providers.openrouter import fetch_llms
     from tests.fake_openrouter import FakeOpenRouter
 
     with FakeOpenRouter() as stand_in:
         llms = fetch_llms(stand_in.base_url)
-    assert llms[0]["id"] == "quackd-stub/tool-model"
+    assert llms[0]["id"] == "roboglot-stub/tool-model"
     (asked,) = stand_in.gets()
     assert asked.path == "/api/v1/models"
-    assert asked.headers["user-agent"] == f"quackd/{__version__}"
+    assert asked.headers["user-agent"] == f"roboglot/{__version__}"
     assert asked.headers["http-referer"] == "https://github.com/rokbenko/quackd"
-    assert asked.headers["x-openrouter-title"] == "quackd"
+    assert asked.headers["x-openrouter-title"] == "roboglot"
     assert "authorization" not in asked.headers and "anthropic-version" not in asked.headers
 
 
@@ -2496,7 +2496,7 @@ def test_the_list_is_asked_for_by_quackd_with_no_key() -> None:
 def test_a_list_in_another_shape_is_refused_not_read_as_absent(body: Any, why: str) -> None:
     """Read as OpenRouter's, any of these would turn "the list is wrong" into "your LLM does
     not exist" or "your LLM has no tool calling", and send the reader to fix the wrong thing."""
-    from quackd.agent.providers.openrouter import fetch_llms
+    from roboglot.agent.providers.openrouter import fetch_llms
     from tests.fake_openrouter import FakeOpenRouter
 
     with (
@@ -2507,7 +2507,7 @@ def test_a_list_in_another_shape_is_refused_not_read_as_absent(body: Any, why: s
 
 
 def test_a_variable_price_on_the_list_is_unpriced_not_negative(or_list: Listing) -> None:
-    from quackd.agent.providers.openrouter import listed_price
+    from roboglot.agent.providers.openrouter import listed_price
 
     assert listed_price({"prompt": "-1", "completion": "-1"}, checked="2026-10-06") is None
     assert listed_price({"prompt": "0.000002"}, checked="2026-10-06") is None
@@ -2542,7 +2542,7 @@ async def test_openrouter_insists_on_one_call_except_on_the_rows_that_refuse_one
 async def test_an_unlisted_llm_is_asked_rather_than_told(
     supported: list[str], tool_choice: str | None, or_list: Listing
 ) -> None:
-    """Nobody here has seen how each upstream words a refusal of a forced call, so an id quackd
+    """Nobody here has seen how each upstream words a refusal of a forced call, so an id Roboglot
     does not carry is asked, the way a local LLM is. Where its entry lists no `tool_choice`,
     the field is not sent: `require_parameters` would route a request carrying it nowhere."""
     or_list[:] = [or_entry(supported_parameters=supported)]
@@ -2586,8 +2586,8 @@ def test_openrouter_refuses_an_llm_fallback_list_from_either_door(
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ProviderError, match=r"--extra-body: 'models' is refused on openrouter"):
         make_provider("openrouter", extra_body='{"models": ["a/b"]}')
-    monkeypatch.setenv("QUACKD_EXTRA_BODY", '{"models": ["a/b"]}')
-    with pytest.raises(ProviderError, match=r"QUACKD_EXTRA_BODY: 'models' is refused"):
+    monkeypatch.setenv("ROBOGLOT_EXTRA_BODY", '{"models": ["a/b"]}')
+    with pytest.raises(ProviderError, match=r"ROBOGLOT_EXTRA_BODY: 'models' is refused"):
         OpenRouterProvider()
     # and nowhere else: every other OpenAI-shaped vendor still forwards it untouched
     assert GrokProvider(client=FakeOpenAI(None)).extra_body == {"models": ["a/b"]}
@@ -2598,9 +2598,9 @@ async def test_openrouter_stays_on_chat_completions_whatever_it_is_told(
 ) -> None:
     """OpenRouter relaying OpenAI's refusal of function tools does not move the run to the
     Responses API: everything this provider adds is chat-shaped. It says why instead."""
-    from quackd.agent.providers.openrouter import RESPONSES_HINT
+    from roboglot.agent.providers.openrouter import RESPONSES_HINT
 
-    monkeypatch.setenv("QUACKD_OPENAI_API", "responses")
+    monkeypatch.setenv("ROBOGLOT_OPENAI_API", "responses")
     client = RefusesToolsOnChat(responses_result("walk", "{}"))
     p = OpenRouterProvider(client=client)
     assert p.api == "chat"
@@ -2616,7 +2616,7 @@ async def test_openrouter_ignores_the_openai_reasoning_effort_variable(
 ) -> None:
     """A stray parameter is worse here than anywhere: with `require_parameters` it can leave no
     endpoint at all. The variable is OpenAI's; an argument still goes through."""
-    monkeypatch.setenv("QUACKD_OPENAI_REASONING_EFFORT", "high")
+    monkeypatch.setenv("ROBOGLOT_OPENAI_REASONING_EFFORT", "high")
     client = FakeOpenAI(openrouter_response())
     await OpenRouterProvider(client=client).step("S", history(), TOOLS)
     assert "reasoning_effort" not in client.kwargs
@@ -2859,7 +2859,7 @@ def test_a_list_reply_that_is_not_one_is_refused_not_a_traceback(
 ) -> None:
     """A captive portal and a connection cut partway are what a list fetched over a hotel's
     network looks like. Both stop the run in a sentence, before any key or robot."""
-    from quackd.agent.providers.openrouter import fetch_llms
+    from roboglot.agent.providers.openrouter import fetch_llms
 
     with RawServer(answer) as server, pytest.raises(ProviderError) as e:
         fetch_llms(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=5.0)
@@ -2871,7 +2871,7 @@ def test_a_list_that_trickles_in_is_refused_when_its_time_is_up() -> None:
     per-read socket timeout and would otherwise hold a run as long as the server liked."""
     import time
 
-    from quackd.agent.providers.openrouter import fetch_llms
+    from roboglot.agent.providers.openrouter import fetch_llms
 
     started = time.monotonic()
     with RawServer(_drip) as server, pytest.raises(ProviderError) as e:
@@ -2894,7 +2894,7 @@ def test_a_blank_base_url_reads_openrouters_own_list_and_sends_there(
 ) -> None:
     """A blank `--base-url` is no address, for the list an id is checked against as for the
     client: both are OpenRouter's own. One of spaces used to be asked for the list as it was."""
-    from quackd.agent.providers.openrouter import BASE_URL
+    from roboglot.agent.providers.openrouter import BASE_URL
 
     provider = OpenRouterProvider(llm_id="qwen/qwen3.8-flash", base_url=blank, client=object())
     assert or_list.fetched == [BASE_URL]
@@ -2908,24 +2908,24 @@ def test_an_llm_that_expires_today_is_refused_and_one_that_expires_tomorrow_is_t
     LLM is gone, so a run on that day is refused, and a run the day before it is not."""
     import datetime as dt
 
-    from quackd.agent.providers.openrouter import admit
+    from roboglot.agent.providers.openrouter import admit
 
     today = dt.date(2026, 10, 6)
     or_list[:] = [
-        or_entry("quackd-stub/today", expiration_date="2026-10-06"),
-        or_entry("quackd-stub/tomorrow", expiration_date="2026-10-07"),
+        or_entry("roboglot-stub/today", expiration_date="2026-10-06"),
+        or_entry("roboglot-stub/tomorrow", expiration_date="2026-10-07"),
     ]
     with pytest.raises(ProviderError, match="expired on OpenRouter on 2026-10-06"):
-        admit("quackd-stub/today", today=today)
-    assert admit("quackd-stub/tomorrow", today=today).id == "quackd-stub/tomorrow"
+        admit("roboglot-stub/today", today=today)
+    assert admit("roboglot-stub/tomorrow", today=today).id == "roboglot-stub/tomorrow"
 
 
 def test_a_list_that_could_not_be_read_is_asked_for_again(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed fetch is not kept. Kept, it would turn "the host was down" into "your LLM does
-    not exist" for every later provider in the process: a preflight sweep, a flock's members."""
-    from quackd.agent.providers import openrouter
+    not exist" for every later provider in the process: a preflight sweep, a team's members."""
+    from roboglot.agent.providers import openrouter
 
     asked: list[str] = []
 
@@ -2945,11 +2945,11 @@ def test_a_list_that_could_not_be_read_is_asked_for_again(
 def test_the_factory_tells_the_list_check_where_the_id_came_from(
     or_list: Listing, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Through `make_provider`, the way a run builds it: an id pinned in `QUACKD_LLM` that the
+    """Through `make_provider`, the way a run builds it: an id pinned in `ROBOGLOT_LLM` that the
     list lacks is refused as coming from there, not from a flag nobody typed."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    with pytest.raises(ProviderError, match="from QUACKD_LLM is not on OpenRouter's LLM list"):
-        make_provider("openrouter", llm_id="qwen/qwen3.8-flsh", source="QUACKD_LLM")
+    with pytest.raises(ProviderError, match="from ROBOGLOT_LLM is not on OpenRouter's LLM list"):
+        make_provider("openrouter", llm_id="qwen/qwen3.8-flsh", source="ROBOGLOT_LLM")
 
 
 # ── a failure keeps the SDK's own error beneath it, for the loop to judge ──────────────
@@ -2985,7 +2985,7 @@ def _openrouter_client(boom: Any) -> Any:
 
 
 def _local_client(boom: Any) -> Any:
-    from quackd.agent.providers.local import LocalProvider
+    from roboglot.agent.providers.local import LocalProvider
 
     return LocalProvider("m", preset="ollama", client=NS(chat=NS(completions=NS(create=boom))))
 
@@ -3000,7 +3000,7 @@ async def test_a_provider_keeps_the_sdk_error_beneath_its_own(provider: Any) -> 
     reads that failure through the `ProviderError` a provider raises `from` it. A provider that
     dropped the chain would turn every rate limit into a run that ends at once, so each one that
     talks to an SDK keeps it: the status and the wait come back through the provider's error."""
-    from quackd.agent.providers.base import transient_failure
+    from roboglot.agent.providers.base import transient_failure
 
     with pytest.raises(ProviderError) as raised:
         await provider(_rate_limited()).step("S", history()[:1], TOOLS)
@@ -3020,8 +3020,8 @@ def test_every_sdk_client_is_built_to_retry_nothing_of_its_own(
     import sys
     import types
 
-    from quackd.agent.providers.base import NO_SDK_RETRIES
-    from quackd.agent.providers.factory import KEY_ENV, make_provider
+    from roboglot.agent.providers.base import NO_SDK_RETRIES
+    from roboglot.agent.providers.factory import KEY_ENV, make_provider
     from tests import fake_openai_sdk as fake_sdk
 
     assert NO_SDK_RETRIES == 0
