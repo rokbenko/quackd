@@ -435,7 +435,7 @@ class DriveSession:
         verbs = {
             name: registry.get(name)
             for name in registry.names()
-            if self.robot.duck is None or executor.is_allowed(name)
+            if self.robot.glot is None or executor.is_allowed(name)
         }
         self.presets = presets_for(executor.manifest, verbs)
         return ExactLane(verbs, self.presets)
@@ -761,9 +761,9 @@ class DriveSession:
         executor = self.robot.executor
         registry = executor.registry
         gated: list[str] = []
-        duck = self.robot.duck
-        if duck is not None:
-            confirmed = {registry.canonical(name) for name in duck.frontmatter.verbs.confirm}
+        glot = self.robot.glot
+        if glot is not None:
+            confirmed = {registry.canonical(name) for name in glot.frontmatter.verbs.confirm}
             gated = [name for name in self.goal_verbs if registry.canonical(name) in confirmed]
         if (
             self.settings.policy
@@ -819,15 +819,15 @@ class DriveSession:
         walked where the session's own budget or battery rule had stopped a typed call."""
         from roboglot.glotfile.parser import glot_from_goal
 
-        duck = glot_from_goal(
+        glot = glot_from_goal(
             text,
             self.goal_verbs or ["stop"],
             confirm=self._gated_for_goals(),
             memory=self.settings.memory is not None,
         )
-        front = duck.frontmatter
+        front = glot.frontmatter
         updates: dict[str, Any] = {"budgets": self._goal_budgets(front.budgets)}
-        session = self.robot.duck
+        session = self.robot.glot
         mine = session.frontmatter if session is not None else None
         if mine is not None:
             rules = list(mine.abort_when)
@@ -844,7 +844,7 @@ class DriveSession:
             updates["abort_when"] = rules
         if (policy := self._goal_policy(mine)) is not None:
             updates["policy"] = policy
-        return duck.model_copy(update={"frontmatter": front.model_copy(update=updates)})
+        return glot.model_copy(update={"frontmatter": front.model_copy(update=updates)})
 
     def _goal_policy(self, session: GlotFrontmatter | None) -> PolicySection | None:
         """What a goal holds `manipulate` to: the session `.glot`'s own `policy:` section, whose
@@ -912,12 +912,12 @@ class DriveSession:
                 "--controller vla tells the arm's policy each line word for word, as its one "
                 f"instruction, and {e}"
             )
-        duck = self.robot.duck
-        listed = duck.frontmatter.effective_policy.instructions if duck is not None else []
-        if duck is not None and listed and line not in listed:
+        glot = self.robot.glot
+        listed = glot.frontmatter.effective_policy.instructions if glot is not None else []
+        if glot is not None and listed and line not in listed:
             return (
                 "--controller vla tells the arm's policy each line word for word, and "
-                f"{duck.name} lists the only instructions it may be told: "
+                f"{glot.name} lists the only instructions it may be told: "
                 + ", ".join(repr(each) for each in listed)
             )
         budget = self.robot.executor.budget
@@ -994,7 +994,7 @@ class DriveSession:
             settings = self.settings
             loop = AgentLoop(
                 RunConfig(
-                    duck=self._goal_glot(cmd.text),
+                    glot=self._goal_glot(cmd.text),
                     provider=self.pilot(cmd.text),
                     transport=AttachedBody(self.robot.transport, manifest),
                     detector=self.robot.detector,

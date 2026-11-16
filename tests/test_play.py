@@ -80,10 +80,10 @@ def _played_team() -> str:
     return text.replace("glot: 1", "glot: 4", 1).replace("persona:", "play: true\npersona:", 1)
 
 
-def _played(duck: GlotFile) -> GlotFile:
+def _played(glot: GlotFile) -> GlotFile:
     """The same task file, saying `play: true` at `glot: 4`."""
-    fm = duck.frontmatter.model_copy(update={"glot": 4, "play": True})
-    return duck.model_copy(update={"frontmatter": fm})
+    fm = glot.frontmatter.model_copy(update={"glot": 4, "play": True})
+    return glot.model_copy(update={"frontmatter": fm})
 
 
 def _section(prompt: str) -> str:
@@ -91,12 +91,12 @@ def _section(prompt: str) -> str:
     return prompt[start : prompt.index("\n## Task file:", start)]
 
 
-def _render(spec: RobotSpec, duck: GlotFile, **kw: Any) -> str:
+def _render(spec: RobotSpec, glot: GlotFile, **kw: Any) -> str:
     manifest = describe(spec)
     registry = registry_for(spec, manifest)
-    allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
+    allow = [n for n in glot.frontmatter.verbs.allow if n in registry]
     return build_system_prompt(
-        duck, [registry.view(n) for n in allow], manifest=manifest, sees=True, **kw
+        glot, [registry.view(n) for n in allow], manifest=manifest, sees=True, **kw
     )
 
 
@@ -120,12 +120,12 @@ def _start(path: Path) -> dict[str, Any]:
 # ── the task file ───────────────────────────────────────────────────────────────────────
 
 
-def test_a_duck_4_file_can_give_its_pilot_a_part() -> None:
+def test_a_glot_4_file_can_give_its_pilot_a_part() -> None:
     assert parse_glot_text(PLAYED, path="t.glot").frontmatter.play is True
 
 
 @pytest.mark.parametrize("version", [0, 1, 2, 3])
-def test_play_needs_duck_4(version: int) -> None:
+def test_play_needs_glot_4(version: int) -> None:
     """Every version before the one that adds the key refuses it, with the fix in the words."""
     with pytest.raises(GlotParseError, match="play needs glot: 4"):
         parse_glot_text(PLAYED.replace("glot: 4", f"glot: {version}"), path="t.glot")
@@ -156,12 +156,12 @@ def test_play_false_adds_nothing_to_the_prompt(spec: RobotSpec) -> None:
     there was a keyword. That this call renders what it did before play existed was checked
     once, by rendering every body before and after the change (ADR-0055): no golden pins it,
     because the prompt is meant to keep improving."""
-    duck = _goal(spec)
+    glot = _goal(spec)
     manifest = describe(spec)
     registry = registry_for(spec, manifest)
-    verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow if n in registry]
-    without = build_system_prompt(duck, verbs, manifest=manifest, sees=True)
-    assert _render(spec, duck, play=False) == without
+    verbs = [registry.view(n) for n in glot.frontmatter.verbs.allow if n in registry]
+    without = build_system_prompt(glot, verbs, manifest=manifest, sees=True)
+    assert _render(spec, glot, play=False) == without
     assert PLAY_HEADING not in without
 
 
@@ -171,8 +171,8 @@ def test_a_played_prompt_is_the_plain_one_with_one_section_before_the_task(
 ) -> None:
     """The lasting form of the promise: whatever the prompt says, playing adds one section and
     changes nothing else, last before the task file."""
-    duck = _goal(spec)
-    plain, played = _render(spec, duck), _render(spec, duck, play=True)
+    glot = _goal(spec)
+    plain, played = _render(spec, glot), _render(spec, glot, play=True)
     assert played.count(f"\n{PLAY_HEADING}\n") == 1
     section = _section(played)
     assert played.replace(section, "", 1) == plain, "the section is the only difference"
@@ -184,14 +184,14 @@ def test_a_played_prompt_is_the_plain_one_with_one_section_before_the_task(
 def test_the_offered_verbs_are_the_same_played_or_not(spec: RobotSpec) -> None:
     """Four adapter tests read the offered verbs as the lines that start with a dash and a
     backtick, so no line of the section may start that way."""
-    duck = _goal(spec)
+    glot = _goal(spec)
 
     def offered(prompt: str) -> list[str]:
         return [line for line in prompt.splitlines() if line.startswith("- `")]
 
-    plain = offered(_render(spec, duck))
+    plain = offered(_render(spec, glot))
     assert plain, "the verb lines moved, so this comparison would hold with nothing in it"
-    assert offered(_render(spec, duck, play=True)) == plain
+    assert offered(_render(spec, glot, play=True)) == plain
 
 
 @pytest.mark.parametrize("still", [True, False])
@@ -216,14 +216,14 @@ def test_a_played_hello_world_reads_what_its_run_keeps_and_says() -> None:
     its lines with `quack`, which maps them to a tone as the Microduck's `say` does: the section
     follows the task's verbs, not the body's."""
     spec = RobotSpec("microduck", "mock")
-    duck = load_glot(str(TASKS / "hello-world.glot"))
-    played = _render(spec, duck, play=True)
+    glot = load_glot(str(TASKS / "hello-world.glot"))
+    played = _render(spec, glot, play=True)
     assert PLAY_HEADING in played and "remember" not in played.lower()
     assert "`quack` gives them this body's own sound" in played
     assert "No verb here speaks" not in played and "`say` gives" not in played
-    kept = _render(spec, duck, play=True, memory_text="")
+    kept = _render(spec, glot, play=True, memory_text="")
     assert "A note you keep with `remember`" in _section(kept)
-    assert kept.replace(_section(kept), "", 1) == _render(spec, duck, memory_text="")
+    assert kept.replace(_section(kept), "", 1) == _render(spec, glot, memory_text="")
 
 
 def test_the_open_duck_prompt_still_names_no_verb_it_does_not_offer() -> None:
@@ -277,8 +277,8 @@ def test_the_table_sentence_follows_move_joints_and_the_travel_one_follows_trave
     gated = [v.name for v in registry.verbs() if v.safety_class == "confirm"]
     if not joints:
         safe, gated = safe - {"move_joints"}, [g for g in gated if g != "move_joints"]
-    duck = glot_from_goal("You are a T-rex. Show me.", sorted(safe | set(gated)), confirm=gated)
-    section = _section(_render(spec, duck, play=True))
+    glot = glot_from_goal("You are a T-rex. Show me.", sorted(safe | set(gated)), confirm=gated)
+    section = _section(_render(spec, glot, play=True))
     assert ("This body cannot travel" in section) is travel
     assert ("stops short of the surface this body stands on" in section) is table
     assert "A blow, a stomp or a touch at something that is not here stops before it" in section
@@ -364,11 +364,11 @@ class Script:
         return ProviderTurn(tool_calls=[call.model_copy(update={"id": f"s-{len(self.systems)}"})])
 
 
-async def _run(duck: GlotFile, tmp_path: Path, **cfg: Any) -> tuple[Script, list[dict[str, Any]]]:
+async def _run(glot: GlotFile, tmp_path: Path, **cfg: Any) -> tuple[Script, list[dict[str, Any]]]:
     provider = cfg.pop("provider", None) or Script()
     transport = cfg.pop("transport", None) or MockTransport()
     result = await run_glot(
-        RunConfig(duck=duck, provider=provider, transport=transport, runs_dir=tmp_path, **cfg)
+        RunConfig(glot=glot, provider=provider, transport=transport, runs_dir=tmp_path, **cfg)
     )
     return provider, Transcript.read(result.run_dir / "transcript.jsonl")
 
@@ -440,9 +440,9 @@ async def test_the_gate_says_the_same_words_played_or_not(tmp_path: Path) -> Non
     ]
     answers = []
     for version, play in ((1, ""), (4, "play: true\n")):
-        duck = parse_glot_text(ARM_TASK.format(version=version, play=play), path="arm.glot")
+        glot = parse_glot_text(ARM_TASK.format(version=version, play=play), path="arm.glot")
         _provider, events = await _run(
-            duck,
+            glot,
             tmp_path / f"v{version}",
             provider=Script(list(calls)),
             transport=LeRobotAdapter(LeRobotMock(rest_pose=dict(REST))),
@@ -648,15 +648,15 @@ def test_the_spec_shows_a_whole_v4_file_and_the_validate_it_passes(tmp_path: Pat
     assert found, "the play section no longer shows a whole file"
     fm = parse_glot_text(found.group(1)).frontmatter
     assert fm.glot == 4 and fm.play is True
-    duck = tmp_path / "t-rex.glot"
-    duck.write_text(found.group(1), encoding="utf-8")
+    glot = tmp_path / "t-rex.glot"
+    glot.write_text(found.group(1), encoding="utf-8")
     assert "```console\n$ roboglot validate t-rex.glot\n" in section, "the command it quotes"
-    result = runner.invoke(cli.app, ["validate", str(duck)])
+    result = runner.invoke(cli.app, ["validate", str(glot)])
     assert result.exit_code == 0, result.output
     assert "1 file valid" in result.output and "1 file valid" in section
     quoted = re.search(r"\|\s*t-rex\.glot\s*\|\s*t-rex\s*\|\s*(\d+)\s*\|", section)
     assert quoted and int(quoted.group(1)) == len(fm.verbs.allow), "the verbs column it quotes"
-    arm = runner.invoke(cli.app, ["validate", str(duck), "--robot", "lerobot:mock"])
+    arm = runner.invoke(cli.app, ["validate", str(glot), "--robot", "lerobot:mock"])
     assert arm.exit_code == 0, arm.output
 
 
@@ -812,14 +812,14 @@ async def test_a_real_llm_plays_a_part_with_the_arm(tmp_path: Path) -> None:
     from roboglot.agent.providers.factory import make_provider
 
     goal = "You are a T-rex. Show me."
-    duck = _goal(RobotSpec("lerobot", "mock"), goal)
+    glot = _goal(RobotSpec("lerobot", "mock"), goal)
     budgets = Budgets(max_steps=3, max_minutes=3, max_llm_calls=6)
-    duck = duck.model_copy(
-        update={"frontmatter": duck.frontmatter.model_copy(update={"budgets": budgets})}
+    glot = glot.model_copy(
+        update={"frontmatter": glot.frontmatter.model_copy(update={"budgets": budgets})}
     )
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=make_provider(
                 "openai", llm_id=os.environ.get("ROBOGLOT_LIVE_LLM_MODEL"), goal=goal
             ),

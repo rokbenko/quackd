@@ -215,13 +215,13 @@ async def _arm(
     person: Any,
     settings: GoalSettings | None = None,
     *,
-    duck: Path | None = None,
+    glot: Path | None = None,
     yes: bool = False,
     pilot: Any = None,
 ) -> tuple[DriveSession, list[dict[str, Any]]]:
     """A session on the LeRobot mock, whose scripted policy answers `manipulate`, its goals
     flown by the VLA pilot unless `pilot` says otherwise. Contractless as `run_drive` leaves one,
-    or under `duck`, adopted before the connect as `run_drive` adopts a `--glotfile`."""
+    or under `glot`, adopted before the connect as `run_drive` adopts a `--glotfile`."""
     adapter = make_adapter(RobotSpec("lerobot", "mock", "arm"))
     event_log = EventLog()
     executor = Executor(
@@ -240,10 +240,10 @@ async def _arm(
         executor=executor,
         heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
     )
-    if duck is not None:
-        robot.adopt(load_glot(str(duck)))
+    if glot is not None:
+        robot.adopt(load_glot(str(glot)))
     await robot.connect()
-    if duck is None:
+    if glot is None:
         registry = executor.registry
         robot.adopt(
             session_glot([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
@@ -496,7 +496,7 @@ def _policy_runs(drive: DriveSession) -> list[str]:
     return list(drive.robot.transport.transport.policy_runs)
 
 
-async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
+async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_task_file_lists(
     tmp_path: Path,
 ) -> None:
     """A goal held `manipulate` to its own contract, which lists nothing, so a session whose
@@ -514,7 +514,7 @@ async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
         )
 
     drive, _records = await _arm(
-        tmp_path, None, GoalSettings(policy=True), duck=_bowl(tmp_path), yes=True, pilot=pilot
+        tmp_path, None, GoalSettings(policy=True), glot=_bowl(tmp_path), yes=True, pilot=pilot
     )
     goal = drive.submit("clear the table", by="cli", channel="pipe")
     await _settled(goal)
@@ -522,11 +522,11 @@ async def test_a_goal_tells_the_arms_policy_only_what_the_sessions_duck_lists(
     assert _policy_runs(drive) == [BOWL], "the policy was told words the .glot never listed"
 
 
-async def test_a_vla_line_the_sessions_duck_does_not_list_is_refused_before_the_arm_moves(
+async def test_a_vla_line_the_sessions_task_file_does_not_list_is_refused_before_the_arm_moves(
     tmp_path: Path,
 ) -> None:
     person = _Person(then=True)
-    drive, _records = await _arm(tmp_path, person, duck=_bowl(tmp_path))
+    drive, _records = await _arm(tmp_path, person, glot=_bowl(tmp_path))
     refused = drive.submit("wave the knife around")
     await _settled(refused)
     listed = drive.submit(BOWL)
@@ -569,15 +569,15 @@ async def test_a_goal_typed_over_a_goal_spends_what_the_first_left(tmp_path: Pat
             ]
         )
 
-    duck = tmp_path / "arm.glot"
-    duck.write_text(
+    glot = tmp_path / "arm.glot"
+    glot.write_text(
         "---\nglot: 3\nname: arm\ndescription: The arm.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 30\n---\nUse the arm.\n",
         encoding="utf-8",
     )
     drive, _records = await _arm(
-        tmp_path, Holding(then=True), GoalSettings(policy=True), duck=duck, pilot=three
+        tmp_path, Holding(then=True), GoalSettings(policy=True), glot=glot, pilot=three
     )
     budget = drive.robot.executor.budget
     assert budget is not None
@@ -738,15 +738,15 @@ async def test_a_vla_line_typed_over_a_goal_that_spent_the_last_seconds_is_refus
                 await asyncio.Event().wait()
             return await super().__call__(question, **more)
 
-    duck = tmp_path / "one.glot"
-    duck.write_text(
+    glot = tmp_path / "one.glot"
+    glot.write_text(
         "---\nglot: 3\nname: one\ndescription: One segment.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [done]\npolicy:\n  segment_s: 10\n  total_s: 10\n---\nOne segment.\n",
         encoding="utf-8",
     )
     person = NeverJudges(then=True)
-    drive, _records = await _arm(tmp_path, person, duck=duck)
+    drive, _records = await _arm(tmp_path, person, glot=glot)
     first = drive.submit("pick up the red cube")
     await asyncio.wait_for(judging.wait(), 20)
     asked_before = len(person.asked)

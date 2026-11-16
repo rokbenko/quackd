@@ -1,4 +1,4 @@
-"""OpenAI as the duck's brain, via the `openai` SDK (optional extra).
+"""OpenAI as the robot's brain, via the `openai` SDK (optional extra).
 
 Also the base class for every vendor that speaks OpenAI's API rather than one of its own,
 which by now is most of them: Grok, Mistral, DeepSeek, Cohere, Qwen, Kimi, GLM, Meta, OpenRouter

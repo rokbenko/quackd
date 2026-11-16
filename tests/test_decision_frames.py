@@ -783,11 +783,11 @@ async def _run(tmp_path: Path, llm: Any, *, frames_on: bool) -> Any:
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = _lookout()
+    glot = _lookout()
     return await run_glot(
         RunConfig(
-            duck=duck,
-            provider=FakeProvider.for_glot(duck.name),
+            glot=glot,
+            provider=FakeProvider.for_glot(glot.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="shadow",

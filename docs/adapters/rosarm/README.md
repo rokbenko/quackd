@@ -218,7 +218,7 @@ How `move_joints` works underneath:
 
    ```text
    move_joints is answered by a person on this robot, each time, while nobody is asked here (--yes,
-   a team's standing answer or the MCP server): run it from a terminal, with roboglot run or Roboglot
+   a team's standing answer or the MCP server): run it from a terminal, with roboglot run or roboglot
    drive and without --yes, and answer its confirm yourself
    ```
 

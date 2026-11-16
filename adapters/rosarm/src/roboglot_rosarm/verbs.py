@@ -39,7 +39,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roboglot.adapters.base import published_travel, said_past
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import send_or_fail
 from roboglot.verbs.registry import (
     STOP_ENDED,
@@ -143,14 +143,14 @@ class MoveJointsParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────────
 
 
-def _fresh_state(state: DuckState) -> str | None:
+def _fresh_state(state: RobotState) -> str | None:
     """The readings must be fresh: a goal starts from where the arm reads, and so does the check
     that it arrived."""
     stale = state.extras.get("stale")
     return None if not stale else f"the arm's readings are stale ({stale}): nothing is sent on them"
 
 
-def _can_move(state: DuckState) -> str | None:
+def _can_move(state: RobotState) -> str | None:
     """The driver's own word where it publishes one; a driver that publishes none, or one Roboglot
     could not read, is believed, as the SO-101's `not_hot` believes a backend with no thermometer.
     Roboglot never powers, enables, un-brakes or un-stops an arm, so this says who has to."""
@@ -170,7 +170,7 @@ def rosarm_conditions() -> dict[str, Precondition]:
 # ── the verbs ───────────────────────────────────────────────────────────────────────────────
 
 
-def _joints_of(state: DuckState) -> dict[str, float]:
+def _joints_of(state: RobotState) -> dict[str, float]:
     return {str(k): float(v) for k, v in dict(state.extras.get("joints") or {}).items()}
 
 

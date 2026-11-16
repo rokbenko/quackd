@@ -388,7 +388,7 @@
             }
           ],
           "default": 3,
-          "description": "Count (named duck-0..) or a list of unique slugs, 2 to 8.",
+          "description": "Count (named robot-0..) or a list of unique slugs, 2 to 8.",
           "title": "Members"
         },
         "allocation": {

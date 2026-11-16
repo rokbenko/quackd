@@ -25,7 +25,7 @@ from roboglot.passport_courtesy import IDENTIFY_BY, PAUSE_S, Courtesy, Decision
 from roboglot.passport_talk import Talker
 from roboglot.passport_trust import TIERS, judge
 from roboglot.safety import Aborted, Budget, Budgets, Executor, VerbNotAllowed
-from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.base import Ack, Intent, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.registry import Verb, VerbContext, VerbResult, default_registry
 from tests.passport_helpers import OWNER, OWNER_B, A, B, passport
@@ -200,7 +200,7 @@ def test_a_pause_ends_a_learned_verb_whatever_it_is_called(
 
 def test_a_verb_admitted_just_before_a_pause_is_held_once_its_state_read_returns() -> None:
     class SlowToReport(Body):
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             await asyncio.sleep(0.3)  # the last await between the gates and the verb itself
             return await super().get_state()
 

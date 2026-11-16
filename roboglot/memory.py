@@ -2,7 +2,7 @@
 
 Until now every run started fresh: the transcript recorded everything and forgot it the
 moment the process exited. `RobotMemory` is the small, honest fix: one append-only JSONL
-file per robot (adapter:backend, so a mock duck and a real one never share notes),
+file per robot (adapter:backend, so a mock robot and a real one never share notes),
 holding two kinds of entry —
 
 - **notes** the LLM chose to keep (`remember`: "the ball is usually near the left wall"),
@@ -50,7 +50,7 @@ class MemoryEntry:
     kind: Kind
     text: str
     ts: float
-    duck: str | None = None
+    task: str | None = None
     tags: list[str] = field(default_factory=list)
     outcome: str | None = None
     highlights: list[str] = field(default_factory=list)
@@ -61,8 +61,8 @@ class MemoryEntry:
 
     def to_json(self) -> dict[str, Any]:
         out: dict[str, Any] = {"kind": self.kind, "text": self.text, "ts": round(self.ts, 3)}
-        if self.duck:
-            out["glot"] = self.duck
+        if self.task:
+            out["glot"] = self.task
         if self.tags:
             out["tags"] = self.tags
         if self.outcome:
@@ -82,7 +82,7 @@ class MemoryEntry:
             kind=d.get("kind", "note"),
             text=str(d.get("text", "")),
             ts=float(d.get("ts", 0.0)),
-            duck=d.get("glot"),
+            task=d.get("glot"),
             tags=list(d.get("tags", [])),
             outcome=d.get("outcome"),
             highlights=list(d.get("highlights", [])),
@@ -171,7 +171,7 @@ class RobotMemory:
         text: str,
         *,
         tags: list[str] | None = None,
-        duck: str | None = None,
+        task: str | None = None,
         run_dir: str | Path | None = None,
         now: float | None = None,
         where: dict[str, Any] | None = None,
@@ -189,8 +189,8 @@ class RobotMemory:
             if e.kind == "note" and e.text.lower() == clean.lower():
                 e.ts = ts
                 e.tags = sorted(set(e.tags) | set(tags or []))
-                if duck:
-                    e.duck = duck
+                if task:
+                    e.task = task
                 if where:
                     e.where = where
                 # a refreshed note is the newest note, so it has to move to the end: file
@@ -202,7 +202,7 @@ class RobotMemory:
             kind="note",
             text=clean,
             ts=ts,
-            duck=duck,
+            task=task,
             tags=sorted(set(tags or [])),
             run_dir=str(run_dir) if run_dir else None,
             where=where or None,
@@ -213,7 +213,7 @@ class RobotMemory:
     def record_episode(
         self,
         *,
-        duck: str,
+        task: str,
         outcome: str,
         reason: str,
         steps: int,
@@ -222,13 +222,13 @@ class RobotMemory:
         now: float | None = None,
     ) -> MemoryEntry:
         text = (
-            f"{duck}: {outcome} — {' '.join(str(reason).split())[:NOTE_MAX_CHARS]} ({steps} steps)"
+            f"{task}: {outcome} — {' '.join(str(reason).split())[:NOTE_MAX_CHARS]} ({steps} steps)"
         )
         entry = MemoryEntry(
             kind="episode",
             text=text,
             ts=time.time() if now is None else now,
-            duck=duck,
+            task=task,
             outcome=outcome,
             highlights=[" ".join(h.split())[:NOTE_MAX_CHARS] for h in (highlights or [])][:4],
             run_dir=str(run_dir) if run_dir else None,

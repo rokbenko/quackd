@@ -61,7 +61,7 @@ python D:/Development/roboglot-shoot/docs/examples/lerobot/e126/monkey.py --coun
 
 | | |
 |---|---|
-| roboglot version | 0.33.0 |
+| Roboglot version | 0.33.0 |
 | Started | 2026-11-10 11:03:43 UTC |
 | Robot | `arm-01` (mock) |
 | LLM | `local:monkey` |
@@ -107,11 +107,11 @@ last 200. The whole of it is in [log/terminal.txt](log/terminal.txt) and [log/af
 $ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e126/monkey.glot --robot lerobot:mock --llm local:monkey --base-url http://127.0.0.1:8799/v1 --no-vision --max-steps 1000 --no-memory
 Roboglot 0.33.0, started 2026-11-10T11:03:35Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 e126-monkey ─────────────────────────────────────────────────────────╮
+╭─ 💬 e126-monkey ─────────────────────────────────────────────────────────╮
 │ provider  local (monkey)                                                 │
 │ robot     lerobot:mock                                                   │
 │ detector  color_blob on this machine                                     │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────╯
    run     connected in 0.01 s
    tools   report_state, move_joints, gripper, place, stop, assess_task, declare_success, declare_failure
 system prompt, 4910 chars, 61 lines (also in transcript.jsonl as run_star… ─

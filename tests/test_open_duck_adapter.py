@@ -66,7 +66,7 @@ GATED = {
 #: Every skill a Microduck understands and this robot does not.
 NOT_THIS_DUCK = ("kick_left", "kick_right", "ground_pick", "sit_toggle", "roulade")
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     "---\nglot: 1\nname: t\ndescription: d\nrequires: [observe, move, say]\nverbs:\n"
     "  allow: [observe, search_scan, go_to, move, gaze, express, say, quack, "
     "report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
@@ -77,7 +77,7 @@ def _executor(adapter: OpenDuckAdapter, manifest: object) -> Executor:
     return Executor(
         registry_from_manifest(manifest, adapter),  # type: ignore[arg-type]
         adapter,
-        contract=DUCK.frontmatter,
+        contract=GLOT.frontmatter,
         detector=ColorBlobDetector(),
         confirm=allow_all,
     )
@@ -135,9 +135,9 @@ def test_the_registry_and_the_prompt_never_offer_a_verb_this_body_lacks() -> Non
         assert gone not in registry
         with pytest.raises(VerbNotFound):
             registry.get(gone)
-    allow = DUCK.frontmatter.verbs.allow
+    allow = GLOT.frontmatter.verbs.allow
     prompt = build_system_prompt(
-        DUCK, [registry.view(n) for n in allow], manifest=open_duck_manifest("mock")
+        GLOT, [registry.view(n) for n in allow], manifest=open_duck_manifest("mock")
     )
     for gone in ("kick", "grab", "stand_up"):
         assert gone not in prompt
@@ -292,7 +292,7 @@ async def test_a_fall_blind_robot_asks_the_human_once_before_it_walks(tmp_path: 
     from roboglot.safety import Aborted
     from roboglot_open_duck.mock import OpenDuckMock
 
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
         "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
     )
@@ -307,7 +307,7 @@ async def test_a_fall_blind_robot_asks_the_human_once_before_it_walks(tmp_path: 
     with pytest.raises(Aborted, match="watching"):
         await AgentLoop(
             RunConfig(
-                duck=duck,
+                glot=glot,
                 provider=FakeProvider(),
                 transport=adapter,
                 # the loop makes its run directory in __init__, before this run gets anywhere

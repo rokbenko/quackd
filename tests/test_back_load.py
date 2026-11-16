@@ -187,7 +187,7 @@ def test_the_word_is_in_the_vocabulary_a_pilot_is_shown() -> None:
     assert "carries_kg" in NEEDS_WORDS_TEXT and "back or deck" in NEEDS_WORDS_TEXT
 
 
-def _duck_with(datasheet_line: str) -> GlotFrontmatter:
+def _glot_with(datasheet_line: str) -> GlotFrontmatter:
     return parse_glot_text(
         "---\n"
         "glot: 2\n"
@@ -207,7 +207,7 @@ def _duck_with(datasheet_line: str) -> GlotFrontmatter:
 
 
 def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
-    front = _duck_with("carries_kg: 5")
+    front = _glot_with("carries_kg: 5")
     assert front.datasheet is not None
     merged = apply_datasheet_override(_hound(), front.datasheet)
     assert merged.datasheet is not None and merged.datasheet.carries_kg is not None
@@ -219,10 +219,10 @@ def test_a_task_file_can_say_it_for_the_build_in_front_of_it() -> None:
 def test_a_task_file_that_does_not_say_it_dumps_no_such_key() -> None:
     """A task file written before the word reads as it always did: the contract
     `robot_load_glotfile` hands back and the run records (`run_start`) carry no new key."""
-    front = _duck_with("payload_kg: 0.3")
+    front = _glot_with("payload_kg: 0.3")
     assert "carries_kg" not in front.model_dump()["datasheet"]
     assert "carries_kg" not in front.model_dump(mode="json")["datasheet"]
-    said = _duck_with("carries_kg: 5").model_dump(mode="json")["datasheet"]
+    said = _glot_with("carries_kg: 5").model_dump(mode="json")["datasheet"]
     assert said["carries_kg"]["value"] == 5
 
 

@@ -54,8 +54,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roboglot.transport.base import (
     Ack,
-    DuckState,
     Intent,
+    RobotState,
     frame_asked_at_of,
     frame_fetch_of,
     frame_taken_at_of,
@@ -604,7 +604,7 @@ reads it (`jsonrpc`'s `_hold_gaze`, and `posture_of` for what each label reads a
 rise, a scoop, robotd's own answer to a fall and a label Roboglot has not read are all `unknown`."""
 
 
-def body_exit(state: DuckState) -> tuple[str, str] | None:
+def body_exit(state: RobotState) -> tuple[str, str] | None:
     """Why `watch` may move this body's head no more, as `(ended, why)`, or None.
 
     Nothing reporting whether it is upright is `blind`. Somebody holding it is `held`, read before
@@ -1243,7 +1243,7 @@ def _fade_s(ctx: VerbContext) -> float:
     return _head_fade_s(ctx)
 
 
-def _start_head(ctx: VerbContext, state: DuckState) -> tuple[float, float]:
+def _start_head(ctx: VerbContext, state: RobotState) -> tuple[float, float]:
     """Where the head was last sent, as `(yaw, pitch)` in degrees: the last look the body accepted
     (`last_look`), else where the state says the camera points, else straight ahead. Not the
     state first, because on a robot that glances on its own the state shows the glance."""

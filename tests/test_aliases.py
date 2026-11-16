@@ -68,12 +68,12 @@ def test_same_verb_pairs() -> None:
 
 async def test_executor_allowlist_and_gates_are_alias_aware() -> None:
     reg = _registry_with("move", "stop")
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk]\n"
         "success: [x]\n---\n# T\nx\n",
         "t.glot",
     )
-    ex = Executor(registry=reg, transport=MockTransport(), contract=duck.frontmatter)
+    ex = Executor(registry=reg, transport=MockTransport(), contract=glot.frontmatter)
     assert ex.allowed == ["walk"]  # the contract's own spelling, verbatim
     assert ex.is_allowed("walk") and ex.is_allowed("move") and ex.is_allowed("stop")
     assert not ex.is_allowed("fly")
@@ -85,19 +85,19 @@ async def test_executor_allowlist_and_gates_are_alias_aware() -> None:
 async def test_confirm_list_resolves_aliases_and_never_gates_stop() -> None:
     reg = _registry_with("move")
     reg.register(Verb("stop", "stop", _ok, NoParams, safety_class="confirm"))
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [move, stop]\n"
         "  confirm: [walk]\nsuccess: [x]\n---\n# T\nx\n",
         "t.glot",
     )
-    ex = Executor(registry=reg, transport=MockTransport(), contract=duck.frontmatter)
+    ex = Executor(registry=reg, transport=MockTransport(), contract=glot.frontmatter)
     assert ex.needs_confirm(reg.get("move"))
     assert not ex.needs_confirm(reg.get("stop"))  # even with a confirm-class stop verb
     ex.confirm = allow_all
     assert (await ex.run_verb("stop")).ok
 
 
-def test_duck_rejects_an_alias_next_to_its_canonical_and_stop_in_confirm() -> None:
+def test_task_file_rejects_an_alias_next_to_its_canonical_and_stop_in_confirm() -> None:
     with pytest.raises(ValidationError, match="same verb"):
         VerbsSection(allow=["walk", "move"])
     with pytest.raises(ValidationError, match="never be confirm-gated"):

@@ -142,9 +142,9 @@ def test_the_prompt_says_the_same_thing_about_an_unseen_target_everywhere() -> N
     from roboglot.verbs.registry import default_registry
 
     registry = default_registry()
-    duck = load_glot("tasks/find-and-kick.glot")
-    allow = [n for n in duck.frontmatter.verbs.allow if n in registry]
-    prompt = build_system_prompt(duck, [registry.view(n) for n in allow])
+    glot = load_glot("tasks/find-and-kick.glot")
+    allow = [n for n in glot.frontmatter.verbs.allow if n in registry]
+    prompt = build_system_prompt(glot, [registry.view(n) for n in allow])
     rule = next(line for line in prompt.splitlines() if "Until then" in line)
     repo = _Path(__file__).resolve().parents[1]
     surfaces = {

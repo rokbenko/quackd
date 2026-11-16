@@ -75,7 +75,7 @@ from roboglot_moss.verbs import (
 REPO = Path(__file__).resolve().parents[1]
 PACKAGE = REPO / "adapters" / "moss" / "src" / "roboglot_moss"
 DOC = REPO / "docs" / "adapters" / "moss" / "README.md"
-DUCK = load_glot("moss-lookout")
+GLOT = load_glot("moss-lookout")
 
 BASE = {"observe", "report_state", "stop"}
 TWISTS = {"move", "go_to", "search_scan", "approach_and"}
@@ -1236,8 +1236,8 @@ def test_the_page_names_every_ref_carries_the_pin_and_says_never() -> None:
 
 
 def test_the_shipped_lookout_validates_and_moves_nothing() -> None:
-    assert validate_glot(DUCK, [describe("mock")]) == []
-    assert not set(DUCK.frontmatter.verbs.allow) & (TWISTS | PLANNER | ARM | {"collect_litter"})
+    assert validate_glot(GLOT, [describe("mock")]) == []
+    assert not set(GLOT.frontmatter.verbs.allow) & (TWISTS | PLANNER | ARM | {"collect_litter"})
 
 
 def test_the_preconditions_and_the_implementations_cover_the_manifest() -> None:

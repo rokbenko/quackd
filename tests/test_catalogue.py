@@ -560,7 +560,7 @@ def test_the_factory_reads_no_environment_at_all(monkeypatch: pytest.MonkeyPatch
     """A variable that would stop `resolve_llm` dead must not reach into a call that names its
     own pilot. `make_provider` is handed an answer that is already decided."""
     monkeypatch.setenv(LLM_ENV, "openai:claude-opus-5")
-    assert make_provider("fake", duck_name="hello-world").name == "fake"
+    assert make_provider("fake", task_name="hello-world").name == "fake"
 
 
 @pytest.mark.parametrize(
@@ -609,7 +609,7 @@ def test_the_source_phrase_says_which_robot_when_one_was_named(
 
 def test_the_scripted_pilot_ignores_an_llm_rather_than_refusing_it() -> None:
     """`--llm fake` has no LLM to pick, and failing a demo over an unused half is rude."""
-    assert make_provider("fake", llm_id="gpt-nope", duck_name="hello-world").name == "fake"
+    assert make_provider("fake", llm_id="gpt-nope", task_name="hello-world").name == "fake"
 
 
 def test_an_unknown_provider_still_says_unknown_provider() -> None:

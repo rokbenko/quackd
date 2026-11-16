@@ -22,7 +22,7 @@ How to do one thing with Roboglot.
 | Page | What it covers |
 |---|---|
 | [Driving a robot](guides/drive.md) | `roboglot drive`: one robot driven a command at a time from the keyboard or a pipe, with an empty Enter as the brake |
-| [The page: roboglot ui](guides/web-ui.md) | a goal or a chat from a browser or a phone, with every option of `run` and `drive`, the robot's questions and a Stop, and how a phone reaches it |
+| [The page: `roboglot ui`](guides/web-ui.md) | a goal or a chat from a browser or a phone, with every option of `run` and `drive`, the robot's questions and a Stop, and how a phone reaches it |
 | [Pilot your robots from Claude](guides/mcp.md) | `roboglot serve-mcp`: a robot, or a team of them, as MCP tools that Claude Code or Claude Desktop pilots |
 | [Local and open-source LLMs](guides/local-llms.md) | Ollama, vLLM, llama.cpp, LM Studio and any other OpenAI-compatible server as the pilot |
 | [OpenRouter](guides/openrouter.md) | one key for other vendors' LLMs as the pilot: which ids Roboglot takes and refuses, where a prompt goes, and what a turn is billed |

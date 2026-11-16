@@ -79,9 +79,9 @@ from roboglot.adapters.threads import DaemonThreads
 from roboglot.transport.base import (
     Ack,
     CameraFrame,
-    DuckState,
     HeartbeatError,
     Intent,
+    RobotState,
     TransportError,
 )
 from roboglot_lerobot import upstream_api as up
@@ -2731,7 +2731,7 @@ class LeRobotReal:
             return False
         return HOLD_MIN < latest < HOLD_MAX
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         try:
             await self._probe()
         except TransportError:
@@ -2772,7 +2772,7 @@ class LeRobotReal:
             # So the frames stop, the observation loses a line, and nothing says why. This
             # is pure field reads, no bus and no camera call, so the heartbeat pays nothing.
             extras["camera"] = self.camera_health()
-        return DuckState(
+        return RobotState(
             t=self.now(),
             policy=self._policy_name,
             posture="unknown",

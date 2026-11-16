@@ -33,11 +33,11 @@ Do it.
 
 
 @pytest.mark.parametrize("path", sorted(TASKS.glob("*.glot")), ids=lambda p: p.stem)
-def test_starter_ducks_parse(path: Path) -> None:
-    duck = load_glot(str(path))
-    assert duck.name == path.stem
-    assert duck.body.strip().startswith("# Task")
-    assert duck.frontmatter.learned_verbs == []
+def test_starter_task_files_parse(path: Path) -> None:
+    glot = load_glot(str(path))
+    assert glot.name == path.stem
+    assert glot.body.strip().startswith("# Task")
+    assert glot.frontmatter.learned_verbs == []
 
 
 def test_bundled_list() -> None:
@@ -70,12 +70,12 @@ def test_resolve_by_bundled_name() -> None:
 
 
 def test_leading_comments_allowed() -> None:
-    duck = parse_glot_text("# a comment\n\n# another\n" + VALID)
-    assert duck.name == "t"
+    glot = parse_glot_text("# a comment\n\n# another\n" + VALID)
+    assert glot.name == "t"
 
 
 @pytest.mark.parametrize("starter", ["hello-world", "fetch"])
-def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
+def test_a_task_file_saved_with_a_byte_order_mark_is_read_like_one_without(
     starter: str, tmp_path: Path
 ) -> None:
     """Notepad can save UTF-8 with a byte-order mark, and every way into a `.glot` refused a file
@@ -108,7 +108,7 @@ def test_a_duck_saved_with_a_byte_order_mark_is_read_like_one_without(
     assert adopted["instructions"] == want.body
 
 
-def test_a_duck_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
+def test_a_task_file_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
     tmp_path: Path,
 ) -> None:
     """Windows PowerShell 5.1 saves UTF-16 with `>`, and every way into a `.glot` read such a file
@@ -139,8 +139,8 @@ def test_a_duck_that_is_not_utf8_is_refused_in_a_sentence_wherever_it_is_read(
 
 
 def test_machine_enforced_abort_conditions() -> None:
-    duck = load_glot(str(TASKS / "find-and-kick.glot"))
-    fm = duck.frontmatter
+    glot = load_glot(str(TASKS / "find-and-kick.glot"))
+    fm = glot.frontmatter
     assert fm.battery_abort_percent == 15
     assert fm.repeat_failure_abort == 3
     assert fm.advisory_abort_conditions == []
@@ -177,7 +177,7 @@ def test_advisory_abort_conditions_pass_through() -> None:
         (lambda s: s.replace("glot: 0", "glot: [0"), "YAML"),
     ],
 )
-def test_invalid_ducks_fail_fast(mutation, needle: str) -> None:
+def test_invalid_task_files_fail_fast(mutation, needle: str) -> None:
     with pytest.raises(GlotParseError) as exc:
         parse_glot_text(mutation(VALID), path="x.glot")
     assert needle.lower() in str(exc.value).lower()
@@ -221,7 +221,7 @@ MEMBERS = "  members: [lerobot-01, duck-01]\n"
 COORDINATOR_GONE = "Roboglot no longer has the coordinator team it was for"
 
 
-def test_duck_v1_parses_requires_and_robots() -> None:
+def test_glot_v1_parses_requires_and_robots() -> None:
     fm = parse_glot_text(V1).frontmatter
     assert fm.glot == 1 and fm.effective_requires == ["observe", "kick"]
     assert fm.robots == {"lerobot-01": "lerobot:mock", "duck-01": "microduck:mock"}
@@ -266,7 +266,7 @@ def test_duck_v1_parses_requires_and_robots() -> None:
         (lambda s: s.replace("glot: 1", "glot: 0"), "a glot: 0 team was a coordinator team"),
     ],
 )
-def test_invalid_v1_ducks_fail_fast(mutation, needle: str) -> None:
+def test_invalid_v1_task_files_fail_fast(mutation, needle: str) -> None:
     with pytest.raises(GlotParseError) as exc:
         parse_glot_text(mutation(V1), path="x.glot")
     assert needle.lower() in str(exc.value).lower()
@@ -331,7 +331,7 @@ def test_a_v2_task_file_corrects_the_datasheet_for_its_own_build() -> None:
         ),
     ],
 )
-def test_invalid_v2_ducks_fail_fast(mutation, needle: str) -> None:
+def test_invalid_v2_task_files_fail_fast(mutation, needle: str) -> None:
     with pytest.raises(GlotParseError) as exc:
         parse_glot_text(mutation(V2), path="x.glot")
     assert needle.lower() in str(exc.value).lower()
@@ -354,7 +354,7 @@ def _goal_allowlist(spec: str) -> list[str]:
 
 
 @pytest.mark.parametrize("spec", ["lerobot:real", "lerobot:mock", "microduck:mock"])
-def test_a_goal_duck_names_no_verb_the_body_was_not_granted(spec: str) -> None:
+def test_a_goal_task_file_names_no_verb_the_body_was_not_granted(spec: str) -> None:
     """The strategy paragraph `--goal` writes used to name `observe`, `search_scan` and
     `go_to` whatever the body was. On 2026-09-15 an SO-101 arm read all three in a prompt
     whose allowlist listed none of them, and looked with `report_state` on its own initiative.
@@ -365,10 +365,10 @@ def test_a_goal_duck_names_no_verb_the_body_was_not_granted(spec: str) -> None:
 
     from roboglot.glotfile.parser import glot_from_goal
 
-    duck = glot_from_goal("wave to me", _goal_allowlist(spec), memory=True)
-    named = set(re.findall(r"`([a-z_]+)`", duck.body))
+    glot = glot_from_goal("wave to me", _goal_allowlist(spec), memory=True)
+    named = set(re.findall(r"`([a-z_]+)`", glot.body))
     assert named, "the body names its verbs in backticks"
-    allowed = set(duck.frontmatter.verbs.allow) | {"remember"}
+    allowed = set(glot.frontmatter.verbs.allow) | {"remember"}
     assert named <= allowed, f"{spec} is promised {sorted(named - allowed)}"
 
 
@@ -382,7 +382,7 @@ def test_an_arm_is_told_to_look_with_report_state_and_a_duck_keeps_its_composite
     assert "verify with a fresh reading" in arm, "an arm with no camera verb has no frame"
     assert "composite" not in arm and "go_to" not in arm
 
-    duck = glot_from_goal("find the ball", _goal_allowlist("microduck:mock"), memory=True).body
-    assert "Look before you act (`observe` or `search_scan`)" in duck
-    assert "prefer composite verbs like `go_to`" in duck
-    assert "verify with a fresh frame" in duck
+    glot = glot_from_goal("find the ball", _goal_allowlist("microduck:mock"), memory=True).body
+    assert "Look before you act (`observe` or `search_scan`)" in glot
+    assert "prefer composite verbs like `go_to`" in glot
+    assert "verify with a fresh frame" in glot

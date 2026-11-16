@@ -1,4 +1,4 @@
-"""Claude as the duck's brain, via the official `anthropic` SDK (optional extra).
+"""Claude as the robot's brain, via the official `anthropic` SDK (optional extra).
 
 Written against `anthropic` 1.x: adaptive thinking is the LLM's default on Claude Opus 5 and
 later, and the request asks for `display: "summarized"` because the default display leaves

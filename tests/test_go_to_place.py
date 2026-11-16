@@ -19,7 +19,7 @@ from roboglot.space.grid import FREE, OCCUPIED, OccupancyGrid
 from roboglot.space.places import Place, PlaceBook, PlaceStore
 from roboglot.space.pose import Fix, FrameRef, Pose2D
 from roboglot.space.source import SpatialSource, SpatialSourceBase
-from roboglot.transport.base import Ack, DuckState, Intent, TransportError, spatial_of
+from roboglot.transport.base import Ack, Intent, RobotState, TransportError, spatial_of
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import speed_limits
 from roboglot.verbs.navigate import BLIND_S, SHARE, Gait, steer
@@ -68,7 +68,7 @@ class Recording:
             await asyncio.sleep(0)
         await self.inner.stop()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = await self.inner.get_state()
         if self.extras:
             state.extras = {**state.extras, **self.extras}
@@ -235,7 +235,7 @@ async def test_the_battery_rule_read_at_a_stop_ends_the_walk_stopped() -> None:
     _, body, ctx = await _base()
     _mark(ctx, "far", 0.8, -0.5)
 
-    async def battery(_state: DuckState) -> None:
+    async def battery(_state: RobotState) -> None:
         raise Aborted("battery below the robot's own rule")
 
     ctx.abort_when = battery
@@ -611,19 +611,19 @@ async def test_the_battery_rule_read_at_a_stop_ends_the_run_in_its_own_words() -
     adapter = body.inner
     walked = body.twists
 
-    async def battery() -> DuckState:
+    async def battery() -> RobotState:
         state = await adapter.get_state()
         state.battery_percent = 10.0 if walked() else 40.0
         return state
 
     body.get_state = battery  # type: ignore[method-assign]
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [go_to_place]\n"
         "success: [x]\nabort_when: [Battery below 15%]\n---\n# Task\nx\n"
     )
     registry = registry_from_manifest(ctx.manifest, adapter)  # type: ignore[arg-type]
     assert ctx.places is not None
-    executor = Executor(registry, body, contract=duck.frontmatter, places=ctx.places.store)
+    executor = Executor(registry, body, contract=glot.frontmatter, places=ctx.places.store)
     body.round_trip = 3  # an abort set while a stop is on its way can cancel what sent it
     _mark(ctx, "far", 0.8, -0.5)
     with pytest.raises(Aborted, match="battery 10% below 15%; the verb stopped where it stood"):

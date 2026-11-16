@@ -5,6 +5,15 @@
 **Amended 2026-11-14 by [ADR-0080](0080-roboglot-is-the-communication-layer-between-people-and-robots.md):** the one-liner below is superseded, the project is
 now called Roboglot, and its task files are `.glot` files. Its other decisions stand.
 
+**Amended 2026-11-16:** the code identifiers that the Decision says keep "fleet" no longer do. In
+`roboglot/mcp_server.py` `Fleet` is `ServedTeam`, `FleetPlan` is `ServedTeamPlan`,
+`build_fleet_server` is `build_team_server`, `fleet_from_flags` is `team_from_flags`,
+`FLEET_INSTRUCTIONS` is `TEAM_INSTRUCTIONS` and `fleet_default` is `team_default`, and the test
+names that used the word say team, as does the module of the MCP server's team tests,
+`tests/test_mcp_team.py`. No message a user reads says fleet either: the refusals that said a
+fleet has several bodies say that this run drives, or this server serves, several robots. See the
+CHANGELOG's Unreleased entry.
+
 ## Context
 
 [ADR-0002](0002-name.md) picked the name and, in the same sentence, fixed the one-liner:

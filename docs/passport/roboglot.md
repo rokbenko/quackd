@@ -258,7 +258,7 @@ With `cannot: []` changed to `cannot: ["climb stairs"]` in `~/sim/one/robot.yaml
 
 ```
 $ roboglot onboard status --dir ~/sim/one
-╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
+╭─ 💬 onboard one ─────────────────────────────────────────────────────────────╮
 │ passport  checks out, until 2027-10-28T20:17:54Z                             │
 │ unsigned  robot.yaml changed since it was signed: cannot, so other robots    │
 │           still see what was signed: roboglot onboard sign                   │
@@ -331,7 +331,7 @@ read. `--json` prints the same as one object.
 
 ```
 $ roboglot onboard status --dir ~/sim/one
-╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
+╭─ 💬 onboard one ─────────────────────────────────────────────────────────────╮
 │ passport  checks out, until 2027-10-28T20:17:54Z                             │
 │ board     sim: a computer standing in for a robot's own                      │
 │ brain     fake                                                               │
@@ -387,7 +387,7 @@ for a script:
 
 ```
 $ roboglot onboard show --dir ~/sim/one
-╭─ 🦆 passport one ────────────────────────────────────────────────────────────╮
+╭─ 💬 passport one ────────────────────────────────────────────────────────────╮
 │ id      did:key:z6MkrViPoM3VHyFUgoYKhNQFuF2YaZ1N8NpQ6YBEPEGApUHN  (short id  │
 │         00a1a74aa06996cc)                                                    │
 │ claim   signed by its owner's key                                            │
@@ -486,7 +486,7 @@ household robot's log and what its brain was shown:
 
 ```
 20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) met
-20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) said: hello from a roboglot robot, staying where I am
+20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) said: hello from a Roboglot robot, staying where I am
 20:19:05 g1-edu-mock: a meeting starts
 20:19:05 radio: met 339ce23bb9491852 over the link
 ```
@@ -518,9 +518,9 @@ has no judgement of the body, so i...', limits_consulted=[], estimates=[],
 needs={})
 observing
 waiting on fake scripted:goal:greet (last call 0.0 s)
-the LLM chose tell(to='stranger-0406f179', text='hello from a roboglot robot, 
+the LLM chose tell(to='stranger-0406f179', text='hello from a Roboglot robot, 
 staying where I am')
-talk the pilot -> stranger-0406f179: hello from a roboglot robot, staying where I 
+talk the pilot -> stranger-0406f179: hello from a Roboglot robot, staying where I 
 am
 observing
 waiting on fake scripted:goal:greet (last call 0.0 s)
@@ -542,7 +542,7 @@ waiting on fake scripted:goal:greet (last call 3.0 s)
 the LLM chose declare_success(reason='told stranger-0406f179: hello from a 
 roboglot robot, stayin...')
 finishing
-✓ success: told stranger-0406f179: hello from a roboglot robot, staying where I 
+✓ success: told stranger-0406f179: hello from a Roboglot robot, staying where I 
 am, and heard nothing back
 ```
 

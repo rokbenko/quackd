@@ -1,4 +1,4 @@
-"""Qwen as the duck's brain, over Alibaba Cloud Model Studio's OpenAI-compatible endpoint.
+"""Qwen as the robot's brain, over Alibaba Cloud Model Studio's OpenAI-compatible endpoint.
 
 The base URL here is Model Studio's international one. Alibaba also issues per-workspace regional
 hosts, and a reader on one of those passes `--base-url`, which is why that flag reaches this

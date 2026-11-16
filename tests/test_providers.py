@@ -1211,7 +1211,7 @@ def test_gemini_an_unsigned_call_is_replayed_without_a_signature() -> None:
 
 
 def test_factory_fake_and_unknown() -> None:
-    assert make_provider("fake", duck_name="hello-world").name == "fake"
+    assert make_provider("fake", task_name="hello-world").name == "fake"
     with pytest.raises(ProviderError, match="unknown provider"):
         make_provider("hal")
 

@@ -1,4 +1,4 @@
-"""The LeRobot adapter: a desktop arm (an SO-101 class follower) as a roboglot robot.
+"""The LeRobot adapter: a desktop arm (an SO-101 class follower) as a Roboglot robot.
 
 An arm has no legs, no head and no voice, so its manifest lists none of that: `move`,
 `go_to`, `search_scan`, `say` and `gaze` do not exist here. What it has is joints, a
@@ -39,10 +39,10 @@ from roboglot.adapters.manifest import (
 from roboglot.transport.base import (
     Ack,
     CameraFrame,
-    DuckState,
-    DuckTransport,
     HeartbeatError,
     Intent,
+    RobotState,
+    RobotTransport,
     frames_of,
 )
 from roboglot.verbs.core import CORE
@@ -206,7 +206,7 @@ class LeRobotAdapter:
     `rest-pose` command asks for exactly this, because a body with joints that Roboglot does
     not park would take the recording and never use it."""
 
-    def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
+    def __init__(self, transport: RobotTransport, *, robot_id: str | None = None) -> None:
         self.transport = transport
         self.backend = transport.name
         self.robot_id = robot_id or DEFAULT_ID
@@ -254,7 +254,7 @@ class LeRobotAdapter:
     async def close(self) -> None:
         await self.disconnect()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self.transport.get_state()
 
     async def get_frame(self) -> Image.Image | None:

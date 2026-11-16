@@ -530,7 +530,7 @@ class Service:
         if self.talker is not None:
             self.talker.courtesy = None
 
-    def _make_loop(self, duck: Any, kind: str, front: Any) -> Any:
+    def _make_loop(self, glot: Any, kind: str, front: Any) -> Any:
         from roboglot.agent.loop import AgentLoop, RunConfig
 
         prune(self.home.runs, keep=RUNS_KEPT - 1)
@@ -544,12 +544,12 @@ class Service:
             vendor,
             llm_id=llm_id,
             source="robot.yaml brain.llm",
-            duck_name=duck.name,
-            goal=duck.body if kind == "goal" else None,
+            task_name=glot.name,
+            goal=glot.body if kind == "goal" else None,
             base_url=brain.base_url,
         )
         cfg = RunConfig(
-            duck=duck,
+            glot=glot,
             provider=provider,
             transport=self._body(),
             runs_dir=self.home.runs,

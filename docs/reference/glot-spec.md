@@ -76,7 +76,7 @@ Full semantics: [guides/team.md](../guides/team.md).
 
 | Field | Type | Default | Enforced by | Meaning |
 |---|---|---|---|---|
-| `team.members` | int, or a list of unique slugs, 2 to 8 | 3 | pilots | Member count (named `duck-0`…) or explicit names. `--team NAME` supplies the members from the registry. |
+| `team.members` | int, or a list of unique slugs, 2 to 8 | 3 | pilots | Member count (named `robot-0`…) or explicit names. `--team NAME` supplies the members from the registry. |
 | `team.allocation.method` | `pilots` | `pilots` | parser | Which kind of team, and `pilots` is the only kind: one LLM per body, any backend ([ADR-0034](../adr/0034-registered-robots-and-pilot-teams.md)). |
 
 Unknown keys anywhere are errors (`extra="forbid"`).

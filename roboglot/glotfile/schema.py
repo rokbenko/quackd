@@ -353,7 +353,7 @@ class TeamSection(BaseModel):
 
     members: int | list[str] = Field(
         default=3,
-        description="Count (named duck-0..) or a list of unique slugs, 2 to 8.",
+        description="Count (named robot-0..) or a list of unique slugs, 2 to 8.",
     )
     allocation: TeamAllocation = Field(default_factory=TeamAllocation)
 
@@ -383,10 +383,10 @@ class TeamSection(BaseModel):
         # before `allocation` is in hand, so the kind-specific cap is a model validator
         if isinstance(value, int):
             if not 2 <= value <= PILOTS_MAX_MEMBERS:
-                raise ValueError(f"a team needs 2 to {PILOTS_MAX_MEMBERS} ducks")
+                raise ValueError(f"a team needs 2 to {PILOTS_MAX_MEMBERS} robots")
             return value
         if not 2 <= len(value) <= PILOTS_MAX_MEMBERS:
-            raise ValueError(f"a team needs 2 to {PILOTS_MAX_MEMBERS} named ducks")
+            raise ValueError(f"a team needs 2 to {PILOTS_MAX_MEMBERS} named robots")
         seen: set[str] = set()
         for name in value:
             if not _NAME_RE.match(name):
@@ -399,7 +399,7 @@ class TeamSection(BaseModel):
     @property
     def member_names(self) -> list[str]:
         if isinstance(self.members, int):
-            return [f"duck-{i}" for i in range(self.members)]
+            return [f"robot-{i}" for i in range(self.members)]
         return list(self.members)
 
 

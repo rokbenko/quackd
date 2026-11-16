@@ -117,9 +117,9 @@ from roboglot.space.places import PlaceStore, places_line
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
     CameraFrame,
-    DuckState,
-    DuckTransport,
     Intent,
+    RobotState,
+    RobotTransport,
     camera_names_of,
     frames_of,
     primary_of,
@@ -396,9 +396,9 @@ def resolve_play(file_play: bool, flag: bool | None) -> tuple[bool, str]:
 
 @dataclass
 class RunConfig:
-    duck: GlotFile
+    glot: GlotFile
     provider: LLMProvider
-    transport: DuckTransport
+    transport: RobotTransport
     registry: VerbRegistry | None = None
     """None means: build it from the manifest the transport returns on connect (an adapter),
     or fall back to the Microduck vocabulary (a bare transport)."""
@@ -572,7 +572,7 @@ LOCOMOTION = frozenset({"move", "go_to", "search_scan", "approach_and"})
 the task can actually make it walk."""
 
 
-def fall_blind_warning(registry: VerbRegistry, allow: list[str], state: DuckState) -> str | None:
+def fall_blind_warning(registry: VerbRegistry, allow: list[str], state: RobotState) -> str | None:
     """Why the human has to watch this one, or None if they do not: asked once by a run, and once
     by a drive session, before anything moves.
 
@@ -597,19 +597,19 @@ def fall_blind_warning(registry: VerbRegistry, allow: list[str], state: DuckStat
 class AgentLoop:
     def __init__(self, cfg: RunConfig) -> None:
         self.cfg = cfg
-        self.duck = cfg.duck
-        self.fm = cfg.duck.frontmatter
+        self.glot = cfg.glot
+        self.fm = cfg.glot.frontmatter
         if cfg.max_steps is not None:
             self.fm = self.fm.model_copy(
                 update={"budgets": self.fm.budgets.model_copy(update={"max_steps": cfg.max_steps})}
             )
-            # and the duck with it, because the system prompt is built from `self.glot` while
+            # and the task with it, because the system prompt is built from `self.glot` while
             # the executor and the observation header read `self.fm`. On 2026-09-15 a
             # `--max-steps 10` run on the arm told the LLM `Budgets: 40 steps` above an
             # observation header that said `step 0/10`: it planned against four times the
             # budget the run actually stopped at, and every `--max-steps` run before this one
             # did the same.
-            self.duck = cfg.duck.model_copy(update={"frontmatter": self.fm})
+            self.glot = cfg.glot.model_copy(update={"frontmatter": self.fm})
         # Whether the pilot may be given a part, and who said so. Kept beside the contract
         # rather than folded into it as `--max-steps` is: `--play` on a `glot: 1` file is a run
         # that plays, and a contract reading `play: true` at `glot: 1` is one the schema
@@ -701,7 +701,7 @@ class AgentLoop:
         self.usage = Usage()
         self.llm_latency_s = 0.0
         """Seconds this run spent waiting on the LLM, every call including the ones that
-        raised. The single largest number in a roboglot run and, until now, the one a reader had
+        raised. The single largest number in a Roboglot run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
         self.llm_answered_s: list[float] = []
         """The seconds of each call that answered, in order, which the summary's percentiles
@@ -2480,7 +2480,7 @@ class AgentLoop:
         where = where_record(fix) if fix is not None and fix.localized else None
         try:
             entry = memory.remember(
-                text, tags=tags, duck=self.fm.name, run_dir=self.run_dir, where=where
+                text, tags=tags, task=self.fm.name, run_dir=self.run_dir, where=where
             )
         except (ValueError, OSError) as e:
             return VerbResult.fail(f"could not remember: {e}")
@@ -2731,7 +2731,7 @@ class AgentLoop:
     _LOCOMOTION = LOCOMOTION
 
     def _fall_blind_warning(
-        self, registry: VerbRegistry, allow: list[str], state: DuckState
+        self, registry: VerbRegistry, allow: list[str], state: RobotState
     ) -> str | None:
         return fall_blind_warning(registry, allow, state)
 
@@ -2958,7 +2958,7 @@ class AgentLoop:
             withdrawn = withdraw_watch(registry, eyes=self.eyes, transport=cfg.transport)
             if withdrawn is not None:
                 if WATCH in self.fm.effective_requires:
-                    raise AdapterError(f"{self.duck.name} requires watch, and {withdrawn}")
+                    raise AdapterError(f"{self.glot.name} requires watch, and {withdrawn}")
                 if WATCH in allow or self.eyes is not None:
                     self._note(f"watch is not offered on this run: {withdrawn}")
                 allow = [name for name in allow if name != WATCH]
@@ -2974,7 +2974,7 @@ class AgentLoop:
             if missing:
                 who = f"{manifest.id} ({manifest.model})" if manifest else "this robot"
                 raise AdapterError(
-                    f"{self.duck.name} requires {', '.join(missing)}, but {who} does not provide "
+                    f"{self.glot.name} requires {', '.join(missing)}, but {who} does not provide "
                     f"{'them' if len(missing) > 1 else 'it'}. The robot reported what it was "
                     "actually built with when it connected, which is narrower than its "
                     "description. Run `roboglot list-verbs` against it to see what it has."
@@ -3054,7 +3054,7 @@ class AgentLoop:
                     price=cfg.decision_price,
                     registry=registry,
                     allow=allow,
-                    goal=self.duck.body,
+                    goal=self.glot.body,
                     success=self.fm.success,
                     gated=self.fm.verbs.confirm,
                     max_steps=self.budget.limits.max_steps,
@@ -3077,7 +3077,7 @@ class AgentLoop:
                 if lens.warning is not None:
                     self._note(lens.warning)
             system = build_system_prompt(
-                self.duck,
+                self.glot,
                 [registry.view(n) for n in allow],
                 manifest=manifest,
                 memory_text=memory_text,
@@ -3097,7 +3097,7 @@ class AgentLoop:
             self._emit(
                 "run_start",
                 glot=self.fm.name,
-                glot_path=self.duck.path,
+                glot_path=self.glot.path,
                 provider=cfg.provider.name,
                 llm_id=cfg.provider.llm_id,
                 # Fields a passthrough added to every request (#12). A run whose LLM was told not
@@ -3634,7 +3634,7 @@ class AgentLoop:
             if cfg.memory is not None and not cfg.dry_run:
                 with contextlib.suppress(Exception):  # memory must never turn a run into a crash
                     cfg.memory.record_episode(
-                        duck=self.fm.name,
+                        task=self.fm.name,
                         outcome=outcome,
                         reason=reason,
                         steps=self.budget.steps,

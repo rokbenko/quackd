@@ -45,9 +45,9 @@ def test_remember_round_trip_and_dedup(tmp_path: Path) -> None:
 
 def test_episode_and_recall_order(tmp_path: Path) -> None:
     mem = RobotMemory("microduck:mock", tmp_path)
-    mem.record_episode(duck="find-and-kick", outcome="failure", reason="no ball", steps=6, now=1.0)
+    mem.record_episode(task="find-and-kick", outcome="failure", reason="no ball", steps=6, now=1.0)
     mem.record_episode(
-        duck="find-and-kick",
+        task="find-and-kick",
         outcome="success",
         reason="ball displaced",
         steps=4,
@@ -79,7 +79,7 @@ def test_cap_drops_old_episodes_before_notes(
     mem = RobotMemory("microduck:mock", tmp_path)
     mem.remember("keep me", now=0.0)
     for i in range(17):
-        mem.record_episode(duck="d", outcome="success", reason=str(i), steps=1, now=float(i))
+        mem.record_episode(task="d", outcome="success", reason=str(i), steps=1, now=float(i))
     entries = mem.entries()
     assert len(entries) == 12
     assert entries[0].kind == "note" and entries[0].text == "keep me"
@@ -119,7 +119,7 @@ def test_the_cli_and_the_mcp_server_key_every_robot_the_same_way() -> None:
                 if "needs --address" not in str(e):
                     raise
                 transport = make_adapter(spec, address="tcp://127.0.0.1:9")
-            # roboglot/mcp_server.py, for a fleet member whose name is not the adapter's
+            # roboglot/mcp_server.py, for a team member whose name is not the adapter's
             mcp_key = f"{adapter_name(transport) or 'member'}:{backend_name(transport)}"
             assert cli_key == mcp_key, f"{adapter}:{backend} would use two memory files"
 
@@ -195,7 +195,7 @@ async def test_remember_tool_saves_a_note_without_spending_a_step(
     ]
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(script=script),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -237,7 +237,7 @@ async def test_second_run_starts_with_what_the_first_learned(
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
     first = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name=REMEMBER_NAME, arguments={"text": "the sofa is on the left"}),
@@ -252,7 +252,7 @@ async def test_second_run_starts_with_what_the_first_learned(
     assert first.outcome == "failure"
     second = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -271,7 +271,7 @@ async def test_second_run_starts_with_what_the_first_learned(
 async def test_memory_off_means_no_tool_no_episode(hello_glot: GlotFile, tmp_path: Path) -> None:
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -286,7 +286,7 @@ async def test_dry_run_writes_no_episode(hello_glot: GlotFile, tmp_path: Path) -
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -304,7 +304,7 @@ async def test_dry_run_writes_no_note_either(hello_glot: GlotFile, tmp_path: Pat
     mem = RobotMemory("microduck:mock", tmp_path / "mem")
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name=REMEMBER_NAME, arguments={"text": "learned in a dry run"}),

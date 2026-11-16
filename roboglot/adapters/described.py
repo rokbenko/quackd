@@ -31,7 +31,7 @@ from pydantic import ValidationError
 from roboglot.adapters.base import AdapterError, RestResult
 from roboglot.adapters.catalogue import DESCRIBED, DESCRIBED_BODIES
 from roboglot.adapters.manifest import Health, RobotManifest, verb_spec
-from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.base import Ack, Intent, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import CORE
 from roboglot.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
@@ -194,10 +194,10 @@ class DescribedBody(MockTransport):
     Its posture is unknown, with why, and nothing reports falls, since nothing here has heard
     from the robot: `fallen: false` from a body nobody reads is silence and not a verdict."""
 
-    def __init__(self, state: DuckState | None = None) -> None:
+    def __init__(self, state: RobotState | None = None) -> None:
         told = {"posture_reason": NOTHING_READ, "fall_detection": False}
         super().__init__(
-            states=[state or DuckState(policy="described", posture="unknown", extras=told)]
+            states=[state or RobotState(policy="described", posture="unknown", extras=told)]
         )
 
 
@@ -206,7 +206,7 @@ class DescribedAdapter:
 
     name = DESCRIBED
 
-    def __init__(self, manifest: RobotManifest, *, state: DuckState | None = None) -> None:
+    def __init__(self, manifest: RobotManifest, *, state: RobotState | None = None) -> None:
         self.transport = DescribedBody(state)
         self.backend = manifest.backend
         self.robot_id = manifest.id
@@ -224,7 +224,7 @@ class DescribedAdapter:
     async def close(self) -> None:
         await self.disconnect()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self.transport.get_state()
 
     async def get_frame(self) -> Image.Image | None:

@@ -56,7 +56,7 @@ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e121/the-human-
 
 | | |
 |---|---|
-| roboglot version | 0.31.3 |
+| Roboglot version | 0.31.3 |
 | Started | 2026-11-06 17:25:55 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |
@@ -97,11 +97,11 @@ roboglot run docs/examples/lerobot/e121/the-human-says-no.glot --robot lerobot:m
 $ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e121/the-human-says-no.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 Roboglot 0.31.3, started 2026-11-06T17:25:51Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 e121-the-human-says-no ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 e121-the-human-says-no ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 

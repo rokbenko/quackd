@@ -56,9 +56,9 @@ from roboglot.space.pose import where_record
 from roboglot.transport.base import (
     Ack,
     CameraFrame,
-    DuckState,
     HeartbeatError,
     Intent,
+    RobotState,
     TransportError,
 )
 from roboglot_moss import upstream_api as up
@@ -892,7 +892,7 @@ class MossCockpit:
 
     # ── state ───────────────────────────────────────────────────────────────────────
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         """What the cockpit and the bridge say now. A cockpit that does not answer is a state
         that says so, which every precondition then refuses on, rather than an exception."""
         extras: dict[str, Any] = {
@@ -909,7 +909,7 @@ class MossCockpit:
             state = await self._call(self.cockpit.state)
         except LinkDown as e:
             extras |= {"state_stale": True, "cockpit_error": str(e)}
-            return DuckState(t=time.monotonic(), policy="unknown", extras=extras)
+            return RobotState(t=time.monotonic(), policy="unknown", extras=extras)
         self._feed_pose(state)
         pose = state.get("pose") or None
         base = state.get("base") or {}
@@ -946,7 +946,7 @@ class MossCockpit:
                     extras["nav"] = {k: nav.get(k) for k in NAV_KEYS}
             except (LinkDown, TransportError) as e:
                 extras |= {"bridge_up": False, "bridge_error": str(e)}
-        return DuckState(
+        return RobotState(
             t=time.monotonic(),
             policy="unknown",
             posture="unknown",

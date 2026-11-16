@@ -23,14 +23,14 @@ from roboglot.team.messages import TalkMsg, TeamMessage
 from roboglot.team.talk import TEAM_SRC, Peer, TeamLink, make_links, notice
 from roboglot.transport.mock import MockTransport
 
-DUCK = (
+GLOT = (
     "---\nglot: 1\nname: talker\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
     "success: [said hello]\n---\n# Task\nSay hello to the others.\n"
 )
 
 
-def _duck() -> Any:
-    return parse_glot_text(DUCK)
+def _glot() -> Any:
+    return parse_glot_text(GLOT)
 
 
 def _peer(name: str, spec: str = "microduck:mock") -> Peer:
@@ -72,7 +72,7 @@ def _config(
     provider = _Script(calls)
     run_dir.mkdir(parents=True, exist_ok=True)
     cfg = RunConfig(
-        duck=_duck(),
+        glot=_glot(),
         provider=provider,
         transport=MockTransport(),
         run_dir=run_dir,

@@ -39,7 +39,7 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, UnidentifiedImageError
 
 from roboglot.adapters.base import AdapterNotInstalled
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
 from roboglot_xlerobot import upstream_api as up
 from roboglot_xlerobot.verbs import ARMS, GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
 
@@ -326,11 +326,11 @@ class XLerobotZmq:
             img = Image.merge("RGB", (r, g, b))
         return img
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         await self._pump(0)
         joints = {j: self._state[f"{j}.pos"] for j in JOINTS if f"{j}.pos" in self._state}
         wz_deg = self._state.get("theta.vel", 0.0)
-        return DuckState(
+        return RobotState(
             t=time.monotonic(),
             policy="idle",
             posture="unknown",

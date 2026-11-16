@@ -3,7 +3,7 @@
 The second bimanual body in Roboglot and the first with a vertical axis. As on the XLeRobot,
 nothing in the manifest vocabulary names an arm, so the side lives in the joint keys
 (`arm_left_*`, `arm_right_*`, upstream's own spelling) and in a `side` parameter on `gripper`
-and `move_joints`. Per-hand holding lives in `DuckState.extras`.
+and `move_joints`. Per-hand holding lives in `RobotState.extras`.
 
 Which joints exist depends on the SKU, and Roboglot derives that from the observed key set
 rather than from a config: an `alohamini1` has six joints per arm, the two 6dof models have
@@ -24,7 +24,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import _ended_by, _waited_out, send_or_fail
 from roboglot.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 
@@ -147,7 +147,7 @@ class LiftParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _host_fresh(state: DuckState) -> str | None:
+def _host_fresh(state: RobotState) -> str | None:
     """The host publishes only when asked and stamps nothing, so Roboglot stamps on arrival.
 
     It also exits by itself after 6000 seconds, and kills its own process after twenty
@@ -166,7 +166,7 @@ def _host_fresh(state: DuckState) -> str | None:
     )
 
 
-def _calibrated(state: DuckState) -> str | None:
+def _calibrated(state: RobotState) -> str | None:
     """An uncalibrated robot never had its lift put into velocity mode, because upstream's
     `lift.configure()` is commented out and only `home()` sets it, and `home()` runs only when
     calibrated. A velocity write to a servo that is not in velocity mode means nothing."""
@@ -178,7 +178,7 @@ def _calibrated(state: DuckState) -> str | None:
     )
 
 
-def _arm_torque(state: DuckState) -> str | None:
+def _arm_torque(state: RobotState) -> str | None:
     """As shipped, the arms are limp: upstream disables torque and both re-enable calls are
     commented out. Roboglot's own host wrapper turns it back on and says so in the state."""
     if state.extras.get("arm_torque", False):

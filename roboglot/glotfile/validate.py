@@ -30,7 +30,7 @@ class Problem:
 
 
 def validate_glot(
-    duck: GlotFile,
+    glot: GlotFile,
     manifests: Sequence[RobotManifest] = (),
     *,
     registry: VerbRegistry | None = None,
@@ -46,7 +46,7 @@ def validate_glot(
     `roboglot validate` and for a solo run. A task file with no `team:` block run against a
     stored team is a team all the same, and checking each of its bodies for every verb
     would refuse the arm for not being able to walk, so the caller says so (ADR-0034)."""
-    fm = duck.frontmatter
+    fm = glot.frontmatter
     as_team = (fm.team is not None) if team is None else team
     problems: list[Problem] = []
     if not manifests:
@@ -119,7 +119,7 @@ def validate_glot(
 
 
 def _why_not(manifest: RobotManifest, verb: str) -> str:
-    """Why `manifest` leaves `verb` out, in the body's own words, as a refusal ends with: a duck
+    """Why `manifest` leaves `verb` out, in the body's own words, as a refusal ends with: a robot
     whose reading keeps no map says why it does not explore (`RobotManifest.not_offered`)."""
     why = manifest.not_offered().get(verb)
     return f" ({why})" if why else ""

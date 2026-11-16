@@ -73,7 +73,7 @@ MAX_MEMBERS = 8
 """What a stored team may hold, which is what a pilot team may run (`PILOTS_MAX_MEMBERS`)."""
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-"""The same slug every member name and fleet name in Roboglot already is (`factory._NAME_RE`)."""
+"""The same slug every member name and team name in Roboglot already is (`factory._NAME_RE`)."""
 
 
 def registry_dir(override: str | Path | None = None) -> Path:
@@ -485,7 +485,7 @@ class RobotEntry(BaseModel):
     @property
     def robot_spec(self) -> RobotSpec:
         """`RobotSpec` carries the name, so the manifest id is the name you registered, which
-        is what `--robots name=spec` has always done for a fleet.
+        is what `--robots name=spec` has always done for a team.
 
         A stored spec this Roboglot cannot parse is refused here, by the robot's name and with
         the fix, because every command that builds a registered robot builds it from this:
@@ -572,7 +572,7 @@ def no_rest_pose_refusal(
     what: str,
     address: str | None = None,
     camera_url: str | Sequence[str] | None = None,
-    fleet: bool = False,
+    as_team: bool = False,
 ) -> tuple[str, str] | None:
     """The refusal for a real arm with no rest pose recorded, and the way out, or None for any
     robot that may be connected without one (`needs_rest_pose`).
@@ -583,8 +583,8 @@ def no_rest_pose_refusal(
     refused before anything is built or connected. `what` is the thing refused, as the sentence
     says it: `a run, a dry one included`, `an MCP session`. A registered arm is sent to record
     its pose; a bare spec names no arm to record one for, so it is sent to register one first,
-    with the address and the cameras it was given. A spec in a fleet, from `--robots` or a task
-    file's `robots:`, is sent on to a stored team as well (`fleet`), since neither spelling
+    with the address and the cameras it was given. A spec in a team, from `--robots` or a task
+    file's `robots:`, is sent on to a stored team as well (`as_team`), since neither spelling
     reads the registry, and registering the arm alone would change nothing they run."""
     if not needs_rest_pose(resolved.spec) or resolved.adapter_kwargs()["rest_pose"] is not None:
         return None
@@ -603,7 +603,7 @@ def no_rest_pose_refusal(
         f' --camera-url "{url}"' for url in camera_urls(camera_url)
     )
     hint = f"roboglot robot add NAME {key}{flags}, then roboglot robot rest-pose NAME"
-    if fleet:
+    if as_team:
         hint += (
             ", then roboglot team create TEAM --robot NAME, one --robot for each member, and run "
             "it with --team TEAM"
@@ -1117,7 +1117,7 @@ def resolve_robot_ref(
     text: str | None,
     registry: Registry | None = None,
     *,
-    duck_default: str | None = None,
+    glot_default: str | None = None,
 ) -> Resolved:
     """What `--robot <something>` means here: a registered name, or `<adapter>[:<backend>]`.
 
@@ -1126,8 +1126,8 @@ def resolve_robot_ref(
     has always been, and `check_name` refuses registering a robot under an adapter's name."""
     reg = registry if registry is not None else Registry()
     if text is None:
-        if duck_default:
-            return Resolved(parse_robot_spec(duck_default))
+        if glot_default:
+            return Resolved(parse_robot_spec(glot_default))
         # no flag and no `robots:` line, so it is whatever is installed here, or a refusal
         # naming what to install. Roboglot stopped shipping a body to fall back to.
         return Resolved(default_spec())

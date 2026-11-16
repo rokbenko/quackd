@@ -1,4 +1,4 @@
-"""The shape of "what the duck sees", independent of how it was seen.
+"""The shape of "what the robot sees", independent of how it was seen.
 
 `Detection` is the only thing verbs and the LLM consume. Whether it came from an HSV
 threshold over a frame, a YOLO model on a laptop, or — one day — upstream `mediad`'s feature
@@ -22,7 +22,7 @@ class Detection(BaseModel):
     confidence: float = Field(default=1.0, ge=0.0, le=1.0)
     bearing_deg: float | None = Field(
         default=None,
-        description="Positive = left of the duck's heading (upstream's +yaw convention).",
+        description="Positive = left of the robot's heading (upstream's +yaw convention).",
     )
     est_distance_m: float | None = None
     calibrated: bool = Field(

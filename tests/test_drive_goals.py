@@ -21,7 +21,7 @@ from roboglot.glotfile.schema import Budgets
 from roboglot.log import EventLog
 from roboglot.mcp_server import RobotSession
 from roboglot.safety import Budget, Executor, Heartbeat
-from roboglot.transport.base import DuckState
+from roboglot.transport.base import RobotState
 from roboglot.verbs.registry import default_registry
 from tests.test_drive_session import _drive, _settled
 
@@ -60,11 +60,11 @@ async def test_a_goal_does_not_start_once_the_sessions_budget_is_spent(tmp_path:
     """The session refused a typed walk with its steps spent, and walked a goal straight after:
     the goal's own contract was a fresh one with steps of its own."""
     drive, body, _records = await _drive(tmp_path)
-    duck = glot_from_goal("drive", VERBS)
-    budgets = duck.frontmatter.budgets.model_copy(update={"max_steps": 1})
+    glot = glot_from_goal("drive", VERBS)
+    budgets = glot.frontmatter.budgets.model_copy(update={"max_steps": 1})
     drive.robot.adopt(
-        duck.model_copy(
-            update={"frontmatter": duck.frontmatter.model_copy(update={"budgets": budgets})}
+        glot.model_copy(
+            update={"frontmatter": glot.frontmatter.model_copy(update={"budgets": budgets})}
         )
     )
     await _settled(drive.submit("report state"))
@@ -97,21 +97,21 @@ async def test_a_goals_steps_are_the_sessions_too(tmp_path: Path) -> None:
     assert spent > 0 and budget.steps == before + spent
 
 
-async def test_a_goal_keeps_the_battery_rule_of_the_sessions_duck(tmp_path: Path) -> None:
+async def test_a_goal_keeps_the_battery_rule_of_the_sessions_task_file(tmp_path: Path) -> None:
     """The session's `.glot` ends every call below half its battery, and at a third of it a goal
     walked, under the goal's own rule of 15%."""
     drive, body, _records = await _drive(tmp_path)
-    duck = glot_from_goal("drive", VERBS)
-    front = duck.frontmatter.model_copy(update={"abort_when": ["Battery below 50%"]})
-    drive.robot.adopt(duck.model_copy(update={"frontmatter": front}))
-    body._states = [DuckState(policy="mock", posture="standing", battery_percent=30)]
+    glot = glot_from_goal("drive", VERBS)
+    front = glot.frontmatter.model_copy(update={"abort_when": ["Battery below 50%"]})
+    drive.robot.adopt(glot.model_copy(update={"frontmatter": front}))
+    body._states = [RobotState(policy="mock", posture="standing", battery_percent=30)]
     goal = drive.submit("patrol the room")
     await _settled(goal)
     await drive.robot.close()
     assert body.intents_of("move") == [], f"the goal walked: {(await goal.ended).summary}"
 
 
-ARM_DUCK = """---
+ARM_GLOT = """---
 glot: 3
 name: arm-session
 description: drive an arm with short segments
@@ -151,7 +151,7 @@ async def test_a_goal_leaves_the_arms_segment_length_as_the_session_set_it(
         executor=executor,
         heartbeat=Heartbeat(adapter, executor.abort, period_s=0.5, event_log=event_log),
     )
-    robot.adopt(parse_glot_text(ARM_DUCK))
+    robot.adopt(parse_glot_text(ARM_GLOT))
     await robot.connect()
     assert adapter.segment_s == 1.5, "control: the session's contract set the segment"
     drive = DriveSession(

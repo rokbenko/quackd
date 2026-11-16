@@ -108,14 +108,14 @@ def _transcript(run_dir: str) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
-def _gated_duck(tmp_path: Path) -> Path:
+def _gated_glot(tmp_path: Path) -> Path:
     """The smoke test with its walk behind a confirm gate. Still named hello-world, which is
     how the scripted pilot knows to quack, walk and quack again."""
     text = (REPO / "tasks" / "hello-world.glot").read_text(encoding="utf-8")
     assert "  confirm: []" in text
-    duck = tmp_path / "gated.glot"
-    duck.write_text(text.replace("  confirm: []", "  confirm: [walk]"), encoding="utf-8")
-    return duck
+    glot = tmp_path / "gated.glot"
+    glot.write_text(text.replace("  confirm: []", "  confirm: [walk]"), encoding="utf-8")
+    return glot
 
 
 def _run_args(tmp_path: Path, *task: str) -> list[str]:
@@ -149,12 +149,12 @@ def test_a_run_from_the_page_says_hello_first_end_last_and_nothing_but_json(
     start = next(r for r in _transcript(end["run_dir"]) if r["kind"] == "run_start")
     assert start["front"] == "jsonl"
     assert "--front" not in start["command"], "the record names the command to type at a terminal"
-    assert "Stop in the page stops the duck." in "".join(page.stderr)
+    assert "Stop in the page stops the robot." in "".join(page.stderr)
 
 
 @pytest.mark.parametrize("yes", [True, False], ids=["yes", "no"])
 def test_a_confirm_gate_is_answered_in_the_page_as_a_person(tmp_path: Path, yes: bool) -> None:
-    page = _Page(_run_args(tmp_path, str(_gated_duck(tmp_path))), tmp_path)
+    page = _Page(_run_args(tmp_path, str(_gated_glot(tmp_path))), tmp_path)
     ask = page.wait_for(lambda line: line["ev"] == "ask")
     assert (ask["kind"], ask["question"]) == (
         "confirm",
@@ -173,7 +173,7 @@ def test_a_confirm_gate_is_answered_in_the_page_as_a_person(tmp_path: Path, yes:
 def test_a_stop_while_the_page_is_asked_takes_the_question_back(tmp_path: Path) -> None:
     """Withdrawn, never answered no: the gate says the prompt raised, no `prompt` row claims a
     person said anything, and the run ends as the Stop button ended it."""
-    page = _Page(_run_args(tmp_path, str(_gated_duck(tmp_path))), tmp_path)
+    page = _Page(_run_args(tmp_path, str(_gated_glot(tmp_path))), tmp_path)
     page.wait_for(lambda line: line["ev"] == "ask")
     page.send(op="stop")
     end = page.wait_for(lambda line: line["ev"] == "end")
@@ -190,7 +190,7 @@ def test_a_stop_while_the_page_is_asked_takes_the_question_back(tmp_path: Path) 
 
 
 def test_the_end_of_the_page_input_is_a_stop_nobody_pressed(tmp_path: Path) -> None:
-    page = _Page(_run_args(tmp_path, str(_gated_duck(tmp_path))), tmp_path)
+    page = _Page(_run_args(tmp_path, str(_gated_glot(tmp_path))), tmp_path)
     page.wait_for(lambda line: line["ev"] == "ask")
     page.close()
     end = page.wait_for(lambda line: line["ev"] == "end")
@@ -252,7 +252,7 @@ def test_a_run_whose_page_dies_still_stops_and_closes_its_record(tmp_path: Path)
     was waiting on is taken back, and the run ends and writes its record as for any stop."""
     out_file = tmp_path / "child-out.jsonl"
     child = [sys.executable, "-P", "-m", "roboglot"]
-    child += [*_run_args(tmp_path, str(_gated_duck(tmp_path))), "--front", "jsonl"]
+    child += [*_run_args(tmp_path, str(_gated_glot(tmp_path))), "--front", "jsonl"]
     parent = tmp_path / "page.py"
     parent.write_text(
         textwrap.dedent(

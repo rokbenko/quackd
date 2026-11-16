@@ -256,7 +256,7 @@ async def test_a_narrowed_robot_refuses_the_run_instead_of_crashing(
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         loop = AgentLoop(
             RunConfig(
-                duck=load_glot("open-duck-scout"),  # needs search_scan, which needs a camera
+                glot=load_glot("open-duck-scout"),  # needs search_scan, which needs a camera
                 provider=None,  # never reached: we refuse before the first turn
                 transport=adapter,
                 runs_dir=tmp_path,
@@ -316,7 +316,7 @@ async def test_a_verb_a_task_merely_allows_is_dropped_not_fatal(
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         loop = AgentLoop(
             RunConfig(
-                duck=load_glot("open-duck-scout"),
+                glot=load_glot("open-duck-scout"),
                 provider=FakeProvider.for_glot("open-duck-scout"),
                 transport=adapter,
                 runs_dir=tmp_path,

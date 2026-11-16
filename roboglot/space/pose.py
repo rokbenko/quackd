@@ -101,7 +101,7 @@ class Fix:
 
 
 def where_record(fix: Fix) -> dict[str, Any]:
-    """The one shape a reading takes outside this package: `DuckState.extras["where"]`, a memory
+    """The one shape a reading takes outside this package: `RobotState.extras["where"]`, a memory
     note's `where`, a verb's result. Rounded to what the pose can be trusted to, and nothing a
     reading does not say."""
     out: dict[str, Any] = {"kind": fix.kind}

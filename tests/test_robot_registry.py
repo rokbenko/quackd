@@ -902,7 +902,7 @@ def test_a_reference_is_the_registry_then_a_spec_then_one_line(tmp_path: Path) -
     reg = _pair(tmp_path)
     with pytest.raises(NoRobotNamed, match="no robot named"):
         resolve_robot_ref(None, reg)  # several adapters here, and none is a default
-    assert resolve_robot_ref(None, reg, duck_default="lerobot:mock").spec.key == "lerobot:mock"
+    assert resolve_robot_ref(None, reg, glot_default="lerobot:mock").spec.key == "lerobot:mock"
     registered = resolve_robot_ref("duck-a", reg)
     assert registered.registered and registered.spec.name == "duck-a"
     assert registered.label == "duck-a (microduck:mock)"

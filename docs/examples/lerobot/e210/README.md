@@ -62,7 +62,7 @@ roboglot robot release arm-01
 
 | | |
 |---|---|
-| roboglot version | 0.34.0 |
+| Roboglot version | 0.34.0 |
 | Started | 2026-11-13 10:41:47 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `fake:scripted:lerobot-lookout` |
@@ -102,11 +102,11 @@ roboglot run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 $ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
 Roboglot 0.34.0, started 2026-11-13T10:41:47Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  fake (scripted:lerobot-lookout)                                                                                                                │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Pressing again still ends the run properly. ───────────────────────────────────────────────────────────────────────────────╯
 kill switch: Ctrl-C — cancelling the verb and stopping the robot
    run     connected in 2.57 s
    tools   report_state, stop, assess_task, declare_success, declare_failure

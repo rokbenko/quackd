@@ -126,7 +126,7 @@ def _logged(
     summary: dict[str, Any],
     *,
     frames: int = 3,
-    duck: str = "task",
+    task: str = "task",
     notes: dict[str, Any] | None = None,
 ) -> Path:
     """An example with a run in its folder, as `add` and somebody's notes would leave it."""
@@ -136,17 +136,17 @@ def _logged(
     command = [
         "roboglot",
         "run",
-        f"D:/x/docs/examples/lerobot/{name}/{duck}.glot",
+        f"D:/x/docs/examples/lerobot/{name}/{task}.glot",
         "--robot",
         "arm-01",
     ]
     (log / "summary.json").write_text(
-        json.dumps({"glot": f"{name}-{duck}", "command": command, **summary}), encoding="utf-8"
+        json.dumps({"glot": f"{name}-{task}", "command": command, **summary}), encoding="utf-8"
     )
     (log / "terminal.txt").write_text(
         f"$ {' '.join(command)}\nRoboglot 0.31.1, started\nsome `code` here\n", encoding="utf-8"
     )
-    media = {"speed": 10, "frames": frames, "run_folder": f"20261104-114416-{name}-{duck}"}
+    media = {"speed": 10, "frames": frames, "run_folder": f"20261104-114416-{name}-{task}"}
     (log / "media.json").write_text(json.dumps(media), encoding="utf-8")
     written = json.dumps({**NOTES, **(notes or {})})  # JSON is YAML
     (log / "notes.yaml").write_text(written, encoding="utf-8")
@@ -183,7 +183,7 @@ def test_every_log_reads_the_same_but_for_its_content(tmp_path: Path) -> None:
     """The one thing asked of these: two very different runs, one structure, one set of lines."""
     root = _tree(tmp_path / "examples")
     _logged(root, "e001", GOOD)
-    _logged(root, "e002", WENT_WRONG, frames=0, duck="other", notes={"goal_met": "No"})
+    _logged(root, "e002", WENT_WRONG, frames=0, task="other", notes={"goal_met": "No"})
     one = script.render_log(root, _experiment(root, "E001"))
     two = script.render_log(root, _experiment(root, "E002"))
 

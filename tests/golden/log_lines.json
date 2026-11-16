@@ -497,7 +497,7 @@
  ],
  "member_end": [
   [
-   "end     stopped after 7 steps",
+   "end     arm aborted after 7 steps",
    "bold"
   ]
  ],
@@ -758,7 +758,7 @@
   "note    planner: it can see the ball\n        bearing +12 deg, 0.8 m away\n        next: go_to, then kick",
   "talk    duck-a -> arm: I have the ball, you spot",
   "talk    duck-a -> ghost: hello (refused: no member called 'ghost'; this team is arm)",
-  "end     stopped after 7 steps",
+  "end     arm aborted after 7 steps",
   "tool    robot_run_verb verb='go_to', params={'target': 'ball'} on duck",
   "done    ok in 1.1 s budget: step 1/40",
   "->      stop",

@@ -12,12 +12,12 @@ from roboglot.glotfile.parser import parse_glot_text
 from roboglot.perception import ASSUMED_LENS
 from roboglot.perception.base import Detection
 from roboglot.safety import Executor
-from roboglot.transport.base import DuckState, Intent, Posture
+from roboglot.transport.base import Intent, Posture, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.registry import default_registry, registry_from_manifest
 from roboglot_microduck import MicroduckAdapter
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, get_frame]\n"
     "success: [x]\n---\n# T\nx\n"
 )
@@ -130,21 +130,21 @@ async def _run_script(executor: Executor) -> list[dict[str, object]]:
 async def test_adapter_emits_exactly_the_intents_of_the_bare_transport() -> None:
     bare = MockTransport()
     await bare.connect()
-    plain = await _run_script(Executor(default_registry(), bare, contract=DUCK.frontmatter))
+    plain = await _run_script(Executor(default_registry(), bare, contract=GLOT.frontmatter))
 
     adapter = MicroduckAdapter(MockTransport())
     manifest = await adapter.connect()
     wrapped = await _run_script(
-        Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
+        Executor(registry_from_manifest(manifest, adapter), adapter, contract=GLOT.frontmatter)
     )
     assert wrapped == plain
     assert plain[0] == Intent.move(0.1, 0.0, 0.0).model_dump()
 
 
 async def test_preconditions_come_from_the_adapter_by_name() -> None:
-    fallen = MicroduckAdapter(MockTransport(states=[DuckState(fallen=True, posture="fallen")]))
+    fallen = MicroduckAdapter(MockTransport(states=[RobotState(fallen=True, posture="fallen")]))
     manifest = await fallen.connect()
-    ex = Executor(registry_from_manifest(manifest, fallen), fallen, contract=DUCK.frontmatter)
+    ex = Executor(registry_from_manifest(manifest, fallen), fallen, contract=GLOT.frontmatter)
     result = await ex.run_verb("walk")
     assert not result.ok and "fallen" in result.summary
     assert fallen.transport.intents_of("move") == []  # type: ignore[attr-defined]
@@ -155,7 +155,7 @@ async def test_preconditions_come_from_the_adapter_by_name() -> None:
         implementations=fallen.implementations(),
         conditions={"standing": lambda _s: "nope, custom", "not_fallen": lambda _s: None},
     )
-    ex = Executor(custom, MicroduckAdapter(MockTransport()), contract=DUCK.frontmatter)
+    ex = Executor(custom, MicroduckAdapter(MockTransport()), contract=GLOT.frontmatter)
     result = await ex.run_verb("move")
     assert not result.ok and "nope, custom" in result.summary
 
@@ -191,7 +191,7 @@ async def test_the_verbs_that_walk_on_what_the_camera_sees_need_the_duck_standin
     assert not set(WALKS_ON_SIGHT) & set(microduck_manifest("jsonrpc", camera=False).preconditions)
 
     down = MicroduckAdapter(
-        MockTransport(states=[DuckState(posture=posture, fallen=posture == "fallen")])
+        MockTransport(states=[RobotState(posture=posture, fallen=posture == "fallen")])
     )
     manifest = await down.connect()
     ex = Executor(
@@ -217,7 +217,7 @@ async def test_a_posture_nobody_can_vouch_for_refuses_every_verb_that_walks() ->
     an unknown duck and a walk."""
     why = "robotd reports policy 'homing' (the joints are ramping to the home pose)"
     unknown = MicroduckAdapter(
-        MockTransport(states=[DuckState(posture="unknown", extras={"posture_reason": why})])
+        MockTransport(states=[RobotState(posture="unknown", extras={"posture_reason": why})])
     )
     manifest = await unknown.connect()
     ex = Executor(
@@ -259,7 +259,7 @@ def test_robot_spec_parsing() -> None:
         parse_robots("a=microduck:jsonrpc,a=microduck:mock")
 
 
-def test_resolve_robot_is_the_flag_then_the_duck_then_whatever_is_installed() -> None:
+def test_resolve_robot_is_the_flag_then_the_task_file_then_whatever_is_installed() -> None:
     """0.4's `--transport X` alias was promised for removal in 0.5, and is gone. With nothing
     named, and every adapter installed as it is here, there is no body to fall back to."""
     import inspect
@@ -268,7 +268,7 @@ def test_resolve_robot_is_the_flag_then_the_duck_then_whatever_is_installed() ->
     from roboglot.adapters.factory import resolve_robot
 
     assert resolve_robot("microduck:mock").key == "microduck:mock"
-    assert resolve_robot(None, duck_default="microduck:mock").key == "microduck:mock"
+    assert resolve_robot(None, glot_default="microduck:mock").key == "microduck:mock"
     with pytest.raises(factory.NoRobotNamed, match="no robot named: --robot <adapter>:<backend>"):
         resolve_robot(None)
     assert "transport" not in inspect.signature(resolve_robot).parameters

@@ -156,7 +156,7 @@ async def test_the_record_says_what_was_asked_and_whose_word_it_was(
     hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=_Asking(), transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=_Asking(), transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["kind"] == "run_start"

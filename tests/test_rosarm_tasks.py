@@ -103,7 +103,7 @@ async def test_the_lookout_reads_every_arm_back_and_moves_nothing(
     adapter = make("mock", robot_type=robot_type)
     result = await run_glot(
         RunConfig(
-            duck=load_glot("rosarm-lookout"),
+            glot=load_glot("rosarm-lookout"),
             provider=FakeProvider.for_glot("rosarm-lookout"),
             transport=adapter,
             runs_dir=tmp_path,
@@ -132,7 +132,7 @@ async def test_a_slow_wave_a_person_confirms_runs_on_every_arm(
 
     result = await run_glot(
         RunConfig(
-            duck=parse_glot_text(WAVE),
+            glot=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave(joint)),
             transport=adapter,
             runs_dir=tmp_path,
@@ -151,7 +151,7 @@ async def test_a_wave_nobody_confirmed_never_moves(tmp_path: Path) -> None:
     adapter = make("mock")
     result = await run_glot(
         RunConfig(
-            duck=parse_glot_text(WAVE),
+            glot=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave("shoulder_pan_joint")),
             transport=adapter,
             runs_dir=tmp_path,
@@ -197,7 +197,7 @@ async def test_a_heartbeat_that_fails_mid_move_ends_the_run_and_its_teardown_par
     _when_moving(adapter, 0.5, adapter.bridge.quiet)
     result = await run_glot(
         RunConfig(
-            duck=parse_glot_text(WAVE),
+            glot=parse_glot_text(WAVE),
             provider=FakeProvider(script=_wave(joint, out=30.0, seconds=3.0)),
             transport=adapter,
             runs_dir=tmp_path,
@@ -232,7 +232,7 @@ async def test_an_arm_that_stops_itself_mid_move_fails_the_move_and_refuses_the_
     _when_moving(adapter, 1.0, getattr(adapter.bridge.arm, fault))
     result = await run_glot(
         RunConfig(
-            duck=parse_glot_text(WAVE),
+            glot=parse_glot_text(WAVE),
             provider=FakeProvider(
                 script=[
                     *_wave(joint, out=20.0, seconds=4.0)[:3],

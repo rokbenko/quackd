@@ -1,4 +1,4 @@
-"""OpenRouter as the duck's brain: one key, other vendors' LLMs, over OpenAI's API.
+"""OpenRouter as the robot's brain: one key, other vendors' LLMs, over OpenAI's API.
 
 OpenRouter is a router rather than a lab. Its ids name another vendor's LLM
 (`anthropic/claude-opus-5.5`), it lists hundreds of them, and it decides per request which

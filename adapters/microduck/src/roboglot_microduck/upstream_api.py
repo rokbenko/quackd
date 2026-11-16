@@ -23,7 +23,7 @@ make: the vet book (`robot.vetbook`, `robot.vetbookNote`, `robot.vetbookTally`, 
 updates of the operating system (`os.*`), anonymous usage data (`telemetry.*`), an outcome in the
 update log, and `robot.remoteSessionActive`, which is gone. Every type Roboglot sends or reads,
 `hello`'s both ways, the intents' params, `LookResult`, `IntentResult`, `SubscribeResult`,
-`RobotState` and the blocks in it, `HealthResult`, the sound tags and the error codes, reads the
+robotd's own `RobotState` and the blocks in it, `HealthResult`, the sound tags and the error codes, reads the
 same at both pins but for two doc comments: `SubscribeResult.skills` lists the robot's emotions
 after its skills (SKILL_SOURCE), and a servo or the IMU board that goes quiet on a running robot
 is reported as degraded rather than unhealthy, with `healthy` false either way (ROBOT_HEALTH).

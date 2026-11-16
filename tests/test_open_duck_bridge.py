@@ -33,7 +33,7 @@ from roboglot_open_duck.bridge import (
 )
 from roboglot_open_duck.verbs import HEAD_YAW_RANGE
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
     "  allow: [move, gaze, say, quack, express, report_state, stop]\n"
     "success: [x]\n---\n# Task\nx\n"
@@ -324,7 +324,7 @@ async def test_walking_feeds_the_deadman_and_then_stops(bridge: FakeBridge) -> N
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
-        contract=DUCK.frontmatter,
+        contract=GLOT.frontmatter,
         detector=ColorBlobDetector(),
         confirm=allow_all,
     )
@@ -429,7 +429,7 @@ async def test_a_fallen_duck_is_reported_and_nothing_tries_to_stand_it_up() -> N
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
-        contract=DUCK.frontmatter,
+        contract=GLOT.frontmatter,
         detector=ColorBlobDetector(),
         confirm=allow_all,
     )

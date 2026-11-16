@@ -32,7 +32,7 @@ from roboglot_open_duck.bridge import PROTOCOL, PROTOCOL_VERSION, OpenDuckBridge
 REPO = Path(__file__).resolve().parents[1]
 DAEMON = REPO / "bridge" / "open_duck" / "roboglot_duck_bridge.py"
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     "---\nglot: 1\nname: t\ndescription: d\nrequires: [move]\nverbs:\n"
     "  allow: [move, gaze, say, quack, express, report_state, stop]\n"
     "success: [x]\n---\n# Task\nx\n"
@@ -340,7 +340,7 @@ async def test_the_real_daemon_and_the_real_client_agree(daemon: ModuleType) -> 
         ex = Executor(
             registry_from_manifest(manifest, adapter),
             adapter,
-            contract=DUCK.frontmatter,
+            contract=GLOT.frontmatter,
             detector=ColorBlobDetector(),
             confirm=allow_all,
         )
@@ -737,7 +737,7 @@ async def test_a_stop_that_cannot_be_delivered_fails_the_verb(daemon: ModuleType
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=GLOT.frontmatter)
         assert (await ex.run_verb("stop")).ok
         assert adapter.stop_error is None
 
@@ -770,7 +770,7 @@ async def test_a_second_move_right_after_a_stop_still_drives(daemon: ModuleType)
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=GLOT.frontmatter)
         assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 0.2})).ok
         await asyncio.sleep(0.05)
         assert controller.get_last_command()[0][0] == 0.0, "a move ends stopped"
@@ -1019,7 +1019,7 @@ async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) 
     try:
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
-        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=DUCK.frontmatter)
+        ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=GLOT.frontmatter)
         ages: list[int] = []
 
         async def sample() -> None:

@@ -91,7 +91,8 @@ DOWN_ON_THE_FLOOR = {"fallen": True, "picked_up": False, "limp": False}
 
 
 Quat = tuple[float, float, float, float]
-"""A rotation as a scalar-first quaternion, `[w, x, y, z]`, the way `RobotState.frames` has it."""
+"""A rotation as a scalar-first quaternion, `[w, x, y, z]`, the way robotd's own
+`RobotState.frames` has it."""
 
 #: `frames.camera` looking straight ahead. The camera frame is OpenCV's (+x right, +y down, +z
 #: along the optical axis) and the pose is in the trunk frame (x forward, y left, z up), so the

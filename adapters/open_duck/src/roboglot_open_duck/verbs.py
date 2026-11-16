@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
 from roboglot.verbs.registry import Precondition, Verb, VerbContext, VerbResult
 
@@ -95,7 +95,7 @@ class ExpressParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _stale(state: DuckState) -> str | None:
+def _stale(state: RobotState) -> str | None:
     """A state read that failed is silence, not a verdict.
 
     The bridge used to swallow the error and hand back a default frame, so `fallen` was
@@ -108,7 +108,7 @@ def _stale(state: DuckState) -> str | None:
     return f"the duck's state could not be read ({why}), so Roboglot cannot tell what it is doing"
 
 
-def _not_fallen(state: DuckState) -> str | None:
+def _not_fallen(state: RobotState) -> str | None:
     """The one precondition that matters on this body. There is no get-up policy for the
     Open Duck Mini v2, so a fallen duck is a job for a human, not for another verb.
 
@@ -124,7 +124,7 @@ def _not_fallen(state: DuckState) -> str | None:
     return "the duck has fallen and this robot has no get-up policy; stand it up by hand"
 
 
-def _policy_running(state: DuckState) -> str | None:
+def _policy_running(state: RobotState) -> str | None:
     """The walk policy can be paused by `start_paused` in duck_config.json. A backend that
     does not report it is assumed running.
 

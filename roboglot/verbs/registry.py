@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from roboglot.perception.base import Detector
-from roboglot.transport.base import CameraFrame, DuckState, DuckTransport
+from roboglot.transport.base import CameraFrame, RobotState, RobotTransport
 from roboglot.verbs.aliases import ALIASES
 
 if TYPE_CHECKING:
@@ -58,7 +58,7 @@ class NoParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-async def _no_abort_rule(_state: DuckState) -> None:
+async def _no_abort_rule(_state: RobotState) -> None:
     """`VerbContext.abort_when` where no executor reads a run's rules: nothing fires."""
 
 
@@ -66,7 +66,7 @@ async def _no_abort_rule(_state: DuckState) -> None:
 class VerbContext:
     """Everything a verb may touch. Deliberately not the executor and not the LLM."""
 
-    transport: DuckTransport
+    transport: RobotTransport
     detector: Detector | None = None
     dry_run: bool = False
     log: Callable[[str], None] = lambda _msg: None
@@ -97,7 +97,7 @@ class VerbContext:
     places: PlaceBook | None = None
     """This robot's places read against where it is now (`roboglot.space.places`), on a body whose
     transport says where it is; None on every other."""
-    abort_when: Callable[[DuckState], Awaitable[None]] = _no_abort_rule
+    abort_when: Callable[[RobotState], Awaitable[None]] = _no_abort_rule
     """The run's `abort_when` rules, read against a state the verb has just taken. A verb that
     runs for a while and stops along the way awaits it at each stop: once a rule fires it sends a
     stop and raises the executor's `Aborted`, as an admission does. The executor reads the rules
@@ -105,7 +105,7 @@ class VerbContext:
     for minutes never heard that the battery had fallen below the line a task drew."""
 
 
-Precondition = Callable[[DuckState], str | None]
+Precondition = Callable[[RobotState], str | None]
 """Returns a reason string if the verb must NOT run right now, else None."""
 
 ExecuteFn = Callable[[VerbContext, Any], Awaitable[VerbResult]]
@@ -314,7 +314,7 @@ def core_registry() -> VerbRegistry:
 
     The base `installed_vocabulary()` builds on when it unions what the installed bodies can
     do. It is deliberately not the placeholder the loop, a team member and the MCP server
-    use before a robot has described itself: those accept a bare `DuckTransport` as well as
+    use before a robot has described itself: those accept a bare `RobotTransport` as well as
     an adapter, and a bare transport is a Microduck transport whose `connect()` returns no
     manifest to rebuild from, so the Microduck's own list is the honest fallback there."""
     from roboglot.verbs.core import CORE
@@ -328,7 +328,7 @@ def core_registry() -> VerbRegistry:
 def default_registry() -> VerbRegistry:
     """The vocabulary a caller gets when it holds a transport that never described itself.
 
-    A bare `DuckTransport` returns no manifest from `connect()`, so there is nothing to build
+    A bare `RobotTransport` returns no manifest from `connect()`, so there is nothing to build
     a vocabulary from. Historically that meant the Microduck's list, because every bare
     transport was a Microduck's. Now that the duck is a package of its own, it is asked when
     it is installed and the core verbs answer when it is not: a body that never said what it

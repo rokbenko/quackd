@@ -80,8 +80,8 @@ XLEROBOT_VERBS = {
 #: Verbs other robots have and this body has not. No speaker, no microphone, no head mapping.
 ABSENT = {"say", "quack", "gaze", "express", "play_sound", "wake_up", "sit", "stand", "kick"}
 
-DUCK = load_glot("xlerobot-lookout")
-DUCK_TEXT = (REPO / "tasks" / "xlerobot-lookout.glot").read_text(encoding="utf-8")
+GLOT = load_glot("xlerobot-lookout")
+GLOT_TEXT = (REPO / "tasks" / "xlerobot-lookout.glot").read_text(encoding="utf-8")
 
 
 def _executor(adapter: XLerobotAdapter, manifest: object, *, contract: object = None) -> Executor:
@@ -213,8 +213,8 @@ def test_search_scan_turns_the_whole_cart_because_there_is_no_head_to_sweep() ->
 def test_an_absent_verb_is_absent_everywhere() -> None:
     m = xlerobot_manifest("mock", camera=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
-    allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
+    allow = GLOT.frontmatter.verbs.allow
+    prompt = build_system_prompt(GLOT, [registry.view(n) for n in allow], manifest=m)
     # the prompt offers a verb as "- `name`: description"; the task's own prose may still say
     # the word, and does, because it explains that this robot has no voice
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
@@ -228,17 +228,17 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_a_task_needing_a_voice_is_refused_against_this_robot() -> None:
-    text = DUCK_TEXT.replace(
+    text = GLOT_TEXT.replace(
         "requires: [observe, report_state]", "requires: [observe, say]"
     ).replace("allow: [observe, report_state, stop]", "allow: [observe, report_state, stop, say]")
-    duck = parse_glot_text(text)
-    problems = validate_glot(duck, [xlerobot_manifest("mock", camera=True)])
+    glot = parse_glot_text(text)
+    problems = validate_glot(glot, [xlerobot_manifest("mock", camera=True)])
     assert any("say" in p.message for p in problems)
 
 
 def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
-    assert validate_glot(DUCK, [xlerobot_manifest("mock", camera=True)]) == []
-    allowed = set(DUCK.frontmatter.verbs.allow)
+    assert validate_glot(GLOT, [xlerobot_manifest("mock", camera=True)]) == []
+    allowed = set(GLOT.frontmatter.verbs.allow)
     assert not (allowed & {"move", "go_to", "approach_and", "search_scan", "move_joints"}), (
         "the first task pointed at real hardware must not drive a 12 kg cart"
     )

@@ -2,6 +2,13 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-12 · Numbered 0033 on 2026-09-13, because two branches that merged the same day had both taken 0031 · Amends [ADR-0029](0029-tracing.md) (its "lines are ASCII first" rule becomes "the MCP lines are ASCII; a terminal asks its own stream") · Extends [ADR-0001](0001-language.md) (`typer` + `rich` were always the CLI stack; this is what they are used for) · Documented in [architecture.md](../concepts/architecture.md#trace)
 
+**Amended 2026-11-16:** the emoji in the run header, the `🦆` among the glyphs the Context lists,
+is a speech bubble (U+1F4AC) now, before the title of the panel a run opens with, which a replay
+and a few other commands draw too. The duck stood there on every body, an arm and a rover too,
+and the robot emoji was not taken because it already marks a backend verified on hardware. A
+stream that cannot carry the bubble still draws the title with no glyph, and `degrade` spells it
+`task`. See the CHANGELOG's Unreleased entry.
+
 **Amended 2026-09-21 by [ADR-0042](0042-the-log-is-the-whole-screen.md):** the trace this ADR draws is now the log, and `roboglot trace` below is `roboglot log`; the old spelling works for one release and goes in 0.12. The consoles do one thing more: `make_console` returns a `ui.TeeConsole`, so everything printed through `ui.console` and `ui.err_console` is copied into the run directory's `terminal.txt` with no colour and no control characters in it, and the glyph half this ADR picks off the stream is what that copy shows too. The house style is unchanged, and so is the split between the two surfaces. One rule below settled something for the new work instead of changing: `prompt` was already the label of the system prompt block, so the line a person's answer gets is `asked`.
 
 ## Context

@@ -992,11 +992,11 @@ class Stepper:
         prompt either, because the instructions belong in the questions, and never the history,
         which is the distractor TypeSafe warn about by name."""
         from roboglot.perception.base import Detection, summarize_detections
-        from roboglot.transport.base import DuckState
+        from roboglot.transport.base import RobotState
 
         features = obs.features or {}
         dump = features.get("state") or {}
-        now = DuckState(**dump).summary() if dump else "not reported"
+        now = RobotState(**dump).summary() if dump else "not reported"
         detections = [Detection(**d) for d in features.get("detections") or []]
         last = features.get("last_result")
         raw = {

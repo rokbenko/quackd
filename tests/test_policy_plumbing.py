@@ -308,11 +308,11 @@ def test_a_goal_with_a_policy_allows_manipulate_behind_a_person() -> None:
     choice = PolicyChoice("http://127.0.0.1:9875", TOKEN)
     safe = _safe("lerobot:real", policy=choice)
     assert "manipulate" not in safe and "pick" not in safe
-    duck = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
-    assert "manipulate" in duck.frontmatter.verbs.allow
-    assert duck.frontmatter.verbs.confirm == ["manipulate"]
+    glot = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
+    assert "manipulate" in glot.frontmatter.verbs.allow
+    assert glot.frontmatter.verbs.confirm == ["manipulate"]
     manifest = describe(parse_robot_spec("lerobot:real"), policy=choice)
-    assert validate_glot(duck, [manifest]) == []
+    assert validate_glot(glot, [manifest]) == []
     # without a policy nothing changes: the safe verbs and stop, and nothing gated
     plain = glot_from_goal("stack the blocks", _safe("lerobot:real"))
     assert plain.frontmatter.verbs.confirm == []
@@ -341,9 +341,9 @@ def test_the_prompt_of_a_goal_run_with_a_policy_tells_the_pilot_its_executor() -
     robot = parse_robot_spec("lerobot:real")
     registry = registry_for(robot, describe(robot, policy=choice))
     safe = _safe("lerobot:real", policy=choice)
-    duck = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
-    verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
-    prompt = build_system_prompt(duck, verbs, manifest=describe(robot, policy=choice))
+    glot = glot_from_goal("stack the blocks", safe, confirm=["manipulate"])
+    verbs = [registry.view(n) for n in glot.frontmatter.verbs.allow]
+    prompt = build_system_prompt(glot, verbs, manifest=describe(robot, policy=choice))
     assert "## Your executor" in prompt
     assert "Verbs marked confirm (manipulate) ask a human" in prompt
     plain = glot_from_goal("stack the blocks", _safe("lerobot:real"))
@@ -362,13 +362,13 @@ def test_a_pilot_that_sees_the_arms_camera_judges_the_frame_after_each_segment()
     robot = parse_robot_spec("lerobot:real")
     registry = registry_for(robot, describe(robot, policy=choice))
     safe = _safe("lerobot:real", policy=choice)
-    duck = glot_from_goal("put the block in the bowl", safe, confirm=["manipulate"])
-    verbs = [registry.view(n) for n in duck.frontmatter.verbs.allow]
+    glot = glot_from_goal("put the block in the bowl", safe, confirm=["manipulate"])
+    verbs = [registry.view(n) for n in glot.frontmatter.verbs.allow]
     assert "observe" not in {v.name for v in verbs} and "manipulate" in {v.name for v in verbs}
 
     def executor(camera: bool, sees: bool) -> str:
         manifest = lerobot_manifest("real", camera=camera)
-        prompt = build_system_prompt(duck, verbs, manifest, sees=sees)
+        prompt = build_system_prompt(glot, verbs, manifest, sees=sees)
         return _flat(prompt.split("## Your executor")[1].split("\n## ")[0])
 
     assert "the fresh frame your next observation brings" in executor(camera=True, sees=True)
@@ -390,8 +390,8 @@ def test_a_run_tells_the_prompt_whether_its_pilot_sees_the_frames(
         return ToolCall(name="declare_success", arguments={"reason": "nothing to do"})
 
     monkeypatch.setitem(fake.STRATEGIES, "hand-off", strategy)
-    duck = tmp_path / "hand-off.glot"
-    duck.write_text(
+    glot = tmp_path / "hand-off.glot"
+    glot.write_text(
         "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
@@ -405,7 +405,7 @@ def test_a_run_tells_the_prompt_whether_its_pilot_sees_the_frames(
         result = runner.invoke(
             app,
             [
-                *("run", str(duck), "--robot", "lerobot:mock", "--llm", "fake", "--no-memory"),
+                *("run", str(glot), "--robot", "lerobot:mock", "--llm", "fake", "--no-memory"),
                 *("--yes", flag, "--runs-dir", str(runs)),
             ],
         )
@@ -534,7 +534,7 @@ def _run(tmp_path: Path, *argv: str) -> Any:
     [
         (
             ["--robots", "a=lerobot:mock,b=lerobot:mock", "--policy-url", DEAD],
-            "--policy-url is one arm's policy server, and a fleet has several bodies",
+            "--policy-url is one arm's policy server, and this run drives several robots",
         ),
         (["--robot", "microduck:mock", "--policy-url", DEAD], "microduck:mock runs no policy"),
         (["--robot", "lerobot:mock", "--policy-url", DEAD], "runs its own scripted policy"),
@@ -564,10 +564,10 @@ def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(
     either, run, validated or served without it, is refused with a line saying how to give it
     one, rather than only sent to `roboglot list-verbs`, which never lists them. Nothing else
     gains the line."""
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
-    duck = tmp_path / "hand-off.glot"
-    duck.write_text(
+    glot = tmp_path / "hand-off.glot"
+    glot.write_text(
         "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
@@ -577,17 +577,17 @@ def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(
     ran = runner.invoke(
         app,
         [
-            *("run", str(duck), "--robot", "lerobot:real", "--llm", "fake", "--no-memory"),
+            *("run", str(glot), "--robot", "lerobot:real", "--llm", "fake", "--no-memory"),
             *("--runs-dir", str(tmp_path / "runs")),
         ],
     )
     out = _flat(ran.output)
     assert ran.exit_code == 1 and "manipulate is not provided by" in out, ran.output
     assert said in out and "give roboglot run its address with --policy-url" in out, out
-    checked = runner.invoke(app, ["validate", str(duck), "--robot", "lerobot:real"])
+    checked = runner.invoke(app, ["validate", str(glot), "--robot", "lerobot:real"])
     assert checked.exit_code == 1 and said in _flat(checked.output), checked.output
     with pytest.raises(SystemExit, match="give roboglot serve-mcp its address with --policy-url"):
-        fleet_from_flags(robot=registered_arm, glotfile=str(duck))
+        team_from_flags(robot=registered_arm, glotfile=str(glot))
     # a verb no policy gives, and a body that runs no policy, are refused as they always were
     assert policy_hint(["observe"], ["lerobot:real"], "roboglot run") is None
     assert policy_hint(["manipulate"], ["microduck:mock"], "roboglot run") is None
@@ -604,20 +604,20 @@ def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path, registere
     assert f"roboglot policy check --policy-url {DEAD} asks it what it serves" in out
 
 
-def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_fleet(
+def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_team(
     held: Serving, registered_arm: str
 ) -> None:
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
-    with pytest.raises(SystemExit, match="a fleet has several bodies"):
-        fleet_from_flags(
+    with pytest.raises(SystemExit, match="this server serves several robots"):
+        team_from_flags(
             robots="a=lerobot:mock,b=lerobot:mock", policy_url=held.url, policy_token=TOKEN
         )
     with pytest.raises(AdapterError, match="microduck:mock runs no policy"):
-        fleet_from_flags(robot="microduck:mock", policy_url=held.url, policy_token=TOKEN)
+        team_from_flags(robot="microduck:mock", policy_url=held.url, policy_token=TOKEN)
     with pytest.raises(SystemExit, match=UNANSWERED):
-        fleet_from_flags(robot=registered_arm, policy_url=DEAD, policy_token=TOKEN)
-    plan = fleet_from_flags(robot=registered_arm, policy_url=held.url, policy_token=TOKEN)
+        team_from_flags(robot=registered_arm, policy_url=DEAD, policy_token=TOKEN)
+    plan = team_from_flags(robot=registered_arm, policy_url=held.url, policy_token=TOKEN)
     ((name, manifest),) = plan.manifests.items()
     assert manifest.provides("manipulate") and manifest.provides("pick")
     served = plan.adapters[name].policy_served
@@ -689,9 +689,9 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
     assert isinstance(client, RemoteRunner) and client.accept_other_frame
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["accept_other_frame"] is True
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
-    plan = fleet_from_flags(
+    plan = team_from_flags(
         robot=registered_arm, policy_url=held.url, policy_token=TOKEN, accept_other_frame=True
     )
     (served,) = [a.policy_served for a in plan.adapters.values()]
@@ -726,9 +726,9 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
     assert adapter.transport.policy_loop.async_chunks is False  # type: ignore[attr-defined]
     said = adapter.ask_policy()  # type: ignore[attr-defined]
     assert said is not None and said["async_chunks"] is False
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
-    plan = fleet_from_flags(
+    plan = team_from_flags(
         robot=registered_arm, policy_url=held.url, policy_token=TOKEN, async_chunks=False
     )
     (served,) = [a.policy_served for a in plan.adapters.values()]

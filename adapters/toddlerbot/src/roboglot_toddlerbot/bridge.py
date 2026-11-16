@@ -38,7 +38,7 @@ from typing import Any
 
 from PIL import Image, UnidentifiedImageError
 
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
 from roboglot_toddlerbot.verbs import look_degrees
 
 log = logging.getLogger(__name__)
@@ -357,7 +357,7 @@ class ToddlerBotBridge:
             return float("inf")
         return max(0.0, (time.monotonic() - self._t0 - float(stamped)) * 1000.0)
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         result = await self.request(STATE)
         state = result if isinstance(result, dict) else {}
         self._last_state = state
@@ -376,7 +376,7 @@ class ToddlerBotBridge:
             "stale_limit_ms": STALE_LIMIT_MS,
             "tilt_deg": state.get("tilt_deg"),
         }
-        return DuckState(
+        return RobotState(
             t=float(state.get("t") or 0.0),
             policy=str(state.get("policy") or "idle"),
             posture=state.get("posture") or "unknown",

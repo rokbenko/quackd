@@ -2,6 +2,14 @@
 
 **Status:** accepted, amended · **Date:** 2026-09-02 · Implemented in Phase 1 of 0.4 ([design](../design/multi-robot.md))
 
+**Amended 2026-11-16:** `DuckTransport` and `DuckState` below are `RobotTransport` and
+`RobotState` now, both in `roboglot.transport.base`, so `RobotAdapter` is a superset of
+`RobotTransport`, and `DuckState` did not keep its name as the Consequences say. Neither old name
+has an alias, and `DuckSession`, the 0.3 name of the MCP server's `RobotSession`, is gone. robotd,
+the Microduck's own daemon, has a type of its own also called `RobotState`, the state it streams,
+and where a page or a comment could mean either it says robotd's. See the CHANGELOG's Unreleased
+entry.
+
 **Amended 2026-11-05 by [ADR-0075](0075-an-adapter-is-a-family-a-body-file-and-a-binding.md):**
 "adding a robot means one package" holds for a robot of a new kind on a new route. A robot of a
 kind a package already drives, or one that speaks a protocol a package already speaks, is a body

@@ -83,7 +83,7 @@ def test_clear_on_an_empty_memory_says_so_and_succeeds(tmp_path: Path) -> None:
 def test_clear_forgets_and_show_survives_it(tmp_path: Path) -> None:
     mem = RobotMemory(ROBOT, tmp_path)
     mem.remember("a", now=1.0)
-    mem.record_episode(duck="d", outcome="success", reason="r", steps=1, now=2.0)
+    mem.record_episode(task="d", outcome="success", reason="r", steps=1, now=2.0)
     cleared = runner.invoke(app, ["memory", "clear", "--yes", "--robot", ROBOT, *_mem(tmp_path)])
     assert cleared.exit_code == 0 and "forgot 2 entries" in cleared.output
     assert not mem.path.exists()

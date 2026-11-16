@@ -93,7 +93,7 @@ Some robots have no network API to talk to at all. The Open Duck Mini v2 is one:
 runtime reads a local gamepad and nothing else, so the adapter needed a companion daemon
 that runs on the robot, in `bridge/<name>/` at the repository root rather than inside the
 adapter package. Three rules if you find yourself there. It
-must never import roboglot, because Roboglot's dependencies do not belong on a 512 MB board.
+must never import `roboglot`, because Roboglot's dependencies do not belong on a 512 MB board.
 It ships in the core's sdist and in no wheel at all, because a Raspberry Pi copies the one
 file it needs rather than installing anything. And it
 should be testable with no hardware, which in practice means a `--fake` mode and a pure
@@ -294,9 +294,9 @@ lives. The rules, enforced by the model itself
 
 ## The adapter class
 
-A `RobotAdapter` is a `DuckTransport` plus self-description. Wrap your backend and
+A `RobotAdapter` is a `RobotTransport` plus self-description. Wrap your backend and
 delegate: `connect()` returns the manifest, `disconnect()`/`close()` release it,
-`get_state()` returns a `DuckState` (`posture="unknown"` is fine for a body without
+`get_state()` returns a `RobotState` (`posture="unknown"` is fine for a body without
 postures; `holding` is for grippers), `get_frame()` returns a PIL image or `None`,
 `send_intent()` maps an `Intent` to the SDK, `health()` is informational and never
 raises, `heartbeat()` is the watchdog and raises `HeartbeatError`. Copy

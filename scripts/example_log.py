@@ -576,7 +576,7 @@ def _numbers(
         asked_for = f"`{asked}`" if asked else "the default robot"
         robot = f"{asked_for} ({summary.get('transport')}), whose connect failed"
     rows: list[tuple[str, object]] = [
-        ("roboglot version", summary["version"]),
+        ("Roboglot version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
         ("Robot", robot),
         ("Pilot" if vla else "LLM", llm),
@@ -1218,7 +1218,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="with a session's folder: what its terminal printed, since a session saves none",
     )
-    add.add_argument("--version", help="with --text: the roboglot version that ran it")
+    add.add_argument("--version", help="with --text: the Roboglot version that ran it")
     add.add_argument("--started", help="with --text: when it ran, as 2026-11-06T12:27:26Z")
     verbs.add_parser("write", help="rewrite every log and the table")
     verbs.add_parser("check", help="exit 1 if any log or the table would change")

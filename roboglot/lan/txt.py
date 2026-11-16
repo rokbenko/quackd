@@ -1,4 +1,4 @@
-"""The mDNS TXT record a roboglot robot advertises, and how one is read back.
+"""The mDNS TXT record a Roboglot robot advertises, and how one is read back.
 
 Pure: no zeroconf import, so the format is unit-tested without the extra. Identity only
 (`v mid sha adp vend mdl emb nverbs`); a manifest is never squeezed into TXT, it is
@@ -100,7 +100,7 @@ class DiscoveredRobot:
 def robot_from_txt(
     txt: Mapping[str, str], *, instance: str, host: str, port: int, addresses: tuple[str, ...]
 ) -> DiscoveredRobot | None:
-    """A record of another version, or one without an identity, is not a roboglot robot."""
+    """A record of another version, or one without an identity, is not a Roboglot robot."""
     if txt.get("v") != TXT_VERSION or not txt.get("mid") or not txt.get("sha"):
         return None
     try:

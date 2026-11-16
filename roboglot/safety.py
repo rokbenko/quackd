@@ -51,8 +51,8 @@ from roboglot.perception.base import Detector, detect_times
 from roboglot.space.places import PlaceBook, PlaceStore
 from roboglot.transport.base import (
     CameraFrame,
-    DuckState,
-    DuckTransport,
+    RobotState,
+    RobotTransport,
     TransportError,
     spatial_of,
 )
@@ -303,7 +303,7 @@ class Executor:
     """allowlist → confirm gate → budget → preconditions → (dry-run |) execute with timeout."""
 
     registry: VerbRegistry
-    transport: DuckTransport
+    transport: RobotTransport
     contract: GlotFrontmatter | None = None
     budget: Budget | None = None
     detector: Detector | None = None
@@ -586,7 +586,7 @@ class Executor:
             places=self.place_book(),
         )
 
-    def _abort_rule_reader(self, name: str | None) -> Callable[[DuckState], Awaitable[None]]:
+    def _abort_rule_reader(self, name: str | None) -> Callable[[RobotState], Awaitable[None]]:
         """`VerbContext.abort_when` for a verb beginning now: the rules an admission reads
         (`_check_abort_conditions`), read against a state the verb took mid-way. One that fires
         is recorded as the admission's `abort_when` gate is, the body is stopped, and only then is
@@ -596,7 +596,7 @@ class Executor:
         the run is over whatever else ends the verb. A composite whose nested call read the rule
         is ended by that abort in its turn, with a stop of its own after it."""
 
-        async def abort_when(state: DuckState) -> None:
+        async def abort_when(state: RobotState) -> None:
             reason = self._abort_rule_fired(state)
             if reason is None:
                 return
@@ -1370,12 +1370,12 @@ class Executor:
             name, params, VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED)
         )
 
-    def _check_abort_conditions(self, state: DuckState) -> None:
+    def _check_abort_conditions(self, state: RobotState) -> None:
         if (reason := self._abort_rule_fired(state)) is not None:
             self.abort.set()
             raise Aborted(reason)
 
-    def _abort_rule_fired(self, state: DuckState) -> str | None:
+    def _abort_rule_fired(self, state: RobotState) -> str | None:
         """The `abort_when` rule `state` fires, in the words an abort says, or None. A reading
         and nothing else: the admission's gate and a verb's own reading mid-way
         (`_abort_rule_reader`) each decide when to set the abort."""
@@ -1396,7 +1396,7 @@ class Heartbeat:
 
     def __init__(
         self,
-        transport: DuckTransport,
+        transport: RobotTransport,
         abort: asyncio.Event,
         *,
         period_s: float = 0.5,
@@ -1425,7 +1425,7 @@ class Heartbeat:
                 # raised used to kill this task outright, leaving the abort unset and the run
                 # with no idea the link had gone.
                 try:
-                    # "sending stop", not "stopping the duck": the heartbeat fails precisely
+                    # "sending stop", not "stopping the robot": the heartbeat fails precisely
                     # when the link is in doubt, which is when a stop is least likely to
                     # arrive. What actually stops a body whose deadman we cannot reach is the
                     # deadman itself.

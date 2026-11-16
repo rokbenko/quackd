@@ -1,4 +1,4 @@
-"""Mistral as the duck's brain, over its OpenAI-compatible endpoint.
+"""Mistral as the robot's brain, over its OpenAI-compatible endpoint.
 
 One difference worth the file: Mistral's function-calling guide documents `any` as its word for
 "you must call a tool", so that is what Roboglot sends, although its API spec lists OpenAI's

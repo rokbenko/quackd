@@ -1,11 +1,11 @@
 name: Bug report
-description: Something quacked when it should not have.
+description: Something went wrong that should not have.
 labels: ["bug"]
 body:
   - type: input
     id: version
     attributes:
-      label: roboglot version
+      label: Roboglot version
       description: Output of `roboglot --version`
     validations:
       required: true

@@ -27,6 +27,59 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Changed
 
+- **Breaking. An adapter is built on `RobotTransport` and `RobotState`, where it was built on
+  `DuckTransport` and `DuckState`.** Both are still imported from `roboglot.transport.base`, and
+  neither old name has an alias, so an adapter of your own that imports one fails at that import.
+  Change the import to `from roboglot.transport.base import RobotState, RobotTransport`, and each
+  use of the two names with it: a `get_state()` that returns `DuckState(...)` returns
+  `RobotState(...)`, and a transport annotated `DuckTransport` is a `RobotTransport`.
+  `DuckSession`, the 0.3 name of `roboglot.mcp_server.RobotSession`, is gone too. robotd, the
+  Microduck's own daemon, has a type of its own also called `RobotState`, which the Microduck's
+  pages call robotd's.
+- **Breaking for code that imports Roboglot. A name that held a task file says `glot`, one that
+  held its name says `task`, and the MCP server's names for several robots say team.**
+  `RunConfig(glot=...)` and `AgentLoop.glot` in `roboglot.agent.loop`, `RobotSession.glot` and
+  `RobotSession.adopt(glot)` in `roboglot.mcp_server`, and the first parameter of `validate_glot`,
+  `build_system_prompt` and `run_pilot_team` were `duck`, and `resolve_robot` and
+  `resolve_robot_ref` take `glot_default=` where they took `duck_default=`. `MemoryEntry.task` and
+  the `task=` keyword of `RobotMemory.remember` and `record_episode` in `roboglot.memory` were
+  `duck`, and `make_provider` takes `task_name=` where it took `duck_name=`. `roboglot.mcp_server`
+  exports `ServedTeam`, `ServedTeamPlan`, `build_team_server` and `team_from_flags` in place of
+  `Fleet`, `FleetPlan`, `build_fleet_server` and `fleet_from_flags`, and `roboglot.ui.Glyphs.duck`
+  is `Glyphs.bubble`. No old name has an alias. No key on disk changed with these names: a memory
+  file and a run's transcript name the task under `glot`, the key they took when task files became
+  `.glot` files. One stored name did change: `roboglot.mcp_server.build_server`, given a bare
+  transport that no adapter names, calls that robot `robot` where it called it `duck`, so for a
+  bare `MockTransport` its memory and places are kept in `robot-mock.jsonl` and
+  `robot-mock.places.jsonl`, where they were in `duck-mock.jsonl` and `duck-mock.places.jsonl`.
+  Rename the two files to keep what they hold.
+- **What Roboglot prints says robot where it said duck, on every body.** The panel a run opens with,
+  which `roboglot log`, `roboglot passport check`, `roboglot onboard show`, `roboglot onboard status`
+  and `roboglot announce` draw too, carries a speech bubble before its title where it carried a duck:
+  an arm or a rover is no duck, and the robot emoji already marks a backend verified on hardware. A
+  stream that cannot draw the bubble shows no glyph there, as it showed none for the duck. The hint
+  under a run's panel says `Ctrl-C or q stops the robot. Ctrl-C twice quits at once.`, or
+  `Stop in the page stops the robot.` for a run the page started, and under a `--by-hand` run it
+  says `Ctrl-C or q stops the robot. Pressing again still ends the run properly.` Its second
+  sentence was `However often you press, the run ends properly.`, which with `robot` in the first
+  no longer fit under a panel 80 columns wide.
+- **A team's counted members are `robot-0`, `robot-1` and so on, and what is refused for several
+  robots says robots.** A `team:` block with `members: 3` names them `robot-0` to `robot-2`, where
+  they were `duck-0` to `duck-2`, and the JSON Schema in `roboglot/glotfile/schema.json` says so.
+  A task file that gives such members their bodies by name in `robots:`, or a `--robots` that does,
+  has to say `robot-0` now: a name no member has is passed over, and that member takes the one
+  adapter installed, or the run is refused where there is not exactly one. The two refusals of a
+  team's size say `a team needs 2 to 8 robots` and `a team needs 2 to 8 named robots`. The twelve
+  refusals that said a fleet has several bodies, six from `roboglot run` and six from
+  `roboglot serve-mcp`, say that this run drives several robots, or that this server serves several
+  robots, as in `--policy-url is one arm's policy server, and this run drives several robots`.
+- **A team run's `team.jsonl` uses the keys a single run's records use.** `team_start` names the
+  task under `glot` and `member_end` names the member under `robot`, where both said `duck`. No
+  reader keeps the old key, so `roboglot log` given a team's record from an earlier release shows
+  each member's end without the member's name, as `success after 0 steps`.
+- **The page `roboglot ui` serves forgets its saved choice of a bundled task file once.** The choice
+  is kept in `ui-setup.json` under a new name, so one saved before is not read, and the Task file
+  picker starts on `hello-world` until another is chosen.
 - **`roboglot policy check --bench` says what a declared latency is for on the arm.** Its advice
   says `so the arm asks for each chunk in time`, where it said the simulator holds each chunk back
   as long.
@@ -211,6 +264,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   or more from where it was is a quack and a success, a nearer one is another approach and kick,
   and a ball the camera did not place both before and after ends the run as a failure that says
   it cannot tell.
+- **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
+  printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
+  the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
+  the runner writes now and names the member, as in `arm success after 0 steps`.
+- **A body whose manifest has no blurb is introduced to the pilot as a robot.** The system prompt
+  opens with `You are the brain of` and the manifest's `blurb`, and for a manifest that left the
+  field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
+  its rover told it is `a small biped duck robot (25 cm, 800 g)`. It is told it is `a robot` now.
+  Every body Roboglot ships has a blurb of its own, so none of them was affected.
 - **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
   mapd names no map yet, and the place read as waiting for the robot's map to be known until the
   next session found it orphaned. It says `its map was wiped` from the moment of the wipe.
@@ -250,6 +312,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Documentation
 
+- **The pages quote what Roboglot prints now, and the SO-101 examples' terminal records were edited
+  to match.** The README, the Jetson and play guides, the passport pages and the Jetson bridge's
+  README draw the speech bubble in a quoted panel and say the robot in a quoted hint, the README's
+  `team.jsonl` sample names each member under `robot`, the task file reference names counted
+  members `robot-0` and so on, the guide to writing an adapter names `RobotTransport` and
+  `RobotState`, and the Jetson bridge's README says a run that drives several robots where it said
+  fleet. The 25 `terminal.txt` records of the SO-101 examples were edited in two lines each, the
+  panel's title to the speech bubble and its hint to the new words, and in nothing else, and their
+  22 pages were written again from them. The films were not edited. The issue form for a task file
+  labels it `task-file`, where it labelled it `duck`, and asks for its Task name.
 - **The documentation says nothing of a simulator.** The README, the guides, the adapter pages,
   the passport pages and the examples offer the mocks where they offered a simulator, and the
   guide to exploring is gone with the verbs. The pictures and records made on a simulator are

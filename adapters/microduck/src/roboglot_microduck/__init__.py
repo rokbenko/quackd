@@ -30,10 +30,10 @@ from roboglot.perception import ASSUMED_LENS
 from roboglot.space.source import SpatialSource
 from roboglot.transport.base import (
     Ack,
-    DuckState,
-    DuckTransport,
     HeartbeatError,
     Intent,
+    RobotState,
+    RobotTransport,
     frame_period_of,
     frame_taken_at_of,
     spatial_of,
@@ -239,7 +239,7 @@ class MicroduckAdapter:
     name = "microduck"
     body = MICRODUCK
 
-    def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
+    def __init__(self, transport: RobotTransport, *, robot_id: str | None = None) -> None:
         # A transport built for one body says what it may send in that body's terms, so a Huebot
         # over a Microduck's would send looks its shim does not answer. The mock carries no body,
         # and is any body's. By name and not by identity, since a test that imports the package
@@ -294,7 +294,7 @@ class MicroduckAdapter:
     async def close(self) -> None:
         await self.disconnect()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self.transport.get_state()
 
     async def get_frame(self) -> Image.Image | None:

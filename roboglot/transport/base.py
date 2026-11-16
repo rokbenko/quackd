@@ -1,4 +1,4 @@
-"""One interface for "a duck", whether it is a mock or 800 g of servos.
+"""One interface for "a robot", whether it is a mock or 800 g of servos.
 
 The protocol is small on purpose: frames in, state in, intents out, plus a heartbeat and a
 stop. Time is part of the interface (`now`/`sleep`) so a mock can run faster than real time
@@ -68,7 +68,7 @@ class CameraFrame:
     primary: bool = False
 
 
-class DuckState(BaseModel):
+class RobotState(BaseModel):
     """A compact snapshot the LLM can read in one glance.
 
     `x, y, theta` are known on a mock, or from a robot's own map or odometry, which drifts;
@@ -177,7 +177,7 @@ class Intent(BaseModel):
 
 
 @runtime_checkable
-class DuckTransport(Protocol):
+class RobotTransport(Protocol):
     """Every transport implements exactly this. Verbs see nothing else.
 
     A transport whose body has several cameras may also offer
@@ -204,17 +204,17 @@ class DuckTransport(Protocol):
     async def close(self) -> None: ...
 
     async def get_frame(self) -> Image.Image | None:
-        """The duck's camera view, or None if this transport has no camera."""
+        """The robot's camera view, or None if this transport has no camera."""
         ...
 
-    async def get_state(self) -> DuckState: ...
+    async def get_state(self) -> RobotState: ...
 
     async def send_intent(self, intent: Intent) -> Ack: ...
 
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]: ...
 
     async def heartbeat(self) -> None:
-        """Raise `HeartbeatError` if the duck is unreachable or unhealthy."""
+        """Raise `HeartbeatError` if the robot is unreachable or unhealthy."""
         ...
 
     async def stop(self) -> None:

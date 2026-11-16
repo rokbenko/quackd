@@ -197,7 +197,7 @@ def test_log_with_no_argument_picks_the_newest_run(tmp_path: Path) -> None:
     assert first not in out
 
 
-def test_log_resolves_a_timestamp_prefix_and_a_duck_name(tmp_path: Path) -> None:
+def test_log_resolves_a_timestamp_prefix_and_a_task_name(tmp_path: Path) -> None:
     run_dir = _run(tmp_path)
     stamp = run_dir.name.split("-")[0]
     for typed in (stamp, "open-duck-scout"):
@@ -336,6 +336,30 @@ def test_log_on_a_team_run_names_every_member(tmp_path: Path) -> None:
         assert f"{name} ▶ run team-hello" in out, (name, out[:400])
         assert f"{name} ✓ declare success: said hello and heard back from {other}" in out
     assert "SUCCESS" in out and "every member declared success: duck, arm" in out
+
+
+def test_a_team_s_own_records_use_a_run_s_keys_and_replay_as_written(tmp_path: Path) -> None:
+    """`team.jsonl` names the task under `glot` and a member under `robot`, the keys a single
+    run's records use, and `roboglot log` draws each member's end from what the runner wrote
+    there: its outcome, never a field the runner does not write."""
+    result = runner.invoke(
+        app, ["run", "team-hello", "--llm", "fake", "--runs-dir", str(tmp_path), "--no-log"]
+    )
+    assert result.exit_code == 0, result.output
+    (run_dir,) = [d for d in tmp_path.iterdir() if d.is_dir()]
+    text = (run_dir / "team.jsonl").read_text(encoding="utf-8")
+    records = [json.loads(line) for line in text.splitlines() if line.strip()]
+    (start,) = [r for r in records if r["kind"] == "team_start"]
+    assert start["glot"] == "team-hello" and "duck" not in start, start
+    ends = {r["robot"]: r for r in records if r["kind"] == "member_end"}
+    assert set(ends) == {"duck", "arm"}, records
+    assert not any("duck" in r for r in ends.values()), "no record keeps the old key"
+    code, out = _replay(tmp_path, str(run_dir / "team.jsonl"))
+    assert code == 0, out
+    for name, end in ends.items():
+        assert end["outcome"] == "success", end
+        assert f"{name} success after {end['steps']} steps" in out, out
+    assert "None after" not in out, out
 
 
 # ── the clocks, the price, and the name the run was given ───────────────────────────────

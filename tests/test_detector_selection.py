@@ -32,7 +32,7 @@ from roboglot.cli import app
 from roboglot.glotfile.parser import parse_glot_text
 from roboglot.host import HOST_ENV, HostClient, HostHello
 from roboglot.log import LogEvent, render_lines
-from roboglot.mcp_server import build_fleet_server, fleet_from_flags
+from roboglot.mcp_server import build_team_server, team_from_flags
 from roboglot.perception import detector_for, explicit_detector, lens
 from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.perception.host import HostDetector
@@ -42,7 +42,7 @@ from roboglot.transport.mock import MockTransport
 from roboglot_toddlerbot import ToddlerBotAdapter
 from roboglot_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FakeHostd, dead_address
-from tests.test_mcp_fleet import _data, connected
+from tests.test_mcp_team import _data, connected
 
 runner = CliRunner()
 
@@ -289,12 +289,12 @@ def test_a_detector_is_for_one_robot(
     """Every team builds its members' detectors itself, so a choice here would be dropped
     without a word; it is refused instead, as `--image` is.
 
-    `--robots` with one member is refused too. It is the fleet spelling, as it is for `--host`,
-    and `serve-mcp` serves it as a fleet and refuses it there: ADR-0046 and the CHANGELOG say
+    `--robots` with one member is refused too. It is the team spelling, as it is for `--host`,
+    and `serve-mcp` serves it as a team and refuses it there: ADR-0046 and the CHANGELOG say
     both commands refuse `--detector` for `--robots`, and `run` once took it from one member."""
     result = _run(tmp_path, "--robots", robots, "--detector", "color")
     assert result.exit_code == 1, result.output
-    assert "--detector is for one robot, and a fleet has several bodies" in _flat(result)
+    assert "--detector is for one robot, and this run drives several robots" in _flat(result)
     assert nothing_connects == []
 
 
@@ -595,22 +595,22 @@ def test_validate_and_list_verbs_say_the_boards_camera_is_not_counted(
 
 def test_serve_mcp_refuses_a_host_whose_daemon_does_not_answer(quick_hello: None) -> None:
     with pytest.raises(SystemExit, match=r"^--host 127\.0\.0\.1:\d+ did not answer"):
-        fleet_from_flags(robot="microduck:mock", host=dead_address())
+        team_from_flags(robot="microduck:mock", host=dead_address())
 
 
 @pytest.mark.parametrize("robots", ["a=microduck:mock,b=microduck:mock", "a=microduck:mock"])
-def test_serve_mcp_refuses_a_detector_for_a_fleet(hostd: FakeHostd, robots: str) -> None:
-    """In `run`'s words, which count a one-member `--robots` as a fleet too."""
+def test_serve_mcp_refuses_a_detector_for_a_team(hostd: FakeHostd, robots: str) -> None:
+    """As `run` does, counting a one-member `--robots` as a team too."""
     with pytest.raises(
-        SystemExit, match=r"^--detector is for one robot, and a fleet has several bodies"
+        SystemExit, match=r"^--detector is for one robot, and this server serves several robots"
     ):
-        fleet_from_flags(robots=robots, detector="color")
+        team_from_flags(robots=robots, detector="color")
 
 
 def test_serve_mcp_refuses_detector_host_without_detect(hostd: FakeHostd) -> None:
     hostd.without_detector()
     with pytest.raises(SystemExit, match=r"cannot detect \(detect=false"):
-        fleet_from_flags(robot="microduck:mock", host=hostd.address, detector="host")
+        team_from_flags(robot="microduck:mock", host=hostd.address, detector="host")
 
 
 async def test_serve_mcp_serves_the_boards_camera_and_names_its_detector(
@@ -619,12 +619,12 @@ async def test_serve_mcp_serves_the_boards_camera_and_names_its_detector(
     """The same wiring as `run`: the body wrapped with the board's camera, the detector kept
     through connect, `robot_list` naming it, and the line the server logs when it is up."""
     caplog.set_level(logging.INFO, logger="roboglot.mcp")
-    plan = fleet_from_flags(robot="microduck:mock", host=hostd.address, detector="host")
+    plan = team_from_flags(robot="microduck:mock", host=hostd.address, detector="host")
     assert isinstance(plan.detector, HostDetector)
     (body,) = plan.adapters.values()
     assert isinstance(body, HostCameraAdapter)
-    async with connected(dict(plan.adapters), detector=plan.detector) as (client, fleet):
-        (session,) = fleet.sessions.values()
+    async with connected(dict(plan.adapters), detector=plan.detector) as (client, team):
+        (session,) = team.sessions.values()
         assert session.detector is plan.detector
         (row,) = _data(await client.call_tool("robot_list", {}))["robots"]
         assert row["detector"] == "yolo@host"
@@ -655,15 +655,15 @@ async def test_serve_mcp_gives_yolo_the_lens_of_the_body_that_connected(
     module.YOLO = _FakeYOLO  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "ultralytics", module)
     _toddlerbot_on_its_bridge(monkeypatch, camera=True)
-    plan = fleet_from_flags(robot="toddlerbot:bridge", host=hostd.address, detector="yolo")
+    plan = team_from_flags(robot="toddlerbot:bridge", host=hostd.address, detector="yolo")
     yolo = plan.detector
     assert isinstance(yolo, YoloDetector)
     assert (yolo.fov_deg, yolo.calibrated) == (62.0, False), "nothing known about the lens yet"
     assert _lens_warnings(caplog) == []
     (body,) = plan.adapters.values()
     assert isinstance(body, HostCameraAdapter)
-    async with connected(dict(plan.adapters), detector=yolo) as (_client, fleet):
-        (session,) = fleet.sessions.values()
+    async with connected(dict(plan.adapters), detector=yolo) as (_client, team):
+        (session,) = team.sessions.values()
         assert session.detector is yolo
         assert not body.host_is_primary, "the body's own camera is the primary view"
     assert (yolo.fov_deg, yolo.calibrated) == (62.0, False)
@@ -680,15 +680,15 @@ async def test_serve_mcp_tells_a_body_with_nothing_to_look_at_nothing_about_a_le
     caplog.set_level(logging.WARNING, logger="roboglot.perception")
     hostd.without_camera()
     _toddlerbot_on_its_bridge(monkeypatch, camera=False)
-    plan = fleet_from_flags(robot="toddlerbot:bridge", host=hostd.address)
+    plan = team_from_flags(robot="toddlerbot:bridge", host=hostd.address)
     assert isinstance(plan.detector, HostDetector)
-    async with connected(dict(plan.adapters), detector=plan.detector) as (_client, fleet):
-        (session,) = fleet.sessions.values()
+    async with connected(dict(plan.adapters), detector=plan.detector) as (_client, team):
+        (session,) = team.sessions.values()
         assert "camera" not in session.transport.manifest.sensors
     assert _lens_warnings(caplog) == []
 
 
-def test_build_fleet_server_is_given_the_plans_detector(
+def test_build_team_server_is_given_the_plans_detector(
     hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`serve` hands the plan's detector on, so `--detector` on the command line is not dropped
@@ -699,14 +699,14 @@ def test_build_fleet_server_is_given_the_plans_detector(
         seen.update(kw)
         raise SystemExit(0)
 
-    monkeypatch.setattr("roboglot.mcp_server.build_fleet_server", build)
+    monkeypatch.setattr("roboglot.mcp_server.build_team_server", build)
     result = runner.invoke(
         app,
         ["serve-mcp", "--robot", "microduck:mock", "--host", hostd.address, "--detector", "host"],
     )
     assert result.exit_code == 0, result.output
     assert isinstance(seen["detector"], HostDetector)
-    assert build_fleet_server is not build
+    assert build_team_server is not build
 
 
 # ── a detector handed in from Python ────────────────────────────────────────────────────
@@ -743,7 +743,7 @@ class _OwnDetector:
 
 
 async def _run_with(detector: Any, body: Any, tmp_path: Path) -> Any:
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
@@ -753,7 +753,7 @@ async def _run_with(detector: Any, body: Any, tmp_path: Path) -> Any:
     ]
     return await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(script=script),
             transport=body,
             detector=detector,
@@ -787,13 +787,13 @@ async def test_a_yolo_handed_to_a_run_from_python_keeps_the_lens_it_was_built_wi
 async def test_a_yolo_handed_to_the_mcp_server_keeps_the_lens_it_was_built_with(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, backend: str
 ) -> None:
-    """The server's side, where a caller of `build_fleet_server` had no way out at all: it
+    """The server's side, where a caller of `build_team_server` had no way out at all: it
     takes no field of view, so a real body without `camera_fov_deg` in its manifest always
     replaced the caller's lens with the guess."""
     caplog.set_level(logging.WARNING, logger="roboglot.perception")
     yolo = _yolo_70(monkeypatch)
-    async with connected({"toddler": _toddlerbot(backend)}, detector=yolo) as (_client, fleet):
-        (session,) = fleet.sessions.values()
+    async with connected({"toddler": _toddlerbot(backend)}, detector=yolo) as (_client, team):
+        (session,) = team.sessions.values()
         assert session.detector is yolo
         assert "camera" in session.transport.manifest.sensors
     assert (yolo.fov_deg, yolo.calibrated) == (70.0, True)
@@ -812,8 +812,8 @@ async def test_a_detector_with_a_calibrate_of_its_own_is_not_called_at_connect(
     # a server whose start-up raised never answers the client's hello, so this would wait for
     # ever rather than fail
     async with asyncio.timeout(20):
-        async with connected({"toddler": _toddlerbot("mock")}, detector=own) as (_client, fleet):
-            (session,) = fleet.sessions.values()
+        async with connected({"toddler": _toddlerbot("mock")}, detector=own) as (_client, team):
+            (session,) = team.sessions.values()
             assert session.detector is own
     assert own.calls == 0
 
@@ -847,7 +847,7 @@ async def _run_looking(
     detector: Any, body: Any, tmp_path: Path, *, fov_deg: float | None = None
 ) -> Any:
     """`_run_with`, with the `--fov-deg` a run was given."""
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
@@ -857,7 +857,7 @@ async def _run_looking(
     ]
     return await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(script=script),
             transport=body,
             detector=detector,
@@ -967,9 +967,9 @@ async def test_serve_mcp_measures_through_an_assumed_lens_uncalibrated(
 
     async with connected({"duck": MicroduckAdapter(_ReportsItsLens(37.3, ASSUMED))}) as (
         _client,
-        fleet,
+        team,
     ):
-        (session,) = fleet.sessions.values()
+        (session,) = team.sessions.values()
         assert isinstance(session.detector, ColorBlobDetector)
         assert (session.detector.fov_deg, session.detector.calibrated) == (37.3, False)
     assert any(ASSUMED in said for said in _lens_warnings(caplog))

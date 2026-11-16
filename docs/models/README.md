@@ -1,6 +1,6 @@
 # Models
 
-A roboglot run has up to three models in it, and only the first is required. The robots are in
+A Roboglot run has up to three models in it, and only the first is required. The robots are in
 [adapters/](../adapters/status.md), one page per body. This folder is the other half: the models
 that plan, the ones that decide, the ones that move the arm, and how to name each one.
 

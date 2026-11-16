@@ -250,7 +250,7 @@ def test_a_verbose_line_survives_a_bracket_an_llm_wrote(monkeypatch) -> None:
     assert "[/think]" in out and "[bold]walk" in out
 
 
-def test_validate_starter_ducks() -> None:
+def test_validate_starter_task_files() -> None:
     files = sorted(TASKS.glob("*.glot"))
     result = runner.invoke(app, ["validate", *[str(p) for p in files]])
     assert result.exit_code == 0, result.output
@@ -347,7 +347,7 @@ def test_missing_extra_hint_survives_rich_markup(tmp_path: Path, monkeypatch) ->
     assert "roboglot[anthropic]" in result.output  # Rich must not eat the [anthropic] "tag"
 
 
-def test_run_goal_builds_an_ad_hoc_duck(tmp_path: Path) -> None:
+def test_run_goal_builds_an_ad_hoc_task_file(tmp_path: Path) -> None:
     result = runner.invoke(
         app,
         [
@@ -396,7 +396,7 @@ def test_goal_picks_a_matching_scripted_strategy(tmp_path: Path) -> None:
     assert walked == ["walk"] * 3, walked  # it really walked, not just "nothing more to do"
 
 
-def test_run_needs_exactly_one_of_duck_or_goal(tmp_path: Path) -> None:
+def test_run_needs_exactly_one_of_task_file_or_goal(tmp_path: Path) -> None:
     both = runner.invoke(
         app,
         [
@@ -530,18 +530,18 @@ def test_list_verbs_for_a_robot() -> None:
 def test_validate_against_a_robot(tmp_path: Path) -> None:
     ok = runner.invoke(app, ["validate", "hello-world", "--robot", "microduck:mock"])
     assert ok.exit_code == 0 and "for microduck" in ok.output
-    duck = tmp_path / "needs-express.glot"
-    duck.write_text(
+    glot = tmp_path / "needs-express.glot"
+    glot.write_text(
         "---\nglot: 1\nname: needs-express\ndescription: d\nrequires: [express]\n"
         "robots: microduck:mock\nverbs:\n  allow: [quack, express, stop]\nsuccess: [x]\n"
         "---\n# Task\nx\n",
         encoding="utf-8",
     )
-    bad = runner.invoke(app, ["validate", str(duck)])  # the duck's own robots: default applies
+    bad = runner.invoke(app, ["validate", str(glot)])  # the duck's own robots: default applies
     assert bad.exit_code == 1
     # printed as a plain line under the table, so it survives any terminal width
     assert "requires express, but microduck (microduck) does not provide it" in bad.output
-    with_robot = runner.invoke(app, ["validate", str(duck), "--robot", "bogus:x"])
+    with_robot = runner.invoke(app, ["validate", str(glot), "--robot", "bogus:x"])
     assert with_robot.exit_code == 1 and "unknown adapter" in with_robot.output
 
 
@@ -899,7 +899,7 @@ def test_run_refuses_an_openrouter_alias_before_any_key_or_robot(
     assert list(tmp_path.iterdir()) == [], "a refused run left a directory behind"
 
 
-def test_run_refuses_a_duck_the_robot_cannot_do(tmp_path: Path) -> None:
+def test_run_refuses_a_task_file_the_robot_cannot_do(tmp_path: Path) -> None:
     """`serve-mcp` always validated the contract against the robot; `run` never did, and
     died halfway in with a raw VerbNotFound once the robot was already connected."""
     result = runner.invoke(
@@ -923,7 +923,7 @@ def test_run_refuses_a_duck_the_robot_cannot_do(tmp_path: Path) -> None:
     assert list(tmp_path.iterdir()) == []  # refused before a run directory was made
 
 
-def test_run_still_starts_when_the_duck_fits(tmp_path: Path) -> None:
+def test_run_still_starts_when_the_task_file_fits(tmp_path: Path) -> None:
     """The guard must refuse the impossible without over-refusing the possible."""
     result = runner.invoke(
         app,
@@ -1086,7 +1086,7 @@ def test_extra_body_reaches_every_provider_a_run_builds(
 
     def recorder(name: str, **kw: object) -> object:
         seen.append(kw.get("extra_body"))
-        return real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
+        return real("fake", task_name=kw.get("task_name"))  # type: ignore[arg-type]
 
     monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     result = runner.invoke(
@@ -1514,14 +1514,14 @@ def _arm_registry(tmp_path: Path, *, rest_pose: bool) -> Path:
     return reg
 
 
-def _by_hand_run(tmp_path: Path, *flags: str, duck: str = "hello-world") -> Any:
+def _by_hand_run(tmp_path: Path, *flags: str, task: str = "hello-world") -> Any:
     """A `--by-hand` run whose runs directory is `tmp_path` itself, for the refusals that have
     to leave it empty."""
     return runner.invoke(
         app,
         [
             "run",
-            duck,
+            task,
             "--llm",
             "fake",
             "--runs-dir",
@@ -3453,7 +3453,7 @@ def test_a_by_hand_run_stays_from_the_start_and_its_panel_says_so(
     held = runner.invoke(app, [*argv, "--by-hand"])
     said = " ".join(held.output.split())
     assert told == [True], held.output
-    assert "However often you press, the run ends properly" in said
+    assert "Ctrl-C or q stops the robot. Pressing again still ends the run properly." in said
     assert "Ctrl-C twice quits at once" not in said
     told.clear()
     plain = runner.invoke(app, argv)
@@ -3795,7 +3795,7 @@ def test_a_run_that_gave_up_asking_the_llm_again_prints_what_the_waiting_cost(
     real = __import__("roboglot.agent.providers.factory", fromlist=["make_provider"]).make_provider
 
     def overloaded(name: str, **kw: object) -> object:
-        provider = real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
+        provider = real("fake", task_name=kw.get("task_name"))  # type: ignore[arg-type]
 
         async def step(*_args: Any, **_kwargs: Any) -> Any:
             raise _overloaded()
@@ -3836,7 +3836,7 @@ def _typed_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *flags: str,
-    duck: str = "hello-world",
+    task: str = "hello-world",
     answer: str | None = None,
 ) -> Any:
     """One run on the mock duck, invoked as if somebody had typed it at a shell.
@@ -3853,7 +3853,7 @@ def _typed_run(
     at a prompt."""
     args = [
         "run",
-        duck,
+        task,
         "--llm",
         "fake",
         "--robot",
@@ -4018,7 +4018,7 @@ def test_a_question_and_the_answer_to_it_are_both_kept(
     refuses to name a person it cannot find one for. This is the run where somebody really is
     standing there; the run where nobody is is directly below."""
     monkeypatch.setattr(cli_mod, "_can_prompt", lambda: True)
-    result = _typed_run(tmp_path, monkeypatch, duck=_gated(tmp_path), answer="y\n")
+    result = _typed_run(tmp_path, monkeypatch, task=_gated(tmp_path), answer="y\n")
     assert result.exit_code == 0, result.output
     asked = [line for line in _terminal(tmp_path).splitlines() if "[y/N]" in line]
     assert len(asked) == 1, asked
@@ -4040,7 +4040,7 @@ def test_a_pipe_on_stdin_opens_the_gate_and_is_not_written_down_as_a_person(
     standing next to. `_can_prompt` already knows whether there is a terminal; this is that
     answer reaching the two fields a reader would take as a witness."""
     monkeypatch.setattr(cli_mod, "_can_prompt", lambda: False)
-    result = _typed_run(tmp_path, monkeypatch, duck=_gated(tmp_path), answer="y\n")
+    result = _typed_run(tmp_path, monkeypatch, task=_gated(tmp_path), answer="y\n")
     assert result.exit_code == 0, result.output
     assert "[y/N]: y" in _terminal(tmp_path)
     events = _events(tmp_path)
@@ -4075,7 +4075,7 @@ def test_a_yes_run_leaves_no_claim_that_anybody_was_asked(
     somebody who was never at the terminal is worse than no record at all. The gate still
     ran and still says what it decided; what is missing is the exchange, because there
     wasn't one."""
-    result = _typed_run(tmp_path, monkeypatch, "--yes", duck=_gated(tmp_path))
+    result = _typed_run(tmp_path, monkeypatch, "--yes", task=_gated(tmp_path))
     assert result.exit_code == 0, result.output
     assert "[y/N]" not in _terminal(tmp_path)
     events = _events(tmp_path)

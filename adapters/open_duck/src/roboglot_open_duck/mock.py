@@ -14,7 +14,7 @@ import math
 from PIL import Image, ImageDraw
 
 from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
-from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.base import Ack, Intent, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot_open_duck.verbs import GESTURES
 
@@ -40,7 +40,7 @@ class OpenDuckMock(MockTransport):
     ) -> None:
         super().__init__(
             states=[
-                DuckState(
+                RobotState(
                     policy="stand",
                     posture="standing",
                     battery_percent=None,
@@ -73,7 +73,7 @@ class OpenDuckMock(MockTransport):
         self.y += (self._vx * math.sin(self.theta) + self._vy * math.cos(self.theta)) * seconds
         await super().sleep(seconds)
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = await super().get_state()
         return state.model_copy(
             update={

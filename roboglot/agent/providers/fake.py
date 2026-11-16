@@ -638,7 +638,7 @@ def meeting_strategy(obs: Observation, step: int, history: list[Exchange]) -> To
     if names:
         return ToolCall(
             name="tell",
-            arguments={"to": names[0], "text": "hello from a roboglot robot, staying where I am"},
+            arguments={"to": names[0], "text": "hello from a Roboglot robot, staying where I am"},
         )
     if _count_calls(history, "report_state") >= len(NEARBY_PAUSES_S):
         return ToolCall(name="declare_failure", arguments={"reason": "no robot came near"})
@@ -819,11 +819,11 @@ class FakeProvider:
 
     @classmethod
     def for_glot(
-        cls, duck_name: str, goal: str | None = None, *, vision: bool | None = None
+        cls, task_name: str, goal: str | None = None, *, vision: bool | None = None
     ) -> FakeProvider:
         """Pick a scripted strategy by task name, or by keywords in a plain-language goal."""
-        strategy = STRATEGIES.get(duck_name)
-        label = duck_name
+        strategy = STRATEGIES.get(task_name)
+        label = task_name
         if strategy is None and goal:
             text = goal.lower()
             if "kick" in text or "ball" in text:

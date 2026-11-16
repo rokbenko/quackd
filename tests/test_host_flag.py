@@ -2,7 +2,7 @@
 
 The noun is one machine: its LLM server, its camera, its detector and its health. These
 tests hold the parts that exist before any of the board's data is read: the order the three
-places that can name a board are tried in, the refusal of a fleet (one board cannot be every
+places that can name a board are tried in, the refusal of a team (one board cannot be every
 member's camera), the local preset moving to the board, and the token staying out of every
 record a run writes. The client and the daemon are tested in their own files.
 
@@ -30,7 +30,7 @@ from roboglot.host import (
     HostHello,
     resolve_host,
 )
-from roboglot.mcp_server import fleet_from_flags
+from roboglot.mcp_server import team_from_flags
 from roboglot.registry import Registry, RobotEntry, StoredTeam
 from tests.conftest import help_text
 from tests.fake_jetson_hostd import FakeHostd
@@ -241,7 +241,7 @@ def _flat(result: Any) -> str:
 
 
 @pytest.mark.parametrize(
-    "fleet",
+    "team",
     [
         ("hello-world", "--robots", "a=microduck:mock,b=microduck:mock"),
         ("hello-world", "--robots", "a=microduck:mock"),
@@ -249,15 +249,15 @@ def _flat(result: Any) -> str:
     ],
     ids=["robots", "robots-of-one", "team-section"],
 )
-def test_a_host_on_the_line_is_refused_for_a_fleet_before_anything_connects(
-    tmp_path: Path, nothing_connects: list[Any], fleet: tuple[str, ...]
+def test_a_host_on_the_line_is_refused_for_a_team_before_anything_connects(
+    tmp_path: Path, nothing_connects: list[Any], team: tuple[str, ...]
 ) -> None:
-    """One board is one camera and one detector, and a fleet is several bodies: no member could
-    be told which of them the board's camera is, so none of them is. Every spelling of a fleet
-    is refused, `--robots` even with one member, because it is the fleet spelling."""
-    result = _run(tmp_path, *fleet, "--host", "jetson.local")
+    """One board is one camera and one detector, and a team is several bodies: no member could
+    be told which of them the board's camera is, so none of them is. Every spelling of a team
+    is refused, `--robots` even with one member, because it is the team spelling."""
+    result = _run(tmp_path, *team, "--host", "jetson.local")
     assert result.exit_code == 1, result.output
-    assert "--host names one machine's camera and detector, and a fleet has several bodies" in (
+    assert "--host names one machine's camera and detector, and this run drives several robots" in (
         _flat(result)
     )
     assert nothing_connects == []
@@ -281,11 +281,11 @@ def test_a_host_stored_with_a_team_member_is_refused_by_that_members_name(
     assert nothing_connects == []
 
 
-def test_the_usual_board_in_the_environment_does_not_stop_a_fleet(
+def test_the_usual_board_in_the_environment_does_not_stop_a_team(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`ROBOGLOT_HOST` is the board somebody usually uses, not a claim about these bodies, so a
-    team still runs with it set; what it moves for a fleet is only a local preset's server."""
+    team still runs with it set; what it moves for a team is only a local preset's server."""
     monkeypatch.setenv(HOST_ENV, "jetson.local")
     result = _run(tmp_path, "team-hello")
     assert result.exit_code == 0, result.output
@@ -306,12 +306,12 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
     tmp_path: Path, nothing_connects: list[Any]
 ) -> None:
     """It used to be dropped: the run went ahead on the laptop's camera and detector with exit
-    0, and nothing on the screen said the flag had gone nowhere. A fleet has no board at all,
+    0, and nothing on the screen said the flag had gone nowhere. A team has no board at all,
     and refuses the token as it refuses --host."""
     alone = _run(tmp_path, "hello-world", "--robot", "microduck:mock", "--host-token", "abc123")
     assert alone.exit_code == 1, alone.output
     assert "--host-token needs a board" in _flat(alone), alone.output
-    fleet = _run(
+    team = _run(
         tmp_path,
         "hello-world",
         "--robots",
@@ -319,9 +319,9 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
         "--host-token",
         "abc123",
     )
-    assert fleet.exit_code == 1, fleet.output
-    assert "--host-token is one board's token, and a fleet has several bodies" in _flat(fleet)
-    for result in (alone, fleet):
+    assert team.exit_code == 1, team.output
+    assert "--host-token is one board's token, and this run drives several robots" in _flat(team)
+    for result in (alone, team):
         assert "abc123" not in result.output
     assert nothing_connects == []
     assert not (tmp_path / "runs").exists()
@@ -329,9 +329,11 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
 
 def test_serve_mcp_refuses_a_typed_host_token_with_no_board() -> None:
     with pytest.raises(SystemExit, match=r"^--host-token needs a board"):
-        fleet_from_flags(robot="microduck:mock", host_token="abc123")
-    with pytest.raises(SystemExit, match=r"^--host-token is one board's token, and a fleet"):
-        fleet_from_flags(robots="a=microduck:mock,b=microduck:mock", host_token="abc123")
+        team_from_flags(robot="microduck:mock", host_token="abc123")
+    with pytest.raises(
+        SystemExit, match=r"^--host-token is one board's token, and this server serves several"
+    ):
+        team_from_flags(robots="a=microduck:mock,b=microduck:mock", host_token="abc123")
 
 
 def test_a_stored_token_the_board_refuses_is_answered_with_robot_edit_and_doctor_by_name(
@@ -417,7 +419,7 @@ def pilots(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
     def recorder(name: str, **kw: Any) -> Any:
         seen.append({"name": name, **kw})
-        return real("fake", duck_name=kw.get("duck_name"))
+        return real("fake", task_name=kw.get("task_name"))
 
     monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     return seen
@@ -582,10 +584,10 @@ def _seed(tmp_path: Path) -> Registry:
     ],
     ids=["robots", "robots-of-one", "team"],
 )
-def test_serve_mcp_refuses_a_host_for_a_fleet(tmp_path: Path, kwargs: dict[str, Any]) -> None:
+def test_serve_mcp_refuses_a_host_for_a_team(tmp_path: Path, kwargs: dict[str, Any]) -> None:
     _seed(tmp_path)
-    with pytest.raises(SystemExit, match="a fleet has several bodies"):
-        fleet_from_flags(registry_dir=str(tmp_path), **kwargs)
+    with pytest.raises(SystemExit, match="this server serves several robots"):
+        team_from_flags(registry_dir=str(tmp_path), **kwargs)
 
 
 def test_serve_mcp_refuses_a_team_whose_member_has_a_host_by_that_members_name(
@@ -593,41 +595,41 @@ def test_serve_mcp_refuses_a_team_whose_member_has_a_host_by_that_members_name(
 ) -> None:
     _seed(tmp_path)
     with pytest.raises(SystemExit, match=r"jet has a host in robots\.json"):
-        fleet_from_flags(team="pair", registry_dir=str(tmp_path))
+        team_from_flags(team="pair", registry_dir=str(tmp_path))
 
 
 def test_serve_mcp_settles_one_robots_board_by_the_same_ladder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, any_board: list[str]
 ) -> None:
     """The plan carries the board for the camera and the detector to read, settled the way
-    `run` settles it: the robot's own, a flag over it field by field, and nothing for a fleet
-    even when the environment names one, so a fleet asks no board anything."""
+    `run` settles it: the robot's own, a flag over it field by field, and nothing for a team
+    even when the environment names one, so a team asks no board anything."""
     _seed(tmp_path)
-    stored = fleet_from_flags(robot="jet", registry_dir=str(tmp_path)).host
+    stored = team_from_flags(robot="jet", registry_dir=str(tmp_path)).host
     assert (stored.host, stored.source, stored.token) == (
         "jetson.local",
         "robot jet (robots.json)",
         "stored",
     )
-    tunnel = fleet_from_flags(robot="jet", registry_dir=str(tmp_path), host="127.0.0.1").host
+    tunnel = team_from_flags(robot="jet", registry_dir=str(tmp_path), host="127.0.0.1").host
     assert (tunnel.host, tunnel.token) == ("127.0.0.1", "stored")
     with pytest.raises(SystemExit, match="not a URL"):
-        fleet_from_flags(robot="duck", registry_dir=str(tmp_path), host="http://jetson.local")
+        team_from_flags(robot="duck", registry_dir=str(tmp_path), host="http://jetson.local")
     monkeypatch.setenv(HOST_ENV, "usual.local")
-    fleet = fleet_from_flags(robots="a=microduck:mock,b=microduck:mock", registry_dir=str(tmp_path))
-    assert fleet.host == HostChoice()
+    team = team_from_flags(robots="a=microduck:mock,b=microduck:mock", registry_dir=str(tmp_path))
+    assert team.host == HostChoice()
     assert any_board == ["jetson.local", "127.0.0.1"]
 
 
 def test_serve_mcp_takes_the_flag_on_its_command_line(tmp_path: Path) -> None:
     """The refusal above, through the command a desktop client spawns, so the flag is proved to
-    reach `fleet_from_flags` rather than stop at Typer."""
+    reach `team_from_flags` rather than stop at Typer."""
     result = runner.invoke(
         app,
         ["serve-mcp", "--robots", "a=microduck:mock,b=microduck:mock", "--host", "jetson.local"],
     )
     assert result.exit_code == 1
-    assert "a fleet has several bodies" in _flat(result)
+    assert "this server serves several robots" in _flat(result)
 
 
 # ── where the flag is offered ───────────────────────────────────────────────────────────

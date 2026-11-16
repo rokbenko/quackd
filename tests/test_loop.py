@@ -55,7 +55,7 @@ from roboglot.release import (
     RELEASE_NOT_SENT,
 )
 from roboglot.safety import Aborted
-from roboglot.transport.base import CameraFrame, DuckState, TransportError
+from roboglot.transport.base import CameraFrame, RobotState, TransportError
 from roboglot.transport.mock import MockTransport
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
@@ -91,7 +91,7 @@ async def test_run_start_records_the_extra_body(hello_glot: GlotFile, tmp_path: 
     provider = FakeProvider.for_glot(hello_glot.name)
     provider.extra_body = body  # type: ignore[attr-defined]
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["kind"] == "run_start" and start["extra_body"] == body
@@ -99,7 +99,7 @@ async def test_run_start_records_the_extra_body(hello_glot: GlotFile, tmp_path: 
     # a provider with no such attribute records None rather than raising
     plain = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path / "plain",
@@ -124,7 +124,7 @@ async def test_the_extra_body_reaches_the_record_with_no_credential_in_it(
         "chat_template_kwargs": {"enable_thinking": False, "api_key": "sk-live-Y"},
     }
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     start = Transcript.read(result.run_dir / "transcript.jsonl")[0]
     assert start["extra_body"] == {
@@ -139,7 +139,7 @@ async def test_hello_world_golden(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=transport,
             runs_dir=tmp_path,
@@ -200,7 +200,7 @@ async def test_no_tool_call_is_reprompted_once_then_failure(
 ) -> None:
     result = await run_glot(
         RunConfig(
-            duck=hello_glot, provider=NoToolProvider(), transport=MockTransport(), runs_dir=tmp_path
+            glot=hello_glot, provider=NoToolProvider(), transport=MockTransport(), runs_dir=tmp_path
         )
     )
     assert result.outcome == "failure" and "no tool call" in result.reason
@@ -215,7 +215,7 @@ async def test_time_budget_wins_over_late_declaration(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=ClockAdvancingProvider(transport, 7, declaration),
             transport=transport,
             runs_dir=tmp_path,
@@ -237,7 +237,7 @@ async def test_provider_response_before_time_budget_is_processed(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=ClockAdvancingProvider(transport, 5),
             transport=transport,
             runs_dir=tmp_path,
@@ -292,7 +292,7 @@ async def test_a_call_that_hangs_past_the_tasks_minutes_ends_the_run_on_its_budg
     result = await asyncio.wait_for(
         run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=provider,
                 transport=transport,
                 runs_dir=tmp_path,
@@ -313,7 +313,7 @@ async def test_budget_ends_the_run(hello_glot: GlotFile, tmp_path: Path) -> None
     forever = FakeProvider(script=[ToolCall(name="quack", arguments={})])
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=forever,
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -336,7 +336,7 @@ async def test_a_max_steps_override_reaches_the_prompt_as_well_as_the_observatio
     cannot tell which number is real. All three readings of it have to agree."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,  # its own file says five
+            glot=hello_glot,  # its own file says five
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -359,7 +359,7 @@ async def test_every_observation_says_its_step_once(hello_glot: GlotFile, tmp_pa
     It says it once, and the rest of the budget line is still there."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -383,7 +383,7 @@ async def test_disallowed_verb_is_feedback(hello_glot: GlotFile, tmp_path: Path)
     )
     transport = MockTransport()
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=naughty, transport=transport, runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=naughty, transport=transport, runs_dir=tmp_path)
     )
     assert result.outcome == "failure"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -398,7 +398,7 @@ async def test_heartbeat_failure_aborts_the_run(hello_glot: GlotFile, tmp_path: 
     forever = FakeProvider(script=[ToolCall(name="walk", arguments={"duration_s": 2.0})])
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=forever,
             transport=transport,
             runs_dir=tmp_path,
@@ -414,7 +414,7 @@ async def test_dry_run_touches_nothing(hello_glot: GlotFile, tmp_path: Path) -> 
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=transport,
             runs_dir=tmp_path,
@@ -460,7 +460,7 @@ async def test_the_transcript_carries_the_whole_conversation(
     thought, what it answered, what the executor decided, what went to the robot."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=ThinkingProvider(
                 ToolCall(name="quack", arguments={"text": "hi"}),
                 ToolCall(name="declare_success", arguments={"reason": "quacked"}),
@@ -500,7 +500,7 @@ async def test_the_final_safety_stop_is_in_the_log_too(
     """The intents that matter most are the ones sent because something went wrong."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -528,7 +528,7 @@ async def test_a_provider_that_fails_says_so_instead_of_exiting_unexpectedly(
     with pytest.raises(ProviderError):
         await run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=Failing(),
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -562,7 +562,7 @@ async def test_a_cancelled_run_ends_as_an_abort_that_still_stops_and_records(
     task = asyncio.create_task(
         run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=Stalling(),
                 transport=transport,
                 run_dir=run_dir,
@@ -594,7 +594,7 @@ async def test_a_record_that_fails_at_run_end_still_gets_its_summary_and_is_clos
     run_dir.mkdir()
     loop = AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             run_dir=run_dir,
@@ -631,7 +631,7 @@ async def test_a_console_sees_the_run_as_it_happens(hello_glot: GlotFile, tmp_pa
     seen: list[str] = []
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -650,7 +650,7 @@ async def test_a_broken_console_never_ends_a_run(hello_glot: GlotFile, tmp_path:
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -672,7 +672,7 @@ async def test_the_summary_counts_the_events_a_broken_console_dropped(
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -713,7 +713,7 @@ async def test_thinking_on_the_reprompt_turn_is_recorded(
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=Dithering(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -756,7 +756,7 @@ async def test_a_turn_a_fallback_answered_is_recorded_with_the_llm_that_answered
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot, provider=FellBack(), transport=MockTransport(), runs_dir=tmp_path
+            glot=hello_glot, provider=FellBack(), transport=MockTransport(), runs_dir=tmp_path
         )
     )
     assert result.outcome == "success"
@@ -789,7 +789,7 @@ async def test_a_composite_is_logged_as_nested_pairs_with_the_parents_tally(
     seen: list[Any] = []
     result = await run_glot(
         RunConfig(
-            duck=kick_duck,
+            glot=kick_duck,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="search_scan", arguments={"target": "ball"}),
@@ -840,7 +840,7 @@ async def test_the_log_callback_still_gets_the_lines_that_only_it_had(
     seen: list[Any] = []
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -897,18 +897,18 @@ async def test_the_stand_ins_a_robot_declares_are_told_to_the_llm(
     is built from `state.summary()`, and neither had a branch for it. So the docs said a
     transcript never implies more than happened while the LLM was told nothing at all.
     """
-    from roboglot.transport.base import DuckState
+    from roboglot.transport.base import RobotState
 
     stand_ins = [  # two that AlohaMini's adapter declares
         "holding is what Roboglot commanded, never what the robot felt",
         "no odometry exists, so go_to closes the loop on the camera alone",
     ]
     transport = MockTransport(
-        states=[DuckState(policy="mock", posture="standing", extras={"assumptions": stand_ins})]
+        states=[RobotState(policy="mock", posture="standing", extras={"assumptions": stand_ins})]
     )
     provider = CapturingProvider()
     await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=transport, runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=transport, runs_dir=tmp_path)
     )
     system = provider.systems[0]
     assert "## What is a stand-in on this robot" in system
@@ -923,13 +923,13 @@ async def test_a_robot_that_claims_no_stand_ins_gets_no_such_section(
 ) -> None:
     provider = CapturingProvider()
     await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert "stand-in" not in provider.systems[0]
     assert "stand-ins=" not in provider.observations[0]
 
 
-ARM_DUCK = """\
+ARM_GLOT = """\
 ---
 glot: {version}
 name: lift-the-mug
@@ -956,7 +956,7 @@ async def test_a_task_files_datasheet_reaches_the_prompt_the_executor_and_the_re
     adapter = make_adapter("lerobot:mock")
     loop = AgentLoop(
         RunConfig(
-            duck=parse_glot_text(ARM_DUCK.format(version=2, block=_OVERRIDE)),
+            glot=parse_glot_text(ARM_GLOT.format(version=2, block=_OVERRIDE)),
             provider=provider,
             transport=adapter,
             runs_dir=tmp_path,
@@ -982,7 +982,7 @@ async def test_without_a_correction_the_body_speaks_for_itself(tmp_path: Path) -
     provider = CapturingProvider()
     result = await run_glot(
         RunConfig(
-            duck=parse_glot_text(ARM_DUCK.format(version=1, block="")),
+            glot=parse_glot_text(ARM_GLOT.format(version=1, block="")),
             provider=provider,
             transport=make_adapter("lerobot:mock"),
             runs_dir=tmp_path,
@@ -1005,7 +1005,7 @@ async def test_the_rule_answers_the_gate_before_its_own_first_verb(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 1.0}),
@@ -1052,7 +1052,7 @@ async def test_a_verb_before_any_verdict_is_refused_and_the_pilot_is_told_why(
 
     transport = MockTransport()
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=Impatient(), transport=transport, runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=Impatient(), transport=transport, runs_dir=tmp_path)
     )
     assert result.outcome == "failure"
     events = Transcript.read(result.run_dir / "transcript.jsonl")
@@ -1092,7 +1092,7 @@ async def test_until_a_verdict_an_empty_frame_says_it_is_not_by_itself_a_reason_
     frame is the task going on and nobody needs telling."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             detector=_Finds(),
@@ -1115,7 +1115,7 @@ async def test_a_frame_that_found_something_gets_no_such_line(
     ball = Detection(label="ball", cx=0.5, cy=0.5, area=0.05)
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             detector=_Finds(ball),
@@ -1135,7 +1135,7 @@ async def test_a_run_no_detector_looks_for_is_never_told_nothing_was_detected_ye
     line saying "yet" on each of them would be false. It goes only where a detector looked."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -1155,7 +1155,7 @@ async def test_an_uncertain_nobody_can_answer_is_not_followed_by_the_line(
     clears the gate."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(
@@ -1190,7 +1190,7 @@ async def test_a_feasible_its_own_sheet_refuses_brings_the_line_back(
     back, and with it the half that sends an unpublished figure to `uncertain`."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(
@@ -1223,7 +1223,7 @@ async def test_an_infeasible_verdict_ends_the_run_before_anything_moves(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1279,7 +1279,7 @@ async def test_an_uncertain_verdict_asks_the_person_in_the_room(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1310,7 +1310,7 @@ async def test_a_person_who_says_go_clears_the_gate(hello_glot: GlotFile, tmp_pa
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -1348,7 +1348,7 @@ async def test_a_pilot_hears_that_a_person_cleared_its_doubt(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see how heavy the thing is"),
@@ -1405,7 +1405,7 @@ async def test_a_pilot_cleared_without_asking_anybody_is_not_told_a_person_did(
     }[standing]
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see how heavy the thing is"),
@@ -1443,7 +1443,7 @@ async def test_with_nobody_to_ask_the_pilot_is_told_to_decide_itself(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -1471,7 +1471,7 @@ async def test_a_later_verdict_can_still_end_the_run(hello_glot: GlotFile, tmp_p
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "looks light from here"),
@@ -1507,7 +1507,7 @@ async def test_a_feasible_verdict_is_held_to_its_own_datasheet(
     """
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it can patrol", needs={"endurance_min": 45}),
@@ -1537,7 +1537,7 @@ async def test_a_need_this_body_meets_still_passes(hello_glot: GlotFile, tmp_pat
     """
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call(
@@ -1571,7 +1571,7 @@ async def test_a_refused_verdict_shuts_the_gate_an_earlier_one_opened(
     """
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it walks", needs={"mobility": "legged"}),
@@ -1615,7 +1615,7 @@ async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_ve
     """
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it walks"),
@@ -1653,7 +1653,7 @@ async def test_yes_clears_the_doubt_a_refused_feasible_became(
     """
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "it can patrol", needs={"endurance_min": 45}),
@@ -1683,7 +1683,7 @@ async def test_an_invalid_verdict_is_refused_and_the_run_goes_on(
 ) -> None:
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="assess_task", arguments={"verdict": "maybe", "reason": "hm"}),
@@ -1712,7 +1712,7 @@ async def test_the_prompt_offers_the_tool_and_states_the_rule(
 ) -> None:
     provider = CapturingProvider()
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert "assess_task" in events[0]["tools"]
@@ -1745,7 +1745,7 @@ def test_the_rule_line_names_a_bodys_own_read_only_verb() -> None:
     assert before_verdict_clause(verbs) == "only `locate` and `stop` run"
     assert before_verdict_clause([]) == "only `stop` runs", "the brake is never gated"
 
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         """---
 glot: 0
 name: t
@@ -1759,7 +1759,7 @@ x
 """
     )
     rule = next(
-        line for line in build_system_prompt(duck, verbs).splitlines() if "Until then" in line
+        line for line in build_system_prompt(glot, verbs).splitlines() if "Until then" in line
     )
     assert "Until then only `locate` and `stop` run." in rule
     assert "`reach`" not in rule.split("Until then")[1]
@@ -1810,7 +1810,7 @@ def _arm_glot() -> GlotFile:
     """A task an arm can run: it looks, it reads its own state, it stops."""
     from roboglot.glotfile.parser import parse_glot_text
 
-    return parse_glot_text(ARM_DUCK.format(version=1, block=""))
+    return parse_glot_text(ARM_GLOT.format(version=1, block=""))
 
 
 async def test_a_task_the_arm_cannot_run_still_puts_the_arm_down_before_letting_go(
@@ -1826,9 +1826,9 @@ async def test_a_task_the_arm_cannot_run_still_puts_the_arm_down_before_letting_
 
     Nothing is asked of the pilot: this is refused before the first call, so a run that could
     never have worked also costs nothing."""
-    duck = _arm_glot()
-    duck.frontmatter.glot = 1
-    duck.frontmatter.requires = ["fly"]
+    glot = _arm_glot()
+    glot.frontmatter.glot = 1
+    glot.frontmatter.requires = ["fly"]
     mock = LeRobotMock(rest_pose=ARM_REST)
     mock.joints["shoulder_pan"] = ARM_REST["shoulder_pan"] + 70.0  # nowhere anybody chose
     provider = FakeProvider.for_glot("hello-world")
@@ -1838,7 +1838,7 @@ async def test_a_task_the_arm_cannot_run_still_puts_the_arm_down_before_letting_
     with pytest.raises(AdapterError, match="fly"):
         await run_glot(
             RunConfig(
-                duck=duck,
+                glot=glot,
                 provider=provider,
                 transport=LeRobotAdapter(mock),
                 run_dir=run_dir,
@@ -1941,7 +1941,7 @@ async def test_every_way_a_run_ends_returns_the_arm_to_rest(ending: str, tmp_pat
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     cfg = RunConfig(
-        duck=_arm_glot(),
+        glot=_arm_glot(),
         provider=provider,
         transport=LeRobotAdapter(mock),
         run_dir=run_dir,
@@ -1978,15 +1978,15 @@ async def test_an_arm_the_run_left_elsewhere_is_driven_home_before_the_torque_dr
     stop holds the arm where it is and the close releases it, so the move between them is the
     only thing standing between the arm and the desk."""
     mock = LeRobotMock(rest_pose=ARM_REST)
-    duck = _arm_glot()
-    duck.frontmatter.verbs.allow = [*duck.frontmatter.verbs.allow, "move_joints"]
+    glot = _arm_glot()
+    glot.frontmatter.verbs.allow = [*glot.frontmatter.verbs.allow, "move_joints"]
     script = [
         ToolCall(name="move_joints", arguments={"positions": {"shoulder_pan": -20.0}}),
         ToolCall(name="declare_success", arguments={"reason": "moved and stopped"}),
     ]
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2017,7 +2017,7 @@ async def test_a_rest_pose_past_the_travel_is_explained_once_and_the_old_notes_s
     script = [ToolCall(name="declare_success", arguments={"reason": "parked twice"})]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2079,7 +2079,7 @@ async def test_a_connect_the_body_had_to_make_again_is_in_the_run_s_record(
     script = [ToolCall(name="declare_success", arguments={"reason": "connected on a retry"})]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2107,7 +2107,7 @@ async def test_a_dry_run_never_moves_the_arm_to_its_rest_pose(tmp_path: Path) ->
     script = [ToolCall(name="declare_success", arguments={"reason": "pretended"})]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2136,7 +2136,7 @@ async def test_a_run_whose_first_rest_move_fails_never_asks_the_llm_anything(
     script = [ToolCall(name="declare_success", arguments={"reason": "never asked"})]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2162,7 +2162,7 @@ async def test_the_note_about_torque_left_on_reaches_the_transcript(tmp_path: Pa
     script = [ToolCall(name="declare_success", arguments={"reason": "never asked"})]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=script),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -2186,7 +2186,7 @@ async def test_a_body_with_no_rest_pose_says_nothing_about_one(
     them."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -2227,14 +2227,14 @@ def test_a_body_with_one_camera_is_never_told_its_view_has_a_name() -> None:
     from roboglot.agent.prompts import build_system_prompt
     from roboglot_lerobot import lerobot_manifest
 
-    duck, one = _arm_glot(), lerobot_manifest("mock", camera_names=("forward",))
+    glot, one = _arm_glot(), lerobot_manifest("mock", camera_names=("forward",))
     one.extras["cameras"] = ["forward"]  # an adapter that publishes it for its only camera
-    said = build_system_prompt(duck, [], manifest=one)
+    said = build_system_prompt(glot, [], manifest=one)
     assert "1 cameras" not in said, said[said.find("camera") - 80 :][:240]
     assert "labelled with the name of the camera" not in said
 
     two = lerobot_manifest("mock", camera_names=("top", "side"))
-    both = build_system_prompt(duck, [], manifest=two)
+    both = build_system_prompt(glot, [], manifest=two)
     assert "This body has 2 cameras: top, side" in both
     assert "top is the primary" in both
 
@@ -2263,7 +2263,7 @@ async def test_the_one_lens_left_on_a_two_camera_body_still_says_which_one_it_is
     stalls."""
     provider = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=OneCameraLeft(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=OneCameraLeft(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
 
@@ -2346,7 +2346,7 @@ async def test_every_camera_frame_reaches_the_provider_and_the_transcript(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2396,7 +2396,7 @@ async def test_a_turns_pictures_are_encoded_off_the_event_loops_thread(
         ToolCall(name="declare_success", arguments={"reason": "seen"}),
     )
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert encoded_on and loop_thread not in encoded_on, "a picture was encoded on the loop"
@@ -2435,7 +2435,7 @@ async def test_each_picture_is_encoded_once_and_the_llm_is_sent_the_file(
         ToolCall(name="declare_success", arguments={"reason": "seen"}),
     )
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=TwoCameraDuck(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     frames = result.run_dir / "frames"
@@ -2463,7 +2463,7 @@ async def test_only_the_last_n_exchanges_keep_their_images(
     )
     loop = AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2506,7 +2506,7 @@ async def test_a_provider_that_binds_its_thinking_is_trimmed_in_steps_not_every_
     )
     result = await AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path,
@@ -2610,7 +2610,7 @@ async def test_a_binding_llm_is_never_sent_a_thinking_block_a_trim_invalidated(
     hello_glot.frontmatter.budgets = Budgets()
     result = await AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -2768,7 +2768,7 @@ async def test_every_call_marks_for_the_cache_where_the_next_call_still_matches_
     hello_glot.frontmatter.budgets = Budgets()
     result = await AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -2859,7 +2859,7 @@ async def test_the_task_pictures_ride_the_first_turn_and_no_later_one(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -2895,7 +2895,7 @@ async def test_the_trim_that_drops_old_frames_never_drops_a_task_picture(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=TwoCameraDuck(),
             runs_dir=tmp_path / "runs",
@@ -2938,7 +2938,7 @@ async def test_a_task_picture_is_written_beside_the_transcript_as_the_llm_got_it
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world", vision=True),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -2979,7 +2979,7 @@ async def test_the_record_says_which_pictures_the_run_was_given_and_how_often(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world", vision=True),
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -3015,7 +3015,7 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
     provider = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -3035,7 +3035,7 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
     one = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=one,
             transport=MockTransport(),
             runs_dir=tmp_path / "one",
@@ -3053,7 +3053,7 @@ async def test_the_prompt_names_every_picture_that_came_with_the_task(
     bare = SeeingProvider(ToolCall(name="declare_success", arguments={"reason": "seen"}))
     await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=bare,
             transport=MockTransport(),
             runs_dir=tmp_path / "bare",
@@ -3082,7 +3082,7 @@ async def test_a_pilot_that_cannot_see_is_sent_no_picture_and_the_run_says_so(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=MockTransport(),
             runs_dir=tmp_path / "runs",
@@ -3197,7 +3197,7 @@ def _by_hand(mock: LeRobotMock, person: ScriptedPerson, runs: Path, **extra: Any
     calls: several of these tests are about a run that must never reach the LLM at all."""
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
-        duck=_arm_glot(),
+        glot=_arm_glot(),
         provider=FakeProvider(script=[declare]),
         transport=LeRobotAdapter(mock),
         hand_off=person,
@@ -3584,7 +3584,7 @@ async def test_a_gripper_an_arm_that_stopped_answering_did_not_open_says_cut_its
     class GoesSilent(LeRobotMock):
         silent = False
 
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             if self.silent:
                 raise TransportError("the arm did not answer: ConnectionError: no status packet")
             return await super().get_state()
@@ -3764,7 +3764,7 @@ async def test_a_press_while_a_plain_run_connects_still_lets_its_fold_start(
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=[declare]),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -3800,7 +3800,7 @@ class _NoConnect(LeRobotMock):
 def _a_run_on(body: Any, tmp_path: Path) -> AgentLoop:
     return AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=[]),
             transport=LeRobotAdapter(body),
             runs_dir=tmp_path,
@@ -4223,7 +4223,7 @@ async def test_declaring_with_arguments_that_are_no_object_declares_nothing(
     ]
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider(script=calls),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -4653,7 +4653,7 @@ def _missing_run(mock: LeRobotMock, runs: Path, **extra: Any) -> RunConfig:
     the pilot, and the offer is the teardown's."""
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
-        duck=_arm_glot(),
+        glot=_arm_glot(),
         provider=FakeProvider(script=[declare]),
         transport=LeRobotAdapter(mock),
         runs_dir=runs,
@@ -5504,7 +5504,7 @@ class _FallBlindDuck(OpenDuckMock):
     False, because the IMU has one owner and it is upstream's loop. With no `stand_up` in the
     manifest either, this is the body the warning exists for."""
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = await super().get_state()
         return state.model_copy(update={"extras": {**state.extras, "fall_detection": False}})
 
@@ -5520,12 +5520,12 @@ def _fall_blind(
     `RunResult` to read the directory off afterwards."""
     from roboglot.glotfile.parser import parse_glot_text
 
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: blind\ndescription: d\nverbs:\n"
         "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
     )
     return RunConfig(
-        duck=duck,
+        glot=glot,
         provider=FakeProvider(
             script=[
                 _verdict_call("feasible", "a short walk on a flat floor"),
@@ -5557,7 +5557,7 @@ async def test_a_verdict_a_person_cleared_records_the_question_they_answered(
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5631,7 +5631,7 @@ async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
     transport = MockTransport()
     refused = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5649,7 +5649,7 @@ async def test_a_doubt_and_a_fall_warning_answered_later_are_waited_for(
 
     cleared = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5701,7 +5701,7 @@ async def test_an_asker_nobody_marked_writes_no_prompt_row(
     inventing somebody who was in the room."""
     cleared = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5757,7 +5757,7 @@ async def test_a_mark_that_says_nobody_is_there_writes_no_prompt_row(
 
     cleared = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5820,7 +5820,7 @@ async def test_the_mark_is_asked_at_the_time_of_asking_and_not_at_import(
     async def decide_in(runs: Path) -> list[dict[str, Any]]:
         result = await run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=FakeProvider(
                     script=[
                         _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5936,7 +5936,7 @@ async def test_the_record_and_the_line_name_what_said_go(
         decide = cli._yes_to_go if who == "--yes" else _standing_go
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -5963,7 +5963,7 @@ async def test_a_feasible_verdict_names_nobody(hello_glot: GlotFile, tmp_path: P
     """Nobody is asked about a verdict the pilot was sure of, and its event names nobody."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("feasible", "a short walk"),
@@ -6002,7 +6002,7 @@ async def test_a_doubt_whose_prompt_raised_went_unanswered(
     transport = MockTransport()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider(
                 script=[
                     _verdict_call("uncertain", "cannot see the thing from here"),
@@ -6091,7 +6091,7 @@ async def test_the_record_says_in_absolute_time_when_the_run_began(
     their runs by subtracting these."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6123,7 +6123,7 @@ async def test_the_end_of_a_run_is_its_start_plus_the_span_the_run_measured(
     ordering them would fail on the first mock run to reach it."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6157,7 +6157,7 @@ async def test_the_seconds_spent_waiting_on_the_llm_count_the_call_that_raised(
     run_dir.mkdir()
     loop = AgentLoop(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FailsAfterOneAnswer(ToolCall(name="quack", arguments={"text": "hi"})),
             transport=MockTransport(),
             run_dir=run_dir,
@@ -6199,7 +6199,7 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
 
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6222,7 +6222,7 @@ async def test_the_summary_says_how_the_calls_spread_and_when_the_robot_first_mo
 
     dry = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path / "dry",
@@ -6245,7 +6245,7 @@ async def test_every_call_is_costed_at_the_rate_the_environment_named(
     monkeypatch.setenv("ROBOGLOT_PRICE", "in=3,out=15,cache_read=0.3,cache_write=3.75")
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6283,7 +6283,7 @@ async def test_a_price_on_the_run_beats_one_in_the_environment(
     monkeypatch.setenv("ROBOGLOT_PRICE", "in=99,out=99")
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6312,7 +6312,7 @@ async def test_an_llm_roboglot_has_no_rate_for_records_null_and_never_zero(
     exactly that much and no more."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=UnlistedLLM(
                 ToolCall(name="quack", arguments={"text": "hi"}),
                 ToolCall(name="declare_success", arguments={"reason": "quacked"}),
@@ -6339,7 +6339,7 @@ async def test_the_scripted_pilot_is_free_rather_than_unpriced(
     also what makes the whole cost path testable with no key and no bill."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6393,7 +6393,7 @@ async def test_a_turn_the_vendor_billed_is_recorded_at_what_it_was_billed(
     and every call it did not decide says so."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=_billed([0.0011, 0.0025]),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6421,7 +6421,7 @@ async def test_a_price_on_the_run_beats_what_the_vendor_billed(
     cannot see, and it is obeyed over the bill as it is over the catalogue."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=_billed([0.0011, 0.0025]),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6445,7 +6445,7 @@ async def test_a_listed_rate_prices_an_llm_the_catalogue_does_not_carry(
     provider = _billed([None, None], listed_price=listed)
     provider.llm_id = "qwen/qwen3.8-flash"
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     rate = events[0]["price"]
@@ -6465,7 +6465,7 @@ async def test_one_call_nobody_could_price_leaves_the_run_unpriced(
     provider = _billed([0.001, None])
     provider.llm_id = "qwen/qwen3.8-flash"
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert events[0]["price"] is None
@@ -6497,14 +6497,14 @@ class FailsBilled(BillingProvider):
 
 
 async def _run_that_fails(
-    duck: GlotFile, tmp_path: Path, provider: Any
+    glot: GlotFile, tmp_path: Path, provider: Any
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """A run whose pilot raises, read back off what it wrote: the summary and the transcript."""
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     loop = AgentLoop(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=provider,
             transport=MockTransport(),
             run_dir=run_dir,
@@ -6583,7 +6583,7 @@ async def test_a_run_on_the_real_provider_with_no_rate_adds_up_its_bills(
         client=NS(chat=NS(completions=NS(create=create))),
     )
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert result.summary["price"] is None
@@ -6610,7 +6610,7 @@ async def test_a_run_nobody_billed_reads_exactly_as_it_did(
     """Every vendor but one reports tokens and no bill, and its records must not grow a field."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=_quack_then_done(),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6634,7 +6634,7 @@ async def test_the_result_hands_back_the_summary_that_was_written_to_disk(
     same mapping now, so a number that is right in one of them is right in all three."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6661,7 +6661,7 @@ async def test_a_named_run_is_called_that_on_disk_and_quoted_as_typed_in_the_rec
     counter, so both the timestamp prefix and the task name still resolve."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6684,7 +6684,7 @@ async def test_a_run_nobody_named_is_called_exactly_what_it_always_was(
     reader never has to guess which kind of record they are holding."""
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path,
@@ -6709,7 +6709,7 @@ async def test_a_name_with_nothing_to_slug_is_refused_before_a_directory_exists(
     with pytest.raises(ValueError, match="has no ASCII letters or digits"):
         await run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=FakeProvider.for_glot("hello-world"),
                 transport=MockTransport(),
                 runs_dir=runs,
@@ -6729,9 +6729,9 @@ class FlakyProvider:
     call after it answers. Each history it is handed is kept as it was when the call was made,
     so a test can show that a try sent exactly what the one before it did."""
 
-    def __init__(self, plan: Sequence[BaseException | None], duck: str = "hello-world") -> None:
+    def __init__(self, plan: Sequence[BaseException | None], task: str = "hello-world") -> None:
         self.plan = list(plan)
-        self.answers = FakeProvider.for_glot(duck)
+        self.answers = FakeProvider.for_glot(task)
         self.name, self.llm_id, self.supports_vision = "flaky", "test", False
         self.sent: list[list[dict[str, Any]]] = []
         self.on_failure: Callable[[], None] | None = None
@@ -6782,7 +6782,7 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
     turn is charged once, and every try is on the record."""
     clean = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot("hello-world"),
             transport=MockTransport(),
             runs_dir=tmp_path / "clean",
@@ -6790,7 +6790,7 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
     )
     provider = FlakyProvider([None, _rate_limited()])
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [loop_module.ASK_AGAIN_AFTER_S[0]]
@@ -6814,11 +6814,11 @@ async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(
 ) -> None:
     """With `max_llm_calls` at exactly the turns the task takes, three tries asked again
     still finish it: a busy minute at the vendor does not spend the task's turns."""
-    duck = copy.deepcopy(hello_glot)
-    duck.frontmatter.budgets.max_llm_calls = len(GOLDEN_HELLO)
+    glot = copy.deepcopy(hello_glot)
+    glot.frontmatter.budgets.max_llm_calls = len(GOLDEN_HELLO)
     provider = FlakyProvider([_overloaded(), _overloaded(), None, _rate_limited()])
     result = await run_glot(
-        RunConfig(duck=duck, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert result.llm_calls == len(GOLDEN_HELLO) and result.summary["llm_retries"] == 3
@@ -6845,7 +6845,7 @@ async def test_the_wait_an_api_asks_for_is_kept_where_it_is_the_longer(
     after the SDK has already spent its quick retries is not asked again within the second."""
     provider = FlakyProvider([_rate_limited(headers)])
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success" and instant_waits == waits
 
@@ -6862,7 +6862,7 @@ async def test_an_api_that_asks_to_be_left_too_long_ends_the_run_at_once(
     with pytest.raises(ProviderError, match=f"asked to be left {asked:.0f} s"):
         await run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=provider,
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -6899,7 +6899,7 @@ async def test_a_failure_not_worth_asking_again_ends_the_run_at_once(
     with pytest.raises(ProviderError):
         await run_glot(
             RunConfig(
-                duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path
+                glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path
             )
         )
     assert instant_waits == [] and len(provider.sent) == 2
@@ -6918,8 +6918,8 @@ async def test_out_of_tries_the_run_ends_in_error_and_the_arm_is_put_down(
     with pytest.raises(ProviderError, match=f"in {tries} tries"):
         await run_glot(
             RunConfig(
-                duck=_arm_glot(),
-                provider=FlakyProvider([_overloaded()] * tries, duck="lerobot-lookout"),
+                glot=_arm_glot(),
+                provider=FlakyProvider([_overloaded()] * tries, task="lerobot-lookout"),
                 transport=LeRobotAdapter(mock),
                 run_dir=run_dir,
                 runs_dir=tmp_path,
@@ -6948,8 +6948,8 @@ async def test_a_stop_while_the_loop_waits_ends_the_run_aborted_and_puts_the_arm
     mock = LeRobotMock(rest_pose=ARM_REST)
     result = await run_glot(
         RunConfig(
-            duck=_arm_glot(),
-            provider=FlakyProvider([_overloaded()], duck="lerobot-lookout"),
+            glot=_arm_glot(),
+            provider=FlakyProvider([_overloaded()], task="lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
         )
@@ -6975,7 +6975,7 @@ async def test_a_stop_in_the_tick_the_wait_ran_out_sends_no_further_try(
     monkeypatch.setattr(loop_module, "_wait_or_abort", ran_out_as_it_was_pressed)
     provider = FlakyProvider([None, _overloaded()])
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "aborted" and result.reason == "kill switch", result.reason
     assert len(provider.sent) == 2, "a try went out after the stop"
@@ -6989,7 +6989,7 @@ async def test_a_stop_pressed_while_the_call_was_out_is_not_overruled_by_a_retry
     reason worth asking again, the stop wins: the run ends `aborted`, with no wait."""
     provider = FlakyProvider([None, _overloaded()])
     loop = AgentLoop(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     provider.on_failure = loop.executor.abort.set
     result = await loop.run()
@@ -7010,7 +7010,7 @@ async def test_the_heartbeat_watches_the_robot_while_the_loop_waits(
     started = asyncio.get_running_loop().time()
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=provider,
             transport=transport,
             runs_dir=tmp_path,
@@ -7030,12 +7030,12 @@ async def test_a_wait_past_the_task_s_minutes_ends_the_run_without_waiting(
 ) -> None:
     """`max_minutes` is checked between turns, so a wait that would outlast it would hold the
     robot after the task's time was up. The run ends instead, saying so."""
-    duck = copy.deepcopy(hello_glot)
-    duck.frontmatter.budgets.max_minutes = 0.05  # 3 s, under the first wait's 5
+    glot = copy.deepcopy(hello_glot)
+    glot.frontmatter.budgets.max_minutes = 0.05  # 3 s, under the first wait's 5
     with pytest.raises(ProviderError, match="would run past the task's max_minutes"):
         await run_glot(
             RunConfig(
-                duck=duck,
+                glot=glot,
                 provider=FlakyProvider([_rate_limited()]),
                 transport=MockTransport(),
                 runs_dir=tmp_path,
@@ -7059,7 +7059,7 @@ async def test_a_connection_that_never_answered_is_not_asked_again(
     with pytest.raises(ProviderError, match="the provider's own words"):
         await run_glot(
             RunConfig(
-                duck=hello_glot,
+                glot=hello_glot,
                 provider=provider,
                 transport=MockTransport(),
                 run_dir=run_dir,
@@ -7081,7 +7081,7 @@ async def test_a_first_connection_that_comes_back_on_a_quick_try_runs_on(
     gave a dropped first connection is the loop's: half a second, and the run goes on."""
     provider = FlakyProvider([sdk.wrapped(sdk.APIConnectionError("Connection error."))])
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [loop_module.FIRST_CONNECTION_TRIES_S[0]]
@@ -7100,7 +7100,7 @@ async def test_a_connection_that_drops_after_the_llm_has_answered_is_asked_again
     call that times out is the network or the vendor having a moment: asked again."""
     provider = FlakyProvider([None, sdk.wrapped(dropped)])
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success" and instant_waits == [5.0]
 
@@ -7114,7 +7114,7 @@ async def test_a_connection_dropped_after_the_api_answered_with_a_status_is_aske
         [_overloaded(), sdk.wrapped(sdk.APIConnectionError("Connection error."))]
     )
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=provider, transport=MockTransport(), runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert instant_waits == [5.0, 15.0]
@@ -7145,7 +7145,7 @@ async def test_a_press_while_the_llm_is_thinking_ends_the_run_without_waiting_fo
     provider = StallingProvider()
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=provider,
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -7203,7 +7203,7 @@ async def test_a_press_during_the_fold_of_a_run_that_ended_by_itself_stops_the_f
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -7238,7 +7238,7 @@ async def test_a_team_stopping_its_members_does_not_stop_a_members_fold(
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,
@@ -7273,7 +7273,7 @@ async def test_a_run_shows_the_pilot_the_places_its_body_knows(
     )
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot(hello_glot.name),
             transport=MicroduckAdapter(MockTransport(spatial=True)),
             runs_dir=tmp_path,
@@ -7347,7 +7347,7 @@ async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_d
     mock = LeRobotMock(rest_pose=ARM_REST)
     loop = AgentLoop(
         RunConfig(
-            duck=_arm_glot(),
+            glot=_arm_glot(),
             provider=FakeProvider.for_glot("lerobot-lookout"),
             transport=LeRobotAdapter(mock),
             runs_dir=tmp_path,

@@ -1143,7 +1143,7 @@ async def test_collect_litter_survives_a_person_reading_its_confirm(
     once the person answers."""
     monkeypatch.setattr(cli, "_SWITCH", _PersonReading(WINDOW_S))
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [observe, report_state, "
         "stop, collect_litter]\n  confirm: []\nsuccess: [x]\nabort_when: []\n---\n# Task\nx\n"
     ).frontmatter
@@ -1152,7 +1152,7 @@ async def test_collect_litter_survives_a_person_reading_its_confirm(
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
-        contract=duck,
+        contract=glot,
         detector=ColorBlobDetector(),
         confirm=cli._confirm_prompt,
         manifest=manifest,

@@ -91,8 +91,37 @@ def test_every_gutter_glyph_fits_the_gutter_in_both_halves() -> None:
 
 def test_a_mark_nobody_defined_draws_nothing() -> None:
     assert ui.UNICODE.mark(None) == ""
-    assert ui.UNICODE.mark("duck") == "", "only the marks, never the decorations"
+    assert ui.UNICODE.mark("bubble") == "", "only the marks, never the decorations"
     assert ui.UNICODE.mark("nonsense") == ""
+
+
+@pytest.mark.parametrize(
+    ("task", "robot"),
+    [(["lerobot-lookout"], "lerobot:mock"), (["--goal", "walk in a square"], "rosbridge:mock")],
+    ids=["arm", "rover"],
+)
+def test_a_task_panel_wears_a_speech_bubble_on_any_body(
+    tmp_path: Path, task: list[str], robot: str
+) -> None:
+    """The panel a run opens with names a task, on whatever body runs it: a speech bubble before
+    the task's name, and no word of a duck on an arm or a rover, in the title or the hint under
+    it. A stream that cannot draw the bubble reads `task` where it stood."""
+    from typer.testing import CliRunner
+
+    from roboglot.cli import app
+
+    argv = ["run", *task, "--robot", robot, "--llm", "fake", "--no-memory"]
+    result = CliRunner().invoke(app, [*argv, "--runs-dir", str(tmp_path)])
+    assert result.exit_code == 0, result.output
+    title = next(line for line in result.output.splitlines() if "─ \U0001f4ac " in line)
+    assert (task[0] if len(task) == 1 else "goal") in title, title
+    assert "duck" not in result.output.lower(), result.output
+    assert "\U0001f986" not in result.output, result.output
+    assert "stops the robot" in " ".join(result.output.split()), result.output
+    console, raw = narrow()
+    console.print(ui.run_header(task[-1], [("robot", robot)], hint="Ctrl-C stops it"))
+    assert "duck" not in drawn(console, raw).lower()
+    assert ui.degrade(f"\U0001f4ac {task[-1]}", ui.ASCII) == f"task {task[-1]}"
 
 
 def test_the_registry_status_emoji_becomes_something_a_codepage_can_carry() -> None:
