@@ -5,27 +5,42 @@ from __future__ import annotations
 import asyncio
 import math
 from collections.abc import Callable
+from dataclasses import dataclass
+from decimal import Decimal
+from fractions import Fraction
+from pathlib import Path
+from typing import Any
 
+import numpy as np
 import pytest
-from PIL import Image
+from annotated_types import Ge, Le
+from PIL import Image, ImageDraw
 
-from roboglot.glotfile.parser import parse_glot_text
+from roboglot.adapters.manifest import RobotManifest, VerbSpec
+from roboglot.glotfile.parser import load_glot, parse_glot_text
+from roboglot.host import HostBox, HostDetections
 from roboglot.perception.base import Detection
 from roboglot.perception.color_blob import ColorBlobDetector
+from roboglot.perception.host import HostDetector
+from roboglot.perception.palette import BALL
+from roboglot.perception.yolo import GUESSED_FOV_DEG, HEIGHT_M, YoloDetector
 from roboglot.safety import Executor
 from roboglot.transport.base import Ack, Intent
 from roboglot.transport.mock import MockTransport
+from roboglot.verbs import core
 from roboglot.verbs.core import (
     LOST_TICKS,
     LOST_WZ,
     MAX_SCAN_STEPS,
     STEER_TURN_S,
     TICK_S,
+    ApproachAndParams,
+    GoToParams,
     SearchScanParams,
     scan_steps,
     views_round,
 )
-from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
+from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbContext, VerbRegistry, VerbResult
 from roboglot_open_duck.mock import OpenDuckMock
 
 GLOT = parse_glot_text(
@@ -822,3 +837,1204 @@ def test_a_sensor_45_degrees_wide_looks_40_degrees_apart_as_a_camera_does() -> N
     assert views_round(45.0) == (40.0, 9)
     assert scan_steps(SearchScanParams(), 45.0) == (40.0, min(MAX_SCAN_STEPS, 9))
     assert views_round(90.0) == (72.0, 5)
+
+
+# ── a target the camera cannot range near enough to stop ────────────────────────────────
+#
+# Every number below comes from the code's own constants: the box detectors' guessed lens
+# (`GUESSED_FOV_DEG`), the label heights (`HEIGHT_M`) and `GoToParams`' bounds. The frame is
+# 640x480, as the reviewer's repro names it; a box detector's nearest reading grows with the
+# frame's width over its height.
+
+FRAME = (640, 480)
+TASKS = Path(__file__).resolve().parents[1] / "tasks"
+
+
+def _bound(kind: type) -> float:
+    for m in GoToParams.model_fields["stop_distance"].metadata:
+        if isinstance(m, kind):
+            return float(m.ge if kind is Ge else m.le)  # type: ignore[attr-defined]
+    raise AssertionError("GoToParams.stop_distance lost its bound")
+
+
+STOP_MIN, STOP_MAX = _bound(Ge), _bound(Le)
+STOP_DEFAULT = float(GoToParams.model_fields["stop_distance"].default)
+
+
+def _frame_tall_m(label: str, size: tuple[int, int] = FRAME, share: float = 1.0) -> float:
+    """What a box `share` of the frame's height reads at the guessed lens, by
+    `detections_from_boxes`' own arithmetic: as tall as the frame, the nearest a box detector
+    can say."""
+    w, h = size
+    f = (w / 2) / math.tan(math.radians(GUESSED_FOV_DEG) / 2)
+    return round(f * HEIGHT_M[label] / (h * share), 3)
+
+
+def _askable(nearest_m: float) -> float:
+    """A nearest reading rounded up to the centimetre, as a refusal names it."""
+    return math.ceil(round(nearest_m * 100, 6)) / 100
+
+
+@dataclass
+class _Box:
+    xyxy: list[list[float]]
+    cls: int
+    conf: float
+
+
+@dataclass
+class _Result:
+    names: dict[int, str]
+    boxes: list[_Box]
+
+
+#: A box as tall as the frame and a third of its width, centred, as fractions of the frame.
+FRAME_TALL = (1 / 3, 0.0, 2 / 3, 1.0)
+
+
+class _BoxModel:
+    """Stands in for YOLO itself: frame after frame, one box of `coco` at the next of
+    `boxes` (fractions of the frame), the last kept once they run out. `YoloDetector.detect` reads
+    `res.names`, `box.xyxy[0]`, `box.cls` and `box.conf`, and this has exactly those."""
+
+    def __init__(self, coco: str, *boxes: tuple[float, float, float, float]) -> None:
+        self.coco = coco
+        self.boxes = list(boxes) or [FRAME_TALL]
+        self.calls = 0
+
+    def predict(self, image: Image.Image, conf: float, verbose: bool) -> list[_Result]:
+        w, h = image.size
+        x1, y1, x2, y2 = self.boxes[min(self.calls, len(self.boxes) - 1)]
+        self.calls += 1
+        return [_Result({0: self.coco}, [_Box([[x1 * w, y1 * h, x2 * w, y2 * h]], 0, 0.9)])]
+
+
+def _local_yolo(coco: str, *boxes: tuple[float, float, float, float]) -> YoloDetector:
+    """The real `YoloDetector`, at the lens it guesses, with only YOLO itself stood in for."""
+    det = YoloDetector.__new__(YoloDetector)  # no ultralytics needed
+    det._model = _BoxModel(coco, *boxes)
+    det.conf = 0.4
+    det.fov_deg = GUESSED_FOV_DEG
+    det.calibrated = False
+    det._told_lens = None
+    return det
+
+
+class _BoardClient:
+    """Stands in for `HostClient`: `/detect` answers with one frame-tall box in the pixels of the
+    image it was sent, as the board's daemon does."""
+
+    address = "127.0.0.1:0"
+
+    def __init__(self, coco: str) -> None:
+        self.coco = coco
+
+    def detect(self, jpeg: bytes, *, conf: float | None = None) -> HostDetections:
+        w, h = FRAME
+        box = HostBox(self.coco, 0.9, w / 3, 0.0, 2 * w / 3, float(h))
+        return HostDetections(w, h, (box,), "yolov8n", "cuda", 10.0)
+
+
+def _board_yolo(coco: str) -> HostDetector:
+    return HostDetector(_BoardClient(coco), fov_deg=GUESSED_FOV_DEG, calibrated=False)  # type: ignore[arg-type]
+
+
+class _NoDistance:
+    """A detector that sees the target dead ahead and gives no distance (`est_distance_m` is
+    optional on `Detection`). No shipped detector does; a third party's may."""
+
+    name = "no_distance"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [Detection(label="person", cx=0.5, cy=0.5, area=0.3, bearing_deg=0.0)]
+
+
+class _Seen:
+    """Wraps a detector and keeps every detection it handed `go_to`. It passes on `name`,
+    `blocking` and `error` and nothing else, so `go_to` sees it as a third party's detector that
+    names no nearest reading of its own."""
+
+    def __init__(self, inner: Any) -> None:
+        self.inner = inner
+        self.name = inner.name
+        self.blocking = getattr(inner, "blocking", False)
+        self.seen: list[Detection] = []
+
+    @property
+    def error(self) -> str | None:
+        return getattr(self.inner, "error", None)
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        found = self.inner.detect(image)
+        self.seen.extend(found)
+        return found
+
+
+def _alpha_lens() -> tuple[tuple[int, int], float]:
+    """A Microduck alpha's upright `/frame` (9:16) and the lens its transport assumes for it,
+    by the transport's own formula (`JsonRpcUnixTransport._assumed_lens`)."""
+    from roboglot_microduck import upstream_api as up
+
+    w, h = 270, 480
+    half = math.radians(up.IMX219_FOV_DEG) / 2
+    return (w, h), math.degrees(2 * math.atan(math.tan(half) * w / h))
+
+
+def _ball_across_the_bottom(size: tuple[int, int]) -> Image.Image:
+    """An orange disc as wide as the frame, touching its bottom edge: a ball under the nose."""
+    w, h = size
+    img = Image.new("RGB", size, (40, 40, 40))
+    ImageDraw.Draw(img).ellipse([0, h - w, w - 1, h - 1], fill=BALL)
+    return img
+
+
+def _colour_on_alpha() -> ColorBlobDetector:
+    _, fov = _alpha_lens()
+    return ColorBlobDetector(fov_deg=fov, calibrated=False)
+
+
+def _body_for(detector: Any) -> MockTransport:
+    """A 640x480 body for the box detectors, and an alpha's upright frame with a ball under the
+    nose for the colour detector."""
+    if isinstance(detector, ColorBlobDetector):
+        size, _ = _alpha_lens()
+        return MockTransport(frame_size=size, frames=[_ball_across_the_bottom(size)])
+    return MockTransport(frame_size=FRAME)
+
+
+def test_the_colour_detector_marks_a_ball_as_wide_as_the_frame_and_names_its_reading_nearest() -> (
+    None
+):
+    """The colour detector reads a ball the frame cuts off by its width, so a ball as wide as the
+    frame reads `0.05 / tan(fov / 2)` however near it comes: 0.148 m on a Microduck alpha's
+    upright frame, where a stop distance of 0.1 was never reached and the body crept into the
+    ball. Such a ball is marked `clipped`, and the nearest the detector names is what the widest
+    ball it does not mark reads, a little farther; one the frame cuts at one side only, which
+    turning toward it brings back into view, is not marked, and nor is one inside the frame."""
+    size, _ = _alpha_lens()
+    w, h = size
+    detector = _colour_on_alpha()
+    (across,) = detector.detect(_ball_across_the_bottom(size))
+    nearest = detector.nearest_m("ball", size)
+    assert across.clipped and nearest is not None and across.est_distance_m < nearest
+    one_side = Image.new("RGB", size, (40, 40, 40))
+    ImageDraw.Draw(one_side).ellipse([-w // 8, h // 3, w // 4, h // 3 + 3 * w // 8], fill=BALL)
+    inside = Image.new("RGB", size, (40, 40, 40))
+    ImageDraw.Draw(inside).ellipse([w // 4, h // 3, w // 2, h // 3 + w // 4], fill=BALL)
+    assert [d.clipped for img in (one_side, inside) for d in detector.detect(img)] == [False] * 2
+    assert detector.nearest_m("person", size) is None
+
+
+#: A target in `_World`: (COCO name, how far along x it stands in m, its height, its width,
+#: the confidence a network gives it).
+Target = tuple[str, float, float, float, float]
+
+
+class _World(OpenDuckMock):
+    """The Open Duck's walking mock, which integrates every twist it is sent, with no ball of its
+    own and blank frames `size` big: the targets standing on the x axis ahead of it are drawn as
+    the boxes an ideal network would give them (`boxes`), or, with `colour`, as an orange disc
+    of a ball's size centred in the frame. The camera is at each target's mid-height, the case
+    most favourable to measuring, looking through a lens `fov_deg` wide."""
+
+    def __init__(
+        self,
+        size: tuple[int, int],
+        targets: list[Target],
+        *,
+        fov_deg: float = GUESSED_FOV_DEG,
+        colour: bool = False,
+        inset: float = 0.0,
+        fixed: tuple[tuple[str, float, float, float, float, float], ...] = (),
+    ) -> None:
+        super().__init__(ball_xy=None)
+        self.size, self.targets, self.fov_deg = size, targets, fov_deg
+        self.colour, self.inset = colour, inset
+        self.fixed = fixed
+        """Boxes at the same pixels on every frame, after the targets': a picture on a wall, or
+        a ball off to the side the walk does not bring nearer."""
+
+    def _focal(self) -> float:
+        return (self.size[0] / 2) / math.tan(math.radians(self.fov_deg) / 2)
+
+    def boxes(self) -> list[tuple[str, float, float, float, float, float]]:
+        """Each target's box as a network clips it to the frame, a cut edge reported `inset`
+        pixels inside the frame's, as a network that regressed it on a coarser input might."""
+        w, h = self.size
+        f = self._focal()
+        out = []
+        for name, x, height, width, conf in self.targets:
+            d = x - self.x
+            if d <= 0:
+                continue
+            half_h, half_w = f * height / 2 / d, f * width / 2 / d
+            x1, x2 = max(0.0, w / 2 - half_w), min(float(w), w / 2 + half_w)
+            y1, y2 = max(0.0, h / 2 - half_h), min(float(h), h / 2 + half_h)
+            y1, y2 = max(y1, self.inset), min(y2, h - self.inset)
+            out.append((name, conf, x1, y1, x2, y2))
+        return out + list(self.fixed)
+
+    async def get_frame(self) -> Image.Image | None:
+        img = Image.new("RGB", self.size, (40, 40, 40))
+        if self.colour:
+            w, h = self.size
+            for _name, x, _height, width, _conf in self.targets:
+                r = self._focal() * width / 2 / (x - self.x)
+                ImageDraw.Draw(img).ellipse([w / 2 - r, h / 2 - r, w / 2 + r, h / 2 + r], fill=BALL)
+        return img
+
+    def gap(self) -> float:
+        """How far the nearest target truly is."""
+        return min(x for _name, x, *_ in self.targets) - self.x
+
+
+class _WorldBoard:
+    """The board's HTTP client, answering `/detect` with `_World`'s boxes."""
+
+    address = "stand-in:0"
+
+    def __init__(self, world: _World) -> None:
+        self.world = world
+
+    def detect(self, jpeg: bytes, *, conf: float | None = None) -> HostDetections:
+        w, h = self.world.size
+        found = tuple(HostBox(*box) for box in self.world.boxes())
+        return HostDetections(w, h, found, "yolov8n", "cuda", 10.0)
+
+
+class _WorldNet:
+    """Stands in for YOLO itself, giving `_World`'s boxes for every frame."""
+
+    def __init__(self, world: _World) -> None:
+        self.world = world
+
+    def predict(self, image: Image.Image, conf: float, verbose: bool) -> list[_Result]:
+        boxes = self.world.boxes()
+        names = {i: name for i, (name, *_rest) in enumerate(boxes)}
+        found = [_Box([[x1, y1, x2, y2]], i, c) for i, (_n, c, x1, y1, x2, y2) in enumerate(boxes)]
+        return [_Result(names, found)]
+
+
+def _board_on(world: _World) -> HostDetector:
+    return HostDetector(_WorldBoard(world), fov_deg=world.fov_deg, calibrated=False)  # type: ignore[arg-type]
+
+
+def _local_on(world: _World) -> YoloDetector:
+    det = _local_yolo("person")
+    det._model = _WorldNet(world)
+    det.fov_deg = world.fov_deg
+    return det
+
+
+def _colour_on(world: _World) -> ColorBlobDetector:
+    return ColorBlobDetector(fov_deg=world.fov_deg, calibrated=False)
+
+
+def _forward(body: MockTransport) -> list[float]:
+    """Every forward speed the body was sent."""
+    return [float(i.params["vx"]) for i in body.intents_of("move") if i.params["vx"] > 0]
+
+
+RANGE_CASES = [
+    # (id, detector factory, label, stop_distance)
+    ("ball, colour, alpha microduck lens, stop at the least", _colour_on_alpha, "ball", STOP_MIN),
+    ("follow-me: person, local yolo, stop 0.5", lambda: _local_yolo("person"), "person", 0.5),
+    ("person, local yolo, stop at the most", lambda: _local_yolo("person"), "person", STOP_MAX),
+    ("person, board yolo, stop at the most", lambda: _board_yolo("person"), "person", STOP_MAX),
+    ("pet, local yolo, default stop", lambda: _local_yolo("dog"), "pet", STOP_DEFAULT),
+    ("ball, board yolo, stop at the least", lambda: _board_yolo("sports ball"), "ball", STOP_MIN),
+    ("no distance at all, default stop", lambda: _NoDistance(), "person", STOP_DEFAULT),
+]
+
+
+@pytest.mark.parametrize(
+    ("make", "label", "stop"), [c[1:] for c in RANGE_CASES], ids=[c[0] for c in RANGE_CASES]
+)
+async def test_go_to_never_walks_on_toward_a_target_that_fills_the_frame_or_has_no_distance(
+    registry: VerbRegistry, make: Any, label: str, stop: float
+) -> None:
+    """`go_to` arrived only when `est_distance_m <= stop_distance`, and a box detector's distance
+    (`f * HEIGHT_M[label] / box height`) cannot fall below what a box as tall as the frame reads:
+    1.775 m for a person on a 4:3 frame at the guessed lens, above every stop distance the verb
+    took. Below that nothing ever arrived, and the verb walked on at up to 0.2 m/s toward a target
+    already filling the frame until its timeout. The colour detector's ball as wide as the frame
+    floors the same way, and a detector that gives no distance never arrived either. A target that
+    fills the frame, or has no distance, is not walked toward now: no forward twist goes out.
+
+    Driven through the executor with the shipped `tasks/follow-me.glot` as the contract and
+    `walk_to` as its pilot calls it. The detectors are the real `YoloDetector.detect`,
+    `HostDetector.detect` and `ColorBlobDetector.detect`, with only YOLO itself or the board's
+    HTTP client stood in for, and wrapped so that `go_to` cannot ask them for their nearest reading:
+    what stops it here is the detection itself."""
+    task = load_glot(str(TASKS / "follow-me.glot"))
+    inner = make()
+    detector = _Seen(inner)
+    body = _body_for(inner)
+    ex = Executor(registry, body, contract=task.frontmatter, detector=detector)
+    timeout = 2.0
+    result = await ex.run_verb(
+        "walk_to", {"target": label, "stop_distance": stop, "timeout_s": timeout}
+    )
+
+    dists = sorted({d.est_distance_m for d in detector.seen}, key=lambda d: d or 0.0)
+    if isinstance(inner, ColorBlobDetector):
+        # a ball as wide as the frame is read at half the frame's width: 0.05 / tan(fov / 2)
+        assert dists and min(dists) > stop, dists  # type: ignore[operator]
+    elif not isinstance(inner, _NoDistance):
+        assert dists == [_frame_tall_m(label)], dists
+    forward = [i.params["vx"] for i in body.intents_of("move") if i.params["vx"] > 0]
+    assert not forward, (
+        f"walk_to sent {len(forward)} forward twists (vx {sorted(set(forward))} m/s) over "
+        f"{body.now():.1f} s of the body's clock toward a {label} filling the frame, ending "
+        f"{result.summary!r}; every detection read {dists} m against stop_distance {stop}"
+    )
+
+
+REFUSAL_CASES = [
+    # (id, detector factory, label, stop_distance, the nearest the camera can measure)
+    (
+        "follow-me: person, local yolo",
+        lambda: _local_yolo("person"),
+        "person",
+        0.5,
+        _frame_tall_m("person"),
+    ),
+    ("person, board yolo", lambda: _board_yolo("person"), "person", 0.5, _frame_tall_m("person")),
+    ("pet, local yolo", lambda: _local_yolo("dog"), "pet", STOP_DEFAULT, _frame_tall_m("pet")),
+    (
+        "ball, board yolo",
+        lambda: _board_yolo("sports ball"),
+        "ball",
+        STOP_MIN,
+        _frame_tall_m("ball"),
+    ),
+    (
+        "ball, colour, alpha microduck lens",
+        _colour_on_alpha,
+        "ball",
+        STOP_MIN,
+        round(0.05 / math.tan(math.radians(_alpha_lens()[1]) / 2), 3),
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("make", "label", "stop", "nearest"),
+    [c[1:] for c in REFUSAL_CASES],
+    ids=[c[0] for c in REFUSAL_CASES],
+)
+async def test_go_to_refuses_a_stop_distance_nearer_than_the_camera_can_measure_and_names_it(
+    registry: VerbRegistry, make: Any, label: str, stop: float, nearest: float
+) -> None:
+    """A stop distance under the nearest this detector can read for this label, lens and frame
+    could never be reached, and the body walked on into the target. It is refused now on the
+    first frame, with nothing sent but the look that centres the head, which the refusal says,
+    naming a stop distance the camera can measure, and that distance can be asked for: here,
+    where every frame shows a box as tall as the frame, the walk it gives does not start, and
+    says the frame's edge cuts the target."""
+    body = _body_for(make())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=make())
+    refused = await ex.run_verb("walk_to", {"target": label, "stop_distance": stop})
+    assert not refused.ok and "nearest_m" in refused.data, refused
+    need = refused.data["nearest_m"]
+    assert _askable(nearest) <= need, f"named {need} m, nearer than the frame lets it read"
+    assert f"Ask for {need:.2f} m or more." in refused.summary, refused.summary
+    assert "nothing was sent but the look that centres the head" in refused.summary
+    assert [i.kind for i in body.intents] == ["look"], "the refusal came after the body moved"
+    assert need <= STOP_MAX, f"the nearest the camera can measure, {need} m, cannot be asked for"
+
+    asked = await ex.run_verb("walk_to", {"target": label, "stop_distance": need})
+    assert asked.ok, asked.summary
+    assert asked.summary.startswith(
+        f"go_to did not start: the frame's edge cuts the {label}, so its distance cannot be "
+        "measured"
+    ), asked
+    assert asked.data["started"] is False and asked.data["cannot_range"] == "cut by the frame"
+    assert "distance_m" not in asked.data and asked.data["at_most_m"] >= nearest, asked.data
+    assert not [i for i in body.intents_of("move") if i.params["vx"] > 0]
+    assert body.intents[-1].kind == "stop"
+
+
+#: A pet a long way off, its box a quarter of the frame's height and inside it, then near
+#: enough that the frame cuts the top of its box off at half the frame's height.
+PET_FAR = (1 / 3, 3 / 8, 2 / 3, 5 / 8)
+PET_CUT = (1 / 3, 0.0, 2 / 3, 1 / 2)
+
+
+async def test_go_to_stops_once_the_target_runs_off_the_frame_and_says_it_is_as_near_as_it_can_tell(
+    registry: VerbRegistry,
+) -> None:
+    """A box the frame cuts at its top or bottom reads farther than the target is, since its
+    distance comes from its height, and it only gets worse nearer in: the body kept walking on a
+    reading that fell more slowly than the gap did. The approach ends at the first such frame now,
+    with the body stopped, and the result says the frame's edge cuts the target, so its distance
+    cannot be measured, and gives the reading as the farthest it can be. It is not a failure:
+    follow-me ends every leg that way, so three in a row do not trip its `abort_when`. Nor does it
+    say "reached" with a distance nobody measured: the data has `at_most_m`, not `distance_m`."""
+    task = load_glot(str(TASKS / "follow-me.glot"))
+    legs = task.frontmatter.repeat_failure_abort
+    assert legs is not None
+    far, cut = (_frame_tall_m("pet", share=b[3] - b[1]) for b in (PET_FAR, PET_CUT))
+    stop = STOP_DEFAULT * 2
+    assert _frame_tall_m("pet") < stop < cut < far
+    body = MockTransport(frame_size=FRAME)
+    detector = _local_yolo("dog", *[PET_FAR, PET_CUT] * legs)
+    ex = Executor(registry, body, contract=task.frontmatter, detector=detector)
+    for _ in range(legs):
+        sent = len(body.intents)
+        result = await ex.run_verb("walk_to", {"target": "pet", "stop_distance": stop})
+        assert result.ok, result.summary
+        assert result.summary.startswith(
+            "go_to stopped: the frame's edge cuts the pet, so its distance cannot be measured; "
+            f"it reads ~{cut:.2f} m, the farthest it can be if it is the size the detector takes "
+            "it for"
+        ), result.summary
+        assert result.data["at_most_m"] == cut and "distance_m" not in result.data
+        assert result.data["cannot_range"] == "cut by the frame" and result.data["started"]
+        leg = body.intents[sent:]
+        moves = [i for i in leg if i.kind == "move"]
+        assert [m.params["vx"] > 0 for m in moves] == [True], f"one tick's walk, then: {leg}"
+        assert [i.kind for i in leg[leg.index(moves[-1]) + 1 :]] == ["stop"], leg
+    assert ex.consecutive_failures.get("go_to", 0) == 0 and not ex.abort.is_set()
+
+
+class _DistanceThenNone:
+    """A third party's detector: the ball dead ahead three metres off, then no distance."""
+
+    name = "then_none"
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        self.calls += 1
+        far = 3.0 if self.calls == 1 else None
+        return [
+            Detection(label="ball", cx=0.5, cy=0.5, area=0.1, bearing_deg=0.0, est_distance_m=far)
+        ]
+
+
+async def test_approach_and_runs_its_then_verb_only_where_go_to_measured_the_stop_distance(
+    registry: VerbRegistry,
+) -> None:
+    """`then` is promised at the stop distance. Where `go_to` ends on a target the frame's edge
+    cuts, it knows only that the target is at most so far away, which can be farther than the stop
+    distance: a ball whose box the frame cuts at the top while it is still out of reach. The kick
+    went out all the same, since that ending is a success. `approach_and` now leaves the body
+    stopped there, runs no `then`, and fails naming the verb it did not run and carrying
+    `at_most_m`, so the pilot can run it itself. Where that bound is within the stop distance,
+    the target certainly is too, and `then` runs as it did at the base commit: a ball that fills
+    the frame was kicked before the camera-limit ending existed, and is kicked now. An arrival by
+    measurement kicks as before."""
+    body = MockTransport(frame_size=FRAME)
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_local_yolo("sports ball"))
+    refused = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN})
+    stop = refused.data["nearest_m"]
+    cut = _frame_tall_m("ball", share=PET_CUT[3] - PET_CUT[1])
+    assert cut > stop, "the ball has to be cut while it may still be out of reach"
+    body = MockTransport(frame_size=FRAME)
+    detector = _local_yolo("sports ball", PET_CUT)
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=detector)
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": stop, "then": "kick"}
+    )
+    assert not result.ok
+    assert result.summary.startswith(
+        f"approach_and did not run kick: go_to read the ball at most ~{cut:.3f} m away, which may "
+        f"be farther than the stop_distance of {stop:g} m"
+    ), result.summary
+    assert result.data["at_most_m"] == cut and result.data["not_run"] == "kick", result.data
+    assert "kick" not in [name for name, _params, _result in ex.history], "it kicked anyway"
+    assert body.intents[-1].kind == "stop"
+
+    # a ball as wide as the frame, read by the colour detector at an upper bound under the stop
+    within = Executor(
+        registry,
+        MockTransport(frames=[Image.new("RGB", (64, 64), BALL)]),
+        contract=GLOT.frontmatter,
+        detector=ColorBlobDetector(),
+    )
+    kicked = await within.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": STOP_DEFAULT, "then": "kick"}
+    )
+    assert kicked.ok and "kick" in [name for name, _params, _result in within.history], kicked
+    assert kicked.summary.startswith("go_to did not start: the frame's edge cuts the ball"), kicked
+    assert "may be farther" not in kicked.summary
+    assert kicked.data["go_to"]["at_most_m"] <= STOP_DEFAULT
+
+    measured = Executor(
+        registry, MockTransport(), contract=GLOT.frontmatter, detector=_BallUnderfoot()
+    )
+    arrived = await measured.run_verb("approach_and", {"target": "ball", "then": "kick"})
+    assert arrived.summary.startswith("reached the ball: ~0.10 m away, bearing +0°; then kick: ")
+    assert "kick" in [name for name, _params, _result in measured.history]
+
+
+async def test_a_detector_that_stops_giving_a_distance_ends_the_approach_at_its_last_reading(
+    registry: VerbRegistry,
+) -> None:
+    """`dist is None` never arrived, so a detection that stopped giving a distance was walked
+    toward at full speed until the timeout. A detector that never gave one is refused before
+    anything moves (the case above); one that stops giving one mid-approach ends it with the body
+    stopped, the last reading quoted."""
+    body = MockTransport()
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_DistanceThenNone())
+    result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
+    assert result.ok, result.summary
+    assert result.summary.startswith(
+        "go_to stopped: then_none gives no distance for the ball now; its last reading was ~3.00 m"
+    ), result
+    assert result.data["at_most_m"] == 3.0 and result.data["cannot_range"] == "no distance"
+    assert len(body.intents_of("move")) == 1 and body.intents[-1].kind == "stop"
+
+
+@pytest.mark.parametrize("wide", [True, False], ids=["16:9", "4:3"])
+async def test_go_to_takes_a_stop_distance_as_far_as_a_person_reads_at_the_nearest_on_a_wide_frame(
+    registry: VerbRegistry, wide: bool
+) -> None:
+    """`stop_distance` was capped at 1.5 m, under the 1.775 m a person reads at the nearest on a
+    4:3 frame through the guessed lens, so the refusal that names that distance would have made a
+    person impossible to approach. The cap is the stop distance a refusal names for a person on
+    the widest frame Roboglot expects, a Microduck beta's 16:9, through that lens, so it can be
+    asked for, and every narrower frame names less. `approach_and`, which hands its stop
+    distance to `go_to`, takes the same."""
+    from roboglot_microduck import upstream_api as up
+
+    size = (up.BETA_SOLVE["width"], up.BETA_SOLVE["height"]) if wide else FRAME
+    world = _World(size, [("person", 4.0, HEIGHT_M["person"], 0.5, 0.9)])
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    refused = await ex.run_verb("walk_to", {"target": "person", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    assert named == STOP_MAX if wide else named < STOP_MAX, (named, STOP_MAX)
+    approach = ApproachAndParams.model_fields["stop_distance"].metadata
+    assert [m.le for m in approach if isinstance(m, Le)] == [STOP_MAX]
+
+
+#: Where each label stands to begin with in the world tests, far enough that every detector reads
+#: it whole on the first frame and near enough that the walk to it fits go_to's default timeout.
+START_M = {"person": 4.0, "pet": 1.5, "ball": 1.0}
+#: Its width, for the box's sides and the colour detector's disc (a ball's is its radius twice).
+WIDTH_M = {"person": 0.5, "pet": 0.3, "ball": 0.1}
+
+NAMED_CASES = [
+    (kind, make, coco, label, size)
+    for kind, make in (("local yolo", _local_on), ("board yolo", _board_on))
+    for coco, label in (("person", "person"), ("dog", "pet"), ("sports ball", "ball"))
+    for size in ((640, 480), (1280, 720))
+] + [("colour", _colour_on, "sports ball", "ball", size) for size in ((270, 480), (128, 128))]
+
+
+@pytest.mark.parametrize(
+    ("make", "coco", "label", "size"),
+    [c[1:] for c in NAMED_CASES],
+    ids=[f"{c[0]}, {c[3]}, {c[4][0]}x{c[4][1]}" for c in NAMED_CASES],
+)
+async def test_the_stop_distance_a_refusal_names_is_one_go_to_arrives_at_by_measurement(
+    registry: VerbRegistry,
+    make: Callable[[_World], Any],
+    coco: str,
+    label: str,
+    size: tuple[int, int],
+) -> None:
+    """A refusal named the nearest a box as big as the frame reads, rounded up, and a box that
+    big touches the frame's edge rows, which the detector marks as cut: the tallest box it still
+    measures reads farther than the distance named. "Ask for 1.78 m or more", asked, could only
+    end as near as the camera can tell, and `approach_and` at that distance never ran its `then`.
+    The distance named now is the nearest reading of a box the detector does not mark, rounded
+    up past one creeping step, and asking for it walks straight at the target standing whole in
+    view and arrives by measurement. The colour detector's case is a ball through a Microduck
+    alpha's lens, the narrowest the code assumes, where the least stop distance is refused."""
+    fov = _alpha_lens()[1] if make is _colour_on else GUESSED_FOV_DEG
+    height = WIDTH_M[label] if make is _colour_on else HEIGHT_M[label]
+    world = _World(
+        size,
+        [(coco, START_M[label], height, WIDTH_M[label], 0.9)],
+        fov_deg=fov,
+        colour=make is _colour_on,
+    )
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=make(world))
+    refused = await ex.run_verb("walk_to", {"target": label, "stop_distance": STOP_MIN})
+    assert not refused.ok and "nearest_m" in refused.data, refused
+    named = refused.data["nearest_m"]
+    assert not _forward(world), "nothing moves before the refusal"
+    asked = await ex.run_verb("walk_to", {"target": label, "stop_distance": named})
+    assert asked.ok and "distance_m" in asked.data, (
+        f"walk_to(stop_distance={named}) ended {asked.summary!r} {asked.data} with the {label} "
+        f"truly {world.gap():.3f} m away, so the distance named is not one it arrives at"
+    )
+    assert asked.data["distance_m"] <= named and world.gap() > named - WIDTH_M[label]
+
+
+async def test_a_near_target_the_frame_cuts_ends_the_approach_while_it_steers_by_a_far_one(
+    registry: VerbRegistry,
+) -> None:
+    """Two people dead ahead: one a metre away, whose box the frame cuts at top and bottom, and
+    one five metres off, seen whole and named first, as a network names its most confident box
+    first. `go_to` judged only the first detection of the label, so the near person's mark was
+    never read, and the body walked through where the near person stands toward the far one,
+    saying it had reached the person. Any detection of the label the frame cuts ends the approach
+    now, whichever one it steers by, and the result says it is another one."""
+    near = ("person", 1.0, HEIGHT_M["person"], 0.5, 0.6)
+    far = ("person", 5.0, HEIGHT_M["person"], 0.5, 0.9)
+    world = _World(FRAME, [far, near])
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": 2.0})
+    assert not _forward(world), (
+        f"walk_to sent forward twists {sorted(set(_forward(world)))} m/s with a person 1.0 m ahead "
+        f"whose box the frame cut; the duck ended {world.gap():+.2f} m from them; it said "
+        f"{result.summary!r}"
+    )
+    assert result.ok and result.summary.startswith(
+        "go_to did not start: the frame's edge cuts another person, bearing +0°, so its distance "
+        "cannot be measured; it reads ~"
+    ), result.summary
+    assert result.data["another"] is True and result.data["cannot_range"] == "cut by the frame"
+    assert result.data["steered_m"] == 5.0
+
+
+#: A picture of a person at the frame's top right, 60 of 480 rows tall and cut by the frame's
+#: top, as a network boxes a poster on a wall: (COCO name, confidence, x1, y1, x2, y2).
+PICTURE = ("person", 0.8, 520.0, 0.0, 600.0, 60.0)
+
+
+async def test_a_small_box_the_frame_cuts_is_not_said_to_fill_the_frame(
+    registry: VerbRegistry,
+) -> None:
+    """A person stands whole 3 m ahead, and a picture of a person at the frame's top right is
+    boxed 60 rows tall, cut by the frame's top. Any cut detection of the label ends the approach,
+    the safe side, since a person beside the body can show as a small cut box. But the result said
+    "as near to the person as the camera can tell: another person fills the frame", which was
+    false twice over. It says what is known now: another person, at its bearing, is cut by the
+    frame's edge, so its distance cannot be measured; the person steered by reads 3 m; nothing
+    moved, and the pilot can look or turn until that one is whole or out of view."""
+    world = _World(FRAME, [("person", 3.0, HEIGHT_M["person"], 0.5, 0.9)], fixed=(PICTURE,))
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": 2.0})
+    assert "fills the frame" not in result.summary and "as near" not in result.summary, result
+    assert result.summary.startswith(
+        "go_to did not start: the frame's edge cuts another person, bearing -24°, so its distance "
+        "cannot be measured; it reads ~14.20 m, the farthest it can be if it is the size the "
+        "detector takes it for"
+    ), result.summary
+    assert ". The person it steered by reads ~3.00 m, bearing +0°. " in result.summary
+    assert result.summary.endswith(
+        "Nothing moved: look or turn until that person is whole in the frame or out of view, "
+        "then ask again."
+    ), result.summary
+    assert result.data["started"] is False and not _forward(world)
+
+
+async def test_a_ball_cut_by_the_frame_s_bottom_is_not_said_to_fill_the_frame(
+    registry: VerbRegistry,
+) -> None:
+    """On the ToddlerBot's mock, whose camera is 0.5 m up, a ball on the floor leaves the bottom of
+    the 128 px frame about 0.4 m off and 17 px wide. The approach rightly ends there, its width a
+    chord, but the result said "it fills the frame", which a pilot reads as a ball under the nose.
+    It says the frame's edge cuts the ball now."""
+    from roboglot_toddlerbot.mock import ToddlerBotMock
+
+    body = ToddlerBotMock(ball_xy=(1.0, 0.0))
+    await body.connect()
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=ColorBlobDetector())
+    result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN * 2})
+    assert body.ball_xy is not None
+    end = math.hypot(body.ball_xy[0] - body.x, body.ball_xy[1] - body.y)
+    assert "fills the frame" not in result.summary, (end, result.summary)
+    assert result.summary.startswith(
+        "go_to stopped: the frame's edge cuts the ball, so its distance cannot be measured"
+    ), result.summary
+    assert result.data["cannot_range"] == "cut by the frame" and result.data["at_most_m"] < end
+
+
+async def test_approach_and_does_not_run_then_when_another_target_ended_the_approach(
+    registry: VerbRegistry,
+) -> None:
+    """The ball steered by sits whole 1.5 m dead ahead, and another lies close by to the right,
+    its box cut by the frame's bottom. `go_to` rightly stops on the other one, and put that one's
+    reading in `at_most_m`, inside the stop distance, so `approach_and` kicked straight ahead at a
+    ball 1.5 m off that nothing had turned the body toward. `then` runs only when the target steered
+    by is the one known to be within the stop distance; here it is not run, and the result says
+    another ball ended the approach."""
+    near = ("sports ball", 0.5, 500.0, 80.0, 640.0, 480.0)
+    world = _World(
+        FRAME, [("sports ball", 1.5, HEIGHT_M["ball"], WIDTH_M["ball"], 0.9)], fixed=(near,)
+    )
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": STOP_DEFAULT, "then": "kick"}
+    )
+    ran = [name for name, _params, _result in ex.history]
+    assert "kick" not in ran, f"history {ran}; {result.summary!r}"
+    assert result.data["go_to"]["another"] is True
+    assert result.data["go_to"]["at_most_m"] <= STOP_DEFAULT, "the other one's bound was within it"
+    assert not result.ok and result.summary.startswith(
+        "approach_and did not run kick: go_to stopped for another ball, not the ball it walked "
+        "toward, which reads ~1.50 m"
+    ), result.summary
+    assert result.data["not_run"] == "kick"
+
+
+#: A target in `_Lateral`: COCO name, how far ahead and to the left it stands in m (the left as
+#: a function of the body's clock, for one that moves), its height and width, and the confidence a
+#: network gives it whole and once the frame's edge band cuts it.
+Moving = tuple[str, float, Callable[[float], float], float, float, float, float]
+
+
+def _still(y: float) -> Callable[[float], float]:
+    return lambda _t: y
+
+
+class _Lateral(OpenDuckMock):
+    """The Open Duck's walking mock with blank 640x480 frames and targets anywhere on the floor,
+    some moving across it, seen through `_LateralBoard`. With `period` it is a camera that hands
+    out a frame every so often, as a Microduck's mediad `/frame` does, so `go_to` measures first."""
+
+    def __init__(self, targets: list[Moving], *, period: float | None = None) -> None:
+        super().__init__(ball_xy=None)
+        self.targets = targets
+        if period is not None:
+            self.frame_period_s = period
+
+    async def get_frame(self) -> Image.Image | None:
+        return Image.new("RGB", FRAME, (40, 40, 40))
+
+
+class _LateralBoard:
+    """The board's HTTP client, answering `/detect` as an ideal network would for `_Lateral`'s
+    targets, camera at each target's mid-height: boxes listed most confident first, as YOLO lists
+    them, and a box the frame's edge band cuts scored lower than a whole one, as a network scores a
+    target it sees only part of."""
+
+    address = "stand-in:0"
+
+    def __init__(self, world: _Lateral) -> None:
+        self.world = world
+
+    def detect(self, jpeg: bytes, *, conf: float | None = None) -> HostDetections:
+        from roboglot.perception.base import box_edge_band_px
+
+        w, h = FRAME
+        f = (w / 2) / math.tan(math.radians(GUESSED_FOV_DEG) / 2)
+        band = box_edge_band_px(FRAME)
+        boxes = []
+        for name, x, y_at, height, width, whole, cut in self.world.targets:
+            dx, dy = x - self.world.x, y_at(self.world.now()) - self.world.y
+            d = math.hypot(dx, dy)
+            rel = math.atan2(
+                math.sin(math.atan2(dy, dx) - self.world.theta),
+                math.cos(math.atan2(dy, dx) - self.world.theta),
+            )
+            if d < 1e-3 or abs(rel) >= math.radians(GUESSED_FOV_DEG / 2):
+                continue
+            cx = w / 2 - math.tan(rel) * f
+            half_h, half_w = f * height / 2 / d, f * width / 2 / d
+            y1, y2 = max(0.0, h / 2 - half_h), min(float(h), h / 2 + half_h)
+            score = cut if (y1 < band or y2 > h - band) else whole
+            boxes.append(
+                HostBox(name, score, max(0.0, cx - half_w), y1, min(float(w), cx + half_w), y2)
+            )
+        boxes.sort(key=lambda b: -b.conf)
+        return HostDetections(w, h, tuple(boxes), "yolov8n", "cuda", 10.0)
+
+
+def _lateral_board(world: _Lateral) -> HostDetector:
+    return HostDetector(_LateralBoard(world), fov_deg=GUESSED_FOV_DEG, calibrated=False)  # type: ignore[arg-type]
+
+
+async def test_the_target_walked_toward_stays_the_one_steered_by_when_a_cut_lowers_its_score(
+    registry: VerbRegistry,
+) -> None:
+    """`go_to` took the target it walked toward to be whichever box a frame listed first. A network
+    lists the most confident first and scores a box the frame cuts lower than a whole one, so once
+    the frame cut the ball walked toward, a whole ball 3 m off and 20 degrees left came first:
+    the ending said go_to "stopped for another ball", and `approach_and` declined a kick at the
+    ball dead ahead within its stop distance. Which detection is the target is decided by
+    continuity with the one steered by on the frame before now, not by the list's order."""
+    near: Moving = ("sports ball", 1.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    left = 3.0 * math.tan(math.radians(20.0))
+    far: Moving = ("sports ball", 3.0, _still(left), HEIGHT_M["ball"], WIDTH_M["ball"], 0.7, 0.7)
+    world = _Lateral([near, far], period=0.5)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    refused = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": named, "then": "kick"}
+    )
+    go_to = result.data.get("go_to", {})
+    assert not go_to.get("another") and go_to.get("tracked") is True, (
+        f"the ball walked toward is {1.0 - world.x:.3f} m off dead ahead; go_to's data {go_to}; "
+        f"approach_and said {result.summary!r}"
+    )
+    assert "kick" in [name for name, _params, _result in ex.history], result.summary
+
+
+async def test_go_to_keeps_to_the_target_it_steers_by_while_another_crosses_its_view(
+    registry: VerbRegistry,
+) -> None:
+    """A ball 2 m dead ahead is steered by, and a second ball, scored higher, walks across the view
+    from left to right 4 m off. `go_to` steered by whichever came first, so it turned off after the
+    second ball as soon as it came into view. It keeps to the one it was steering by now, walks
+    straight, and arrives at that one by measurement."""
+    ahead: Moving = ("sports ball", 2.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.9)
+    crossing: Moving = (
+        "sports ball",
+        4.0,
+        lambda t: 3.0 - t,
+        HEIGHT_M["ball"],
+        WIDTH_M["ball"],
+        0.95,
+        0.95,
+    )
+    world = _Lateral([ahead, crossing])
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    stop = 1.0
+    result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": stop})
+    assert result.ok and "distance_m" in result.data, result.summary
+    assert abs(world.y) < WIDTH_M["ball"] and abs(2.0 - world.x - stop) < WIDTH_M["ball"], (
+        f"the body ended at ({world.x:.2f}, {world.y:.2f}), facing "
+        f"{math.degrees(world.theta):.0f}°; it said {result.summary!r}"
+    )
+
+
+@pytest.mark.parametrize("period", [None, 0.5], ids=["arrives", "cut by the frame"])
+async def test_approach_and_runs_then_on_an_arrival_it_cannot_tell_but_not_at_the_camera_limit(
+    registry: VerbRegistry, period: float | None
+) -> None:
+    """Two balls side by side, a hand's breadth apart and as far off, are both where the target
+    steered by could have moved to between two frames, so nothing tells them apart, and go_to's
+    data says `tracked: false`. An arrival by measurement still puts the body within the stop
+    distance of a ball, which is all `approach_and` promises, so `then` runs there as it always
+    did. Where the walk ends because the frame's edge cuts the ball, on a camera that measures
+    first, the distance was not measured, and `approach_and` cannot vouch that the bound it has
+    is the target's: it does not run `then`, and says it cannot tell."""
+    one: Moving = ("sports ball", 1.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    two: Moving = ("sports ball", 1.0, _still(0.03), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    world = _Lateral([one, two], period=period)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    refused = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": named, "then": "kick"}
+    )
+    ran = "kick" in [name for name, _params, _result in ex.history]
+    assert result.data["go_to"]["tracked"] is False, result.data
+    if period is None:
+        assert "distance_m" in result.data["go_to"] and ran, result.summary
+        assert "It cannot tell which ball it walked toward" in result.summary
+    else:
+        assert "cannot_range" in result.data["go_to"] and not ran, result.summary
+        assert result.summary.startswith(
+            "approach_and did not run kick: go_to cannot tell which ball it walked toward"
+        ), result.summary
+
+
+@pytest.mark.parametrize("rows", [2.0, 5.0])
+async def test_a_box_reported_rows_inside_the_edge_still_ends_the_approach_at_the_named_distance(
+    registry: VerbRegistry, rows: float
+) -> None:
+    """A network puts the edge of a box the frame cut a little inside the frame's edge. A band of
+    three of its input pixels, three rows on a 640x480 frame, left a person's box reported five
+    rows inside unmarked: it floored at 1.813 m, over the 1.81 m the refusal named, and `go_to`
+    crept on toward a person filling the frame until it was 0.97 m off. The band is at least a
+    share of the frame's height now, a margin chosen on the safe side. Asked for the distance a
+    refusal names, the body ends no nearer than a person who fills the frame."""
+    world = _World(FRAME, [("person", 4.0, HEIGHT_M["person"], 0.5, 0.9)], inset=rows)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    refused = await ex.run_verb("walk_to", {"target": "person", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": named})
+    assert result.ok and "timed out" not in result.summary, result.summary
+    assert world.gap() > _frame_tall_m("person"), (
+        f"named {named} m; walk_to then ended {result.summary!r} with the person "
+        f"{world.gap():.2f} m away"
+    )
+
+
+async def test_a_ball_that_runs_off_the_bottom_of_the_frame_ends_the_approach(
+    registry: VerbRegistry,
+) -> None:
+    """The Open Duck's mock draws its ball on the floor, so as the duck nears it the ball sinks
+    and leaves the frame at the bottom, as a real ball does under a forward camera. Once its
+    centre is below the frame the colour detector measures the chord the frame leaves, so the
+    reading rose while the ball came nearer; the detector marked only a ball as wide as the
+    frame, so `go_to` walked on, the ball left the frame, and the verb said it had lost the ball
+    with the duck nearer than the stop distance asked for. The detector marks that ball now, and
+    the approach ends as near as the camera can tell, or arrives by measurement first."""
+    stop = 0.2
+    body = OpenDuckMock(ball_xy=(0.6, 0.0))
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=ColorBlobDetector())
+    result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": stop})
+    assert body.ball_xy is not None
+    end = math.hypot(body.ball_xy[0] - body.x, body.ball_xy[1] - body.y)
+    assert result.ok and ({"distance_m", "cannot_range"} & set(result.data)), (
+        f"walk_to(stop_distance={stop}) ended {result.summary!r} with the duck {end:.3f} m from "
+        "the ball"
+    )
+    assert end >= stop - TICK_S * 0.1, f"the duck ended {end:.3f} m from the ball"
+
+
+def test_the_colour_detector_marks_a_ball_whose_width_the_frame_may_have_cut() -> None:
+    """The colour detector reads a ball's size off its area, or off its width once the frame
+    cuts it at the bottom or a side. A ball cut at the bottom whose centre is still in the frame
+    is as wide as it ever is, and is measured; one whose centre has left the frame shows only a
+    chord, narrower than the ball, and one cut at the top is measured off an area the frame has
+    cut too. Both read farther than the ball is, and are marked `clipped`."""
+    size = (128, 128)
+    w, h = size
+    detector = ColorBlobDetector()
+
+    def ball(cx: float, cy: float, r: float) -> Detection:
+        img = Image.new("RGB", size, (40, 40, 40))
+        ImageDraw.Draw(img).ellipse([cx - r, cy - r, cx + r, cy + r], fill=BALL)
+        (found,) = detector.detect(img)
+        return found
+
+    r = w / 4
+    assert not ball(w / 2, h - r / 2, r).clipped, "centre in the frame, cut at the bottom"
+    assert ball(w / 2, h + r / 2, r).clipped, "centre below the frame"
+    assert ball(w / 2, r / 2, r).clipped, "cut at the top"
+    assert not ball(w / 2, h / 2, r).clipped, "inside the frame"
+
+
+@pytest.mark.parametrize("reading", [math.nan, math.inf, 0.0, -0.5])
+async def test_a_distance_that_is_not_finite_and_above_nought_is_no_distance(
+    registry: VerbRegistry, reading: float
+) -> None:
+    """A third party's detector may give NaN, infinity, nought or less, and none of them is a
+    distance a body can be at. NaN and infinity never compared at or under the stop distance, so
+    `go_to` walked at full speed for its whole timeout; nought or less was announced as reached.
+    Each is no distance now: refused on the first sighting, as a missing one is."""
+
+    class _Third:
+        name = "third"
+
+        def detect(self, image: Image.Image) -> list[Detection]:
+            return [
+                Detection(
+                    label="ball", cx=0.5, cy=0.5, area=0.1, bearing_deg=0.0, est_distance_m=reading
+                )
+            ]
+
+    body = MockTransport()
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Third())
+    result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 2})
+    assert not _forward(body) and "reached" not in result.summary, result
+    assert result.summary == (
+        "go_to: third gives no distance for the ball, so it cannot tell when to stop, and did not "
+        "approach it"
+    ), result.summary
+
+
+# ── what go_to's arrival says, the clamp, and a refused look ────────────────────────────
+
+
+class _UncalibratedBallClose:
+    """A detector whose lens was a guess: the ball dead ahead, inside the default stop."""
+
+    name = "uncalibrated"
+
+    def detect(self, image: Image.Image) -> list[Detection]:
+        return [
+            Detection(
+                label="ball",
+                cx=0.5,
+                cy=0.5,
+                area=0.1,
+                bearing_deg=0.0,
+                est_distance_m=STOP_DEFAULT - 0.05,
+                calibrated=False,
+            )
+        ]
+
+
+async def test_go_to_s_arrival_says_when_its_distance_was_a_guess() -> None:
+    """`go_to`'s success read 'reached the ball: ~D m away' and carried no `calibrated` flag, so
+    an arrival judged through a guessed lens read as measured, where `observe` would have said
+    '(uncalibrated: distance is a rough guess)'. The summary says so now, in `observe`'s words,
+    and the data carries `calibrated: False`. An arrival through a lens somebody measured reads
+    as it always did."""
+    result = await core.go_to(
+        VerbContext(transport=MockTransport(), detector=_UncalibratedBallClose()), GoToParams()
+    )
+    assert result.ok, result.summary
+    assert result.summary.endswith("(uncalibrated: distance is a rough guess)"), result.summary
+    assert result.data["calibrated"] is False
+    measured = await core.go_to(
+        VerbContext(transport=MockTransport(), detector=_BallUnderfoot()), GoToParams()
+    )
+    assert measured.summary == "reached the ball: ~0.10 m away, bearing +0°"
+    assert set(measured.data) == {"distance_m", "bearing_deg", "ticks"}
+
+
+def _limited(limits: dict[str, float], *, head: bool = False) -> RobotManifest:
+    """A body that walks and sees, with a head to look with when `head`, its manifest validated
+    and then given `limits` as they stand, past the validator, as code holding a manifest can:
+    the clamp has to be safe alone."""
+    manifest = RobotManifest(
+        id="bot-01",
+        vendor="acme",
+        model="bot",
+        embodiment="biped",
+        mobility="legged",
+        intents=["twist", "gaze"] if head else ["twist"],
+        sensors=["camera"],
+        verbs=[VerbSpec(name="move", core=True), VerbSpec(name="search_scan", core=True)],
+    )
+    manifest.limits.update(limits)
+    return manifest
+
+
+LIMIT_CASES = [
+    # (id, limits, what to run, the field read back)
+    (
+        "max_vx -0.1, stand still",
+        {"max_vx": -0.1, "max_vy": 0.2, "max_wz": 1.0},
+        ("move", {"vx": 0.0, "duration_s": 0.2}),
+        "vx",
+    ),
+    (
+        "max_vx -0.2, turn in place",
+        {"max_vx": -0.2, "max_vy": 0.2, "max_wz": 1.5},
+        ("move", {"vx": 0.0, "wz": 0.5, "duration_s": 0.2}),
+        "vx",
+    ),
+    ("max_vx NaN", {"max_vx": float("nan")}, ("move", {"vx": 0.1, "duration_s": 0.2}), "vx"),
+    ("max_wz -1.0, turn left", {"max_wz": -1.0}, ("turn", {"radians": math.radians(45)}), "wz"),
+    (
+        "max_wz inf, turn left",
+        {"max_wz": float("inf")},
+        ("turn", {"radians": math.radians(45)}),
+        "wz",
+    ),
+]
+
+
+@pytest.mark.parametrize(
+    ("limits", "run", "field"), [c[1:] for c in LIMIT_CASES], ids=[c[0] for c in LIMIT_CASES]
+)
+async def test_a_manifest_s_speed_limit_never_turns_a_request_into_another_motion(
+    limits: dict[str, float], run: tuple[str, dict[str, Any]], field: str
+) -> None:
+    """`_clamped`, `speed_limits` and `_turn` read a manifest's limits as they stand: a negative
+    `max_vx` clamped every request to its magnitude, zero included, NaN went out as the twist,
+    and a negative `max_wz` turned `_turn` the other way, for a negative time. The manifest
+    refuses such limits now (tests/test_manifest.py), and the clamp reads one that got past it
+    as no limit at all, the schema's bound, so nothing a manifest says changes the sign of a
+    request or sends a twist that is not finite."""
+    body = MockTransport()
+    ctx = VerbContext(transport=body, manifest=_limited(limits))
+    verb, args = run
+    summary = ""
+    if verb == "move":
+        p = core.MoveParams(**args)
+        summary = (await core.move(ctx, p)).summary
+        asked = getattr(p, field)
+    else:
+        await core._turn(ctx, args["radians"])
+        asked = args["radians"]
+    sent = [i.params[field] for i in body.intents_of("move")]
+    ok = all(
+        math.isfinite(v)
+        and (v == 0.0 if asked == 0.0 else math.copysign(1, v) == math.copysign(1, asked))
+        for v in sent
+    )
+    assert sent and ok, (
+        f"limits {limits}; asked {field}={asked:g}, the body was sent "
+        f"{field}={sorted(set(map(str, sent)))}; the verb said {summary!r}"
+    )
+    assert all(math.isfinite(v) and v >= 0 for v in core.speed_limits(ctx.manifest))
+
+
+def test_a_limit_held_as_any_kind_of_real_number_still_holds_the_clamp() -> None:
+    """A limit set after validation was read only as an `int` or a `float`, so one held as a
+    numpy number, which is what a limit computed from an array is, or as a Decimal, read as no
+    limit at all: a base that cannot strafe (`max_vy` 0) was allowed the schema's 0.2 m/s
+    sideways and a 0.1 m/s cap became 0.3. Every real number is read now, and NaN, infinity and a
+    negative are still not."""
+    for vx, vy, wz in [
+        (np.float32(0.1), np.int64(0), Decimal("0.5")),
+        (Fraction(1, 10), 0, np.float64(0.5)),
+    ]:
+        manifest = _limited({})
+        manifest.limits.update({"max_vx": vx, "max_vy": vy, "max_wz": wz})  # type: ignore[dict-item]
+        got = core.speed_limits(manifest)
+        assert got == pytest.approx((0.1, 0.0, 0.5)), (vx, vy, wz, got)
+        assert all(type(v) is float for v in got)
+    manifest = _limited({"max_vx": np.float64("nan"), "max_vy": Decimal("-0.1")})  # type: ignore[dict-item]
+    assert core.speed_limits(manifest)[:2] == (core.MAX_VX, core.MAX_VY)
+
+
+async def test_a_body_s_head_fade_that_is_not_finite_is_not_waited_for() -> None:
+    """`_head_fade_s` took any positive number, infinity included, and `_look_ahead` sleeps it
+    before `go_to` looks: on a real transport a sleep with no end until the executor's timeout,
+    on the mock a clock at infinity, which ended `go_to` as timed out without one frame looked
+    at. A fade that is not finite is not waited for."""
+
+    class _InfiniteFade(MockTransport):
+        head_fade_s = float("inf")
+
+    ctx = VerbContext(transport=_InfiniteFade(), detector=_BallUnderfoot())
+    assert core._head_fade_s(ctx) == 0.0
+    result = await core.go_to(ctx, GoToParams())
+    assert result.ok, result.summary
+
+
+def _looks_only() -> RobotManifest:
+    """A body that cannot move and looks around by sweeping its head."""
+    return RobotManifest(
+        id="bot-01",
+        vendor="acme",
+        model="bot",
+        embodiment="humanoid",
+        mobility="none",
+        intents=["gaze"],
+        sensors=["camera"],
+        verbs=[VerbSpec(name="search_scan", core=True)],
+    )
+
+
+async def test_a_head_sweep_the_body_refused_does_not_read_as_a_sweep_that_found_nothing() -> None:
+    """`_gaze_sweep` sent each look and threw its answer away, so a body that refused every look
+    was reported as having looked across the whole sweep and not found the target, which a pilot
+    reads as the target not being there. The sweep ends at the first refused look and says so."""
+    manifest = _looks_only()
+    assert core.scan_mode(manifest) == "gaze"
+    body = MockTransport(refuse_kinds={"look"})
+    ctx = VerbContext(transport=body, detector=ColorBlobDetector(), manifest=manifest)
+    result = await core.search_scan(ctx, SearchScanParams(target="ball"))
+    assert not result.ok
+    assert result.summary.startswith(
+        "search_scan: a look was refused, so the sweep stopped after 0 of "
+    ), result.summary
+    assert result.summary.endswith(" looks: mock refuses look"), result.summary
+    assert result.data == {"look_refused": "mock refuses look", "steps": 0}
+    assert len(body.intents_of("look")) == 1
+
+
+@pytest.mark.parametrize("verb", ["go_to", "search_scan"])
+async def test_a_refused_look_that_would_have_centred_the_head_ends_the_verb_before_it_moves(
+    verb: str,
+) -> None:
+    """`go_to` and a turning `search_scan` centre the head first (`_look_ahead`) and threw that
+    look's answer away too, so on a body with a head that refused it they steered on bearings
+    taken through a head pointing wherever it was. On such a body the verb ends there, saying
+    why, before anything moves. A body with no head to centre refuses a look as a matter of
+    course (a wheeled base over rosbridge says it cannot look), and goes on as it always has."""
+    body = MockTransport(refuse_kinds={"look"})
+    ctx = VerbContext(transport=body, detector=_BallUnderfoot(), manifest=_limited({}, head=True))
+    if verb == "go_to":
+        result = await core.go_to(ctx, GoToParams())
+    else:
+        result = await core.search_scan(ctx, SearchScanParams())
+    assert not result.ok
+    assert result.summary == (
+        f"{verb}: the look that centres the head was refused, so nothing moved: mock refuses look"
+    ), result.summary
+    assert result.data == {"look_refused": "mock refuses look"}
+    assert body.intents_of("move") == []
+    headless = VerbContext(
+        transport=MockTransport(refuse_kinds={"look"}),
+        detector=_BallUnderfoot(),
+        manifest=_limited({}),
+    )
+    assert (await core.go_to(headless, GoToParams())).ok
