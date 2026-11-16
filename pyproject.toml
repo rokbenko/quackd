@@ -177,6 +177,8 @@ dev = [
   "hatchling>=1.25",
   "pytest>=8.2",
   "pytest-asyncio>=0.23",
+  "pytest-cov>=7.1",
+  "pytest-timeout>=2.4",
   # CI's six test jobs run on every core a runner has (`-n auto`, ci.yml). Not in addopts: a test
   # that runs pytest itself reads that, and one test on a laptop has no need of workers.
   "pytest-xdist>=3.5",

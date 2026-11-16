@@ -76,8 +76,10 @@ class DefaultAsyncHttpxClient:
 # to a request that lacks one of the SDK's own headers, its own `User-Agent`, and in 1.66.0 and
 # 1.83.0 a `Content-Type` for a JSON body. Nothing Roboglot hands leaves that gap, since a line of
 # the variable that names one of those headers carries the SDK's own value
-# (`openai_headers.own_headers`). 3.43.0 and 3.46.0, the releases the lock has held since, were
-# run against this model on 2026-11-09 and are the kind 3.22.1 is.
+# (`openai_headers.own_headers`). 3.43.0 and 3.46.0, which the lock held next, were
+# run against this model on 2026-11-09 and are the kind 3.22.1 is. So is 3.51.0, the release the
+# lock holds since 2026-11-16: its `openai/_client.py` and `openai/_base_client.py` are 3.46.0's
+# byte for byte, and it was run against this model that day.
 
 RELEASES = ("1.66", "3.1", "3.6", "3.22")
 """Four kinds of release inside the extras' range, by the first cached release of each. `1.66`,
@@ -101,6 +103,7 @@ READ = {
     "3.22.1": "3.22",
     "3.43.0": "3.22",
     "3.46.0": "3.22",
+    "3.51.0": "3.22",
 }
 """Each release that was read, and the kind of release it is. A release that is not here has
 not been read, and nothing says which kind it is."""

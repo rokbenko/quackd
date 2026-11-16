@@ -1,21 +1,34 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
       - id: check-toml
-      # The README hero is the one exception, and it has a cap of its own in
-      # `docs/assets/lerobot_hero.py`. A render spends bytes on what moved; a photograph of a
-      # lab spends them on every pixel of every frame, so the recording of the real arm does
-      # not fit here at a width worth putting at the top of a page. Everything else does.
+      # Two kinds of file are meant to be over the cap, and each has a cap of its own. The README
+      # hero has `HERO_MAX_BYTES` in `docs/assets/lerobot_hero.py`: a render spends bytes on what
+      # moved; a photograph of a lab spends them on every pixel of every frame, so the recording
+      # of the real arm does not fit here at a width worth putting at the top of a page. An
+      # example's `run.gif` under `docs/examples/` is the whole video of a run on a real arm, and
+      # `scripts/example_log.py` makes it to fit `GIF_LIMIT` there and refuses a log whose GIF
+      # does not. Everything else fits here.
       - id: check-added-large-files
         args: ["--maxkb=2048"]
-        exclude: ^docs/assets/lerobot\.gif$
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.9
+        exclude: ^(docs/assets/lerobot\.gif|docs/examples/[^/]+/e[0-9]+/log/(part-[0-9]+/)?run\.gif)$
+  # ruff is the one uv.lock holds, run in the project's own environment, so the hooks and CI's
+  # `uv run ruff` are always the same release. `uv sync --extra dev` first.
+  - repo: local
     hooks:
       - id: ruff
-        args: ["--fix"]
+        name: ruff check
+        entry: uv run --no-sync ruff check --force-exclude --fix
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
       - id: ruff-format
+        name: ruff format
+        entry: uv run --no-sync ruff format --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
