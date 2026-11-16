@@ -42,12 +42,36 @@ case "$TOKEN_FILE" in
   Use letters, digits, dot, dash, underscore and slash." ;;
 esac
 
+# Whether the token file already there is one this script wrote, in this run or an earlier one,
+# and so one whose group and mode it may set: a regular file, no symlink, belonging to root and
+# holding one line of 64 hexadecimal characters, which is what openssl rand -hex 32 writes and
+# what every version of this script has written there. Anything else it never changes: it stops
+# and says what to run. The directory it is in has been checked first (secret_dir_or_die, or the
+# script's own), so nobody but root can swap the file for something else after this looks.
+token_file_is_ours_or_die() {
+  local owner mode
+  if sudo test -L "$TOKEN_FILE" || ! sudo test -f "$TOKEN_FILE"; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there and is not a regular file, or is a symlink,
+  which this script never follows. Name a path that does not exist yet, or leave TOKEN_FILE
+  unset for $TOKEN_DIR/duck-bridge.token."
+  fi
+  read -r owner mode < <(sudo stat -c '%U %a' "$TOKEN_FILE")
+  if [ "$owner" != root ] || [ "$(sudo grep -c '' "$TOKEN_FILE")" != 1 ] \
+      || ! sudo grep -qxE '[0-9a-f]{64}' "$TOKEN_FILE"; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there and is not a token this script wrote (a file
+  of root's holding one line of 64 hexadecimal characters), so it changes neither its group
+  nor its mode. Name a path that does not exist yet, or, if you mean to replace that file
+  with a new token, do it yourself: openssl rand -hex 32 | sudo install -m 0640 -o root -g
+  $SVC_USER /dev/stdin $TOKEN_FILE, then run this again."
+  fi
+}
+
 # What makes a directory that is not this script's own safe to hold the token. Only the
 # directory itself is checked, not the ones above it: it exists and is no symlink, it belongs to
-# root or to the service user, neither its group nor anyone else may write in it (so nobody else
-# can replace the token or put a file of their own in its place), and the service user can
-# search it (so the bridge can reach the token). The script never changes such a directory: it
-# stops, and says what to run.
+# root, neither its group nor anyone else may write in it (so nobody but root can replace the
+# token, or swap it for a symlink between this script's look at it and its change to it), and
+# the service user can search it (so the bridge can reach the token). The script never changes
+# such a directory: it stops, and says what to run.
 secret_dir_or_die() {  # $1 = the directory TOKEN_FILE is in
   local dir="$1" owner mode
   if ! sudo test -d "$dir" || sudo test -L "$dir"; then
@@ -56,7 +80,7 @@ secret_dir_or_die() {  # $1 = the directory TOKEN_FILE is in
   for $TOKEN_DIR/duck-bridge.token, in a directory this script makes and keeps right itself."
   fi
   read -r owner mode < <(sudo stat -c '%U %a' "$dir")
-  if [ "$owner" != root ] && [ "$owner" != "$SVC_USER" ]; then
+  if [ "$owner" != root ]; then
     die "$dir, where TOKEN_FILE is, belongs to $owner, who could replace the token. This
   script does not change a directory it did not make: run sudo chown root $dir yourself, or
   leave TOKEN_FILE unset."
@@ -188,16 +212,19 @@ if [ "$TOKEN_FILE_DIR" = "$TOKEN_DIR" ]; then
 else
   secret_dir_or_die "$TOKEN_FILE_DIR"
 fi
-if ! sudo test -f "$TOKEN_FILE"; then
+if sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; then
+  # anything already there is changed only if it is a token this script wrote
+  token_file_is_ours_or_die
+  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
+else
   # created with its owner, group and mode as the token is written, so it is never readable
   # by anyone else, not even for a moment under the umask
   openssl rand -hex 32 | sudo install -m 0640 -o root -g "$SVC_USER" /dev/stdin "$TOKEN_FILE"
   printf 'wrote a new token to %s\n' "$TOKEN_FILE"
-else
-  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
 fi
-# Group-read for the service user, and verified rather than assumed.
-sudo chgrp "$SVC_USER" "$TOKEN_FILE"
+# Group-read for the service user, and verified rather than assumed. -h, so a symlink is never
+# followed, though none can be there by now.
+sudo chgrp -h "$SVC_USER" "$TOKEN_FILE"
 sudo chmod 0640 "$TOKEN_FILE"
 sudo -u "$SVC_USER" test -r "$TOKEN_FILE" || die "$SVC_USER still cannot read $TOKEN_FILE.
   The bridge refuses to start rather than run with authentication silently disabled, so fix

@@ -31,9 +31,11 @@ import argparse
 import base64
 import contextlib
 import io
+import ipaddress
 import json
 import logging
 import os
+import socket
 import sys
 import threading
 import time
@@ -326,21 +328,33 @@ def runtime_owns_the_camera(duck_config_path: str) -> bool:
     return bool((config.get("expression_features") or {}).get("camera"))
 
 
-#: The addresses that reach this machine alone. This server has no token and no way to add one,
-#: so anywhere else it starts only with --allow-no-token: the owner's decision of 2026-11-16
-#: for every bridge.
-LOOPBACK = ("127.0.0.1", "localhost")
+def is_loopback(bind: str) -> bool:
+    """Whether `bind` reaches this machine alone: the name localhost in any case, or an address
+    the address module calls loopback, read as the socket layer reads it, so `127.1` is
+    127.0.0.1. This server has no token and no way to add one, so anywhere else it starts only
+    with --allow-no-token: the owner's decision of 2026-11-16 for every bridge."""
+    if bind.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(bind)
+    except ValueError:  # not in the address module's spelling: try the socket layer's for IPv4
+        try:
+            address = ipaddress.ip_address(socket.inet_aton(bind))
+        except OSError:  # no address at all, such as a name other than localhost
+            return False
+    return address.is_loopback
 
 
 def wide_bind_refusal(bind: str, *, allow_no_token: bool) -> str | None:
     """Why this server will not start: an address beyond loopback, not asked for on purpose.
     It used to warn and serve a live view of wherever the robot is to anyone on that network."""
-    if bind in LOOPBACK or allow_no_token:
+    if is_loopback(bind) or allow_no_token:
         return None
     return (
-        f"refusing to bind {bind}: this serves a live view of wherever your robot is, with no "
-        "authentication and no way to add any, to anyone on that network. Bind 127.0.0.1 and "
-        "reach it with ssh -L, or pass --allow-no-token to serve it there on purpose."
+        f"refusing to bind {bind!r}: it is not a loopback address, and this serves a live view "
+        "of wherever your robot is, with no authentication and no way to add any, to anything "
+        "that can reach it. Bind 127.0.0.1 and reach it with ssh -L, or pass --allow-no-token "
+        "to serve it there on purpose."
     )
 
 
@@ -418,7 +432,7 @@ def main(argv: list[str] | None = None) -> int:
             log.error("no camera: %s. Try --fake to check the plumbing without one.", e)
             return 2
 
-    if args.bind not in LOOPBACK:  # --allow-no-token, or it refused above
+    if not is_loopback(args.bind):  # --allow-no-token, or it refused above
         log.warning(
             "binding %s: this serves a live view of wherever your robot is, to anyone on "
             "that network, with no authentication and no way to add any. There is no control "

@@ -27,7 +27,7 @@ import logging
 import math
 import os
 import socket
-import threading
+import ssl
 import time
 import urllib.parse
 import urllib.request
@@ -161,61 +161,122 @@ def _origin(url: str) -> tuple[str, str, int]:
     return scheme, str(parts.hostname).lower(), port
 
 
+def _bound(sock: socket.socket, ends: float, within_s: float) -> None:
+    """Make the next wait on `sock` no longer than what is left before the monotonic time `ends`,
+    or raise once nothing is."""
+    left = ends - time.monotonic()
+    if left <= 0:
+        raise FrameTooSlow(f"no whole frame within {within_s:g} s")
+    sock.settimeout(left)
+
+
+class _DeadlineSocket(socket.socket):
+    """A socket on which every read and write waits no longer than what is left of the fetch's
+    one clock. `http.client` reads the headers a line at a time and the body a chunk at a time,
+    and a timeout set once before it starts lets one byte near the end buy each later read a
+    whole fresh wait: here none can, on any platform. Unbounded until `ends` is set."""
+
+    ends: float | None = None
+    within_s = 0.0
+
+    def recv_into(self, buffer: Any, nbytes: int = 0, flags: int = 0) -> int:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        return super().recv_into(buffer, nbytes, flags)
+
+    def recv(self, bufsize: int, flags: int = 0) -> bytes:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        return super().recv(bufsize, flags)
+
+    def sendall(self, data: Any, flags: int = 0) -> None:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        super().sendall(data, flags)
+
+
+class _DeadlineSSLSocket(ssl.SSLSocket):
+    """`_DeadlineSocket` for an https camera: the socket TLS wraps is not the one read from."""
+
+    ends: float | None = None
+    within_s = 0.0
+
+    def recv_into(self, buffer: Any, nbytes: int | None = None, flags: int = 0) -> int:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        return super().recv_into(buffer, nbytes, flags)
+
+    def recv(self, buflen: int = 1024, flags: int = 0) -> bytes:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        return super().recv(buflen, flags)
+
+    def sendall(self, data: Any, flags: int = 0) -> None:
+        if self.ends is not None:
+            _bound(self, self.ends, self.within_s)
+        super().sendall(data, flags)
+
+
+def _connect(host: str, port: int, ends: float, within_s: float) -> _DeadlineSocket:
+    """A socket connected to `host`, trying each address it resolves to in the order given, each
+    with its share of what is left of the clock, so a camera reachable on any of them answers.
+
+    `socket.create_connection` gave every address the whole of what was left, and on Windows a
+    refused connect takes about two seconds, so `localhost`, which resolves to `::1` first, spent
+    the deadline on `::1` and never reached a camera on 127.0.0.1. The lookup itself is the
+    system resolver's, and is not bounded here."""
+    found = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    failed: OSError | None = None
+    for tried, (family, kind, proto, _, address) in enumerate(found):
+        left = ends - time.monotonic()
+        if left <= 0:
+            break
+        sock = _DeadlineSocket(family, kind, proto)
+        sock.settimeout(left / (len(found) - tried))
+        try:
+            sock.connect(address)
+        except OSError as e:  # kept, and raised if no address answers
+            sock.close()
+            failed = e
+            continue
+        sock.ends, sock.within_s = ends, within_s
+        return sock
+    if failed is not None and time.monotonic() < ends:
+        raise failed
+    raise FrameTooSlow(f"no whole frame within {within_s:g} s") from failed
+
+
 def _get_once(
     url: str, origin: tuple[str, str, int], ends: float, within_s: float, max_bytes: int
 ) -> tuple[int, str, Any, bytes]:
     """One GET of `url`, ending by the monotonic time `ends`. A redirect or an error page is read
     only as far as one chunk, which is all its reason needs."""
     scheme, host, port = origin
-    left = ends - time.monotonic()
-    if left <= 0:
-        raise FrameTooSlow(f"no whole frame within {within_s:g} s")
+    too_slow = f"no whole frame within {within_s:g} s"
+    if time.monotonic() >= ends:
+        raise FrameTooSlow(too_slow)
     kind = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
-    conn = kind(host, port, timeout=left)
-    sockets: list[socket.socket] = []
-    cut = threading.Event()
-
-    def shut() -> None:
-        cut.set()
-        for sock in sockets:
-            with contextlib.suppress(OSError):
-                sock.shutdown(socket.SHUT_RDWR)
-
-    # The guard. It shuts the socket down at the deadline whatever the fetch is reading then,
-    # the headers or the body; on Windows that does not wake a read already waiting, so every
-    # read below also waits no longer than what is left.
-    guard = threading.Timer(left, shut)
-    guard.daemon = True
-    guard.start()
+    # No timeout of its own: the socket handed to it keeps the fetch's one clock.
+    conn = kind(host, port)
     answer: http.client.HTTPResponse | None = None
-
-    def wait_no_longer_than_is_left() -> None:
-        remaining = ends - time.monotonic()
-        if remaining <= 0 or cut.is_set():
-            raise FrameTooSlow(f"no whole frame within {within_s:g} s")
-        for sock in sockets:
-            # http.client closes the socket itself once a body has been read to its length,
-            # and a closed one has nothing left to wait for
-            if sock.fileno() >= 0:
-                sock.settimeout(remaining)
-
     try:
-        conn.connect()
-        if conn.sock is not None:
-            sockets.append(conn.sock)
-        if cut.is_set():  # the guard fired while the connect was still going on
-            shut()
+        sock: socket.socket = _connect(host, port, ends, within_s)
+        if scheme == "https":
+            context = ssl.create_default_context()
+            context.sslsocket_class = _DeadlineSSLSocket
+            # the handshake is bounded by what is left, as one wait with a deadline of its own
+            _bound(sock, ends, within_s)
+            tls = context.wrap_socket(sock, server_hostname=host)
+            if isinstance(tls, _DeadlineSSLSocket):  # always, by `sslsocket_class`
+                tls.ends, tls.within_s = ends, within_s
+            sock = tls
+        conn.sock = sock
         parts = urllib.parse.urlsplit(url)
         conn.request("GET", (parts.path or "/") + (f"?{parts.query}" if parts.query else ""))
-        wait_no_longer_than_is_left()
         answer = conn.getresponse()
         ok = 200 <= answer.status < 300
         body = bytearray()
-        while True:
-            wait_no_longer_than_is_left()
-            chunk = answer.read1(CAMERA_CHUNK_BYTES)
-            if not chunk:
-                break
+        while chunk := answer.read1(CAMERA_CHUNK_BYTES):
             body += chunk
             if not ok:
                 break
@@ -224,19 +285,18 @@ def _get_once(
                     f"the camera sent more than {max_bytes / 1e6:g} MB for one frame, which no "
                     "still picture is: give --camera-url a URL that answers one JPEG or PNG"
                 )
-        if cut.is_set():
-            raise FrameTooSlow(f"no whole frame within {within_s:g} s")
         if ok and answer.length:
             raise http.client.IncompleteRead(bytes(body), answer.length)
         return answer.status, answer.reason, answer.headers, bytes(body)
     except FrameTooSlow:
         raise
     except Exception as e:
-        if cut.is_set() or time.monotonic() >= ends:
-            raise FrameTooSlow(f"no whole frame within {within_s:g} s") from e
+        # a read the clock ended surfaces as the socket's own timeout, and may wake a hair
+        # before the clock says so
+        if isinstance(e, TimeoutError) or time.monotonic() >= ends:
+            raise FrameTooSlow(too_slow) from e
         raise
     finally:
-        guard.cancel()
         if answer is not None:
             answer.close()
         conn.close()
@@ -248,8 +308,11 @@ def fetch_frame(url: str, *, deadline_s: float, max_bytes: int) -> tuple[bytes, 
 
     `http.client` and nothing above it, so no proxy variable is read, and a redirect is followed
     only to the same scheme, host and port, at most `MAX_REDIRECTS` times. The body is read a
-    chunk at a time and refused past `max_bytes`. Every socket is shut at the deadline, so the
-    thread is done by then and nothing reads on behind a caller that has given up."""
+    chunk at a time and refused past `max_bytes`. One clock bounds it all: each address the
+    name resolves to gets its share of what is left for its connect, and every read and write
+    after that, headers included, waits no longer than what is left. So the thread is done by
+    the deadline and nothing reads on behind a caller that has given up. The name's lookup is
+    the system resolver's, and is not bounded."""
     ends = time.monotonic() + deadline_s
     origin = _origin(url)
     for _ in range(MAX_REDIRECTS + 1):

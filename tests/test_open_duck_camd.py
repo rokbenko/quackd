@@ -363,6 +363,21 @@ def test_a_wide_bind_refuses_to_start_unless_it_is_asked_to_run_open(
     assert camd.parser().parse_args([]).allow_no_token is False
 
 
+def test_every_loopback_spelling_serves_as_it_did_and_the_refusal_says_only_what_is_true(
+    camd: ModuleType,
+) -> None:
+    """The refusal compared the address with ("127.0.0.1", "localhost"), so 127.0.0.2, `127.1`,
+    `LOCALHOST` and `::1`, all of them loopback, refused, where the server had served there.
+    Loopback is what the address module calls loopback, and the name localhost in any case;
+    every other address is refused, and the refusal says of it only that it is not loopback."""
+    for loopback in ("127.0.0.2", "127.1", "LOCALHOST", "::1"):
+        assert camd.wide_bind_refusal(loopback, allow_no_token=False) is None, loopback
+    for wide in ("0.0.0.0", "::", "", "duck.local"):
+        said = camd.wide_bind_refusal(wide, allow_no_token=False)
+        assert said is not None and "not a loopback address" in said, wide
+        assert "that network" not in said, said
+
+
 # ── the transforms --fake never runs, and the geometry nobody could set ─────────────────
 
 

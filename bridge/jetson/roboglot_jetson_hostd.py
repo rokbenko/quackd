@@ -42,6 +42,7 @@ import base64
 import contextlib
 import hmac
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -1563,9 +1564,25 @@ def resolve_token(args: argparse.Namespace) -> str | None:
     return os.environ.get(TOKEN_ENV, "").strip() or None
 
 
+def is_loopback(bind: str) -> bool:
+    """Whether `bind` reaches this board alone: the name localhost in any case, or an address
+    the address module calls loopback, read as the socket layer reads it, so `127.1` is
+    127.0.0.1. `LOOPBACK` holds one of each kind, and this is the rule."""
+    if bind.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(bind)
+    except ValueError:  # not in the address module's spelling: try the socket layer's for IPv4
+        try:
+            address = ipaddress.ip_address(socket.inet_aton(bind))
+        except OSError:  # no address at all, such as a name other than localhost
+            return False
+    return address.is_loopback
+
+
 def wide_bind_warning(bind: str, token: str | None) -> str | None:
     """What to say when this is reachable from beyond the board with nothing checking who."""
-    if bind in LOOPBACK or token:
+    if is_loopback(bind) or token:
         return None
     return (
         f"binding {bind} with no token: this serves a live view of wherever this board is, "
@@ -1584,10 +1601,10 @@ def wide_bind_refusal(bind: str, token: str | None, *, allow_no_token: bool) -> 
     if allow_no_token or wide_bind_warning(bind, token) is None:
         return None
     return (
-        f"refusing to bind {bind} with no token: this would serve a live view of wherever this "
-        "board is, and a GPU anyone can keep busy, to everyone on that network. Give it a "
-        "--token-file, or bind 127.0.0.1 and use an ssh tunnel. To start it open on purpose, "
-        "pass --allow-no-token."
+        f"refusing to bind {bind!r} with no token: it is not a loopback address, and this would "
+        "serve a live view of wherever this board is, and a GPU anyone can keep busy, to "
+        "anything that can reach it. Give it a --token-file, or bind 127.0.0.1 and use an ssh "
+        "tunnel. To start it open on purpose, pass --allow-no-token."
     )
 
 

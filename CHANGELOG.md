@@ -302,21 +302,27 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   mapd names no map yet, and the place read as waiting for the robot's map to be known until the
   next session found it orphaned. It says `its map was wiped` from the moment of the wipe.
 - **Stopping the Open Duck bridge no longer lets a client walk the duck again, and ends its walk
-  loop cleanly.** On SIGTERM or Ctrl-C the bridge zeroed the command with an ordinary stop, which
+  loop with a KeyboardInterrupt, not a hard exit.** On SIGTERM or Ctrl-C the bridge zeroed the
+  command with an ordinary stop, which
   refuses a stale command only for the 300 ms deadman inside a settle of 0.5 s, so a client still
   in the middle of a `move` walked the duck again after 0.3 s, or at once after reading
   `duck.state`, and the settle cut the loop off mid-stride. A shutdown now refuses every command
   until the process ends, and an antenna gesture with `the bridge is shutting down; nothing moves
-  now`. The settle then ended in a hard exit with status 1, because the interrupt meant to end
-  the loop ran the bridge's own signal handler, so upstream's cleanup never ran and every
-  `systemctl stop` left the unit failed. It ends with a KeyboardInterrupt now, and only a second
-  signal exits at once.
+  now`, and `duck.state` says the duck is still and the stop latched for the rest of it. The
+  settle then ended in a hard exit with status 1, because the interrupt meant to end the loop
+  ran the bridge's own signal handler, so upstream's cleanup never ran and every `systemctl stop`
+  left the unit failed. It ends with a KeyboardInterrupt now, and only a second signal exits at
+  once. What upstream's walk loop does with that interrupt has not been read.
 - **The Open Duck bridge refuses a command with a number that is not finite.** Its clamp turned
   NaN into the upper bound, and its server reads the `NaN` and `Infinity` literals, so
   `{"vx": NaN}` walked the duck forward at full speed, Infinity went to the bound it pointed at,
   and a NaN head target sent the head to the end of its travel. Such a command is refused whole
   now, as a lost packet would be, and the clamp refuses a number that is not finite on its own.
   Roboglot's own client never sends one.
+- **The Open Duck bridge refuses a speed limit that is not a finite number above 0.**
+  `--max-vx nan` (or `--max-vy`, `--max-vyaw`) passed the check against upstream's own clamp,
+  because NaN compares false, and every command then reached the walk loop as NaN. NaN,
+  Infinity, 0 and a negative limit, which was taken for its size, now refuse to start.
 - **The AlohaMini host zeroes the lift before it turns any torque on.** The lift shares the left
   arm bus, and the wrapper energised both arm buses before it wrote the lift's zero, so the
   lift met torque with homing's full-speed descent still in its register, a failure on the
@@ -394,15 +400,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and the script checks that it does. `/etc/roboglot`, the script's own directory, is made and
   put right on every run as before, root's and the service user's group's, mode 0750. A
   `TOKEN_FILE` in any other directory leaves that directory as it is: the script stops, and
-  says what to run, unless the directory is no symlink, belongs to root or to the service user,
-  can be written by neither its group nor anyone else, and can be searched by the service user.
-  The token is created with its mode as it is written.
+  says what to run, unless the directory is no symlink, belongs to root, can be written by
+  neither its group nor anyone else, and can be searched by the service user. The script also
+  changed the group and mode of whatever was already at `TOKEN_FILE`, so `/etc/hostname` would
+  have become the token. It now changes only a token it wrote, this run or an earlier one (a
+  file of root's holding one line of 64 hexadecimal characters), stops on anything else there
+  and on any symlink, and creates a new token with its mode as it is written.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,
-  as on the Jetson daemon, and say how to run with no token on purpose
-  (`--token-file ""`). With no `--token-file`, a missing file at the default path is still no
-  token.
+  as on the Jetson daemon, and say how to run with no token on purpose: `--token-file ""` for a
+  named file, deleting it for the default one. With no `--token-file`, a missing file at the
+  default path is still no token. A token file that is not UTF-8 text refuses with the reason,
+  where it ended in a traceback.
 
 ### Documentation
 

@@ -673,8 +673,7 @@ def test_install_sh_puts_its_token_file_in_the_unit_and_changes_no_directory_but
         'sudo test -d "$dir"',  # it exists and is a directory
         'sudo test -L "$dir"',  # and is no symlink to somewhere else
         "stat -c '%U %a'",  # its owner and mode
-        '"$owner" != root',  # owned by root
-        '"$owner" != "$SVC_USER"',  # or by the service user
+        '"$owner" != root',  # owned by root, so nobody else can swap the token for a symlink
         "8#022",  # writable by neither its group nor anyone else
         'sudo -u "$SVC_USER" test -x "$dir"',  # and searchable by the service user
     ):
@@ -683,6 +682,135 @@ def test_install_sh_puts_its_token_file_in_the_unit_and_changes_no_directory_but
     assert not re.search(r"^\s*sudo (chgrp|chmod|chown|install)\b", check.group(0), re.M)
     # and the token is created with its mode before a byte of it is written
     assert not any('tee "$TOKEN_FILE"' in line for line in lines)
+
+
+def _usable_bash() -> str | None:
+    """A bash that runs this machine's paths: not the WSL launcher in System32 on Windows."""
+    import shutil
+
+    found = shutil.which("bash")
+    if found is None or "system32" in found.lower():
+        return None
+    try:
+        said = subprocess.run(
+            [found, "-c", "printf ok"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return found if said.stdout == "ok" else None
+
+
+#: install.sh's token step run with `sudo` stood in for: every command it is given is logged,
+#: `test` and `grep` run against a folder standing in for /, `stat` answers root and 755 (as
+#: /etc's are), and `install` writes into that folder, so nothing on this machine is changed.
+INSTALL_HARNESS = """set -euo pipefail
+SVC_USER=pi
+TOKEN_DIR=/etc/roboglot
+TOKEN_FILE='@TOKEN_FILE@'
+TOKEN_FILE_DIR="$(dirname -- "$TOKEN_FILE")"
+say() { :; }
+die() { printf 'stopped: %s\\n' "$1" >> '@LOG@'; exit 1; }
+openssl() { printf '%064d\\n' 0; }
+sudo() {
+  printf 'sudo %s\\n' "$*" >> '@LOG@'
+  local cmd="$1" a
+  local args=()
+  shift
+  if [ "$cmd" = -u ]; then shift; sudo "$@"; return; fi
+  for a in "$@"; do
+    case "$a" in /dev/*) args+=("$a") ;; /*) args+=("@ROOT@$a") ;; *) args+=("$a") ;; esac
+  done
+  local last="${args[${#args[@]}-1]}"
+  case "$cmd" in
+    test|grep) "$cmd" "${args[@]}" ;;
+    stat) printf 'root 755\\n' ;;
+    install) if [ "$1" = -d ]; then mkdir -p "$last"; else cat > "$last"; fi ;;
+    *) return 0 ;;
+  esac
+}
+"""
+
+
+@pytest.mark.parametrize(
+    "token_file, already",
+    [
+        ("/etc/hostname", "a file of the system's"),
+        ("/etc/roboglot", "the script's own directory"),
+        ("/etc/roboglot/duck-bridge.token", "a symlink to a file of the system's"),
+        ("/etc/roboglot/duck-bridge.token", "a token an earlier run wrote"),
+        ("/etc/roboglot/duck-bridge.token", "nothing"),
+        ("/etc/duck.token", "nothing"),
+    ],
+)
+def test_install_sh_changes_no_path_it_did_not_write_and_follows_no_symlink(
+    tmp_path: Path, token_file: str, already: str
+) -> None:
+    """The token step, as root, set its group and mode on whatever TOKEN_FILE named once its
+    directory passed: `/etc/hostname` became the bridge's token and lost its mode, and
+    `TOKEN_FILE=/etc/roboglot` took the search bit off the script's own directory. It now stops
+    on anything already there that it did not write (a regular file of root's holding one line
+    of 64 hexadecimal characters, which is what it writes) and on any symlink, and changes only
+    a token it writes now or wrote before. The script's own lines run here, cut out of
+    install.sh, with `sudo` stood in for, so nothing on this machine is changed."""
+    bash = _usable_bash()
+    if bash is None:
+        pytest.skip("needs a bash that runs this machine's paths")
+    import os
+    import re
+
+    text = (REPO / "bridge" / "open_duck" / "install.sh").read_text(encoding="utf-8")
+    lines = text.splitlines()
+    top = next(i for i, line in enumerate(lines) if line.startswith('case "$TOKEN_FILE" in'))
+    check = next(i for i, line in enumerate(lines) if line.startswith("secret_dir_or_die() {"))
+    ends = next(i for i in range(check, len(lines)) if lines[i].startswith("}"))
+    step = next(i for i, line in enumerate(lines) if line.startswith('say "generating a token"'))
+    read = next(
+        i for i, line in enumerate(lines) if line.startswith("printf '%s can read the token")
+    )
+    root = tmp_path / "root"
+    (root / "etc" / "roboglot").mkdir(parents=True)
+    (root / "etc" / "hostname").write_text("duckpi\n", encoding="utf-8")
+    target = root / token_file.lstrip("/")
+    if already == "a symlink to a file of the system's":
+        try:
+            os.symlink(root / "etc" / "hostname", target)
+        except OSError:
+            pytest.skip("this machine will not make a symlink for this user")
+    elif already == "a token an earlier run wrote":
+        target.write_text("ab" * 32 + "\n", encoding="utf-8")
+    log = tmp_path / "log.txt"
+    log.write_text("", encoding="utf-8")
+    harness = (
+        INSTALL_HARNESS.replace("@TOKEN_FILE@", token_file)
+        .replace("@LOG@", log.as_posix())
+        .replace("@ROOT@", root.as_posix())
+    )
+    script = tmp_path / "harness.sh"
+    script.write_bytes(
+        "\n".join(
+            [harness, *lines[top:check], *lines[check : ends + 1], *lines[step : read + 1]]
+        ).encode("utf-8")
+    )
+    run = subprocess.run([bash, str(script)], capture_output=True, text=True, timeout=60)
+    said = log.read_text(encoding="utf-8").splitlines()
+    changed = [
+        line
+        for line in said
+        if re.match(r"sudo (chgrp|chmod|chown|install)\b", line) and line.split()[-1] == token_file
+    ]
+    stopped = [line for line in said if line.startswith("stopped:")]
+    if already in ("a token an earlier run wrote", "nothing"):
+        assert not stopped and run.returncode == 0, (said, run.stderr)
+        assert any(line.startswith("sudo chgrp -h pi ") for line in changed), said
+        assert (root / token_file.lstrip("/")).read_text(encoding="utf-8").strip(), "no token"
+        if token_file.startswith("/etc/roboglot/"):
+            assert "sudo chmod 0750 /etc/roboglot" in said, "its own directory is repaired"
+        else:
+            assert not [line for line in said if line.split()[-1] == "/etc" and "ch" in line]
+    else:
+        assert stopped and run.returncode != 0, (said, run.stderr)
+        assert not changed, f"TOKEN_FILE={token_file} ({already}) was changed as root: {changed}"
+        assert (root / "etc" / "hostname").read_text(encoding="utf-8") == "duckpi\n"
 
 
 def test_serve_refuses_before_it_binds_when_upstreams_data_is_not_there(
@@ -918,6 +1046,27 @@ def test_nothing_a_client_sends_moves_the_duck_once_a_shutdown_has_begun(
     finally:
         for sig, handler in previous.items():
             signal_module.signal(sig, handler)
+
+
+def test_state_says_the_duck_is_still_and_stopped_once_a_shutdown_has_begun(
+    daemon: ModuleType,
+) -> None:
+    """A command already past the gate when the shutdown landed can store its walk after the
+    zero. The loop reads zeros whatever is stored, but `duck.state` read the stored command and
+    said `moving: true` for the whole settle, and `stop_latched` false once the latch had run
+    out. State now says what the loop is doing: still, and stopped until the process ends."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock)
+    controller = daemon.NetworkController(core)
+    hello(core)
+    core.begin_shutdown()
+    # what a command part way through `_apply` on the server thread stores after the zero
+    core.snapshot = daemon.Snapshot(seq=99, at=clock.t, vx=core.limits.vx[1], vyaw=0.5)
+    assert controller.get_last_command()[0][0] == 0.0, "setup: the loop reads zeros"
+    state = core.state()
+    assert state["moving"] is False and state["stop_latched"] is True, state
+    clock.t += core.stop_latch_s * 10
+    assert core.state()["stop_latched"] is True, "a shutdown's stop does not run out"
 
 
 def test_the_settle_ends_the_loop_with_a_keyboard_interrupt_and_a_second_signal_exits_at_once(
@@ -1167,6 +1316,80 @@ def test_a_wide_bind_with_no_token_refuses_to_start_unless_it_is_asked_to_run_op
             daemon.read_token(str(named), named=True)
         assert "Refusing to start" in str(caught.value) and str(named) in str(caught.value)
     assert daemon.read_token(str(tmp_path / "never-written.token"), named=False) is None
+
+
+def test_every_loopback_spelling_starts_as_it_did_and_the_refusal_says_only_what_is_true(
+    daemon: ModuleType,
+) -> None:
+    """The refusal compared the address with ("127.0.0.1", "localhost"), so 127.0.0.2, `127.1`,
+    `LOCALHOST` and `::1`, all of them loopback, refused to start, saying anything on this
+    network could walk the duck, where the bridge had served there. Loopback is what the
+    address module calls loopback, and the name localhost in any case; every other address is
+    refused, and the refusal says of it only that it is not loopback."""
+    refusal = daemon.wide_bind_refusal
+    for loopback in (
+        "127.0.0.1",
+        "127.0.0.2",
+        "127.1",
+        "localhost",
+        "LOCALHOST",
+        "LocalHost",
+        "::1",
+    ):
+        assert refusal(loopback, None, allow_no_token=False) is None, loopback
+    for wide in ("0.0.0.0", "::", "", "0", "192.168.1.20", "duck.local", "127.0.0.1.example"):
+        said = refusal(wide, None, allow_no_token=False)
+        assert said is not None and "not a loopback address" in said, wide
+        assert "this network" not in said, said
+
+
+def test_the_empty_token_file_refusal_names_a_way_out_that_starts(
+    daemon: ModuleType, tmp_path: Path
+) -> None:
+    """An empty token file refused with "remove it to run with no token on purpose", and a file
+    named with --token-file, as install.sh's unit now names every one, then refused again as
+    missing. Each refusal now names the way out that starts: `--token-file ""` for a named file,
+    deleting it for the default path."""
+    path = tmp_path / "duck-bridge.token"
+    path.write_text("  \n", encoding="utf-8")
+    with pytest.raises(SystemExit) as named:
+        daemon.read_token(str(path), named=True)
+    assert '--token-file ""' in str(named.value) and "remove it" not in str(named.value)
+    assert daemon.read_token("", named=True) is None, "the way out it names"
+    with pytest.raises(SystemExit) as default:
+        daemon.read_token(str(path), named=False)
+    assert "delete it" in str(default.value)
+    path.unlink()
+    assert daemon.read_token(str(path), named=False) is None, "the way out it names"
+
+
+def test_a_token_file_that_is_not_utf8_refuses_with_a_reason(
+    daemon: ModuleType, tmp_path: Path
+) -> None:
+    """It refused to start, which is safe, but with a UnicodeDecodeError traceback rather than a
+    sentence that names the file and what is wrong with it."""
+    path = tmp_path / "duck-bridge.token"
+    path.write_bytes(b"\xff\xfe\x00token")
+    with pytest.raises(SystemExit) as refused:
+        daemon.read_token(str(path), named=True)
+    assert str(path) in str(refused.value) and "UTF-8" in str(refused.value)
+
+
+@pytest.mark.parametrize("flag", ["--max-vx", "--max-vy", "--max-vyaw"])
+def test_a_speed_limit_that_is_not_a_finite_number_above_nought_refuses_to_start(
+    daemon: ModuleType, flag: str
+) -> None:
+    """`abs(nan) > bound` is False, so `--max-vx nan` passed the start check, the limit became
+    (nan, nan), and every command then reached the walk loop as NaN, because a clamp to a bound
+    that is not a number is not a number. A limit must be a finite number above nought: a
+    negative one used to be taken for its size, and nought, inf and NaN refuse too."""
+    for value in ("nan", "inf", "-inf", "0", "-0.1"):
+        args = daemon.parser().parse_args(
+            ["serve", "--fake", "--token-file", "", f"{flag}={value}"]
+        )
+        with pytest.raises(SystemExit) as refused:
+            daemon.build_core(args)
+        assert flag in str(refused.value) and "finite number above 0" in str(refused.value)
 
 
 def test_the_hello_says_whether_there_is_any_authentication(daemon: ModuleType) -> None:

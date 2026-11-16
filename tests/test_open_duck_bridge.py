@@ -432,6 +432,80 @@ async def test_a_redirect_is_followed_only_to_the_same_scheme_host_and_port() ->
         elsewhere.finish()
 
 
+@pytest.mark.parametrize("named", ["localhost", "a name whose first address refuses"])
+async def test_a_camera_name_with_several_addresses_gives_each_its_share_of_the_deadline(
+    named: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The connect tried each address a name resolves to with the whole of what was left, so an
+    address that refused slowly spent the deadline the next one needed. On Windows `localhost` is
+    `::1` first, and a refused connect there takes about two seconds, so a camera listening on
+    127.0.0.1 alone, as camd does by default, never gave a frame, where the old fetch got one.
+    Each address now gets its share of what is left, in the order given. The second case puts a
+    closed loopback port first, under a name that never reaches a resolver."""
+    camera = RawCamera(_picture)
+    camera.start()
+    host = "localhost"
+    if named != "localhost":
+        host = "camera.invalid"
+        spare = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        spare.bind(("127.0.0.1", 0))
+        closed_port = spare.getsockname()[1]
+        spare.close()
+        resolve = socket.getaddrinfo
+
+        def addresses(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name != host:
+                return resolve(name, *args, **kwargs)
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, port))
+                for address, port in (("127.0.0.1", closed_port), ("127.0.0.1", camera.port))
+            ]
+
+        monkeypatch.setattr(socket, "getaddrinfo", addresses)
+    try:
+        t = OpenDuckBridge(camera_url=f"http://{host}:{camera.port}/snapshot.jpg")
+        assert await t.get_frame() is not None, t.camera_error
+    finally:
+        camera.finish()
+
+
+def test_a_header_byte_just_before_the_deadline_does_not_buy_a_second_deadline() -> None:
+    """The socket's timeout was set once, to what was left, before `getresponse()`, which then
+    read every header line under it. On Windows a shutdown does not wake a read already waiting,
+    so one byte of a header arriving just before the deadline bought the next read a whole
+    further timeout, and the fetch ended near twice its deadline. Every read now waits no longer
+    than what is left of the one clock, headers included."""
+    slack_s = client.CAMERA_TIMEOUT_S / 4  # scheduling, not a second read's worth of waiting
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    done = threading.Event()
+
+    def camera() -> None:
+        conn, _ = server.accept()
+        try:
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 200 OK\r\n")
+            time.sleep(client.CAMERA_TIMEOUT_S * 0.9)
+            conn.sendall(b"X")
+            done.wait(client.CAMERA_TIMEOUT_S * 5)
+        finally:
+            conn.close()
+
+    threading.Thread(target=camera, daemon=True).start()
+    started = time.monotonic()
+    with pytest.raises(client.FrameTooSlow):
+        client.fetch_frame(
+            f"http://127.0.0.1:{server.getsockname()[1]}/snapshot.jpg",
+            deadline_s=client.CAMERA_TIMEOUT_S,
+            max_bytes=client.CAMERA_MAX_BYTES,
+        )
+    took = time.monotonic() - started
+    done.set()
+    server.close()
+    assert took <= client.CAMERA_TIMEOUT_S + slack_s, f"the fetch took {took:.2f} s"
+
+
 async def test_a_protocol_mismatch_refuses_rather_than_guessing() -> None:
     fake = FakeBridge(protocol_version=PROTOCOL_VERSION + 1)
     await fake.start()

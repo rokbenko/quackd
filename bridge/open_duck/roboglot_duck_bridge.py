@@ -32,6 +32,7 @@ import _thread
 import argparse
 import contextlib
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -568,13 +569,17 @@ class BridgeCore:
 
     def state(self) -> dict[str, Any]:
         snap = self.snapshot
+        # Once a shutdown has begun the loop reads zeros whatever the snapshot holds (see
+        # `may_move`), and a command part way through `_apply` can still store a walk after the
+        # zero, so the state reports what the loop does: still, and stopped for good.
+        may_move = self.may_move()
         return {
             "t": self.now(),
             "seq": snap.seq,
             "policy_running": not self.paused,
             "fallen": self.fallen,
             "fall_detection": self.fallen is not None,
-            "moving": bool(snap.vx or snap.vy or snap.vyaw),
+            "moving": may_move and bool(snap.vx or snap.vy or snap.vyaw),
             "loop_hz": round(self.loop_hz, 1),
             "ticks": self.ticks,
             "command_age_ms": int((self.now() - snap.at) * 1000),
@@ -583,7 +588,7 @@ class BridgeCore:
             "head_target": list(self.head_target),
             "head_yaw_deg": math.degrees(self.head_now[HEAD_ORDER.index("head_yaw")]),
             "deadman_tripped": self.deadman_tripped,
-            "stop_latched": self.now() < self.stopped_until,
+            "stop_latched": not may_move or self.now() < self.stopped_until,
             # so a client that missed a stop's reply can resynchronise from any state read
             # rather than having its commands dropped until the window expires
             "stop_epoch": self.stop_epoch,
@@ -926,9 +931,23 @@ def runtime_commit(script: str) -> str | None:
 #: Where the token is read from when --token-file names no file. A file here that does not exist
 #: is no token, because this path is named whether or not anyone wrote the file.
 DEFAULT_TOKEN_FILE = "/etc/roboglot/duck-bridge.token"
-#: The addresses that reach this machine alone. Anywhere else with no token is refused unless
-#: --allow-no-token says it is on purpose: the owner's decision of 2026-11-16 for every bridge.
-LOOPBACK = ("127.0.0.1", "localhost")
+
+
+def is_loopback(bind: str) -> bool:
+    """Whether `bind` reaches this machine alone: the name localhost in any case, or an address
+    the address module calls loopback, read as the socket layer reads it, so `127.1` is
+    127.0.0.1. Anywhere else with no token is refused unless --allow-no-token says it is on
+    purpose: the owner's decision of 2026-11-16 for every bridge."""
+    if bind.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(bind)
+    except ValueError:  # not in the address module's spelling: try the socket layer's for IPv4
+        try:
+            address = ipaddress.ip_address(socket.inet_aton(bind))
+        except OSError:  # no address at all, such as a name other than localhost
+            return False
+    return address.is_loopback
 
 
 def read_token(path: str | None, *, named: bool = False) -> str | None:
@@ -964,10 +983,23 @@ def read_token(path: str | None, *, named: bool = False) -> str | None:
             "read it — check the owner and mode, or point --token-file somewhere it can. "
             "Refusing to start with authentication silently disabled."
         ) from e
-    if not token:
+    except UnicodeDecodeError as e:
         raise SystemExit(
-            f"the token file {path} is empty. Write a token into it, or remove it to run with "
-            "no token on purpose. Refusing to start with authentication silently disabled."
+            f"the token file {path} is not UTF-8 text ({e}). Write the token into it as text, "
+            "as openssl rand -hex 32 does. Refusing to start with authentication silently "
+            "disabled."
+        ) from e
+    if not token:
+        # A named file that is missing refuses too, so deleting it is a way out only for the
+        # default path; for a named one it is the empty name.
+        way_out = (
+            'give --token-file "" to run with no token on purpose'
+            if named
+            else "delete it to run with no token on purpose"
+        )
+        raise SystemExit(
+            f"the token file {path} is empty. Write a token into it, or {way_out}. Refusing to "
+            "start with authentication silently disabled."
         )
     return token
 
@@ -975,12 +1007,13 @@ def read_token(path: str | None, *, named: bool = False) -> str | None:
 def wide_bind_refusal(bind: str, token: str | None, *, allow_no_token: bool) -> str | None:
     """Why this bridge will not start: an address beyond loopback with no token, not asked
     for on purpose. It used to warn and serve, and this port walks a robot."""
-    if bind in LOOPBACK or token or allow_no_token:
+    if is_loopback(bind) or token or allow_no_token:
         return None
     return (
-        f"refusing to bind {bind} with no token: anything on this network could walk your "
-        f"duck. Write a token to {DEFAULT_TOKEN_FILE} or name one with --token-file, or bind "
-        "127.0.0.1 and use ssh -L. To start it open on purpose, pass --allow-no-token."
+        f"refusing to bind {bind!r} with no token: it is not a loopback address, so anything "
+        f"that can reach it could walk your duck. Write a token to {DEFAULT_TOKEN_FILE} or name "
+        "one with --token-file, or bind 127.0.0.1 and use ssh -L. To start it open on purpose, "
+        "pass --allow-no-token."
     )
 
 
@@ -1023,9 +1056,11 @@ def install_settle(
 
     The handler itself does two cheap things and returns. A helper thread then waits out the
     settle window — during which the still-running loop consumes ~25 ticks of zero velocity
-    and comes to a stand — before raising KeyboardInterrupt in the main thread, so upstream's
-    own cleanup and ours both run inside the unit's TimeoutStopSec. A second signal gives up
-    waiting and exits now.
+    and comes to a stand — before raising KeyboardInterrupt in the main thread, so that
+    upstream's own handling of it and our cleanup run inside the unit's TimeoutStopSec. What
+    upstream's walk loop does with that KeyboardInterrupt has not been read (UNVERIFIED, on the
+    adapter's page). The hard exit stays behind it: a second signal gives up waiting and exits
+    now, and systemd kills the unit at its TimeoutStopSec.
 
     Torque stays on throughout: `stop_is_limp` is False by design, and de-energising a
     standing duck drops it.
@@ -1165,6 +1200,15 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         ("--max-vy", args.max_vy, VY[1]),
         ("--max-vyaw", args.max_vyaw, VYAW[1]),
     ):
+        # `abs(nan) > bound` is False, so NaN passed the check below and became the limit, and
+        # a clamp to a bound that is not a number is not a number: every command then reached
+        # the walk loop as NaN. A negative one used to be taken for its size, nought is no
+        # ceiling for an axis Roboglot drives, and Infinity is past every clamp.
+        if not (math.isfinite(asked) and asked > 0):
+            raise SystemExit(
+                f"{name}={asked} is not a finite number above 0. It is the fastest Roboglot may "
+                "ask this robot for on that axis."
+            )
         if abs(asked) > bound + 1e-9:
             raise SystemExit(
                 f"{name}={asked} is above the runtime's own clamp of {bound}. Roboglot never "
@@ -1361,7 +1405,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.duck_config,
             )
             return 2
-    if args.bind not in LOOPBACK and core.token is None:  # --allow-no-token, or it refused above
+    if not is_loopback(args.bind) and core.token is None:  # --allow-no-token, or it refused
         log.warning(
             "binding %s with no token: anything on this network can walk your duck. Write a "
             "token to %s, or bind 127.0.0.1 and use ssh -L.",

@@ -1895,6 +1895,23 @@ def test_a_wide_bind_with_no_token_refuses_to_start_unless_it_is_asked_to_run_op
     assert hostd.parser().parse_args([]).allow_no_token is False
 
 
+def test_every_loopback_spelling_starts_as_it_did_and_the_refusal_says_only_what_is_true(
+    hostd: ModuleType,
+) -> None:
+    """The refusal compared the address with ("127.0.0.1", "localhost", "::1"), so 127.0.0.2,
+    `127.1` and `LOCALHOST`, all of them loopback, refused to start, where the daemon had served
+    there with a warning only off loopback. Loopback is what the address module calls loopback,
+    and the name localhost in any case; every other address is refused, and the refusal says of
+    it only that it is not loopback."""
+    for loopback in ("127.0.0.2", "127.1", "LOCALHOST", "::1"):
+        assert hostd.wide_bind_refusal(loopback, None, allow_no_token=False) is None, loopback
+        assert hostd.wide_bind_warning(loopback, None) is None, loopback
+    for wide in ("0.0.0.0", "::", "", "jetson.local"):
+        said = hostd.wide_bind_refusal(wide, None, allow_no_token=False)
+        assert said is not None and "not a loopback address" in said, wide
+        assert "that network" not in said, said
+
+
 def test_it_serves_on_ipv6_loopback_too(hostd: ModuleType, tmp_path: Path) -> None:
     daemon = hostd.Hostd(board_root=str(tmp_path))
     try:

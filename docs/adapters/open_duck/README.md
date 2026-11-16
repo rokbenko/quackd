@@ -236,6 +236,7 @@ less than its name suggests, and they are worth knowing before you write a task.
 | `SOUND_FILE_NAMES` | Roboglot sends a mood from its own vocabulary and never spells a `.wav` name; the bridge logs it and presses the random-sound button |
 | `ANTENNA_GESTURES` | perk, droop and wiggle are Roboglot's words, turned into servo positions by the bridge |
 | `LOOP_HEADROOM` | the bridge reports its loop rate and Roboglot's heartbeat fails below 35 Hz, so a starved Pi aborts a run instead of walking badly |
+| the walk loop on a KeyboardInterrupt | nobody here has read what upstream's walk loop does with the KeyboardInterrupt that ends the bridge's shutdown settle: whether it de-energises the servos, or catches it and loops on. The bridge sends it after the settle so the loop's own handling can run. The hard exit stays behind it: a second SIGTERM or Ctrl-C exits at once, and systemd kills the unit at its `TimeoutStopSec` |
 
 ## How to help
 

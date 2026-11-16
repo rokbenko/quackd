@@ -96,7 +96,7 @@ python roboglot_duck_bridge.py check          # what this duck would advertise, 
 | `--allow-no-token` | off | start on an address beyond loopback with no token, on purpose. Without it the bridge refuses to |
 | `--camera-url` | none | the snapshot URL to advertise. **Without it the bridge reports no camera** |
 | `--deadman-ms` | `300` | how long silence is tolerated before the velocities go to zero |
-| `--max-vx`, `--max-vy`, `--max-vyaw` | `0.15`, `0.2`, `1.0` | your own ceilings. Above upstream's own numbers the bridge refuses to start |
+| `--max-vx`, `--max-vy`, `--max-vyaw` | `0.15`, `0.2`, `1.0` | your own ceilings. Above upstream's own numbers the bridge refuses to start, and so it does for one that is not a finite number above 0 |
 | `--enable-head` | off | EXPERIMENTAL. Upstream warns head control can break the head |
 | `--head-safety` | `0.8` | the fraction of upstream's head range Roboglot will use. Refused outside (0, 1] |
 | `--workdir` | the script's own directory | where upstream's loop runs from. It opens `polynomial_coefficients.pkl` by relative path, so this has to be the directory holding it |
@@ -172,6 +172,10 @@ to see the difference between the description and your duck.
 
 Never run on a physical duck by us. The protocol is exercised end to end in Roboglot's test
 suite, against this daemon, over loopback. That makes "the protocol works" a fact and keeps
-"the duck walked" a claim nobody has earned yet. If you run it on yours, please open an issue:
+"the duck walked" a claim nobody has earned yet. UNVERIFIED as well: what upstream's walk loop
+does with the KeyboardInterrupt that ends the shutdown settle has not been read, so whether it
+de-energises the servos or catches it and loops on is unknown. The hard exit stays behind it: a
+second SIGTERM or Ctrl-C exits at once, and systemd kills the unit at its `TimeoutStopSec`. If
+you run it on yours, please open an issue:
 [`docs/adapters/open_duck/hardware-checklist.md`](../../docs/adapters/open_duck/hardware-checklist.md)
 says what to send.
