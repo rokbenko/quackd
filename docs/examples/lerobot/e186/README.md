@@ -66,7 +66,7 @@ drive> quit
 
 | | |
 |---|---|
-| roboglot version | 0.34.0 |
+| Roboglot version | 0.34.0 |
 | Started | 2026-11-10 14:36:06 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |

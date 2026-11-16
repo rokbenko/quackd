@@ -67,7 +67,7 @@ toy-sized robot has no computer on board that can run Roboglot, so neither carri
 
 - **Not remote control.** A peer can ask for a pause or for a robot to identify itself, and nothing
   else reaches its body.
-- **Not a coordinator.** A roboglot team divides work among robots a person put in it; a passport
+- **Not a coordinator.** A Roboglot team divides work among robots a person put in it; a passport
   only lets robots outside it be known.
 - **Not a benchmark,** a replacement for ROS 2, A2A, VDA 5050 or Matter, navigation, or encryption.
 

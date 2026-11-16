@@ -59,7 +59,7 @@ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e114/as-fast-as
 
 | | |
 |---|---|
-| roboglot version | 0.31.3 |
+| Roboglot version | 0.31.3 |
 | Started | 2026-11-06 17:39:00 UTC |
 | Robot | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` |
@@ -100,12 +100,12 @@ roboglot run docs/examples/lerobot/e114/as-fast-as-you-can.glot --robot lerobot:
 $ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e114/as-fast-as-you-can.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory --dry-run
 Roboglot 0.31.3, started 2026-11-06T17:38:56Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 e114-as-fast-as-you-can ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 e114-as-fast-as-you-can ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
 │ mode      DRY RUN: every intent is printed and nothing is sent                                                                                           │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 

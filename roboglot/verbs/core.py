@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 MOVE_RESEND_S = 0.1
 #: How long a closed loop may hold its last twist while waiting for the next frame. One
-#: deadman window: past that the steering loop is stalled, and a duck that stops is right.
+#: deadman window: past that the steering loop is stalled, and a robot that stops is right.
 HOLD_TTL_S = 0.3
 MAX_VX = 0.3
 MAX_VY = 0.2
@@ -160,7 +160,7 @@ async def _twist(ctx: VerbContext, vx: float, vy: float, wz: float) -> None:
     `move` has always ended at a refused twist, through `send_or_fail`. `go_to`, `search_scan`
     and the helpers they steer through threw the answer away, so a body that would not take a
     twist was steered on regardless: `go_to` ran out its whole timeout and said only that it
-    had timed out, and `search_scan` reported a full sweep of a duck that never turned, which a
+    had timed out, and `search_scan` reported a full sweep of a robot that never turned, which a
     pilot reads as the target not being in the room. A Microduck's transport refuses a twist
     once the duck has stopped standing or robotd has stopped showing the twists it was sent, and
     every body refuses one it cannot deliver, a dropped link above all, so each of those reached
@@ -354,10 +354,10 @@ async def _see_holding(
     walks while looking. Over the ssh tunnel the checklist mandates, a single latency spike
     past ~200 ms zeroed the velocity mid-stride with nothing in the log to say why.
 
-    A free-running pump inside the transport would be worse: it would keep the duck walking
+    A free-running pump inside the transport would be worse: it would keep the robot walking
     blind for the whole fetch timeout, turning the deadman's meaning from "the steering loop
     is alive" into "the socket is up". This holds only the last justified twist, and only
-    for one deadman window — after that the steering loop really is stalled, and a duck that
+    for one deadman window — after that the steering loop really is stalled, and a robot that
     stops is the right outcome.
 
     So when the window closes with the frame still out, this sends one zero twist itself
@@ -697,7 +697,7 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
         try:
             await _turn(ctx, math.radians(step))
         except _Refused as refused:
-            # how far it really turned, the turn it was refused in not counted: a scan of a duck
+            # how far it really turned, the turn it was refused in not counted: a scan of a robot
             # that never turned used to report the whole sweep, the target not in it
             stopped, taken = _scan_stopped(ctx, starts, steps, step)
             return await _stopped_by(ctx, "search_scan", stopped, refused, steps=taken)
@@ -786,7 +786,7 @@ def _measures_first(ctx: VerbContext) -> bool:
     the same turn held, and a frame steers from the moment it was taken until a newer one
     replaces it, which on a camera whose fetch can take as long as its period is up to two
     periods. The law covers a whole bearing in STEER_TURN_S of holding one, so where two periods
-    are longer than that, one measurement turns the duck past what it measured, and the next,
+    are longer than that, one measurement turns the robot past what it measured, and the next,
     taken before the turn, says to go on turning. On mediad's `/frame`, asked at two frames a
     second, a model of the duck turned a ball out of an alpha's 37° view that way, and the lost
     branch then turned away from it. On such a camera `go_to` turns no further than each
@@ -809,7 +809,7 @@ async def _hold(ctx: VerbContext, twist: tuple[float, float, float], seconds: fl
 
 async def _settle(ctx: VerbContext, vx: float) -> tuple[float, tuple[float, float, float] | None]:
     """End a turn of `go_to`'s: walk on straight at `vx`, or stand, for a tick while the turn
-    dies down, and return the moment after which a frame shows where the turn left the duck,
+    dies down, and return the moment after which a frame shows where the turn left the robot,
     with the twist to hold while that frame comes, which `_see_holding` holds for no more than
     a deadman window."""
     straight = _clamped(ctx, vx, 0.0, 0.0)
@@ -823,14 +823,14 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
 
     On a camera that keeps up with the steering law a frame is measured every tick and the turn
     it calls for held for that tick (STEER_GAIN). On a slower one (`_measures_first`) each turn
-    is held only for as long as it takes to cover the bearing the frame measured, then the duck
+    is held only for as long as it takes to cover the bearing the frame measured, then the robot
     walks on straight and the next frame acted on is one taken once the turn had settled, so no
     measurement turns it past what it measured, and none taken before a turn steers after it.
 
     A target lost from view is looked for by turning toward the side it was last seen on, as
     before. Measured first, no turn goes further than the bearing that called for it, so that
     side is still where the target should be, as it is on a camera that keeps up with the law.
-    It was the law's overshoot on a slow camera that sent the duck the wrong way. Measuring
+    It was the law's overshoot on a slow camera that sent the robot the wrong way. Measuring
     first, the lost branch too turns only between frames taken once its last turn had settled,
     each turn lasting STEER_TURN_S and counting for as many ticks, so it turns as far before it
     gives up as on a camera that keeps up."""

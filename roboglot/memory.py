@@ -2,7 +2,7 @@
 
 Until now every run started fresh: the transcript recorded everything and forgot it the
 moment the process exited. `RobotMemory` is the small, honest fix: one append-only JSONL
-file per robot (adapter:backend, so a mock duck and a real one never share notes),
+file per robot (adapter:backend, so a mock robot and a real one never share notes),
 holding two kinds of entry —
 
 - **notes** the LLM chose to keep (`remember`: "the ball is usually near the left wall"),

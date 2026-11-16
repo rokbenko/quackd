@@ -56,7 +56,7 @@ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e016/wave.glot 
 
 | | |
 |---|---|
-| roboglot version | 0.31.3 |
+| Roboglot version | 0.31.3 |
 | Started | 2026-11-06 17:31:44 UTC |
 | Robot | `lerobot:real` (real) |
 | LLM | `openai:gpt-6-astra`, never asked |

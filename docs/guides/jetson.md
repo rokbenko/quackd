@@ -311,7 +311,7 @@ That block came from a fake board, not a Jetson. It is what doctor printed on Wi
 `tests/fake_jetson_hostd.py` listening on port 9874, a fake of the daemon's protocol whose
 answers describe an Orin Nano with a camera and a CUDA detector, and whose board files and
 `tegrastats` line are the ones in `tests/jetson_fixtures.py`.
-[What roboglot doctor shows](#what-roboglot-doctor-shows) goes through it row by row.
+[What `roboglot doctor` shows](#what-roboglot-doctor-shows) goes through it row by row.
 
 Then the Microduck's mock, with the LLM on the board. It needs no robot, and it is the honest
 first test of the arrangement: if the run gets past its first LLM call, the LLM on the board is
@@ -332,12 +332,12 @@ fake board, with its memory row left out because that row names a path on the ma
 printed it:
 
 ```
-┌─ 🦆 hello-world ────────────────────────────────────────────────────────────────────────┐
+┌─ 💬 hello-world ────────────────────────────────────────────────────────────────────────┐
 │ provider  ollama (qwen3:4b)                                                             │
 │ robot     microduck:mock                                                                │
 │ detector  color_blob on this machine                                                    │
 │ host      127.0.0.1:9874  daemon 0.1.0  camera as an extra view, detect, tegra          │
-└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
+└─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ──────────────────────────────┘
 ```
 
 No LLM server was listening there, so that run stopped at its first LLM call with
@@ -357,12 +357,12 @@ roboglot run open-duck-lookout --robot open_duck:bridge --address tcp://127.0.0.
 ```
 
 ```
-┌─ 🦆 open-duck-lookout ──────────────────────────────────────────────────────────────────┐
+┌─ 💬 open-duck-lookout ──────────────────────────────────────────────────────────────────┐
 │ provider  ollama (qwen3:4b)                                                             │
 │ robot     open_duck:bridge                                                              │
 │ detector  yolo@host  127.0.0.1:9874  yolov8n.pt on cuda                                 │
 │ host      127.0.0.1:9874  daemon 0.1.0  camera as an extra view, detect, tegra          │
-└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
+└─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ──────────────────────────────┘
 ```
 
 That came from the same fake board with no duck at the address, so the run stopped at connect,
@@ -587,7 +587,7 @@ precaution, not a measurement.
 > advertising and accepting a link at once, address privacy and the unit across a reboot are
 > untested on a Jetson.
 
-## What roboglot doctor shows
+## What `roboglot doctor` shows
 
 With a host named, by `--host`, by the robot `--robot` names or by `ROBOGLOT_HOST`, doctor grows
 a section above the usual ones, titled for what the daemon said. It is `Jetson at HOST` when

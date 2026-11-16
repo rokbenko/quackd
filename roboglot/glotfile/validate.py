@@ -119,7 +119,7 @@ def validate_glot(
 
 
 def _why_not(manifest: RobotManifest, verb: str) -> str:
-    """Why `manifest` leaves `verb` out, in the body's own words, as a refusal ends with: a duck
+    """Why `manifest` leaves `verb` out, in the body's own words, as a refusal ends with: a robot
     whose reading keeps no map says why it does not explore (`RobotManifest.not_offered`)."""
     why = manifest.not_offered().get(verb)
     return f" ({why})" if why else ""

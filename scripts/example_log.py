@@ -576,7 +576,7 @@ def _numbers(
         asked_for = f"`{asked}`" if asked else "the default robot"
         robot = f"{asked_for} ({summary.get('transport')}), whose connect failed"
     rows: list[tuple[str, object]] = [
-        ("roboglot version", summary["version"]),
+        ("Roboglot version", summary["version"]),
         ("Started", summary["started_at"][:19].replace("T", " ") + " UTC"),
         ("Robot", robot),
         ("Pilot" if vla else "LLM", llm),

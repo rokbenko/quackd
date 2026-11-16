@@ -2,7 +2,7 @@
 
 `team.jsonl` is the team's own log, stamped in wall seconds under `t`. Each member gets a real
 solo-style `Transcript` under `robots/<name>/` for its
-verb events and frames. Per-duck dirs deliberately carry no summary.json — they are not
+verb events and frames. Per-robot dirs deliberately carry no summary.json — they are not
 solo runs and must not masquerade as ones; the rollup lives in the team summary.
 """
 

@@ -455,7 +455,7 @@ broken, and the log says `not_offered` for it without a request being made at al
 
 > [!IMPORTANT]
 > **Everything in this section is an estimate, and nobody has run any decision LLM against a
-> roboglot robot.** It combines two measured things with published ones: Roboglot's own timings from
+> Roboglot robot.** It combines two measured things with published ones: Roboglot's own timings from
 > the SO-101 run on 2026-09-15 and the size of the request Roboglot actually builds (measured against
 > the mock arm), with TypeSafe's published per-call latency and price, and OpenAI's published rate
 > for the one paragraph about `openai`. Every input is named below so you can disagree with any of

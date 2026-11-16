@@ -103,7 +103,7 @@ ref passes: read the line you cite, at the pin.
 
 Touching anything under `bridge/`? That is the code that runs on a robot, or on the board
 `--host` names, and there are four lots of it now (`open_duck/`, `alohamini/`,
-`toddlerbot/`, `jetson/`). It plays by different rules: it must never import roboglot (its
+`toddlerbot/`, `jetson/`). It plays by different rules: it must never import `roboglot` (its
 dependencies do not belong on a 512 MB Raspberry Pi), it ships in the sdist and never in
 the wheel, and it stays testable with no hardware through a fake mode of its own and a pure
 core the tests drive directly. The ToddlerBot daemon carries the most of its own safety

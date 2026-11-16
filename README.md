@@ -451,9 +451,9 @@ And the same shape with two robots instead of one, from the `team.jsonl` of a `t
 ```jsonc
 {"t": 0.94, "kind": "bus", "msg": {"src": "duck", "kind": "TALK", "to": null, "text": "duck here and ready; say hello back"}}
 {"t": 1.048, "kind": "bus", "msg": {"src": "arm", "kind": "TALK", "to": null, "text": "arm here and ready; say hello back"}}
-{"t": 1.145, "kind": "member_end", "duck": "arm", "outcome": "success", "reason": "said hello and heard back from duck", "llm_calls": 3}
+{"t": 1.145, "kind": "member_end", "robot": "arm", "outcome": "success", "reason": "said hello and heard back from duck", "llm_calls": 3}
 {"t": 1.147, "kind": "bus", "msg": {"src": "team", "kind": "TALK", "to": null, "text": "arm declared success: said hello and heard back from duck"}}
-{"t": 1.309, "kind": "member_end", "duck": "duck", "outcome": "success", "reason": "said hello and heard back from arm", "llm_calls": 4}
+{"t": 1.309, "kind": "member_end", "robot": "duck", "outcome": "success", "reason": "said hello and heard back from arm", "llm_calls": 4}
 {"t": 1.31, "kind": "bus", "msg": {"src": "team", "kind": "TALK", "to": null, "text": "duck declared success: said hello and heard back from arm"}}
 {"t": 1.318, "kind": "team_end", "outcome": "success", "reason": "every member declared success: duck, arm", "messages": 2, "llm_calls": 7}
 ```
@@ -1003,7 +1003,7 @@ The file is shown whole, every comment in it, in [docs/passport/roboglot.md](doc
 
 ```
 $ roboglot onboard show --dir ~/sim/one
-╭─ 🦆 passport one ────────────────────────────────────────────────────────────╮
+╭─ 💬 passport one ────────────────────────────────────────────────────────────╮
 │ id      did:key:z6MkrViPoM3VHyFUgoYKhNQFuF2YaZ1N8NpQ6YBEPEGApUHN  (short id  │
 │         00a1a74aa06996cc)                                                    │
 │ claim   signed by its owner's key                                            │
@@ -1152,7 +1152,7 @@ Roboglot keeps what it learns on the robot: the pins a person made in `robot.yam
 
 ```
 $ roboglot onboard status --dir ~/sim/one
-╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
+╭─ 💬 onboard one ─────────────────────────────────────────────────────────────╮
 │ passport  checks out, until 2027-10-28T20:17:54Z                             │
 │ board     sim: a computer standing in for a robot's own                      │
 │ brain     fake                                                               │

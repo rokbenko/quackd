@@ -124,7 +124,7 @@ and `roboglot serve-mcp`, and on `roboglot robot add` and `edit`, which keep it 
 the port off and it is 9874. Without the flag a command uses the host the robot keeps, then
 `ROBOGLOT_HOST`, and the token comes from `--host-token`, the robot's own, then
 `ROBOGLOT_HOST_TOKEN`. One board is one camera and one detector, so `--host` is refused for a
-fleet: `--robots`, `--team` or a team task.
+run that drives several robots: `--robots`, `--team` or a team task.
 
 **`roboglot doctor --host <board>`** reads `/hello`, `/healthz` and `/board`, parses the board's
 files on the laptop, and probes the four local LLM presets on the board rather than on the
@@ -174,12 +174,12 @@ gives that frame no detections and a note in the run's log, `go_to` and `search_
 body on it and fail with the reason, and the run never switches detector. The header names both:
 
 ```
-┌─ 🦆 find-and-kick ──────────────────────────────────────────────────────────────────────┐
+┌─ 💬 find-and-kick ──────────────────────────────────────────────────────────────────────┐
 │ provider  fake (scripted:find-and-kick)                                                 │
 │ robot     microduck:mock                                                                │
 │ detector  color_blob on this machine                                                    │
 │ host      127.0.0.1:19874  daemon 0.1.0  camera as an extra view, tegra                 │
-└─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ───────────────────────────────┘
+└─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ──────────────────────────────┘
 ```
 
 That was the Microduck's mock, with `--no-memory`, against this daemon started with

@@ -93,7 +93,7 @@ Some robots have no network API to talk to at all. The Open Duck Mini v2 is one:
 runtime reads a local gamepad and nothing else, so the adapter needed a companion daemon
 that runs on the robot, in `bridge/<name>/` at the repository root rather than inside the
 adapter package. Three rules if you find yourself there. It
-must never import roboglot, because Roboglot's dependencies do not belong on a 512 MB board.
+must never import `roboglot`, because Roboglot's dependencies do not belong on a 512 MB board.
 It ships in the core's sdist and in no wheel at all, because a Raspberry Pi copies the one
 file it needs rather than installing anything. And it
 should be testable with no hardware, which in practice means a `--fake` mode and a pure

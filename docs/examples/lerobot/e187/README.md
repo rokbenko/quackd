@@ -85,7 +85,7 @@ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-tim
 
 | | Part 1 | Part 2 |
 |---|---|---|
-| roboglot version | 0.31.3 | 0.31.3 |
+| Roboglot version | 0.31.3 | 0.31.3 |
 | Started | 2026-11-06 18:11:13 UTC | 2026-11-06 18:15:33 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` |
@@ -134,11 +134,11 @@ roboglot run docs/examples/lerobot/e187/out-of-calls.glot --robot lerobot:mock -
 $ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-calls.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 Roboglot 0.31.3, started 2026-11-06T18:11:09Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 e187-out-of-calls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 e187-out-of-calls ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
@@ -264,11 +264,11 @@ step 1/10 · llm calls 2/3, 0.3/4 min ──────────────
 $ roboglot run D:/Development/roboglot-shoot/docs/examples/lerobot/e187/out-of-time.glot --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 40 --no-memory
 Roboglot 0.31.3, started 2026-11-06T18:15:29Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 e187-out-of-time ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 e187-out-of-time ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 

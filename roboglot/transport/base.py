@@ -204,7 +204,7 @@ class RobotTransport(Protocol):
     async def close(self) -> None: ...
 
     async def get_frame(self) -> Image.Image | None:
-        """The duck's camera view, or None if this transport has no camera."""
+        """The robot's camera view, or None if this transport has no camera."""
         ...
 
     async def get_state(self) -> RobotState: ...
@@ -214,7 +214,7 @@ class RobotTransport(Protocol):
     def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]: ...
 
     async def heartbeat(self) -> None:
-        """Raise `HeartbeatError` if the duck is unreachable or unhealthy."""
+        """Raise `HeartbeatError` if the robot is unreachable or unhealthy."""
         ...
 
     async def stop(self) -> None:

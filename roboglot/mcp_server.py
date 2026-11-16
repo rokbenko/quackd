@@ -303,13 +303,13 @@ class RobotSession:
 
         `robot_load_glotfile` is a tool the *LLM* holds, so a fresh `Budget` here was the
         way out of one: a pilot that had spent its steps, or been refused a verb, could load
-        a wider duck and start counting from zero. The limits become the new contract's. The
+        a wider task and start counting from zero. The limits become the new contract's. The
         steps, the LLM calls, the clock and the failure tallies stay the session's. The seconds
         a learned policy has driven the body stay the session's from the first load on, since
         a session with no task has a policy budget of its own to spend first."""
         # "First contract" used to be spelled `budget is None`, which stopped being true when
         # a contractless session gained a default budget of its own. Ask the question
-        # directly: it is the first if no duck has been adopted yet.
+        # directly: it is the first if no task has been adopted yet.
         first = self.glot is None
         spent = self.executor.budget
         self.glot = glot

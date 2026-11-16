@@ -109,7 +109,7 @@ def _deprecated(msg: str) -> None:
 def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
     """`_deprecated`'s line for each backend these robots are on that its adapter is retiring
     (`deprecated_backend`), said once in a command however many of its robots are on the backend
-    and however many times this is asked, so a team of two ducks on one such backend is told
+    and however many times this is asked, so a team of two robots on one such backend is told
     once.
 
     Asked just before a command connects the robots it is handed, and never earlier, because
@@ -2619,7 +2619,7 @@ def _run_impl(
         from roboglot.memory import RobotMemory
 
         # keyed by adapter:backend, so a mock never inherits a real body's notes,
-        # or by the registered name, so two ducks of one kind keep separate notes
+        # or by the registered name, so two robots of one kind keep separate notes
         robot_memory = RobotMemory(here.memory_key, memory_dir)
     front = _FRONT
     cfg = RunConfig(
@@ -3854,7 +3854,7 @@ def _resolve_run(run: str | None, runs_dir: str) -> Path:
             for d in reversed(runs):
                 # Against what follows the timestamp, and only where something precedes the
                 # label there. Otherwise `roboglot log hello-world` would match the bare
-                # `<stamp>-hello-world` and quietly prefer an older unnamed run of that duck
+                # `<stamp>-hello-world` and quietly prefer an older unnamed run of that task
                 # over a newer named one, which is not what typing a task name asks for.
                 rest = _LABELLED.sub("", d.name, count=1)
                 if rest != d.name and rest != label and _ends_with_label(rest, label):
@@ -4309,7 +4309,7 @@ def log_cmd(
             prefix=f"{path.parent.name:<{width}}  " if width else "",
             prefix_style=ui.MEMBER_STYLES[i % len(ui.MEMBER_STYLES)] if width else "",
             # a replay has no CLI header in front of it, so this is where the run says what
-            # it was: which duck, which LLM, which robot, and how long connecting took
+            # it was: which task, which LLM, which robot, and how long connecting took
             header=True,
         )
         end = _replay(records, view, from_step=from_step, frames=frames) or end
@@ -7498,7 +7498,7 @@ def _memory_for(robot: str | None, memory_dir: str | None, registry_dir: str | N
     except (AdapterError, RegistryError) as e:
         # every other --robot command answers in one line, not a traceback
         _fail(str(e))
-    # a registered robot keys by its name, so two ducks of one kind keep separate notes
+    # a registered robot keys by its name, so two robots of one kind keep separate notes
     return RobotMemory(resolved.memory_key, memory_dir)
 
 

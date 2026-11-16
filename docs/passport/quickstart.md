@@ -81,7 +81,7 @@ household | 20:19:04 radio: the link to 339ce23bb9491852 opened
 pilot) met
 household | 20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) met
 household | 20:19:05 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) 
-said: hello from a roboglot robot, staying where I am
+said: hello from a Roboglot robot, staying where I am
 household | 20:19:05 g1-edu-mock: a meeting starts
 household | 20:19:05 radio: met 339ce23bb9491852 over the link
 household | 20:19:05 the meeting ended: success
@@ -89,7 +89,7 @@ household | 20:19:05 the meeting ended: success
   courier | 20:19:05 radio: 0b73bc256e01cdf6 is near, about 0.98 m (-58.8 >= 
 -65.6 dBm for 1.0 s)
   courier | 20:19:05 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
-pilot) said: hello from a roboglot robot, staying where I am
+pilot) said: hello from a Roboglot robot, staying where I am
   courier | 20:19:08 the meeting ended: success
 act appointment: they meet as known robots, and each brain hears the other by 
 name
@@ -109,7 +109,7 @@ household | 20:19:19 radio: met 8a98effc78cab7f1 over the link
 household | 20:19:19 the meeting ended: success
   courier | 20:19:19 agile-one-sn-mock: a meeting starts
   courier | 20:19:19 agile-one-sn-mock (known, agile-one-sn-mock to the pilot) 
-said: hello from a roboglot robot, staying where I am
+said: hello from a Roboglot robot, staying where I am
   courier | 20:19:22 the meeting ended: success
 act office: they share a network, so the hello goes over the LAN
 household | 20:19:32 radio: a880b71f3b96fcf5 is near, about 1.46 m (-62.6 >= 
@@ -119,11 +119,11 @@ household | 20:19:32 radio: a880b71f3b96fcf5 is near, about 1.46 m (-62.6 >=
 household | 20:19:33 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) met
 household | 20:19:33 g1-edu-mock: a meeting starts
 household | 20:19:33 g1-edu-mock (stranger, stranger-dbfd8c91 to the pilot) 
-said: hello from a roboglot robot, staying where I am
+said: hello from a Roboglot robot, staying where I am
   courier | 20:19:33 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
 pilot) met
   courier | 20:19:33 agile-one-sn-mock (stranger, stranger-4b592ebd to the 
-pilot) said: hello from a roboglot robot, staying where I am
+pilot) said: hello from a Roboglot robot, staying where I am
   courier | 20:19:33 agile-one-sn-mock: a meeting starts
   courier | 20:19:33 radio: met bdc6d2db764619e2 over the LAN
   courier | 20:19:33 the meeting ended: success
@@ -239,7 +239,7 @@ Each prints what it does, one line at a time. Robot one, then robot two, until t
 20:18:17 radio: 2ef01e9a77341d05 is near, about 1.52 m (-63.0 >= -65.6 dBm for 1.2 s)
 20:18:17 two (stranger, stranger-0406f179 to the pilot) met
 20:18:18 two: a meeting starts
-20:18:18 two (stranger, stranger-0406f179 to the pilot) said: hello from a roboglot robot, staying where I am
+20:18:18 two (stranger, stranger-0406f179 to the pilot) said: hello from a Roboglot robot, staying where I am
 20:18:21 the meeting ended: success
 ```
 
@@ -248,7 +248,7 @@ Each prints what it does, one line at a time. Robot one, then robot two, until t
 20:18:17 radio: 55fb788ac8f66da8 is near, about 1.45 m (-62.5 >= -65.6 dBm for 1.0 s)
 20:18:17 radio: meeting 55fb788ac8f66da8
 20:18:18 one (stranger, stranger-00a1a74a to the pilot) met
-20:18:18 one (stranger, stranger-00a1a74a to the pilot) said: hello from a roboglot robot, staying where I am
+20:18:18 one (stranger, stranger-00a1a74a to the pilot) said: hello from a Roboglot robot, staying where I am
 20:18:18 one: a meeting starts
 20:18:18 radio: met 55fb788ac8f66da8 over the LAN
 20:18:18 the meeting ended: success
@@ -264,7 +264,7 @@ roboglot onboard met --dir ~/sim/one
 
 ```
 $ roboglot onboard status --dir ~/sim/one
-╭─ 🦆 onboard one ─────────────────────────────────────────────────────────────╮
+╭─ 💬 onboard one ─────────────────────────────────────────────────────────────╮
 │ passport  checks out, until 2027-10-28T20:17:54Z                             │
 │ board     sim: a computer standing in for a robot's own                      │
 │ brain     fake                                                               │

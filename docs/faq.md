@@ -458,7 +458,7 @@ hardware, each member's mock is a test double of its own that shares nothing wit
 nothing checks a claimed success, and `tell` has been exercised by the scripted pilot and by no
 real LLM ([guides/team.md](guides/team.md#the-pilot-team)).
 
-**Can roboglot drive something that is not a duck?** Since 0.4, yes: a robot is an adapter
+**Can Roboglot drive something that is not a duck?** Since 0.4, yes: a robot is an adapter
 that returns a manifest, and the verbs come from the manifest. `roboglot list-adapters`
 shows the ten that ship (Microduck, a LeRobot arm, any base over rosbridge, an Open
 Duck Mini v2, an XLeRobot dual-arm cart, an AlohaMini with two arms on a lift, a ToddlerBot

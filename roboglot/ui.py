@@ -250,7 +250,7 @@ def make_console(*, stderr: bool = False, no_color: bool = False) -> TeeConsole:
 tolerate_narrow_encodings()
 # At import, not only in `configure`: Typer renders `--help` from a console of its own while
 # it is still parsing, which is before any callback of ours has run, and this project's help
-# text has a duck in it.
+# text has emoji in it.
 
 console = make_console()
 """Answers: tables, verdicts, the things you would redirect into a file."""

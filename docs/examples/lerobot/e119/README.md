@@ -102,7 +102,7 @@ roboglot robot rest-pose arm-01
 
 | | Part 1 | Part 2 | Part 3 |
 |---|---|---|---|
-| roboglot version | 0.31.3 | 0.31.3 | 0.31.3 |
+| Roboglot version | 0.31.3 | 0.31.3 | 0.31.3 |
 | Started | 2026-11-06 12:17:36 UTC | 2026-11-06 12:20:54 UTC | 2026-11-06 12:27:26 UTC |
 | Robot | `arm-01` (real) | `arm-01` (real) | `arm-01` (real) |
 | LLM | `openai:gpt-6-astra` | `openai:gpt-6-astra` | none |
@@ -155,11 +155,11 @@ roboglot run lerobot-lookout --robot lerobot:mock --llm openai:gpt-6-astra --no-
 $ roboglot run lerobot-lookout --robot arm-01 --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 Roboglot 0.31.3, started 2026-11-06T12:17:33Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. Ctrl-C twice quits at once. ────────────────────────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Ctrl-C twice quits at once. ───────────────────────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 
@@ -290,11 +290,11 @@ step 1/10 · llm calls 1/12, 0.1/3 min ─────────────�
 $ roboglot run lerobot-lookout --robot arm-01 --by-hand --camera-url 'opencv://1?name=arm' --llm openai:gpt-6-astra --max-steps 10 --no-memory
 Roboglot 0.31.3, started 2026-11-06T12:20:49Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  openai (gpt-6-astra)                                                                                                                           │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Pressing again still ends the run properly. ───────────────────────────────────────────────────────────────────────────────╯
 WARNING  no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of percent: pass      
          --fov-deg (a Pi Camera Module 2 is about 62) once you know yours.                                                                                  
 WARNING:roboglot.perception:no camera field of view given for a real camera, so detections use the simulator's 90 degrees. Distances will be out by tens of 

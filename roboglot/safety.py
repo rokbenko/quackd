@@ -1425,7 +1425,7 @@ class Heartbeat:
                 # raised used to kill this task outright, leaving the abort unset and the run
                 # with no idea the link had gone.
                 try:
-                    # "sending stop", not "stopping the duck": the heartbeat fails precisely
+                    # "sending stop", not "stopping the robot": the heartbeat fails precisely
                     # when the link is in doubt, which is when a stop is least likely to
                     # arrive. What actually stops a body whose deadman we cannot reach is the
                     # deadman itself.

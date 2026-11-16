@@ -85,7 +85,7 @@ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 -
 
 | | Part 1 | Part 2 |
 |---|---|---|
-| roboglot version | 0.34.0 | 0.34.0 |
+| Roboglot version | 0.34.0 | 0.34.0 |
 | Started | 2026-11-13 09:27:20 UTC | 2026-11-13 09:32:40 UTC |
 | Robot | `arm-01` (real), whose connect failed | `arm-01` (real), whose connect failed |
 | LLM | `fake:scripted:lerobot-lookout` | `fake:scripted:lerobot-lookout` |
@@ -131,11 +131,11 @@ roboglot run lerobot-lookout --robot lerobot:mock --llm fake --no-memory
 $ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
 Roboglot 0.34.0, started 2026-11-13T09:27:20Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  fake (scripted:lerobot-lookout)                                                                                                                │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Pressing again still ends the run properly. ───────────────────────────────────────────────────────────────────────────────╯
 WARNING  connect attempt 1 of 3 failed: SerialMotorsBus motor check failed on port 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected model:
          777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777) - 6 (expected model: 777) Full expected motor list (id:         
          model_number): {1: 777, 2: 777, 3: 777, 4: 777, 5: 777, 6: 777} Full found motor list (id: model_number): {}. LeRobot closed the port behind its   
@@ -160,11 +160,11 @@ nothing else has COM3 open (a teleoperation, a recording or a serial monitor), t
 $ roboglot run lerobot-lookout --robot arm-01 --by-hand --llm fake --max-steps 4 --no-memory
 Roboglot 0.34.0, started 2026-11-13T09:32:40Z, cwd D:\Development\lerobot-test\.venv
 
-╭─ 🦆 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
+╭─ 💬 lerobot-lookout ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ provider  fake (scripted:lerobot-lookout)                                                                                                                │
 │ robot     arm-01 (lerobot:real)                                                                                                                          │
 │ detector  color_blob on this machine  (once the body reports a camera)                                                                                   │
-╰─ Ctrl-C or q stops the duck. However often you press, the run ends properly. ────────────────────────────────────────────────────────────────────────────╯
+╰─ Ctrl-C or q stops the robot. Pressing again still ends the run properly. ───────────────────────────────────────────────────────────────────────────────╯
 kill switch: Ctrl-C — cancelling the verb and stopping the robot
 ✗ error: lerobot real: connect stopped after attempt 1 of 3, because a stop was asked for. Attempt 1 failed: SerialMotorsBus motor check failed on port 
 'COM3': Missing motor IDs: - 1 (expected model: 777) - 2 (expected model: 777) - 3 (expected model: 777) - 4 (expected model: 777) - 5 (expected model: 777)
