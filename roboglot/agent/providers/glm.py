@@ -1,4 +1,4 @@
-"""GLM as the duck's brain, over Z.ai's OpenAI-compatible endpoint.
+"""GLM as the robot's brain, over Z.ai's OpenAI-compatible endpoint.
 
 Z.ai's function-calling page is explicit where the others are silent: `tool_choice` defaults to
 `auto` and `auto` is the only value it supports. So `auto` is not a cautious guess here, it is the

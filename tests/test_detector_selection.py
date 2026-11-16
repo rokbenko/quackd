@@ -294,7 +294,7 @@ def test_a_detector_is_for_one_robot(
     both commands refuse `--detector` for `--robots`, and `run` once took it from one member."""
     result = _run(tmp_path, "--robots", robots, "--detector", "color")
     assert result.exit_code == 1, result.output
-    assert "--detector is for one robot, and a fleet has several bodies" in _flat(result)
+    assert "--detector is for one robot, and this run drives several robots" in _flat(result)
     assert nothing_connects == []
 
 
@@ -600,9 +600,9 @@ def test_serve_mcp_refuses_a_host_whose_daemon_does_not_answer(quick_hello: None
 
 @pytest.mark.parametrize("robots", ["a=microduck:mock,b=microduck:mock", "a=microduck:mock"])
 def test_serve_mcp_refuses_a_detector_for_a_team(hostd: FakeHostd, robots: str) -> None:
-    """In `run`'s words, which count a one-member `--robots` as a team too."""
+    """As `run` does, counting a one-member `--robots` as a team too."""
     with pytest.raises(
-        SystemExit, match=r"^--detector is for one robot, and a fleet has several bodies"
+        SystemExit, match=r"^--detector is for one robot, and this server serves several robots"
     ):
         team_from_flags(robots=robots, detector="color")
 

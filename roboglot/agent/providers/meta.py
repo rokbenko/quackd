@@ -1,4 +1,4 @@
-"""Meta as the duck's brain, over the Meta Model API.
+"""Meta as the robot's brain, over the Meta Model API.
 
 Not Llama. Meta serve no Llama on an API of their own any more, the old Llama API's pages
 redirecting to this one's, and what stands at `https://api.meta.ai/v1` serves Muse Wonder, Muse

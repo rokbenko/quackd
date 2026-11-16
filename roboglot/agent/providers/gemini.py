@@ -1,4 +1,4 @@
-"""Gemini as the duck's brain, via `google-genai` (optional extra).
+"""Gemini as the robot's brain, via `google-genai` (optional extra).
 
 Function calling with `mode="ANY"` so a turn always yields a call; images ride as inline
 PNG parts; tool results go back as `function_response` parts. Gemini's schema dialect

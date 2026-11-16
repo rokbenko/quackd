@@ -257,7 +257,7 @@ def test_a_host_on_the_line_is_refused_for_a_team_before_anything_connects(
     is refused, `--robots` even with one member, because it is the team spelling."""
     result = _run(tmp_path, *team, "--host", "jetson.local")
     assert result.exit_code == 1, result.output
-    assert "--host names one machine's camera and detector, and a fleet has several bodies" in (
+    assert "--host names one machine's camera and detector, and this run drives several robots" in (
         _flat(result)
     )
     assert nothing_connects == []
@@ -320,7 +320,7 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
         "abc123",
     )
     assert team.exit_code == 1, team.output
-    assert "--host-token is one board's token, and a fleet has several bodies" in _flat(team)
+    assert "--host-token is one board's token, and this run drives several robots" in _flat(team)
     for result in (alone, team):
         assert "abc123" not in result.output
     assert nothing_connects == []
@@ -330,7 +330,9 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
 def test_serve_mcp_refuses_a_typed_host_token_with_no_board() -> None:
     with pytest.raises(SystemExit, match=r"^--host-token needs a board"):
         team_from_flags(robot="microduck:mock", host_token="abc123")
-    with pytest.raises(SystemExit, match=r"^--host-token is one board's token, and a fleet"):
+    with pytest.raises(
+        SystemExit, match=r"^--host-token is one board's token, and this server serves several"
+    ):
         team_from_flags(robots="a=microduck:mock,b=microduck:mock", host_token="abc123")
 
 
@@ -584,7 +586,7 @@ def _seed(tmp_path: Path) -> Registry:
 )
 def test_serve_mcp_refuses_a_host_for_a_team(tmp_path: Path, kwargs: dict[str, Any]) -> None:
     _seed(tmp_path)
-    with pytest.raises(SystemExit, match="a fleet has several bodies"):
+    with pytest.raises(SystemExit, match="this server serves several robots"):
         team_from_flags(registry_dir=str(tmp_path), **kwargs)
 
 
@@ -627,7 +629,7 @@ def test_serve_mcp_takes_the_flag_on_its_command_line(tmp_path: Path) -> None:
         ["serve-mcp", "--robots", "a=microduck:mock,b=microduck:mock", "--host", "jetson.local"],
     )
     assert result.exit_code == 1
-    assert "a fleet has several bodies" in _flat(result)
+    assert "this server serves several robots" in _flat(result)
 
 
 # ── where the flag is offered ───────────────────────────────────────────────────────────

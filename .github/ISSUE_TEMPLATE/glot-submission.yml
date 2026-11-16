@@ -1,6 +1,6 @@
 name: .glot submission
 description: Share a .glot file (or open a PR to tasks/ directly — that is the preferred route).
-labels: ["duck"]
+labels: ["task-file"]
 body:
   - type: markdown
     attributes:
@@ -9,7 +9,7 @@ body:
   - type: input
     id: name
     attributes:
-      label: Duck name
+      label: Task name
       placeholder: e.g. guard-the-snacks
     validations:
       required: true

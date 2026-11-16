@@ -396,7 +396,7 @@ async def run_pilot_team(
     played, played_from = resolve_play(glot.frontmatter.play, play)
     transcript.write(
         "team_start",
-        duck=glot.name,
+        glot=glot.name,
         team=team_name,
         method="pilots",
         clock="wall",
@@ -495,7 +495,7 @@ async def run_pilot_team(
             result = results.setdefault(name, _ended(name, "error", "ended without a result"))
             transcript.write(
                 "member_end",
-                duck=name,
+                robot=name,
                 outcome=result.outcome,
                 reason=result.reason,
                 steps=result.steps,

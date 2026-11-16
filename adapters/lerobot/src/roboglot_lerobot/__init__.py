@@ -1,4 +1,4 @@
-"""The LeRobot adapter: a desktop arm (an SO-101 class follower) as a roboglot robot.
+"""The LeRobot adapter: a desktop arm (an SO-101 class follower) as a Roboglot robot.
 
 An arm has no legs, no head and no voice, so its manifest lists none of that: `move`,
 `go_to`, `search_scan`, `say` and `gaze` do not exist here. What it has is joints, a

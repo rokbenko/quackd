@@ -1,4 +1,4 @@
-"""DeepSeek as the duck's brain, over its OpenAI-compatible endpoint.
+"""DeepSeek as the robot's brain, over its OpenAI-compatible endpoint.
 
 DeepSeek thinks by default, and thinking mode refuses both halves of how Roboglot asks. Its
 request reference says "`required` and named tool choices are not supported in thinking mode;

@@ -534,7 +534,7 @@ def _run(tmp_path: Path, *argv: str) -> Any:
     [
         (
             ["--robots", "a=lerobot:mock,b=lerobot:mock", "--policy-url", DEAD],
-            "--policy-url is one arm's policy server, and a fleet has several bodies",
+            "--policy-url is one arm's policy server, and this run drives several robots",
         ),
         (["--robot", "microduck:mock", "--policy-url", DEAD], "microduck:mock runs no policy"),
         (["--robot", "lerobot:mock", "--policy-url", DEAD], "runs its own scripted policy"),
@@ -609,7 +609,7 @@ def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_team(
 ) -> None:
     from roboglot.mcp_server import team_from_flags
 
-    with pytest.raises(SystemExit, match="a fleet has several bodies"):
+    with pytest.raises(SystemExit, match="this server serves several robots"):
         team_from_flags(
             robots="a=lerobot:mock,b=lerobot:mock", policy_url=held.url, policy_token=TOKEN
         )

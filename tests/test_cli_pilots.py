@@ -178,11 +178,11 @@ def test_a_team_writes_no_key_into_its_summary(
 
 
 def test_a_number_for_a_team_is_refused_in_one_line(tmp_path: Path) -> None:
-    """`--team 3` was the coordinator's count of ducks, and a team is a stored one now."""
+    """`--team 3` was the coordinator's count of robots, and a team is a stored one now."""
     result = runner.invoke(app, ["run", "team-hello", "--team", "3", *_run_args(tmp_path)])
     assert result.exit_code == 1
     said = " ".join(result.output.split())
-    assert "--team 3 was a coordinator team of 3 ducks, which Roboglot no longer has" in said
+    assert "--team 3 was a coordinator team of 3 robots, which Roboglot no longer has" in said
     assert "roboglot team list" in said
     assert not (tmp_path / "runs").exists(), "nothing was written"
 

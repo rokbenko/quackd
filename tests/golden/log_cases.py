@@ -613,7 +613,19 @@ def events() -> list[tuple[str, LogEvent]]:
                 summary="no member called 'ghost'; this team is arm",
             ),
         ),
-        ("member_end", _e("member_end", 1.1, status="stopped", steps=7)),
+        (
+            "member_end",
+            # the shape `roboglot.team.pilots` writes into team.jsonl, key for key
+            _e(
+                "member_end",
+                1.1,
+                robot="arm",
+                outcome="aborted",
+                reason="stopped by the team",
+                steps=7,
+                llm_calls=7,
+            ),
+        ),
         # ── the MCP server's own kinds ──
         (
             "tool_call",

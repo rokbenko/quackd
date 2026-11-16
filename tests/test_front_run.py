@@ -149,7 +149,7 @@ def test_a_run_from_the_page_says_hello_first_end_last_and_nothing_but_json(
     start = next(r for r in _transcript(end["run_dir"]) if r["kind"] == "run_start")
     assert start["front"] == "jsonl"
     assert "--front" not in start["command"], "the record names the command to type at a terminal"
-    assert "Stop in the page stops the duck." in "".join(page.stderr)
+    assert "Stop in the page stops the robot." in "".join(page.stderr)
 
 
 @pytest.mark.parametrize("yes", [True, False], ids=["yes", "no"])

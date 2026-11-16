@@ -21,7 +21,7 @@ from roboglot.team.transcript import TeamTranscript
 
 def test_team_section_defaults_and_names() -> None:
     team = TeamSection()
-    assert team.member_names == ["duck-0", "duck-1", "duck-2"]
+    assert team.member_names == ["robot-0", "robot-1", "robot-2"]
     assert team.allocation.method == "pilots"
     named = TeamSection(members=["ada", "grace"])
     assert named.member_names == ["ada", "grace"]
@@ -39,8 +39,10 @@ def test_pilots_take_up_to_eight_members() -> None:
     """The bound is what a person can read in one terminal."""
     eight = [f"duck-{i}" for i in range(PILOTS_MAX_MEMBERS)]
     assert len(TeamSection(members=eight, allocation={"method": "pilots"}).member_names) == 8
-    with pytest.raises(ValidationError, match="2 to 8"):
+    with pytest.raises(ValidationError, match="a team needs 2 to 8 named robots"):
         TeamSection(members=[*eight, "duck-8"], allocation={"method": "pilots"})
+    with pytest.raises(ValidationError, match="a team needs 2 to 8 robots"):
+        TeamSection(members=PILOTS_MAX_MEMBERS + 1, allocation={"method": "pilots"})
 
 
 @pytest.mark.parametrize(
@@ -80,7 +82,7 @@ def test_team_block_parses_in_a_task_file_and_is_optional() -> None:
         "team:\n  members: 2\n---\n# T\nx\n"
     )
     assert glot.frontmatter.team is not None
-    assert glot.frontmatter.team.member_names == ["duck-0", "duck-1"]
+    assert glot.frontmatter.team.member_names == ["robot-0", "robot-1"]
     solo = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [stop]\n"
         "success: [x]\n---\n# T\nx\n"

@@ -1,4 +1,4 @@
-"""Grok as the duck's brain: xAI's OpenAI-compatible endpoint, so it is the OpenAI provider with
+"""Grok as the robot's brain: xAI's OpenAI-compatible endpoint, so it is the OpenAI provider with
 a different base URL, key and LLM list. Nothing else changes.
 
 xAI documents both `tool_choice="required"` and `parallel_tool_calls`, so the strict settings the

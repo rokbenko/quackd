@@ -1,4 +1,4 @@
-"""Cohere as the duck's brain, over its OpenAI compatibility endpoint.
+"""Cohere as the robot's brain, over its OpenAI compatibility endpoint.
 
 Cohere's compatibility layer takes `tools` but documents neither `tool_choice` nor
 `parallel_tool_calls` among the parameters it supports, so Roboglot sends neither. That makes Cohere

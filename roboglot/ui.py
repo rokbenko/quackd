@@ -99,7 +99,7 @@ class Glyphs:
     note: str
     team: str
     end: str
-    duck: str
+    bubble: str
     dot: str
     spinner: str
 
@@ -118,7 +118,7 @@ UNICODE = Glyphs(
     note="·",
     team="◆",
     end="■",
-    duck="\U0001f986",
+    bubble="\U0001f4ac",
     dot="·",
     spinner="dots",
 )
@@ -132,7 +132,7 @@ ASCII = Glyphs(
     note="-",
     team="#",
     end="=",
-    duck="",
+    bubble="",
     dot="-",
     spinner="line",
 )
@@ -146,7 +146,7 @@ _PLAIN = {
     "⏳": "[wip]",
     "⚠️": "[!]",
     "❌": "[no]",
-    "🦆": "duck",
+    "💬": "task",  # the speech bubble before a task panel's title
     "·": "-",  # the middle dot this project separates fields with
     "—": "-",  # an em dash the codepage has not got
     "–": "-",  # noqa: RUF001 - nor an en dash
@@ -189,7 +189,7 @@ def tolerate_narrow_encodings() -> None:
     """Stop a non-UTF-8 stdout turning Roboglot's own output into a crash.
 
     Windows uses the ANSI codepage when Python writes to a pipe, and Roboglot prints ticks and
-    a duck and the status emoji in `doctor`. On cp1252 those raise UnicodeEncodeError and
+    a speech bubble and the status emoji in `doctor`. On cp1252 those raise UnicodeEncodeError and
     take the command with them, which is why `glyphs_for` exists to avoid printing them at
     all. This is the backstop for the text Roboglot did not choose: replacing what the
     codepage cannot carry costs a glyph, and raising costs the command."""
@@ -593,8 +593,8 @@ def run_header(
 
     def build(g: Glyphs) -> RenderableType:
         head = Text()
-        if g.duck:
-            head.append(f"{g.duck} ")
+        if g.bubble:
+            head.append(f"{g.bubble} ")
         head.append(title, style=STYLES["key"])
         return Panel(
             kv_grid(rows),

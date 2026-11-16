@@ -1,4 +1,4 @@
-"""Kimi as the duck's brain, over Moonshot's OpenAI-compatible endpoint.
+"""Kimi as the robot's brain, over Moonshot's OpenAI-compatible endpoint.
 
 Moonshot's Tool Choice guide documents `auto`, `none`, `required` and a named function, and
 says a named function is refused whenever thinking is on. Its Model Parameter Reference says

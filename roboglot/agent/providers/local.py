@@ -1,4 +1,4 @@
-"""Local and open-source LLMs as the duck's brain: llama.cpp, vLLM, Ollama, LM Studio.
+"""Local and open-source LLMs as the robot's brain: llama.cpp, vLLM, Ollama, LM Studio.
 
 They all speak OpenAI's Chat Completions format, so this is the OpenAI provider with the
 knobs turned for servers that are pickier and LLMs that are weaker at tool calling:

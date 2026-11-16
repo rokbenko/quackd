@@ -87,7 +87,7 @@ def _form() -> None:
             names = bundled()
             if names:
                 task = {
-                    "glotfile": widgets.pick("_duck", "Task file", names, default="hello-world")
+                    "glotfile": widgets.pick("_glot", "Task file", names, default="hello-world")
                 }
         else:
             uploaded = st.file_uploader("A .glot file", type=["glot", "task", "brief"])

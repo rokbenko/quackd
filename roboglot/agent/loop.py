@@ -701,7 +701,7 @@ class AgentLoop:
         self.usage = Usage()
         self.llm_latency_s = 0.0
         """Seconds this run spent waiting on the LLM, every call including the ones that
-        raised. The single largest number in a roboglot run and, until now, the one a reader had
+        raised. The single largest number in a Roboglot run and, until now, the one a reader had
         to add up by hand out of the `llm` records (ADR-0040 did exactly that)."""
         self.llm_answered_s: list[float] = []
         """The seconds of each call that answered, in order, which the summary's percentiles

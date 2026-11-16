@@ -1,6 +1,6 @@
 """`roboglot serve-mcp`: a robot, or a team of them, as MCP tools over stdio.
 
-This is the second wow-demo — "I asked Claude to make the duck patrol my desk" — and it
+This is the second wow-demo — "I asked Claude to make the robot patrol my desk" — and it
 goes through the *same* `Executor` as `.glot` runs, so allowlists, confirm gates, budgets
 and the heartbeat apply to an interactive session too. Since 0.4 one server can front
 several robots (`--robots duck=microduck:mock,arm=lerobot:mock`): eight `robot_*`
@@ -953,7 +953,7 @@ def build_team_server(
     `before_connect` is handed each robot's name just before the server's start connects it
     (`ServedTeam.connect_all`)."""
     if not robots:
-        raise ValueError("a fleet needs at least one robot")
+        raise ValueError("an MCP server needs at least one robot")
     sessions: dict[str, RobotSession] = {}
     for name, transport in robots.items():
         event_log: EventLog | None = None
@@ -1239,7 +1239,7 @@ def build_server(
     log: bool = True,
 ) -> tuple[MCPServer, RobotSession]:
     """One robot, the 0.3 entry point: a team of one named after its adapter."""
-    name = adapter_name(transport) or "duck"
+    name = adapter_name(transport) or "robot"
     mcp, team = build_team_server(
         {name: transport},
         glotfile=glotfile,
@@ -1396,29 +1396,29 @@ def team_from_flags(
     hosted = [r.entry.name for r in resolved if r.entry is not None and r.entry.host]
     if as_team and (host or "").strip():
         raise SystemExit(
-            "--host names one machine's camera and detector, and a fleet has several bodies: "
-            "drop --host, or serve one robot"
+            "--host names one machine's camera and detector, and this server serves several "
+            "robots: drop --host, or serve one robot"
         )
     if as_team and hosted:
         raise SystemExit(
             f"{hosted[0]} has a host in robots.json, which names one machine's camera and "
-            "detector, and a fleet has several bodies: roboglot robot edit "
+            "detector, and this server serves several robots: roboglot robot edit "
             f"{hosted[0]} --clear host, or serve it on its own"
         )
     if as_team and (host_token or "").strip():
         raise SystemExit(
-            "--host-token is one board's token, and a fleet has several bodies and no board: "
-            "drop --host-token, or serve one robot"
+            "--host-token is one board's token, and this server serves several robots and no "
+            "board: drop --host-token, or serve one robot"
         )
     if as_team and policy is not None:
         raise SystemExit(
-            "--policy-url is one arm's policy server, and a fleet has several bodies: drop "
-            "--policy-url, or serve one arm"
+            "--policy-url is one arm's policy server, and this server serves several robots: "
+            "drop --policy-url, or serve one arm"
         )
     if as_team and map_address is not None:
         raise SystemExit(
-            "--map-address is where one robot's map answers, and a fleet has several bodies: "
-            "drop --map-address, or keep each robot's own with roboglot robot edit NAME "
+            "--map-address is where one robot's map answers, and this server serves several "
+            "robots: drop --map-address, or keep each robot's own with roboglot robot edit NAME "
             "--map-address ..."
         )
     # The one place this server's board is settled, carried on the plan so everything that
@@ -1439,8 +1439,8 @@ def team_from_flags(
             raise SystemExit(str(e)) from e
     if as_team and (detector or "").strip():
         raise SystemExit(
-            "--detector is for one robot, and a fleet has several bodies: drop --detector, or "
-            "serve one robot"
+            "--detector is for one robot, and this server serves several robots: drop "
+            "--detector, or serve one robot"
         )
     board = None
     hello = None

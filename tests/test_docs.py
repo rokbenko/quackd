@@ -2168,8 +2168,12 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
 
     ADR-0035 retired "fleet" from prose and from help text, and the code's own names have since
     followed it (`ServedTeam`, `build_team_server`). This guard reads what a person reads, which
-    for `roboglot/` means docstrings and help strings rather than identifiers, so it checks the
-    CLI's rendered help rather than the source."""
+    for `roboglot/` means docstrings, help and messages rather than identifiers, so it checks the
+    CLI's rendered help, and the string literals of the CLI and the MCP server, where its
+    refusals are, rather than a grep of the source."""
+    import io
+    import tokenize
+
     from typer.testing import CliRunner
 
     from roboglot.cli import app
@@ -2191,6 +2195,21 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
         assert "fleet" not in result.output.lower(), (
             f"`roboglot {' '.join(argv)} --help` still says fleet"
         )
+    # what the two commands that serve several robots say when they refuse: messages and hints
+    # rather than help, so no `--help` shows them, and six of each said fleet after the help
+    # had stopped. String tokens only, the pieces of an f-string included, so an identifier
+    # with the word in it cannot fail this and a message cannot hide from it.
+    pieces = {tokenize.STRING, getattr(tokenize, "FSTRING_MIDDLE", tokenize.STRING)}
+    for source in ("roboglot/cli.py", "roboglot/mcp_server.py"):
+        text = (REPO / source).read_text(encoding="utf-8")
+        said = [
+            (token.start[0], token.string)
+            for token in tokenize.generate_tokens(io.StringIO(text).readline)
+            if token.type in pieces
+        ]
+        assert len(said) > 100, f"{source}: no string literals read"
+        for line, literal in said:
+            assert "fleet" not in literal.lower(), f"{source}:{line} still says fleet: {literal}"
 
 
 def test_no_living_document_claims_the_wrong_number_of_mcp_tools() -> None:

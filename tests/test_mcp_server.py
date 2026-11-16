@@ -269,7 +269,9 @@ async def test_the_observe_tool_appends_its_log_as_text() -> None:
         frame = await client.call_tool("robot_observe", {})
         kinds = [c.type for c in frame.content]
         assert kinds == ["text", "image", "text"]  # summary, picture, log
-        assert frame.content[0].text.startswith("duck camera:") or "camera" in frame.content[0].text
+        assert (
+            frame.content[0].text.startswith("robot camera:") or "camera" in frame.content[0].text
+        )
         assert frame.content[-1].text.startswith("log:")
         assert "observe" in frame.content[-1].text
 
@@ -326,10 +328,10 @@ async def test_the_stderr_view_logs_a_call_as_one_block_at_its_end(caplog: Any) 
     async with connected() as (client, _session, _transport):
         await client.call_tool("robot_run_verb", {"verb": "quack", "params": {"text": "hi"}})
     flat = " | ".join(" ".join(m.split()) for m in caplog.messages)
-    assert "duck: tool robot_run_verb" in flat
-    assert "duck: -> sound" in flat
-    assert "duck: <- quack ok" in flat
-    assert "duck: done ok" in flat
+    assert "robot: tool robot_run_verb" in flat
+    assert "robot: -> sound" in flat
+    assert "robot: <- quack ok" in flat
+    assert "robot: done ok" in flat
 
 
 async def test_two_calls_at_once_log_two_blocks_not_an_interleaving(caplog: Any) -> None:
@@ -357,8 +359,8 @@ async def test_out_of_call_events_reach_stderr_at_once(caplog: Any) -> None:
         session.event_log.emit("note", text="heartbeat failed: gone — sending stop")
         session.event_log.emit("intent", intent="stop", params={}, accepted=True)
     flat = " | ".join(" ".join(m.split()) for m in caplog.messages)
-    assert "duck: note heartbeat failed" in flat
-    assert "duck: -> stop" in flat
+    assert "robot: note heartbeat failed" in flat
+    assert "robot: -> stop" in flat
 
 
 async def test_the_heartbeat_narrates_to_stderr_and_lands_in_no_calls_log(caplog: Any) -> None:
@@ -370,8 +372,8 @@ async def test_the_heartbeat_narrates_to_stderr_and_lands_in_no_calls_log(caplog
     async with connected(MockTransport(fail_heartbeat_after=1)) as (client, session, _transport):
         await asyncio.wait_for(session.executor.abort.wait(), timeout=2.0)
         stderr = " | ".join(" ".join(m.split()) for m in caplog.messages)
-        assert "duck: note heartbeat failed" in stderr
-        assert "duck: -> stop" in stderr  # and the emergency stop, not only the note
+        assert "robot: note heartbeat failed" in stderr
+        assert "robot: -> stop" in stderr  # and the emergency stop, not only the note
         refused = _data(await client.call_tool("robot_run_verb", {"verb": "quack"}))
     log_text = _flat(refused["log"])
     assert refused["ok"] is False and "session_aborted" in log_text
@@ -399,7 +401,7 @@ async def test_cap_lines_at_the_real_defaults_through_a_long_call(caplog: Any) -
                 {"verb": "search_scan", "params": {"target": "unicorn", "max_steps": 16}},
             )
         )
-    logged = [m.removeprefix("duck: ") for m in caplog.messages if m.startswith("duck: ")]
+    logged = [m.removeprefix("robot: ") for m in caplog.messages if m.startswith("robot: ")]
     log_text = result["log"]
     assert len(logged) > MCP_LOG_MAX_LINES, f"only {len(logged)} lines; nothing to cap"
     assert len(log_text) == MCP_LOG_MAX_LINES == 30
@@ -930,7 +932,7 @@ async def test_a_one_camera_observe_reads_back_exactly_as_it_did_before() -> Non
         frame = await client.call_tool("robot_observe", {})
         assert [c.type for c in frame.content] == ["text", "image", "text"]
         lead = frame.content[0].text
-        assert lead.startswith("duck camera: ")
+        assert lead.startswith("robot camera: ")
         assert "frame captured" not in lead, "the prefix is stripped, as it always was"
         labels = [c for c in frame.content if c.type == "text" and c.text.startswith("camera ")]
         assert not labels, f"a one-camera body named its camera: {labels}"

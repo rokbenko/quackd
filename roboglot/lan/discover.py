@@ -61,7 +61,7 @@ def _browse_zeroconf(
 def discover(
     timeout_s: float = 3.0, *, zc: Any = None, browse: Browse | None = None
 ) -> list[DiscoveredRobot]:
-    """Every roboglot robot answering within `timeout_s`, sorted by instance name."""
+    """Every Roboglot robot answering within `timeout_s`, sorted by instance name."""
     if browse is None:
         zeroconf = require_zeroconf("roboglot discover")
         owns = zc is None

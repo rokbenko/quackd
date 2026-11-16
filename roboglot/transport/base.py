@@ -1,4 +1,4 @@
-"""One interface for "a duck", whether it is a mock or 800 g of servos.
+"""One interface for "a robot", whether it is a mock or 800 g of servos.
 
 The protocol is small on purpose: frames in, state in, intents out, plus a heartbeat and a
 stop. Time is part of the interface (`now`/`sleep`) so a mock can run faster than real time

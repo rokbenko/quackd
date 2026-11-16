@@ -1,5 +1,5 @@
 name: Bug report
-description: Something quacked when it should not have.
+description: Something went wrong that should not have.
 labels: ["bug"]
 body:
   - type: input

@@ -3453,7 +3453,7 @@ def test_a_by_hand_run_stays_from_the_start_and_its_panel_says_so(
     held = runner.invoke(app, [*argv, "--by-hand"])
     said = " ".join(held.output.split())
     assert told == [True], held.output
-    assert "However often you press, the run ends properly" in said
+    assert "Ctrl-C or q stops the robot. Pressing again still ends the run properly." in said
     assert "Ctrl-C twice quits at once" not in said
     told.clear()
     plain = runner.invoke(app, argv)

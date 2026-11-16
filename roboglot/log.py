@@ -957,9 +957,11 @@ def render_events(
         word, detail = caption
         return [LogLine(word.lower(), detail, _TEAM_STYLE.get(k, "cyan"), mark="team")]
     if k == "member_end":
-        return [
-            LogLine("end", f"{d.get('status')} after {d.get('steps')} steps", "bold", mark="end")
-        ]
+        # `team.jsonl` holds one of these per member, so the line names whose end it is
+        text = f"{d.get('outcome')} after {d.get('steps')} steps"
+        if d.get("robot"):
+            text = f"{d['robot']} {text}"
+        return [LogLine("end", text, "bold", mark="end")]
     if k == "tool_call":
         args = {key: value for key, value in d.items() if key not in ("tool", "robot")}
         return [LogLine("tool", f"{d.get('tool')} {fmt_params(args)} on {d.get('robot')}", "bold")]

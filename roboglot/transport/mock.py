@@ -1,4 +1,4 @@
-"""A duck that does exactly what the test tells it to.
+"""A robot that does exactly what the test tells it to.
 
 MockTransport records every intent, serves scripted frames and states, and can be told to
 fail its heartbeat after N beats — which is how the safety layer gets tested without a

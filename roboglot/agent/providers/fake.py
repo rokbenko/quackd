@@ -638,7 +638,7 @@ def meeting_strategy(obs: Observation, step: int, history: list[Exchange]) -> To
     if names:
         return ToolCall(
             name="tell",
-            arguments={"to": names[0], "text": "hello from a roboglot robot, staying where I am"},
+            arguments={"to": names[0], "text": "hello from a Roboglot robot, staying where I am"},
         )
     if _count_calls(history, "report_state") >= len(NEARBY_PAUSES_S):
         return ToolCall(name="declare_failure", arguments={"reason": "no robot came near"})

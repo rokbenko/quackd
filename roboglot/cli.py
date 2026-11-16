@@ -1795,7 +1795,7 @@ def _parse_team_flag(team: str | None, registry_dir: str | None) -> Any:
     """`--team NAME`: the stored team's roster, read now rather than at the first connection,
     so a team with a hole in it refuses before a run directory exists.
 
-    A number is refused in one line: `--team 3` was a coordinator team of three ducks, and
+    A number is refused in one line: `--team 3` was a coordinator team of three robots, and
     `check_name` refuses to register anything that could be read as one."""
     from roboglot.registry import Registry, RegistryError
 
@@ -1804,7 +1804,7 @@ def _parse_team_flag(team: str | None, registry_dir: str | None) -> Any:
     team = team.strip()
     if team.isdigit():
         _fail(
-            f"--team {team} was a coordinator team of {team} ducks, which Roboglot no longer has",
+            f"--team {team} was a coordinator team of {team} robots, which Roboglot no longer has",
             hint="name a stored team: roboglot team list",
         )
         raise typer.Exit(code=1)  # _fail has exited; this is for the type checker
@@ -2065,14 +2065,14 @@ def _run_impl(
     hosted = [r.entry.name for r in resolved if r.entry is not None and r.entry.host]
     if as_team and (host or "").strip():
         _fail(
-            "--host names one machine's camera and detector, and a fleet has several bodies",
+            "--host names one machine's camera and detector, and this run drives several robots",
             hint="drop --host, or run the task on one body at a time",
         )
         return
     if as_team and hosted:
         _fail(
             f"{hosted[0]} has a host in robots.json, which names one machine's camera and "
-            "detector, and a fleet has several bodies",
+            "detector, and this run drives several robots",
             hint=f"roboglot robot edit {hosted[0]} --clear host, or run it on its own",
         )
         return
@@ -2080,7 +2080,7 @@ def _run_impl(
         # refused as --host is, rather than dropped: `resolve_host` refuses a typed token with
         # no board to go to, and a team never reaches it
         _fail(
-            "--host-token is one board's token, and a fleet has several bodies and no board",
+            "--host-token is one board's token, and this run drives several robots and no board",
             hint="drop --host-token, or run the task on one body at a time",
         )
         return
@@ -2088,13 +2088,13 @@ def _run_impl(
         # one server, one session at a time, and one arm's calibration it was checked against:
         # every team path builds its own members, so it would be dropped without a word
         _fail(
-            "--policy-url is one arm's policy server, and a fleet has several bodies",
+            "--policy-url is one arm's policy server, and this run drives several robots",
             hint="drop --policy-url, or run the task on one arm at a time",
         )
         return
     if as_team and map_address is not None:
         _fail(
-            "--map-address is where one robot's map answers, and a fleet has several bodies",
+            "--map-address is where one robot's map answers, and this run drives several robots",
             hint="drop --map-address, or keep each robot's own: roboglot robot edit NAME "
             "--map-address ...",
         )
@@ -2202,7 +2202,7 @@ def _run_impl(
         # even with one member, as it does for --host: serve-mcp serves one member as a team
         # and would drop the choice there, and the two commands keep one rule
         _fail(
-            "--detector is for one robot, and a fleet has several bodies",
+            "--detector is for one robot, and this run drives several robots",
             hint="drop --detector, or run the task on one body at a time",
         )
         return
@@ -2451,7 +2451,7 @@ def _run_impl(
                 host=host_choice.explicit,
                 effort=effort,
             )
-        duck_transport = make_adapter(
+        robot_transport = make_adapter(
             spec,
             # the board's camera joins the body here when it has one; the board has answered
             # its hello already, so building this asks it nothing
@@ -2470,7 +2470,7 @@ def _run_impl(
     # it hears against the arm before any torque.
     served: dict[str, Any] | None = None
     if policy is not None:
-        ask = getattr(duck_transport, "ask_policy", None)
+        ask = getattr(robot_transport, "ask_policy", None)
         try:
             served = ask() if callable(ask) else None
         except RuntimeError as e:
@@ -2482,7 +2482,7 @@ def _run_impl(
         if served is None:
             served = {"server": policy.url}
     if by_hand:
-        if not getattr(duck_transport, "supports_hand_off", False):
+        if not getattr(robot_transport, "supports_hand_off", False):
             _fail(
                 f"{spec.key} is not a body a person places by hand: only the LeRobot arm is",
                 hint="roboglot list-adapters",
@@ -2625,7 +2625,7 @@ def _run_impl(
     cfg = RunConfig(
         glot=glot,
         provider=pilot,
-        transport=duck_transport,
+        transport=robot_transport,
         detector=detector,
         dry_run=dry_run,
         confirm=allow_all if yes else (front.confirm if front is not None else _confirm_prompt),
@@ -2680,11 +2680,11 @@ def _run_impl(
                 ),
                 effort=effort,
             ),
-            hint="Stop in the page stops the duck."
+            hint="Stop in the page stops the robot."
             if front is not None
-            else "Ctrl-C or q stops the duck. However often you press, the run ends properly."
+            else "Ctrl-C or q stops the robot. Pressing again still ends the run properly."
             if by_hand
-            else "Ctrl-C or q stops the duck. Ctrl-C twice quits at once.",
+            else "Ctrl-C or q stops the robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -4680,7 +4680,7 @@ def serve_mcp(
         # parsed only to be refused in words, since a flag Typer does not know is refused in
         # its own, which say nothing about why or where it belongs
         _fail(
-            "--controller picks who flies a roboglot run, and over MCP the client flies, with no "
+            "--controller picks who flies a Roboglot run, and over MCP the client flies, with no "
             "terminal for a vla run to ask whether the arm did the task",
             hint="roboglot run --controller vla, from a terminal",
         )
