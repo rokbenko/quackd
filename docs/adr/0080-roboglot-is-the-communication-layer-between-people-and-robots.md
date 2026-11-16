@@ -1,11 +1,18 @@
 # ADR-0080: Roboglot is the communication layer between people and robots, and between robots
 
-**Status:** proposed · **Date:** 2026-11-14 · Supersedes [ADR-0002](0002-name.md) and the one-liner in [ADR-0035](0035-one-cli-for-all-your-robots.md), whose other decisions stand · Documented in the README and the [FAQ](../faq.md#the-name)
+**Status:** accepted · **Date:** 2026-11-14 · Supersedes [ADR-0002](0002-name.md) and the one-liner in [ADR-0035](0035-one-cli-for-all-your-robots.md), whose other decisions stand · Documented in the README and the [FAQ](../faq.md#the-name)
 
 **Amended 2026-11-15:** the browser simulator is gone from this repository with every other
 simulator, so it is no longer one of the ways in the Context counts, and "a duck in the
 simulator" and the simulator's domain below name nothing Roboglot has. See the CHANGELOG's
 Unreleased entry.
+
+**Amended 2026-11-16:** the last consequence below no longer holds, because the names in code
+followed the words. No name in the code Roboglot ships holds a task file under `duck`: one that
+holds the file is `glot`, and one that holds its name is `task` or `task_name`. What the robot's
+protocol, its state and the MCP server's team are called now is in the notes of the same day on
+[ADR-0017](0017-robot-adapters-and-manifest.md) and [ADR-0035](0035-one-cli-for-all-your-robots.md).
+See the CHANGELOG's Unreleased entry.
 
 ## Context
 

@@ -22,6 +22,12 @@ if TYPE_CHECKING:
     from roboglot.adapters.manifest import Datasheet, Embodiment, RobotManifest
 
 DUCK_BLURB = "a small biped duck robot (25 cm, 800 g)"
+"""The Microduck, which is the body a prompt built with no manifest at all describes."""
+
+ROBOT_BLURB = "a robot"
+"""What a body is called when its manifest has no blurb of its own. It used to borrow the
+Microduck's, so an adapter that left the field empty had its arm or its rover told it is a
+duck."""
 
 ASSESS_TASK = {
     "name": "assess_task",
@@ -853,7 +859,7 @@ def build_system_prompt(
     `state.extras` when the run connects. It belongs in the prompt rather than in every
     observation because the list is sentences and an observation line is a line."""
     fm = glot.frontmatter
-    blurb = manifest.blurb if manifest is not None and manifest.blurb else DUCK_BLURB
+    blurb = DUCK_BLURB if manifest is None else manifest.blurb or ROBOT_BLURB
     names = {v.name for v in verbs}
     # what this body actually has, not what a duck has. The fallback used to name
     # `search_scan` unconditionally, so an arm was told about a composite verb it does not
