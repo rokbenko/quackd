@@ -6,24 +6,24 @@
 "jsonrpc False sit_toggle": "f22f1677dd792898",
 "jsonrpc False sit_toggle,kick_left,kick_right": "6f3d296e174ed89b",
 "jsonrpc False unset": "6f3d296e174ed89b",
-"jsonrpc True kick_left": "d9581a2dc49ae493",
-"jsonrpc True kick_left,kick_right": "84afd9da161fe9ef",
-"jsonrpc True none": "d9581a2dc49ae493",
-"jsonrpc True sit_toggle": "ca976f747772849d",
-"jsonrpc True sit_toggle,kick_left,kick_right": "3fbf2507953e7aaa",
-"jsonrpc True unset": "3fbf2507953e7aaa",
+"jsonrpc True kick_left": "a379a0c151e16b36",
+"jsonrpc True kick_left,kick_right": "3538b6c73029e9cb",
+"jsonrpc True none": "a379a0c151e16b36",
+"jsonrpc True sit_toggle": "c9dc283091c47888",
+"jsonrpc True sit_toggle,kick_left,kick_right": "15fa02961229baee",
+"jsonrpc True unset": "15fa02961229baee",
 "mock False kick_left": "f02b1f50da55153c",
 "mock False kick_left,kick_right": "b3115b7cec69db98",
 "mock False none": "f02b1f50da55153c",
 "mock False sit_toggle": "65e90a2af444b841",
 "mock False sit_toggle,kick_left,kick_right": "68cbd5aedbdd9b2b",
 "mock False unset": "68cbd5aedbdd9b2b",
-"mock True kick_left": "c364ce134828e4c2",
-"mock True kick_left,kick_right": "4d7c3d907a57dd76",
-"mock True none": "c364ce134828e4c2",
-"mock True sit_toggle": "acdddfa6a9a0d79a",
-"mock True sit_toggle,kick_left,kick_right": "b7ae210429a9a827",
-"mock True unset": "b7ae210429a9a827"
+"mock True kick_left": "64e37990feebe1b6",
+"mock True kick_left,kick_right": "ed0737022df963ff",
+"mock True none": "64e37990feebe1b6",
+"mock True sit_toggle": "96967a8fbdc7495f",
+"mock True sit_toggle,kick_left,kick_right": "2add9b9e132c0ee2",
+"mock True unset": "2add9b9e132c0ee2"
 },
 "microduck": {
 "jsonrpc False False 62.2": "084b6b268b0c9907",
@@ -32,24 +32,24 @@
 "jsonrpc False None None": "16ce396320eceb9a",
 "jsonrpc False True 62.2": "16ce396320eceb9a",
 "jsonrpc False True None": "16ce396320eceb9a",
-"jsonrpc True False 62.2": "bce2f0e416ea7646",
-"jsonrpc True False None": "f44b0694cddc3387",
-"jsonrpc True None 62.2": "25d2d9dcbc66657c",
-"jsonrpc True None None": "35f80071935a88e3",
-"jsonrpc True True 62.2": "25d2d9dcbc66657c",
-"jsonrpc True True None": "35f80071935a88e3",
+"jsonrpc True False 62.2": "9c68cd3038099e08",
+"jsonrpc True False None": "2eda5af82de753b6",
+"jsonrpc True None 62.2": "92c181221e99de90",
+"jsonrpc True None None": "786ecf5d34de0d47",
+"jsonrpc True True 62.2": "92c181221e99de90",
+"jsonrpc True True None": "786ecf5d34de0d47",
 "mock False False 62.2": "084b6b268b0c9907",
 "mock False False None": "084b6b268b0c9907",
 "mock False None 62.2": "16ce396320eceb9a",
 "mock False None None": "16ce396320eceb9a",
 "mock False True 62.2": "16ce396320eceb9a",
 "mock False True None": "16ce396320eceb9a",
-"mock True False 62.2": "bce2f0e416ea7646",
-"mock True False None": "f44b0694cddc3387",
-"mock True None 62.2": "25d2d9dcbc66657c",
-"mock True None None": "35f80071935a88e3",
-"mock True True 62.2": "25d2d9dcbc66657c",
-"mock True True None": "35f80071935a88e3"
+"mock True False 62.2": "9c68cd3038099e08",
+"mock True False None": "2eda5af82de753b6",
+"mock True None 62.2": "92c181221e99de90",
+"mock True None None": "786ecf5d34de0d47",
+"mock True True 62.2": "92c181221e99de90",
+"mock True True None": "786ecf5d34de0d47"
 },
 "verbs": {
 "084b6b268b0c9907": [
@@ -64,6 +64,21 @@
 "stand_up",
 "quack",
 "gaze"
+],
+"15fa02961229baee": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"sit",
+"stand",
+"kick",
+"stand_up",
+"quack"
 ],
 "16ce396320eceb9a": [
 "report_state",
@@ -82,51 +97,7 @@
 "quack",
 "gaze"
 ],
-"25d2d9dcbc66657c": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"map",
-"mark_place",
-"forget_place",
-"go_to_place",
-"sit",
-"stand",
-"kick",
-"grab",
-"stand_up",
-"quack",
-"gaze",
-"watch"
-],
-"35f80071935a88e3": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"map",
-"mark_place",
-"forget_place",
-"go_to_place",
-"sit",
-"stand",
-"kick",
-"grab",
-"stand_up",
-"quack",
-"gaze",
-"watch"
-],
-"3fbf2507953e7aaa": [
+"2add9b9e132c0ee2": [
 "report_state",
 "stop",
 "say",
@@ -141,7 +112,25 @@
 "stand_up",
 "quack"
 ],
-"4d7c3d907a57dd76": [
+"2eda5af82de753b6": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"sit",
+"stand",
+"kick",
+"grab",
+"stand_up",
+"quack",
+"gaze",
+"watch"
+],
+"3538b6c73029e9cb": [
 "report_state",
 "stop",
 "say",
@@ -159,6 +148,18 @@
 "stop",
 "say",
 "move",
+"stand_up",
+"quack"
+],
+"64e37990feebe1b6": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
 "stand_up",
 "quack"
 ],
@@ -203,7 +204,7 @@
 "stand_up",
 "quack"
 ],
-"84afd9da161fe9ef": [
+"786ecf5d34de0d47": [
 "report_state",
 "stop",
 "say",
@@ -212,11 +213,42 @@
 "go_to",
 "search_scan",
 "approach_and",
+"map",
+"mark_place",
+"forget_place",
+"go_to_place",
+"sit",
+"stand",
 "kick",
+"grab",
 "stand_up",
-"quack"
+"quack",
+"gaze",
+"watch"
 ],
-"acdddfa6a9a0d79a": [
+"92c181221e99de90": [
+"report_state",
+"stop",
+"say",
+"move",
+"observe",
+"go_to",
+"search_scan",
+"approach_and",
+"map",
+"mark_place",
+"forget_place",
+"go_to_place",
+"sit",
+"stand",
+"kick",
+"grab",
+"stand_up",
+"quack",
+"gaze",
+"watch"
+],
+"96967a8fbdc7495f": [
 "report_state",
 "stop",
 "say",
@@ -230,31 +262,7 @@
 "stand_up",
 "quack"
 ],
-"b3115b7cec69db98": [
-"report_state",
-"stop",
-"say",
-"move",
-"kick",
-"stand_up",
-"quack"
-],
-"b7ae210429a9a827": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"sit",
-"stand",
-"kick",
-"stand_up",
-"quack"
-],
-"bce2f0e416ea7646": [
+"9c68cd3038099e08": [
 "report_state",
 "stop",
 "say",
@@ -272,7 +280,7 @@
 "gaze",
 "watch"
 ],
-"c364ce134828e4c2": [
+"a379a0c151e16b36": [
 "report_state",
 "stop",
 "say",
@@ -284,7 +292,16 @@
 "stand_up",
 "quack"
 ],
-"ca976f747772849d": [
+"b3115b7cec69db98": [
+"report_state",
+"stop",
+"say",
+"move",
+"kick",
+"stand_up",
+"quack"
+],
+"c9dc283091c47888": [
 "report_state",
 "stop",
 "say",
@@ -298,7 +315,7 @@
 "stand_up",
 "quack"
 ],
-"d9581a2dc49ae493": [
+"ed0737022df963ff": [
 "report_state",
 "stop",
 "say",
@@ -307,6 +324,7 @@
 "go_to",
 "search_scan",
 "approach_and",
+"kick",
 "stand_up",
 "quack"
 ],
@@ -327,24 +345,6 @@
 "stand",
 "stand_up",
 "quack"
-],
-"f44b0694cddc3387": [
-"report_state",
-"stop",
-"say",
-"move",
-"observe",
-"go_to",
-"search_scan",
-"approach_and",
-"sit",
-"stand",
-"kick",
-"grab",
-"stand_up",
-"quack",
-"gaze",
-"watch"
 ]
 }
 }

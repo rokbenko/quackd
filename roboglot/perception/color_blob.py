@@ -80,6 +80,18 @@ class ColorBlobDetector:
             assumed=assumed,
         )
 
+    def nearest_m(self, label: str, size: tuple[int, int]) -> float | None:
+        """The nearest this detector reads `label` at on a frame of `size`, or None for a label
+        it does not look for: what `detect` reads for a target as wide as the frame, whose
+        half-width is the most it measures one by once the frame cuts it off. A nearer target reads
+        this too, or a blob of the frame's colour, and is marked `clipped`."""
+        target = next((t for t in self.targets if t.label == label), None)
+        if target is None:
+            return None
+        w, _ = size
+        f = (w / 2) / math.tan(math.radians(self.fov_deg) / 2)
+        return round(f * target.size_m / (w / 2), 3)
+
     def detect(self, image: Image.Image) -> list[Detection]:
         rgb = np.asarray(image.convert("RGB"))
         h, w = rgb.shape[:2]
@@ -108,17 +120,21 @@ class ColorBlobDetector:
                 else:
                     radius_px = max(1.0, bw / 2)
                 dist = f * target.size_m / radius_px
-                out.append(
-                    Detection(
-                        label=target.label,
-                        cx=cx / w,
-                        cy=cy / h,
-                        area=area / (w * h),
-                        confidence=min(1.0, 0.5 + area / 400.0),
-                        calibrated=self.calibrated,
-                        bearing_deg=round(bearing, 1),
-                        est_distance_m=round(dist, 3),
-                    )
+                detection = Detection(
+                    label=target.label,
+                    cx=cx / w,
+                    cy=cy / h,
+                    area=area / (w * h),
+                    confidence=min(1.0, 0.5 + area / 400.0),
+                    calibrated=self.calibrated,
+                    bearing_deg=round(bearing, 1),
+                    est_distance_m=round(dist, 3),
                 )
+                # as wide as the frame, its width is cut at both sides and no nearer reading
+                # comes: only an upper bound. One cut at one side reads far as well, but turning
+                # toward it, as `go_to` does, brings the rest of it into view
+                if x <= 0 and x + bw >= w - 1:
+                    detection.mark_clipped()
+                out.append(detection)
         out.sort(key=lambda d: (d.label != "ball", d.est_distance_m or 0.0))
         return out

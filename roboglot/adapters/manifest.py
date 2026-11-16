@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from typing import Any, ClassVar, Literal
 
@@ -362,6 +363,19 @@ class RobotManifest(BaseModel):
         if len(set(values)) != len(values):
             raise ValueError(f"duplicates in {values}")
         return values
+
+    @field_validator("limits")
+    @classmethod
+    def _magnitudes(cls, limits: dict[str, float]) -> dict[str, float]:
+        """Every limit is a magnitude: a speed, a turn rate, a reach of the head or a lens's
+        width. The verbs clamp to them as they stand, so a negative `max_vx` turned a request to
+        stand still into the full speed forward, a negative `max_wz` turned the body the other
+        way, and NaN went out as the twist. Refused here, whoever wrote the manifest: an adapter,
+        a body's daemon or a peer's announce."""
+        bad = [f"{key} {value}" for key, value in limits.items() if not 0 <= value < math.inf]
+        if bad:
+            raise ValueError(f"limits must be finite and not negative: {', '.join(bad)}")
+        return limits
 
     @model_validator(mode="after")
     def _invariants(self) -> RobotManifest:

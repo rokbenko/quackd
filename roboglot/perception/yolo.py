@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, ClassVar
 
 from PIL import Image
 
@@ -26,6 +27,26 @@ COCO_TO_LABEL = {"sports ball": "ball", "person": "person", "cat": "pet", "dog":
 HEIGHT_M = {"ball": 0.10, "person": 1.6, "pet": 0.35}
 GUESSED_FOV_DEG = 62.0
 """The lens assumed when nobody said which one this is: a Pi Camera Module 2's."""
+
+EDGE_PX = 1.0
+"""How near a box's top or bottom has to come to the frame's for the frame to have cut it: into
+the outermost row of pixels. A model reports a box the frame cut at 0 or at the frame's height,
+or a pixel short of it, and the colour detector reads its blobs' edges the same way."""
+
+WIDEST_FRAME = 16 / 9
+"""The widest frame, width over height, Roboglot expects a camera to give: 16:9, the shape of a
+Microduck beta's frame at every size mediad serves (upstream's 1280 by 720) and of a webcam's HD
+modes. A lens's field of view is across the width, so the wider the frame, the shorter its height
+for that lens, and the farther the nearest reading of a box as tall as it (`frame_tall_m`)."""
+
+
+def frame_tall_m(height_m: float, w: float, h: float, fov_deg: float) -> float:
+    """What a box as tall as a `w` by `h` frame reads through a lens `fov_deg` wide, for a target
+    `height_m` tall, by `detections_from_boxes`' own arithmetic: the nearest a box detector can
+    read that target, since no box is taller than the frame. A nearer target reads this too, its
+    box cut by the frame's edges."""
+    f = (w / 2) / math.tan(math.radians(fov_deg) / 2)
+    return round(f * height_m / h, 3)
 
 
 def detections_from_boxes(
@@ -47,6 +68,10 @@ def detections_from_boxes(
 
     One function for every detector that sees boxes, so a local YOLO and one on a board reached
     with `--host` cannot drift apart: the same boxes are the same detections, to the last bit.
+
+    A box the frame cuts at its top or its bottom is shorter than the target, so its distance
+    is only an upper bound, and the detection is marked `clipped`. One cut at a side only keeps
+    its whole height and is measured as any other.
     """
     f = (w / 2) / math.tan(math.radians(fov_deg) / 2)
     out: list[Detection] = []
@@ -58,23 +83,46 @@ def detections_from_boxes(
         # float ones take the same arithmetic
         x1, y1, x2, y2 = (float(v) for v in corners)
         cx, bh = (x1 + x2) / 2, max(1.0, y2 - y1)
-        out.append(
-            Detection(
-                label=label,
-                cx=cx / w,
-                cy=(y1 + y2) / 2 / h,
-                area=(x2 - x1) * bh / (w * h),
-                confidence=float(conf),
-                bearing_deg=round(-math.degrees(math.atan((cx - w / 2) / f)), 1),
-                est_distance_m=round(f * HEIGHT_M[label] / bh, 3),
-                calibrated=calibrated,
-            )
+        detection = Detection(
+            label=label,
+            cx=cx / w,
+            cy=(y1 + y2) / 2 / h,
+            area=(x2 - x1) * bh / (w * h),
+            confidence=float(conf),
+            bearing_deg=round(-math.degrees(math.atan((cx - w / 2) / f)), 1),
+            est_distance_m=round(f * HEIGHT_M[label] / bh, 3),
+            calibrated=calibrated,
         )
+        if y1 < EDGE_PX or y2 > h - EDGE_PX:
+            detection.mark_clipped()
+        out.append(detection)
     return out
+
+
+def nearest_box_m(label: str, size: tuple[int, int], fov_deg: float) -> float | None:
+    """The nearest a box detector reads `label` at on a frame of `size` through a lens `fov_deg`
+    wide (`frame_tall_m`), or None for a label it has no height for. What `YoloDetector` and
+    `HostDetector` name as their `nearest_m`."""
+    height = HEIGHT_M.get(label)
+    if height is None:
+        return None
+    w, h = size
+    return frame_tall_m(height, w, h, fov_deg)
 
 
 class YoloDetector:
     name = "yolo"
+    blocking = True
+    """`detect` holds the thread that calls it for a whole forward pass, so `detect_off_loop` runs
+    it in a worker thread, as it does the board's detector. On the event loop the pass held up
+    everything else the loop runs: `go_to` could neither re-send its twist nor zero it once
+    `HOLD_TTL_S` had passed, and the body kept walking on its last twist for as long as the
+    frame took."""
+    _one_pass_at_a_time: ClassVar[threading.Lock] = threading.Lock()
+    """Held around each forward pass. A frame a verb stopped waiting for, when the verb ended, is
+    still in the network when the next verb's first frame comes, and a network is not safe to run
+    from two threads at once, so the next pass waits in its own thread. One lock for the process,
+    not one per detector: two detectors' passes share the machine's GPU or CPU in any case."""
     lens_at_connect = False
     """True on one `explicit_detector` built before the body connected, whose lens the loop and
     the MCP server set again from what the body reported. One built anywhere else, such as a
@@ -127,9 +175,14 @@ class YoloDetector:
             assumed=assumed,
         )
 
+    def nearest_m(self, label: str, size: tuple[int, int]) -> float | None:
+        """The nearest this detector reads `label` at on a frame of `size` (`nearest_box_m`)."""
+        return nearest_box_m(label, size, self.fov_deg)
+
     def detect(self, image: Image.Image) -> list[Detection]:
         w, h = image.size
-        results = self._model.predict(image, conf=self.conf, verbose=False)
+        with self._one_pass_at_a_time:
+            results = self._model.predict(image, conf=self.conf, verbose=False)
         boxes: list[tuple[str, float, float, float, float, float]] = []
         for res in results:
             names = res.names

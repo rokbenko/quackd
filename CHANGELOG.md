@@ -268,6 +268,63 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
   the runner writes now and names the member, as in `arm success after 0 steps`.
+- **`go_to` stops where its camera can range the target no nearer, rather than walking on into
+  it.** `go_to`, and `walk_to` and `approach_and` through it, stopped only once the detection's
+  distance fell to `stop_distance`, and a detector that reads distance off the size of a box can
+  read no nearer than a box as big as the frame. For a person on a 4:3 frame through the 62
+  degree lens a detector guesses that is 1.775 m, above the 1.5 m the verb took at most, so on any
+  body with a camera seen through YOLO, here or on a `--host` board, `go_to` toward a person walked
+  on at up to 0.2 m/s until its timeout. A pet floored at 0.388 m, past the default stop of 0.25,
+  a ball through YOLO at 0.111 m, and a ball through the colour detector on a Microduck alpha's
+  upright frame at 0.148 m, past the least stop of 0.1; a detection with no distance never
+  arrived at all. Now a stop distance nearer than the camera can measure the target is refused on
+  the first frame, before anything moves, naming the nearest it can, rounded up to the
+  centimetre; a target whose box the frame cuts, so that its reading is only an upper bound, ends
+  the approach with the body stopped and the result `as near to the person as the camera can
+  tell: it fills the frame, so it is at most ~2.37 m away`, and so does a detection that stops
+  giving a distance, quoting the last reading. That ending is not a failure that `abort_when`
+  counts and never says `reached`: its data has `at_most_m` and `cannot_range` where an arrival
+  has `distance_m`. `approach_and` runs its `then` verb only after an arrival by measurement: after
+  that ending it leaves the body stopped and fails, naming the verb it did not run and carrying
+  `at_most_m`, since the target may still be beyond the stop distance. A detection that gives no
+  distance from the start is refused. `stop_distance`
+  now goes up to 2.37 m, the nearest a person reads on a 16:9 frame through the guessed lens, so
+  the distance a refusal names can be asked for, and the parameter and the verb's description
+  say all this, which moves the fingerprint of every manifest that offers `go_to`. The detectors
+  Roboglot ships say how near they can measure and mark a detection the frame cuts; a detector of
+  your own that says neither is not guessed for, and one of its detections with no distance
+  stops the approach. `follow-me.glot` told the pilot to stop at 0.5 m and never come nearer
+  than 0.4, distances no detector can report for a person; it asks for 2 m now, takes the
+  distance a refusal names, and treats a frame the person fills as the end of a leg, and its
+  hash in `tests/golden/glot_hashes.json` is locked again to match.
+- **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
+  pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
+  twist nor zero it once its deadman window had passed, and the body kept walking on its last
+  twist for as long as the frame took; the heartbeat waited with it. The pass runs in a worker
+  thread now, as the board's detector does, one at a time, so `go_to` holds its twist for one
+  deadman window and then zeroes it while the frame is still being looked at.
+- **`go_to` says when the distance it arrived by was a guess.** Through a lens nobody measured,
+  `observe` says a distance is `(uncalibrated: distance is a rough guess)`, and `go_to`'s
+  `reached the ball: ~0.25 m away` left that out, though on a guessed lens it is the difference
+  between arriving and announcing it from half a metre away. The summary ends with the same
+  words now and the data carries `calibrated: false`. An arrival through a measured lens reads as
+  it did.
+- **A manifest whose limits are not finite, or are negative, is refused.** `limits` took any
+  number, and the verbs clamp to them as they stand: a negative `max_vx` turned a `move` asked to
+  stand still into the full speed forward, a negative `max_wz` turned the body the other way, and
+  NaN went out as the twist itself. A manifest is refused now when any limit is not finite or is
+  under nought, whoever wrote it, an adapter of your own, a body's daemon or a peer's announce,
+  and the speed clamp reads a limit that got past that as no limit at all, the schema's bound. A
+  body whose transport gives an endless `head_fade_s` is no longer waited on before `go_to` looks.
+- **A head sweep the body refused no longer reads as one that found nothing.** `search_scan` on a
+  body that only looks threw each look's answer away, so a body that refused every look was
+  reported as having swept its range without the target, as in `ball not found in a gaze sweep of
+  3 looks (90°)`. It ends at the first refused look now and says so, as in `search_scan: a look
+  was refused, so the sweep stopped after 0 of 3 looks:` and the body's reason. The look that
+  centres the head before `go_to` and a turning `search_scan` is read the same way on a body with
+  a head to look with: refused, the verb ends before anything moves, rather than steering on
+  bearings taken through a head pointing wherever it was left. A body with no head, which
+  refuses a look as a matter of course, goes on as before.
 - **A body whose manifest has no blurb is introduced to the pilot as a robot.** The system prompt
   opens with `You are the brain of` and the manifest's `blurb`, and for a manifest that left the
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or

@@ -8,7 +8,8 @@ stream, the rest of Roboglot does not care.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Protocol, runtime_checkable
+import math
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from PIL import Image
 from pydantic import BaseModel, Field
@@ -30,6 +31,24 @@ class Detection(BaseModel):
         description="False when the camera model is a guess, so bearing and distance are "
         "the right shape but the wrong size.",
     )
+
+    clipped: ClassVar[bool] = False
+    """True on a detection the frame's edge cuts in the dimension its distance is measured
+    from, so `est_distance_m` is only an upper bound: the target may be nearer, and nearer than
+    the camera can measure (`nearest_measurable`). A detector marks one with `mark_clipped`.
+
+    `go_to` walked on toward such a target, a person whose head had left the frame or a ball
+    under the nose, on a reading that could no longer fall to its stop distance, and the mark is
+    what ends the approach there. It says how far a reading can be trusted, which is the
+    detector's to know and only the steering loop's to act on, so it is kept out of the fields:
+    a detection is recorded, shown and compared exactly as it always was, and one read back from
+    a record is unmarked, as a third party's detector that marks nothing is."""
+
+    def mark_clipped(self) -> Detection:
+        """This detection, marked `clipped`."""
+        # an attribute of the instance beside the fields, so neither `model_dump` nor `==` sees it
+        object.__setattr__(self, "clipped", True)
+        return self
 
     def summary(self) -> str:
         parts = [self.label]
@@ -57,17 +76,36 @@ class Detector(Protocol):
 
 async def detect_off_loop(detector: Detector, image: Image.Image) -> list[Detection]:
     """`detector.detect(image)`, in a worker thread when the detector says it waits on
-    something outside this process.
+    something outside this process or holds its thread for long.
 
     Such a detector sets `blocking = True`; today that is `HostDetector`, whose model runs on
-    the board `--host` names. Called on the event loop, its round trip would hold up
+    the board `--host` names, and `YoloDetector`, whose forward pass holds this process's thread
+    for as long as a round trip to a board would. Called on the event loop, either would hold up
     everything else the loop runs, the twist `go_to` re-sends while it looks among them, so a
-    board slower than a body's deadman would stop the body on every frame. Every other
-    detector runs where it always has, on the loop, so a run without a board is scheduled
-    exactly as it was."""
+    frame slower than a body's deadman would stop the body on every frame, or keep a body with
+    no deadman walking. The colour detector, a few milliseconds a frame, runs where it always
+    has, on the loop."""
     if getattr(detector, "blocking", False):
         return await asyncio.to_thread(detector.detect, image)
     return detector.detect(image)
+
+
+def nearest_measurable(
+    detector: Detector | None, label: str, size: tuple[int, int]
+) -> float | None:
+    """The nearest distance `detector` can measure a `label` at on a frame of `size` (width,
+    height) through its lens, in metres, or None when it does not say.
+
+    A detector that reads distance off the size of a target's box cannot read less than a box as
+    big as the frame gives, and says so through `nearest_m(label, size)`, as every detector
+    Roboglot ships does. A nearer target still reads that, its detection `clipped`. A detector
+    that names no nearest reading, a third party's, is not guessed for: `go_to` then has only its
+    detections' marks and distances to go on."""
+    ask = getattr(detector, "nearest_m", None)
+    nearest = ask(label, size) if callable(ask) else None
+    if isinstance(nearest, bool) or not isinstance(nearest, int | float):
+        return None
+    return float(nearest) if math.isfinite(nearest) and nearest > 0 else None
 
 
 def detect_times(detector: Detector | None) -> dict[str, Any]:

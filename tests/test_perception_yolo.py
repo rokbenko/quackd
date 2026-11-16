@@ -9,21 +9,28 @@ stands in for it in `sys.modules`.
 
 from __future__ import annotations
 
+import asyncio
 import math
 import sys
+import threading
+import time
 from types import ModuleType, SimpleNamespace
 from typing import Any
 
 import pytest
 from PIL import Image
 
-from roboglot.perception.base import Detection
+from roboglot.perception.base import Detection, detect_off_loop
 from roboglot.perception.yolo import (
     COCO_TO_LABEL,
+    GUESSED_FOV_DEG,
     HEIGHT_M,
     YoloDetector,
     detections_from_boxes,
 )
+from roboglot.transport.base import Ack, Intent
+from roboglot.verbs.core import HOLD_TTL_S, MOVE_RESEND_S, _see_holding
+from roboglot.verbs.registry import VerbContext
 
 Box = tuple[str, float, float, float, float, float]
 
@@ -238,6 +245,51 @@ def test_the_yolo_detector_gives_what_the_shared_maths_gives_for_its_boxes(
     assert model.calls == [((640, 480), 0.25, False)]
 
 
+def test_a_box_the_frame_cuts_at_its_top_or_bottom_says_its_distance_is_only_an_upper_bound() -> (
+    None
+):
+    """A box detector reads distance off a box's height, and a box the frame cuts at its top or
+    its bottom is shorter than the target, so it reads farther than the target is: `go_to`
+    walked on toward a person whose head had left the frame, on a reading that fell more slowly
+    than the gap did. Such a detection is marked `clipped`; one the frame cuts at a side only,
+    whose height is whole, is not, and nor is one inside the frame. The mark stays out of the
+    record and out of equality, so a detection serializes and compares as it always has."""
+    boxes: list[Box] = [
+        ("person", 0.9, 200.0, 0.0, 300.0, 400.0),
+        ("person", 0.9, 200.0, 80.0, 300.0, 480.0),
+        ("person", 0.9, 0.0, 80.0, 100.0, 400.0),
+        ("person", 0.9, 200.0, 80.0, 300.0, 400.0),
+    ]
+    found = detections_from_boxes(boxes, 640, 480, fov_deg=62.0)
+    assert [d.clipped for d in found] == [True, True, False, False]
+    assert all("clipped" not in d.model_dump() for d in found)
+    assert found[0] == Detection(**found[0].model_dump())
+
+
+@pytest.mark.parametrize(
+    ("w", "h", "fov_deg"), [(640, 480, 62.0), (1280, 720, 90.0), (320, 240, 48.5)]
+)
+def test_a_box_detector_names_as_its_nearest_reading_what_a_box_as_tall_as_the_frame_reads(
+    w: int, h: int, fov_deg: float, fake_ultralytics: type[_FakeYOLO]
+) -> None:
+    """`go_to` refuses a stop distance nearer than the detector can read for the target, and
+    asks the detector, since only the detector knows how it measures. A box detector's nearest is
+    what a box as tall as the frame reads, to the last bit, for every label it has a height for,
+    the same in this process and on a board, and nothing for a label it has none for."""
+    from roboglot.perception.host import HostDetector
+
+    local = YoloDetector(fov_deg=fov_deg)
+    board = HostDetector(SimpleNamespace(address="board:0"), fov_deg=fov_deg)  # type: ignore[arg-type]
+    for coco, label in COCO_TO_LABEL.items():
+        (tall,) = detections_from_boxes(
+            [(coco, 0.9, 0.0, 0.0, w / 3, float(h))], w, h, fov_deg=fov_deg
+        )
+        assert local.nearest_m(label, (w, h)) == tall.est_distance_m, label
+        assert board.nearest_m(label, (w, h)) == tall.est_distance_m, label
+    assert set(COCO_TO_LABEL.values()) == set(HEIGHT_M)
+    assert local.nearest_m("cup", (w, h)) is None and board.nearest_m("cup", (w, h)) is None
+
+
 def test_the_yolo_detector_carries_calibrated_through(fake_ultralytics: type[_FakeYOLO]) -> None:
     fake_ultralytics.results = _results([("sports ball", 0.87, 300.0, 200.0, 340.0, 240.0)])
     detector = YoloDetector(calibrated=False)
@@ -245,6 +297,112 @@ def test_the_yolo_detector_carries_calibrated_through(fake_ultralytics: type[_Fa
     (ball,) = detector.detect(Image.new("RGB", (640, 480)))
     assert ball.calibrated is False
     assert YoloDetector().calibrated is True
+
+
+# ── off the event loop ──────────────────────────────────────────────────────────────────
+
+#: How long the stand-in model takes over one frame: two deadman windows, so the window closes
+#: well inside it.
+SLOW_S = 2 * HOLD_TTL_S
+
+
+class _SlowModel:
+    """Stands in for ultralytics' model: `predict` is a forward pass that holds the thread that
+    calls it for `SLOW_S` (here `time.sleep`, which holds the calling thread as a forward pass
+    does; a real pass holds the GIL as well, which only makes it worse), then finds nothing. It
+    keeps which threads called it and the most passes it was in at once."""
+
+    def __init__(self) -> None:
+        self.threads: list[int] = []
+        self.running = 0
+        self.most_at_once = 0
+        self._count = threading.Lock()
+
+    def predict(self, image: Image.Image, conf: float, verbose: bool) -> list[Any]:
+        self.threads.append(threading.get_ident())
+        with self._count:
+            self.running += 1
+            self.most_at_once = max(self.most_at_once, self.running)
+        time.sleep(SLOW_S)
+        with self._count:
+            self.running -= 1
+        return []
+
+
+def _slow_yolo(model: _SlowModel) -> YoloDetector:
+    det = YoloDetector.__new__(YoloDetector)  # no ultralytics needed
+    det._model = model
+    det.conf = 0.4
+    det.fov_deg = GUESSED_FOV_DEG
+    det.calibrated = True
+    det._told_lens = None
+    return det
+
+
+class _Walking:
+    """A body that is walking: one frame to look at, and every twist sent to it timed on the
+    event loop's clock, the clock `_see_holding` holds its twist by (as in
+    tests/test_host_detector.py)."""
+
+    def __init__(self) -> None:
+        self.moves: list[tuple[float, tuple[float, float, float]]] = []
+
+    async def get_frame(self) -> Image.Image:
+        return Image.new("RGB", (64, 48), (40, 40, 40))
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind == "move":
+            twist = (intent.params["vx"], intent.params["vy"], intent.params["wz"])
+            self.moves.append((self.now(), twist))
+        return Ack()
+
+    def now(self) -> float:
+        return asyncio.get_running_loop().time()
+
+
+async def test_a_slow_local_yolo_does_not_hold_go_to_s_twist_past_one_deadman_window() -> None:
+    """`detect_off_loop` moves a detector to a worker thread only when it declares
+    `blocking = True`, and `YoloDetector` declared nothing, so its forward pass ran on the event
+    loop. Inside `_see_holding` that meant no re-send and no zero twist while the model ran: the
+    body kept its last twist for the whole pass. As the board's detector already did, the held
+    twist is now re-sent and then zeroed once `HOLD_TTL_S` has passed, while the frame is still
+    being looked at."""
+    model = _SlowModel()
+    body = _Walking()
+    ctx = VerbContext(transport=body, detector=_slow_yolo(model))  # type: ignore[arg-type]
+    loop_thread = threading.get_ident()
+    started = asyncio.get_running_loop().time()
+    await _see_holding(ctx, "ball", "go_to", (0.2, 0.0, 0.0))
+    took = asyncio.get_running_loop().time() - started
+    # less a Windows clock tick (about 16 ms) of slack between time.sleep and the loop's clock
+    assert took >= SLOW_S - 0.05, f"the model really was slow: {took:.3f} s"
+    zeros = [round(t - started, 3) for t, tw in body.moves if tw == (0.0, 0.0, 0.0)]
+    on_loop = loop_thread in model.threads
+    assert zeros and zeros[0] <= HOLD_TTL_S + 2 * MOVE_RESEND_S, (
+        f"no zero twist within one deadman window ({HOLD_TTL_S} s) of a {SLOW_S} s forward pass: "
+        f"twists sent {[(round(t - started, 3), tw) for t, tw in body.moves]}, the frame took "
+        f"{took:.2f} s, predict ran on the event loop's thread: {on_loop}"
+    )
+
+
+async def test_detect_off_loop_runs_yolo_off_the_event_loop_thread() -> None:
+    """`detect_off_loop`, which `_see`, `observe` and the loop's observation all go through, ran
+    `YoloDetector.detect` on the calling thread, the event loop's."""
+    model = _SlowModel()
+    loop_thread = threading.get_ident()
+    await detect_off_loop(_slow_yolo(model), Image.new("RGB", (64, 48)))
+    assert loop_thread not in model.threads, "YOLO's forward pass ran on the event loop's thread"
+
+
+async def test_two_frames_at_once_never_run_the_model_at_once() -> None:
+    """Off the loop, a frame `go_to` stops waiting for when its verb ends is still in the model
+    when the next verb's first frame comes, and a model is not safe to run from two threads at
+    once. The detector runs one forward pass at a time, the next waiting in its own thread."""
+    model = _SlowModel()
+    detector = _slow_yolo(model)
+    frame = Image.new("RGB", (64, 48))
+    await asyncio.gather(detect_off_loop(detector, frame), detect_off_loop(detector, frame))
+    assert len(model.threads) == 2 and model.most_at_once == 1, model.most_at_once
 
 
 def test_without_ultralytics_the_detector_names_the_extra_to_install(
