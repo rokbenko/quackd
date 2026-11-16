@@ -25,8 +25,9 @@ So this daemon carries ten things upstream has not got:
 
 1. signal handlers that reach a safe pose before anything is allowed to exit, and excepthooks
    for the same reason: upstream's C level atexit disables torque on any interpreter exit;
-2. a hard-exit timer around `close()`, which is bound without releasing the GIL and can block
-   forever on an unresponsive bus, freezing every thread that might have supervised it;
+2. a hard-exit deadline that needs no GIL, around the settle and around `close()`, which is
+   bound without releasing the GIL and can block forever on an unresponsive bus, freezing
+   every thread that might have supervised it;
 3. a safe-pose slew, since no reset exists: upstream's own default pose at upstream's own
    0.3 rad/s, waist first, because a position command here is a full-torque snap;
 4. no command at all until it has read the robot once, because before that the target is a
@@ -60,7 +61,9 @@ import argparse
 import base64
 import collections
 import contextlib
+import faulthandler
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -81,6 +84,11 @@ except ImportError:  # pragma: no cover - the daemon cannot run without it
     np = None  # type: ignore[assignment]
 
 VERSION = "1"
+DESCRIPTION = (
+    "Roboglot's ToddlerBot daemon: the fifty hertz loop, and everything upstream does not do."
+)
+"""The first line of this file's docstring, written out: under `python -OO` the docstring is
+None, and a parser built from it raised before it read a flag."""
 PROTOCOL = "roboglot-toddlerbot-bridge"
 PROTOCOL_VERSION = 1
 JSONRPC_VERSION = "2.0"
@@ -139,6 +147,9 @@ Catching up means running the backlog with no sleep between ticks, and each of t
 ticks is allowed a full MAX_STEP_RAD. Twelve ticks in a millisecond is not a rate limit,
 it is a jump, so a loop that fell behind starts again from now instead."""
 CAMERA_PERIOD_S = 0.1
+CAMERA_JOIN_S = 2.0
+"""How long closing the camera waits for its thread, which a USB read that never returns
+wedges. It is the wait this file has always given it; past it the device is closed anyway."""
 CAMERA_STALE_S = 2.0
 """How old the newest frame may be before it is no frame at all. A wedged USB camera
 would otherwise serve its last good picture forever, and a pilot would navigate by a
@@ -160,6 +171,22 @@ returned by now, leave hard: a torqued robot beats a frozen supervisor that cann
 CONSTRUCT_TIMEOUT_S = 30.0
 FALL_TILT_DEG = 50.0
 """Untested against a real robot, and named as an assumption in the adapter's docs."""
+TICK_STALE_S = DEADMAN_S
+"""How long after the last tick ended the loop counts as stalled rather than slow. The deadman
+lives inside the tick, so past DEADMAN_S it can no longer fire on time either, and that is when
+health has to stop answering ok."""
+BUS_GONE_LIMIT = 2 * FAULT_LIMIT
+"""Consecutive failing ticks before the loop stops ticking at all. The first FAULT_LIMIT end the
+orders it takes and turn it to the safe pose; as many again with the bus still failing mean
+there is no bus to reach the safe pose with, and failing fifty times a second forever helps
+nobody."""
+GAVE_UP = (
+    f"the control loop gave up after {FAULT_LIMIT} failing ticks in a row: it takes no orders, "
+    "and it settles the robot to its safe pose for as long as the bus answers. Restart the daemon"
+)
+FALLEN_REFUSES = frozenset({"bot.stand", "bot.perform", "bot.command"})
+"""The moving methods a fallen robot refuses: the ones that drive the legs and the trunk. A stop,
+a look and a grip stay open, as they always were."""
 
 ERR_BAD_TOKEN = 2
 ERR_REFUSED = 3
@@ -181,6 +208,9 @@ COMMAND_METHODS = frozenset(
 Questions (state, health, frame) do not, and neither does anything the daemon has never
 heard of: a client built against a newer protocol would otherwise hold the deadman off
 with calls this daemon is refusing, which is exactly the version-skew case it is for."""
+MOVING_METHODS = COMMAND_METHODS - {"bot.keepalive"}
+"""The methods that change what the robot does. Every one of them goes through
+`Daemon.obey`, the one place that decides whether the robot may move now."""
 
 log = logging.getLogger("roboglot-toddlerbot")
 
@@ -228,6 +258,30 @@ def tilt_degrees(gravity_z: float) -> float:
 def slew(current: Any, goal: Any, dt: float, vel: float = RESET_VEL) -> Any:
     """One step of a bounded-rate move towards a goal."""
     return rate_limit(goal, current, max_step=vel * dt)
+
+
+WALK_KEYS = ("walk_x", "walk_y", "walk_turn")
+"""The walk policy's three inputs, which it indexes unconditionally."""
+ENVELOPE_KEYS = ("max_vx", "max_vy", "max_wz")
+"""The envelope's bound for each of WALK_KEYS, in the same order, as `build_walk_policy` reads
+them off the checkpoint and the hello reports them."""
+
+
+def within_envelope(
+    walk: tuple[float, float, float], envelope: dict[str, float] | None
+) -> tuple[float, float, float]:
+    """A walk command held to the envelope its checkpoint was trained on, each axis on both
+    sides, as the client reads the envelope. With no envelope there is nothing to hold it to.
+
+    Upstream never clips these on the way into the network, so a client other than Roboglot
+    could otherwise drive the gait with inputs it was never trained on."""
+    if envelope is None:
+        return walk
+    held = []
+    for value, key in zip(walk, ENVELOPE_KEYS, strict=True):
+        bound = abs(float(envelope[key]))
+        held.append(max(-bound, min(bound, value)))
+    return held[0], held[1], held[2]
 
 
 def waist_first(goal: Any, current: Any, waist: Any) -> Any:
@@ -345,6 +399,22 @@ def settle_budget(travel: float) -> float:
     return min(SETTLE_MAX_S, SETTLE_FLOOR_S + SETTLE_OVERHEAD * travel / RESET_VEL)
 
 
+def hard_exit_after(seconds: float, what: str) -> None:
+    """End the process with code 1 in `seconds`, whatever it is doing by then, unless the
+    deadline is moved by another call or cancelled (`faulthandler.cancel_dump_traceback_later`).
+
+    faulthandler's watchdog is a thread written in C that needs no GIL, so it fires through a
+    `close()` that holds the GIL and retries torque-off forever on a dead bus. The Python timer
+    this replaced needed the GIL to run, so it could not fire in exactly the case it was for.
+    It writes every thread's stack before it exits, which is the log of where it hung."""
+    log.info("%s; if that has not finished in %.1fs the process exits hard", what, seconds)
+    try:
+        # the stream the process started with, which is the journal under a service manager
+        faulthandler.dump_traceback_later(seconds, exit=True, file=sys.__stderr__ or sys.stderr)
+    except Exception:
+        log.exception("could not arm the hard exit for %s; going on without it", what)
+
+
 class Daemon:
     """Owns the robot, the loop and the safe pose. Everything else asks it politely."""
 
@@ -362,11 +432,18 @@ class Daemon:
         self.fallen = False
         self.tilt_deg = 0.0
         self.deadman_tripped = False
+        #: When the last tick ended, however it ended, or None before the first. `bot.health`
+        #: reads it without `lock`, because a tick blocked on the bus holds the lock and leaves
+        #: everything else the loop writes frozen at its last good value.
+        self.tick_ended: float | None = None
         self.fault: str | None = None
         self.dropped = 0
         self.neck_goal: Any = None
         self.grip_goal: dict[int, float] = {}
         self.faults = 0
+        #: Set once FAULT_LIMIT ticks have failed in a row, and never cleared: from then the
+        #: loop takes no orders (`refusal`) and only settles the robot to its safe pose.
+        self.gave_up = False
         self._shut = False
         self.calibrated = bool(getattr(robot, "roboglot_calibrated", False))
         self.motion_library: dict[str, list[Any]] = {}
@@ -426,7 +503,16 @@ class Daemon:
         default = np.array([angles[k] for k in order], np.float32)
         self.safe = SafeState(default)
         self.command = Command(default)
-        self.command.last_client = time.monotonic()
+        #: Whether any client has commanded the robot yet. The deadman is armed by the first
+        #: command and never before: a daemon nobody has spoken to holds where the robot is,
+        #: and slewing it to the home pose on its own is a move nobody asked for.
+        self.commanded = False
+        #: The connection whose command the robot is carrying out, and so the only one whose
+        #: keepalive feeds the deadman. One clock fed by every connection let an idle second
+        #: client (a serve-mcp session, a doctor probe) hold the deadman off for a walk the
+        #: first client latched and then left. The last connection to command the robot owns
+        #: all of it; None is a caller inside this process, which `--once` and tests are.
+        self.owner: Any = None
         self.target = default.copy()
         #: Whether the first real reading has arrived. Until it has, `target` is a guess
         #: (the home pose), and writing a guess to a servo bus is a full-scale jump from
@@ -522,13 +608,34 @@ class Daemon:
             if self.walk_policy is None or self.last_obs is None:
                 cmd.hold(current)
                 return current
+            if self.fallen:
+                # A gait driving a body on the floor is no gait. This tick is the first to read
+                # the fall, so the walk ends here and the robot holds where it lies; a new walk
+                # is refused for as long as it stays down (`refusal`).
+                log.warning("the robot fell while walking; holding where it lies")
+                cmd.hold(current)
+                return current
             self.walk_policy.control_inputs = dict(cmd.walk)
             _, motor_target = self.walk_policy.step(self.last_obs, self.sim)
             return np.asarray(motor_target, dtype=np.float32)
         return cmd.goal
 
     def tick(self, dt: float = CONTROL_DT) -> Any:
-        """One control step: read, decide, clamp, write. Never raises for a bad reading."""
+        """One control step: read, decide, clamp, write. Never raises for a bad reading.
+
+        Its end is stamped whether it returned or raised, the settle's ticks too, so `bot.health`
+        can see a tick that has not ended at all."""
+        try:
+            return self._tick(dt)
+        finally:
+            self.tick_ended = time.monotonic()
+
+    def tick_age_s(self) -> float | None:
+        """How long since the last tick ended, or None before the first."""
+        ended = self.tick_ended
+        return None if ended is None else time.monotonic() - ended
+
+    def _tick(self, dt: float) -> Any:
         with self.lock:
             obs = self.observe()
             if obs is not None:
@@ -555,7 +662,7 @@ class Daemon:
                 self.dropped += 1
                 if self.dropped > DROP_LIMIT:
                     self.last_obs = None
-            if time.monotonic() - self.command.last_client > DEADMAN_S:
+            if self._deadman_due():
                 if not self.deadman_tripped:
                     log.warning("Roboglot went quiet; slewing to the safe pose and holding")
                     self.deadman_tripped = True
@@ -613,7 +720,7 @@ class Daemon:
         with self.lock:
             self.grip_goal.clear()
 
-    def set_grip(self, side: str, close: bool) -> list[str]:
+    def set_grip(self, side: str, close: bool, client: Any = None) -> list[str]:
         """Command the gripper motors, and say which ones moved.
 
         Returning the names matters: `bot.grip` used to answer accepted and command nothing
@@ -623,19 +730,76 @@ class Daemon:
         an assumption (`upstream_api.GRIPPER_AXES`) and it is written down as one.
         """
         sides = ["left", "right"] if side == "both" else [side]
-        moved: list[str] = []
-        with self.lock:
-            for one in sides:
-                for index in self.grippers.get(one, []):
-                    low, high = float(self.lo[index]), float(self.hi[index])
-                    self.grip_goal[index] = low if close else high
-                    moved.append(self.order[index])
-        return moved
+        indexes = [index for one in sides for index in self.grippers.get(one, [])]
+        if not indexes:
+            return []
 
-    def aim_neck(self, yaw_rad: float, pitch_rad: float) -> None:
-        """Where the head should point. It does not change what the body is doing."""
+        def grip() -> None:
+            for index in indexes:
+                low, high = float(self.lo[index]), float(self.hi[index])
+                self.grip_goal[index] = low if close else high
+
+        self.obey("bot.grip", grip, client)
+        return [self.order[index] for index in indexes]
+
+    def halt(self) -> list[str]:
+        """Hold the whole body where it was last measured, and say what that stopped.
+
+        The caller holds `lock`. The neck and gripper goals are overlays on whatever drives the
+        body, so a stop that held only the body left a closing gripper closing on to its joint
+        limit and the head slewing on to its last aim. The hold's pose is the measured one, head
+        and hands included, so clearing the overlays is what holds them too."""
+        stopped: list[str] = []
+        if self.command.mode != Command.HOLD:
+            stopped.append(self.command.motion or self.command.mode)
+        if self.neck_goal is not None:
+            stopped.append("neck")
+        stopped += [self.order[index] for index in sorted(self.grip_goal)]
+        self.command.hold(self.safe.pose)
+        self.neck_goal = None
+        self.grip_goal.clear()
+        return stopped
+
+    def refusal(self, method: str) -> str | None:
+        """Why `method` may not move the robot now, or None if it may. The caller holds `lock`.
+
+        The one place that decides it, so no moving method can forget a reason another one
+        checks."""
+        if self._shut:
+            # The settle trips to the safe pose once and then ticks towards it. A command that
+            # landed after that trip (a client's stop holding where the robot is, a walk, a look
+            # putting the neck goal back) kept it from ever arriving, and close() then turned
+            # torque off wherever the robot stood.
+            return "the daemon is shutting down and settling the robot to its safe pose"
+        if self.gave_up:
+            # Accepting a move the loop will not carry out is a wrong answer, not a cautious one.
+            return GAVE_UP
+        if self.fallen and method in FALLEN_REFUSES:
+            return "the robot has fallen"
+        return None
+
+    def obey(self, method: str, change: Any, client: Any = None) -> Any:
+        """Make `client`'s change to what the robot does, if it may move now, and answer what
+        `change` returns; raise `NotNow` with the reason otherwise. `client` then owns the
+        deadman (`touch`).
+
+        The check and the change happen under one hold of `lock`, so nothing that stops the
+        robot (a shutdown, the loop giving up) can come between them."""
         with self.lock:
+            reason = self.refusal(method)
+            if reason is not None:
+                raise NotNow(reason)
+            result = change()
+            self.touch(client)
+            return result
+
+    def aim_neck(self, yaw_rad: float, pitch_rad: float, client: Any = None) -> None:
+        """Where the head should point. It does not change what the body is doing."""
+
+        def aim() -> None:
             self.neck_goal = (float(yaw_rad), float(pitch_rad))
+
+        self.obey("bot.look", aim, client)
 
     def run(self) -> None:
         """The absolute schedule upstream uses, so a slow tick does not accumulate error."""
@@ -651,14 +815,26 @@ class Daemon:
                 # healthy while nothing drives the robot. Upstream surfaces a controller fault
                 # as a bare KeyError, so this is a live path rather than a theoretical one.
                 # Record it, force the deadman so the next good tick slews to safety, and stop
-                # claiming health. If the bus never comes back, settle and give up.
+                # claiming health. After FAULT_LIMIT in a row it takes no more orders and only
+                # settles, which needs ticks: so it goes on ticking, and stops only once the bus
+                # has failed BUS_GONE_LIMIT in a row and there is nothing to settle with.
                 self.faults += 1
                 self.fault = f"{type(e).__name__}: {e}"
                 log.exception("tick failed (%d in a row)", self.faults)
                 with self.lock:
                     self.command.trip(self.command.default_pose)
-                if self.faults >= FAULT_LIMIT:
-                    log.error("%d ticks failed in a row; settling and stopping", self.faults)
+                    if self.faults >= FAULT_LIMIT and not self.gave_up:
+                        log.error(
+                            "%d ticks failed in a row; taking no more orders and settling to "
+                            "the safe pose",
+                            self.faults,
+                        )
+                        self.gave_up = True
+                        # the safe pose is the whole body, head and hands included
+                        self.neck_goal = None
+                        self.grip_goal.clear()
+                if self.faults >= BUS_GONE_LIMIT:
+                    log.error("%d ticks failed in a row; the bus is gone, stopping", self.faults)
                     self.running = False
             else:
                 self.faults = 0
@@ -735,33 +911,41 @@ class Daemon:
         return False
 
     def shutdown(self) -> None:
-        """Settle, then close under a hard deadline.
+        """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`).
 
         `close()` is bound without releasing the GIL and retries torque-off forever on an
-        unresponsive bus, so a stuck shutdown freezes every thread including this one. A
-        torqued robot and a dead process beats a frozen process nobody can signal."""
+        unresponsive bus, and a settle tick on a dead bus can block for good, so a stuck
+        shutdown freezes every thread including this one. A torqued robot and a dead process
+        beats a frozen process nobody can signal.
+
+        The settle starts as soon as the loop is told to stop, so the body is never left
+        uncommanded in between: closing the camera, which can wait seconds on a wedged USB
+        read, comes after it."""
         if self._shut:
             return
+        # From here every moving method is refused (`refusal`), so a connected client cannot
+        # keep the settle from the safe pose.
         self._shut = True
-        self.running = False
-        if self.camera is not None:
-            self.camera.close()
+        # Read without the lock: a tick blocked on the bus may hold it, and the deadline has to
+        # be armed before anything here waits on the lock or on the bus.
+        travel = float(np.max(np.abs(self.command.default_pose - self.target)))
+        hard_exit_after(settle_budget(travel) + CLOSE_TIMEOUT_S, "settling to the safe pose")
         try:
-            self.settle()
-        except Exception:  # never let settling stop the close
-            log.exception("settling failed; closing anyway")
-
-        def bail() -> None:
-            log.error("close() did not return in %.0fs; exiting hard", CLOSE_TIMEOUT_S)
-            os._exit(1)
-
-        timer = threading.Timer(CLOSE_TIMEOUT_S, bail)
-        timer.daemon = True
-        timer.start()
-        try:
+            self.running = False
+            try:
+                self.settle()
+            except Exception:  # never let settling stop the close
+                log.exception("settling failed; closing anyway")
+            if self.camera is not None:
+                hard_exit_after(CAMERA_JOIN_S + CLOSE_TIMEOUT_S, "closing the camera")
+                try:
+                    self.camera.close()
+                except Exception:  # never let the camera stop the close
+                    log.exception("closing the camera failed; closing the bus anyway")
+            hard_exit_after(CLOSE_TIMEOUT_S, "closing the bus")
             self.sim.close()
         finally:
-            timer.cancel()
+            faulthandler.cancel_dump_traceback_later()
 
     # -- what the socket asks it ----------------------------------------------------
 
@@ -797,8 +981,30 @@ class Daemon:
                 "rejected_reads": self.safe.rejected,
             }
 
-    def touch(self) -> None:
+    def touch(self, client: Any = None) -> None:
+        """`client` commanded the robot: it owns the deadman from now on, the deadman is armed,
+        and its clock starts again."""
+        self.commanded = True
+        self.owner = client
         self.command.last_client = time.monotonic()
+
+    def heard(self, client: Any) -> None:
+        """A keepalive from `client`, which restarts the deadman's clock only if `client` is
+        the one driving. Any other connection's keepalive says that connection is there, and
+        nothing about the one whose command the robot is carrying out.
+
+        Without `lock`, as `touch` always was: a tick blocked on the bus holds the lock, and a
+        keepalive must not stall the connection behind it, or its health question goes
+        unanswered too."""
+        if self.commanded and client is self.owner:
+            self.command.last_client = time.monotonic()
+
+    def _deadman_due(self) -> bool:
+        """Whether the client driving the robot has said nothing for longer than DEADMAN_S.
+
+        Never before any client has commanded anything: until then nobody is driving, so there
+        is nothing for the deadman to take over from."""
+        return self.commanded and time.monotonic() - self.command.last_client > DEADMAN_S
 
 
 # ── the socket ──────────────────────────────────────────────────────────────────────────
@@ -812,7 +1018,7 @@ class Handler(socketserver.StreamRequestHandler):
     motors: int
 
     def handle(self) -> None:
-        authed = self.token is None
+        authed = not self.token
         spoken = False
         while raw := self.rfile.readline(MAX_LINE + 1):
             if len(raw) > MAX_LINE:
@@ -858,8 +1064,9 @@ class Handler(socketserver.StreamRequestHandler):
     ) -> tuple[Any, bool]:
         d = self.daemon_ref
         if method == "bot.hello":
-            # as bytes: compare_digest raises on a str that is not ASCII
-            if self.token is not None and not hmac.compare_digest(
+            # As bytes: compare_digest raises on a str that is not ASCII. An empty token is no
+            # token, as `main` reads one: comparing against "" admitted a hello that sent none.
+            if self.token and not hmac.compare_digest(
                 str(params.get("token") or "").encode("utf-8", "surrogatepass"),
                 self.token.encode("utf-8", "surrogatepass"),
             ):
@@ -871,87 +1078,105 @@ class Handler(socketserver.StreamRequestHandler):
                 "robot": self.robot_name,
                 "motors": self.motors,
                 "capabilities": dict(self.capabilities),
+                # Whether a token was checked, which a client that sent one cannot otherwise
+                # tell from a daemon that took it and checked nothing.
+                "auth": "token" if self.token else "none",
             }, True
         if not authed:
             raise _Refused(ERR_BAD_TOKEN, "say bot.hello with a token first")
-        # Only a method that drives the robot feeds the deadman. Reading state, health or a
+        # Only a method that drives the robot feeds the deadman: the keepalive here, and every
+        # moving method once `Daemon.obey` has carried it out. Reading state, health or a
         # frame is a question, not driving: a client whose LLM stalled mid-verb, or which
         # polls while it thinks, would otherwise hold the deadman off for as long as it kept
         # asking. WALK is latched, so the robot would go on walking with nobody steering it,
         # which is the exact failure the deadman exists for.
-        if method in COMMAND_METHODS:
-            d.touch()
+        if method == "bot.keepalive":
+            # A notification, and the only thing a client has to send to say it is
+            # still there. It counts only from the connection that is driving (`heard`).
+            d.heard(self)
+            return None, authed
+        if method in MOVING_METHODS:
+            try:
+                return self._move(d, str(method), params), authed
+            except NotNow as e:
+                return {"accepted": False, "reason": str(e)}, authed
         if method == "bot.state":
             return d.state(), authed
         if method == "bot.health":
+            # Nothing here takes `lock`: a tick blocked on the bus holds it, and the loop's own
+            # numbers stay at their last good values while it does. The age of the last tick's
+            # end is the one thing that keeps moving.
+            age = d.tick_age_s()
             reason = None
             if d.fault is not None:
                 reason = f"the control loop faulted: {d.fault}"
+            elif age is not None and age > TICK_STALE_S:
+                reason = (
+                    f"no control tick has ended for {age:.2f}s: the loop is stalled, and the "
+                    "deadman inside it cannot fire"
+                )
+            elif d.gave_up:
+                reason = GAVE_UP
             elif d.fallen:
                 reason = "the robot has fallen"
             return {
                 "ok": reason is None,
                 "reason": reason,
                 "loop_hz": round(d.loop_hz, 1),
+                "tick_age_ms": None if age is None else round(age * 1000.0, 1),
             }, authed
+        if method == "bot.frame":
+            return {"jpeg": d.camera.latest() if d.camera is not None else None}, authed
+        raise _Refused(ERR_UNKNOWN, f"unknown method {method!r}")
+
+    def _move(self, d: Daemon, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """One of MOVING_METHODS. Each checks what it was asked for, and its change reaches the
+        loop only through `Daemon.obey`, which raises `NotNow` when the robot may not move.
+        This connection is the client, so the deadman is its own from then on."""
         if method == "bot.stop":
-            with d.lock:
-                d.command.hold(d.safe.pose)
-            return {"accepted": True}, authed
+            return {"accepted": True, "stopped": d.obey(method, d.halt, self)}
         if method == "bot.stand":
-            if d.fallen:
-                return {"accepted": False, "reason": "the robot has fallen"}, authed
-            with d.lock:
-                d.command.stand()
-            return {"accepted": True}, authed
+            d.obey(method, d.command.stand, self)
+            return {"accepted": True}
         if method == "bot.perform":
             name = str(params.get("motion", ""))
             frames = d.motion_library.get(name)
             if not frames:
-                return {"accepted": False, "reason": f"no motion named {name!r}"}, authed
-            if d.fallen:
-                return {"accepted": False, "reason": "the robot has fallen"}, authed
-            with d.lock:
-                d.command.play(name, frames)
-            return {"accepted": True}, authed
+                return {"accepted": False, "reason": f"no motion named {name!r}"}
+            d.obey(method, lambda: d.command.play(name, frames), self)
+            return {"accepted": True}
         if method == "bot.look":
             if not self.capabilities.get("neck"):
-                return {"accepted": False, "reason": "this build has no neck"}, authed
+                return {"accepted": False, "reason": "this build has no neck"}
             d.aim_neck(
                 math.radians(_number(params, "yaw_deg")),
                 math.radians(_number(params, "pitch_deg")),
+                self,
             )
-            return {"accepted": True}, authed
+            return {"accepted": True}
         if method == "bot.command":
             if not self.capabilities.get("walk"):
-                return {"accepted": False, "reason": "no walk policy is staged"}, authed
-            with d.lock:
-                d.command.drive(
-                    _number(params, "walk_x"),
-                    _number(params, "walk_y"),
-                    _number(params, "walk_turn"),
-                )
-            return {"accepted": True}, authed
-        if method == "bot.grip":
-            if not self.capabilities.get("gripper"):
-                return {"accepted": False, "reason": "this build has no grippers"}, authed
-            side = str(params.get("side", "right"))
-            if side not in ("left", "right", "both"):
-                raise _Refused(ERR_REFUSED, f"unknown side {side!r}")
-            moved = d.set_grip(side, bool(params.get("close", True)))
-            if not moved:
-                return {
-                    "accepted": False,
-                    "reason": f"this robot has no gripper motor on the {side}",
-                }, authed
-            return {"accepted": True, "motors": moved}, authed
-        if method == "bot.keepalive":
-            # A notification, and the only thing a client has to send to say it is
-            # still there. `d.touch()` above already did the work.
-            return None, authed
-        if method == "bot.frame":
-            return {"jpeg": d.camera.latest() if d.camera is not None else None}, authed
-        raise _Refused(ERR_UNKNOWN, f"unknown method {method!r}")
+                return {"accepted": False, "reason": "no walk policy is staged"}
+            asked = (
+                _number(params, "walk_x"),
+                _number(params, "walk_y"),
+                _number(params, "walk_turn"),
+            )
+            walk = within_envelope(asked, d.walk_envelope)
+            d.obey(method, lambda: d.command.drive(*walk), self)
+            if walk == asked:
+                return {"accepted": True}
+            return {"accepted": True, "clamped_to": dict(zip(WALK_KEYS, walk, strict=True))}
+        # bot.grip, the last of MOVING_METHODS
+        if not self.capabilities.get("gripper"):
+            return {"accepted": False, "reason": "this build has no grippers"}
+        side = str(params.get("side", "right"))
+        if side not in ("left", "right", "both"):
+            raise _Refused(ERR_REFUSED, f"unknown side {side!r}")
+        moved = d.set_grip(side, bool(params.get("close", True)), self)
+        if not moved:
+            return {"accepted": False, "reason": f"this robot has no gripper motor on the {side}"}
+        return {"accepted": True, "motors": moved}
 
     def _reply(self, req_id: Any, result: Any) -> None:
         self.wfile.write(
@@ -991,6 +1216,11 @@ class _Refused(Exception):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class NotNow(Exception):
+    """Why the robot may not move at the moment. A client hears it as a refusal with this
+    reason, the way it hears "the robot has fallen", and not as a protocol error."""
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -1159,7 +1389,7 @@ class CameraFeed:
 
     def close(self) -> None:
         self.running = False
-        self.thread.join(timeout=2.0)
+        self.thread.join(timeout=CAMERA_JOIN_S)
         # upstream's own close, which the device needs and which nothing else calls
         with contextlib.suppress(Exception):
             self.camera.close()
@@ -1257,13 +1487,108 @@ def build_real(robot_name: str, root: str) -> tuple[Any, Any]:
     return robot, sim
 
 
+# ── who may drive it ────────────────────────────────────────────────────────────────────
+
+
+class TokenFileError(RuntimeError):
+    """A token file that was named and is missing, unreadable, or holds no token."""
+
+
+def read_token(path: str) -> str:
+    """The token in `path`. The Jetson and MOSS daemons' rules: the flag has no default, so a
+    file that is named is a token asked for, and a missing, unreadable or empty one refuses to
+    start rather than starting with nobody checked, which no client could tell from a daemon
+    that had checked it."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            token = fh.read().strip()
+    except (OSError, UnicodeDecodeError) as e:
+        raise TokenFileError(
+            f"cannot read the token file {path}: {e}. Refusing to start without it."
+        ) from e
+    if not token:
+        raise TokenFileError(f"the token file {path} is empty. Refusing to start without a token.")
+    return token
+
+
+def resolve_token(args: argparse.Namespace) -> str | None:
+    """`--token-file`, else `--token`, else the environment. An empty token, from the flag or
+    the environment, is no token: kept as "", it admitted a hello that carried none."""
+    if args.token_file:
+        return read_token(args.token_file)
+    if args.token is not None:
+        if not args.token.strip():
+            return None
+        log.warning(
+            "a token given with --token can be read by every account on this machine (ps, "
+            "/proc/<pid>/cmdline); prefer --token-file or %s",
+            TOKEN_ENV,
+        )
+        return str(args.token)
+    value = os.environ.get(TOKEN_ENV, "")
+    return value if value.strip() else None
+
+
+def is_loopback(host: str) -> bool:
+    """Whether `host` is reachable from this machine alone: `localhost`, or an address in
+    127.0.0.0/8 or ::1. Any other name can resolve to anything, so it counts as wide."""
+    name = host.strip().lower()
+    if name == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
+def open_address_refusal(host: str, token: str | None, *, allow: bool) -> str | None:
+    """Why the daemon will not start on `host` with `token`, or None if it may. It logs a
+    warning when it lets an open start through on purpose.
+
+    Off loopback with no token, anything that can reach the address could drive the robot, so
+    that start needs saying twice. Loopback with no token is what it always was: the docs reach
+    it through an ssh tunnel."""
+    if token or is_loopback(host):
+        return None
+    if allow:
+        log.warning(
+            "listening on %s with no token, on purpose (--allow-no-token): anything that can "
+            "reach this address can drive the robot",
+            host,
+        )
+        return None
+    return (
+        f"refusing to listen on {host} with no token: anything that can reach that address "
+        f"could drive this robot. Give it a token with --token-file (or {TOKEN_ENV}), or pass "
+        "--allow-no-token to serve anyone who can reach it, on purpose."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
     parser.add_argument("--robot", default="toddlerbot_2xc")
     parser.add_argument("--toddlerbot", default=os.environ.get("TODDLERBOT_ROOT", "."))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--token", default=os.environ.get(TOKEN_ENV))
+    tokens = parser.add_mutually_exclusive_group()
+    tokens.add_argument(
+        "--token",
+        default=None,
+        help=f"The token clients must send (default: ${TOKEN_ENV}). Every account on this "
+        "machine can read a command line, so prefer --token-file.",
+    )
+    tokens.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the token from this file. Refuses to start if it is missing, unreadable "
+        "or empty.",
+    )
+    parser.add_argument(
+        "--allow-no-token",
+        action="store_true",
+        help="Serve anyone who can reach a --host that is not loopback, with no token, on "
+        "purpose. Without it that start is refused.",
+    )
     parser.add_argument("--fake", action="store_true", help="Run with a fake body, no robot.")
     parser.add_argument(
         "--camera",
@@ -1284,6 +1609,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if np is None:
         sys.stderr.write("Roboglot's ToddlerBot daemon needs numpy\n")
+        return 2
+
+    # Who may drive the robot is settled before the robot is touched, so a start refused here
+    # has energised nothing.
+    try:
+        token = resolve_token(args)
+    except TokenFileError as e:
+        log.error("%s", e)
+        sys.stderr.write(f"{e}\n")
+        return 2
+    refused = open_address_refusal(args.host, token, allow=args.allow_no_token)
+    if refused is not None:
+        log.error("%s", refused)
+        sys.stderr.write(refused + "\n")
         return 2
 
     # Resolved once, before anything changes directory. build_real chdirs into the checkout,
@@ -1423,7 +1762,7 @@ def main(argv: list[str] | None = None) -> int:
     loop.start()
 
     Handler.daemon_ref = daemon
-    Handler.token = args.token
+    Handler.token = token
     Handler.capabilities = capabilities
     Handler.robot_name = args.robot
     Handler.motors = int(robot.nu)

@@ -61,9 +61,9 @@ file, so none of it was ever machine-verified by anyone.
 | A failed bulk read returns an all-zeros buffer, indistinguishable from every joint at zero. Believing it commands a full-scale move to zero. | Detects it, refuses it, and holds the last verified-good pose. |
 | A controller fault surfaces as a bare `KeyError`, because the C++ swallows it and inserts an empty map. | Catches it and treats it as a hardware fault, not a transient. |
 | No `reset` anywhere in the sim package: no home, no safe pose. | Builds one: upstream's default pose at upstream's own 0.3 rad/s, waist first. |
-| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. |
-| No Python signal handler, and the C `atexit` does not run on `SIGTERM`. | Installs handlers that settle before anything may exit. |
-| `close()` is bound without releasing the GIL and retries torque-off forever on a dead bus, so a stuck shutdown freezes every thread. | Arms a hard-exit timer before calling it. |
+| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. It is armed by a client's first command, and only the connection whose command the robot is carrying out keeps it off. |
+| No Python signal handler, and the C `atexit` does not run on `SIGTERM`. | Installs handlers that settle before anything may exit, and refuses every command that moves the robot while it settles. |
+| `close()` is bound without releasing the GIL and retries torque-off forever on a dead bus, so a stuck shutdown freezes every thread. | Arms a hard exit that needs no GIL before the settle and again before `close()`, so a hung bus cannot keep the process alive. |
 | The constructor busy-waits forever on a silent IMU, with the motors already live. | Runs construction in a thread it is willing to abandon. |
 | `set_motor_kps` raises `NotImplementedError` on hardware. | Never calls it, so no shutdown path depends on softening gains first. |
 | Upstream tells hardware from sim with `"real" in sim.name`. | Dispatches on type. |
@@ -122,7 +122,11 @@ The core verbs come from the registry. These four are the robot's own.
 | `look` | the two joint neck. Which motor is yaw is inferred from the motor names (`NECK_AXES` below) |
 | `move`, `go_to`, `approach_and` | present only when the daemon reports a walk checkpoint staged, which a fresh install has not got |
 
-A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has.
+A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has,
+the head and the grippers included. A stop the daemon did not answer, or refused, is reported as
+not delivered rather than as a stop, and Roboglot then stops keeping the robot alive: the
+daemon's deadman trips within half a second and takes it to its safe pose, the heartbeat fails
+saying why, and the next command the daemon accepts starts the keepalive again.
 
 ## The motions, and which ones Roboglot offers
 
@@ -162,8 +166,34 @@ daemon reports is a verb Roboglot will offer, so the daemon reports only what it
 camera that will not open means `observe` never appears.
 
 The daemon also reads the loaded checkpoint's own `command_range` at startup and reports the
-velocity envelope it was really trained on, which is what Roboglot's `limits` narrow to. An
-envelope with nothing left on any axis is treated as no locomotion at all.
+velocity envelope it was really trained on, which is what Roboglot's `limits` narrow to, and it
+holds every walk command to that envelope whoever sends it. An envelope with nothing left on any
+axis is treated as no locomotion at all. Roboglot takes from the handshake only what it can
+repeat safely: a motion it does not offer is left out of `perform`, which offers only the motions
+the daemon loaded, and a robot name, motor count or envelope of the wrong kind refuses the
+connect.
+
+**Who may drive it.** The daemon binds `127.0.0.1` by default and is reached through an ssh
+tunnel. On any other `--host` it refuses to start without a token, unless it is given
+`--allow-no-token`; `--token-file` is the way to give it one. The token crosses the network in
+the clear, because there is no TLS. When a robot reached over an address that is not loopback
+checks no token, Roboglot warns, and `roboglot doctor` shows the warning. The daemon's README
+has the details and the exact messages.
+
+**One owner at a time.** The robot answers to one connection, whole: the one whose command it is
+carrying out, and that connection going quiet or closing trips the deadman, whatever another
+connection sends. A stop is honoured from anyone and takes the robot over. So a second client's
+stop ends what a run in flight was doing and holds the robot where it is, and when that client
+leaves, the deadman sends the robot to its safe pose though the run is still connected; the
+run's next accepted command takes it back. `roboglot doctor` sends a stop as it disconnects, so
+a doctor check against a robot another run is driving does exactly this: run it between runs.
+
+**After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
+settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets
+it take orders again. Until then every command that moves the robot, a stop included, is
+refused with the reason (`the control loop gave up after 10 failing ticks in a row: ...
+Restart the daemon`), so Roboglot reports a stop as not delivered, and its heartbeat fails on
+the daemon's health, which says the same or names the fault.
 
 **The board it runs on can lend Roboglot its GPU, and Roboglot stays on the laptop.** This robot
 carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold an LLM
@@ -235,7 +265,7 @@ this body a starved loop is a fall.
 | The walk step | `WalkPolicy.step` | takes the observation and the sim, returns a pair |
 | The envelope | `command_range` | rows 5, 6 and 7 are the walk velocities |
 | All three or none | `control_inputs` | a partial dict raises mid-tick |
-| Never clipped upstream | `walk_x` | out-of-envelope goes straight to the network, so Roboglot clamps to the envelope before sending |
+| Never clipped upstream | `walk_x` | out-of-envelope goes straight to the network, so Roboglot clamps to the envelope before sending, and the daemon holds any client to it again |
 
 ## UNVERIFIED, and what Roboglot does about it
 

@@ -36,9 +36,11 @@ from roboglot_toddlerbot import (
     implementations,
     toddlerbot_manifest,
 )
+from roboglot_toddlerbot.bridge import KEEPALIVE_S, ToddlerBotBridge
 from roboglot_toddlerbot.mock import ToddlerBotMock
 from roboglot_toddlerbot.verbs import MOTIONS, SHIPPED_MOTIONS, neck_limits
 from tests.fake_jetson_hostd import FakeHostd
+from tests.test_toddlerbot_daemon import _FakeDaemon
 
 runner = CliRunner()
 
@@ -301,6 +303,33 @@ async def test_a_silent_daemon_refuses_moving_verbs_but_never_stop() -> None:
     assert "safe pose" in result.summary, "and it says the robot is standing, not falling"
     assert (await ex.run_verb("stop", {})).ok
     assert (await ex.run_verb("report_state", {})).ok
+
+
+@pytest.mark.parametrize("answer", ["no answer", "an error", "a refusal", "accepted"])
+async def test_a_stop_that_did_not_land_is_not_recorded_as_delivered(answer: str) -> None:
+    """The transport's `stop()` swallowed every exception, and neither it nor the adapter had a
+    `stop_error`, so the core `stop` verb, which reads `stop_error` off the adapter, reported a
+    `bot.stop` that got no answer, or was refused, as a stop delivered. The core verb over the
+    real client, against a peer that answers the stop each way; the last one landed."""
+    stop = {
+        "no answer": ("silent", None),
+        "an error": ("error", {"code": 3, "message": "no"}),
+        "a refusal": ("result", {"accepted": False, "reason": "the daemon is shutting down"}),
+        "accepted": ("result", {"accepted": True, "stopped": []}),
+    }[answer]
+    async with _FakeDaemon({"bot.stop": stop}) as fake:
+        adapter = ToddlerBotAdapter(ToddlerBotBridge(fake.address, request_timeout_s=KEEPALIVE_S))
+        manifest = await adapter.connect()
+        try:
+            result = await _executor(adapter, manifest).run_verb("stop", {})
+            stop_error = getattr(adapter, "stop_error", "(the adapter has no stop_error)")
+        finally:
+            await adapter.close()
+    if answer == "accepted":
+        assert result.ok and stop_error is None, (result.summary, stop_error)
+        return
+    assert not result.ok and "could not be delivered" in result.summary, result.summary
+    assert stop_error, "and the adapter says why, where the executor's own brake reads it"
 
 
 async def test_connect_narrows_to_what_the_transport_reported() -> None:

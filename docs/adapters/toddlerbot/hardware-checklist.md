@@ -34,15 +34,17 @@ passed.
    binds loopback by default, so `<host>` here and below is `127.0.0.1` through the ssh
    tunnel SECURITY.md recommends, unless you started it with `--host`. That is the daemon's
    own flag, the address it binds, and not Roboglot's `--host`, which names a board's host
-   daemon.
+   daemon. A `--host` that is not loopback needs a token (`--token-file`), and the daemon
+   refuses to start on one without, unless you pass `--allow-no-token`.
    Confirms the socket, the handshake, the token and the version check, still with no robot.
 
 ## The daemon, on the robot, not moving
 
 6. Start the daemon for real. It will construct upstream's `RealWorld`, **which energises
-   every motor the moment it returns.** Expect the robot to stiffen. If it hangs here, its
-   constructor is busy-waiting on a silent IMU with the motors already live: kill it and check
-   the IMU before anything else.
+   every motor the moment it returns.** Expect the robot to stiffen, and then to hold where it
+   stands: the deadman arms on a client's first command, so nothing moves before one. If it
+   hangs here, its constructor is busy-waiting on a silent IMU with the motors already live:
+   kill it and check the IMU before anything else.
 7. `uv run roboglot doctor --robot toddlerbot:bridge --address tcp://<host>:9873`
    Read the verbs back, this time from the daemon: the ones it lists beyond the static
    description are what this build has. If `move` is absent, you have no walk checkpoint
@@ -68,7 +70,8 @@ script that ignores it.
     the single most important thing to confirm, because on this body silence means hold
     forever and Roboglot's daemon is the only thing that makes it mean anything else.
 12. **Send the daemon `SIGTERM`.** It should settle to the safe pose first and only then
-    release. Upstream's own exit path does not do this, which is why the daemon exists.
+    release, refusing every command that moves it while it settles. Upstream's own exit path
+    does not do this, which is why the daemon exists.
 
 ## Off the stand
 
