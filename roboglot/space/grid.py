@@ -185,55 +185,7 @@ class OccupancyGrid:
         the radius, rounded up to cells, and the cell more `inflated` grows it by."""
         return (math.ceil(radius_m / self.res_m) + 1) * self.res_m
 
-    def frontiers(self) -> list[Cell]:
-        """Free cells with a side on floor nobody has seen, the edge of the grid counting as
-        unseen: where a robot that wants to see more would go and look."""
-        free = self.cells == FREE
-        unseen = np.pad(self.cells == UNKNOWN, 1, constant_values=True)
-        beside = unseen[:-2, 1:-1] | unseen[2:, 1:-1] | unseen[1:-1, :-2] | unseen[1:-1, 2:]
-        rows, cols = np.nonzero(free & beside)
-        return [(int(c), int(r)) for r, c in zip(rows, cols, strict=True)]
-
     # ── planning ────────────────────────────────────────────────────────────────────
-
-    def distances(self, start: tuple[float, float], *, radius_m: float) -> npt.NDArray[np.float64]:
-        """How far a body of `radius_m` walks from `start` to the middle of every cell, in metres,
-        over floor the map has seen and never through the corner of two cells it cannot stand on,
-        and infinity for every cell it cannot reach: one search that answers for every goal at
-        once, as choosing the nearest of many needs. Floor nobody has seen blocks it, the cell the
-        body stands on excepted, and a start in the band a wall is grown by leaves it as `plan`
-        lets a walk leave it."""
-        far = np.full(self.cells.shape, math.inf)
-        s = self.cell_of(*start)
-        if not self.inside(s):
-            return far
-        solid = self.cells == OCCUPIED
-        if solid[s[1], s[0]]:
-            return far
-        unseen = self.cells == UNKNOWN
-        grown = self.inflated(radius_m)
-        band = grown & ~solid & ~unseen
-        reach = math.ceil(radius_m / self.res_m) + 1
-        passable = ~(grown | unseen) | _escape(s, band, solid, reach)
-        passable[s[1], s[0]] = True
-        h, w = passable.shape
-        far[s[1], s[0]] = 0.0
-        queue: list[tuple[float, Cell]] = [(0.0, s)]
-        while queue:
-            d, (c, r) = heapq.heappop(queue)
-            if d > far[r, c]:
-                continue
-            for dc, dr, step in _STEPS:
-                nc, nr = c + dc, r + dr
-                if not (0 <= nc < w and 0 <= nr < h) or not passable[nr, nc]:
-                    continue
-                if dc and dr and not (passable[r, nc] and passable[nr, c]):
-                    continue  # never through the corner of two cells that are not both walkable
-                nd = d + step * self.res_m
-                if nd < far[nr, nc]:
-                    far[nr, nc] = nd
-                    heapq.heappush(queue, (nd, (nc, nr)))
-        return far
 
     def plan(
         self,

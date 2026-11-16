@@ -16,7 +16,7 @@
         },
         "max_minutes": {
           "default": 5.0,
-          "description": "Wall-clock (or sim-clock) cap.",
+          "description": "Wall-clock cap.",
           "exclusiveMinimum": 0,
           "maximum": 180,
           "title": "Max Minutes",

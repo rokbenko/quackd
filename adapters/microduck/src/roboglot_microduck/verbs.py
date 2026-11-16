@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import math
 from functools import cache, partial
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -237,23 +237,16 @@ async def _stand(body: Body, ctx: VerbContext, _: NoParams) -> VerbResult:
     return await _sit_toggle(body, ctx, "standing")
 
 
-async def _kick(body: Body, ctx: VerbContext, p: KickParams) -> VerbResult:
+async def kick(ctx: VerbContext, p: KickParams) -> VerbResult:
+    """Says that the kick was sent and played out, and nothing of the ball: no body reports
+    whether the ball moved, so a pilot looks again with a fresh frame or asks a person."""
     ack = await ctx.transport.send_intent(Intent.do(KICK_SKILLS[p.leg]))
     if not ack.accepted:
         return VerbResult.fail(f"kick missed or refused: {ack.reason or 'no reason given'}")
     if (why := await _waited_out(ctx, 1.5)) is not None:
         stopped = f"the robot plays out the kick it was sent with its {p.leg} leg"
-        unread: dict[str, Any] = {"ball_moved_m": None} if body.reads_the_ball else {}
-        return await _ended_by(ctx, "kick", why, stopped, **unread)
-    if not body.reads_the_ball:
-        return VerbResult.success(f"kicked with {p.leg} leg")
-    state = await ctx.transport.get_state()
-    moved = state.extras.get("last_kick_ball_moved_m")
-    if moved is not None:
-        return VerbResult.success(
-            f"kicked with {p.leg} leg, ball moved {moved:.2f} m", ball_moved_m=moved
-        )
-    return VerbResult.success(f"kicked with {p.leg} leg", ball_moved_m=None)
+        return await _ended_by(ctx, "kick", why, stopped)
+    return VerbResult.success(f"kicked with {p.leg} leg")
 
 
 async def grab(ctx: VerbContext, _: NoParams) -> VerbResult:
@@ -441,7 +434,7 @@ def verbs_for(body: Body) -> dict[str, Verb]:
         Verb(
             "kick",
             words.kick_text,
-            partial(_kick, body),
+            kick,
             KickParams,
             timeout_s=10,
             done_condition=words.kick_done,
@@ -491,5 +484,4 @@ MICRODUCK_VERBS: dict[str, Verb] = verbs_for(MICRODUCK)
 
 sit = partial(_sit, MICRODUCK)
 stand = partial(_stand, MICRODUCK)
-kick = partial(_kick, MICRODUCK)
 stand_up = partial(_stand_up, MICRODUCK)

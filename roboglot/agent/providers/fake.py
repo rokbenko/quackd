@@ -41,21 +41,51 @@ def hello_world_strategy(obs: Observation, step: int, history: list[Exchange]) -
     return script[min(step, len(script) - 1)]
 
 
+#: How far the ball has to go, by find-and-kick's success line.
+KICK_MOVED_M = 0.3
+
+
+def _ball_moved(before: dict[str, Any], after: dict[str, Any]) -> float | None:
+    """How far apart the camera puts the ball in two frames taken from where the kick was sent,
+    or None when either gives no distance. A kick does not walk the body, so both are a bearing
+    and a distance from the same spot."""
+    near, far = before.get("est_distance_m"), after.get("est_distance_m")
+    if near is None or far is None:
+        return None
+    turn = math.radians((before.get("bearing_deg") or 0.0) - (after.get("bearing_deg") or 0.0))
+    return math.sqrt(max(0.0, near * near + far * far - 2 * near * far * math.cos(turn)))
+
+
+def _ball_when_kicked(history: list[Exchange]) -> dict[str, Any] | None:
+    """The ball the camera saw on the turn the last kick was chosen, if it saw one."""
+    for ex in reversed(history):
+        if ex.decision is not None and ex.decision.tool_call.name == "kick":
+            balls = _detections(ex.observation, "ball")
+            return balls[0] if balls else None
+    return None
+
+
 def find_and_kick_strategy(obs: Observation, step: int, history: list[Exchange]) -> ToolCall:
+    """No body reports whether a kick moved the ball, so after a kick the body took, this turn's
+    frame, taken after the kick, is the judge: the ball far enough from where the camera saw it
+    when the kick was chosen is a quack and a success, nearer is another approach and kick, and a
+    ball the camera did not place both before and after ends the run saying it cannot tell."""
     last = _last(obs)
     last_name = last.get("verb")
-    if last_name == "kick" and last.get("ok"):
-        moved = (last.get("data") or {}).get("ball_moved_m")
-        if moved is not None and moved >= 0.3:
-            if _count_calls(history, "quack") == 0:
-                return ToolCall(name="quack", arguments={"text": "yay, got it!"})
-        elif moved is None:
-            return ToolCall(
-                name="declare_success", arguments={"reason": "kicked; no displacement telemetry"}
-            )
-    if last_name == "quack" and _count_calls(history, "kick") > 0:
-        return ToolCall(name="declare_success", arguments={"reason": "ball displaced by the kick"})
     balls = _detections(obs, "ball")
+    if last_name == "kick" and last.get("ok"):
+        before = _ball_when_kicked(history)
+        moved = _ball_moved(before, balls[0]) if before and balls else None
+        if moved is None:
+            return ToolCall(
+                name="declare_failure",
+                arguments={"reason": "kicked, and the camera cannot place the ball to tell"},
+            )
+        if moved >= KICK_MOVED_M and _count_calls(history, "quack") == 0:
+            return ToolCall(name="quack", arguments={"text": "yay, got it!"})
+    if last_name == "quack" and _count_calls(history, "kick") > 0:
+        reason = f"the camera saw the ball {KICK_MOVED_M} m or more from where it was kicked"
+        return ToolCall(name="declare_success", arguments={"reason": reason})
     if not balls:
         if (
             _count_calls(history, "search_scan") >= 3

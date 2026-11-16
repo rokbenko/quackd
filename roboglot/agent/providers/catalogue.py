@@ -7,8 +7,8 @@ way: at the first call, in the vendor's words, after the run had already started
 four defaults Roboglot shipped were wrong by the time anyone checked them, which is what a field
 nobody validates does.
 
-So the list lives here instead, and a user picks from it: on the CLI, in shell completion, in the
-browser demo, and in `roboglot list-models`. When a vendor ships an LLM it is added here and
+So the list lives here instead, and a user picks from it: on the CLI, in shell completion, and in
+`roboglot list-models`. When a vendor ships an LLM it is added here and
 nowhere else. That is the cost of the promise. The list is only as current as its last edit, and
 `roboglot list-models` is how anyone sees what this build knows.
 
@@ -48,8 +48,8 @@ from typing import Any, Literal, get_args
 
 Status = Literal["current", "legacy", "preview", "specialised", "open"]
 
-#: Every status there is, in the order a list of LLMs should be shown in. `list-models` prints
-#: them in this order and the browser demo groups its dropdown by it.
+#: Every status there is, in the order a list of LLMs should be shown in. Each LLM's own status
+#: is checked against this tuple by tests/test_catalogue.py.
 STATUSES: tuple[Status, ...] = get_args(Status)
 
 

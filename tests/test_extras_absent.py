@@ -21,7 +21,6 @@ HEAVY = (
     "zmq",
     "zeroconf",
     "paho",
-    "onnxruntime",
     # The three clients a decision LLM can be reached through: the System One SDK for a server,
     # hosted or your own, the in-process encoder, and OpenAI's SDK for its Decisions API. All
     # three are off by default, so a default install must import the modules that know about

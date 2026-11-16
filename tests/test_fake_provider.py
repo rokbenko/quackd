@@ -119,8 +119,8 @@ async def test_scripted_thinking_never_contains_a_double_quote_or_stands_alone(
     provider: FakeProvider, observation: Observation
 ) -> None:
     """Three invariants the rest of the suite leans on. The quote matters most:
-    `tests/test_cli.py` greps the raw transcript for `"kick"` and `"name": "kick"` to prove
-    the duck kicked, and a quoted verb name in the thinking would make that pass vacuously.
+    `tests/test_cli.py` greps the raw transcript for `"kick"` to prove the duck was allowed
+    to kick, and a quoted verb name in the thinking would make that pass vacuously.
     The prefix keeps the line from ever reading as an LLM's own words, and the log prints
     one `think` row per turn, so it stays a single line."""
     turn = await provider.step(SYSTEM, [Exchange(observation=observation)], [])
@@ -143,6 +143,61 @@ async def test_the_scripted_pilot_has_no_text_and_no_reasoning_tokens() -> None:
     assert turn.thinking  # but it does explain itself
 
 
+def _kicked(
+    before: dict[str, Any], after: list[dict[str, Any]], data: dict[str, Any] | None = None
+) -> tuple[Observation, list[Exchange]]:
+    """A kick chosen with `before` in view and taken by the body, and the turn after it, whose
+    frame shows `after` and whose last result carries `data`."""
+    chose = Exchange(
+        observation=_observation(detections=[before]),
+        decision=Decision(tool_call=ToolCall(id="fake-1", name="kick", arguments={"leg": "right"})),
+    )
+    took = {"verb": "kick", "ok": True, "summary": "kicked with right leg", "data": data or {}}
+    now = _observation(detections=after, last_result=took)
+    return now, [chose, Exchange(observation=now)]
+
+
+def test_after_a_kick_the_scripted_pilot_judges_the_ball_by_the_camera() -> None:
+    """No body reports whether a kick moved the ball. The rule used to read a `ball_moved_m`
+    only the simulators wrote, and on a real duck declared success on any kick the body took.
+    It goes by the frame after the kick now: a ball still where it was is kicked again, even
+    under a result that says otherwise, and one the bound away, ahead or to the side, is a
+    quack and then a success that says the camera saw it."""
+    from roboglot.agent.providers.fake import KICK_MOVED_M, find_and_kick_strategy
+
+    where = _ball(0.22, 0.0)
+    still, history = _kicked(where, [where], data={"ball_moved_m": 10 * KICK_MOVED_M})
+    assert find_and_kick_strategy(still, 1, history).name == "kick"
+
+    beyond = _ball(where["est_distance_m"] + 2 * KICK_MOVED_M, 0.0)
+    for before, after in ((where, beyond), (_ball(KICK_MOVED_M, 60.0), _ball(KICK_MOVED_M, -60.0))):
+        moved, history = _kicked(before, [after])
+        assert find_and_kick_strategy(moved, 1, history).name == "quack"
+
+    quacked = Exchange(
+        observation=moved,
+        decision=Decision(tool_call=ToolCall(id="fake-2", name="quack", arguments={})),
+    )
+    took = {"verb": "quack", "ok": True, "summary": "quacked", "data": {}}
+    after_quack = _observation(detections=[beyond], last_result=took)
+    done = find_and_kick_strategy(
+        after_quack, 2, [*history, quacked, Exchange(observation=after_quack)]
+    )
+    assert done.name == "declare_success"
+    assert "camera saw the ball" in done.arguments["reason"]
+
+
+def test_a_kick_the_camera_cannot_judge_ends_the_run_saying_so() -> None:
+    """A ball gone from the frame after a kick may have gone far or nowhere the camera looks,
+    and a rule cannot tell which, so it says that rather than declaring the kick a success."""
+    from roboglot.agent.providers.fake import find_and_kick_strategy
+
+    gone, history = _kicked(_ball(0.22, 0.0), [])
+    call = find_and_kick_strategy(gone, 1, history)
+    assert call.name == "declare_failure"
+    assert "cannot place the ball" in call.arguments["reason"]
+
+
 def _pose_obs(x: float, y: float, theta: float) -> Observation:
     """An observation carrying a pose, which the shape strategies steer on."""
     return Observation(
@@ -163,7 +218,7 @@ def _drive(strategy: Any, poses: list[tuple[float, float, float]]) -> list[ToolC
 def test_the_square_walker_says_how_square_it_was_and_fails_when_it_is_not() -> None:
     """Four legs is a count, not a shape. Each leg ends when the pose says it has gone far
     enough, so an overshoot or a corner short of ninety degrees gives four legs that finish
-    somewhere else. `docs/assets/hero3d.py` publishes the GIF on this outcome."""
+    somewhere else."""
     from roboglot.agent.providers.fake import SHAPE_CLOSURE_M, square_strategy
 
     # a walk that wanders off: four legs, ending far from where it started

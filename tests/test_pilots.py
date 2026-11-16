@@ -305,9 +305,7 @@ async def test_the_artifacts_are_what_the_docs_say(tmp_path: Path) -> None:
         line["msg"] for line in _team_lines(result) if line.get("msg", {}).get("kind") == "TALK"
     ]
     assert len(talks) == 4, "two between the members, two from the runner"
-    assert all("t" in line and "sim_t" not in line for line in _team_lines(result)), (
-        "a pilot team runs on wall-clock seconds and must not stamp them as sim time"
-    )
+    assert all("t" in line for line in _team_lines(result)), "every line carries its time"
     for name in ("duck", "arm"):
         member = result.run_dir / "robots" / name
         assert (member / "transcript.jsonl").exists()

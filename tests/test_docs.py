@@ -4321,9 +4321,9 @@ def test_the_release_procedure_writes_outside_the_checkout_and_tags_only_what_ci
     hash lists into the checkout, where nothing ignores them and a root `body.md` is a living
     document the guards read. Every file a step writes goes under the scratch directory the
     setup line makes. And a patch cut from the last tag is never merged into `main` before its
-    tag, so without CI on its release branch the `packaging`, `physics` and `policy` jobs would
-    first run on a tag already public. The tag and the release body keep the maintainer's voice
-    rules but not the length rule, which is for a reply to one person."""
+    tag, so without CI on its release branch the `packaging`, `ui`, `onboard` and `policy` jobs
+    would first run on a tag already public. The tag and the release body keep the maintainer's
+    voice rules but not the length rule, which is for a reply to one person."""
     steps = _releasing_section("Cutting a release")
     fences = re.findall(r"```bash\n(.*?)```", steps, flags=re.S)
     assert re.search(r'\bout="\$\(mktemp -d\)"', fences[0]), (

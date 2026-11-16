@@ -2,6 +2,10 @@
 
 **Status:** accepted · **Date:** 2026-10-25 · Amends [ADR-0048](0048-policies-are-the-arms-executor.md) (Roboglot may start the policy server, still in a process of its own, and `hf:NAME` is still typed on the flag and named nowhere else) · Implemented in `adapters/lerobot/src/roboglot_lerobot/policy/endpoint.py`, `policy/endpoint_upstream_api.py`, the `/v1/health` route and `--token-env` in `policy/server.py`, the bearer in `policy/client.py`, `roboglot policy endpoint` in `roboglot/cli.py` and `hf:NAME` in `roboglot/adapters/base.py` ([page](../guides/policies.md#on-a-hugging-face-endpoint), [the endpoint's table](../adapters/lerobot/README.md#the-endpoints-upstream-hugging-face-inference-endpoints))
 
+**Amended 2026-11-16:** `roboglot preflight`, one of the commands the Decision says take
+`--policy-url hf:NAME`, no longer exists: it went with every simulator on 2026-11-15. The decision
+otherwise stands for `run`, `serve-mcp` and `policy check`.
+
 ## Context
 
 SmolVLA and pi05 want a GPU, and the one way Roboglot offered to give them one was a machine of
