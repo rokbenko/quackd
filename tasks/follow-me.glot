@@ -23,13 +23,17 @@ learned_verbs: []
 
 # Task
 
-You are piloting a small biped duck robot. Find the person and follow them, keeping about
-half a metre away.
+You are piloting a small biped duck robot. Find the person and follow them, keeping as near
+as the camera can measure them and no nearer.
 
 ## Strategy
 
 1. `search_scan` until a `person` is detected.
-2. `walk_to` the person with `stop_distance` 0.5. It stops on its own when close enough.
+2. `walk_to` the person with `stop_distance` 2. It stops on its own: within that distance, or
+   sooner once the frame's edge cuts the person and the camera can no longer measure them.
+   Either ends a leg.
+   If it refuses the distance as nearer than the camera can measure a person, `walk_to` again
+   with the distance it names.
 3. `gaze` at them, then `walk_to` again if they have moved.
 4. If you lose them, `search_scan` (they were probably behind you). Quack once when you
    find them again.
@@ -38,7 +42,8 @@ half a metre away.
 
 ## Notes
 
-- Never get closer than 0.4 m. If `walk_to` reports a distance under that, `stop` and wait.
+- Never try to get nearer than `walk_to` takes you. Once it says the frame's edge cuts the
+  person, the camera cannot tell how near they are.
 
 ## Memory
 

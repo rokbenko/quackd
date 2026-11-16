@@ -80,6 +80,29 @@ def test_extra_keys_and_bad_ids_are_rejected() -> None:
         _manifest(intents=["twist", "twist"])
 
 
+@pytest.mark.parametrize(
+    "limits",
+    [
+        {"max_vx": -0.1},
+        {"max_wz": -1.0},
+        {"max_vx": float("nan")},
+        {"max_vy": float("inf")},
+        {"gaze_yaw_deg": float("-inf")},
+        {"camera_fov_deg": -62.0},
+    ],
+    ids=lambda limits: ", ".join(f"{k} {v}" for k, v in limits.items()),
+)
+def test_a_limit_that_is_not_finite_or_is_negative_is_refused(limits: dict[str, float]) -> None:
+    """`limits` was any number at all, and the verbs clamp to it as it stands: a negative
+    `max_vx` turned a request to stand still into the full speed forward, a negative `max_wz`
+    turned the body the other way, and NaN went out as the twist itself. A limit is a magnitude,
+    so one that is not finite or is under nought is refused where the manifest is validated,
+    whoever wrote it: an adapter, a peer's announce or a robot's file."""
+    with pytest.raises(ValidationError, match="limits must be finite and not negative"):
+        _manifest(limits=limits)
+    assert _manifest(limits={"max_vx": 0.0, "max_wz": 1.0, "camera_fov_deg": 62.0}).limits
+
+
 def test_digest_is_a_capability_fingerprint() -> None:
     # the backend and the id are not capabilities: two backends that offer the same verbs match
     a = microduck_manifest("mock", "duck-a")

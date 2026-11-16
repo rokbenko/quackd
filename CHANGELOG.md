@@ -290,6 +290,88 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
   the runner writes now and names the member, as in `arm success after 0 steps`.
+- **`go_to` stops where its camera can range the target no nearer, rather than walking on into
+  it.** `go_to`, and `walk_to` and `approach_and` through it, stopped only once the detection's
+  distance fell to `stop_distance`, and a detector that reads distance off the size of a box can
+  read no nearer than a box as big as the frame. For a person on a 4:3 frame through the 62
+  degree lens a detector guesses that is 1.775 m, above the 1.5 m the verb took at most, so on any
+  body with a camera seen through YOLO, here or on a `--host` board, `go_to` toward a person walked
+  on at up to 0.2 m/s until its timeout. A pet floored at 0.388 m, past the default stop of 0.25,
+  a ball through YOLO at 0.111 m, and a ball through the colour detector on a Microduck alpha's
+  upright frame at 0.148 m, past the least stop of 0.1; a detection with no distance never
+  arrived at all. Now a stop distance nearer than the camera can measure the target is refused on
+  the first frame, with nothing sent but the look that centres the head, naming one it can: the
+  nearest the detector measures before it marks the target as cut by the frame, a creeping step
+  farther, rounded up to the centimetre, so that asked for, it is arrived at by measurement. A
+  detection of the target whose box the frame's edge cuts, so that its reading is only an upper
+  bound, ends the approach with the body stopped, whether it is the one steered by or another one
+  beside it, and the result says which one, that the frame's edge cuts it so its distance cannot
+  be measured, and its reading as the farthest it can be, as in `go_to stopped: the frame's edge
+  cuts the person, so its distance cannot be measured; it reads ~1.86 m, the farthest it can be
+  if it is the size the detector takes it for`. Where nothing had moved yet it says `go_to did
+  not start` and that the pilot can look or turn until that one is whole in the frame or out of
+  view. A detection with no distance, or with one that is not finite and above nought, ends it
+  the same way, quoting the last reading. A network's box counts as cut within three of its input
+  pixels, or two hundredths of the frame's height if that is more, of the frame's top or bottom:
+  a margin chosen on the safe side, not a measurement, since nobody has measured where a network
+  puts a cut edge, and it ends an approach a little sooner. The colour detector marks a ball
+  the frame cuts at the top, and one cut at the bottom once its middle row has left the frame,
+  whose width is then a chord: on the Open Duck's mock that ball's reading rose as the duck came
+  nearer, and `go_to` walked on and said it had lost the ball. That ending is not a failure that
+  `abort_when` counts and never says `reached`: its data has `at_most_m`, `cannot_range` and
+  `started` where an arrival has `distance_m`, and `another` with the reading of the one steered
+  by (`steered_m`) when it was not that one. Which detection is the target walked toward is told
+  by where the one steered by on the frame before could have got to at the verb's own speeds,
+  not by the order a detector lists them in, which put a whole ball three metres off in its place
+  once the frame cut the one walked toward; where no detection, or more than one, could be it,
+  the result says go_to cannot tell, and `tracked` is false. `approach_and` runs its `then` verb
+  after that ending only when go_to can tell the target it walked toward and that target has an
+  upper bound within the stop distance; after an arrival by measurement it runs `then` as it
+  always did, since the body is then within the stop distance of a target of that label, even
+  where go_to cannot tell which. Otherwise it leaves the body stopped and fails, naming the verb
+  it did not run, carrying `at_most_m`, and saying why: the target may be farther than the stop
+  distance, the walk stopped for another one of its kind, or go_to cannot tell which one it
+  walked toward. A detection that gives no distance from the start is refused.
+  `stop_distance` now goes up to 2.48 m, the distance a refusal names for a person on a 16:9
+  frame through the guessed lens, so it can be asked for, and the parameter and the verb's
+  description say all this, as do the Microduck's, Huebot's and Open Duck's own descriptions of
+  `go_to` and `approach_and`, which moves the fingerprint of every manifest that offers `go_to`.
+  The detectors Roboglot ships say how near they can measure and mark a detection the frame cuts;
+  a detector of your own that says neither is not guessed for, and one of its detections with no
+  distance stops the approach. `follow-me.glot` told the pilot to stop at 0.5 m and never come
+  nearer than 0.4, distances no detector can report for a person; it asks for 2 m now, takes the
+  distance a refusal names, and treats the frame's edge cutting the person as the end of a leg,
+  and its hash in `tests/golden/glot_hashes.json` is locked again to match.
+- **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
+  pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
+  twist nor zero it once its deadman window had passed, and the body kept walking on its last
+  twist for as long as the frame took; the heartbeat waited with it. The pass runs in a worker
+  thread now, as the board's detector does, one at a time, so `go_to` holds its twist for one
+  deadman window and then zeroes it while the frame is still being looked at.
+- **`go_to` says when the distance it arrived by was a guess.** Through a lens nobody measured,
+  `observe` says a distance is `(uncalibrated: distance is a rough guess)`, and `go_to`'s
+  `reached the ball: ~0.25 m away` left that out, though on a guessed lens it is the difference
+  between arriving and announcing it from half a metre away. The summary ends with the same
+  words now and the data carries `calibrated: false`. An arrival through a measured lens reads as
+  it did.
+- **A manifest whose limits are not finite, or are negative, is refused.** `limits` took any
+  number, and the verbs clamp to them as they stand: a negative `max_vx` turned a `move` asked to
+  stand still into the full speed forward, a negative `max_wz` turned the body the other way, and
+  NaN went out as the twist itself. A manifest is refused now when any limit is not finite or is
+  under nought, whoever wrote it, an adapter of your own, a body's daemon or a peer's announce,
+  and the speed clamp reads a limit that got past that as no limit at all, the schema's bound,
+  while it reads any other real number set there, a numpy number or a Decimal as much as a
+  float. A body whose transport gives an endless `head_fade_s` is no longer waited on before
+  `go_to` looks.
+- **A head sweep the body refused no longer reads as one that found nothing.** `search_scan` on a
+  body that only looks threw each look's answer away, so a body that refused every look was
+  reported as having swept its range without the target, as in `ball not found in a gaze sweep of
+  3 looks (90°)`. It ends at the first refused look now and says so, as in `search_scan: a look
+  was refused, so the sweep stopped after 0 of 3 looks:` and the body's reason. The look that
+  centres the head before `go_to` and a turning `search_scan` is read the same way on a body with
+  a head to look with: refused, the verb ends before anything moves, rather than steering on
+  bearings taken through a head pointing wherever it was left. A body with no head, which
+  refuses a look as a matter of course, goes on as before.
 - **A body whose manifest has no blurb is introduced to the pilot as a robot.** The system prompt
   opens with `You are the brain of` and the manifest's `blurb`, and for a manifest that left the
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or

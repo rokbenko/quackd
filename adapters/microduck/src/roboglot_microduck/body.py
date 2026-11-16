@@ -245,9 +245,21 @@ MOVE_TEXT = "Walk with a velocity for a duration. Use small values; the robot is
 """The 0.3 description of `move`, so an old duck's tool schemas are byte-identical."""
 
 GO_TO_TEXT = (
-    "Walk toward a detected target and stop at a distance. Closes the loop on the camera itself."
+    "Walk toward a detected target and stop at a distance. Closes the loop on the camera itself. "
+    "Stops sooner, without arriving, where the frame's edge cuts the target or another of its "
+    "kind so that the camera can no longer measure it."
 )
-"""The 0.3 description of `go_to`."""
+"""The 0.3 description of `go_to`, and the ending it has had since: a detection the frame's edge
+cuts so that its distance cannot be measured stops the walk there, which says so rather than
+walking on. Not every cut does: one at a side only, or a ball cut at the bottom with its middle
+still in view, is measured as before."""
+
+APPROACH_AND_TEXT = (
+    "walk_to a target, then run another verb (kick, grab), only once the camera puts the target "
+    "within stop_distance."
+)
+"""The 0.3 description of `approach_and`, and when the other verb runs: not after a walk that
+stopped where the frame's edge cut a target the camera could not then place within it."""
 
 SEARCH_SCAN_TEXT = "Rotate in steps, looking for a target. Returns where it was seen."
 """The 0.3 description of `search_scan`."""
@@ -283,7 +295,7 @@ MICRODUCK = Body(
             "move": MOVE_TEXT,
             "go_to": GO_TO_TEXT,
             "search_scan": SEARCH_SCAN_TEXT,
-            "approach_and": "walk_to a target, then run another verb (kick, grab).",
+            "approach_and": APPROACH_AND_TEXT,
         }
     ),
     words=Words(
