@@ -1,7 +1,7 @@
 """The shape of "what the duck sees", independent of how it was seen.
 
 `Detection` is the only thing verbs and the LLM consume. Whether it came from an HSV
-threshold in sim, a YOLO model on a laptop, or — one day — upstream `mediad`'s feature
+threshold over a frame, a YOLO model on a laptop, or — one day — upstream `mediad`'s feature
 stream, the rest of Roboglot does not care.
 """
 

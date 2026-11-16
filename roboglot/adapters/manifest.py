@@ -126,7 +126,7 @@ def without_unsaid_back_load(dumped: dict[str, Any]) -> dict[str, Any]:
     """A dump with no `carries_kg` key where nobody said one, as a dump had before the field came.
 
     Every other figure nobody published dumps as null, and has since the digest first hashed the
-    dump, so one more null would have changed every body's digest and every bid (ADR-0079).
+    dump, so one more null would have changed every body's digest (ADR-0079).
     Shared with the `.glot` override, so a task file that does not say it dumps as it always
     did: the contract `robot_load_glotfile` hands back and `run_start` records."""
     if dumped.get("carries_kg") is None:

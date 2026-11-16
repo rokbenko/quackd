@@ -738,7 +738,6 @@ def run_by_hand(commands: Sequence[Sequence[str]], *, poll_s: float, answer: str
         os.environ["HOME"] = os.environ["USERPROFILE"] = str(home)
         os.environ["ROBOGLOT_REGISTRY_DIR"] = str(home / ".roboglot")
         os.environ["ROBOGLOT_MEMORY_DIR"] = str(home / ".roboglot" / "memory")
-        os.environ["ROBOGLOT_CACHE_DIR"] = str(home / ".roboglot" / "cache")
         os.environ["HF_HOME"] = str(home / ".cache" / "huggingface")
         os.environ["HF_TOKEN"] = ACCOUNT_TOKEN
         os.environ.pop("HF_TOKEN_PATH", None)

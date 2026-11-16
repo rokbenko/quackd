@@ -29,8 +29,8 @@ You are piloting a small biped duck robot. Find the ball and kick it.
 1. `search_scan` to locate the ball. It rotates in steps and reports detections.
 2. `walk_to` the ball and stop about 0.25 m away. `walk_to` closes the approach loop
    itself using the camera — you do not need to micro-manage it.
-3. `kick`. The result tells you whether the ball moved and by how much.
-4. Verify with a fresh frame or the kick result. If the ball has not moved at least
+3. `kick`. The result says the kick was sent, not whether the ball moved.
+4. Verify with a fresh frame or a person's word. If the ball has not moved at least
    0.3 m, `walk_to` it again and retry the kick.
 5. When the ball has moved ≥ 0.3 m, `remember` where you found the ball, `quack` once
    and declare success.

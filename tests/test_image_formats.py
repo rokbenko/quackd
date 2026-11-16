@@ -311,7 +311,7 @@ def _opens(path: Path) -> Iterator[ast.Call]:
 
 
 def test_every_image_open_that_ships_names_its_formats() -> None:
-    """What a wheel or a robot runs. `docs/assets`, `web/` and `docs/examples` open a file the
+    """What a wheel or a robot runs. `docs/assets` and `docs/examples` open a file the
     person running them chose, and no install runs them."""
     shipped = [
         *REPO.glob("roboglot/**/*.py"),

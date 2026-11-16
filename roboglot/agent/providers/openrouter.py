@@ -108,8 +108,8 @@ LIST_TIMEOUT_S = 10.0
 hundred kilobytes long; a host that cannot answer it in ten seconds will not answer a turn."""
 
 _LISTINGS: dict[str, list[dict[str, Any]]] = {}
-"""The LLM list, read once per process and base URL. A preflight sweep and a pilot team build
-a provider per run, and none of them needs the same list fetched again."""
+"""The LLM list, read once per process and base URL. A pilot team builds a provider per run,
+and none of them needs the same list fetched again."""
 
 
 @dataclass(frozen=True, slots=True)

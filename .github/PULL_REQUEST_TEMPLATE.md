@@ -14,7 +14,7 @@
 
 - [ ] `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest` pass locally
 - [ ] No network calls in tests; no API keys needed
-- [ ] No upstream assets added, from any project: no logos, meshes (`.stl`), MJCF or URDF, ONNX policies, keyframes or videos, and nothing copied out of `~/.roboglot/cache`
+- [ ] No upstream assets added, from any project: no logos, meshes (`.stl`), MJCF or URDF, ONNX policies, keyframes or videos
 - [ ] CHANGELOG.md updated under *Unreleased*
 - [ ] `uv run roboglot validate tasks/*.glot` passes (CI runs it)
 

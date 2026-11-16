@@ -825,7 +825,7 @@ persona: Determined and cheerful. Quack once when you succeed.
 # Task
 Find the ball and kick it.
 ## Strategy
-1. `search_scan`. 2. `walk_to` the ball, stop ~0.25 m away. 3. `kick`. 4. Verify, and retry if it did not move.
+1. `search_scan`. 2. `walk_to` the ball, stop ~0.25 m away. 3. `kick`. 4. Verify with a fresh frame or a person's word, and retry if it did not move.
 ```
 
 That is a `glot: 0` file, the contract since 0.1, and every bundled v0 file still parses. A `glot: 1` file can also say which body it is for and what it truly needs:

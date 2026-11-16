@@ -155,9 +155,7 @@ class Budgets(BaseModel):
     max_steps: int = Field(
         default=40, ge=1, le=1000, description="Maximum number of LLM decisions."
     )
-    max_minutes: float = Field(
-        default=5.0, gt=0, le=180, description="Wall-clock (or sim-clock) cap."
-    )
+    max_minutes: float = Field(default=5.0, gt=0, le=180, description="Wall-clock cap.")
     max_llm_calls: int = Field(
         default=40,
         ge=1,

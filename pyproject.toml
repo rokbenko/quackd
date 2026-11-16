@@ -260,12 +260,9 @@ include = [
   "roboglot", "tasks", "bridge", "docs", "tests",
   "README.md", "LICENSE", "NOTICE", "CHANGELOG.md", "hatch_build.py",
 ]
-# The README's images are served from raw.githubusercontent, so no published artefact ever
-# needed them. Keeping them out matters for one of them: `roboglot-on-off.gif` renders
-# upstream's model
-# and carries its meshes' CC BY-NC-SA 4.0 terms, and a published package must stay wholly
-# Apache-2.0. An
-# example's log is read on GitHub, so no published artefact needs its GIF or its frames either.
+# The README's images are served from raw.githubusercontent, so no published artefact needs
+# them. An example's log is read on GitHub, so no published artefact needs its GIF or its
+# frames either.
 exclude = [
   "docs/assets/*.gif", "docs/assets/*.png", "docs/assets/*.svg",
   "docs/examples/**/*.gif", "docs/examples/**/*.jpg",
@@ -362,7 +359,7 @@ markers = [
     """live_decision: calls a real decision LLM over the network (needs that preset's key, \
 TYPESAFE_API_KEY for jev or OPENAI_API_KEY for openai, and ROBOGLOT_LIVE_DECISION=1)""",
 ]
-# A single test that runs five minutes has hung: the slowest here, a ten-seed sweep, takes
-# well under one. pytest then dumps every thread's stack to stderr and carries on, so the
-# job timeout in ci.yml ends a hang with the blocked frame in the log rather than nothing.
+# A single test that runs five minutes has hung. pytest then dumps every thread's stack to
+# stderr and carries on, so the job timeout in ci.yml ends a hang with the blocked frame in
+# the log rather than nothing.
 faulthandler_timeout = 300
