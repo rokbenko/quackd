@@ -3629,6 +3629,10 @@ class AgentLoop:
                 # and where it could not be put down, the person at the terminal may take
                 # torque off while they hold it, before the close keeps it on
                 await self._offer_release(folded)
+            with contextlib.suppress(Exception):
+                # a stop the run said goes on by itself is given its bound to land while the
+                # record is still open, and said plainly if it did not (`see_out_stops`)
+                await self.executor.see_out_stops()
             final_state: dict[str, Any] = {}
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()

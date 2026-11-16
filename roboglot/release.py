@@ -414,6 +414,30 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> bool:
     return all(task.done() for task in tasks)
 
 
+async def _told_twice(
+    folding: asyncio.Future[Any], *beside: asyncio.Future[Any]
+) -> tuple[bool, BaseException | None]:
+    """Tell a fold to stop, and again if it has not ended `STOPPED_FOLD_S` later, and say
+    whether it still goes on, and the cancel or the interrupt of this call that came meanwhile,
+    or None. `beside`, the watch for a press, is told with the first.
+
+    A second press, or a cancel, while the fold was waited for raised out of the first wait and
+    took the place of everything after it: the fold was told once, nothing marked it, and the
+    person was told it had stopped, or that a release had not gone out, while it went on. It is
+    kept here and handed back, and both tellings still happen, each waited for as
+    `cancel_and_wait` waits, so no number of presses can cut them short."""
+    later: BaseException | None = None
+    for tasks in ((folding, *beside), (folding,)):
+        try:
+            if await cancel_and_wait(*tasks) or folding.done():
+                break
+        except (asyncio.CancelledError, KeyboardInterrupt) as e:
+            later = e
+            if folding.done():
+                break
+    return not folding.done(), later
+
+
 @contextlib.asynccontextmanager
 async def one_watch(person: Any) -> AsyncIterator[Callable[[], Awaitable[Any]] | None]:
     """A press watched for once across what a person may stop in turn: a count and then a fold.
@@ -472,10 +496,13 @@ async def fold_unless_stopped(
         # is told twice, as after a press, and the cancel or the interrupt is marked when it is
         # still going (`fold_went_on`): told once, a fold that lost the cancel was said to have
         # stopped, or a release not to have gone out, and then went on.
-        await cancel_and_wait(folding, watching)
-        if not folding.done() and not await cancel_and_wait(folding):
-            setattr(stopped_it, WENT_ON, True)
-        raise
+        went_on, later = await _told_twice(folding, watching)
+        leaving = later or stopped_it
+        if went_on:
+            setattr(leaving, WENT_ON, True)
+        if leaving is stopped_it:
+            raise
+        raise leaving from stopped_it
     if folding.done():
         # the fold ended first, or both at once: it is what happened, whatever was pressed
         await cancel_and_wait(watching)
@@ -484,7 +511,13 @@ async def fold_unless_stopped(
         # Told twice, since a cancel lost on its way is not lost twice, and said for what it is if
         # it still goes on: a fold abandoned after the first wait was reported stopped, and the
         # stop sent after it was followed by its next goals.
-        if not await cancel_and_wait(folding) and not await cancel_and_wait(folding):
+        went_on, later = await _told_twice(folding)
+        if later is not None:
+            # a second press, or a cancel, while the fold was waited for goes on up, marked
+            if went_on:
+                setattr(later, WENT_ON, True)
+            raise later
+        if went_on:
             raise FoldWentOn
         raise FoldStopped
     # a `stopped` that failed is no stop, so the fold goes on alone. Awaited directly, so a
