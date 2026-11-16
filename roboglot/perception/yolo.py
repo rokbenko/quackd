@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 
 from PIL import Image
 
-from roboglot.perception.base import Detection
+from roboglot.perception.base import Detection, edge_band_px
 
 logger = logging.getLogger("roboglot.perception")
 
@@ -28,25 +28,18 @@ HEIGHT_M = {"ball": 0.10, "person": 1.6, "pet": 0.35}
 GUESSED_FOV_DEG = 62.0
 """The lens assumed when nobody said which one this is: a Pi Camera Module 2's."""
 
-EDGE_PX = 1.0
-"""How near a box's top or bottom has to come to the frame's for the frame to have cut it: into
-the outermost row of pixels. A model reports a box the frame cut at 0 or at the frame's height,
-or a pixel short of it, and the colour detector reads its blobs' edges the same way."""
-
 WIDEST_FRAME = 16 / 9
 """The widest frame, width over height, Roboglot expects a camera to give: 16:9, the shape of a
 Microduck beta's frame at every size mediad serves (upstream's 1280 by 720) and of a webcam's HD
 modes. A lens's field of view is across the width, so the wider the frame, the shorter its height
-for that lens, and the farther the nearest reading of a box as tall as it (`frame_tall_m`)."""
+for that lens, and the farther the nearest reading of a box that fits in it (`nearest_box_m`)."""
 
 
-def frame_tall_m(height_m: float, w: float, h: float, fov_deg: float) -> float:
-    """What a box as tall as a `w` by `h` frame reads through a lens `fov_deg` wide, for a target
-    `height_m` tall, by `detections_from_boxes`' own arithmetic: the nearest a box detector can
-    read that target, since no box is taller than the frame. A nearer target reads this too, its
-    box cut by the frame's edges."""
+def box_reading_m(height_m: float, w: float, box_h: float, fov_deg: float) -> float:
+    """What a box `box_h` pixels tall reads on a frame `w` pixels wide through a lens `fov_deg`
+    wide, for a target `height_m` tall, by `detections_from_boxes`' own arithmetic."""
     f = (w / 2) / math.tan(math.radians(fov_deg) / 2)
-    return round(f * height_m / h, 3)
+    return round(f * height_m / max(1.0, box_h), 3)
 
 
 def detections_from_boxes(
@@ -70,10 +63,12 @@ def detections_from_boxes(
     with `--host` cannot drift apart: the same boxes are the same detections, to the last bit.
 
     A box the frame cuts at its top or its bottom is shorter than the target, so its distance
-    is only an upper bound, and the detection is marked `clipped`. One cut at a side only keeps
-    its whole height and is measured as any other.
+    is only an upper bound, and the detection is marked `clipped`: one whose top or bottom lies in
+    the frame's edge band (`edge_band_px`). One cut at a side only keeps its whole height and is
+    measured as any other.
     """
     f = (w / 2) / math.tan(math.radians(fov_deg) / 2)
+    band = edge_band_px((w, h))
     out: list[Detection] = []
     for name, conf, *corners in boxes:
         label = COCO_TO_LABEL.get(name)
@@ -93,21 +88,23 @@ def detections_from_boxes(
             est_distance_m=round(f * HEIGHT_M[label] / bh, 3),
             calibrated=calibrated,
         )
-        if y1 < EDGE_PX or y2 > h - EDGE_PX:
+        if y1 < band or y2 > h - band:
             detection.mark_clipped()
         out.append(detection)
     return out
 
 
-def nearest_box_m(label: str, size: tuple[int, int], fov_deg: float) -> float | None:
-    """The nearest a box detector reads `label` at on a frame of `size` through a lens `fov_deg`
-    wide (`frame_tall_m`), or None for a label it has no height for. What `YoloDetector` and
-    `HostDetector` name as their `nearest_m`."""
+def nearest_box_m(label: str, size: tuple[float, float], fov_deg: float) -> float | None:
+    """The nearest a box detector measures `label` at on a frame of `size` through a lens
+    `fov_deg` wide, or None for a label it has no height for: what the tallest box it does not
+    mark reads, as tall as the frame less its edge band at the top and the bottom. A nearer target
+    reads farther than it is, its box cut, and is marked. It assumes the target is centred in the
+    frame (`nearest_measurable`). What `YoloDetector` and `HostDetector` name as `nearest_m`."""
     height = HEIGHT_M.get(label)
     if height is None:
         return None
     w, h = size
-    return frame_tall_m(height, w, h, fov_deg)
+    return box_reading_m(height, w, h - 2 * edge_band_px(size), fov_deg)
 
 
 class YoloDetector:

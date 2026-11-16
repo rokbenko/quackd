@@ -245,6 +245,25 @@ def test_the_yolo_detector_gives_what_the_shared_maths_gives_for_its_boxes(
     assert model.calls == [((640, 480), 0.25, False)]
 
 
+@pytest.mark.parametrize(("w", "h"), [(640, 480), (1280, 720), (1920, 1080), (480, 640)])
+def test_a_cut_box_a_network_reports_two_of_its_pixels_inside_the_edge_is_still_marked(
+    w: int, h: int
+) -> None:
+    """A network regresses a box on its own input, ultralytics' 640 pixels on the long side, and
+    it is scaled back to the frame, so the edge of a box the frame cut can land a pixel or two of
+    that input inside the frame's edge, more of the frame's own on a bigger frame. With a band of
+    one row such a box went unmarked, its reading floored above the nearest a refusal names, and
+    `go_to` crept on toward a person filling the frame until its timeout."""
+    inset = 2 * max(w, h) / 640
+    (cut,) = detections_from_boxes(
+        [("person", 0.9, w / 3, inset, 2 * w / 3, h - inset)], w, h, fov_deg=62.0
+    )
+    (inside,) = detections_from_boxes(
+        [("person", 0.9, w / 3, h / 4, 2 * w / 3, 3 * h / 4)], w, h, fov_deg=62.0
+    )
+    assert cut.clipped and not inside.clipped
+
+
 def test_a_box_the_frame_cuts_at_its_top_or_bottom_says_its_distance_is_only_an_upper_bound() -> (
     None
 ):
@@ -269,23 +288,31 @@ def test_a_box_the_frame_cuts_at_its_top_or_bottom_says_its_distance_is_only_an_
 @pytest.mark.parametrize(
     ("w", "h", "fov_deg"), [(640, 480, 62.0), (1280, 720, 90.0), (320, 240, 48.5)]
 )
-def test_a_box_detector_names_as_its_nearest_reading_what_a_box_as_tall_as_the_frame_reads(
+def test_a_box_detector_names_as_its_nearest_reading_what_its_tallest_unmarked_box_reads(
     w: int, h: int, fov_deg: float, fake_ultralytics: type[_FakeYOLO]
 ) -> None:
-    """`go_to` refuses a stop distance nearer than the detector can read for the target, and
+    """`go_to` refuses a stop distance nearer than the detector can measure the target at, and
     asks the detector, since only the detector knows how it measures. A box detector's nearest is
-    what a box as tall as the frame reads, to the last bit, for every label it has a height for,
-    the same in this process and on a board, and nothing for a label it has none for."""
+    what the tallest box it does not mark reads, the frame's height less its edge band at the
+    top and the bottom, to the last bit, for every label it has a height for, the same in this
+    process and on a board, and nothing for a label it has none for. A box as tall as the frame
+    named it before, and such a box is marked, so the distance named was never measured."""
+    from roboglot.perception.base import edge_band_px
     from roboglot.perception.host import HostDetector
 
     local = YoloDetector(fov_deg=fov_deg)
     board = HostDetector(SimpleNamespace(address="board:0"), fov_deg=fov_deg)  # type: ignore[arg-type]
+    band = edge_band_px((w, h))
     for coco, label in COCO_TO_LABEL.items():
-        (tall,) = detections_from_boxes(
-            [(coco, 0.9, 0.0, 0.0, w / 3, float(h))], w, h, fov_deg=fov_deg
+        (tallest,) = detections_from_boxes(
+            [(coco, 0.9, 0.0, band, w / 3, h - band)], w, h, fov_deg=fov_deg
         )
-        assert local.nearest_m(label, (w, h)) == tall.est_distance_m, label
-        assert board.nearest_m(label, (w, h)) == tall.est_distance_m, label
+        (marked,) = detections_from_boxes(
+            [(coco, 0.9, 0.0, band - 0.5, w / 3, h - band)], w, h, fov_deg=fov_deg
+        )
+        assert not tallest.clipped and marked.clipped, label
+        assert local.nearest_m(label, (w, h)) == tallest.est_distance_m, label
+        assert board.nearest_m(label, (w, h)) == tallest.est_distance_m, label
     assert set(COCO_TO_LABEL.values()) == set(HEIGHT_M)
     assert local.nearest_m("cup", (w, h)) is None and board.nearest_m("cup", (w, h)) is None
 

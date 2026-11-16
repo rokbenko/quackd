@@ -96,16 +96,54 @@ def nearest_measurable(
     """The nearest distance `detector` can measure a `label` at on a frame of `size` (width,
     height) through its lens, in metres, or None when it does not say.
 
-    A detector that reads distance off the size of a target's box cannot read less than a box as
-    big as the frame gives, and says so through `nearest_m(label, size)`, as every detector
-    Roboglot ships does. A nearer target still reads that, its detection `clipped`. A detector
-    that names no nearest reading, a third party's, is not guessed for: `go_to` then has only its
-    detections' marks and distances to go on."""
+    A detector that reads distance off the size of a target's box cannot measure a box that
+    reaches the frame's edge band (`edge_band_px`), since it marks one as `clipped`, so the nearest
+    it measures is what the biggest box inside the band reads, and says so through
+    `nearest_m(label, size)`, as every detector Roboglot ships does. That reading assumes the
+    target is centred in the frame, as it is when the camera sits at the target's own height; a
+    target above or below the camera's height runs off the frame sooner, farther away, and the
+    approach ends there as near as the camera can tell. A detector that names no nearest
+    reading, a third party's, is not guessed for: `go_to` then has only its detections' marks and
+    distances to go on."""
     ask = getattr(detector, "nearest_m", None)
     nearest = ask(label, size) if callable(ask) else None
     if isinstance(nearest, bool) or not isinstance(nearest, int | float):
         return None
     return float(nearest) if math.isfinite(nearest) and nearest > 0 else None
+
+
+def usable_m(distance: float | None) -> float | None:
+    """`distance` when it is one a body can be at, finite and above nought, else None.
+
+    `est_distance_m` is any float a detector gives, and a third party's may give NaN, infinity,
+    nought or less. NaN and infinity never compare at or under a stop distance, so `go_to` walked
+    at full speed toward one until its timeout, and nought or less was announced as an arrival.
+    Each is no distance at all, as a missing one is."""
+    if distance is None or not 0 < distance < math.inf:
+        return None
+    return float(distance)
+
+
+EDGE_BAND_INPUT_PX = 3.0
+"""How many of a network's own input pixels from the frame's edge a box's edge may land and
+still be one the frame cut. A network regresses a box on its input and it is scaled back to the
+frame, so the edge of a box the frame cut lands a pixel or two inside the frame's edge as often
+as on it, and a box reported two rows inside went unmarked: its reading then floored just above
+the nearest a refusal names, and `go_to` crept on toward a target filling the frame. Three is
+more than that. The colour detector marks its blobs by the same band, which a lens's vignetting,
+darkening the frame's outer rows below its threshold, can eat into the same way."""
+
+NETWORK_INPUT_PX = 640
+"""The long side of the input YOLO is run at, ultralytics' default, which the board's daemon
+keeps: one of its pixels is `max(w, h) / NETWORK_INPUT_PX` of a frame's."""
+
+
+def edge_band_px(size: tuple[float, float]) -> float:
+    """How near the edge of a frame of `size` (width, height), in its own pixels, a box or a
+    blob has to come for the frame to have cut it (`EDGE_BAND_INPUT_PX`): never less than the
+    outermost row."""
+    w, h = size
+    return max(1.0, EDGE_BAND_INPUT_PX * max(w, h) / NETWORK_INPUT_PX)
 
 
 def detect_times(detector: Detector | None) -> dict[str, Any]:
