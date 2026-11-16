@@ -58,7 +58,7 @@ from roboglot.release import (
     RELEASE_INTERRUPTED,
     RELEASE_NOT_SENT,
 )
-from roboglot.safety import ENDING_S, Aborted
+from roboglot.safety import ENDING_S, Aborted, Executor
 from roboglot.transport.base import CameraFrame, HeartbeatError, RobotState, TransportError
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import CORE
@@ -7577,3 +7577,99 @@ async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_d
     else:
         assert FOLD_STOPPED not in notes, notes
         assert mock.sequence[-2:] == ["rest", "close"], mock.sequence
+
+
+#: Every bounded wait of a teardown at the core `stop`'s allowance, and room to spare.
+TEARDOWN_ENDS_WITHIN_S = 6 * CORE["stop"].timeout_s
+
+
+def _eats_one_stop(
+    mock: LeRobotMock, which: Callable[[], bool]
+) -> tuple[asyncio.Event, list[bool]]:
+    """The arm's link, which eats the first stop asked for once `which()` says so: answered only
+    once the test is over."""
+    real_stop = mock.stop
+    answer_it = asyncio.Event()
+    eaten: list[bool] = []
+
+    async def stop(*args: Any, **kwargs: Any) -> Any:
+        if not eaten and which():
+            eaten.append(True)
+            await answer_it.wait()
+        return await real_stop(*args, **kwargs)
+
+    mock.stop = stop  # type: ignore[method-assign]
+    return answer_it, eaten
+
+
+async def test_a_second_press_during_the_wait_for_stops_still_out_cannot_skip_the_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait the teardown gives a stop still out (`see_out_stops`) sat under
+    `suppress(Exception)` alone, and a second press there, which is when somebody at an arm over
+    a slow link presses again, went straight past the close and `run_end`."""
+    mock = LeRobotMock(rest_pose=REST)
+    _takes_a_moment(mock)
+    person = PressesAtTheCount(mock, places=PLACED)
+    in_last_stop: list[bool] = []
+    real_last_stop = Executor.last_stop
+
+    async def last_stop(self: Executor) -> Any:
+        in_last_stop.append(True)
+        return await real_last_stop(self)
+
+    monkeypatch.setattr(Executor, "last_stop", last_stop)
+    answer_it, eaten = _eats_one_stop(mock, lambda: bool(in_last_stop))
+    running: asyncio.Task[Any] | None = None
+    seen: list[bool] = []
+    real_see_out = Executor.see_out_stops
+
+    async def see_out(self: Executor) -> None:
+        if self._stops_out and not seen:
+            seen.append(True)
+            assert running is not None
+            running.cancel()  # the second press, as the wait begins
+        await real_see_out(self)
+
+    monkeypatch.setattr(Executor, "see_out_stops", see_out)
+    running = asyncio.create_task(run_glot(_by_hand(mock, person, tmp_path)))
+    try:
+        done, _ = await asyncio.wait({running}, timeout=TEARDOWN_ENDS_WITHIN_S)
+    finally:
+        answer_it.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.wait({running}, timeout=5)
+    assert eaten, "the run's last stop was never sent"
+    assert done, "the run did not end"
+    assert seen, "no stop was still out when the teardown reached its wait"
+    assert not running.cancelled(), f"the press skipped the close: {mock.sequence[-3:]}"
+    result = running.result()
+    assert mock.sequence[-1] == "close", mock.sequence[-3:]
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert [e for e in events if e["kind"] == "run_end"], "the record has no end"
+
+
+async def test_a_by_hand_run_whose_link_eats_the_stop_after_a_press_still_ends(
+    tmp_path: Path,
+) -> None:
+    """The stops the teardown sends after a press were waited for through every later press and
+    with no bound, so over a link that ate one the run never ended and no press got it out. Each
+    is waited for as an owed stop is now, and one not answered is said to the person at the arm
+    and in the record."""
+    mock = LeRobotMock(rest_pose=REST)
+    _takes_a_moment(mock)
+    person = PressesAtTheCount(mock, places=PLACED)
+    answer_it, eaten = _eats_one_stop(mock, lambda: bool(person.presses))
+    running = asyncio.create_task(run_glot(_by_hand(mock, person, tmp_path)))
+    try:
+        done, _ = await asyncio.wait({running}, timeout=TEARDOWN_ENDS_WITHIN_S)
+    finally:
+        answer_it.set()
+        await asyncio.wait({running}, timeout=10)
+    assert eaten, "no stop was sent after the press"
+    assert done, f"the run had not ended: {mock.sequence[-3:]}"
+    said = [s for s in person.said if s.startswith("the stop after the press:")]
+    assert said and "cannot tell whether the arm is holding" in said[0], person.said
+    events = Transcript.read(running.result().run_dir / "transcript.jsonl")
+    assert said[0] in [e.get("text") for e in events if e["kind"] == "note"]

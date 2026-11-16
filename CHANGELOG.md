@@ -289,13 +289,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   than a stop, and not even a stop once a stop for it is known to have landed, so one that ends
   late cannot brake the next verb or the run's fold. No call it makes to another verb runs but
   `stop`, nor does one it made before and that was still reading the body's state. The stop goes
-  out as soon as the verb has been cancelled, without waiting for it to end, and is sent again
-  one deadman window later where a twist the verb had already started may have reached the robot
-  after it, as a write a thread was doing does whatever the cancel, so a stop is the last thing
-  sent. A verb that has not ended 0.3 s after its cancel, one deadman window, is cancelled again,
-  and one that has not ended 0.3 s after that is left behind with a note that says so, and the
-  run's end does not wait for it. A pause granted to a robot met, and a newer command, end a verb
-  the same way, where they used to wait on it with no bound but its own timeout.
+  out as soon as the verb has been cancelled, without waiting for it to end. Where a twist the
+  verb had started was still on its way as the stop went, the stop is sent again after it, so a
+  stop is the last thing sent: as soon as that send came back, whatever it returned, or one
+  deadman window after the first stop where it was cut off in flight, as a write a thread was
+  doing goes on whatever the cancel. A verb that has not ended 0.3 s after its cancel, one
+  deadman window, is cancelled again, and one that has not ended 0.3 s after that is left behind
+  with a note that says so, and the run's end does not wait for it. A pause granted to a robot
+  met, and a newer command, end a verb the same way, where they used to wait on it with no bound
+  but its own timeout.
 - **A cancel that comes while a verb is being ended is no longer lost, and nor is the stop owed
   after it.** Once an abort or a verb's timeout had ended the wait, a second Ctrl-C or an MCP
   client giving up on the call while the executor waited for the verb to end was taken for the
@@ -315,8 +317,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   waited for as long as the body gives its own `stop` verb, 5 s for the core one, and one not
   answered by then goes on by itself and is said to be unconfirmed. So is the stop a run's
   teardown sends first, which over a dead link held the fold or release after it, the close and
-  the run's end for good: the teardown says it was not answered, and goes on. A stop still on
-  its way is given the same allowance again before the run ends, and once more as the process
+  the run's end for good: the teardown says it was not answered, and goes on. So are the stops
+  a `--by-hand` run's teardown sends after a press, over a link that ate one the run never ended
+  and no press got it out: the person at the arm is told the stop was not answered and that
+  Roboglot cannot tell whether the arm is holding where it stopped. A stop still on its way is
+  given the same allowance again before the run ends, and once more as the process
   closes, and one still not answered then is said plainly: Roboglot cannot tell whether it
   reached the robot.
 - **The record of a call cancelled from outside says whether its stop landed.** Its `cancelled`

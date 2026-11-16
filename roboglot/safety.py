@@ -414,12 +414,10 @@ class _Leash:
         self._above = above
         self._below: list[_Leash] = []
         self._sealed = False
-        self.stop_gone = False
-        """The executor's own stop for the verb has gone, and been answered (`_end_verb`)."""
-        self.after_the_stop = False
-        """A send of the verb's that passed this before it closed may have reached the body after
-        the executor's stop: it came back only after that stop had gone, or it was cut off in
-        flight, where a write a thread was doing goes on whatever the cancel."""
+        self._sending = 0
+        self.cut_off = False
+        """A send of the verb's that passed this was cut off in flight once it had closed: a write
+        a thread was doing for it goes on whatever the cancel, so it may land at any time."""
         self.why: str | None = None
         """Why the executor ended the verb, or one above it (`CANCELLED_BY_ABORT` and the rest),
         or None."""
@@ -471,15 +469,22 @@ class _Leash:
             if self.why is None and self._abort is not None and self._abort.is_set():
                 await self._ended.wait()
             self._refuse_if_ended()
+        if intent.kind == "stop":
+            return cast(Ack, await self._inner.send_intent(intent))
+        self._sending += 1  # what could reach the wire, whatever it later returns
         try:
-            ack = cast(Ack, await self._inner.send_intent(intent))
+            return cast(Ack, await self._inner.send_intent(intent))
         except asyncio.CancelledError:
-            if self.why is not None and intent.kind != "stop":
-                self.after_the_stop = True  # cut off in flight: its write may still land
+            if self.why is not None:
+                self.cut_off = True
             raise
-        if self.stop_gone and intent.kind != "stop":
-            self.after_the_stop = True
-        return ack
+        finally:
+            self._sending -= 1
+
+    @property
+    def sending(self) -> bool:
+        """Whether a send of the verb's, other than a stop, has passed this and not finished."""
+        return self._sending > 0
 
     def calls(
         self,
@@ -1745,8 +1750,10 @@ class Executor:
             verb_task.cancel(why)
         clock = asyncio.get_running_loop()
         stopped_at = clock.time()
-        unstopped, cancelled = await self._answer_of(self._start_stop(), cancelled=cancelled)
-        leash.stop_gone = True
+        stopping = self._start_stop()
+        # a send that had passed the leash and not finished as the stop went may write after it
+        sending = leash.sending
+        unstopped, cancelled = await self._answer_of(stopping, cancelled=cancelled)
         if unstopped is None:
             # a stop has landed: one of the verb's own after it could only land in whatever runs
             # next, so nothing of it goes through from here, a stop included. Not while that
@@ -1766,12 +1773,14 @@ class Executor:
                 verb_task.exception()  # read, so nothing reports it later as never retrieved
         else:
             self._left_behind(verb_task, why, called, cancelled=cancelled)
-        if leash.after_the_stop:
-            # A send that passed the leash before it closed came back after the stop went, or was
-            # cut off in flight, and a write a thread was doing goes on whatever the cancel, so it
-            # may have reached the body after the stop. It is given one deadman window from the
-            # stop, `ENDING_S`, and the stop is sent again, so a stop is the last thing sent.
-            while not cancelled and (left := stopped_at + ENDING_S - clock.time()) > 0:
+        if sending:
+            # A send that had passed the leash and not finished when the stop went may have
+            # written after it, whatever it then returned, so the stop is sent again after it, and
+            # a stop is the last thing sent. One that came back has written; one cut off in flight
+            # (`cut_off`), whose write a thread may still be doing, or one still out, is given one
+            # deadman window from the first stop, `ENDING_S`, before the stop goes again.
+            unsure = leash.cut_off or leash.sending
+            while unsure and not cancelled and (left := stopped_at + ENDING_S - clock.time()) > 0:
                 cancelled = await _waited({asyncio.ensure_future(asyncio.sleep(left))}, left)
             unstopped, more = await self._answer_of(self._start_stop(), cancelled=cancelled)
             cancelled = cancelled or more

@@ -1358,7 +1358,7 @@ class AgentLoop:
                 # gone on after it was told twice (`fold_went_on`)
                 went_on = fold_went_on(stopped_it)
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await self._unbroken(self.executor.logged_transport().stop())
+                await self._stop_after_a_press()
             self._fold_was_stopped(went_on=went_on)
             return None
         finally:
@@ -1822,7 +1822,7 @@ class AgentLoop:
         # in it. And the arm stays where it is, since they have just been told to reach in.
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self._unbroken(self.executor.logged_transport().stop())
+            await self._stop_after_a_press()
         said = (
             f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
             "where it stopped and does not fold"
@@ -1908,7 +1908,7 @@ class AgentLoop:
             )
         except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await self._unbroken(self.executor.logged_transport().stop())
+                await self._stop_after_a_press()
             # never "stopped" over jaws told twice that had not ended, which may still be moving
             went_on = fold_went_on(stopped_it)
             said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}" if went_on else GRIPPER_STOPPED
@@ -1962,11 +1962,30 @@ class AgentLoop:
         """A press during the hand-back: the arm stays where it is, and nothing folds it."""
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self._unbroken(self.executor.logged_transport().stop())
+            await self._stop_after_a_press()
         with contextlib.suppress(Exception):
             hand.say(self.HELD_BACK)
         self._emit("hand_off", stage="kept", reason=why)
         self._note(self.HELD_BACK)
+
+    async def _stop_after_a_press(self) -> None:
+        """The stop a press during the teardown is answered with, waited for through any later
+        press as every step there is (`_unbroken`), and no longer than an owed stop is
+        (`Executor.last_stop`): over a link that ate it the run waited for good, and no press got
+        it out. One not answered in time goes on by itself, and the person at the arm and the
+        record are told that Roboglot cannot tell whether the arm is holding where it stopped."""
+        unanswered = await self._unbroken(self.executor.last_stop())
+        if unanswered is None:
+            return
+        said = (
+            f"the stop after the press: {unanswered}, so Roboglot cannot tell whether the arm is "
+            "holding where it stopped"
+        )
+        hand = self.cfg.hand_off
+        if hand is not None:
+            with contextlib.suppress(Exception):
+                hand.say(said)
+        self._note(said)
 
     async def _offer_release(self, parked: RestResult | None) -> None:
         """Ask the person at the terminal about an arm whose last rest move missed.
@@ -3629,10 +3648,11 @@ class AgentLoop:
                 # and where it could not be put down, the person at the terminal may take
                 # torque off while they hold it, before the close keeps it on
                 await self._offer_release(folded)
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
                 # a stop the run said goes on by itself is given its bound to land while the
-                # record is still open, and said plainly if it did not (`see_out_stops`)
-                await self.executor.see_out_stops()
+                # record is still open, and said plainly if it did not (`see_out_stops`); through
+                # a press, as the read and the close after it are, which it went straight past
+                await self._unbroken(self.executor.see_out_stops())
             final_state: dict[str, Any] = {}
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()

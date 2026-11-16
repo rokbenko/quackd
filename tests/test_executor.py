@@ -3628,3 +3628,75 @@ async def test_a_call_cancelled_as_its_admission_read_answers_does_not_run() -> 
     finally:
         go.set()
         await _ended(running)
+
+
+#: How long the twist below takes to be written, and the stop's answer its round trip after its
+#: own write: the twist lands after the stop's write and before its answer.
+LATE_WRITE_S = ENDING_S / 6
+STOP_ANSWER_S = ENDING_S / 2
+
+
+class _LateWrite(MockTransport):
+    """A send the cancel does not reach (Python 3.11's `wait_for`, or a third party's send that
+    finishes its write), which comes back once written: after the stop's write, and before the
+    stop's answer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.wire: list[str] = []
+        self.writing = threading.Event()
+        self.caught = 0
+        self._lock = threading.Lock()
+
+    def _write(self, what: str, delay: float) -> None:
+        if delay:
+            self.writing.set()
+            time.sleep(delay)
+        with self._lock:
+            self.wire.append(what)
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        self.intents.append(intent)
+        delay = LATE_WRITE_S if intent.kind == "move" else 0
+        write = asyncio.ensure_future(asyncio.to_thread(self._write, intent.kind, delay))
+        try:
+            await asyncio.shield(write)
+        except asyncio.CancelledError:
+            self.caught += 1
+            await write  # the cancel did not reach it: it comes back once written
+        return Ack()
+
+    async def stop(self) -> None:
+        self.stops += 1
+        self.intents.append(Intent.stop())
+        await asyncio.to_thread(self._write, "stop", 0)
+        await asyncio.sleep(STOP_ANSWER_S)  # the answer's round trip
+
+
+async def test_a_twist_written_after_the_stop_is_followed_by_another_stop() -> None:
+    """A send counted only when it was cut off or came back after the stop was answered. One the
+    cancel did not reach came back once its twist was written, after the stop's write and before
+    its answer, was not counted, and the body's last command was that twist. Any send in flight
+    as the stop went counts now, whatever it returned."""
+
+    async def walk_long(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("walk_long", "walks", walk_long, timeout_s=60))
+    transport = _LateWrite()
+    ex = Executor(reg, transport, contract=glot("walk_long").frontmatter)
+    running = asyncio.create_task(ex.run_verb("walk_long"))
+    try:
+        assert await asyncio.to_thread(transport.writing.wait, 5.0), "a twist is being written"
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=8 * ENDING_S)
+        await asyncio.sleep(2 * LATE_WRITE_S)
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert transport.caught == 1, "the cancel reached the send, so this proves nothing"
+        assert transport.wire[-1] == "stop", f"the body's last command: {transport.wire[-3:]}"
+    finally:
+        await _ended(running)
