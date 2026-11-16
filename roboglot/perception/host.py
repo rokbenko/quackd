@@ -55,7 +55,7 @@ from PIL import Image
 
 from roboglot.host import HostClient, HostError, confidence_floor
 from roboglot.perception.base import Detection
-from roboglot.perception.yolo import detections_from_boxes
+from roboglot.perception.yolo import detections_from_boxes, nearest_box_m
 
 logger = logging.getLogger("roboglot.perception")
 
@@ -173,6 +173,12 @@ class HostDetector:
             "yours.",
             assumed=assumed,
         )
+
+    def nearest_m(self, label: str, size: tuple[int, int]) -> float | None:
+        """The nearest this detector reads `label` at on a frame of `size`: the boxes are the
+        board's and the geometry this machine's, so it is what `YoloDetector` names
+        (`nearest_box_m`)."""
+        return nearest_box_m(label, size, self.fov_deg)
 
     def detect(self, image: Image.Image) -> list[Detection]:
         """The board's YOLO on this frame, as Roboglot's detections, or none when the board did

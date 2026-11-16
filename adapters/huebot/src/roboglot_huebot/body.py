@@ -136,7 +136,10 @@ HUEBOT = Body(
             # The core's wording offers `kick, grab`, and Huebot has no `grab`. Its `then`
             # parameter still says so, since a parameter's description is the core's and no
             # manifest can change it.
-            "approach_and": "walk_to a target, then run another verb (e.g. kick).",
+            "approach_and": (
+                "walk_to a target, then run another verb (e.g. kick), only once the camera puts "
+                "the target within stop_distance."
+            ),
         }
     ),
     words=Words(
