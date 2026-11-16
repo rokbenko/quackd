@@ -43,7 +43,7 @@ then is answered 503).
 | Path | Method | What it answers |
 |---|---|---|
 | `/hello` | GET | the protocol and its version, the board's model name, and what started: `camera`, `detect` and `tegra`. Anything that did not start says why in `camera_error` or `detect_error`. Roboglot refuses `--host` until this answers |
-| `/healthz` | GET | always 200. `ok` is whether everything the daemon was asked to run is running: the camera's frame is fresh, the detector's last call worked, and neither was asked for and failed to start. `reason` names whichever is not. `--camera none` and `--no-detect` are not held against it |
+| `/healthz` | GET | always 200. `ok` is whether everything the daemon was asked to run is running: the camera's frame is fresh, the detector's last call worked and none has been running longer than a `/detect` waits for it (when every `/detect` behind it is refused as busy), and neither was asked for and failed to start. `reason` names whichever is not. `--camera none` and `--no-detect` are not held against it |
 | `/board` | GET | raw text: `/proc/device-tree/model` and `compatible` with their NULs removed, `/etc/nv_tegra_release`, `/proc/meminfo`, `/proc/swaps`, the output of `nvpmodel -q`, one `tegrastats` line, and which of `/dev/nvgpu/igpu0`, `/dev/nvhost-ctrl-gpu` and `/dev/nvidia0` exist. Anything that is null has its reason under `errors` |
 | `/snapshot.jpg` | GET | the newest frame, with `X-Frame-Age` in seconds. A 503 before the first frame, once the frame is older than `max(1.5, 4 / fps)` seconds, and when there is no camera, each with its reason |
 | `/detect` | POST | a JPEG in (at most 8 MB, `?conf=` optional), boxes out in that image's pixels with the model's own class names, plus the model, `cuda` or `cpu`, and `ms`, the time spent in the model. Roboglot maps the names and does the geometry |
@@ -63,7 +63,8 @@ python3 roboglot_jetson_hostd.py [flags]
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--bind` | `127.0.0.1` | loopback on purpose. Bound anywhere else with no token, it warns and starts |
+| `--bind` | `127.0.0.1` | loopback on purpose. Bound anywhere else with no token, it refuses to start unless `--allow-no-token` says that is on purpose, and then it warns |
+| `--allow-no-token` | off | start on an address beyond loopback with no token, on purpose. Without it the daemon refuses to |
 | `--port` | `9874` | the Open Duck Mini takes 9871 and 9872 and the ToddlerBot daemon 9873, so a board running both never collides |
 | `--camera` | `none` | `csi`, a V4L2 index such as `0`, a GStreamer pipeline of your own (anything containing `!`, ending in an appsink), or `fake` |
 | `--fps` | `5` | the capture rate, at least 1. It captures on a timer, so a slow client cannot stall it, and `go_to` steers on these frames. Roboglot refuses a frame older than 2 s as a camera that has stopped, so a slower rate would have it refuse a working one |
@@ -110,7 +111,8 @@ ssh -L 9874:127.0.0.1:9874 -L 11434:127.0.0.1:11434 <board>
 
 After which `--host 127.0.0.1` reaches this daemon, and the LLM server on the board's port
 11434 (Ollama's), through the tunnel. `roboglot doctor --host 127.0.0.1` shows what the board
-reported. Binding the daemon wide instead is for a network you trust, and keep the token.
+reported. Binding the daemon wide instead is for a network you trust, and keep the token: the
+daemon is plain HTTP with no TLS, so the token and every frame cross that network in the clear.
 
 The unit runs the system `/usr/bin/python3` rather than a virtualenv, because the OpenCV that
 JetPack installs for it is built with GStreamer and the CSI camera needs GStreamer. It runs at

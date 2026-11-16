@@ -20,7 +20,7 @@ it. Upstream's walk loop opens none, so this server warns and starts anyway; set
 flag false is still the tidier setup.
 
     python roboglot_duck_camd.py --fake            # a synthetic frame, no camera needed
-    python roboglot_duck_camd.py --bind 0.0.0.0    # a real camera, on the duck
+    python roboglot_duck_camd.py                   # a real camera, on the duck, over ssh -L
 
 Nothing here has been run on a physical duck.
 """
@@ -326,6 +326,24 @@ def runtime_owns_the_camera(duck_config_path: str) -> bool:
     return bool((config.get("expression_features") or {}).get("camera"))
 
 
+#: The addresses that reach this machine alone. This server has no token and no way to add one,
+#: so anywhere else it starts only with --allow-no-token: the owner's decision of 2026-11-16
+#: for every bridge.
+LOOPBACK = ("127.0.0.1", "localhost")
+
+
+def wide_bind_refusal(bind: str, *, allow_no_token: bool) -> str | None:
+    """Why this server will not start: an address beyond loopback, not asked for on purpose.
+    It used to warn and serve a live view of wherever the robot is to anyone on that network."""
+    if bind in LOOPBACK or allow_no_token:
+        return None
+    return (
+        f"refusing to bind {bind}: this serves a live view of wherever your robot is, with no "
+        "authentication and no way to add any, to anyone on that network. Bind 127.0.0.1 and "
+        "reach it with ssh -L, or pass --allow-no-token to serve it there on purpose."
+    )
+
+
 def parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="roboglot-duck-camd", description=__doc__)
     p.add_argument(
@@ -335,6 +353,12 @@ def parser() -> argparse.ArgumentParser:
         "there is no authentication. Prefer an ssh tunnel over binding 0.0.0.0.",
     )
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
+    p.add_argument(
+        "--allow-no-token",
+        action="store_true",
+        help="serve on an address beyond loopback, on purpose. This server has no token, so "
+        "without this it refuses to",
+    )
     p.add_argument(
         "--fps",
         type=float,
@@ -364,6 +388,11 @@ def main(argv: list[str] | None = None) -> int:
         level=logging.INFO,
         format="roboglot-duck-camd %(levelname)s %(message)s",
     )
+    # before the camera is opened or a socket bound
+    refusal = wide_bind_refusal(args.bind, allow_no_token=args.allow_no_token)
+    if refusal is not None:
+        log.error("%s", refusal)
+        return 2
     if not args.fake and runtime_owns_the_camera(args.duck_config):
         # Downgraded from a refusal on 2026-09-05, after reading upstream at the pin: the
         # walk loop `v2_rl_walk_mujoco.py` references no camera at all, so the process the
@@ -389,7 +418,7 @@ def main(argv: list[str] | None = None) -> int:
             log.error("no camera: %s. Try --fake to check the plumbing without one.", e)
             return 2
 
-    if args.bind not in ("127.0.0.1", "localhost"):
+    if args.bind not in LOOPBACK:  # --allow-no-token, or it refused above
         log.warning(
             "binding %s: this serves a live view of wherever your robot is, to anyone on "
             "that network, with no authentication and no way to add any. There is no control "

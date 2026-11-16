@@ -270,6 +270,23 @@ def test_the_factory_makes_every_backend() -> None:
         make("sim2d")
 
 
+def test_a_camera_url_that_is_not_http_or_https_is_refused_when_the_adapter_is_built() -> None:
+    """The client fetched a `--camera-url` with `urllib`, which opens `file:` and `ftp:` as
+    readily as HTTP, so a picture on the laptop's own disk could be handed on as the camera's
+    frame. A camera URL is an HTTP snapshot, so anything else is refused at once, on every
+    backend, by a sentence that names the schemes it takes."""
+    from roboglot.adapters.base import AdapterError
+    from roboglot_open_duck import make
+
+    for backend in ("mock", "bridge"):
+        for url in ("file:///C:/Users/me/picture.jpg", "ftp://127.0.0.1/snapshot.jpg", "duck.jpg"):
+            with pytest.raises(AdapterError, match="http or https") as refused:
+                make(backend, camera_url=url)
+            assert url in str(refused.value)
+    for url in ("http://127.0.0.1:9872/snapshot.jpg", "HTTPS://duck.local/still.jpg"):
+        assert make("bridge", camera_url=url).backend == "bridge"
+
+
 def test_the_bring_up_task_does_not_require_the_dangerous_flag() -> None:
     """`open-duck-lookout` is what you point at a real duck first. Head control is off by
     default and is the one thing that can damage this robot, so the task must not need it."""

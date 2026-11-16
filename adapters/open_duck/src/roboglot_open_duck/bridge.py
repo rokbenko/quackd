@@ -20,12 +20,16 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import http.client
+import ipaddress
 import json
 import logging
 import math
 import os
+import socket
+import threading
 import time
-import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import AsyncIterator
 from typing import Any
@@ -107,6 +111,211 @@ def parse_address(address: str) -> tuple[str, int]:
 
 def _clamp(value: float, bounds: tuple[float, float]) -> float:
     return max(bounds[0], min(bounds[1], value))
+
+
+#: The schemes a camera URL may use, from the bridge's hello or from the person: a camera here is
+#: an HTTP snapshot. `urllib` opened `file:` and `ftp:` URLs as readily, so a bridge, or a typo,
+#: could have the laptop read one of its own files and hand it on as the camera's frame.
+CAMERA_SCHEMES = ("http", "https")
+#: The most one frame may be, in bytes: the Microduck transport's `SNAPSHOT_MAX_BYTES`, the frame
+#: limit Roboglot already reads HTTP cameras under, copied because an adapter imports no other
+#: adapter. camd's JPEG is tens of kilobytes, so an answer past this is not one picture.
+CAMERA_MAX_BYTES = 8_000_000
+#: The most one read of a frame asks for: the Microduck transport's `SNAPSHOT_CHUNK_BYTES`.
+CAMERA_CHUNK_BYTES = 64 * 1024
+#: The statuses that redirect. One is followed only to the same scheme, host and port, and no
+#: more often in one fetch than `urllib` itself would follow them.
+REDIRECTS = (301, 302, 303, 307, 308)
+MAX_REDIRECTS = urllib.request.HTTPRedirectHandler.max_redirections
+
+
+class FrameTooSlow(TimeoutError):
+    """A camera whose frame did not arrive whole within the fetch's one deadline."""
+
+
+def camera_url_refusal(url: str) -> str | None:
+    """Why `url` is not a camera URL this client fetches, or None when it is: http or https,
+    with a host."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        fetched = parts.scheme.lower() in CAMERA_SCHEMES and bool(parts.hostname)
+    except ValueError:  # not a URL at all, such as an unclosed `[`: refused below, as named
+        fetched = False
+    if fetched:
+        return None
+    return (
+        f"{url} is not a camera URL Roboglot fetches: a camera URL is http or https, such as "
+        "http://127.0.0.1:9872/snapshot.jpg"
+    )
+
+
+def _origin(url: str) -> tuple[str, str, int]:
+    """The scheme, host and port `url` reaches, the port filled in, which is what a redirect
+    has to keep. A URL that is not a camera URL raises ValueError."""
+    refusal = camera_url_refusal(url)
+    if refusal is not None:
+        raise ValueError(refusal)
+    parts = urllib.parse.urlsplit(url)
+    scheme = parts.scheme.lower()
+    port = parts.port or (http.client.HTTPS_PORT if scheme == "https" else http.client.HTTP_PORT)
+    return scheme, str(parts.hostname).lower(), port
+
+
+def _get_once(
+    url: str, origin: tuple[str, str, int], ends: float, within_s: float, max_bytes: int
+) -> tuple[int, str, Any, bytes]:
+    """One GET of `url`, ending by the monotonic time `ends`. A redirect or an error page is read
+    only as far as one chunk, which is all its reason needs."""
+    scheme, host, port = origin
+    left = ends - time.monotonic()
+    if left <= 0:
+        raise FrameTooSlow(f"no whole frame within {within_s:g} s")
+    kind = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    conn = kind(host, port, timeout=left)
+    sockets: list[socket.socket] = []
+    cut = threading.Event()
+
+    def shut() -> None:
+        cut.set()
+        for sock in sockets:
+            with contextlib.suppress(OSError):
+                sock.shutdown(socket.SHUT_RDWR)
+
+    # The guard. It shuts the socket down at the deadline whatever the fetch is reading then,
+    # the headers or the body; on Windows that does not wake a read already waiting, so every
+    # read below also waits no longer than what is left.
+    guard = threading.Timer(left, shut)
+    guard.daemon = True
+    guard.start()
+    answer: http.client.HTTPResponse | None = None
+
+    def wait_no_longer_than_is_left() -> None:
+        remaining = ends - time.monotonic()
+        if remaining <= 0 or cut.is_set():
+            raise FrameTooSlow(f"no whole frame within {within_s:g} s")
+        for sock in sockets:
+            # http.client closes the socket itself once a body has been read to its length,
+            # and a closed one has nothing left to wait for
+            if sock.fileno() >= 0:
+                sock.settimeout(remaining)
+
+    try:
+        conn.connect()
+        if conn.sock is not None:
+            sockets.append(conn.sock)
+        if cut.is_set():  # the guard fired while the connect was still going on
+            shut()
+        parts = urllib.parse.urlsplit(url)
+        conn.request("GET", (parts.path or "/") + (f"?{parts.query}" if parts.query else ""))
+        wait_no_longer_than_is_left()
+        answer = conn.getresponse()
+        ok = 200 <= answer.status < 300
+        body = bytearray()
+        while True:
+            wait_no_longer_than_is_left()
+            chunk = answer.read1(CAMERA_CHUNK_BYTES)
+            if not chunk:
+                break
+            body += chunk
+            if not ok:
+                break
+            if len(body) > max_bytes:
+                raise TransportError(
+                    f"the camera sent more than {max_bytes / 1e6:g} MB for one frame, which no "
+                    "still picture is: give --camera-url a URL that answers one JPEG or PNG"
+                )
+        if cut.is_set():
+            raise FrameTooSlow(f"no whole frame within {within_s:g} s")
+        if ok and answer.length:
+            raise http.client.IncompleteRead(bytes(body), answer.length)
+        return answer.status, answer.reason, answer.headers, bytes(body)
+    except FrameTooSlow:
+        raise
+    except Exception as e:
+        if cut.is_set() or time.monotonic() >= ends:
+            raise FrameTooSlow(f"no whole frame within {within_s:g} s") from e
+        raise
+    finally:
+        guard.cancel()
+        if answer is not None:
+            answer.close()
+        conn.close()
+
+
+def fetch_frame(url: str, *, deadline_s: float, max_bytes: int) -> tuple[bytes, float | None]:
+    """One frame from an HTTP camera, and the age the camera stamps on it, fetched in the calling
+    thread under one deadline for the whole fetch, redirects included.
+
+    `http.client` and nothing above it, so no proxy variable is read, and a redirect is followed
+    only to the same scheme, host and port, at most `MAX_REDIRECTS` times. The body is read a
+    chunk at a time and refused past `max_bytes`. Every socket is shut at the deadline, so the
+    thread is done by then and nothing reads on behind a caller that has given up."""
+    ends = time.monotonic() + deadline_s
+    origin = _origin(url)
+    for _ in range(MAX_REDIRECTS + 1):
+        status, reason, headers, body = _get_once(url, origin, ends, deadline_s, max_bytes)
+        if status in REDIRECTS:
+            moved = urllib.parse.urljoin(url, headers.get("Location") or "")
+            try:
+                same = _origin(moved) == origin
+            except ValueError:
+                same = False
+            if not same:
+                raise TransportError(
+                    f"the camera answered HTTP {status}, a redirect to {moved}, and Roboglot "
+                    "follows one only to the same scheme, host and port: if that is your "
+                    "camera, give --camera-url that URL"
+                )
+            url = moved
+            continue
+        if not 200 <= status < 300:
+            # camd explains itself in the body ("the last frame is 30.1s old..."), and that
+            # sentence is far more use to whoever is standing next to the duck than the status
+            said: Any = None
+            with contextlib.suppress(ValueError, AttributeError):
+                said = json.loads(body).get("reason")
+            raise TransportError(str(said) if said else f"HTTP Error {status}: {reason}")
+        age = headers.get("X-Frame-Age")
+        return body, (float(age) if age is not None else None)
+    raise TransportError(f"the camera redirected more than {MAX_REDIRECTS} times")
+
+
+def _host_key(name: str) -> Any:
+    """A host as something to compare: an address when it is one, else its name in lower case."""
+    try:
+        return ipaddress.ip_address(name)
+    except ValueError:
+        return name.lower()
+
+
+def _is_loopback(name: str) -> bool:
+    key = _host_key(name)
+    return key == "localhost" if isinstance(key, str) else bool(key.is_loopback)
+
+
+def hello_camera_refusal(url: str, bridge_host: str, peer_host: str | None) -> str | None:
+    """Why a camera URL that the bridge's hello names is not followed, or None when it is.
+
+    It is followed only over HTTP or HTTPS, and only to the host this client connected to: by
+    the name it was given, by the address it reached, or on loopback when it reached the bridge
+    on loopback, which is how the documented `ssh -L` tunnel carries both ports. A URL the
+    person named with `--camera-url` is theirs, and never comes here."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+        scheme, host = parts.scheme.lower(), parts.hostname or ""
+    except ValueError:  # not a URL at all, such as an unclosed `[`: refused below, as named
+        scheme, host = "", ""
+    if scheme in CAMERA_SCHEMES and host:
+        key = _host_key(host)
+        if key == _host_key(bridge_host) or (peer_host and key == _host_key(peer_host)):
+            return None
+        if peer_host and _is_loopback(host) and _is_loopback(peer_host):
+            return None
+    return (
+        f"the bridge named its camera at {url}, which Roboglot does not fetch: a camera URL "
+        "from the bridge is followed only over http or https to the host Roboglot connected "
+        "to. If that is your camera, pass it with --camera-url."
+    )
 
 
 class OpenDuckBridge:
@@ -248,8 +457,19 @@ class OpenDuckBridge:
                 "checked and anything that can reach this port can walk the duck. Check the "
                 "token file on the robot is readable by the service user."
             )
-        if not self.camera_url:
-            self.camera_url = (self.hello.get("camera") or {}).get("url")
+        named = (self.hello.get("camera") or {}).get("url")
+        if not self.camera_url and named:
+            peer = self._writer.get_extra_info("peername") if self._writer is not None else None
+            refusal = hello_camera_refusal(str(named), host, peer[0] if peer else None)
+            if refusal is None:
+                self.camera_url = str(named)
+            else:
+                # A camera with nowhere Roboglot will fetch it from is no camera, as the bridge
+                # itself rules for one with no URL: the verbs that need frames do not exist,
+                # rather than exist and fail.
+                self.features["camera"] = False
+                self.camera_error = refusal
+                log.warning("%s", refusal)
 
     async def close(self) -> None:
         if self._pump is not None:
@@ -350,14 +570,20 @@ class OpenDuckBridge:
         msg: dict[str, Any] = {"jsonrpc": JSONRPC_VERSION, "id": req_id, "method": method}
         if params is not None:
             msg["params"] = params
-        self._write(msg)
-        assert self._writer is not None
-        await self._writer.drain()
         try:
-            return await asyncio.wait_for(fut, timeout=self.request_timeout_s)
+            # One deadline for the write, the drain and the answer. The drain used to come
+            # first and outside it, so on a link whose send buffer had filled (a peer gone
+            # silently, the keepalive still writing) the heartbeat and the stop waited with no
+            # deadline until TCP gave up, which is minutes.
+            async with asyncio.timeout(self.request_timeout_s):
+                self._write(msg)
+                assert self._writer is not None
+                await self._writer.drain()
+                return await fut
         except TimeoutError as e:
-            self._pending.pop(req_id, None)
             raise TransportError(f"{method}: no answer within {self.request_timeout_s:g}s") from e
+        finally:
+            self._pending.pop(req_id, None)
 
     async def notify(self, method: str, params: dict[str, Any]) -> None:
         self._write({"jsonrpc": JSONRPC_VERSION, "method": method, "params": params})
@@ -378,25 +604,12 @@ class OpenDuckBridge:
         url = self.camera_url
 
         def fetch() -> tuple[bytes, float | None]:
-            try:
-                with urllib.request.urlopen(url, timeout=CAMERA_TIMEOUT_S) as resp:
-                    # camd stamps every frame with how old it is. Without this the client
-                    # cannot tell a live camera from one that stopped capturing an hour ago
-                    # and is serving its last good JPEG — which is what a ribbon working
-                    # loose on a walking duck looks like from here.
-                    header = resp.headers.get("X-Frame-Age")
-                    return bytes(resp.read()), (float(header) if header is not None else None)
-            except urllib.error.HTTPError as e:
-                # camd explains itself in the body ("the last frame is 30.1s old..."), and
-                # that sentence is far more use to whoever is standing next to the duck than
-                # "HTTP Error 503". Read it first, raise after: raising inside a suppress()
-                # block hands the new exception straight back to the suppressor.
-                reason: str | None = None
-                with contextlib.suppress(Exception):
-                    reason = json.loads(e.read()).get("reason")
-                if reason:
-                    raise TransportError(str(reason)) from e
-                raise
+            # The one deadline is kept here, in the worker thread, which therefore ends by it.
+            # A deadline around `to_thread` would only stop waiting, and leave the thread
+            # reading. camd stamps every frame with how old it is (X-Frame-Age), which is how a
+            # live camera is told from one serving its last good JPEG for an hour: what a ribbon
+            # working loose on a walking duck looks like from here.
+            return fetch_frame(url, deadline_s=CAMERA_TIMEOUT_S, max_bytes=CAMERA_MAX_BYTES)
 
         try:
             data, age = await asyncio.to_thread(fetch)

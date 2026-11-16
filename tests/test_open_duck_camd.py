@@ -345,6 +345,24 @@ def test_the_camera_binds_loopback_by_default(camd: ModuleType) -> None:
     assert "--bind 127.0.0.1" in unit and "--bind 0.0.0.0" not in unit
 
 
+def test_a_wide_bind_refuses_to_start_unless_it_is_asked_to_run_open(
+    camd: ModuleType, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The owner's decision of 2026-11-16 for every bridge. This server has no token and no
+    way to add one, and on an address beyond loopback it warned and then served a live view of
+    wherever the robot is to anyone on that network. It now starts there only with the flag
+    that says so on purpose, and the refusal names it and the ssh tunnel. 192.0.2.1 is an
+    address no machine has, so nothing here listens on a wide address either way."""
+    with caplog.at_level(logging.ERROR, logger="roboglot-duck-camd"):
+        code = camd.main(["--fake", "--bind", "192.0.2.1", "--port", "0", "--seconds", "0.01"])
+    assert code == 2
+    assert "--allow-no-token" in caplog.text and "ssh" in caplog.text
+    for loopback in ("127.0.0.1", "localhost"):
+        assert camd.wide_bind_refusal(loopback, allow_no_token=False) is None
+    assert camd.wide_bind_refusal("192.0.2.1", allow_no_token=True) is None
+    assert camd.parser().parse_args([]).allow_no_token is False
+
+
 # ── the transforms --fake never runs, and the geometry nobody could set ─────────────────
 
 

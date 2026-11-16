@@ -60,6 +60,11 @@ from typing import Any
 from urllib.parse import parse_qs
 
 HOSTD_VERSION = "0.1.0"
+DESCRIPTION = (
+    "Roboglot's daemon for an NVIDIA Jetson: the board's camera, its GPU and its health, over HTTP."
+)
+"""What `--help` opens with: this docstring's first line, spelled out because `python -OO` strips
+docstrings, and building it from `__doc__` died on an IndexError before a flag was parsed."""
 PROTOCOL = "roboglot-jetson-hostd"
 PROTOCOL_VERSION = 1
 DEFAULT_PORT = 9874
@@ -122,6 +127,11 @@ decoded frames of 48 MB each while they queued for the model. Two rather than on
 upload cannot stall the model for everyone else."""
 DETECT_WAIT_S = REQUEST_TIMEOUT_S
 """How long a `POST /detect` waits for a slot before it is refused as busy, its body unread."""
+DETECT_HUNG_S = DETECT_WAIT_S
+"""How long one prediction may run before `/healthz` calls the detector stuck. The model runs one
+call at a time with no deadline, so a call that has run longer than a `/detect` may wait for a
+slot is one that every `/detect` behind it is refused as busy for, and a health that still said
+ok would contradict what `/detect` answers."""
 
 DEFAULT_YOLO_MODEL = "yolov8n.pt"
 DEFAULT_CONF = 0.4
@@ -575,6 +585,10 @@ class YoloEngine:
         self.last_error: str | None = None
         self.last_ms: float | None = None
         self._last_ok = True
+        #: When the call now in the model started, by `time.monotonic()`, or None between calls.
+        #: Health read only the last call that had finished, so one that never returned left it
+        #: saying ok while every `/detect` behind it was refused as busy.
+        self._running_since: float | None = None
         try:
             self._yolo: Any = YOLO(model)
         except Exception as e:
@@ -635,11 +649,16 @@ class YoloEngine:
         floor = self.conf if conf is None else conf
         with self._lock:
             started = time.perf_counter()
+            with self._stats_lock:
+                self._running_since = time.monotonic()
             try:
                 boxes = self._predict(image, floor)
             except Exception as e:
                 self._record(None, f"{type(e).__name__}: {e}")
                 raise
+            finally:
+                with self._stats_lock:
+                    self._running_since = None
             ms = round((time.perf_counter() - started) * 1000.0, 1)
         self._record(ms, None)
         return {
@@ -666,15 +685,22 @@ class YoloEngine:
         return {"model": self.model, "device": self.device, "conf": self.conf, "names": self.names}
 
     def health(self) -> dict[str, Any]:
+        """The last call's verdict, and whether the call now in the model is stuck. `hung_s` is
+        there only while one has run past `DETECT_HUNG_S`, so a healthy answer is as it was."""
         with self._stats_lock:
-            return {
-                "ok": self._last_ok,
+            ran = None if self._running_since is None else time.monotonic() - self._running_since
+            hung = ran is not None and ran > DETECT_HUNG_S
+            body: dict[str, Any] = {
+                "ok": self._last_ok and not hung,
                 "calls": self.calls,
                 "errors": self.errors,
                 "last_error": self.last_error,
                 "last_ms": self.last_ms,
                 "device": self.device,
             }
+        if hung and ran is not None:
+            body["hung_s"] = round(ran, 1)
+        return body
 
 
 def _class_names(names: Any) -> list[str]:
@@ -1050,7 +1076,13 @@ class Hostd:
         detect = None
         if self.engine is not None:
             detect = self.engine.health()
-            if not detect["ok"]:
+            if "hung_s" in detect:
+                sick.append(
+                    f"the detector has been on one call for {detect['hung_s']:.1f}s, longer "
+                    f"than a /detect waits for it ({DETECT_WAIT_S:g}s), so every /detect is "
+                    "refused as busy"
+                )
+            elif not detect["ok"]:
                 sick.append(f"the detector's last call failed: {detect['last_error']}")
         body: dict[str, Any] = {
             "ok": not sick,
@@ -1545,6 +1577,20 @@ def wide_bind_warning(bind: str, token: str | None) -> str | None:
     )
 
 
+def wide_bind_refusal(bind: str, token: str | None, *, allow_no_token: bool) -> str | None:
+    """Why this will not start: an address beyond loopback with no token, not asked for on
+    purpose. The owner's decision of 2026-11-16 for every bridge, which amends ADR-0046: it
+    used to warn and serve. With --allow-no-token it still warns, as `wide_bind_warning` says."""
+    if allow_no_token or wide_bind_warning(bind, token) is None:
+        return None
+    return (
+        f"refusing to bind {bind} with no token: this would serve a live view of wherever this "
+        "board is, and a GPU anyone can keep busy, to everyone on that network. Give it a "
+        "--token-file, or bind 127.0.0.1 and use an ssh tunnel. To start it open on purpose, "
+        "pass --allow-no-token."
+    )
+
+
 def camera_spec(text: str) -> str:
     spec = text.strip()
     if spec in ("none", "csi", "fake") or spec.isdigit() or "!" in spec:
@@ -1584,9 +1630,7 @@ def _bounded(name: str, low: float, high: float, *, low_included: bool = False) 
 
 
 def parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(
-        prog="roboglot-jetson-hostd", description=(__doc__ or "").splitlines()[0]
-    )
+    p = argparse.ArgumentParser(prog="roboglot-jetson-hostd", description=DESCRIPTION)
     p.add_argument(
         "--bind",
         default="127.0.0.1",
@@ -1640,6 +1684,12 @@ def parser() -> argparse.ArgumentParser:
         "or empty",
     )
     p.add_argument(
+        "--allow-no-token",
+        action="store_true",
+        help="start on an address beyond loopback with no token, on purpose. Without it the "
+        "daemon refuses to",
+    )
+    p.add_argument(
         "--once", action="store_true", help="print what /hello would say, as JSON, and exit"
     )
     # Where the board's files are read from. Tests point it at a tree they built.
@@ -1686,6 +1736,11 @@ def main(argv: list[str] | None = None) -> int:
         daemon: Hostd | None = None
         try:
             token = resolve_token(args)
+            # before the detector loads, which can take minutes; --once serves nothing
+            refusal = wide_bind_refusal(args.bind, token, allow_no_token=args.allow_no_token)
+            if refusal is not None and not args.once:
+                log.error("%s", refusal)
+                return 2
             daemon = Hostd.from_args(args, token)
             starting = False
         except TokenFileError as e:

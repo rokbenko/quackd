@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import importlib.util
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -131,6 +132,41 @@ def test_a_hostile_command_is_clamped_on_the_bridge_too(daemon: ModuleType) -> N
     assert snap.vx == pytest.approx(daemon.VX[1])
     assert snap.vy == pytest.approx(daemon.VY[0])
     assert snap.vyaw == pytest.approx(daemon.VYAW[1])
+
+
+def test_a_number_that_is_not_finite_is_refused_rather_than_clamped_to_a_bound(
+    daemon: ModuleType,
+) -> None:
+    """`clamp` was `max(lo, min(hi, v))`, and `min(hi, nan)` keeps `hi`, while the server's
+    `json.loads` takes the `NaN` and `Infinity` literals. So `{"vx": NaN}` walked the duck
+    forward at the full clamp on every axis it named, Infinity went to the bound it pointed at,
+    and a NaN head target went to the end of its travel. Each command here is parsed from the
+    wire's own text, and each must be refused whole: the duck goes on with the last command it
+    took, which the deadman ends as it would a lost packet."""
+    clock = Clock()
+    core = daemon.BridgeCore(now=clock, limits=daemon.Limits(head_enabled=True))
+    hello(core)
+    core.handle({"method": "duck.command", "params": {"vx": 0.05}}, authed=True)
+    took = core.command_for_tick()
+    head_target = core.head_target
+    nan_head = ", ".join(f'"{name}": NaN' for name in daemon.HEAD_ORDER)
+    for text in (
+        '{"vx": NaN, "vy": NaN, "vyaw": NaN}',
+        '{"vx": Infinity, "vyaw": -Infinity}',
+        '{"vx": "nan"}',
+        '{"vx": 0.05, "head": {' + nan_head + "}}",
+        '{"vx": 0.05, "head": {"head_yaw": Infinity}}',
+    ):
+        core.handle({"method": "duck.command", "params": json.loads(text)}, authed=True)
+        clock.t += 0.02
+        snap = core.command_for_tick()
+        assert (snap.seq, snap.vx, snap.vy, snap.vyaw) == (took.seq, took.vx, 0.0, 0.0), text
+        assert core.head_target == head_target, text
+
+    # and the clamp is safe on its own: it never turns a number that is not finite into a bound
+    for value in (float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            daemon.clamp(value, daemon.VX)
 
 
 def test_the_head_is_pinned_to_neutral_unless_head_control_was_asked_for(
@@ -456,9 +492,7 @@ def test_a_camera_with_no_snapshot_url_is_not_advertised(daemon: ModuleType, tmp
     every one of them fails at runtime instead of simply not existing."""
     config = tmp_path / "duck_config.json"
     config.write_text('{"expression_features": {"camera": true, "speaker": true}}')
-    args = daemon.parser().parse_args(
-        ["serve", "--duck-config", str(config), "--token-file", str(tmp_path / "none")]
-    )
+    args = daemon.parser().parse_args(["serve", "--duck-config", str(config), "--token-file", ""])
     assert daemon.build_core(args).capabilities["camera"] is False
 
     args = daemon.parser().parse_args(
@@ -467,7 +501,7 @@ def test_a_camera_with_no_snapshot_url_is_not_advertised(daemon: ModuleType, tmp
             "--duck-config",
             str(config),
             "--token-file",
-            str(tmp_path / "none"),
+            "",
             "--camera-url",
             "http://127.0.0.1:9872/snapshot.jpg",
         ]
@@ -494,7 +528,7 @@ def test_the_documented_camera_setup_actually_has_a_camera(daemon: ModuleType, t
             "--duck-config",
             str(config),
             "--token-file",
-            str(tmp_path / "none"),
+            "",
             "--camera-url",
             "http://127.0.0.1:9872/snapshot.jpg",
         ]
@@ -504,9 +538,7 @@ def test_the_documented_camera_setup_actually_has_a_camera(daemon: ModuleType, t
     assert core.hello()["camera"]["url"].endswith("/snapshot.jpg")
 
     # and with the device free but nothing serving it, there is still no camera
-    args = daemon.parser().parse_args(
-        ["serve", "--duck-config", str(config), "--token-file", str(tmp_path / "none")]
-    )
+    args = daemon.parser().parse_args(["serve", "--duck-config", str(config), "--token-file", ""])
     assert daemon.build_core(args).capabilities["camera"] is False
 
 
@@ -565,6 +597,92 @@ def test_the_unit_runs_upstream_from_the_directory_its_data_is_in() -> None:
     assert workdir.endswith("/scripts"), workdir
     script = next(a for a in exec_start(path) if a.endswith("v2_rl_walk_mujoco.py"))
     assert script.rsplit("/", 1)[0] == workdir, "the unit must run the script from its own dir"
+
+
+def test_install_sh_puts_its_token_file_in_the_unit_and_changes_no_directory_but_its_own(
+    daemon: ModuleType, tmp_path: Path
+) -> None:
+    """`TOKEN_FILE=... bash install.sh` wrote the token where TOKEN_FILE said and never put
+    `--token-file` into the unit, so the bridge read its default path, found no file and served
+    with no token, admitting any client, while the script said the service user could read its
+    token. Its chgrp and chmod 0750 ran on whatever directory held TOKEN_FILE, so
+    `TOKEN_FILE=/etc/duck.token` changed the group and mode of /etc itself. Its own directory,
+    /etc/roboglot, it makes and puts right on every run; any other it only checks, and stops
+    with what to run when that one is not safe for a secret. install.sh is never run here: its
+    own sed expressions are applied to the shipped unit, the ExecStart is read by the daemon's
+    own parser, and its token step is read line by line."""
+    import argparse
+    import posixpath
+    import re
+
+    here = REPO / "bridge" / "open_duck"
+    script = (here / "install.sh").read_text(encoding="utf-8")
+    shipped = (here / "roboglot-duck-bridge.service").read_text(encoding="utf-8")
+    found = re.search(r'^TOKEN_FILE="\$\{TOKEN_FILE:-(.*)\}"$', script, re.M)
+    substitute = re.search(r"^substitute\(\) \{.*?^\}", script, re.M | re.S)
+    camera = re.search(r'sudo sed -i "(s\|--bind[^"]*)" "\$BRIDGE_UNIT"', script)
+    assert found and substitute and camera
+    default = found.group(1)
+    edits = [*re.findall(r'-e "(s\|[^"]*)"', substitute.group(0)), camera.group(1)]
+
+    def installed(token_file: str) -> argparse.Namespace:
+        env = {
+            "SVC_USER": "duckowner",
+            "VENV": "/home/duckowner/venv",
+            "RUNTIME_DIR": "/home/duckowner/Open_Duck_Mini_Runtime",
+            "ONNX_PATH": "/home/duckowner/walk.onnx",
+            "CAMERA_URL": "http://127.0.0.1:9872/snapshot.jpg",
+            "TOKEN_FILE": token_file,
+        }
+        text = shipped
+        for edit in edits:
+            parts = re.fullmatch(r"s\|(.*?)\|(.*?)\|(g?)", edit)
+            assert parts, edit
+            pattern, replacement, every = parts.groups()
+            replacement = re.sub(r"\$(\w+)", lambda m: env[m.group(1)], replacement)
+            replacement = replacement.replace("\\", "\\\\").replace("&", r"\g<0>")
+            text = re.sub(pattern, replacement, text, count=0 if every else 1, flags=re.M)
+        unit = tmp_path / "roboglot-duck-bridge.service"
+        unit.write_text(text, encoding="utf-8")
+        return daemon.parser().parse_args(exec_start(unit)[2:])
+
+    for token_file in (default, f"{posixpath.dirname(default)}/duck.token", "/etc/duck.token"):
+        args = installed(token_file)
+        assert args.token_file == token_file, "the unit reads another file than the one written"
+        assert (args.bind, args.deadman_ms) == ("127.0.0.1", 300)
+        assert args.camera_url == "http://127.0.0.1:9872/snapshot.jpg"
+
+    # The script's own directory is made and put right on every run, owner, group and mode.
+    token_dir = re.search(r"^TOKEN_DIR=(\S+)$", script, re.M)
+    assert token_dir and posixpath.dirname(default) == token_dir.group(1)
+    lines = [line.strip() for line in script.splitlines()]
+    own = lines.index('if [ "$TOKEN_FILE_DIR" = "$TOKEN_DIR" ]; then')
+    other = lines.index("else", own)
+    end = lines.index("fi", other)
+    for repair in ('sudo chown root:"$SVC_USER" "$TOKEN_DIR"', 'sudo chmod 0750 "$TOKEN_DIR"'):
+        assert repair in lines[own + 1 : other], f"not repaired on every run: {repair}"
+    # Any other directory is only checked, and no line anywhere changes one but the script's own.
+    assert lines[other + 1 : end] == ['secret_dir_or_die "$TOKEN_FILE_DIR"']
+    for i, line in enumerate(lines):
+        changes = re.match(r"sudo (chgrp|chmod|chown|install -d)\b", line)
+        if changes and re.search(r"TOKEN_DIR|TOKEN_FILE_DIR|dirname|\$dir\b", line):
+            assert own < i < other and line.endswith('"$TOKEN_DIR"'), f"line {i + 1}: {line}"
+    check = re.search(r"^secret_dir_or_die\(\) \{.*?^\}", script, re.M | re.S)
+    assert check, "the check of a directory that is not the script's own"
+    for checked in (
+        'sudo test -d "$dir"',  # it exists and is a directory
+        'sudo test -L "$dir"',  # and is no symlink to somewhere else
+        "stat -c '%U %a'",  # its owner and mode
+        '"$owner" != root',  # owned by root
+        '"$owner" != "$SVC_USER"',  # or by the service user
+        "8#022",  # writable by neither its group nor anyone else
+        'sudo -u "$SVC_USER" test -x "$dir"',  # and searchable by the service user
+    ):
+        assert checked in check.group(0), checked
+    assert check.group(0).count('die "') >= 4, "each failed check stops and says what to run"
+    assert not re.search(r"^\s*sudo (chgrp|chmod|chown|install)\b", check.group(0), re.M)
+    # and the token is created with its mode before a byte of it is written
+    assert not any('tee "$TOKEN_FILE"' in line for line in lines)
 
 
 def test_serve_refuses_before_it_binds_when_upstreams_data_is_not_there(
@@ -724,6 +842,145 @@ def test_a_shutdown_settles_the_duck_while_the_loop_is_still_running(daemon: Mod
             signal_module.signal(sig, handler)
 
 
+def test_nothing_a_client_sends_moves_the_duck_once_a_shutdown_has_begun(
+    daemon: ModuleType,
+) -> None:
+    """The settle's zero was an ordinary stop, which refuses a stale command only for its latch
+    (the deadman, 300 ms) inside a settle of `SETTLE_S` (0.5 s). A client still in the middle
+    of a `move` re-sends its old epoch at 10 Hz, so the duck walked again once the latch had
+    lapsed; a client that had read `duck.state` sent the new epoch and walked it again at once.
+    The settle then ended the loop mid-stride with torque on, which is the fall it exists to
+    prevent. This sends both while the settle is still running, with a head target, a gesture
+    and a walk that raced the signal's zero into the snapshot, and the loop must read zeros and
+    a head that stays where it was, up to the moment the settle ends it."""
+    import signal as signal_module
+
+    signals = (signal_module.SIGTERM, signal_module.SIGINT)
+    previous = {s: signal_module.getsignal(s) for s in signals}
+    interrupted = threading.Event()
+    clock = Clock()
+    core = daemon.BridgeCore(
+        now=clock, limits=daemon.Limits(head_enabled=True), capabilities={"antennas": True}
+    )
+    controller = daemon.NetworkController(core)
+    walk = core.limits.vx[1]
+    still = (0.0, 0.0, 0.0)
+
+    def command(**params: object) -> None:
+        core.handle({"method": "duck.command", "params": params}, authed=True)
+
+    def loop_reads() -> tuple[float, float, float]:
+        clock.t += 0.02
+        vector = controller.get_last_command()[0]
+        return (float(vector[0]), float(vector[1]), float(vector[2]))
+
+    try:
+        daemon.install_settle(core, seconds=daemon.SETTLE_S, interrupt=interrupted.set)
+        hello(core)
+        command(vx=walk, epoch=core.stop_epoch)
+        assert loop_reads()[0] == pytest.approx(walk)
+        head_at_signal = core.head_now
+
+        handler = signal_module.getsignal(signal_module.SIGTERM)
+        assert callable(handler)
+        handler(signal_module.SIGTERM, None)  # what systemctl stop delivers
+        assert loop_reads() == still
+
+        # the client never heard of this stop, and its next command comes after the latch
+        clock.t += core.stop_latch_s
+        command(vx=walk, epoch=0)
+        assert loop_reads() == still, "a command past the stop's latch walked the duck again"
+
+        # a client that read the state carries the epoch the shutdown moved to
+        state, _ = core.handle({"id": 2, "method": "duck.state"}, authed=True)
+        command(vx=walk, vyaw=0.5, head={"head_yaw": 0.3}, epoch=state["result"]["stop_epoch"])
+        assert loop_reads() == still, "a command with the current epoch walked the duck again"
+        assert core.state()["moving"] is False, "the command was taken, not refused"
+
+        reply, _ = core.handle(
+            {"id": 3, "method": "duck.antennas", "params": {"gesture": "perk"}}, authed=True
+        )
+        assert "error" in reply, "a gesture must be refused, not accepted and never played"
+        assert core.command_for_tick().triggers == (0.0, 0.0)
+
+        # a command part way through on the server thread when the signal came, stored after
+        # the zero: the loop is the last word
+        core.snapshot = daemon.Snapshot(seq=99, at=clock.t, vx=walk, vyaw=0.5)
+        core.head_target = (0.0, 0.0, 0.3, 0.0)
+        assert loop_reads() == still, "a walk that raced the zero reached the loop"
+        for _ in range(10):
+            loop_reads()
+        assert core.head_now == head_at_signal, "the head moved during the shutdown"
+
+        assert not interrupted.is_set(), "setup: all of this has to happen inside the settle"
+        assert interrupted.wait(timeout=daemon.SETTLE_S * 10), "the settle must end the loop"
+        assert loop_reads() == still
+    finally:
+        for sig, handler in previous.items():
+            signal_module.signal(sig, handler)
+
+
+def test_the_settle_ends_the_loop_with_a_keyboard_interrupt_and_a_second_signal_exits_at_once(
+    daemon: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`install_settle` ends the settle with `_thread.interrupt_main()` so that a
+    KeyboardInterrupt runs upstream's own cleanup and `main()`'s and the unit stops cleanly.
+    But its handler is installed for SIGINT as well, and `interrupt_main` runs the installed
+    SIGINT handler rather than raising: the handler saw a shutdown already asked for and took
+    `os._exit(1)`, so every clean stop was a hard exit and the unit read failed. A second signal
+    from a person must still exit at once, during the settle and after it. `interrupt_main`
+    simulates SIGINT inside this process only, and `os._exit` is replaced by a recorder."""
+    import signal as signal_module
+
+    signals = (signal_module.SIGTERM, signal_module.SIGINT)
+    previous = {s: signal_module.getsignal(s) for s in signals}
+    exits: list[int] = []
+    monkeypatch.setattr(daemon.os, "_exit", exits.append)
+    raised = False
+    try:
+        # a person who asks twice, inside the settle
+        never = threading.Event()
+        daemon.install_settle(
+            daemon.BridgeCore(), seconds=daemon.SETTLE_S * 10, interrupt=never.set
+        )
+        handler = signal_module.getsignal(signal_module.SIGTERM)
+        assert callable(handler)
+        handler(signal_module.SIGTERM, None)
+        assert exits == []
+        handler(signal_module.SIGINT, None)
+        assert exits == [1], "a second signal must give up waiting and exit now"
+        exits.clear()
+
+        # the settle's own ending, through the default interrupt
+        before = set(threading.enumerate())
+        daemon.install_settle(daemon.BridgeCore(), seconds=daemon.SETTLE_S)
+        settle = [
+            t
+            for t in threading.enumerate()
+            if t not in before and t.name == "roboglot-duck-bridge-settle" and t.is_alive()
+        ]
+        handler = signal_module.getsignal(signal_module.SIGTERM)
+        assert callable(handler)
+        try:
+            handler(signal_module.SIGTERM, None)
+            for thread in settle:
+                thread.join(timeout=daemon.SETTLE_S * 20)
+            # the simulated SIGINT is run at the next check in this, the main, thread
+            deadline = time.monotonic() + daemon.SETTLE_S * 4
+            while time.monotonic() < deadline and not exits:
+                time.sleep(0.01)
+        except KeyboardInterrupt:
+            raised = True
+        assert raised and exits == [], (
+            f"the settle ended with os._exit{tuple(exits)}, and KeyboardInterrupt raised={raised}"
+        )
+        handler(signal_module.SIGTERM, None)
+        assert exits == [1], "a signal after the settle has ended the loop is a second one"
+    finally:
+        for sig, h in previous.items():
+            signal_module.signal(sig, h)
+
+
 async def test_a_stop_that_cannot_be_delivered_fails_the_verb(daemon: ModuleType) -> None:
     """End to end, through the real client and the real adapter, which is where this broke.
 
@@ -822,7 +1079,7 @@ def test_serve_refuses_to_start_a_policy_it_could_never_release(
             "--duck-config",
             str(config),
             "--token-file",
-            str(tmp_path / "none"),
+            "",
             "--port",
             "0",
         ]
@@ -858,9 +1115,13 @@ def test_a_token_the_service_cannot_read_refuses_to_start(daemon: ModuleType, tm
     missing = tmp_path / "nope.token"
     assert daemon.read_token(str(missing)) is None, "no file is honestly no token"
 
+    # The owner's decision of 2026-11-16: an empty token file refuses to start, as the Jetson
+    # daemon's does, where it used to be no token with a warning.
     empty = tmp_path / "empty.token"
     empty.write_text("   \n")
-    assert daemon.read_token(str(empty)) is None, "an empty token must not authenticate"
+    with pytest.raises(SystemExit) as caught:
+        daemon.read_token(str(empty))
+    assert "silently disabled" in str(caught.value), "an empty token must not authenticate"
 
     good = tmp_path / "good.token"
     good.write_text("s3cret\n")
@@ -871,6 +1132,41 @@ def test_a_token_the_service_cannot_read_refuses_to_start(daemon: ModuleType, tm
     with pytest.raises(SystemExit) as caught:
         daemon.read_token(str(unreadable))
     assert "silently disabled" in str(caught.value)
+
+
+def test_a_wide_bind_with_no_token_refuses_to_start_unless_it_is_asked_to_run_open(
+    daemon: ModuleType, tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The owner's decision of 2026-11-16 for every bridge. This port walks a robot, and on an
+    address beyond loopback with no token the bridge warned and then served anyone on that
+    network. It now refuses to start there, and names both ways out: a token, or the flag that
+    starts it open on purpose. Loopback is as it was, an empty token is no token, and a token
+    file named with --token-file that is missing or empty refuses to start, as the Jetson
+    daemon's always has. 192.0.2.1 is an address no machine has, so nothing here listens on a
+    wide address whether the refusal comes or not."""
+    empty = tmp_path / "empty.token"
+    empty.write_text("\n")
+    with caplog.at_level(logging.ERROR, logger="roboglot-duck-bridge"):
+        # an empty name is no token, on purpose
+        code = daemon.main(
+            ["serve", "--fake", "--bind", "192.0.2.1", "--port", "0", "--token-file", ""]
+        )
+    assert code == 2
+    assert "--allow-no-token" in caplog.text and "--token-file" in caplog.text
+
+    refusal = daemon.wide_bind_refusal
+    assert refusal("192.0.2.1", None, allow_no_token=False) is not None
+    assert refusal("192.0.2.1", None, allow_no_token=True) is None, "open, on purpose"
+    assert refusal("192.0.2.1", "s3cret", allow_no_token=False) is None
+    for loopback in ("127.0.0.1", "localhost"):
+        assert refusal(loopback, None, allow_no_token=False) is None, "loopback is as it was"
+    assert daemon.parser().parse_args(["serve"]).allow_no_token is False
+
+    for named in (tmp_path / "never-written.token", empty):
+        with pytest.raises(SystemExit) as caught:
+            daemon.read_token(str(named), named=True)
+        assert "Refusing to start" in str(caught.value) and str(named) in str(caught.value)
+    assert daemon.read_token(str(tmp_path / "never-written.token"), named=False) is None
 
 
 def test_the_hello_says_whether_there_is_any_authentication(daemon: ModuleType) -> None:
@@ -951,7 +1247,7 @@ def _serve_in_subprocess(tmp_path: Path, script: Path, watchdog_s: str) -> subpr
         "spec.loader.exec_module(m)\n"
         "sys.exit(m.main(["
         f'"serve", "--script", {str(script)!r}, "--port", "0",'
-        f'"--token-file", {str(tmp_path / "none")!r},'
+        '"--token-file", "",'
         f'"--patch-watchdog-s", "{watchdog_s}",'
         "]))\n"
     )

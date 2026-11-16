@@ -52,7 +52,14 @@ upstream imports to read a gamepad, then runs upstream's own script. Three thing
 - **The only e-stop is the power switch.** Keep a hand near it.
 - **Both daemons bind loopback by default.** The bridge walks a robot and the camera shows
   your home. Prefer `ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 your-pi` over binding
-  either one wide.
+  either one wide. Bound wider with no token, each refuses to start unless `--allow-no-token`
+  says that is on purpose (the camera has no token at all). Neither has TLS, so the bridge's
+  token, every command and every frame cross the network in the clear unless a tunnel
+  carries them.
+- **A shutdown refuses every command until the process ends.** On SIGTERM or Ctrl-C the bridge
+  zeroes the command and holds the loop at zero for `--settle-s`, and nothing a client sends
+  in that time moves the duck. A number in a command that is not finite refuses the whole
+  command.
 
 ## Getting the files onto the Pi
 
@@ -85,7 +92,8 @@ python roboglot_duck_bridge.py check          # what this duck would advertise, 
 | `--bind` | `127.0.0.1` | loopback on purpose: this port walks a robot |
 | `--port` | `9871` | |
 | `--duck-config` | `~/duck_config.json` | where the capability flags come from |
-| `--token-file` | `/etc/roboglot/duck-bridge.token` | if the file exists, a client must send that token |
+| `--token-file` | `/etc/roboglot/duck-bridge.token` | a client must send the token in this file. With no flag, a missing file at the default path is no token; a file named here that is missing, or any that is empty, refuses to start. `""` runs with no token on purpose |
+| `--allow-no-token` | off | start on an address beyond loopback with no token, on purpose. Without it the bridge refuses to |
 | `--camera-url` | none | the snapshot URL to advertise. **Without it the bridge reports no camera** |
 | `--deadman-ms` | `300` | how long silence is tolerated before the velocities go to zero |
 | `--max-vx`, `--max-vy`, `--max-vyaw` | `0.15`, `0.2`, `1.0` | your own ceilings. Above upstream's own numbers the bridge refuses to start |
@@ -93,7 +101,7 @@ python roboglot_duck_bridge.py check          # what this duck would advertise, 
 | `--head-safety` | `0.8` | the fraction of upstream's head range Roboglot will use. Refused outside (0, 1] |
 | `--workdir` | the script's own directory | where upstream's loop runs from. It opens `polynomial_coefficients.pkl` by relative path, so this has to be the directory holding it |
 | `--patch-watchdog-s` | `150` | how long upstream may take to ask for a controller before the bridge exits. `0` disables |
-| `--settle-s` | `0.5` | on SIGTERM or Ctrl-C, hold zero velocity this long before the loop exits, so the duck comes to a stand. Must stay under the unit's `TimeoutStopSec` |
+| `--settle-s` | `0.5` | on SIGTERM or Ctrl-C, hold zero velocity this long before the loop exits, refusing every command meanwhile, so the duck comes to a stand. Must stay under the unit's `TimeoutStopSec` |
 | `--fake` | off | a synthetic 50 Hz loop, no robot and no runtime needed |
 | `--seconds` | forever | stop after this long. Useful with `--fake` |
 
@@ -110,6 +118,7 @@ python roboglot_duck_camd.py [flags]
 | Flag | Default | What it does |
 |---|---|---|
 | `--bind` | `127.0.0.1` | it serves a live view of wherever your robot is, with no authentication |
+| `--allow-no-token` | off | serve on an address beyond loopback, on purpose. It has no token, so without this it refuses to |
 | `--port` | `9872` | |
 | `--fps` | `5.0` | it captures on a timer, so a slow client cannot stall the capture. 1 fps was too slow for the 10 Hz steering loop |
 | `--size` | `256` | square. Upstream's own camera code uses 512, which costs CPU this process exists to save |
@@ -137,7 +146,8 @@ python roboglot_duck_bridge.py serve --fake --enable-head --seconds 300 \
 Then from a laptop, against that fake. Note `--camera-url` on **both** sides when you are
 tunnelling: the bridge advertises a URL from its own point of view, and passing one to Roboglot
 cannot rescue a bridge that was started without one, because the manifest is narrowed from
-what the bridge reports.
+what the bridge reports. Roboglot takes a camera URL over http or https only, and one the
+bridge advertises only to the host it connected to.
 
 ```bash
 roboglot doctor --robot open_duck:bridge --address tcp://127.0.0.1:9871

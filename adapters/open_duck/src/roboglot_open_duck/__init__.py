@@ -23,7 +23,7 @@ from typing import Any
 
 from PIL import Image
 
-from roboglot.adapters.base import RestResult, one_camera_url, refuse_rest_pose
+from roboglot.adapters.base import AdapterError, RestResult, one_camera_url, refuse_rest_pose
 from roboglot.adapters.manifest import (
     Datasheet,
     Figure,
@@ -374,10 +374,17 @@ def make(
     token: str | None = None,
     rest_pose: dict[str, float] | None = None,
 ) -> OpenDuckAdapter:
-    # both run before the branch so a rest pose this duck cannot hold and a second camera are
-    # refused on every backend, not only on the one that would have opened the camera
+    # these run before the branch so a rest pose this duck cannot hold, a second camera and a
+    # camera URL that is not http or https are refused on every backend, not only on the one
+    # that would have opened the camera
     refuse_rest_pose("open_duck", rest_pose)
     url = one_camera_url(camera_url, spec=f"open_duck:{backend}")
+    if url is not None:
+        from roboglot_open_duck.bridge import camera_url_refusal
+
+        refusal = camera_url_refusal(url)
+        if refusal is not None:
+            raise AdapterError(f"open_duck:{backend}, --camera-url: {refusal}")
     if backend == "mock":
         from roboglot_open_duck.mock import OpenDuckMock
 
