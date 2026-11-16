@@ -14,9 +14,11 @@ updates:
       python-deps:
         patterns: ["*"]
     # Dependabot asks uv for one version of a package in every split of the lock at once, the
-    # newest PyPI has, and for the first seven below uv finds none while something else in the
-    # lock holds them back. Five failed the whole job every week from 2026-09-11 until they were
-    # ignored, and dm-tree on every run from 2026-10-30, and lerobot is ignored before it can.
+    # newest PyPI has, and for every entry below but hatchling uv finds none, because something
+    # holds it back in one split: another package in the lock, or for av, Python 3.11. Five
+    # failed the whole job every week from 2026-09-11 until they were ignored, and dm-tree on
+    # every run from 2026-10-30. lerobot and rustypot are ignored before they can fail it, and so
+    # is websockets 18, which PyPI does not have yet.
     # Only the versions the hold rules out are ignored, so a release inside it still comes in the
     # group. Drop an entry once what holds it back moves. hatchling, the last, is the build
     # backend, which the updater cannot move.
@@ -38,13 +40,16 @@ updates:
       # a person runs uv lock --upgrade-package ultralytics.
       - dependency-name: "ultralytics"
         versions: [">=8.4.124"]
-      # google-genai, behind roboglot[gemini] and roboglot[all], pins websockets>=13.0.0,<17.0, so
-      # 16.x can still come in the group.
+      # google-genai 2.34, behind roboglot[gemini] and roboglot[all], pins websockets>=13.0.0,<18.0,
+      # and streamlit 1.67, behind roboglot[ui], pins websockets>=12.0.0,<18, so 17.x can still
+      # come in the group.
       - dependency-name: "websockets"
-        versions: [">=17.0"]
-      # aiortc, behind roboglot-microduck[camera], pins av>=14.0.0,<18.0.0.
+        versions: [">=18.0"]
+      # aiortc 1.16, behind roboglot-microduck[camera], takes av>=14.0.0,<20.0.0, and av 19 needs
+      # Python 3.12, so the lock holds av 18 on Python 3.11 and av 19 on the rest. The 3.12 split
+      # can still move: a person runs uv lock --upgrade-package av.
       - dependency-name: "av"
-        versions: [">=18.0.0"]
+        versions: [">=19.0.0"]
       # dm-tree 0.1.10, behind roboglot-lerobot[vla], wants numpy>=2.3.2 on Python 3.14 and later,
       # and lerobot's numpy>=2.0.0,<2.3.0 leaves it nothing there.
       - dependency-name: "dm-tree"
