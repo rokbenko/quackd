@@ -6621,8 +6621,8 @@ class _DoctorHands:
             FOLDING_IN,
             HANDS_AWAY_S,
             FoldStopped,
-            FoldWentOn,
             fold_unless_stopped,
+            fold_went_on,
             one_watch,
         )
 
@@ -6656,7 +6656,7 @@ class _DoctorHands:
                         # held where the stopped fold left it, a step cap on at most
                         await adapter.stop()
                     # one told twice that had not ended may still be moving, and is said so
-                    went_on = isinstance(stopped_it, FoldWentOn)
+                    went_on = fold_went_on(stopped_it)
                     return RestResult("refused", FOLD_WENT_ON if went_on else FOLD_STOPPED)
 
     async def before_close(self, adapter: Any) -> None:
@@ -6753,10 +6753,10 @@ def robot_release(
         LIMP_AT_THE_CLOSE,
         TORQUE_READS_OFF,
         FoldStopped,
-        FoldWentOn,
         Settled,
         ask,
         fold_unless_stopped,
+        fold_went_on,
         one_watch,
         release_where_it_stands,
         settle_missed_fold,
@@ -6872,7 +6872,7 @@ def robot_release(
             with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
                 # as after a stopped fold, and the gripper's last goal is a step cap on at most
                 await adapter.stop()
-            if isinstance(stopped_it, FoldWentOn):
+            if fold_went_on(stopped_it):
                 # told twice and not ended: its jaws may still be moving, and nothing says so
                 said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}"
                 return Settled("kept", "the gripper did not stop when pressed", said=said)
@@ -6944,7 +6944,7 @@ def robot_release(
                     # second press landing here is caught too, so the close still comes
                     await adapter.stop()
                 # one told twice that had not ended may still be moving, and is said so
-                went_on = isinstance(stopped_it, FoldWentOn)
+                went_on = fold_went_on(stopped_it)
                 return Settled(
                     "kept", FOLD_INTERRUPTED, said=FOLD_WENT_ON if went_on else FOLD_STOPPED
                 )

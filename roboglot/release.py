@@ -376,6 +376,20 @@ class FoldWentOn(FoldStopped):
     fold still happens; what it says of it is `FOLD_WENT_ON`, never that the fold stopped."""
 
 
+WENT_ON = "fold_went_on"
+"""The attribute set on a cancel or an interrupt of `fold_unless_stopped` that leaves the fold
+still going after it was told twice, which goes on up as the cancel or the interrupt it is
+(`fold_went_on`)."""
+
+
+def fold_went_on(stopped_it: BaseException) -> bool:
+    """Whether what ended `fold_unless_stopped` left the fold, the gripper or the release still
+    going after it was told twice: `FoldWentOn` after a press, or a cancel or an interrupt of the
+    call marked so (`WENT_ON`). Over one, every caller says it cannot tell (`FOLD_WENT_ON`,
+    `GRIPPER_WENT_ON`), never that it stopped, and never that a release was not sent."""
+    return isinstance(stopped_it, FoldWentOn) or bool(getattr(stopped_it, WENT_ON, False))
+
+
 async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> bool:
     """Cancel `tasks`, wait until every one has finished, whatever each ends with, and say
     whether every one has.
@@ -453,9 +467,14 @@ async def fold_unless_stopped(
     folding = asyncio.ensure_future(fold())
     try:
         await asyncio.wait({folding, watching}, return_when=asyncio.FIRST_COMPLETED)
-    except BaseException:
-        # this call was cancelled or interrupted while both ran: neither may outlive it
+    except BaseException as stopped_it:
+        # This call was cancelled or interrupted while both ran: neither may outlive it. The fold
+        # is told twice, as after a press, and the cancel or the interrupt is marked when it is
+        # still going (`fold_went_on`): told once, a fold that lost the cancel was said to have
+        # stopped, or a release not to have gone out, and then went on.
         await cancel_and_wait(folding, watching)
+        if not folding.done() and not await cancel_and_wait(folding):
+            setattr(stopped_it, WENT_ON, True)
         raise
     if folding.done():
         # the fold ended first, or both at once: it is what happened, whatever was pressed
@@ -496,7 +515,7 @@ async def release_where_it_stands(
         )
     except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as e:
         # one that would not end when stopped may still go out, so it gets the limp reading
-        if not isinstance(e, FoldWentOn) and getattr(transport, "in_hand", None) is False:
+        if not fold_went_on(e) and getattr(transport, "in_hand", None) is False:
             event(stage="kept", reason=NOT_SENT)
             note(RELEASE_NOT_SENT)
             return Settled("kept", NOT_SENT, said=RELEASE_NOT_SENT)
@@ -593,13 +612,11 @@ async def settle_missed_fold(
     again: RestResult | None
     try:
         again = await fold_unless_stopped(fold, getattr(person, "stopped", None))
-    except FoldWentOn:
-        # never "stopped" over a fold that may still be moving: the line says it cannot tell
-        interrupted, again, stopped_line = True, None, FOLD_WENT_ON
-    except FoldStopped:
+    except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
         interrupted, again = True, None
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        interrupted, again = True, None
+        if fold_went_on(stopped_it):
+            # never "stopped" over a fold that may still be moving: the line says it cannot tell
+            stopped_line = FOLD_WENT_ON
     except Exception as e:
         # a fold that failed in a way nothing here can read: settled as one over an arm that
         # stopped answering, with nothing more asked, since a drop offered over an arm nobody

@@ -270,10 +270,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   answer through it; a third party's verb may catch its own. Such a verb went on sending twists
   after Ctrl-C, `q`, a failed heartbeat or its own `timeout_s`, and the stop went out only once it
   ended by itself. No intent a verb sends after it has been ended reaches the robot now, other
-  than a stop, and no call it makes to another verb runs but `stop`; the same holds for a verb a
-  pause granted to a robot met, or a newer command, has ended. A verb that has not ended 0.3 s
-  after its cancel, one deadman window, is cancelled again, and one that has not ended 0.3 s
-  after that is left behind with a note that says so, and the stop goes out without it.
+  than a stop, and not even a stop once the executor's own stop for it has gone, so one that ends
+  late cannot brake the next verb or the run's fold. No call it makes to another verb runs but
+  `stop`, nor does one it made before and that was still reading the body's state. The stop goes out as soon as the verb has been
+  cancelled, without waiting for it to end. A verb that has not ended 0.3 s after its cancel, one
+  deadman window, is cancelled again, and one that has not ended 0.3 s after that is left behind
+  with a note that says so, and the run's end does not wait for it. A pause granted to a robot
+  met, and a newer command, end a verb the same way, where they used to wait on it with no bound
+  but its own timeout.
 - **A cancel that comes while a verb is being ended is no longer lost, and nor is the stop owed
   after it.** Once an abort or a verb's timeout had ended the wait, a second Ctrl-C or an MCP
   client giving up on the call while the executor waited for the verb to end was taken for the
@@ -287,13 +291,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   stop had come back, and that stop goes out over the link that has just failed: while it hung,
   the running verb went on sending twists and a new verb was let through. The abort is set as the
   stop is sent now, and the heartbeat waits no longer than one beat for that stop, which goes out
-  by itself when it can.
+  by itself when it can. Nor does the call the abort ended wait for good on its own stop over the
+  dead link, with the run's teardown behind it: a stop owed after a verb the executor ended is
+  waited for as long as the body gives its own `stop` verb, 5 s for the core one, and one not
+  answered by then goes on by itself and is said to be unconfirmed. So is the stop a run's
+  teardown sends first, which over a dead link held the fold or release after it, the close and
+  the run's end for good: the teardown says it was not answered, and goes on.
 - **The record of a call cancelled from outside says whether its stop landed.** Its `cancelled`
   gate said `a stop was sent` before the stop went, and never read whether it had landed, so the
   record could say so beside a stop row with `accepted` false. The gate is written after the stop
-  now, and says when the stop failed and why. A record that cannot be written there, a full disk,
-  no longer turns the cancelled call into a failed result that blames the verb: the call stays
-  cancelled, and the log says the record could not be written.
+  now, and says when the stop failed and why, or that it was still on its way when a cancel that
+  comes again on every turn, as the MCP server's does, ended the call. A record that cannot be
+  written there, a full disk, no longer turns the cancelled call into a failed result that blames
+  the verb: the call stays cancelled, and the log says the record could not be written. The
+  gates of a verb the abort, a newer command or a pause ended are written after the stop the same
+  way, and say when it failed: written first, a full disk held the stop back and turned the
+  abort, the newer command or the pause into a failure of the verb's, which `abort_when` counts.
 - **`stop` goes out without waiting for a state read.** Every verb read the body's state before
   it ran, the brake as well, with no limit on the wait, so every brake went out a read's round
   trip late, and over a read that did not come back it never went out, abort or no abort. The
@@ -319,7 +332,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   that nothing was sent. The same goes for every other fold and gripper a press stops, and what
   follows is what followed one that stopped: the fold a `--by-hand` run starts with and the one a
   run ends with, `roboglot robot release`'s first fold, `roboglot doctor`'s fold, and the gripper
-  opening or closing, where the person is told its jaws may still be moving.
+  opening or closing, where the person is told its jaws may still be moving. A fold, a gripper or
+  a release cancelled from outside, by a later Ctrl-C rather than a press, is told twice as well,
+  and is never said to have stopped, or a release not to have gone out, while it goes on.
 - **A record that cannot be written no longer silences the release.** With the record failing, a
   full disk, Enter at the question that drops the arm sent the release, and the line for the
   person holding the arm, whether torque came off and what still holds, was never said; with the

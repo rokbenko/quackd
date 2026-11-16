@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import dataclasses
 import itertools
 import json
 import math
@@ -57,9 +58,10 @@ from roboglot.release import (
     RELEASE_INTERRUPTED,
     RELEASE_NOT_SENT,
 )
-from roboglot.safety import Aborted
-from roboglot.transport.base import CameraFrame, RobotState, TransportError
+from roboglot.safety import ENDING_S, Aborted
+from roboglot.transport.base import CameraFrame, HeartbeatError, RobotState, TransportError
 from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import CORE
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
 from roboglot_lerobot.verbs import (
@@ -411,6 +413,57 @@ async def test_heartbeat_failure_aborts_the_run(hello_glot: GlotFile, tmp_path: 
     assert result.outcome == "aborted"
     assert "heartbeat" in result.reason
     assert transport.stops >= 1
+
+
+class _DeadLink(MockTransport):
+    """A link whose beat fails and whose stop never comes back, as a write into a full send
+    buffer or a serial write that never completes does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.never = asyncio.Event()
+
+    async def heartbeat(self) -> None:
+        raise HeartbeatError("no answer from the robot")
+
+    async def stop(self) -> None:
+        self.stops += 1
+        await self.never.wait()
+
+
+async def test_a_run_whose_link_eats_every_stop_still_reaches_its_end(
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run's own last stop, the first thing its teardown sends, was waited for with no end:
+    over a link that had died, the fold, the release, the close and `run_end` never came. It is
+    waited for as long as an owed stop is, the body's `stop` verb's `timeout_s` (here
+    `ENDING_S`), and said to be unconfirmed."""
+    monkeypatch.setitem(CORE, "stop", dataclasses.replace(CORE["stop"], timeout_s=ENDING_S))
+    transport = _DeadLink()
+    forever = FakeProvider(script=[ToolCall(name="walk", arguments={"duration_s": 2.0})])
+    running = asyncio.create_task(
+        run_glot(
+            RunConfig(
+                glot=hello_glot,
+                provider=forever,
+                transport=transport,
+                runs_dir=tmp_path,
+                heartbeat_period_s=0.001,
+            )
+        )
+    )
+    try:
+        await asyncio.wait({running}, timeout=20 * ENDING_S)
+        assert running.done(), f"the teardown waits on its stop ({transport.stops} out)"
+        result = running.result()
+        assert result.outcome == "aborted"
+        events = Transcript.read(result.run_dir / "transcript.jsonl")
+        notes = [str(e.get("text")) for e in events if e["kind"] == "note"]
+        assert any(n.startswith("the run's last stop: it was not answered") for n in notes), notes
+        assert [e for e in events if e["kind"] == "run_end"], "no run_end"
+    finally:
+        transport.never.set()
+        await asyncio.wait({running}, timeout=2.0)
 
 
 async def test_dry_run_touches_nothing(hello_glot: GlotFile, tmp_path: Path) -> None:
