@@ -888,21 +888,26 @@ def test_a_terminal_this_process_is_behind_is_not_read(pty_pair: Any) -> None:
     def own_the_terminal() -> None:
         fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
 
+    # Its stderr has a pipe of its own. Python 3.12 and later warn there when a process forks
+    # with more than one thread running, and the script forks after importing Roboglot: whether
+    # a thread is still there at that instant is the machine's business, and on stdout's pipe
+    # the warning, when it came, was the first line read.
     child = subprocess.Popen(
         [sys.executable, "-c", BEHIND],
         stdin=slave,
         stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
+        stderr=subprocess.PIPE,
         text=True,
         start_new_session=True,
         preexec_fn=own_the_terminal,
     )
     try:
-        assert child.stdout is not None
-        assert child.stdout.readline().strip() == "True True True"
-        assert child.stdout.readline().strip() == "''", "a question there is a no, unread"
-        assert child.stdout.readline().strip() == "False", "and Roboglot has nobody there to ask"
-        assert child.wait(timeout=20) == 0
+        out, err = child.communicate(timeout=20)
+        lines = [line.strip() for line in out.splitlines()]
+        assert lines[:1] == ["True True True"], err
+        assert lines[1:2] == ["''"], "a question there is a no, unread"
+        assert lines[2:3] == ["False"], "and Roboglot has nobody there to ask"
+        assert child.returncode == 0, err
     finally:
         child.kill()
 

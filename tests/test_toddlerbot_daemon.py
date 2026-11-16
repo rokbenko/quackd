@@ -294,9 +294,14 @@ def test_a_command_clears_the_deadman() -> None:
 
 
 class _Serving:
-    """The real daemon, its real loop and its real socket, on loopback."""
+    """The real daemon, its real loop and its real socket, on loopback.
 
-    def __init__(self, **caps: bool) -> None:
+    `loop=False` serves without the loop, for a test about the socket alone. A loop ticks as
+    fast as its machine lets it, and a heartbeat fails a rate under the client's floor: on a
+    full CI runner that is a failure for the machine's reasons. With no loop there is no rate,
+    and the heartbeat judges none."""
+
+    def __init__(self, *, loop: bool = True, **caps: bool) -> None:
         robot = D.FakeRobot()
         self.daemon = D.Daemon(robot, D.FakeSim(robot), fake=True)
         D.Handler.daemon_ref = self.daemon
@@ -317,11 +322,12 @@ class _Serving:
         # can be another worker's by then, and SO_REUSEADDR on Windows hides the collision.
         self.server = D.Server(("127.0.0.1", 0), D.Handler)
         self.port = self.server.server_address[1]
-        self._loop = threading.Thread(target=self.daemon.run, daemon=True)
+        self._loop = threading.Thread(target=self.daemon.run, daemon=True) if loop else None
         self._serve = threading.Thread(target=self.server.serve_forever, daemon=True)
 
     def __enter__(self) -> _Serving:
-        self._loop.start()
+        if self._loop is not None:
+            self._loop.start()
         self._serve.start()
         return self
 
@@ -956,7 +962,7 @@ class _LongFrames:
 async def test_a_frame_over_asyncios_default_line_reaches_the_client() -> None:
     """A frame is one line of base64, and over 64 KiB `readline` raised out of the pump. The frame
     came back None, and every request after it waited out its timeout, the heartbeat's too."""
-    with _Serving(camera=True) as s:
+    with _Serving(camera=True, loop=False) as s:
         s.daemon.camera = _LongFrames()
         link = ToddlerBotBridge(address=s.address)
         await link.connect()
@@ -970,7 +976,7 @@ async def test_a_line_over_the_limit_costs_that_frame_and_not_the_link(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr("roboglot_toddlerbot.bridge.READER_LIMIT", 2**15)
-    with _Serving(camera=True) as s:
+    with _Serving(camera=True, loop=False) as s:
         s.daemon.camera = _LongFrames()
         link = ToddlerBotBridge(address=s.address, request_timeout_s=0.5)
         await link.connect()
