@@ -246,10 +246,13 @@ MOVE_TEXT = "Walk with a velocity for a duration. Use small values; the robot is
 
 GO_TO_TEXT = (
     "Walk toward a detected target and stop at a distance. Closes the loop on the camera itself. "
-    "Stops sooner, without arriving, once the frame's edge cuts the target or another of its kind."
+    "Stops sooner, without arriving, where the frame's edge cuts the target or another of its "
+    "kind so that the camera can no longer measure it."
 )
 """The 0.3 description of `go_to`, and the ending it has had since: a detection the frame's edge
-cuts cannot be measured, so the walk stops there and says so rather than walking on."""
+cuts so that its distance cannot be measured stops the walk there, which says so rather than
+walking on. Not every cut does: one at a side only, or a ball cut at the bottom with its middle
+still in view, is measured as before."""
 
 APPROACH_AND_TEXT = (
     "walk_to a target, then run another verb (kick, grab), only once the camera puts the target "

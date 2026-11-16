@@ -1574,6 +1574,160 @@ async def test_approach_and_does_not_run_then_when_another_target_ended_the_appr
     assert result.data["not_run"] == "kick"
 
 
+#: A target in `_Lateral`: COCO name, how far ahead and to the left it stands in m (the left as
+#: a function of the body's clock, for one that moves), its height and width, and the confidence a
+#: network gives it whole and once the frame's edge band cuts it.
+Moving = tuple[str, float, Callable[[float], float], float, float, float, float]
+
+
+def _still(y: float) -> Callable[[float], float]:
+    return lambda _t: y
+
+
+class _Lateral(OpenDuckMock):
+    """The Open Duck's walking mock with blank 640x480 frames and targets anywhere on the floor,
+    some moving across it, seen through `_LateralBoard`. With `period` it is a camera that hands
+    out a frame every so often, as a Microduck's mediad `/frame` does, so `go_to` measures first."""
+
+    def __init__(self, targets: list[Moving], *, period: float | None = None) -> None:
+        super().__init__(ball_xy=None)
+        self.targets = targets
+        if period is not None:
+            self.frame_period_s = period
+
+    async def get_frame(self) -> Image.Image | None:
+        return Image.new("RGB", FRAME, (40, 40, 40))
+
+
+class _LateralBoard:
+    """The board's HTTP client, answering `/detect` as an ideal network would for `_Lateral`'s
+    targets, camera at each target's mid-height: boxes listed most confident first, as YOLO lists
+    them, and a box the frame's edge band cuts scored lower than a whole one, as a network scores a
+    target it sees only part of."""
+
+    address = "stand-in:0"
+
+    def __init__(self, world: _Lateral) -> None:
+        self.world = world
+
+    def detect(self, jpeg: bytes, *, conf: float | None = None) -> HostDetections:
+        from roboglot.perception.base import box_edge_band_px
+
+        w, h = FRAME
+        f = (w / 2) / math.tan(math.radians(GUESSED_FOV_DEG) / 2)
+        band = box_edge_band_px(FRAME)
+        boxes = []
+        for name, x, y_at, height, width, whole, cut in self.world.targets:
+            dx, dy = x - self.world.x, y_at(self.world.now()) - self.world.y
+            d = math.hypot(dx, dy)
+            rel = math.atan2(
+                math.sin(math.atan2(dy, dx) - self.world.theta),
+                math.cos(math.atan2(dy, dx) - self.world.theta),
+            )
+            if d < 1e-3 or abs(rel) >= math.radians(GUESSED_FOV_DEG / 2):
+                continue
+            cx = w / 2 - math.tan(rel) * f
+            half_h, half_w = f * height / 2 / d, f * width / 2 / d
+            y1, y2 = max(0.0, h / 2 - half_h), min(float(h), h / 2 + half_h)
+            score = cut if (y1 < band or y2 > h - band) else whole
+            boxes.append(
+                HostBox(name, score, max(0.0, cx - half_w), y1, min(float(w), cx + half_w), y2)
+            )
+        boxes.sort(key=lambda b: -b.conf)
+        return HostDetections(w, h, tuple(boxes), "yolov8n", "cuda", 10.0)
+
+
+def _lateral_board(world: _Lateral) -> HostDetector:
+    return HostDetector(_LateralBoard(world), fov_deg=GUESSED_FOV_DEG, calibrated=False)  # type: ignore[arg-type]
+
+
+async def test_the_target_walked_toward_stays_the_one_steered_by_when_a_cut_lowers_its_score(
+    registry: VerbRegistry,
+) -> None:
+    """`go_to` took the target it walked toward to be whichever box a frame listed first. A network
+    lists the most confident first and scores a box the frame cuts lower than a whole one, so once
+    the frame cut the ball walked toward, a whole ball 3 m off and 20 degrees left came first:
+    the ending said go_to "stopped for another ball", and `approach_and` declined a kick at the
+    ball dead ahead within its stop distance. Which detection is the target is decided by
+    continuity with the one steered by on the frame before now, not by the list's order."""
+    near: Moving = ("sports ball", 1.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    left = 3.0 * math.tan(math.radians(20.0))
+    far: Moving = ("sports ball", 3.0, _still(left), HEIGHT_M["ball"], WIDTH_M["ball"], 0.7, 0.7)
+    world = _Lateral([near, far], period=0.5)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    refused = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": named, "then": "kick"}
+    )
+    go_to = result.data.get("go_to", {})
+    assert not go_to.get("another") and go_to.get("tracked") is True, (
+        f"the ball walked toward is {1.0 - world.x:.3f} m off dead ahead; go_to's data {go_to}; "
+        f"approach_and said {result.summary!r}"
+    )
+    assert "kick" in [name for name, _params, _result in ex.history], result.summary
+
+
+async def test_go_to_keeps_to_the_target_it_steers_by_while_another_crosses_its_view(
+    registry: VerbRegistry,
+) -> None:
+    """A ball 2 m dead ahead is steered by, and a second ball, scored higher, walks across the view
+    from left to right 4 m off. `go_to` steered by whichever came first, so it turned off after the
+    second ball as soon as it came into view. It keeps to the one it was steering by now, walks
+    straight, and arrives at that one by measurement."""
+    ahead: Moving = ("sports ball", 2.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.9)
+    crossing: Moving = (
+        "sports ball",
+        4.0,
+        lambda t: 3.0 - t,
+        HEIGHT_M["ball"],
+        WIDTH_M["ball"],
+        0.95,
+        0.95,
+    )
+    world = _Lateral([ahead, crossing])
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    stop = 1.0
+    result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": stop})
+    assert result.ok and "distance_m" in result.data, result.summary
+    assert abs(world.y) < WIDTH_M["ball"] and abs(2.0 - world.x - stop) < WIDTH_M["ball"], (
+        f"the body ended at ({world.x:.2f}, {world.y:.2f}), facing "
+        f"{math.degrees(world.theta):.0f}°; it said {result.summary!r}"
+    )
+
+
+@pytest.mark.parametrize("period", [None, 0.5], ids=["arrives", "cut by the frame"])
+async def test_approach_and_runs_then_on_an_arrival_it_cannot_tell_but_not_at_the_camera_limit(
+    registry: VerbRegistry, period: float | None
+) -> None:
+    """Two balls side by side, a hand's breadth apart and as far off, are both where the target
+    steered by could have moved to between two frames, so nothing tells them apart, and go_to's
+    data says `tracked: false`. An arrival by measurement still puts the body within the stop
+    distance of a ball, which is all `approach_and` promises, so `then` runs there as it always
+    did. Where the walk ends because the frame's edge cuts the ball, on a camera that measures
+    first, the distance was not measured, and `approach_and` cannot vouch that the bound it has
+    is the target's: it does not run `then`, and says it cannot tell."""
+    one: Moving = ("sports ball", 1.0, _still(0.0), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    two: Moving = ("sports ball", 1.0, _still(0.03), HEIGHT_M["ball"], WIDTH_M["ball"], 0.9, 0.5)
+    world = _Lateral([one, two], period=period)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_lateral_board(world))
+    refused = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": named, "then": "kick"}
+    )
+    ran = "kick" in [name for name, _params, _result in ex.history]
+    assert result.data["go_to"]["tracked"] is False, result.data
+    if period is None:
+        assert "distance_m" in result.data["go_to"] and ran, result.summary
+        assert "It cannot tell which ball it walked toward" in result.summary
+    else:
+        assert "cannot_range" in result.data["go_to"] and not ran, result.summary
+        assert result.summary.startswith(
+            "approach_and did not run kick: go_to cannot tell which ball it walked toward"
+        ), result.summary
+
+
 @pytest.mark.parametrize("rows", [2.0, 5.0])
 async def test_a_box_reported_rows_inside_the_edge_still_ends_the_approach_at_the_named_distance(
     registry: VerbRegistry, rows: float

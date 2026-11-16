@@ -72,6 +72,15 @@ LOST_TICKS = 30
 #: How near its stop distance `go_to` slows to a creep, and the speed it creeps at.
 CREEP_BAND_M = 0.15
 CREEP_VX = 0.1
+#: How fast `go_to` walks at a target near the camera's axis, and slows to past the bearing it
+#: turns on the spot at.
+WALK_VX = 0.2
+TURN_VX = 0.05
+WALK_BEARING_DEG = 25.0
+#: How finely the detectors Roboglot ships give a bearing (`round(..., 1)`) and a distance
+#: (`round(..., 3)`): two readings of a target that has not moved can differ by that much.
+BEARING_STEP_DEG = 0.1
+DISTANCE_STEP_M = 0.001
 
 
 def _cm_up(metres: float) -> float:
@@ -975,6 +984,66 @@ def _stopper(hits: list[Detection], d: Detection) -> Detection | None:
     return None
 
 
+def _same_target(
+    before: Detection,
+    hits: list[Detection],
+    seconds: float,
+    size: tuple[int, int],
+    lens_deg: float | None,
+) -> tuple[Detection | None, bool]:
+    """The detection in `hits` that is the target steered by `seconds` before (`before`), on
+    frames of `size` through a lens `lens_deg` wide, and whether nothing else could be, or None
+    when no detection could be it.
+
+    `go_to` took its target to be whichever box a frame listed first, and a network lists the most
+    confident first and scores a box the frame cuts lower: once the frame cut the ball walked
+    toward, a whole ball three metres off came first, and was taken for it. A target is known by
+    where it can have got to instead. Between two frames the body walks at most `WALK_VX` and
+    turns at most `STEER_MAX_WZ`, or `LOST_WZ` looking for it, for as long as passed between them,
+    so a still target's distance can change by no more than the walk, and its bearing by no more
+    than the turn and the walk's parallax at the nearer of its two readings. Each reading is also
+    only as fine as a pixel: a bearing by a pixel across the frame's middle, a distance by a pixel
+    of the size it is ranged by (taken as the radius of a disc of the detection's area, which is
+    never more than a box's height or a blob's radius, so the allowance errs wide), and each by
+    the step the detectors round it to. A detection outside those bounds is not the target, and
+    two inside them cannot be told apart, which is `False`. A target that walks off itself,
+    faster than that, cannot be followed, and is not."""
+    w, h = size
+    pixel_deg = (
+        math.degrees(math.atan(math.tan(math.radians(lens_deg) / 2) / (w / 2)))
+        if lens_deg is not None
+        else 0.0
+    )
+
+    def pixel_m(d: Detection, m: float) -> float:
+        # a reading `m` off a target `r` pixels across moves by `m / r` for one pixel of `r`
+        return m / max(1.0, math.sqrt(d.area * w * h / math.pi))
+
+    walked = WALK_VX * seconds
+    turned = math.degrees(max(STEER_MAX_WZ, LOST_WZ) * seconds)
+    was_m = usable_m(before.est_distance_m)
+    fits: list[tuple[float, Detection]] = []
+    for hit in hits:
+        is_m = usable_m(hit.est_distance_m)
+        known = [m for m in (was_m, is_m) if m is not None]
+        parallax = math.degrees(math.atan2(walked, min(known))) if known else 0.0
+        turn = abs((hit.bearing_deg or 0.0) - (before.bearing_deg or 0.0))
+        may_turn = turned + parallax + 2 * (pixel_deg + BEARING_STEP_DEG)
+        if turn > may_turn:
+            continue
+        moved, may_move = 0.0, walked
+        if is_m is not None and was_m is not None:
+            moved = abs(is_m - was_m)
+            may_move += pixel_m(before, was_m) + pixel_m(hit, is_m) + 2 * DISTANCE_STEP_M
+            if moved > may_move:
+                continue
+        fits.append((turn / may_turn + (moved / may_move if may_move else 0.0), hit))
+    if not fits:
+        return None, False
+    fits.sort(key=lambda fit: fit[0])
+    return fits[0][1], len(fits) == 1
+
+
 async def _no_nearer(
     ctx: VerbContext,
     p: GoToParams,
@@ -982,6 +1051,7 @@ async def _no_nearer(
     steered: Detection,
     last_m: float | None,
     tick: int,
+    tracked: bool = True,
 ) -> VerbResult:
     """Stop the body where the camera cannot range a detection of the target, and say what is
     known: which one ended the approach (the one steered by, or another beside it), that the
@@ -1043,6 +1113,8 @@ async def _no_nearer(
                 f". The {p.target} it steered by reads ~{steered_m:.2f} m, bearing "
                 f"{steered_bearing:+.0f}°"
             )
+    if not tracked:
+        summary += f". {_UNTRACKED.format(target=p.target)}"
     if not started:
         if not another and at_most is not None and at_most <= p.stop_distance:
             summary += ". Nothing moved: by that reading it is within the stop_distance already."
@@ -1057,9 +1129,18 @@ async def _no_nearer(
         ticks=tick,
         cannot_range=why,
         started=started,
+        tracked=tracked,
         **extra,
         **guessed,
     )
+
+
+#: What `go_to` says when it cannot vouch that the detection it steered by at the end is the one
+#: it set out toward (`_same_target`).
+_UNTRACKED = (
+    "It cannot tell which {target} it walked toward: another of its kind was where that one "
+    "could have moved to, or none was"
+)
 
 
 def _guessed(d: Detection) -> tuple[str, dict[str, Any]]:
@@ -1103,11 +1184,17 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     lost = 0.0  # ticks' worth of the lost branch's turn since the target was last seen
     last_bearing = 0.0
     last_m: float | None = None  # the last distance a detection of the target gave
+    # the detection steered by on the last frame that showed the target, and when; and whether
+    # every frame since the first could tell the target from the rest (`_same_target`)
+    steered: Detection | None = None
+    steered_at = t0
+    tracked = True
     tick = 0
     held: tuple[float, float, float] | None = None
     while ctx.transport.now() - t0 < p.timeout_s:
         tick += 1
         img, hits = await _see_holding(ctx, p.target, f"go_to {p.target}", held, since)
+        seen_at = ctx.transport.now()
         since = None
         if img is None:
             return await _no_frame(ctx, "go_to")
@@ -1126,7 +1213,17 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
             held = _clamped(ctx, 0.0, 0.0, LOST_WZ if last_bearing >= 0 else -LOST_WZ)
         else:
             lost = 0.0
+            # the target is the detection where the one steered by last could have got to; on
+            # the first sighting, and when none could be it, the one listed first, as it always
+            # was, but then go_to can no longer vouch for which target it is walking toward
             d = hits[0]
+            if steered is not None:
+                same, alone = _same_target(
+                    steered, hits, seen_at - steered_at, img.size, _lens_deg(ctx)
+                )
+                d = same if same is not None else d
+                tracked = tracked and same is not None and alone
+            steered, steered_at = d, seen_at
             bearing = d.bearing_deg or 0.0
             dist = usable_m(d.est_distance_m)
             last_bearing = bearing
@@ -1135,22 +1232,25 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
                 # would pass on its way, so walking on would be walking into it on a number that
                 # has stopped falling
                 stopper = stopper or d
-                return await _no_nearer(ctx, p, stopper, d, last_m, tick)
+                return await _no_nearer(ctx, p, stopper, d, last_m, tick, tracked)
             if dist <= p.stop_distance:
                 held = None
                 await ctx.transport.stop()
                 await ctx.transport.sleep(TICK_S)
                 guess, guessed = _guessed(d)
+                doubt = "" if tracked else f". {_UNTRACKED.format(target=p.target)}"
                 return VerbResult.success(
-                    f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°{guess}",
+                    f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°{guess}"
+                    + doubt,
                     distance_m=dist,
                     bearing_deg=bearing,
                     ticks=tick,
                     **guessed,
+                    **({} if tracked else {"tracked": False}),
                 )
             last_m = dist
             wz = max(-STEER_MAX_WZ, min(STEER_MAX_WZ, bearing * STEER_GAIN))
-            vx = 0.2 if abs(bearing) < 25 else 0.05
+            vx = WALK_VX if abs(bearing) < WALK_BEARING_DEG else TURN_VX
             if dist < p.stop_distance + CREEP_BAND_M:
                 vx = min(vx, CREEP_VX)  # creep in
             held = _clamped(ctx, vx, 0.0, wz)
@@ -1187,16 +1287,26 @@ async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
         return first
     at_most = first.data.get("at_most_m")
     another = first.data.get("another") is True
+    tracked = first.data.get("tracked") is not False
     within = not another and isinstance(at_most, int | float) and at_most <= p.stop_distance
-    if "cannot_range" in first.data and not within:
+    if "cannot_range" in first.data and not (within and tracked):
         # `then` is promised at the stop distance of the target walked toward, and where the
         # frame's edge cuts a detection its reading is only an upper bound, which can lie beyond
         # it: a ball whose box the frame cuts at the top while it is still out of reach. A bound
         # within the stop distance puts the target within it too, and `then` runs, as it did for
         # a ball filling the frame before this ending existed, but only the bound of the target
         # walked toward: another one's put a kick out straight ahead at a ball 1.5 m off, while
-        # the cut one lay to the side. The body stays where go_to stopped it, and the pilot decides
-        if another:
+        # the cut one lay to the side. Nor does it run on a bound where go_to cannot tell which
+        # detection is the target it walked toward (`_same_target`). An arrival is another
+        # matter: measured within the stop distance, the body is there for a target of that
+        # label, whichever one, which is all `then` was ever promised, and it runs as before.
+        # The body stays where go_to stopped it, and the pilot decides
+        if not tracked:
+            reason = (
+                f"go_to cannot tell which {p.target} it walked toward, so it is not known to be "
+                "the one within the stop_distance"
+            )
+        elif another:
             steered = first.data.get("steered_m")
             reason = (
                 f"go_to stopped for another {p.target}, not the {p.target} it walked toward"
@@ -1333,15 +1443,17 @@ CORE: dict[str, Verb] = {
         Verb(
             "go_to",
             "Go toward a detected target and stop at a distance. Closes the loop on the "
-            "camera itself. Stops sooner, without arriving, once the frame's edge cuts the "
-            "target or another of its kind, whose distance the camera cannot then measure.",
+            "camera itself. Stops sooner, without arriving, where the frame's edge cuts the "
+            "target, or another of its kind, so that the camera can no longer measure its "
+            "distance.",
             go_to,
             GoToParams,
             timeout_s=70,
             kind="composite",
             core=True,
             done_condition="within stop_distance of the target, stopped where the frame's edge "
-            "cuts a detection of it, the target was lost, or timed out.",
+            "cuts a detection of it so that its distance cannot be measured, the target was "
+            "lost, or timed out.",
         ),
         Verb(
             "search_scan",

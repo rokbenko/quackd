@@ -314,11 +314,18 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   nearer, and `go_to` walked on and said it had lost the ball. That ending is not a failure that
   `abort_when` counts and never says `reached`: its data has `at_most_m`, `cannot_range` and
   `started` where an arrival has `distance_m`, and `another` with the reading of the one steered
-  by (`steered_m`) when it was not that one. `approach_and` runs its `then` verb after it only
-  when the target it walked toward has an upper bound within the stop distance; otherwise it
-  leaves the body stopped and fails, naming the verb it did not run, carrying `at_most_m`, and
-  saying why: the target may be farther than the stop distance, or the walk stopped for another
-  one of its kind. A detection that gives no distance from the start is refused.
+  by (`steered_m`) when it was not that one. Which detection is the target walked toward is told
+  by where the one steered by on the frame before could have got to at the verb's own speeds,
+  not by the order a detector lists them in, which put a whole ball three metres off in its place
+  once the frame cut the one walked toward; where no detection, or more than one, could be it,
+  the result says go_to cannot tell, and `tracked` is false. `approach_and` runs its `then` verb
+  after that ending only when go_to can tell the target it walked toward and that target has an
+  upper bound within the stop distance; after an arrival by measurement it runs `then` as it
+  always did, since the body is then within the stop distance of a target of that label, even
+  where go_to cannot tell which. Otherwise it leaves the body stopped and fails, naming the verb
+  it did not run, carrying `at_most_m`, and saying why: the target may be farther than the stop
+  distance, the walk stopped for another one of its kind, or go_to cannot tell which one it
+  walked toward. A detection that gives no distance from the start is refused.
   `stop_distance` now goes up to 2.48 m, the distance a refusal names for a person on a 16:9
   frame through the guessed lens, so it can be asked for, and the parameter and the verb's
   description say all this, as do the Microduck's, Huebot's and Open Duck's own descriptions of

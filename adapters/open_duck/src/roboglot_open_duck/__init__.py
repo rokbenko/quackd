@@ -98,8 +98,8 @@ _SEARCH_SCAN_DESCRIPTION = (
 )
 _GO_TO_DESCRIPTION = (
     "Walk toward a detected target and stop at a distance. Closes the loop on the camera "
-    "itself. Stops sooner, without arriving, once the frame's edge cuts the target or another "
-    "of its kind. Slow: expect this to take a while."
+    "itself. Stops sooner, without arriving, where the frame's edge cuts the target or another "
+    "of its kind so that the camera can no longer measure it. Slow: expect this to take a while."
 )
 # the core wording offers `kick, grab`, which this robot does not have at all
 _APPROACH_AND_DESCRIPTION = (
