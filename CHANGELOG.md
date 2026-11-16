@@ -178,6 +178,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Fixed
 
+- **`roboglot ui` reads its options under Typer 0.29 as it does under 0.28.** Roboglot asks for
+  `typer>=0.12` with no cap, so a fresh install took Typer 0.29 while the lock held 0.28.0, and
+  Typer 0.29 parses on an engine of its own: an option carries its annotation there, and no Click
+  type. The page read the type off every option of `roboglot run` and `roboglot drive`, so its
+  setup page, and every goal or chat started from it, stopped on `AttributeError: 'TyperOption'
+  object has no attribute 'type'`. It reads the type where the installed Typer keeps it now. Typer
+  0.29 also loads pydantic by itself for a command's `--help`, which the test that keeps help light
+  took for Roboglot's doing; that test now holds help to loading nothing Typer's own help does not.
+  Nothing changes for an install on Typer 0.28.
 - **A team run that names one member's robot takes the others' from the task file.** `roboglot
   run team-hello --robot arm`, with `arm` a registered robot, gave `arm` its registered body and
   every other member the machine's default, where the file's `robots:` named one: a member was

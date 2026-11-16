@@ -90,7 +90,8 @@ def _command(command: str) -> Any:
 
 def _kind(param: Any) -> str:
     """By the names Click gives its parameters and types, never by their classes: Typer carries
-    a Click of its own (`typer._click`), whose classes are not the installed `click`'s."""
+    a Click of its own (`typer._click`), whose classes are not the installed `click`'s. The type is
+    read where the installed Typer keeps it (`_type_name`)."""
     if getattr(param, "param_type_name", "") == "argument":
         return "task"
     if getattr(param, "is_flag", False):
@@ -99,12 +100,23 @@ def _kind(param: Any) -> str:
         return "switch"
     if getattr(param, "multiple", False):
         return "list"
-    type_name = str(getattr(param.type, "name", "")).lower()
+    type_name = _type_name(param)
     if type_name.startswith("int"):  # `int` and `int range` in Typer's, `integer` in click's
         return "integer"
     if type_name.startswith("float"):
         return "number"
     return "text"
+
+
+def _type_name(param: Any) -> str:
+    """The name of the type a parameter's value takes, in lower case. Typer 0.29 parses on an
+    engine of its own: its parameters carry the annotation itself (`type_descriptor.annotation`,
+    `int` or `float`) and no `type`. Those of an earlier Typer carry a Click type, whose name is
+    `type.name`."""
+    descriptor = getattr(param, "type_descriptor", None)
+    if descriptor is not None:
+        return str(getattr(descriptor.annotation, "__name__", "")).lower()
+    return str(getattr(param.type, "name", "")).lower()
 
 
 def options(command: str) -> list[Option]:
