@@ -264,6 +264,68 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   or more from where it was is a quack and a success, a nearer one is another approach and kick,
   and a ball the camera did not place both before and after ends the run as a failure that says
   it cannot tell.
+- **An abort or a verb's own timeout ends the verb at once, even when its cancel is lost.** The
+  executor cancelled a running verb once and then waited for it with no end. On Python 3.11 a
+  cancel that lands as `asyncio.wait_for` returns is lost, and several transports wait for every
+  answer through it; a third party's verb may catch its own. Such a verb went on sending twists
+  after Ctrl-C, `q`, a failed heartbeat or its own `timeout_s`, and the stop went out only once it
+  ended by itself. No intent a verb sends after it has been ended reaches the robot now, other
+  than a stop, and no call it makes to another verb runs but `stop`; the same holds for a verb a
+  pause granted to a robot met, or a newer command, has ended. A verb that has not ended 0.3 s
+  after its cancel, one deadman window, is cancelled again, and one that has not ended 0.3 s
+  after that is left behind with a note that says so, and the stop goes out without it.
+- **A cancel that comes while a verb is being ended is no longer lost, and nor is the stop owed
+  after it.** Once an abort or a verb's timeout had ended the wait, a second Ctrl-C or an MCP
+  client giving up on the call while the executor waited for the verb to end was taken for the
+  verb's own cancel and dropped: the call ended as `Aborted` or as an ordinary timeout, and a
+  composite whose nested call was ending on its own timeout went on to its next step after the
+  composite's timeout. The call is cancelled now, once the stop is sent. A cancel that landed
+  while that stop waited its turn on the bus cancelled the stop as well, so the verb had been
+  ended with no stop at all; the stop now goes out when its turn comes, and the log says so if it
+  then fails.
+- **A failed heartbeat aborts the run at once.** The heartbeat set the abort only once its own
+  stop had come back, and that stop goes out over the link that has just failed: while it hung,
+  the running verb went on sending twists and a new verb was let through. The abort is set as the
+  stop is sent now, and the heartbeat waits no longer than one beat for that stop, which goes out
+  by itself when it can.
+- **The record of a call cancelled from outside says whether its stop landed.** Its `cancelled`
+  gate said `a stop was sent` before the stop went, and never read whether it had landed, so the
+  record could say so beside a stop row with `accepted` false. The gate is written after the stop
+  now, and says when the stop failed and why. A record that cannot be written there, a full disk,
+  no longer turns the cancelled call into a failed result that blames the verb: the call stays
+  cancelled, and the log says the record could not be written.
+- **`stop` goes out without waiting for a state read.** Every verb read the body's state before
+  it ran, the brake as well, with no limit on the wait, so every brake went out a read's round
+  trip late, and over a read that did not come back it never went out, abort or no abort. The
+  brake is sent first now, and the state is read after it for the task's `abort_when` rules,
+  which still abort the run on a battery below the line. A dry run reads first, as before.
+- **No precondition holds back `stop`.** A manifest may list preconditions for any verb, and the
+  executor applied them to the brake as well, so a `stop: [not_fallen]` line made `stop` on a
+  fallen body answer `cannot stop` and send nothing. Every other gate lets `stop` through on
+  purpose, and so does this one now. No manifest Roboglot ships lists one.
+- **A verdict recorded while a verb reads the body's state is heeded.** After that read the
+  executor looked again at a pause, a newer command, the abort and a stop, which can each change
+  meanwhile, but not at the verdict. Over MCP, where calls run side by side, an `infeasible`
+  assessed while a walk read the state let the walk start anyway. The walk is refused now.
+- **A fold a person stops is not said to have stopped while it may still move.** After a fold
+  that missed its rest pose, Enter at the question folds the arm again, and a press stops that
+  fold. The press cancelled it once and gave it `STOPPED_FOLD_S`, 2 s: a fold whose cancel was
+  lost was left running, the person was told `the fold was stopped where it was`, and the stop
+  sent after it was followed by the fold's next goals. A fold that has not ended is cancelled a
+  second time now. One that still has not ended 2 s after that is not called stopped: the person
+  is told that Roboglot cannot tell whether the arm is still moving, to keep their hands out of
+  its path until it is still, and then to hold it and cut its power. A release stopped at the
+  next question that will not end either gets the reading that the arm may be limp in part, never
+  that nothing was sent. The same goes for every other fold and gripper a press stops, and what
+  follows is what followed one that stopped: the fold a `--by-hand` run starts with and the one a
+  run ends with, `roboglot robot release`'s first fold, `roboglot doctor`'s fold, and the gripper
+  opening or closing, where the person is told its jaws may still be moving.
+- **A record that cannot be written no longer silences the release.** With the record failing, a
+  full disk, Enter at the question that drops the arm sent the release, and the line for the
+  person holding the arm, whether torque came off and what still holds, was never said; with the
+  disk full already, Enter at the first question folded nothing and said nothing. The second fold
+  and the release go on now, the person is told what they did, and the log says the record could
+  not be written.
 - **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome

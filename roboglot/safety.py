@@ -23,8 +23,8 @@ import threading
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn
+from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING, Any, Literal, NamedTuple, NoReturn, cast
 
 from pydantic import ValidationError
 
@@ -50,12 +50,15 @@ from roboglot.log import (
 from roboglot.perception.base import Detector, detect_times
 from roboglot.space.places import PlaceBook, PlaceStore
 from roboglot.transport.base import (
+    Ack,
     CameraFrame,
+    Intent,
     RobotState,
     RobotTransport,
     TransportError,
     spatial_of,
 )
+from roboglot.verbs.core import HOLD_TTL_S
 from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -298,6 +301,94 @@ def allow_all(_name: str, _params: dict[str, Any]) -> bool:
     return True
 
 
+ENDING_S = HOLD_TTL_S
+"""How long a verb the executor has cancelled is given to end, twice over, before it is left
+behind and the stop sent without it (`Executor._end_verb`). One deadman window, the daemon's
+300 ms (`HOLD_TTL_S`): a verb that has not ended that long after its cancel is stalled, as a
+steering loop is that has had no frame for that long, and nothing it sends meanwhile is passed on
+(`_Leash`), so a body with a deadman has stopped by then without the stop."""
+
+
+_STOPS_UNDER_WAY: set[asyncio.Future[Any]] = set()
+"""Stops still going out after the call that owed them was cancelled (`Executor._stop_after`),
+and the heartbeat's own (`Heartbeat._run`), held here so nothing collects one before it has
+gone."""
+
+
+def _stop_gone(stopping: asyncio.Future[Any]) -> None:
+    """A heartbeat's stop has gone, or failed as its link had: its record is the transport's
+    own (`LoggedTransport`), and it is read here so asyncio does not report it again."""
+    _STOPS_UNDER_WAY.discard(stopping)
+    if not stopping.cancelled():
+        stopping.exception()
+
+
+async def _waited(tasks: set[asyncio.Future[Any]], seconds: float | None) -> bool:
+    """Wait at most `seconds` for `tasks` to end, and say whether the task doing the waiting was
+    cancelled meanwhile. `asyncio.wait` hands such a cancel to none of `tasks`, so a verb's own
+    clean-up is not cut short by its caller going, and the wait ends there rather than lose the
+    cancel: the caller raises it once what it owes is done (`Executor._execute`)."""
+    try:
+        await asyncio.wait(tasks, timeout=seconds)
+    except asyncio.CancelledError:
+        return True
+    return False
+
+
+class _Leash:
+    """The transport, and the way to other verbs, that a running verb is handed (`_execute`),
+    which carry nothing more once the executor has ended the verb.
+
+    A verb is ended by a cancel, and a cancel can be lost: Python 3.11's `asyncio.wait_for`, which
+    many transports wait for their answers through, drops one that lands as its call returns
+    (`Heartbeat._run`), and a third party's verb may catch its own. Such a verb went on sending
+    twists after the abort, or after its own timeout, until it ended by itself. Through this an
+    intent it sends once it has been ended raises the cancel again, and so does a call to another
+    verb, a stop excepted either way. An intent sent after the abort and before the executor has
+    ended the verb, which takes it a turn or two of the loop, waits for that rather than race it
+    to the robot; a call to another verb meanwhile is refused by the abort's own gate. Everything
+    else is the transport's own, delegated as `LoggedTransport` delegates it."""
+
+    def __init__(self, inner: Any, abort: asyncio.Event | None) -> None:
+        self._inner = inner
+        self._abort = abort
+        self._ended = asyncio.Event()
+        self.why: str | None = None
+        """Why the executor ended the verb (`CANCELLED_BY_ABORT` and the rest), or None."""
+
+    def __getattr__(self, name: str) -> Any:
+        if name.startswith("_"):  # never delegate our own privates (copy, pickle, half-init)
+            raise AttributeError(name)
+        return getattr(self._inner, name)
+
+    def end(self, why: str) -> None:
+        self.why = why
+        self._ended.set()
+
+    def _refuse_if_ended(self) -> None:
+        if self.why is not None:
+            raise asyncio.CancelledError(self.why)
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind != "stop":
+            if self.why is None and self._abort is not None and self._abort.is_set():
+                await self._ended.wait()
+            self._refuse_if_ended()
+        return cast(Ack, await self._inner.send_intent(intent))
+
+    def calls(
+        self,
+        run_verb: Callable[[str, dict[str, Any]], Awaitable[VerbResult]],
+        canonical: Callable[[str], str],
+    ) -> Callable[[str, dict[str, Any]], Awaitable[VerbResult]]:
+        async def leashed(name: str, params: dict[str, Any]) -> VerbResult:
+            if canonical(name) != "stop":
+                self._refuse_if_ended()
+            return await run_verb(name, params)
+
+        return leashed
+
+
 @dataclass
 class Executor:
     """allowlist → confirm gate → budget → preconditions → (dry-run |) execute with timeout."""
@@ -330,9 +421,11 @@ class Executor:
     it once its pilot has the body and closes it before its teardown, and an MCP session once it
     has connected and until it closes. Outside those windows the body is moved by its rest move
     and its hand-over, which no gate sees, so a pause granted then could not be kept."""
-    _moving: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
+    _moving: dict[asyncio.Task[VerbResult], _Leash] = field(
+        default_factory=dict, init=False, repr=False
+    )
     """The verbs moving the body now, which a granted pause or a newer command ends (`pause_for`,
-    `preempt`)."""
+    `preempt`), each with the leash it sends through."""
     _halted: dict[asyncio.Task[VerbResult], tuple[str, str]] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -428,14 +521,41 @@ class Executor:
         A transport that knows its stop did not land says so in `stop_error` and does not raise,
         which is how the core `stop` verb hears it. This stop is the same call, so it reads the
         same attribute: without it, an abort said "a stop was sent" over an arm whose hold never
-        reached it."""
+        reached it.
+
+        A cancel of the caller is the one thing it raises, and never by cancelling the stop. A
+        cancel that landed while the stop waited its turn on the bus used to cancel the stop with
+        it, so a verb the executor had ended was left with no stop at all: an MCP call given up on
+        in that window, over an arm, whose lock holds a stop until the call ahead of it is done.
+        The stop runs in a task of its own now, goes out when its turn comes, and is said on the
+        log if it then fails (`_late_stop`)."""
         transport = self.logged_transport()
+        stopping: asyncio.Future[Any] | None = None
         try:
-            await transport.stop()
+            # inside the `try`: a stop that raises as it is called is a failed stop, as before
+            stopping = asyncio.ensure_future(transport.stop())
+            await asyncio.shield(stopping)
+        except asyncio.CancelledError:
+            if stopping is not None and not stopping.done():
+                _STOPS_UNDER_WAY.add(stopping)
+                stopping.add_done_callback(self._late_stop)
+            raise
         except Exception as e:
             return f"{type(e).__name__}: {e}"
         undelivered = getattr(transport, "stop_error", None)
         return str(undelivered) if undelivered else None
+
+    def _late_stop(self, stopping: asyncio.Future[Any]) -> None:
+        """How a stop left to go out after its caller was cancelled ended, said on the log when
+        it did not land, since nobody is waiting on it to say so (`_stop_after`)."""
+        _STOPS_UNDER_WAY.discard(stopping)
+        if stopping.cancelled():
+            self.log("the stop owed after a cancelled call was itself cancelled")
+        elif (error := stopping.exception()) is not None:
+            failed = f"{type(error).__name__}: {error}"
+            self.log(f"the stop owed after a cancelled call failed: {failed}")
+        elif undelivered := getattr(self.transport, "stop_error", None):
+            self.log(f"the stop owed after a cancelled call did not land: {undelivered}")
 
     # ── policy ──────────────────────────────────────────────────────────────────────
 
@@ -501,6 +621,37 @@ class Executor:
             self._emit("gate", name=name, gate="params", outcome="ignored", reason=_invalid(e))
             return parsed
 
+    def _looks(self, canonical: str, verb: Verb) -> bool:
+        """Whether a verb runs before any verdict, as one that only looks does.
+
+        A verb declared `read_only` by whoever wrote it is a sensor, whatever body it came
+        with: a third-party `locate` that reads where things are must run before the
+        verdict for the same reason `observe` does, or the pilot judges feasibility blind.
+        `BEFORE_VERDICT` is matched by name, and a learned verb is excluded from that half
+        on purpose: it is an unproven policy, so a `.glot` that named one `observe` on a
+        body with no camera verb would otherwise have it run before any verdict. The
+        confirm gate would still stop it, and `--yes` answers the confirm gate.
+        `MOVES_THE_BODY` wins over the flag: where Roboglot has said a name is motion, a verb
+        arriving under that name and carrying `read_only` is saying two contradictory things
+        about itself, and the gate believes Roboglot's own record rather than the newcomer."""
+        return (canonical in BEFORE_VERDICT and verb.kind != "learned") or (
+            verb.read_only and canonical not in MOVES_THE_BODY
+        )
+
+    def _no_verdict(self, name: str) -> VerdictRequired:
+        """The `verdict` gate's refusal of a verb that moves the body, recorded."""
+        why = (
+            self.verdict.blocking_reason()
+            if self.verdict is not None
+            else "no feasibility verdict has been recorded for this task yet"
+        )
+        reason = (
+            f"{name} moves the body, and {why}: record a verdict first "
+            "(feasible, infeasible or uncertain)"
+        )
+        self._emit("gate", name=name, gate="verdict", outcome="refused", reason=reason)
+        return VerdictRequired(reason)
+
     def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
         """The `paused` gate: refuse a verb that may move the body while a pause holds."""
         held = self.paused_until - time.monotonic()
@@ -521,11 +672,13 @@ class Executor:
         still. A second pause only ever lengthens the hold, never shortens one already running."""
         self.paused_until = max(self.paused_until, time.monotonic() + seconds)
         # Cancelled here, not through something they wait on: a task cancelled before its next
-        # step never takes it, so none of them sends another intent after this returns, and the
-        # stop the courtesy sends next is the last thing the body is told.
-        for task in list(self._moving):
+        # step never takes it, and its leash passes on nothing it sends after a cancel it lost,
+        # so none of them sends another intent after this returns, and the stop the courtesy
+        # sends next is the last thing the body is told.
+        for task, leash in list(self._moving.items()):
             if not task.done():
                 self._halted[task] = (CANCELLED_BY_PAUSE, "")
+                leash.end(CANCELLED_BY_PAUSE)
                 task.cancel(CANCELLED_BY_PAUSE)
 
     def preempt(self, reason: str) -> int:
@@ -542,9 +695,10 @@ class Executor:
         ended = 0
         # cancelled here, for the reason `pause_for` gives: a task cancelled before its next step
         # never takes it, so nothing it would have sent goes out after this returns
-        for task in list(self._moving):
+        for task, leash in list(self._moving.items()):
             if not task.done():
                 self._halted[task] = (CANCELLED_BY_PREEMPT, reason)
+                leash.end(CANCELLED_BY_PREEMPT)
                 task.cancel(CANCELLED_BY_PREEMPT)
                 ended += 1
         return ended
@@ -806,19 +960,7 @@ class Executor:
             self._emit("gate", name=name, gate="peer", outcome="refused", reason=reason)
             raise VerbNotAllowed(reason)
 
-        # A verb declared `read_only` by whoever wrote it is a sensor, whatever body it came
-        # with: a third-party `locate` that reads where things are must run before the
-        # verdict for the same reason `observe` does, or the pilot judges feasibility blind.
-        # `BEFORE_VERDICT` is matched by name, and a learned verb is excluded from that half
-        # on purpose: it is an unproven policy, so a `.glot` that named one `observe` on a
-        # body with no camera verb would otherwise have it run before any verdict. The
-        # confirm gate below would still stop it, and `--yes` answers the confirm gate.
-        # `MOVES_THE_BODY` wins over the flag: where Roboglot has said a name is motion, a verb
-        # arriving under that name and carrying `read_only` is saying two contradictory things
-        # about itself, and the gate believes Roboglot's own record rather than the newcomer.
-        looks = (canonical in BEFORE_VERDICT and verb.kind != "learned") or (
-            verb.read_only and canonical not in MOVES_THE_BODY
-        )
+        looks = self._looks(canonical, verb)
         self._hold_still_for(name, canonical, verb)
         if self.require_verdict and not looks and not self.cleared and source in PERSONS:
             # the person's own command is the verdict for its own call, and the record says
@@ -841,17 +983,7 @@ class Executor:
                     reason=f"{whose}, which stands for the verdict for it alone",
                 )
         elif self.require_verdict and not looks and not self.cleared:
-            why = (
-                self.verdict.blocking_reason()
-                if self.verdict is not None
-                else "no feasibility verdict has been recorded for this task yet"
-            )
-            reason = (
-                f"{name} moves the body, and {why}: record a verdict first "
-                "(feasible, infeasible or uncertain)"
-            )
-            self._emit("gate", name=name, gate="verdict", outcome="refused", reason=reason)
-            raise VerdictRequired(reason)
+            raise self._no_verdict(name)
 
         try:
             parsed = self._parsed(name, canonical, verb, params)
@@ -1028,33 +1160,25 @@ class Executor:
         nested: bool = False,
     ) -> VerbResult:
         """A verb every gate has let through: its state, its abort conditions and its
-        preconditions, then the verb itself, or the dry run's word for it. `timed` is a policy
+        preconditions, then the verb itself, or the dry run's word for it; the brake reads its
+        state after it has gone out, for the abort conditions alone. `timed` is a policy
         segment's, whose seconds are charged on every way out. `preempts` is the executor's count
         of newer commands from before the gates, which a verb that may move the body is refused
         on once it has changed (`preempt`), and `stops` its count of stops from then, which the
         verb ends on once that has changed (`_interruption`). A `nested` call's `stops` is its
         composite's, and one that has changed by the time it is admitted is not started."""
-        try:
-            state = await self.transport.get_state()
-        except Exception as e:
-            # the one in-verb transport failure that used to send no stop. A link that
-            # cannot report state cannot be trusted to be holding a zero twist either.
-            unstopped = await self._stop_after()
-            said = str(e)
-            if (
-                unstopped is not None
-                and isinstance(e, TransportError)
-                and len(e.args) == 1
-                # once: an error a link raises again for every read would gain a clause each time
-                and "the stop sent after it failed" not in said
-            ):
-                # and a stop that did not land is said beside the read, which is all a pilot or
-                # a chat is told: the arm reads before it writes its hold, so over one gone
-                # silent the stop held nothing. The error itself is kept, its class and code. A
-                # wedged bus answers the read and the stop with one sentence, said once
-                why = " the same way" if unstopped in said else f": {unstopped}"
-                e.args = (f"{said}; the stop sent after it failed{why}",)
-            raise
+        # The brake goes out first and reads the body's state after, for the run's `abort_when`
+        # rules alone: it waited on that read, abort or not, so a read that did not come back
+        # held the brake for good, and every brake went out a read's round trip late. A dry run
+        # sends no brake, and reads first as every other call does.
+        brake = canonical == "stop" and not self.dry_run
+        state: RobotState | None = None
+        if not brake:
+            try:
+                state = await self.transport.get_state()
+            except Exception as e:
+                await self._stop_after_a_failed_read(e)
+                raise
         # Read again after the last await before the verb is tracked as moving. A pause
         # granted while this verb waited on that state read, or on a person's confirm before
         # it, found nothing to end, and the gate it had already passed is not asked twice, so
@@ -1072,38 +1196,38 @@ class Executor:
         if self.abort.is_set() and canonical != "stop":
             self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
             raise Aborted("run aborted")
+        # and the verdict, for the same reason: one recorded as infeasible, or withdrawn, while
+        # this verb read the body's state (two MCP calls at once) found nothing to refuse, and a
+        # walk the pilot had just judged the body could not do started after that judgement.
+        # A person's own command stands for its verdict whatever was recorded meanwhile.
+        if (
+            self.require_verdict
+            and source not in PERSONS
+            and not self.cleared
+            and not self._looks(canonical, verb)
+        ):
+            raise self._no_verdict(name)
         # and a call that a stop sent while it read the body's state has overtaken, for the reason
         # the gate before the confirm gives (`_overtaken`)
         if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
-        try:
-            self._check_abort_conditions(state)
-        except Aborted as e:
-            self._emit(
-                "gate",
-                name=name,
-                gate="abort_when",
-                outcome="fired",
-                reason=str(e),
-                state=state.summary(),
-            )
-            # The brake is the one verb a rule that fired must still let through: the rule is
-            # there to stop the body, and a `stop` it refused was a stop never sent, on a body
-            # whose battery had just been read as too low to trust with anything else.
-            if canonical != "stop":
-                raise
-        for pre in verb.preconditions:
-            refusal = pre(state)
-            if refusal:
-                self._emit(
-                    "gate",
-                    name=name,
-                    gate="precondition",
-                    outcome="refused",
-                    reason=refusal,
-                    state=state.summary(),
-                )
-                return self._record(name, params, VerbResult.fail(f"cannot {name}: {refusal}"))
+        if state is not None:
+            self._read_abort_rules(name, canonical, state)
+            # No precondition holds back the brake, whatever a manifest lists for it: every other
+            # gate lets `stop` through on purpose, and a fallen body or a flat battery is where
+            # it is wanted most. One listed for it answered `cannot stop` and sent nothing.
+            for pre in verb.preconditions if canonical != "stop" else ():
+                refusal = pre(state)
+                if refusal:
+                    self._emit(
+                        "gate",
+                        name=name,
+                        gate="precondition",
+                        outcome="refused",
+                        reason=refusal,
+                        state=state.summary(),
+                    )
+                    return self._record(name, params, VerbResult.fail(f"cannot {name}: {refusal}"))
 
         if self.dry_run and not verb.read_only:
             self.log(f"[dry-run] would run {name}({parsed.model_dump()})")
@@ -1169,8 +1293,57 @@ class Executor:
             ):
                 self.first_motion_at = handed_over
                 self.first_motion_llm_calls = calls_by_then
+        if brake:
+            # the read the brake did not wait for, which a run's `abort_when` rules still get
+            try:
+                state = await self.transport.get_state()
+            except Exception as e:
+                await self._stop_after_a_failed_read(e)
+                raise
+            self._read_abort_rules(name, canonical, state)
         self.log(f"← {name}: {'ok' if result.ok else 'FAIL'} {result.summary}")
         return self._record(name, params, result)
+
+    async def _stop_after_a_failed_read(self, e: Exception) -> None:
+        """The stop after an admission's state read that raised `e`, and its failure said in
+        `e`, which the caller raises."""
+        # the one in-verb transport failure that used to send no stop. A link that
+        # cannot report state cannot be trusted to be holding a zero twist either.
+        unstopped = await self._stop_after()
+        said = str(e)
+        if (
+            unstopped is not None
+            and isinstance(e, TransportError)
+            and len(e.args) == 1
+            # once: an error a link raises again for every read would gain a clause each time
+            and "the stop sent after it failed" not in said
+        ):
+            # and a stop that did not land is said beside the read, which is all a pilot or
+            # a chat is told: the arm reads before it writes its hold, so over one gone
+            # silent the stop held nothing. The error itself is kept, its class and code. A
+            # wedged bus answers the read and the stop with one sentence, said once
+            why = " the same way" if unstopped in said else f": {unstopped}"
+            e.args = (f"{said}; the stop sent after it failed{why}",)
+
+    def _read_abort_rules(self, name: str, canonical: str, state: RobotState) -> None:
+        """The run's `abort_when` rules read against an admission's `state`: one that fires is
+        recorded and aborts the run, and refuses every verb but the brake."""
+        try:
+            self._check_abort_conditions(state)
+        except Aborted as e:
+            self._emit(
+                "gate",
+                name=name,
+                gate="abort_when",
+                outcome="fired",
+                reason=str(e),
+                state=state.summary(),
+            )
+            # The brake is the one verb a rule that fired must still let through: the rule is
+            # there to stop the body, and a `stop` it refused was a stop never sent, on a body
+            # whose battery had just been read as too low to trust with anything else.
+            if canonical != "stop":
+                raise
 
     async def _execute(
         self,
@@ -1199,8 +1372,20 @@ class Executor:
 
         `stop` is never interruptible: it is what the abort is trying to achieve."""
         called = name or verb.name
+        ctx = self.context(source, stops=stops, name=called)
+        leash = _Leash(ctx.transport, self.abort if interruptible else None)
+        leashed: Any = leash  # a transport by delegation, as `LoggedTransport` is
         verb_task: asyncio.Task[VerbResult] = asyncio.ensure_future(
-            verb.execute(self.context(source, stops=stops, name=called), parsed)
+            verb.execute(
+                replace(
+                    ctx,
+                    transport=leashed,
+                    run_verb=leash.calls(ctx.run_verb, self.registry.canonical)
+                    if ctx.run_verb is not None
+                    else None,
+                ),
+                parsed,
+            )
         )
         abort_task: asyncio.Task[bool] | None = None
         waiting: set[asyncio.Future[Any]] = {verb_task}
@@ -1208,7 +1393,7 @@ class Executor:
             abort_task = asyncio.ensure_future(self.abort.wait())
             waiting.add(abort_task)
             if self._may_move(self.registry.canonical(verb.name), verb):
-                self._moving.add(verb_task)
+                self._moving[verb_task] = leash
         done: set[asyncio.Future[Any]] = set()
         finished = False
         try:
@@ -1219,12 +1404,17 @@ class Executor:
         finally:
             # the loser is always cancelled: an abort waiter left behind would otherwise
             # accumulate one task per verb for the life of the run
-            self._moving.discard(verb_task)
+            self._moving.pop(verb_task, None)
             halted = self._halted.pop(verb_task, None)
+            # A cancel of this call that lands while the verb is being ended (a second Ctrl-C, an
+            # MCP client that gave up, a composite's own timeout) is kept, and raised once the
+            # verb has ended and the stop is sent. These awaits used to sit in a suppress that ate
+            # it with the verb's own cancel, and the caller went on as if it had not been
+            # cancelled: a composite took its next step after its own timeout.
+            cancelled = False
             if abort_task is not None and not abort_task.done():
                 abort_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await abort_task
+                cancelled = await _waited({abort_task}, None)
             # Nothing the verb does from here can be trusted to end, so take the legs back. The
             # cancel says why, which a verb that keeps a record of its own reads off the
             # `CancelledError` it is handed (`watch`'s `ended`): the abort, its timeout, or a
@@ -1236,20 +1426,31 @@ class Executor:
                     why = CANCELLED_BY_TIMEOUT
                 else:
                     why = CANCELLED_FROM_OUTSIDE
-                verb_task.cancel(why)
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await verb_task
-            if not finished:
+                cancelled = await self._end_verb(verb_task, leash, why, called) or cancelled
+            # a verb that ended by itself is owed no stop, even by a call cancelled after it
+            owes_a_stop = verb_task not in done or halted is not None
+            if owes_a_stop and (cancelled or not finished):
+                # The stop first, then the gate saying how it went. The gate used to say "a stop
+                # was sent" before the stop, whose failure was then suppressed unread, and a
+                # record that could not be written in its place turned the cancelled call into a
+                # failed one the run carried on from.
+                unstopped = await self._stop_after()
                 if halted is None:  # one a pause or a newer command ended is said once, below
-                    self._emit(
+                    stopped = (
+                        "the verb was cancelled and a stop was sent"
+                        if unstopped is None
+                        else "the verb was cancelled, and the stop sent after it failed: "
+                        + unstopped
+                    )
+                    self._emit_on_the_way_out(
                         "gate",
                         name=called,
                         gate="cancelled",
                         outcome="fired",
-                        reason="the call was cancelled; the verb was cancelled and a stop was sent",
+                        reason=f"the call was cancelled; {stopped}",
                     )
-                with contextlib.suppress(Exception):
-                    await self.logged_transport().stop()
+        if cancelled:
+            raise asyncio.CancelledError
         if halted is not None:
             if self.abort.is_set():  # an abort that landed with the pause is what leaves
                 await self._aborted_mid_verb(called)
@@ -1262,6 +1463,47 @@ class Executor:
         if abort_task is not None and abort_task in done:
             await self._aborted_mid_verb(called)
         raise TimeoutError
+
+    async def _end_verb(
+        self, verb_task: asyncio.Task[VerbResult], leash: _Leash, why: str, called: str
+    ) -> bool:
+        """End a verb the executor is done with, for `why`, and say whether a cancel of this call
+        came meanwhile (`_waited`).
+
+        It used to be one cancel and then a wait with no end: a verb whose cancel was lost went on
+        sending for as long as it ran, and the stop owed after it went out only once it had ended
+        by itself. Now nothing it sends is passed on from the cancel (`_Leash`), it is cancelled
+        again if it has not ended within `ENDING_S`, and if it has not ended `ENDING_S` after that
+        it is left behind, saying so, and the stop goes out without it."""
+        leash.end(why)
+        cancelled = False
+        clock = asyncio.get_running_loop()
+        for _ in range(2):
+            verb_task.cancel(why)
+            # on a clock of its own, so a cancel of this call that ends a wait early does not
+            # cut the verb's time short
+            until = clock.time() + ENDING_S
+            while not verb_task.done() and (left := until - clock.time()) > 0:
+                cancelled = await _waited({verb_task}, left) or cancelled
+            if verb_task.done():
+                if not verb_task.cancelled():
+                    verb_task.exception()  # read, so nothing reports it later as never retrieved
+                return cancelled
+        text = (
+            f"{called} had not ended {2 * ENDING_S:g} s after it was cancelled twice: it is left "
+            "behind, no intent it sends is passed on, and the stop is sent without it"
+        )
+        self.log(text)
+        self._emit_on_the_way_out("note", text=text)
+        return cancelled
+
+    def _emit_on_the_way_out(self, kind: str, **data: Any) -> None:
+        """`_emit` where something is already on its way out, a cancel or a stop still owed: a
+        record that cannot be written is said on the log, and never takes the place of that."""
+        try:
+            self._emit(kind, **data)
+        except Exception as e:
+            self.log(f"the record could not be written: {type(e).__name__}: {e}")
 
     async def _aborted_mid_verb(self, called: str) -> NoReturn:
         """What a verb the abort cancelled comes to: a stop after it, and `Aborted`."""
@@ -1423,7 +1665,11 @@ class Heartbeat:
                 # Everything in here is best effort and the abort is in a `finally`, because
                 # setting it is the one thing that must happen: a log call or an event sink that
                 # raised used to kill this task outright, leaving the abort unset and the run
-                # with no idea the link had gone.
+                # with no idea the link had gone. And the stop is only started in here, never
+                # waited on: a `finally` after it was safe from a stop that raised but not from
+                # one that hung on the link that had just failed, and until that stop came back
+                # the running verb went on sending and a new verb passed the abort's gate.
+                stopping: asyncio.Future[Any] | None = None
                 try:
                     # "sending stop", not "stopping the robot": the heartbeat fails precisely
                     # when the link is in doubt, which is when a stop is least likely to
@@ -1438,9 +1684,16 @@ class Heartbeat:
                             self.event_log.emit("note", text=message)
                         stopper = LoggedTransport(self.transport, self.event_log)
                     with contextlib.suppress(Exception):
-                        await stopper.stop()
+                        stopping = asyncio.ensure_future(stopper.stop())
+                        _STOPS_UNDER_WAY.add(stopping)
+                        stopping.add_done_callback(_stop_gone)
                 finally:
                     self.abort.set()
+                if stopping is not None:
+                    # Waited for no longer than a beat, the time this promises to notice a dead
+                    # link in: nothing else waits on this stop once the abort is out, and one
+                    # stuck on that link goes out when it can, in a task of its own.
+                    await asyncio.wait({stopping}, timeout=self.period_s)
                 return
             if me is not None and me.cancelling():
                 # Python 3.11's wait_for, which a transport's wait for its answer goes through,

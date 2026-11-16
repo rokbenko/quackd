@@ -46,9 +46,12 @@ from roboglot.release import (
     DROP_AFTER_TWO_FOLDS,
     ENTER_DROPS_S,
     FOLD_STOPPED,
+    FOLD_WENT_ON,
     FOLDING_IN,
     GRIPPER_STOPPED,
+    GRIPPER_WENT_ON,
     HANDS_AWAY_S,
+    LIMP_AT_THE_CLOSE,
     REFOLD_UNANSWERED,
     REFOLDED,
     RELEASE_INTERRUPTED,
@@ -4430,6 +4433,157 @@ async def test_a_press_stops_the_gripper_closing_and_the_run_still_closes(tmp_pa
     events = Transcript.read(result.run_dir / "transcript.jsonl")
     assert GRIPPER_STOPPED in [e.get("text") for e in events if e["kind"] == "note"]
     assert _stages(events)[-1] == "kept", _stages(events)
+
+
+class _WillNotStop:
+    """A move a press stops that catches the two cancels a stopped move is given, as one whose
+    cancel was lost on its way twice does, and ends on the third, which the test sends at its
+    end (`end`). `STOPPED_FOLD_S` is shrunk beside it, as tests/test_release.py shrinks it."""
+
+    def __init__(self) -> None:
+        self.task: asyncio.Task[Any] | None = None
+
+    async def run(self) -> None:
+        self.task = asyncio.current_task()
+        caught = 0
+        while True:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                caught += 1
+                if caught > 2:
+                    raise
+
+    async def end(self) -> None:
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+            await asyncio.wait({self.task}, timeout=2.0)
+
+
+def _notes(result: Any) -> list[str]:
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    return [str(e.get("text")) for e in events if e["kind"] == "note"]
+
+
+async def test_a_by_hand_runs_first_fold_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fold a press stopped that had not ended when told to twice was still said to have
+    stopped where it was, to the person who pressed, while it may have been moving on."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    move = _WillNotStop()
+
+    async def fold() -> Any:
+        mock.sequence.append("rest")
+        person.press()
+        await move.run()
+
+    mock.go_to_rest = fold  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    assert result.outcome == "aborted", result.reason
+    assert FOLD_WENT_ON in person.said and FOLD_STOPPED not in person.said, person.said
+    assert FOLD_WENT_ON in _notes(result) and FOLD_STOPPED not in _notes(result)
+    assert mock.sequence == ["rest", "stop", "close"], "nothing folds it afterwards, or lets it go"
+
+
+async def test_a_teardown_fold_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fold a run ends with, stopped by a press after the hand-back, the same way."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    real = mock.go_to_rest
+    move = _WillNotStop()
+    folds = 0
+
+    async def second_will_not_stop() -> Any:
+        nonlocal folds
+        folds += 1
+        if folds == 1:
+            return await real()
+        person.press()
+        await move.run()
+
+    mock.go_to_rest = second_will_not_stop  # type: ignore[method-assign]
+    person = Presser(mock, places=PLACED)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    person.on_wait = lambda _p: loop.executor.abort.set()
+    try:
+        result = await asyncio.wait_for(loop.run(), timeout=30.0)
+    finally:
+        await move.end()
+    assert folds == 2, "it was started, and stopped"
+    assert FOLD_WENT_ON in _notes(result) and FOLD_STOPPED not in _notes(result)
+    assert FOLD_WENT_ON in person.said, person.said
+    assert mock.sequence[-2:] == ["stop", "close"], mock.sequence
+    assert "let_go" not in mock.sequence[-3:], "nothing is let go of after it"
+
+
+async def test_a_gripper_closing_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gripper closing after the fold, stopped by a press, told twice and still going."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED, answers=[True, True])
+    move = _WillNotStop()
+
+    async def closing() -> Any:
+        mock.sequence.append("gripper")
+        person.press()
+        await move.run()
+
+    mock.close_gripper = closing  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}"
+    assert said in person.said and GRIPPER_STOPPED not in person.said, person.said
+    assert said in _notes(result)
+    assert mock.sequence[-3:] == ["gripper", "stop", "close"], mock.sequence
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    kept = [e["reason"] for e in events if e["kind"] == "hand_off" and e["stage"] == "kept"]
+    assert kept == ["the gripper closing did not stop when pressed"], kept
+
+
+async def test_a_gripper_opening_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gripper opening at the hand-back, stopped by a press, told twice and still going: the
+    arm is held where it is and not folded, as after a gripper that stopped, and the person is
+    told the jaws may still be moving."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    move = _WillNotStop()
+    send = mock.send_intent
+
+    async def sending(intent: Any) -> Any:
+        ack = await send(intent)
+        if intent.kind == "gripper":
+            person.press()
+            await move.run()
+        return ack
+
+    mock.send_intent = sending  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    assert GRIPPER_WENT_ON in person.said, person.said
+    assert AgentLoop.HELD_BACK in person.said, "the arm is held and not folded"
+    assert GRIPPER_WENT_ON in _notes(result)
+    assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    kept = [e["reason"] for e in events if e["kind"] == "hand_off" and e["stage"] == "kept"]
+    assert kept == ["the gripper opening did not stop when pressed"], kept
+    assert mock.torque is True, "and it is not let go of, away from its pose"
 
 
 async def test_a_press_as_the_fold_arrives_keeps_the_gripper_from_starting(tmp_path: Path) -> None:

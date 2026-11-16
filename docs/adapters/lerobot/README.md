@@ -2644,6 +2644,7 @@ said 0, and the command exits 0 only then. Everything else exits 1 and says whic
 | `nothing was released: ...` | the arm did not answer before the release, so nothing was sent. Whether it is holding itself up is not something Roboglot could read, so hold it |
 | `torque stays on and nothing was released: ...` | no Enter at a question about a fold that missed: the arm holds itself up where the fold stopped. Clear its way and run the command again, or hold it and cut its power |
 | `the fold was stopped where it was, and nothing was released: ...` | Ctrl-C or `q` during a fold |
+| `the fold was told to stop, twice, and did not end, so Roboglot cannot tell whether the arm is still moving: ...` | Ctrl-C or `q` during a fold that had not ended when it was cancelled a second time, as a fold whose cancel was lost on its way can do: nothing was released, and it may still be moving, so keep your hands out of its path until it is still, then hold it and cut its power |
 | `lerobot:real at COM5: ...` and `keep hold of the arm` | the connect failed, and a connect that fails part way can leave some motors limp ([When it will not work](#when-it-will-not-work)) |
 | `... is not a body Roboglot takes torque off: only the LeRobot arm is` | the name is a body that does not declare `supports_hand_off` |
 

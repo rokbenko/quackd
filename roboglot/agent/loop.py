@@ -91,10 +91,14 @@ from roboglot.perception.base import Detection, Detector, detect_off_loop, detec
 from roboglot.release import (
     CLOSING_THE_GRIPPER,
     FOLD_STOPPED,
+    FOLD_WENT_ON,
     FOLDING_IN,
     GRIPPER_STOPPED,
+    GRIPPER_WENT_ON,
     HANDS_AWAY_S,
+    LIMP_AT_THE_CLOSE,
     FoldStopped,
+    FoldWentOn,
     cancel_and_wait,
     fold_unless_stopped,
     one_watch,
@@ -1250,18 +1254,21 @@ class AgentLoop:
                 return await fold_unless_stopped(
                     functools.partial(self._rest, pause=False), stopped
                 )
-        except FoldStopped:
+        except FoldStopped as stopped_it:
             self._no_fold = True
-            self._fold_was_stopped()
+            self._fold_was_stopped(went_on=isinstance(stopped_it, FoldWentOn))
             return None
 
-    def _fold_was_stopped(self) -> None:
-        """Said to whoever pressed as well as to the log, which `--no-log` leaves them without."""
-        self._note(FOLD_STOPPED)
+    def _fold_was_stopped(self, *, went_on: bool = False) -> None:
+        """Said to whoever pressed as well as to the log, which `--no-log` leaves them without.
+        A fold that had not ended when told to twice (`went_on`) is never said to have stopped:
+        it may still be moving, and the line says Roboglot cannot tell (`FOLD_WENT_ON`)."""
+        said = FOLD_WENT_ON if went_on else FOLD_STOPPED
+        self._note(said)
         hand = self.cfg.hand_off
         if hand is not None:
             with contextlib.suppress(Exception):
-                hand.say(FOLD_STOPPED)
+                hand.say(said)
 
     async def _rest(self, *, pause: bool = True) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
@@ -1335,6 +1342,7 @@ class AgentLoop:
                     await self._close_what_the_hand_back_opened(parked, None)
                     return parked
                 watch = self._pressed_during_the_fold
+            went_on = False
             try:
                 parked = await fold_unless_stopped(
                     functools.partial(self._rest, pause=False), watch
@@ -1343,14 +1351,14 @@ class AgentLoop:
                 # arrived is one the gripper hears
                 await self._close_what_the_hand_back_opened(parked, watch)
                 return parked
-            except FoldStopped:
-                pass
+            except FoldStopped as stopped_it:
+                went_on = isinstance(stopped_it, FoldWentOn)
             except (asyncio.CancelledError, KeyboardInterrupt):
                 if self._fold_watch is None:
                     raise
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 await self._unbroken(self.executor.logged_transport().stop())
-            self._fold_was_stopped()
+            self._fold_was_stopped(went_on=went_on)
             return None
         finally:
             if self._press_watch is not None:
@@ -1793,7 +1801,15 @@ class AgentLoop:
             return
         try:
             why = await fold_unless_stopped(self._open_the_gripper, self._fold_watch)
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
+            if isinstance(stopped_it, FoldWentOn):
+                # told twice and not ended: its jaws may still be moving, by the hand at them
+                with contextlib.suppress(Exception):
+                    hand.say(GRIPPER_WENT_ON)
+                with contextlib.suppress(Exception):
+                    self._note(GRIPPER_WENT_ON)
+                await self._hold_the_arm(hand, "the gripper opening did not stop when pressed")
+                return
             await self._hold_the_arm(hand, "a press stopped the gripper opening")
             return
         if why is None:
@@ -1889,14 +1905,23 @@ class AgentLoop:
             shut = await fold_unless_stopped(
                 functools.partial(close_gripper_if_any, transport), stopped
             )
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 await self._unbroken(self.executor.logged_transport().stop())
+            # never "stopped" over jaws told twice that had not ended, which may still be moving
+            went_on = isinstance(stopped_it, FoldWentOn)
+            said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}" if went_on else GRIPPER_STOPPED
             if hand is not None:
                 with contextlib.suppress(Exception):
-                    hand.say(GRIPPER_STOPPED)
-            self._emit("hand_off", stage="kept", reason="a press stopped the gripper closing")
-            self._note(GRIPPER_STOPPED)
+                    hand.say(said)
+            self._emit(
+                "hand_off",
+                stage="kept",
+                reason="the gripper closing did not stop when pressed"
+                if went_on
+                else "a press stopped the gripper closing",
+            )
+            self._note(said)
             return
         if shut.short:
             # to them first: a record that cannot be written is no reason not to tell them
