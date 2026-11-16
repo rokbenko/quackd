@@ -843,7 +843,7 @@ requires: [search_scan, walk_to, kick]  # the honest minimum a body must provide
 | `hello-world` | quack, one step forward, quack | the smoke test |
 | `find-and-kick` | find the ball and kick it | the flagship, written for a real duck. The Microduck's mock sends grey frames, so there it finds no ball and aborts |
 | `patrol-and-quack` | wander, quack twice on a person or pet | the colour detector sees no person and no pet, so on a mock the scripted pilot walks its lap, finds nobody and declares it done. Only YOLO or a board's detector sees either, and no pilot has quacked at a real sighting yet |
-| `follow-me` | keep a person in view and follow at 0.5 m | the colour detector sees no person, so this needs YOLO or a board's detector. The scripted pilot has no strategy for it and declares success after two steps without a single `walk_to`, no real LLM run yet |
+| `follow-me` | keep a person in view and follow as near as the camera can measure them | the colour detector sees no person, so this needs YOLO or a board's detector. The scripted pilot has no strategy for it and declares success after two steps without a single `walk_to`, no real LLM run yet |
 | `fetch` | scoop the ball up and bring it back | **experimental**, the scoop is open loop on the real robot, and the scripted pilot has no strategy for it either, no real LLM run yet |
 | `team-hello` | a duck and an arm introduce themselves to each other | **pilot team**, one LLM per body, talking over the bus |
 | `open-duck-scout` | find the ball, walk up to it, say where it is | **Open Duck Mini v2** (`open_duck:mock` is its default), the kick free shape of `find-and-kick`. Its mock draws a ball, and the scripted pilot walks up to it and says where it is |

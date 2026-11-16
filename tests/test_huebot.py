@@ -179,7 +179,10 @@ async def test_grab_is_offered_nowhere_even_to_a_shim_that_lists_ground_pick(
         described = describe(backend)
         assert "grab" not in described.verb_names() and "grab" not in described.preconditions
         (approach,) = [spec for spec in described.verbs if spec.name == "approach_and"]
-        assert approach.description == "walk_to a target, then run another verb (e.g. kick)."
+        assert approach.description == (
+            "walk_to a target, then run another verb (e.g. kick), only once the camera puts the "
+            "target within stop_distance."
+        )
     assert "grab" not in (await make_adapter("huebot:mock").connect()).verb_names()
     shim.skills = [*ALL_SKILLS, "ground_pick"]
     adapter = await _connected(shim)

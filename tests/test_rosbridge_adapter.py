@@ -293,12 +293,13 @@ async def test_the_base_describes_itself_as_it_did_before_the_builder_moved() ->
     left `RosbridgeWs._build`, and is what it computes now."""
     from roboglot_rosbridge import describe, rosbridge_manifest
 
-    assert describe("mock").digest() == "8ab21e32ba85b7d0"
+    # the mock's and the camera's offer go_to, and moved with its stop_distance's bound and words
+    assert describe("mock").digest() == "1c5be7305e64cd93"
     assert describe("ws").digest() == "a66b6376ea69717f"
     adapter = make_adapter("rosbridge:mock")
-    assert (await adapter.connect()).digest() == "8ab21e32ba85b7d0"
+    assert (await adapter.connect()).digest() == "1c5be7305e64cd93"
     camera = rosbridge_manifest("ws", camera=True, image="/camera/compressed")
-    assert camera.digest() == "9694f069d41f767c"
+    assert camera.digest() == "d2f3b58b710d3029"
 
 
 # ── what the bridge says about the body ─────────────────────────────────────────────────
