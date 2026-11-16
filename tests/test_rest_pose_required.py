@@ -163,7 +163,7 @@ def test_a_mock_arm_with_no_rest_pose_still_runs(tmp_path: Path) -> None:
 def test_an_mcp_session_on_a_real_arm_with_no_rest_pose_is_refused(
     tmp_path: Path, never_built: list[str], how: str
 ) -> None:
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
     _add(tmp_path, "arm-r", "lerobot:real", "--address", "COM99")
     _add(tmp_path, "arm-m", "lerobot:mock")
@@ -176,7 +176,7 @@ def test_an_mcp_session_on_a_real_arm_with_no_rest_pose_is_refused(
         Registry(reg).add_team(StoredTeam(name="pair", members=["arm-r", "arm-m"]))
         kwargs = {"team": "pair"}
     with pytest.raises(SystemExit) as refused:
-        fleet_from_flags(registry_dir=reg, **kwargs)
+        team_from_flags(registry_dir=reg, **kwargs)
     said = str(refused.value)
     assert "no rest pose" in said and "at the end of an MCP session" in said, said
     assert "roboglot robot rest-pose" in said
@@ -184,10 +184,10 @@ def test_an_mcp_session_on_a_real_arm_with_no_rest_pose_is_refused(
 
 
 def test_an_mcp_session_on_a_mock_arm_with_no_rest_pose_is_served(tmp_path: Path) -> None:
-    from roboglot.mcp_server import fleet_from_flags
+    from roboglot.mcp_server import team_from_flags
 
     _add(tmp_path, "arm-m", "lerobot:mock")
-    plan = fleet_from_flags(robot="arm-m", registry_dir=str(tmp_path / "registry"))
+    plan = team_from_flags(robot="arm-m", registry_dir=str(tmp_path / "registry"))
     assert [spec.key for spec in plan.specs.values()] == ["lerobot:mock"], plan.specs
 
 
@@ -294,7 +294,7 @@ def test_a_registered_arm_named_in_a_pilot_team_is_built_with_its_pose_and_addre
     assert built.get("address") == "COM99" and built.get("rest_pose") == FULL_POSE, built
 
 
-def test_a_spec_in_a_fleet_is_sent_to_a_stored_team_and_a_solo_one_keeps_its_cameras(
+def test_a_spec_in_a_team_is_sent_to_a_stored_team_and_a_solo_one_keeps_its_cameras(
     tmp_path: Path, never_built: list[str]
 ) -> None:
     """`--robots` and a task file's `robots:` never read the registry, so registering the arm
@@ -302,11 +302,11 @@ def test_a_spec_in_a_fleet_is_sent_to_a_stored_team_and_a_solo_one_keeps_its_cam
     stored team. A solo spec's way out keeps the cameras it was given, so the command it
     prints registers the arm the run was asked for."""
     common = ["--llm", "fake", "--runs-dir", str(tmp_path / "runs"), *_reg(tmp_path)]
-    fleet = runner.invoke(
+    team = runner.invoke(
         app, ["run", "team-hello", "--robots", "duck=microduck:mock,arm=lerobot:real", *common]
     )
-    flat = " ".join(fleet.output.split())
-    assert fleet.exit_code == 1, fleet.output
+    flat = " ".join(team.output.split())
+    assert team.exit_code == 1, team.output
     assert "roboglot team create TEAM --robot NAME" in flat and "--team TEAM" in flat, flat
     solo = runner.invoke(
         app,

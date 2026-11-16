@@ -1,4 +1,4 @@
-"""A backend name → a `DuckTransport`.
+"""A backend name → a `RobotTransport`.
 
 The robot-facing transport is reachable only by name, which is how the "no UNVERIFIED upstream
 call without `--robot microduck:jsonrpc`" promise is kept.
@@ -9,7 +9,7 @@ A body of the family takes the backends it declares from here (`Body.backends`).
 from __future__ import annotations
 
 from roboglot.adapters.base import AdapterError
-from roboglot.transport.base import DuckTransport, TransportError
+from roboglot.transport.base import RobotTransport, TransportError
 from roboglot_microduck.body import MICRODUCK, Body
 
 TRANSPORT_NAMES = ("mock", "jsonrpc")
@@ -26,7 +26,7 @@ def make_transport(
     address: str | None = None,
     camera_url: str | None = None,
     map_address: str | None = None,
-) -> DuckTransport:
+) -> RobotTransport:
     """`map_address` is where the real duck's own `mapd` answers; the adapter refuses it on
     any other backend."""
     name = name.lower()

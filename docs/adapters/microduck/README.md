@@ -32,7 +32,7 @@ and so does everything it reads but for fields added to `robot.state` and `robot
 API v23, of which Roboglot reads two: `safety.picked_up`, whether somebody holds the duck, and
 `frames`, where the camera points, for `extras.head_yaw_deg` and `head_pitch_deg`. A robotd on API
 v23 reports neither, so there nothing tells Roboglot that the duck is held, and the head's yaw comes
-off the head_yaw joint, with no pitch (the `safety.picked_up` and `RobotState.frames` rows below).
+off the head_yaw joint, with no pitch (the `safety.picked_up` and robotd's own `RobotState.frames` rows below).
 A third, `robot.health`'s `cpu_throttle`, reaches `extras.health` with the rest of that answer,
 which Roboglot passes on as robotd sent it. Upstream's own rule for the number is that "A bump
 promises nothing in either direction".

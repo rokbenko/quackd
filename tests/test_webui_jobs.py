@@ -18,7 +18,7 @@ import pytest
 from roboglot.front import PROTOCOL
 from roboglot.webui import jobs as jobs_mod
 from roboglot.webui.jobs import Job, Jobs, _child_environment
-from tests.test_front_run import _gated_duck
+from tests.test_front_run import _gated_glot
 
 FAKE_CHILD = textwrap.dedent(
     """
@@ -225,7 +225,7 @@ def test_a_real_run_through_the_table_answers_in_the_page_and_holds_its_robot(
     """The table starting Roboglot itself: a run waiting on a question holds its robot, and the
     page's answer lets it finish."""
     jobs = Jobs(cwd=tmp_path)
-    args = ["run", str(_gated_duck(tmp_path)), "--robot", "microduck:mock", "--llm", "fake"]
+    args = ["run", str(_gated_glot(tmp_path)), "--robot", "microduck:mock", "--llm", "fake"]
     job = jobs.start("goal", [*args, "--runs-dir", str(tmp_path / "runs")], robot="mock")
     _until(lambda: bool(job.snapshot()["asks"]))
     with pytest.raises(RuntimeError, match="mock is busy"):

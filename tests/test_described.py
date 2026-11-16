@@ -850,7 +850,7 @@ async def test_a_task_its_sheet_rules_out_ends_at_the_verdict_and_nothing_is_sen
     done on this body, and what it read is the sheet's own `cannot` and the line that says Roboglot
     drives none of it. The verdict is scripted here, since judging is what an LLM is asked for."""
     adapter = make_adapter("described:unitree-b2")
-    duck = glot_from_goal("carry this box upstairs", ["report_state", "stop"])
+    glot = glot_from_goal("carry this box upstairs", ["report_state", "stop"])
 
     class Reading(FakeProvider):
         """Keeps the system prompt it was handed, which is all the LLM knows of the body."""
@@ -873,7 +873,7 @@ async def test_a_task_its_sheet_rules_out_ends_at_the_verdict_and_nothing_is_sen
         ]
     )
     result = await run_glot(
-        RunConfig(duck=duck, provider=provider, transport=adapter, runs_dir=tmp_path)
+        RunConfig(glot=glot, provider=provider, transport=adapter, runs_dir=tmp_path)
     )
     assert result.outcome == "infeasible", result.reason
     assert result.steps == 0 and not result.ok

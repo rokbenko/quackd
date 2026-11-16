@@ -105,7 +105,7 @@ def test_a_session_outlasts_one_tasks_budget(tmp_path: Path) -> None:
     assert result.output.count("result   ok: ") == calls + 1, "a call was refused"
 
 
-def test_a_session_without_a_duck_keeps_the_battery_rule_and_the_ceilings() -> None:
+def test_a_session_without_a_task_file_keeps_the_battery_rule_and_the_ceilings() -> None:
     """Not the rule that ends a run on three failures in a row, which would end a session a
     person was still driving; and each budget the schema's own ceiling, one past it refused."""
     front = session_glot(["move", "stop"]).frontmatter
@@ -230,7 +230,7 @@ x
 """
 
 
-async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
+async def test_the_fast_lanes_floors_answer_to_the_task_files_own_gates(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A kick the `.glot` gates answered to the motion floor rather than the confirm one, the
@@ -255,13 +255,13 @@ async def test_the_fast_lanes_floors_answer_to_the_ducks_own_gates(
     monkeypatch.setattr(
         factory, "make_decision_llm", lambda spec, llm_id=None, url=None: _Decider()
     )
-    duck = tmp_path / "gated.glot"
-    duck.write_text(GATED_KICK, encoding="utf-8")
+    glot = tmp_path / "gated.glot"
+    glot.write_text(GATED_KICK, encoding="utf-8")
     args = DriveArgs(
         robot="microduck:mock",
         llm="fake",
         decision_llm="scripted",
-        glotfile=str(duck),
+        glotfile=str(glot),
         runs_dir=str(tmp_path / "runs"),
     )
     await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
@@ -605,20 +605,20 @@ def test_the_no_policy_refusal_names_drive(tmp_path: Path, monkeypatch: pytest.M
     assert "give roboglot drive its address with --policy-url" in said, said
 
 
-async def test_a_vla_session_whose_duck_does_not_allow_manipulate_is_refused_first(
+async def test_a_vla_session_whose_task_file_does_not_allow_manipulate_is_refused_first(
     tmp_path: Path,
 ) -> None:
     """It started, put every line's doubt to the person, and then failed on the allowlist."""
     from roboglot.drive.run import DriveError
 
-    duck = tmp_path / "look.glot"
-    duck.write_text(
+    glot = tmp_path / "look.glot"
+    glot.write_text(
         "---\nglot: 0\nname: look\ndescription: d\nverbs:\n  allow: [report_state, stop]\n"
         "success: [x]\n---\n# Task\nx\n",
         encoding="utf-8",
     )
     runs = tmp_path / "runs"
-    args = DriveArgs(robot="lerobot:mock", controller="vla", glotfile=str(duck), runs_dir=str(runs))
+    args = DriveArgs(robot="lerobot:mock", controller="vla", glotfile=str(glot), runs_dir=str(runs))
     with pytest.raises(DriveError, match="look does not allow it"):
         await run_drive(args, say=lambda _line: None, stream=io.StringIO("quit\n"), keyboard=False)
     assert not runs.exists(), "refused before anything was made"

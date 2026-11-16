@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from roboglot.glotfile.schema import GlotFile
 from roboglot.perception.base import Detection, summarize_detections
-from roboglot.transport.base import DuckState
+from roboglot.transport.base import RobotState
 from roboglot.verbs.aliases import canonical
 from roboglot.verbs.registry import Verb, VerbResult
 from roboglot.verdict import BEFORE_VERDICT, needs_properties
@@ -822,7 +822,7 @@ def body_summary(manifest: RobotManifest) -> str:
 
 
 def build_system_prompt(
-    duck: GlotFile,
+    glot: GlotFile,
     verbs: list[Verb],
     manifest: RobotManifest | None = None,
     memory_text: str | None = None,
@@ -852,7 +852,7 @@ def build_system_prompt(
     `assumptions` is what the robot says Roboglot is standing in for on this backend, read from
     `state.extras` when the run connects. It belongs in the prompt rather than in every
     observation because the list is sentences and an observation line is a line."""
-    fm = duck.frontmatter
+    fm = glot.frontmatter
     blurb = manifest.blurb if manifest is not None and manifest.blurb else DUCK_BLURB
     names = {v.name for v in verbs}
     # what this body actually has, not what a duck has. The fallback used to name
@@ -997,7 +997,7 @@ you choose ONE verb per turn; {pilot_line}. Do not micro-manage.
 {body}{executor}{places}{placed}{pictures}{stand_ins}{persona}{memory}{team}{played}
 ## Task file: {fm.name} — {fm.description}
 
-{duck.body}
+{glot.body}
 """
 
 
@@ -1038,7 +1038,7 @@ def build_observation_text(
     *,
     step: int,
     max_steps: int,
-    state: DuckState,
+    state: RobotState,
     detections: list[Detection],
     last_verb: str | None,
     last_result: VerbResult | None,
@@ -1092,7 +1092,7 @@ def build_observation_text(
 
 def observation_features(
     *,
-    state: DuckState,
+    state: RobotState,
     detections: list[Detection],
     last_verb: str | None,
     last_result: VerbResult | None,

@@ -40,9 +40,9 @@ def _roster(specs: dict[str, RobotSpec] | None = None) -> dict[str, SpecEntry]:
     return roster_from_specs(specs or MIXED)
 
 
-def _providers(roster: dict[str, Any], duck_name: str = "team-hello") -> dict[str, Any]:
+def _providers(roster: dict[str, Any], task_name: str = "team-hello") -> dict[str, Any]:
     # one instance per member: a shared strategy closure would be shared state
-    return {name: FakeProvider.for_glot(duck_name) for name in roster}
+    return {name: FakeProvider.for_glot(task_name) for name in roster}
 
 
 async def _run(tmp_path: Path, roster: dict[str, Any] | None = None, **kw: Any) -> Any:

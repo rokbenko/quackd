@@ -1,6 +1,6 @@
 """`roboglot drive` from end to end: one robot connected, its session recorded, and a front end.
 
-The robot is resolved by the flags `serve-mcp` takes (`mcp_server.fleet_from_flags`), and held by
+The robot is resolved by the flags `serve-mcp` takes (`mcp_server.team_from_flags`), and held by
 a `RobotSession`, so the connect, the rest pose, the heartbeat and the close are the ones every
 MCP session has. The record is a run directory of its own, `runs/<stamp>-drive[-name]/`, whose
 `transcript.jsonl` opens with a `run_start` and closes with a `run_end`, as any run's does, so
@@ -199,7 +199,7 @@ async def run_drive(
     from roboglot.glotfile.parser import load_glot
     from roboglot.glotfile.schema import Budgets
     from roboglot.log import EventLog, LogEvent
-    from roboglot.mcp_server import RobotSession, fleet_from_flags, session_memory_key
+    from roboglot.mcp_server import RobotSession, session_memory_key, team_from_flags
     from roboglot.memory import RobotMemory
     from roboglot.registry import Registry, resolve_robot_ref
     from roboglot.safety import Budget, Executor, Heartbeat
@@ -223,7 +223,7 @@ async def run_drive(
         raise DriveError(
             f"--max-steps is how many steps each goal may take, 1 to {most}, not {args.max_steps}"
         )
-    plan = fleet_from_flags(
+    plan = team_from_flags(
         robot=args.robot,
         registry_dir=args.registry_dir,
         glotfile=args.glotfile,
@@ -397,7 +397,7 @@ async def run_drive(
         if args.fov_deg:
             _given_lens(robot, float(args.fov_deg))
         registry = executor.registry
-        if robot.duck is None:
+        if robot.glot is None:
             # after the connect, so the verbs are the body's own and not the default registry's
             robot.adopt(
                 session_glot([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
@@ -407,7 +407,7 @@ async def run_drive(
         # by `is_allowed`, which reads an alias as the verb it names: a `.glot` allowing `walk`
         # allows `move`, and matching the names alone left it out
         verbs = {n: registry.get(n) for n in registry.names() if executor.is_allowed(n)}
-        contract = robot.duck.frontmatter if robot.duck is not None else None
+        contract = robot.glot.frontmatter if robot.glot is not None else None
         # the `.glot`'s own confirm gates, which the fast lane's floors answer to as the run's
         # stepper's do (`verb_class`)
         gated = frozenset(
@@ -448,7 +448,7 @@ async def run_drive(
                 # pilot (`DriveSession._vla_refusal`)
                 return VlaProvider([goal], label="goal")
             if vendor == "fake":
-                return make_provider("fake", duck_name="goal", goal=goal, **llm_kw)
+                return make_provider("fake", task_name="goal", goal=goal, **llm_kw)
             return built
 
         chooser = None

@@ -39,7 +39,7 @@ from PIL import Image, ImageDraw
 from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import Fix, where_record
-from roboglot.transport.base import Ack, CameraFrame, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, CameraFrame, HeartbeatError, Intent, RobotState
 from roboglot_moss import upstream_api as up
 from roboglot_moss.verbs import (
     BATTERY_FLOOR_V,
@@ -995,7 +995,7 @@ class MossMock:
     def frame_period_s(self) -> float | None:
         return CAMERA_PERIOD_S if self.bridge_up else None
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         if not self.stack_running:
             extras: dict[str, Any] = {
                 "stack": self.stack,
@@ -1006,7 +1006,7 @@ class MossMock:
                 "battery_floor_v": BATTERY_FLOOR_V,
                 "stack_running": False,
             }
-            return DuckState(t=self._t, extras=extras)
+            return RobotState(t=self._t, extras=extras)
         job = self.job.doc(self._t) if self.job is not None else None
         arm = (
             {
@@ -1071,7 +1071,7 @@ class MossMock:
         if self.battery_v is not None:
             empty, full = (float(v) for v in up.BATTERY_GAUGE.name.replace(" V", "").split(" to "))
             percent = round(100.0 * min(1.0, max(0.0, (self.battery_v - empty) / (full - empty))))
-        return DuckState(
+        return RobotState(
             t=self._t,
             x=round(self.ox, 3),
             y=round(self.oy, 3),

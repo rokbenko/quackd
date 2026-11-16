@@ -68,7 +68,7 @@ class CameraFrame:
     primary: bool = False
 
 
-class DuckState(BaseModel):
+class RobotState(BaseModel):
     """A compact snapshot the LLM can read in one glance.
 
     `x, y, theta` are known on a mock, or from a robot's own map or odometry, which drifts;
@@ -177,7 +177,7 @@ class Intent(BaseModel):
 
 
 @runtime_checkable
-class DuckTransport(Protocol):
+class RobotTransport(Protocol):
     """Every transport implements exactly this. Verbs see nothing else.
 
     A transport whose body has several cameras may also offer
@@ -207,7 +207,7 @@ class DuckTransport(Protocol):
         """The duck's camera view, or None if this transport has no camera."""
         ...
 
-    async def get_state(self) -> DuckState: ...
+    async def get_state(self) -> RobotState: ...
 
     async def send_intent(self, intent: Intent) -> Ack: ...
 

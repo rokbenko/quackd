@@ -294,9 +294,9 @@ lives. The rules, enforced by the model itself
 
 ## The adapter class
 
-A `RobotAdapter` is a `DuckTransport` plus self-description. Wrap your backend and
+A `RobotAdapter` is a `RobotTransport` plus self-description. Wrap your backend and
 delegate: `connect()` returns the manifest, `disconnect()`/`close()` release it,
-`get_state()` returns a `DuckState` (`posture="unknown"` is fine for a body without
+`get_state()` returns a `RobotState` (`posture="unknown"` is fine for a body without
 postures; `holding` is for grippers), `get_frame()` returns a PIL image or `None`,
 `send_intent()` maps an `Intent` to the SDK, `health()` is informational and never
 raises, `heartbeat()` is the watchdog and raises `HeartbeatError`. Copy

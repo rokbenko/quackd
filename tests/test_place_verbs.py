@@ -15,7 +15,7 @@ from roboglot.safety import Executor
 from roboglot.space.places import PlaceBook, PlaceStore, places_line
 from roboglot.space.pose import Fix, FrameRef, Pose2D
 from roboglot.space.source import SpatialSourceBase
-from roboglot.transport.base import DuckState
+from roboglot.transport.base import RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.registry import VerbRegistry, registry_from_manifest
 from roboglot.verdict import BEFORE_VERDICT, MOVES_THE_BODY
@@ -188,7 +188,7 @@ def test_the_pilot_reads_the_nearest_places_and_the_orphaned_after_them(tmp_path
     text = build_observation_text(
         step=1,
         max_steps=40,
-        state=DuckState(),
+        state=RobotState(),
         detections=[],
         last_verb=None,
         last_result=None,
@@ -199,7 +199,7 @@ def test_the_pilot_reads_the_nearest_places_and_the_orphaned_after_them(tmp_path
     without = build_observation_text(
         step=1,
         max_steps=40,
-        state=DuckState(),
+        state=RobotState(),
         detections=[],
         last_verb=None,
         last_result=None,

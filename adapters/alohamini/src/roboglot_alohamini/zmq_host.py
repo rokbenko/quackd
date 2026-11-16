@@ -42,7 +42,7 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, UnidentifiedImageError
 
 from roboglot.adapters.base import AdapterNotInstalled
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
 from roboglot_alohamini import upstream_api as up
 from roboglot_alohamini.verbs import (
     ARMS,
@@ -379,7 +379,7 @@ class AlohaMiniZmq:
             return img.convert("RGB")
         return None
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         # A real request with a real timeout. This wire is request/reply: nothing arrives
         # unasked, so polling for zero milliseconds would send a token, give up before any
         # reply could arrive, and serve the cache every single time.
@@ -389,7 +389,7 @@ class AlohaMiniZmq:
             for j in joints_for(self.robot_model)
             if f"{j}.pos" in self._state
         }
-        return DuckState(
+        return RobotState(
             t=time.monotonic(),
             policy="idle",
             posture="unknown",

@@ -30,7 +30,7 @@ from PIL import Image
 from roboglot.adapters.base import AdapterNotInstalled
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import Fix, where_record
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
 from roboglot_rosbridge import upstream_api as up
 from roboglot_rosbridge.introspection import (
     Introspection,
@@ -575,7 +575,7 @@ class RosbridgeWs:
             # `frames_of` promises every caller this never raises for a camera that failed
             return None
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         with self._lock:
             odom = self._latest_odom
         x = y = theta = None
@@ -586,7 +586,7 @@ class RosbridgeWs:
             theta = yaw_from_quaternion(dict(pose.get("orientation", {})))
         vx, vy, wz = self.last_twist
         intro = self.introspection
-        return DuckState(
+        return RobotState(
             t=self.now(),
             policy="idle",
             posture="unknown",

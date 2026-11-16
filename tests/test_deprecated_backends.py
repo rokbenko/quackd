@@ -201,7 +201,7 @@ def test_a_declaration_roboglot_cannot_read_is_refused_naming_the_module(
     ids=["first-and-third", "second", "third"],
 )
 def test_a_line_is_said_once_wherever_its_robots_come(specs: list[str]) -> None:
-    """Every robot handed over is asked about, first or not, and a fleet of two robots on the
+    """Every robot handed over is asked about, first or not, and a team of two robots on the
     retiring backend is told once. Asked again in the same command, as `robot list --probe` asks
     once for each robot it probes, the line is not said again. `_deprecated` keeps every line it
     printed for the run's saved terminal, which is what is read here."""
@@ -358,15 +358,15 @@ def test_serve_mcp_says_nothing_of_a_robot_whose_connect_never_comes(
 def test_a_server_started_without_the_cli_logs_the_line(caplog: pytest.LogCaptureFixture) -> None:
     """A program that calls `serve` hands it no `warn`, and has the line in its log at warning
     level, said as the start connects the robot. Building the plan connects nothing, so
-    `fleet_from_flags` on its own says nothing. The runner's isolation stands in for the stdio
+    `team_from_flags` on its own says nothing. The runner's isolation stands in for the stdio
     the server reads and writes, as it does for the CLI's own tests."""
-    from roboglot.mcp_server import fleet_from_flags, serve
+    from roboglot.mcp_server import serve, team_from_flags
 
     def said() -> list[str]:
         return [r.getMessage() for r in caplog.records if r.name == "roboglot.mcp"]
 
     with caplog.at_level("WARNING", logger="roboglot.mcp"):
-        fleet_from_flags(robot="retiring:old")
+        team_from_flags(robot="retiring:old")
         assert said() == []
         with CliRunner().isolation(), pytest.raises((TransportError, BaseExceptionGroup)):
             serve(robot="retiring:old", memory=False)

@@ -50,7 +50,7 @@ from roboglot.glotfile.parser import parse_glot_text
 from roboglot.glotfile.schema import Budgets
 from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import Aborted, Budget, Executor
-from roboglot.transport.base import Ack, DuckState, Intent
+from roboglot.transport.base import Ack, Intent, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import CORE
 from roboglot.verbs.registry import STOPPED, VerbNotFound, VerbRegistry, VerbResult
@@ -406,7 +406,7 @@ class Duck(MockTransport):
 
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self.state = DuckState(policy="stand", posture="standing", battery_percent=88)
+        self.state = RobotState(policy="stand", posture="standing", battery_percent=88)
         self.sent_at: list[tuple[float, Intent]] = []
         self.camera_error: str | None = None
         self.clamp_yaw_deg: float | None = None
@@ -414,7 +414,7 @@ class Duck(MockTransport):
         its own reach."""
         self.clamp_pitch = False
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return self.state.model_copy(update={"t": self.now()})
 
     async def send_intent(self, intent: Intent) -> Ack:
@@ -706,24 +706,24 @@ async def test_a_new_copy_of_a_frame_already_sent_is_not_sent_again() -> None:
 @pytest.mark.parametrize(
     ("state", "ended", "said"),
     [
-        (DuckState(posture="fallen", fallen=True, policy="stand"), "fallen", "has fallen"),
+        (RobotState(posture="fallen", fallen=True, policy="stand"), "fallen", "has fallen"),
         (
-            DuckState(posture="standing", policy="stand", extras={"fall_detection": False}),
+            RobotState(posture="standing", policy="stand", extras={"fall_detection": False}),
             "blind",
             "nothing is reporting whether the robot is upright",
         ),
         (
-            DuckState(posture="unknown", policy="held", extras={"picked_up": True}),
+            RobotState(posture="unknown", policy="held", extras={"picked_up": True}),
             "held",
             "somebody is holding the robot",
         ),
         (
-            DuckState(posture="unknown", policy="limp_fall"),
+            RobotState(posture="unknown", policy="limp_fall"),
             "held",
             "policy 'limp_fall'",
         ),
         (
-            DuckState(posture="standing", policy="stand", extras={"state_stale": "5 s old"}),
+            RobotState(posture="standing", policy="stand", extras={"state_stale": "5 s old"}),
             "blind",
             "nothing is reporting",
         ),
@@ -731,7 +731,7 @@ async def test_a_new_copy_of_a_frame_already_sent_is_not_sent_again() -> None:
     ids=["fallen", "blind", "picked_up", "limp_fall", "stale_state"],
 )
 async def test_a_body_nobody_can_vouch_for_ends_the_call_and_moves_nothing(
-    state: DuckState, ended: str, said: str
+    state: RobotState, ended: str, said: str
 ) -> None:
     """Read before every look and again before every move: the answer that arrives after the
     duck is picked up turns nothing."""
@@ -752,7 +752,7 @@ async def test_a_body_nobody_can_vouch_for_ends_the_call_and_moves_nothing(
 
 async def test_a_body_nobody_can_vouch_for_at_the_start_is_never_looked_at() -> None:
     duck, eyes = Duck(), ScriptedEyes(default=seen_at(0.0))
-    duck.state = DuckState(posture="unknown", policy="held", extras={"picked_up": True})
+    duck.state = RobotState(posture="unknown", policy="held", extras={"picked_up": True})
     result = await _watch(_executor(duck, eyes), duration_s=5)
     assert result.data["ended"] == "held", result.summary
     assert eyes.images == [] and duck.intents == []
@@ -763,9 +763,9 @@ async def test_a_body_that_falls_between_looks_is_not_looked_at_again() -> None:
     move sends no frame of the floor."""
 
     class Falling(Duck):
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             if self.now() >= 1.2:
-                self.state = DuckState(posture="fallen", fallen=True, policy="stand")
+                self.state = RobotState(posture="fallen", fallen=True, policy="stand")
             return await super().get_state()
 
     duck, eyes = Falling(), ScriptedEyes(default=seen_at(0.0))
@@ -783,7 +783,7 @@ async def test_a_duck_picked_up_while_an_answer_is_out_is_sent_no_more_looks(clo
     picked: list[float] = []
 
     def picked_up_as_it_goes(_image: Image.Image) -> tuple[float, dict[str, Any]]:
-        duck.state = DuckState(posture="unknown", policy="held", extras={"picked_up": True})
+        duck.state = RobotState(posture="unknown", policy="held", extras={"picked_up": True})
         picked.append(duck.now())
         return 1.4, seen_at(-0.4)
 
@@ -817,7 +817,7 @@ async def test_a_duck_neither_standing_nor_sitting_is_never_looked_at(
     posture, why = posture_of(policy, {"fallen": False, "picked_up": False}, skills=skills)
     assert posture == "unknown" and why, (posture, why)
     duck, eyes = Duck(), ScriptedEyes(default=seen_at(0.0))
-    duck.state = DuckState(policy=policy, posture=posture, extras={"posture_reason": why})
+    duck.state = RobotState(policy=policy, posture=posture, extras={"posture_reason": why})
     result = await _watch(_executor(duck, eyes), duration_s=5)
     assert result.data["ended"] == "held" and why in result.summary, result.summary
     assert eyes.images == [] and duck.intents == []
@@ -1449,7 +1449,7 @@ def test_the_microduck_declares_watch_only_with_a_camera() -> None:
 
 # ── a whole run, through Roboglot's own client for OpenAI's Decisions API ────────────────
 
-WATCH_DUCK = """---
+WATCH_GLOT = """---
 glot: 1
 name: watch-test
 description: keep the ball in view
@@ -1516,11 +1516,11 @@ def _config(
     llm: Any,
     *,
     script: list[ToolCall] | None = None,
-    duck: str = WATCH_DUCK,
+    glot: str = WATCH_GLOT,
     decision: str = "off",
 ) -> RunConfig:
     return RunConfig(
-        duck=parse_glot_text(duck),
+        glot=parse_glot_text(glot),
         provider=FakeProvider(script=script or WATCH_THEN_STOP),
         transport=transport,
         detector=ColorBlobDetector(),
@@ -1855,7 +1855,7 @@ async def test_a_run_that_never_asked_for_watch_is_told_nothing_about_it(tmp_pat
 
     adapter = make_microduck("mock")
     cfg = _config(tmp_path, adapter, None)
-    cfg.duck = load_glot("microduck-lookout")
+    cfg.glot = load_glot("microduck-lookout")
     cfg.provider = FakeProvider.for_glot("microduck-lookout")
     result = await run_glot(cfg)
     events = _events(result.run_dir)
@@ -1867,7 +1867,7 @@ async def test_a_task_that_requires_watch_stops_before_anything_moves(tmp_path: 
     transport = Duck()
     adapter = MicroduckAdapter(transport)
     cfg = _config(
-        tmp_path, adapter, None, duck=WATCH_DUCK.replace("verbs:", "requires: [watch]\nverbs:")
+        tmp_path, adapter, None, glot=WATCH_GLOT.replace("verbs:", "requires: [watch]\nverbs:")
     )
     with pytest.raises(AdapterError, match="requires watch, and watch looks through"):
         await run_glot(cfg)

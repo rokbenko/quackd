@@ -15,7 +15,7 @@ from PIL import Image
 
 from roboglot.space.pose import Fix, FrameRef, Pose2D, where_record
 from roboglot.space.source import SpatialSourceBase
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState
 
 
 class MockPose(SpatialSourceBase):
@@ -45,7 +45,7 @@ class MockTransport:
         self,
         *,
         frames: list[Image.Image] | None = None,
-        states: list[DuckState] | None = None,
+        states: list[RobotState] | None = None,
         fail_heartbeat_after: int | None = None,
         refuse_kinds: set[str] | None = None,
         frame_size: tuple[int, int] = (64, 64),
@@ -55,7 +55,7 @@ class MockTransport:
         """Where the mock is (`MockPose`), for a body whose mock stands in for one that says where
         it is, the Microduck's; None, a body with no pose, for every other."""
         self._frames = frames or []
-        self._states = states or [DuckState(policy="mock", posture="standing", battery_percent=88)]
+        self._states = states or [RobotState(policy="mock", posture="standing", battery_percent=88)]
         self._fail_after = fail_heartbeat_after
         self._refuse = refuse_kinds or set()
         self._frame_size = frame_size
@@ -81,7 +81,7 @@ class MockTransport:
             return img
         return Image.new("RGB", self._frame_size, (40, 40, 40))
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = self._states[min(self._state_i, len(self._states) - 1)]
         self._state_i += 1
         copied = state.model_copy(update={"t": self._t})
@@ -90,7 +90,7 @@ class MockTransport:
             copied.extras = {**copied.extras, "where": where_record(self.spatial.fix())}
         return copied
 
-    def current_state(self) -> DuckState:
+    def current_state(self) -> RobotState:
         """The state last handed out, or the first one before any was, without moving on."""
         return self._states[min(max(0, self._state_i - 1), len(self._states) - 1)]
 

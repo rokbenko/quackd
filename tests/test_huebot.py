@@ -31,9 +31,9 @@ from roboglot.perception.base import Detection
 from roboglot.safety import Executor
 from roboglot.transport.base import (
     Ack,
-    DuckState,
     Intent,
     Posture,
+    RobotState,
     TransportError,
 )
 from roboglot.transport.mock import MockTransport
@@ -247,7 +247,7 @@ class _Body(MockTransport):
         super().__init__()
         self.posture: Posture = "standing"
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = await super().get_state()
         return state.model_copy(
             update={"posture": self.posture, "fallen": self.posture == "fallen"}
@@ -724,9 +724,9 @@ async def test_stand_up_returns_as_soon_as_the_robot_stands_and_sends_nothing_me
 
 def _mock_state(
     posture: str, *, fallen: bool = False, policy: str = "walk", **extras: Any
-) -> DuckState:
+) -> RobotState:
     told = {"fall_detection": True, "picked_up": False, "pickup_detection": True} | extras
-    return DuckState(policy=policy, posture=posture, fallen=fallen, extras=told)  # type: ignore[arg-type]
+    return RobotState(policy=policy, posture=posture, fallen=fallen, extras=told)  # type: ignore[arg-type]
 
 
 class _AfterEnable(MockTransport):
@@ -736,10 +736,10 @@ class _AfterEnable(MockTransport):
 
     def __init__(
         self,
-        before: DuckState,
-        after: DuckState | None = None,
+        before: RobotState,
+        after: RobotState | None = None,
         *,
-        then: DuckState | None = None,
+        then: RobotState | None = None,
         then_at: float = 0.0,
     ) -> None:
         super().__init__(states=[before])
@@ -751,7 +751,7 @@ class _AfterEnable(MockTransport):
             self.enabled_at = self.now()
         return await super().send_intent(intent)
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         if self.enabled_at is None:
             state = self.before
         elif self.then is not None and self.now() - self.enabled_at >= self.then_at:
@@ -782,7 +782,7 @@ async def test_stand_up_says_the_robot_may_need_a_hand_only_once_ten_seconds_are
 class _SlowLink(_AfterEnable):
     """Each reading takes a second of the robot's own time, as over a link that holds lines up."""
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         self._t += 1.0
         return await super().get_state()
 
@@ -824,7 +824,7 @@ async def test_stand_up_calls_the_robot_upright_on_the_poll_it_stands() -> None:
     ids=["answering-a-fall", "unknown"],
 )
 async def test_stand_up_judges_the_last_reading_once_the_wait_is_up(
-    after: DuckState, summary: str
+    after: RobotState, summary: str
 ) -> None:
     """A robot still in its own answer to a fall is told to run the verb again, and one whose
     posture is unknown says why, each only once the whole wait is up."""
@@ -844,7 +844,7 @@ async def test_stand_up_judges_the_last_reading_once_the_wait_is_up(
     ids=["blind", "held", "held-upright"],
 )
 async def test_stand_up_stops_waiting_for_a_robot_somebody_picks_up_or_nothing_reports_on(
-    after: DuckState, summary: str
+    after: RobotState, summary: str
 ) -> None:
     """A robot somebody picks up while `stand_up` waits is in their hands, and one nothing
     reports on cannot be called upright, so the wait ends on the first reading that says so,
@@ -869,7 +869,7 @@ async def test_stand_up_stops_waiting_for_a_robot_somebody_picks_up_or_nothing_r
     ids=["held", "blind", "no-pickup-detector", "walk-held", "seated", "standing"],
 )
 async def test_stand_up_reads_the_robot_before_it_asks_it_to_drive(
-    state: DuckState, summary: str
+    state: RobotState, summary: str
 ) -> None:
     robot = _AfterEnable(state)
     result = await _stand_up_on(robot)

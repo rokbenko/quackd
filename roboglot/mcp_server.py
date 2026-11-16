@@ -74,7 +74,7 @@ from roboglot.space.places import PlaceStore
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
     CameraFrame,
-    DuckTransport,
+    RobotTransport,
     TransportError,
     camera_names_of,
 )
@@ -158,7 +158,7 @@ drifts as the body walks."""
 """Said when a body's static manifest declares `map`. Conditional on the live list, since a
 connection whose transport says nothing of where the body is leaves the place verbs out."""
 
-FLEET_INSTRUCTIONS = """You are piloting {n} robot(s) through Roboglot: {names}.
+TEAM_INSTRUCTIONS = """You are piloting {n} robot(s) through Roboglot: {names}.
 Call robot_list first, then robot_list_verbs(robot) for each body you will use: verbs come
 from each robot's own manifest, so they differ per robot. Every action is a *verb*; each
 robot's executor enforces its own allowlist, budgets and confirmation gates, so a refused
@@ -176,12 +176,12 @@ The bodies:
 {datasheets}
 Call robot_run_verb(verb="stop", robot=...) if anything looks wrong."""
 
-FLEET_MEMORY = """ robot_recall(robot) is what that robot learned in earlier sessions;
+TEAM_MEMORY = """ robot_recall(robot) is what that robot learned in earlier sessions;
 robot_remember(text, robot) keeps one short fact for the next one."""
 
 
 def _prefixed(emit: Callable[..., None], name: str) -> Callable[[str], None]:
-    """Log lines from a fleet say which robot they are about."""
+    """Log lines from a team say which robot they are about."""
 
     def log_line(message: str) -> None:
         emit("%s: %s", name, message)
@@ -224,12 +224,12 @@ class RobotSession:
     """One robot behind the server: its own executor, budget, heartbeat and contract."""
 
     name: str
-    transport: DuckTransport
+    transport: RobotTransport
     registry: VerbRegistry
     executor: Executor
     heartbeat: Heartbeat
     detector: Detector | None = None
-    duck: GlotFile | None = None
+    glot: GlotFile | None = None
     manifest: RobotManifest | None = None
     """Set on connect when the transport is an adapter that describes itself."""
     frames: int = 0
@@ -292,13 +292,13 @@ class RobotSession:
 
     def shown_name(self, verb: Verb) -> str:
         """The name a client sees: the loaded contract's own spelling when it used an alias."""
-        if self.duck is not None:
+        if self.glot is not None:
             for spelled in self.executor.allowed:
                 if spelled != verb.name and self.registry.canonical(spelled) == verb.name:
                     return spelled
         return verb.name
 
-    def adopt(self, duck: GlotFile) -> None:
+    def adopt(self, glot: GlotFile) -> None:
         """Take on a task contract. Loading a second one never refunds the first.
 
         `robot_load_glotfile` is a tool the *LLM* holds, so a fresh `Budget` here was the
@@ -310,16 +310,16 @@ class RobotSession:
         # "First contract" used to be spelled `budget is None`, which stopped being true when
         # a contractless session gained a default budget of its own. Ask the question
         # directly: it is the first if no duck has been adopted yet.
-        first = self.duck is None
+        first = self.glot is None
         spent = self.executor.budget
-        self.duck = duck
-        self.executor.contract = duck.frontmatter
+        self.glot = glot
+        self.executor.contract = glot.frontmatter
         if self.manifest is not None:
             self.executor.manifest = self._merged(self.manifest)
         self.executor.budget = Budget(
-            duck.frontmatter.budgets,
+            glot.frontmatter.budgets,
             now=self.transport.now,
-            policy_total_s=duck.frontmatter.effective_policy.total_s,
+            policy_total_s=glot.frontmatter.effective_policy.total_s,
         )
         if spent is not None:
             # the seconds a policy has driven the body are the body's and not the task's, the
@@ -341,7 +341,7 @@ class RobotSession:
 
     def _merged(self, manifest: RobotManifest) -> RobotManifest:
         """The robot's manifest with the loaded task file's datasheet corrections folded in."""
-        override = self.duck.frontmatter.datasheet if self.duck is not None else None
+        override = self.glot.frontmatter.datasheet if self.glot is not None else None
         return apply_datasheet_override(manifest, override)
 
     def effective_manifest(self) -> RobotManifest | None:
@@ -403,7 +403,7 @@ class RobotSession:
         length under a timeout that covers them (`narrow_policy_verb`)."""
         narrow_policy_verb(
             self.registry,
-            self.duck.frontmatter if self.duck is not None else None,
+            self.glot.frontmatter if self.glot is not None else None,
             self.transport,
         )
 
@@ -487,8 +487,8 @@ class RobotSession:
     async def assess(self, arguments: dict[str, Any], could: dict[str, str]) -> dict[str, Any]:
         """`robot_assess_task`: the pilot's verdict on this task against this body.
 
-        `could` is the other robots in the fleet whose datasheets meet what the task needs,
-        already matched by the caller, which is the only place that knows the fleet."""
+        `could` is the other robots in the team whose datasheets meet what the task needs,
+        already matched by the caller, which is the only place that knows the team."""
         return await self._call(
             "robot_assess_task", dict(arguments), lambda: self._assess(arguments, could)
         )
@@ -509,7 +509,7 @@ class RobotSession:
             return {"ok": False, "robot": self.name, "summary": f"invalid verdict: {msgs}"}
         if verdict.verdict == "feasible":
             # the loop's check, on this surface too. `robot_assess_task` matched `needs`
-            # against every OTHER robot in the fleet to fill in `could`, and recorded a
+            # against every OTHER robot in the team to fill in `could`, and recorded a
             # feasible against this robot's own sheet without ever looking at it.
             objection = own_sheet_objection(
                 verdict.needs, self.effective_manifest(), tool="robot_assess_task"
@@ -578,7 +578,7 @@ class RobotSession:
             "digest": m.digest() if m else None,
             "datasheet": m.datasheet.model_dump(mode="json") if m and m.datasheet else None,
             "datasheet_text": body_summary(m) if m else None,
-            "contract": self.duck.name if self.duck else None,
+            "contract": self.glot.name if self.glot else None,
             "healthy": healthy,
             "health_reason": reason,
             "aborted": self.executor.abort.is_set(),
@@ -593,7 +593,7 @@ class RobotSession:
         aliases = reg.aliases()
         return {
             "robot": self.name,
-            "contract": self.duck.name if self.duck else None,
+            "contract": self.glot.name if self.glot else None,
             "manifest_id": self.manifest.id if self.manifest else None,
             "verbs": [
                 {
@@ -697,7 +697,7 @@ class RobotSession:
             entry = self.memory.remember(
                 text,
                 tags=tags,
-                duck=self.duck.name if self.duck else None,
+                task=self.glot.name if self.glot else None,
                 where=where_record(fix) if fix is not None and fix.localized else None,
             )
         except (ValueError, OSError) as e:
@@ -711,10 +711,10 @@ class RobotSession:
 
     def load(self, path: str) -> dict[str, Any]:
         try:
-            duck = load_glot(path)
+            glot = load_glot(path)
         except GlotParseError as e:
             return {"ok": False, "error": str(e)}
-        if duck.frontmatter.team is not None:
+        if glot.frontmatter.team is not None:
             # same guard as serve(): one MCP pilot must not adopt a many-robot contract
             return {
                 "ok": False,
@@ -725,7 +725,7 @@ class RobotSession:
                 ),
             }
         if self.manifest is not None:
-            problems = validate_glot(duck, [self.manifest], registry=self.registry)
+            problems = validate_glot(glot, [self.manifest], registry=self.registry)
             if problems:
                 return {
                     "ok": False,
@@ -733,7 +733,7 @@ class RobotSession:
                     "problems": [p.message for p in problems],
                 }
         if self.locked_to is not None:
-            wider = widened_by(self.locked_to, duck.frontmatter, self.registry.canonical)
+            wider = widened_by(self.locked_to, glot.frontmatter, self.registry.canonical)
             if wider:
                 return {
                     "ok": False,
@@ -747,11 +747,11 @@ class RobotSession:
         # session's task, its verdict and its verb as they were; and nothing is awaited from
         # here to the verdict being cleared, so no call runs under the one and not the other.
         try:
-            narrow_policy_verb(self.registry, duck.frontmatter, self.transport)
+            narrow_policy_verb(self.registry, glot.frontmatter, self.transport)
         except ValueError as e:
             return {"ok": False, "error": str(e)}
         reloaded = self.executor.budget is not None
-        self.adopt(duck)
+        self.adopt(glot)
         # a new task is a new question about this body; the last task's verdict does not
         # carry over, and the gate shuts again until the pilot answers for this one
         self.executor.verdict = None
@@ -765,7 +765,7 @@ class RobotSession:
             # wondering why the new contract's budget is already part spent
             note += f" What this session already spent still counts: {budget.status()}."
         effective = self.effective_manifest()
-        played = duck.frontmatter.play
+        played = glot.frontmatter.play
         if played:
             note += (
                 " This task may give the robot a part to play: read the play field before you "
@@ -774,11 +774,11 @@ class RobotSession:
         result: dict[str, Any] = {
             "ok": True,
             "robot": self.name,
-            "name": duck.name,
+            "name": glot.name,
             # without `play` for a file that does not play, so loading any task file written
             # before there was such a key reads exactly the result it always did
-            "contract": duck.frontmatter.model_dump(exclude=None if played else {"play"}),
-            "instructions": duck.body,
+            "contract": glot.frontmatter.model_dump(exclude=None if played else {"play"}),
+            "instructions": glot.body,
             "datasheet_text": body_summary(effective) if effective is not None else None,
             "note": note,
         }
@@ -788,7 +788,7 @@ class RobotSession:
             # are this session's: a body with no manifest is taken as one that moves, as the
             # run's prompt takes it, and a voice or `move_joints` counts only where this body
             # has the verb.
-            allowed = [v for v in duck.frontmatter.verbs.allow if v in self.registry]
+            allowed = [v for v in glot.frontmatter.verbs.allow if v in self.registry]
             result["play"] = "\n\n".join(
                 play_paragraphs(
                     still=effective is not None and effective.mobility == "none",
@@ -801,16 +801,12 @@ class RobotSession:
         return result
 
 
-DuckSession = RobotSession
-"""The 0.3 name."""
-
-
 def _result(r: VerbResult) -> dict[str, Any]:
     return {"ok": r.ok, "summary": r.summary, "data": r.data}
 
 
 @dataclass
-class Fleet:
+class ServedTeam:
     sessions: dict[str, RobotSession]
     default: str
     static: dict[str, RobotManifest] = field(default_factory=dict)
@@ -837,7 +833,7 @@ class Fleet:
         }
 
     async def connect_all(self) -> None:
-        """Sequential and fail-fast: a fleet with a hole in it is not served.
+        """Sequential and fail-fast: a team with a hole in it is not served.
 
         So a robot after the first that fails is never connected, and `before_connect` is
         never handed it: what is said of a robot just before its connect is said only of a
@@ -863,7 +859,7 @@ class Fleet:
 
 def _pick_default(robots: Mapping[str, Any]) -> str:
     """The only robot; else the first Microduck, because a caller that names no robot on
-    a mixed fleet most likely means the duck; else the first declared."""
+    a mixed team most likely means the duck; else the first declared."""
     names = list(robots)
     if len(names) == 1:
         return names[0]
@@ -873,39 +869,39 @@ def _pick_default(robots: Mapping[str, Any]) -> str:
     return names[0]
 
 
-def _instructions(fleet: Fleet) -> str:
+def _instructions(team: ServedTeam) -> str:
     """One robot gets a prompt about that robot, whichever body it is.
 
     Until 0.5 the solo prompt was hardcoded to a 25 cm Microduck, which was wrong for every
     other body. The description now comes from the manifest's own blurb, and the datasheet
-    from `Fleet.static`: these instructions are built when the server is, which is before
+    from `ServedTeam.static`: these instructions are built when the server is, which is before
     anything has connected, so a live manifest is not there to read yet and the static
     description is the honest source."""
     # with --no-memory both tools answer "memory is off", so telling the pilot to call
     # them early is an instruction to waste a turn
-    on = any(s.memory is not None for s in fleet.sessions.values())
-    described = {name: fleet.described(name) for name in fleet.sessions}
+    on = any(s.memory is not None for s in team.sessions.values())
+    described = {name: team.described(name) for name in team.sessions}
     places = (
         PLACES_NOTE
         if any(m is not None and "map" in {v.name for v in m.verbs} for m in described.values())
         else ""
     )
-    if len(fleet.sessions) == 1:
-        manifest = described[fleet.default]
+    if len(team.sessions) == 1:
+        manifest = described[team.default]
         blurb = manifest.blurb if manifest and manifest.blurb else "a small robot"
         return INSTRUCTIONS.format(
-            names=fleet.default,
+            names=team.default,
             blurb=blurb,
             datasheet=body_summary(manifest) if manifest else "no datasheet until it connects.",
             memory=SOLO_MEMORY if on else "",
             places=places,
         )
     newline = "\n"
-    return FLEET_INSTRUCTIONS.format(
-        n=len(fleet.sessions),
-        names=", ".join(fleet.sessions),
-        default=fleet.default,
-        memory=FLEET_MEMORY if on else "",
+    return TEAM_INSTRUCTIONS.format(
+        n=len(team.sessions),
+        names=", ".join(team.sessions),
+        default=team.default,
+        memory=TEAM_MEMORY if on else "",
         places=places,
         datasheets=newline.join(
             f"- {name}: {body_summary(m) if m else 'no datasheet until it connects.'}"
@@ -915,7 +911,7 @@ def _instructions(fleet: Fleet) -> str:
 
 
 def session_memory_key(
-    name: str, transport: DuckTransport, memory_keys: Mapping[str, str] | None = None
+    name: str, transport: RobotTransport, memory_keys: Mapping[str, str] | None = None
 ) -> str:
     """The key a session keeps a robot's memory and places under: its registered name where
     `memory_keys` gives one, so two registered robots of one kind keep their own, and
@@ -925,8 +921,8 @@ def session_memory_key(
     )
 
 
-def build_fleet_server(
-    robots: Mapping[str, DuckTransport],
+def build_team_server(
+    robots: Mapping[str, RobotTransport],
     *,
     glotfile: str | None = None,
     lock_glotfile: bool = False,
@@ -942,7 +938,7 @@ def build_fleet_server(
     log: bool = True,
     manifests: Mapping[str, RobotManifest] | None = None,
     before_connect: Callable[[str], None] | None = None,
-) -> tuple[MCPServer, Fleet]:
+) -> tuple[MCPServer, ServedTeam]:
     """One MCP server over several robots, each behind its own executor.
 
     `--yes` and `--dry-run` are global; contracts, budgets and abort flags are per robot.
@@ -955,7 +951,7 @@ def build_fleet_server(
     and the same lines on stderr in place of the executor's own log lines.
 
     `before_connect` is handed each robot's name just before the server's start connects it
-    (`Fleet.connect_all`)."""
+    (`ServedTeam.connect_all`)."""
     if not robots:
         raise ValueError("a fleet needs at least one robot")
     sessions: dict[str, RobotSession] = {}
@@ -1015,31 +1011,31 @@ def build_fleet_server(
         )
         executor.on_frames = _stash_frames(session)
         sessions[name] = session
-    fleet = Fleet(
+    team = ServedTeam(
         sessions,
         default or _pick_default(robots),
         dict(manifests or {}),
         before_connect=before_connect,
     )
-    if fleet.default not in sessions:
-        raise ValueError(f"default robot {fleet.default!r} is not one of {list(sessions)}")
+    if team.default not in sessions:
+        raise ValueError(f"default robot {team.default!r} is not one of {list(sessions)}")
     if glotfile:
         started_with = load_glot(glotfile)
-        sessions[fleet.default].adopt(started_with)
+        sessions[team.default].adopt(started_with)
         if lock_glotfile:
-            sessions[fleet.default].locked_to = started_with.frontmatter
+            sessions[team.default].locked_to = started_with.frontmatter
 
     @contextlib.asynccontextmanager
-    async def lifespan(_server: MCPServer) -> AsyncIterator[Fleet]:
-        await fleet.connect_all()
-        for session in fleet.sessions.values():
+    async def lifespan(_server: MCPServer) -> AsyncIterator[ServedTeam]:
+        await team.connect_all()
+        for session in team.sessions.values():
             # now that the robot has said what it actually has, not what its description
-            # claims. `build_fleet_server` can only see a bare transport's backend.
+            # claims. `build_team_server` can only see a bare transport's backend.
             live = getattr(session.transport, "manifest", None)
             if live is not None:
                 # a detector the server was given is kept. One `explicit_detector` built
                 # before connect learns the lens the body reported: the board's, when the
-                # board's camera is the only one it has. One handed to `build_fleet_server`
+                # board's camera is the only one it has. One handed to `build_team_server`
                 # from Python keeps the lens it was built with, as `run_glot` keeps it.
                 lens_fov, assumed = lens_of(live, None)
                 session.detector = detector_for(
@@ -1068,18 +1064,18 @@ def build_fleet_server(
                 getattr(session.detector, "name", None) if session.detector else None,
             )
         try:
-            yield fleet
+            yield team
         finally:
-            await fleet.close_all()
+            await team.close_all()
 
     mcp = MCPServer(
-        "roboglot", instructions=_instructions(fleet), version=__version__, lifespan=lifespan
+        "roboglot", instructions=_instructions(team), version=__version__, lifespan=lifespan
     )
 
     def me() -> RobotSession:
-        return fleet.sessions[fleet.default]
+        return team.sessions[team.default]
 
-    # ── the fleet tools ─────────────────────────────────────────────────────────────
+    # ── the team tools ─────────────────────────────────────────────────────────────
 
     @mcp.tool(
         description="Every robot this server fronts (adapter, body, manifest, contract, "
@@ -1088,9 +1084,9 @@ def build_fleet_server(
     async def robot_list() -> dict[str, Any]:
         return {
             "robots": [
-                await s.info(default=(name == fleet.default)) for name, s in fleet.sessions.items()
+                await s.info(default=(name == team.default)) for name, s in team.sessions.items()
             ],
-            "default": fleet.default,
+            "default": team.default,
         }
 
     @mcp.tool(
@@ -1098,8 +1094,8 @@ def build_fleet_server(
         "canonical name, aliases, and whether its contract allows each now."
     )
     async def robot_list_verbs(robot: str | None = None) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return session.verbs_payload() if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return session.verbs_payload() if session else team.unknown(robot)
 
     @mcp.tool(
         description=(
@@ -1132,9 +1128,9 @@ def build_fleet_server(
         needs: dict[str, Any] | None = None,
         robot: str | None = None,
     ) -> dict[str, Any]:
-        session = fleet.get(robot)
+        session = team.get(robot)
         if session is None:
-            return fleet.unknown(robot)
+            return team.unknown(robot)
         arguments: dict[str, Any] = {"verdict": verdict, "reason": reason}
         if limits_consulted is not None:
             arguments["limits_consulted"] = limits_consulted
@@ -1144,8 +1140,8 @@ def build_fleet_server(
             arguments["needs"] = needs
         could: dict[str, str] = {}
         if needs:
-            for name in fleet.sessions:
-                other = fleet.described(name)
+            for name in team.sessions:
+                other = team.described(name)
                 # this list names bodies to hand a task to, and Roboglot drives no part of a
                 # described one (ADR-0077)
                 drivable = other is not None and not other.extras.get("described")
@@ -1166,8 +1162,8 @@ def build_fleet_server(
     async def robot_run_verb(
         verb: str, params: dict[str, Any] | None = None, robot: str | None = None
     ) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return await session.run(verb, params) if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return await session.run(verb, params) if session else team.unknown(robot)
 
     @mcp.tool(
         description="The observe verb on one robot, through its executor: the camera frame "
@@ -1175,16 +1171,16 @@ def build_fleet_server(
         structured_output=False,
     )
     async def robot_observe(robot: str | None = None) -> list[str | Image]:
-        session = fleet.get(robot)
-        return await session.observe() if session else [str(fleet.unknown(robot)["error"])]
+        session = team.get(robot)
+        return await session.observe() if session else [str(team.unknown(robot)["error"])]
 
     @mcp.tool(
         description="Say something on one robot: tones on a Microduck. A robot without a "
         "sound intent refuses."
     )
     async def robot_say(text: str, robot: str | None = None) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return await session.say(text) if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return await session.say(text) if session else team.unknown(robot)
 
     @mcp.tool(
         description="Load a .glot contract on one robot: its requires are checked against "
@@ -1192,12 +1188,12 @@ def build_fleet_server(
         "back as instructions."
     )
     async def robot_load_glotfile(path: str, robot: str | None = None) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return session.load(path) if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return session.load(path) if session else team.unknown(robot)
 
     # The rule `_instructions` keeps: with --no-memory both tools stay registered and answer
     # "memory is off", so a description that says to call one is an instruction to waste a turn.
-    remembering = any(s.memory is not None for s in fleet.sessions.values())
+    remembering = any(s.memory is not None for s in team.sessions.values())
 
     @mcp.tool(
         description="What one robot remembers from earlier sessions and runs: the notes a "
@@ -1208,8 +1204,8 @@ def build_fleet_server(
         "record of earlier runs, so this only answers that, and there is no need to call it."
     )
     async def robot_recall(robot: str | None = None) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return session.recall() if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return session.recall() if session else team.unknown(robot)
 
     @mcp.tool(
         description="Keep one short fact for future sessions on one robot (where things "
@@ -1222,14 +1218,14 @@ def build_fleet_server(
     async def robot_remember(
         text: str, tags: list[str] | None = None, robot: str | None = None
     ) -> dict[str, Any]:
-        session = fleet.get(robot)
-        return session.remember(text, tags) if session else fleet.unknown(robot)
+        session = team.get(robot)
+        return session.remember(text, tags) if session else team.unknown(robot)
 
-    return mcp, fleet
+    return mcp, team
 
 
 def build_server(
-    transport: DuckTransport,
+    transport: RobotTransport,
     *,
     glotfile: str | None = None,
     lock_glotfile: bool = False,
@@ -1242,9 +1238,9 @@ def build_server(
     memory_dir: str | Path | None = None,
     log: bool = True,
 ) -> tuple[MCPServer, RobotSession]:
-    """One robot, the 0.3 entry point: a fleet of one named after its adapter."""
+    """One robot, the 0.3 entry point: a team of one named after its adapter."""
     name = adapter_name(transport) or "duck"
-    mcp, fleet = build_fleet_server(
+    mcp, team = build_team_server(
         {name: transport},
         glotfile=glotfile,
         lock_glotfile=lock_glotfile,
@@ -1257,12 +1253,12 @@ def build_server(
         memory_dir=memory_dir,
         log=log,
     )
-    return mcp, fleet.sessions[name]
+    return mcp, team.sessions[name]
 
 
 @dataclass
-class FleetPlan:
-    """A fleet, built but not connected: what `serve` hands `build_fleet_server`."""
+class ServedTeamPlan:
+    """A team, built but not connected: what `serve` hands `build_team_server`."""
 
     adapters: dict[str, Any]
     manifests: dict[str, RobotManifest]
@@ -1272,7 +1268,7 @@ class FleetPlan:
     """The team's first member, when a stored team named one. Else `_pick_default` decides."""
     host: HostChoice = field(default_factory=HostChoice)
     """The board this server's one robot uses (`--host`), settled once from the flag, the
-    registry and the environment. Empty for a fleet, which may not have one."""
+    registry and the environment. Empty for a team, which may not have one."""
     detector: Detector | None = None
     """The detector `--detector` asked for, or the board's when `--host` brings one, for the
     one robot. None leaves it to `detector_for` at connect, which is the colour detector."""
@@ -1281,7 +1277,7 @@ class FleetPlan:
     connects a robot, to say whether it is on a backend its adapter is retiring."""
 
 
-def fleet_from_flags(
+def team_from_flags(
     *,
     robot: str | None = None,
     robots: str | None = None,
@@ -1300,15 +1296,15 @@ def fleet_from_flags(
     async_chunks: bool = True,
     map_address: str | None = None,
     fov_deg: float | None = None,
-) -> FleetPlan:
+) -> ServedTeamPlan:
     """Which robots this server fronts, from the flags that name them.
 
-    Three ways in: one robot, an ad-hoc fleet, or a stored team. The last is the only one
+    Three ways in: one robot, an ad-hoc team, or a stored team. The last is the only one
     where each robot brings its own address, token and camera, because it is the only one
     where somebody wrote them down (ADR-0034).
 
-    `--host` is for one robot, and refused for a fleet by `roboglot run`'s rule and in its
-    words: a host names one machine's camera and detector, and a fleet has several bodies.
+    `--host` is for one robot, and refused for a team by `roboglot run`'s rule and in its
+    words: a host names one machine's camera and detector, and a team has several bodies.
     The board is asked what it is before any body is built, and a board that does not answer
     refuses the server, as it refuses a run. `--detector` is for one robot too.
 
@@ -1366,7 +1362,7 @@ def fleet_from_flags(
             default = probe.frontmatter.robots
     registry = Registry(registry_dir)
     resolved: list[Resolved]
-    fleet_default: str | None = None
+    team_default: str | None = None
     if team:
         try:
             roster = registry.roster(team)
@@ -1374,11 +1370,11 @@ def fleet_from_flags(
             raise SystemExit(str(e)) from e
         resolved = [Resolved(entry.robot_spec, entry) for entry in roster.values()]
         # the team's own order decides, rather than `_pick_default`'s first-Microduck rule
-        fleet_default = next(iter(roster), None)
+        team_default = next(iter(roster), None)
     elif robots:
         resolved = [Resolved(spec) for spec in parse_robots(robots)]
     else:
-        resolved = [resolve_robot_ref(robot, registry, duck_default=default)]
+        resolved = [resolve_robot_ref(robot, registry, glot_default=default)]
     specs: list[RobotSpec] = [r.spec for r in resolved]
     # A real arm with no rest pose has nothing to be folded to when its session closes, and
     # would be left holding itself up wherever it stopped (ADR-0058). Refused before anything is
@@ -1389,37 +1385,37 @@ def fleet_from_flags(
             what="an MCP session",
             address=address,
             camera_url=camera_url,
-            fleet=bool(robots) or len(resolved) > 1,
+            as_team=bool(robots) or len(resolved) > 1,
         )
         if refused is not None:
             raise SystemExit(f"{refused[0]}: {refused[1]}")
     # Refused before a manifest is described or an adapter built, as `run` refuses it.
     # ROBOGLOT_HOST is not refused, for `run`'s reason: it is the board you usually use, and
     # with several bodies there is nothing here for it to name, so it is left unread.
-    fleet = bool(team or robots) or len(resolved) > 1
+    as_team = bool(team or robots) or len(resolved) > 1
     hosted = [r.entry.name for r in resolved if r.entry is not None and r.entry.host]
-    if fleet and (host or "").strip():
+    if as_team and (host or "").strip():
         raise SystemExit(
             "--host names one machine's camera and detector, and a fleet has several bodies: "
             "drop --host, or serve one robot"
         )
-    if fleet and hosted:
+    if as_team and hosted:
         raise SystemExit(
             f"{hosted[0]} has a host in robots.json, which names one machine's camera and "
             "detector, and a fleet has several bodies: roboglot robot edit "
             f"{hosted[0]} --clear host, or serve it on its own"
         )
-    if fleet and (host_token or "").strip():
+    if as_team and (host_token or "").strip():
         raise SystemExit(
             "--host-token is one board's token, and a fleet has several bodies and no board: "
             "drop --host-token, or serve one robot"
         )
-    if fleet and policy is not None:
+    if as_team and policy is not None:
         raise SystemExit(
             "--policy-url is one arm's policy server, and a fleet has several bodies: drop "
             "--policy-url, or serve one arm"
         )
-    if fleet and map_address is not None:
+    if as_team and map_address is not None:
         raise SystemExit(
             "--map-address is where one robot's map answers, and a fleet has several bodies: "
             "drop --map-address, or keep each robot's own with roboglot robot edit NAME "
@@ -1428,7 +1424,7 @@ def fleet_from_flags(
     # The one place this server's board is settled, carried on the plan so everything that
     # uses the board reads this value rather than deriving its own.
     host_choice = HostChoice()
-    if not fleet:
+    if not as_team:
         (solo,) = resolved
         stored = solo.host_kwargs()
         try:
@@ -1441,7 +1437,7 @@ def fleet_from_flags(
             )
         except ValueError as e:
             raise SystemExit(str(e)) from e
-    if fleet and (detector or "").strip():
+    if as_team and (detector or "").strip():
         raise SystemExit(
             "--detector is for one robot, and a fleet has several bodies: drop --detector, or "
             "serve one robot"
@@ -1458,7 +1454,7 @@ def fleet_from_flags(
         spec.name or describe(spec, **body_kw).id: describe(spec, **body_kw) for spec in specs
     }
     chosen: Detector | None = None
-    if not fleet:
+    if not as_team:
         (only,) = manifests
         # the body as its adapter describes it: all a detector built before connect may know
         # about the lens. Never the board's yet, as `roboglot run` says: a body described blind
@@ -1490,10 +1486,10 @@ def fleet_from_flags(
         )
         problems = validate_glot(probe, [manifests[target]])
         if problems:
-            # an arm's pick and manipulate come only from --policy-url, which a fleet refuses
+            # an arm's pick and manipulate come only from --policy-url, which a team refuses
             hint = (
                 None
-                if fleet or policy is not None
+                if as_team or policy is not None
                 else policy_hint(
                     [p.verb for p in problems if p.verb],
                     [dict(zip(manifests, specs, strict=True))[target].key],
@@ -1540,11 +1536,11 @@ def fleet_from_flags(
         for name, one in zip(manifests, resolved, strict=True)
         if one.registered
     }
-    return FleetPlan(
+    return ServedTeamPlan(
         adapters,
         manifests,
         memory_keys,
-        fleet_default,
+        team_default,
         host_choice,
         chosen,
         specs=dict(zip(manifests, specs, strict=True)),
@@ -1577,7 +1573,7 @@ def serve(
     map_address: str | None = None,
     lock_glotfile: bool = False,
 ) -> None:
-    plan = fleet_from_flags(
+    plan = team_from_flags(
         robot=robot,
         robots=robots,
         team=team,
@@ -1598,7 +1594,7 @@ def serve(
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO, format="roboglot-mcp %(levelname)s %(message)s"
     )
-    mcp, _fleet = build_fleet_server(
+    mcp, _team = build_team_server(
         plan.adapters,
         manifests=plan.manifests,
         memory_keys=plan.memory_keys,
@@ -1622,10 +1618,10 @@ def serve(
 def _deprecations_before_connect(
     specs: Mapping[str, RobotSpec], warn: Callable[[str], None] | None
 ) -> Callable[[str], None]:
-    """What `serve` hands its fleet as `before_connect`.
+    """What `serve` hands its team as `before_connect`.
 
     A robot on a backend its adapter is retiring (`deprecated_backend`) is said just before the
-    server's start connects it, which `Fleet.connect_all` does one robot at a time and stops at
+    server's start connects it, which `ServedTeam.connect_all` does one robot at a time and stops at
     the first that fails, so a robot whose connect never comes is never said. A line is said
     once however many robots are on its backend, through `warn`, which `roboglot serve-mcp` hands
     the line `roboglot run` prints, or through this module's logger when nothing is handed, so a
@@ -1663,12 +1659,11 @@ if __name__ == "__main__":  # pragma: no cover
 
 __all__ = [
     "TOOL_NAMES",
-    "DuckSession",
-    "Fleet",
-    "FleetPlan",
     "RobotSession",
-    "build_fleet_server",
+    "ServedTeam",
+    "ServedTeamPlan",
     "build_server",
-    "fleet_from_flags",
+    "build_team_server",
     "serve",
+    "team_from_flags",
 ]

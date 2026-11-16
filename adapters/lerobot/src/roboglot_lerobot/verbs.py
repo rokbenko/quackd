@@ -32,7 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roboglot.adapters.base import CONNECTING_TAKES_TORQUE_OFF, published_travel, said_past
 from roboglot.glotfile.schema import DEFAULT_SEGMENT_S, INSTRUCTION_MAX_CHARS, instruction_line
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import send_or_fail
 from roboglot.verbs.registry import (
     STOP_ENDED,
@@ -275,7 +275,7 @@ class ManipulateParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _torque_on(state: DuckState) -> str | None:
+def _torque_on(state: RobotState) -> str | None:
     if state.extras.get("torque", True):
         return None
     return (
@@ -286,11 +286,11 @@ def _torque_on(state: DuckState) -> str | None:
     )
 
 
-def _holding(state: DuckState) -> str | None:
+def _holding(state: RobotState) -> str | None:
     return None if state.holding else "nothing is held: pick something first"
 
 
-def _not_hot(state: DuckState) -> str | None:
+def _not_hot(state: RobotState) -> str | None:
     """Only on the verbs that move the five body joints. LeRobot caps the gripper's torque
     and current and caps nothing else (`upstream_api.SO_BODY_HAS_NO_TORQUE_CAP`), so this is
     the only thing standing between a stalled elbow and a servo cooking itself. A backend
@@ -314,7 +314,7 @@ def lerobot_conditions() -> dict[str, Precondition]:
 # ── watching a goal arrive ──────────────────────────────────────────────────────────────
 
 
-def _joints_of(state: DuckState) -> dict[str, float]:
+def _joints_of(state: RobotState) -> dict[str, float]:
     return {str(k): float(v) for k, v in dict(state.extras.get("joints", {})).items()}
 
 
@@ -491,7 +491,7 @@ async def _drive(
     tolerance: Callable[[str], float],
     start: dict[str, float] | None = None,
     ramp_s: float = 0.0,
-) -> tuple[dict[str, float], DuckState | None, str, str | None]:
+) -> tuple[dict[str, float], RobotState | None, str, str | None]:
     """Send a goal until the arm is there, stops moving, or the budget runs out.
 
     With a `start` and a `ramp_s`, the goal is walked there: each tick sends `intent_for` the
@@ -524,7 +524,7 @@ async def _drive(
     ramping = bool(start) and ramp_s > 0
     joints: dict[str, float] = {}
     previous: dict[str, float] = {}
-    state: DuckState | None = None
+    state: RobotState | None = None
     still = 0
     while (elapsed := ctx.transport.now() - started) < budget_s:
         if (told := ctx.interrupted()) is not None:
@@ -1328,7 +1328,7 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
 
 async def _drive_gripper(
     ctx: VerbContext, *, open_: bool
-) -> tuple[float | None, DuckState | None, str, str | None]:
+) -> tuple[float | None, RobotState | None, str, str | None]:
     """The gripper is a joint like the others: the step cap moves it a few units per send,
     and where it stops is the whole of what Roboglot knows about holding something.
 

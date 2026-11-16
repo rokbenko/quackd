@@ -33,7 +33,7 @@ from roboglot.adapters.manifest import (
     SafetyAuthority,
     verb_spec,
 )
-from roboglot.transport.base import Ack, DuckState, DuckTransport, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, RobotTransport
 from roboglot.verbs.core import CORE
 from roboglot.verbs.registry import Precondition, Verb
 from roboglot_open_duck.verbs import (
@@ -232,7 +232,7 @@ class OpenDuckAdapter:
 
     name = "open_duck"
 
-    def __init__(self, transport: DuckTransport, *, robot_id: str | None = None) -> None:
+    def __init__(self, transport: RobotTransport, *, robot_id: str | None = None) -> None:
         self.transport = transport
         self.backend = transport.name
         self.robot_id = robot_id or DEFAULT_ID
@@ -278,7 +278,7 @@ class OpenDuckAdapter:
     async def close(self) -> None:
         await self.disconnect()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self.transport.get_state()
 
     async def get_frame(self) -> Image.Image | None:

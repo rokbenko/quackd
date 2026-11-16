@@ -407,7 +407,7 @@ def make_provider(
     *,
     llm_id: str | None = None,
     source: str = "--llm",
-    duck_name: str | None = None,
+    task_name: str | None = None,
     goal: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
@@ -440,7 +440,7 @@ def make_provider(
         # the LLM half is ignored. `--vision` it does take: it looks at nothing either way, and
         # it is the only pilot that can carry a picture through the whole loop with no key and no
         # vendor.
-        return FakeProvider.for_glot(duck_name or "", goal=goal, vision=vision)
+        return FakeProvider.for_glot(task_name or "", goal=goal, vision=vision)
     # No environment is read here: `resolve_llm` has already settled what was asked for, and
     # `source` says where it was asked, so a wrong id names the flag the reader has just typed
     # or the line in `robots.json` they had forgotten, rather than guessing between them.

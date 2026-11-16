@@ -158,16 +158,16 @@ class RunSlot:
                 self._stop(running, FOR_A_GOAL)
                 if running.thread is not None:
                     running.thread.join(timeout=15)
-            duck = glot_from_goal(
+            glot = glot_from_goal(
                 f"{text.strip()}\n\n{NEARBY_LINE}", self._safe_verbs(), memory=True
             )
             if max_steps is not None:
-                front_matter = duck.frontmatter
+                front_matter = glot.frontmatter
                 budgets = front_matter.budgets.model_copy(update={"max_steps": max_steps})
-                duck = duck.model_copy(
+                glot = glot.model_copy(
                     update={"frontmatter": front_matter.model_copy(update={"budgets": budgets})}
                 )
-            if not self._start("goal", duck, front, set()):
+            if not self._start("goal", glot, front, set()):
                 return "the goal did not start"
             return None
 
@@ -197,13 +197,13 @@ class RunSlot:
 
     # ── running ─────────────────────────────────────────────────────────────────────────
 
-    def _start(self, kind: str, duck: GlotFile, front: Any, peers: set[str]) -> bool:
+    def _start(self, kind: str, glot: GlotFile, front: Any, peers: set[str]) -> bool:
         try:
-            agent = self._make_loop(duck, kind, front)
+            agent = self._make_loop(glot, kind, front)
         except Exception as e:  # a run that cannot be built is said and the slot stays empty
             self._log(f"the {kind} could not start: {e}")
             return False
-        running = Running(kind, duck.name, self._clock(), set(peers), agent, front)
+        running = Running(kind, glot.name, self._clock(), set(peers), agent, front)
         thread = threading.Thread(
             target=self._run, args=(running,), name=f"onboard-{kind}", daemon=True
         )

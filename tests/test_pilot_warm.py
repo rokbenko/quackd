@@ -98,7 +98,7 @@ async def test_the_warm_up_runs_in_its_own_thread_while_the_robot_connects(
 
     body = _ConnectsBesideIt(began, release)
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     assert body.saw_it_begin, "the warm-up did not begin until the connect was over"
@@ -119,7 +119,7 @@ async def test_a_warm_up_that_fails_is_a_line_in_the_record_and_nothing_else(
 
     body = _ConnectsBesideIt(began, release)
     result = await run_glot(
-        RunConfig(duck=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
+        RunConfig(glot=hello_glot, provider=_Warms(warm), transport=body, runs_dir=tmp_path)
     )
     assert result.outcome == "success", result.reason
     warmed = _start(result.run_dir)["pilot_warm"]
@@ -140,7 +140,7 @@ async def test_the_run_never_waits_for_a_warm_up_still_going(
     try:
         result = await run_glot(
             RunConfig(
-                duck=hello_glot, provider=_Warms(warm), transport=MockTransport(), runs_dir=tmp_path
+                glot=hello_glot, provider=_Warms(warm), transport=MockTransport(), runs_dir=tmp_path
             )
         )
     finally:
@@ -154,7 +154,7 @@ async def test_a_pilot_with_no_warm_up_writes_the_record_it_always_did(
 ) -> None:
     result = await run_glot(
         RunConfig(
-            duck=hello_glot,
+            glot=hello_glot,
             provider=FakeProvider.for_glot(hello_glot.name),
             transport=MockTransport(),
             runs_dir=tmp_path,

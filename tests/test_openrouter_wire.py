@@ -44,14 +44,14 @@ def _run(
     *flags: str,
     llm: str = "openrouter",
     robot: str = "microduck:mock",
-    duck: str = "hello-world",
+    task: str = "hello-world",
 ) -> Any:
     return runner.invoke(
         app,
         [
             "--no-color",
             "run",
-            duck,
+            task,
             "--llm",
             llm,
             "--base-url",
@@ -320,14 +320,14 @@ def test_a_claude_row_is_asked_and_keeps_its_reasoning_past_eight_exchanges(
         .replace("max_minutes: 1", "max_minutes: 5")
     )
     assert longer != hello and "max_llm_calls: 20" in longer
-    duck = tmp_path / "long-quack.glot"
-    duck.write_text(longer, encoding="utf-8")
+    glot = tmp_path / "long-quack.glot"
+    glot.write_text(longer, encoding="utf-8")
     with FakeOpenRouter(script="long") as stand_in:
         result = _run(
             stand_in,
             tmp_path / "runs",
             llm="openrouter:anthropic/claude-opus-5.5",
-            duck=str(duck),
+            task=str(glot),
         )
     assert result.exit_code == 0, result.output
     posts = stand_in.posts()

@@ -44,7 +44,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image
 
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent, TransportError
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
 from roboglot_rosarm import upstream_api as up
 from roboglot_rosarm.bodies import ArmBody
 from roboglot_rosbridge.introspection import UrdfJoint, UrdfSummary, parse_urdf
@@ -802,7 +802,7 @@ class RosArmWs:
         }.get(self.body.robot_type, [])
         return [*names, *self._extra_assumptions]
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         now = self.clock.now()
         joints = self.readings_deg()
         with self._lock:
@@ -812,7 +812,7 @@ class RosArmWs:
             read = bool(self._driver.heard)
             ages = [now - at for at in self._read_at.values()]
         stale = self.staleness()
-        return DuckState(
+        return RobotState(
             t=now,
             policy="moving" if goal is not None and goal.running else "idle",
             posture="unknown",

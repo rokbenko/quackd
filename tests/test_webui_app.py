@@ -20,7 +20,7 @@ pytest.importorskip("streamlit")
 from streamlit.testing.v1 import AppTest
 
 from roboglot.webui import jobs, launch, state, widgets
-from tests.test_front_run import _gated_duck
+from tests.test_front_run import _gated_glot
 
 APP = str(Path(__file__).resolve().parents[1] / "roboglot" / "webui" / "app.py")
 SCREENS = ("setup", "goal", "chat", "history", "robots", "memory", "policies")
@@ -329,11 +329,11 @@ def test_a_chat_starts_takes_a_line_and_ends_in_order() -> None:
 def test_the_floating_stop_stops_a_run_waiting_on_a_question(page: Path) -> None:
     state.setup().set("_task", "file")
     state.setup().set("_file_from", "bundled")
-    duck = _gated_duck(page)
+    glot = _gated_glot(page)
     table = jobs.table(page)
     job = table.start(
         "goal",
-        ["run", str(duck), "--robot", "microduck:mock", "--llm", "fake"],
+        ["run", str(glot), "--robot", "microduck:mock", "--llm", "fake"],
         robot="microduck:mock",
     )
     at = _screen("goal")

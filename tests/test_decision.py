@@ -828,11 +828,11 @@ async def _lookout_run(tmp_path: Any, **over: Any) -> Any:
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = _lookout()
+    glot = _lookout()
     return await run_glot(
         RunConfig(
-            duck=duck,
-            provider=FakeProvider.for_glot(duck.name),
+            glot=glot,
+            provider=FakeProvider.for_glot(glot.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             **over,
@@ -929,12 +929,12 @@ async def test_shadow_asks_the_stepper_beside_the_llms_call_not_before_it(
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = _lookout()
-    pilot = _Counting(FakeProvider.for_glot(duck.name))
+    glot = _lookout()
+    pilot = _Counting(FakeProvider.for_glot(glot.name))
     llm = _Overlaps({"answers": _answered()}, pilot)
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=pilot,  # type: ignore[arg-type]
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -986,7 +986,7 @@ async def test_a_shadow_request_the_turn_ends_without_is_cut_off_and_on_the_reco
     with pytest.raises(ProviderError):
         await run_glot(
             RunConfig(
-                duck=_lookout(),
+                glot=_lookout(),
                 provider=_Failing(),  # type: ignore[arg-type]
                 transport=LeRobotAdapter(LeRobotMock()),
                 runs_dir=runs,
@@ -1028,11 +1028,11 @@ async def test_a_stop_while_the_shadow_request_is_out_keeps_the_answer_the_llm_g
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = _lookout()
-    pilot = _AnswersAsTheStopLands(FakeProvider.for_glot(duck.name))
+    glot = _lookout()
+    pilot = _AnswersAsTheStopLands(FakeProvider.for_glot(glot.name))
     loop = AgentLoop(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=pilot,  # type: ignore[arg-type]
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -1065,11 +1065,11 @@ def _shadow_loop(tmp_path: Any, refused: str) -> Any:
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = _lookout()
+    glot = _lookout()
     loop = AgentLoop(
         RunConfig(
-            duck=duck,
-            provider=FakeProvider.for_glot(duck.name),
+            glot=glot,
+            provider=FakeProvider.for_glot(glot.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="shadow",
@@ -1151,11 +1151,11 @@ async def _on_run(tmp_path: Any, llm: Any, **over: Any) -> Any:
     from roboglot_lerobot import LeRobotAdapter
     from roboglot_lerobot.mock import LeRobotMock
 
-    duck = over.pop("duck", None) or _lookout()
-    recorder = _Recorder(FakeProvider.for_glot(duck.name))
+    glot = over.pop("glot", None) or _lookout()
+    recorder = _Recorder(FakeProvider.for_glot(glot.name))
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=recorder,  # type: ignore[arg-type]
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -1279,14 +1279,14 @@ async def test_a_wave_like_goal_never_gets_a_pose_out_of_the_stepper(tmp_path: A
     in the run came from an LLM call."""
     from roboglot.glotfile.parser import glot_from_goal
 
-    duck = glot_from_goal(
+    glot = glot_from_goal(
         "Wave to the camera with an extended arm",
         ["report_state", "stop", "gripper", "place", "move_joints"],
     )
     result, _rec = await _on_run(
         tmp_path,
         _fake(answers=fake_systemone.turn("move_joints", 0.99)),
-        duck=duck,
+        glot=glot,
     )
     asked = _records(result, "decision")
     assert asked, "the stepper was never asked"
@@ -1329,7 +1329,7 @@ async def test_the_verdict_gate_never_refuses_a_verb_the_stepper_chose(tmp_path:
             ],
             answers=fake_systemone.turn(ESCALATE, 0.99, done=0.9),
         ),
-        duck=load_glot(str(glot_path)),
+        glot=load_glot(str(glot_path)),
     )
     refused = [
         r for r in _records(result, "gate") if r.get("gate") == "verdict" and r["outcome"] != "ok"
@@ -2488,11 +2488,11 @@ async def test_a_press_while_the_decision_llm_is_thinking_ends_the_run_without_w
             asked.set()
             await asyncio.sleep(30)
 
-    duck = _lookout()
+    glot = _lookout()
     loop = AgentLoop(
         RunConfig(
-            duck=duck,
-            provider=FakeProvider.for_glot(duck.name),
+            glot=glot,
+            provider=FakeProvider.for_glot(glot.name),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
             decision="on",

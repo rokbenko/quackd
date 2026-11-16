@@ -186,7 +186,7 @@ class RobotSpec:
     adapter: str
     backend: str
     name: str | None = None
-    """The member or fleet name (`duck=microduck:mock`), which becomes the manifest id."""
+    """The member or team name (`duck=microduck:mock`), which becomes the manifest id."""
     robot_type: str | None = None
     """Which of its adapter's robot types this is (`AdapterInfo.robot_types`), when a registered
     robot said (`--robot-type`), and None for the adapter's default. Not part of `key`: an
@@ -198,7 +198,7 @@ class RobotSpec:
 
     @property
     def robot_id(self) -> str | None:
-        """The manifest id to ask for: the fleet name, or the adapter's own default."""
+        """The manifest id to ask for: the team name, or the adapter's own default."""
         return self.name
 
 
@@ -279,12 +279,12 @@ def default_spec() -> RobotSpec:
     )
 
 
-def resolve_robot(robot: str | None, *, duck_default: str | None = None) -> RobotSpec:
+def resolve_robot(robot: str | None, *, glot_default: str | None = None) -> RobotSpec:
     """`--robot` wins; without it, the task file's own `robots:` default, then whatever is here."""
     if robot:
         return parse_robot_spec(robot)
-    if duck_default:
-        return parse_robot_spec(duck_default)
+    if glot_default:
+        return parse_robot_spec(glot_default)
     return default_spec()
 
 

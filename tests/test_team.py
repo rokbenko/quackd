@@ -74,13 +74,13 @@ def test_a_team_needs_glot_1() -> None:
     assert parse_glot_text(text.format(v=1)).frontmatter.team is not None
 
 
-def test_team_block_parses_in_a_duck_and_is_optional() -> None:
-    duck = parse_glot_text(
+def test_team_block_parses_in_a_task_file_and_is_optional() -> None:
+    glot = parse_glot_text(
         "---\nglot: 1\nname: t\ndescription: d\nverbs:\n  allow: [stop]\nsuccess: [x]\n"
         "team:\n  members: 2\n---\n# T\nx\n"
     )
-    assert duck.frontmatter.team is not None
-    assert duck.frontmatter.team.member_names == ["duck-0", "duck-1"]
+    assert glot.frontmatter.team is not None
+    assert glot.frontmatter.team.member_names == ["duck-0", "duck-1"]
     solo = parse_glot_text(
         "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [stop]\n"
         "success: [x]\n---\n# T\nx\n"

@@ -45,7 +45,7 @@ from roboglot.safety import (
     allow_all,
     deny_all,
 )
-from roboglot.transport.base import DuckState, HeartbeatError, Intent, TransportError, primary_of
+from roboglot.transport.base import HeartbeatError, Intent, RobotState, TransportError, primary_of
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbResult, registry_from_manifest
 from roboglot_lerobot import (
@@ -155,7 +155,7 @@ ARM_VERBS = {
     "manipulate",
 }
 DUCK_ONLY = {"move", "walk", "go_to", "walk_to", "search_scan", "say", "gaze", "kick", "sit"}
-ARM_DUCK = parse_glot_text(
+ARM_GLOT = parse_glot_text(
     "---\nglot: 1\nname: arm\ndescription: d\nrequires: [move_joints, gripper]\nverbs:\n"
     "  allow: [observe, report_state, stop, move_joints, gripper, place, pick]\n"
     "  confirm: [pick]\nsuccess: [x]\n---\n# Task\nx\n"
@@ -256,7 +256,7 @@ async def test_mock_arm_runs_every_verb_through_the_executor() -> None:
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
-        contract=ARM_DUCK.frontmatter,
+        contract=ARM_GLOT.frontmatter,
         detector=ColorBlobDetector(),
         confirm=allow_all,
         manifest=manifest,
@@ -2109,7 +2109,7 @@ async def test_pick_looks_once_more_before_calling_a_finished_policy_a_failed_gr
         policy_available = True
 
         def __init__(self) -> None:
-            super().__init__(states=[DuckState(policy="idle", posture="unknown")])
+            super().__init__(states=[RobotState(policy="idle", posture="unknown")])
             self.looks = 0
             self.watching = False
 
@@ -2149,7 +2149,7 @@ class RunsItsOwnSegment(MockTransport):
     policy_available = True
 
     def __init__(self, ended_by: str | None = None, ends_at: float = 0.0) -> None:
-        super().__init__(states=[DuckState(policy="idle", posture="unknown")])
+        super().__init__(states=[RobotState(policy="idle", posture="unknown")])
         self.ended_by = ended_by
         self.ends_at = ends_at
         self.policy = "idle"
@@ -2287,20 +2287,20 @@ async def test_a_policy_that_raises_is_a_failed_pick_and_says_so() -> None:
     assert "no accelerated backend" in failed.summary and "RuntimeError" in failed.summary
 
 
-async def test_the_lookout_duck_validates_against_the_arm_and_moves_nothing() -> None:
+async def test_the_lookout_task_file_validates_against_the_arm_and_moves_nothing() -> None:
     """`lerobot:real` has no camera configured, so it has no `observe`: the bring-up task
     has to ask for something the arm it is pointed at actually provides."""
-    duck = load_glot("lerobot-lookout")
+    glot = load_glot("lerobot-lookout")
     for backend in ("mock", "real"):
         manifest = describe(parse_robot_spec(f"lerobot:{backend}"))
-        assert validate_glot(duck, [manifest]) == [], backend
+        assert validate_glot(glot, [manifest]) == [], backend
     mock = LeRobotMock()
     adapter = LeRobotAdapter(mock)
     manifest = await adapter.connect()
     ex = Executor(
         registry_from_manifest(manifest, adapter),
         adapter,
-        contract=duck.frontmatter,
+        contract=glot.frontmatter,
         manifest=manifest,
     )
     assert (await ex.run_verb("report_state")).ok
@@ -4775,7 +4775,7 @@ def _by_hand_run(transport: LeRobotReal, hands: _Hands, runs: Any) -> Any:
 
     declare = ToolCall(name="declare_success", arguments={"reason": "up"})
     return RunConfig(
-        duck=ARM_DUCK,
+        glot=ARM_GLOT,
         provider=FakeProvider(script=[declare]),
         transport=LeRobotAdapter(transport),
         hand_off=hands,
@@ -7577,7 +7577,7 @@ async def test_a_run_whose_kill_switch_was_pressed_during_a_failing_connect_conn
     transport.connect_pause_s = 0.0
     loop = AgentLoop(
         RunConfig(
-            duck=ARM_DUCK,
+            glot=ARM_GLOT,
             provider=FakeProvider(script=[]),
             transport=LeRobotAdapter(transport),
             runs_dir=tmp_path,

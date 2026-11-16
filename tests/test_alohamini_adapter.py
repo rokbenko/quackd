@@ -86,7 +86,7 @@ ALOHAMINI_VERBS = {
 #: Verbs other robots have and this body has not. No speaker, no head, no legs.
 ABSENT = {"say", "quack", "gaze", "express", "play_sound", "wake_up", "sit", "stand", "kick"}
 
-DUCK = load_glot("alohamini-lookout")
+GLOT = load_glot("alohamini-lookout")
 
 
 def _executor(adapter: AlohaMiniAdapter, manifest: object) -> Executor:
@@ -225,8 +225,8 @@ def test_joint_goals_are_normalised_and_not_degrees() -> None:
 def test_an_absent_verb_is_absent_everywhere() -> None:
     m = alohamini_manifest("mock", camera=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
-    allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
+    allow = GLOT.frontmatter.verbs.allow
+    prompt = build_system_prompt(GLOT, [registry.view(n) for n in allow], manifest=m)
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
     for verb in ABSENT:
         with pytest.raises(VerbNotFound):
@@ -236,8 +236,8 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_the_shipped_lookout_task_validates_and_moves_nothing() -> None:
-    assert validate_glot(DUCK, [alohamini_manifest("mock", camera=True)]) == []
-    allowed = set(DUCK.frontmatter.verbs.allow)
+    assert validate_glot(GLOT, [alohamini_manifest("mock", camera=True)]) == []
+    allowed = set(GLOT.frontmatter.verbs.allow)
     assert not (allowed & {"move", "lift", "move_joints", "go_to", "approach_and", "search_scan"})
 
 

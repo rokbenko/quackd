@@ -1,6 +1,6 @@
 """One interface for "a robot", whatever its body.
 
-`RobotAdapter` is a superset of `DuckTransport`: everything 0.3 took a transport for
+`RobotAdapter` is a superset of `RobotTransport`: everything 0.3 took a transport for
 (the executor, the loop, the heartbeat, the MCP session, a team member) accepts an
 adapter unchanged. What an adapter adds is self-description: `connect()` returns a
 `RobotManifest`, `preconditions()` names the checks its verbs need, `implementations()`
@@ -21,7 +21,7 @@ from PIL import Image
 from roboglot.adapters.manifest import Health, RobotManifest
 from roboglot.command import readable_url, redacted_url
 from roboglot.glotfile.schema import POLICY_VERBS
-from roboglot.transport.base import Ack, DuckState, Intent, TransportError
+from roboglot.transport.base import Ack, Intent, RobotState, TransportError
 from roboglot.verbs.registry import Precondition, Verb
 
 
@@ -541,10 +541,10 @@ class RobotAdapter(Protocol):
     async def disconnect(self) -> None: ...
 
     async def close(self) -> None:
-        """Same as `disconnect()`; kept so an adapter satisfies `DuckTransport`."""
+        """Same as `disconnect()`; kept so an adapter satisfies `RobotTransport`."""
         ...
 
-    async def get_state(self) -> DuckState: ...
+    async def get_state(self) -> RobotState: ...
 
     async def get_frame(self) -> Image.Image | None:
         """The primary camera's newest picture, or None. A body with several cameras also
@@ -583,7 +583,7 @@ class RobotAdapter(Protocol):
     async def sleep(self, seconds: float) -> None: ...
 
     def preconditions(self) -> dict[str, Precondition]:
-        """Condition name -> predicate over `DuckState` (a reason string, or None)."""
+        """Condition name -> predicate over `RobotState` (a reason string, or None)."""
         ...
 
     def implementations(self) -> dict[str, Verb]:

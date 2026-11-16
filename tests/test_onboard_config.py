@@ -176,10 +176,10 @@ def test_a_tracked_body_is_shown_to_a_pilot_as_wheeled_and_signed_as_tracked() -
 
 
 def test_the_meeting_task_moves_nothing_and_carries_the_owners_words() -> None:
-    duck = meeting_glot("Say hello and that you deliver parcels.")
-    assert duck.frontmatter.name == NAME
-    assert duck.frontmatter.verbs.allow == ["report_state", "stop"]
-    assert "deliver parcels" in duck.body
+    glot = meeting_glot("Say hello and that you deliver parcels.")
+    assert glot.frontmatter.name == NAME
+    assert glot.frontmatter.verbs.allow == ["report_state", "stop"]
+    assert "deliver parcels" in glot.body
     assert NAME in STRATEGIES, "the scripted pilot can play a meeting offline"
 
 

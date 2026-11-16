@@ -28,7 +28,7 @@ from roboglot.verbs.core import (
 from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbRegistry, VerbResult
 from roboglot_open_duck.mock import OpenDuckMock
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     """---
 glot: 0
 name: t
@@ -49,7 +49,7 @@ def _executor(registry: VerbRegistry, facing: float) -> tuple[Executor, OpenDuck
     `facing` radians from the ball's side of the room to begin with."""
     body = OpenDuckMock()
     body.theta = facing
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=ColorBlobDetector())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=ColorBlobDetector())
     return ex, body
 
 
@@ -82,7 +82,7 @@ async def test_walk_to_reaches_the_ball(registry: VerbRegistry) -> None:
 
 async def test_walk_to_without_detector_explains(registry: VerbRegistry) -> None:
     transport = MockTransport()
-    ex = Executor(registry, transport, contract=DUCK.frontmatter, detector=None)
+    ex = Executor(registry, transport, contract=GLOT.frontmatter, detector=None)
     result = await ex.run_verb("walk_to")
     assert not result.ok and "detector" in result.summary
 
@@ -127,7 +127,7 @@ async def test_a_steering_verb_lets_the_head_settle_before_its_first_frame(
     centre. They wait `head_fade_s` first, with nothing sent that moves the body, and a body
     whose head moves only when asked waits for nothing, as before."""
     body = _Glancing(head_fade_s=fade_s)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_BallUnderfoot())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_BallUnderfoot())
     result = await ex.run_verb(verb, {"target": "ball"})
     assert result.ok, result.summary
     assert body.sent_by_the_first_frame == ["look"]
@@ -220,7 +220,7 @@ async def test_the_first_frame_acted_on_was_taken_after_the_head_settled(
     is one taken once the wait had ended."""
     fade_s = 1.5
     body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_BallUnderfoot())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_BallUnderfoot())
     result = await ex.run_verb(verb, {"target": "ball"})
     assert result.ok, result.summary
     first = body.handed_out[0].info["taken_at"]
@@ -239,7 +239,7 @@ async def test_search_scan_looks_at_each_heading_from_that_heading(
     the heading the turns add up to."""
     step = 45.0
     body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": step, "max_steps": 4})
     assert not result.ok and "not found" in result.summary
     seen = [round(frame.info["yaw_deg"], 1) for frame in body.handed_out]
@@ -256,7 +256,7 @@ async def test_search_scan_claims_the_head_again_after_each_turn_on_a_body_that_
     glances on its own the scan centres it again after every turn, before anything else goes
     out. A body whose head moves only when asked is sent what it always was."""
     body = _Kept(period=0.5, fetch=0.5, head_fade_s=fade_s)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())
     await ex.run_verb("search_scan", {"target": "ball", "step_deg": 45.0, "max_steps": 3})
     kinds = [intent.kind for intent in body.intents]
     assert kinds[0] == "look"
@@ -333,7 +333,7 @@ async def _go_to_twists(
 ) -> list[dict[str, float]]:
     """The twists `go_to` sends toward a ball a little off to the left, on `_KeptBall`."""
     body = _KeptBall(period=period, fetch=fetch, ball_deg=12.0, ball_m=1.5, says_period=says_period)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
     result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
     assert result.ok, result.summary
     return [dict(intent.params) for intent in body.intents if intent.kind == "move"]
@@ -351,7 +351,7 @@ async def test_go_to_on_a_camera_too_slow_for_its_law_turns_no_further_than_it_m
     frame taken once the turn had settled, so the ball never leaves the picture and is reached
     dead ahead."""
     body = _KeptBall(period=0.5, fetch=0.6, ball_deg=12.0, ball_m=1.5)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
     result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
     assert result.ok, result.summary
     seen = [abs(frame.info["bearing"]) for frame in body.handed_out]
@@ -387,7 +387,7 @@ async def test_go_to_looks_for_a_lost_target_as_far_whether_or_not_it_measures_f
     that many ticks, so the duck turns as far before it gives up, give or take one look's turn,
     where counting looks would have spun it round more than once."""
     body = _KeptBall(period=0.5, fetch=0.5, ball_deg=-90.0, ball_m=1.5, says_period=says_period)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
     result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
     assert not result.ok and "lost the ball" in result.summary, result.summary
     as_far = math.degrees(LOST_TICKS * TICK_S * LOST_WZ)
@@ -435,7 +435,7 @@ async def test_search_scan_finds_a_target_where_its_old_step_left_a_wedge_unseen
     whole turn of the old step never looked into. The step comes from the lens the detector
     measures through now, so one view overlaps the next and the scan finds the ball."""
     body = _KeptBall(period=0.5, fetch=0.5, ball_deg=22.0, ball_m=1.5)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_SeesTheBall(NARROW_LENS_DEG))
     result = await ex.run_verb("search_scan", {"target": "ball"})
     assert result.ok, result.summary
 
@@ -493,7 +493,7 @@ async def test_go_to_stops_at_the_first_twist_the_body_refuses(registry: VerbReg
     steered on regardless until the verb's own timeout, which said only that it had timed out.
     It stops at the first twist refused now, and says why."""
     body = _Refusing(lambda b: b.taken >= 2)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_BallAway())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_BallAway())
     result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
     assert not result.ok
     assert result.summary == f"go_to: a twist was refused, so the body stopped: {REFUSED}"
@@ -509,7 +509,7 @@ async def test_search_scan_says_how_far_it_turned_when_a_turn_is_refused(
     not in it, of a body that never turned, which a pilot reads as the room being empty. It
     stops at the turn that was refused, and counts only the turns before it."""
     body = _Refusing(lambda b: b.stops >= 1)  # the first turn ends on a stop; the second is refused
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert not result.ok
     said = "search_scan: a twist was refused, so the scan stopped after 1 of 4 turns (90°): "
@@ -564,7 +564,7 @@ class _BallHere:
 async def _braked(
     registry: VerbRegistry, body: _Braked, detector: object, verb: str, params: dict[str, object]
 ) -> tuple[VerbResult, Executor]:
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=detector)  # type: ignore[arg-type]
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=detector)  # type: ignore[arg-type]
     body.executor = ex
     result = await ex.run_verb(verb, params)
     assert body.brake is not None, "the stop was never asked for"
@@ -666,7 +666,7 @@ async def test_search_scan_counts_the_turns_the_body_says_it_took_when_a_turn_is
     says which twists it took, the turns counted are the ones it confirmed, and a body that
     confirmed none is said to have confirmed none, where the turns used to be counted as sent."""
     body = _Confirming(lambda b: b.stops >= 2, takes)  # two turns go out; the third is refused
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert not result.ok
     assert result.summary == f"search_scan: a twist was refused, so {said}: {REFUSED}"
@@ -698,7 +698,7 @@ async def test_search_scan_says_not_found_only_of_the_turns_the_body_says_it_too
     being in the room. On a body whose own state says which twists it took, a sweep it did not
     confirm is not reported as one."""
     body = _Confirming(lambda b: False, takes)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert not result.ok and result.summary == said, result.summary
 
@@ -711,7 +711,7 @@ async def test_a_scan_names_the_one_turn_its_body_did_not_confirm(
     it read "confirmed none of the 1 turn sent to it". It names the turn now, whether a refused
     twist stopped the scan or the scan ran out of turns."""
     stopped = _Confirming(lambda b: b.stops >= 1, takes=0)  # one turn goes out; the next is refused
-    ex = Executor(registry, stopped, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, stopped, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert result.summary == (
         "search_scan: a twist was refused, so the scan stopped, and the robot's own state did not "
@@ -719,7 +719,7 @@ async def test_a_scan_names_the_one_turn_its_body_did_not_confirm(
     ), result.summary
     assert result.data["steps"] == 0
     looked = _Confirming(lambda b: False, takes=0)
-    ex = Executor(registry, looked, contract=DUCK.frontmatter, detector=_Empty())
+    ex = Executor(registry, looked, contract=GLOT.frontmatter, detector=_Empty())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 1})
     assert result.summary == (
         "ball not found, but the robot's own state did not confirm the turn sent to it, so it may "
@@ -746,7 +746,7 @@ async def test_search_scan_says_which_turns_before_a_find_the_body_took(
             return [Detection(label="ball", cx=0.5, cy=0.5, area=0.01, bearing_deg=0.0)]
 
     body = _Confirming(lambda b: False, takes=1)
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_ThirdLook())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_ThirdLook())
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert result.ok and result.summary.endswith(
         "(after 2 turn steps, of which the robot's own state confirmed 1)"
@@ -772,7 +772,7 @@ async def test_a_twist_refused_while_go_to_waits_for_a_frame_ends_it(
         return Image.new("RGB", (64, 48))
 
     body.get_frame = get_frame  # type: ignore[method-assign]
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_BallAway())
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_BallAway())
     async with asyncio.timeout(30):  # only ends a test whose wait never ends
         result = await ex.run_verb("walk_to", {"target": "ball"})
     assert not result.ok
@@ -809,7 +809,7 @@ async def test_search_scan_sends_no_look_after_a_stop_beside_it(registry: VerbRe
     """The look that centres the head after each turn went out unchecked, after the stop asked
     for while that turn ended had been counted."""
     body = _GlancingBraked()
-    ex = Executor(registry, body, contract=DUCK.frontmatter, detector=_Empty())  # type: ignore[arg-type]
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_Empty())  # type: ignore[arg-type]
     body.executor = ex
     result = await ex.run_verb("search_scan", {"target": "ball", "step_deg": 90, "max_steps": 4})
     assert body.brake is not None

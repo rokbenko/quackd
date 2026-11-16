@@ -18,7 +18,7 @@ from typing import Any
 from roboglot.adapters.described import DescribedAdapter as _DescribedAdapter
 from roboglot.adapters.manifest import Datasheet, Figure, Health, RobotManifest, verb_spec
 from roboglot.onboard.config import RobotFile
-from roboglot.transport.base import DuckState
+from roboglot.transport.base import RobotState
 from roboglot.verbs.core import CORE
 from roboglot.verbs.registry import Verb
 
@@ -74,7 +74,7 @@ class DescribedAdapter(_DescribedAdapter):
     it reports that, its health is its own, and its `stop` is the core's, as it always was."""
 
     def __init__(self, file: RobotFile) -> None:
-        standing = DuckState(policy="described", posture="standing")
+        standing = RobotState(policy="described", posture="standing")
         super().__init__(described_manifest(file), state=standing)
         self._file = file
 

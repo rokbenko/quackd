@@ -34,10 +34,10 @@ from PIL import Image
 
 from roboglot.transport.base import (
     Ack,
-    DuckState,
     HeartbeatError,
     Intent,
     Posture,
+    RobotState,
     TransportError,
     camera_url_frame,
 )
@@ -426,7 +426,7 @@ class OpenDuckBridge:
             "error": self.camera_error,
         }
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = self._last_state
         stale: str | None = None
         if state is None:
@@ -465,7 +465,7 @@ class OpenDuckBridge:
         # observation, unchanged after the duck had walked across a room. None is the honest
         # answer and `summary()` omits it, which is what the Microduck transport already does.
         pose = state.get("pose") or {}
-        return DuckState(
+        return RobotState(
             t=self.now(),
             x=_maybe_float(pose.get("x")),
             y=_maybe_float(pose.get("y")),

@@ -252,22 +252,22 @@ def test_the_example_in_the_spec_validates_plainly_and_against_the_mock_arm(
         f"{DEFAULT_POLICY_TOTAL_S:g} |",
     ):
         assert said in table, f"docs/reference/glot-spec.md's policy table no longer says {said!r}"
-    duck = tmp_path / "stack-blocks.glot"
-    duck.write_text(found.group(1), encoding="utf-8")
+    glot = tmp_path / "stack-blocks.glot"
+    glot.write_text(found.group(1), encoding="utf-8")
     fm = parse_glot_text(found.group(1)).frontmatter
     assert fm.glot == 3 and fm.policy is not None and fm.policy.instructions
     assert "```console\n$ roboglot validate stack-blocks.glot\n" in section, "the plain form"
-    plain = CliRunner().invoke(app, ["validate", str(duck)])
+    plain = CliRunner().invoke(app, ["validate", str(glot)])
     assert plain.exit_code == 0, plain.output
     assert "1 file valid" in plain.output and "1 file valid" in section
-    result = CliRunner().invoke(app, ["validate", str(duck), "--robot", "lerobot:mock"])
+    result = CliRunner().invoke(app, ["validate", str(glot), "--robot", "lerobot:mock"])
     assert result.exit_code == 0, result.output
     arm = factory.parse_robot_spec("lerobot:real")
     served = factory.describe(arm, policy=PolicyChoice("http://127.0.0.1"))
     provided = set(factory.registry_for(arm, served).names())
     missing = sorted(set(fm.verbs.allow) - provided)
     assert not missing, f"lerobot:real with a policy does not provide {missing}"
-    unserved = CliRunner().invoke(app, ["validate", str(duck), "--robot", "lerobot:real"])
+    unserved = CliRunner().invoke(app, ["validate", str(glot), "--robot", "lerobot:real"])
     assert unserved.exit_code == 1, unserved.output
     said = " ".join(unserved.output.split())
     assert f"requires {POLICY_VERB}" in said and "roboglot policy serve" in said, said
@@ -706,7 +706,7 @@ async def test_a_file_the_bodys_verb_cannot_be_held_to_leaves_the_session_as_it_
         )
         refused = session.load(str(listed))
         assert not refused["ok"] and "takes no instruction" in refused["error"], refused
-        assert session.duck is not None and session.duck.name == "first"
+        assert session.glot is not None and session.glot.name == "first"
         assert session.executor.contract is not None and session.executor.contract.name == "first"
         assert session.executor.verdict is verdict is not None
         assert session.executor.budget is budget
@@ -728,7 +728,7 @@ async def test_a_file_the_bodys_verb_cannot_be_held_to_leaves_the_session_as_it_
 
         monkeypatch.setattr(adapter, "set_segment_s", refuses)
         assert session.load(str(longer)) == {"ok": False, "error": said}
-        assert session.duck is not None and session.duck.name == "first"
+        assert session.glot is not None and session.glot.name == "first"
         assert session.executor.contract is not None and session.executor.contract.name == "first"
         assert session.executor.verdict is verdict and session.executor.budget is budget
         assert session.registry.get(POLICY_VERB) is verb
@@ -800,7 +800,7 @@ class _Seen:
 async def _run(tmp_path: Path, mode: str) -> tuple[Any, _Seen]:
     from roboglot.agent.loop import RunConfig, run_glot
 
-    duck = parse_glot_text(_v3(name=f"stack-{mode}"))
+    glot = parse_glot_text(_v3(name=f"stack-{mode}"))
     pilot = _Seen(
         [
             ToolCall(name=POLICY_VERB, arguments={"instruction": INSTRUCTIONS[0]}),
@@ -811,7 +811,7 @@ async def _run(tmp_path: Path, mode: str) -> tuple[Any, _Seen]:
     stub = _fake(answers=fake_systemone.turn(_said(INSTRUCTIONS[0])[0], 0.99))
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=pilot,  # type: ignore[arg-type]
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,

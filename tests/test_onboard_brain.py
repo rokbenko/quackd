@@ -29,8 +29,8 @@ class Executor:
 class Run:
     """A run that waits until its abort is set, as a stopped run does, and says why it ended."""
 
-    def __init__(self, duck: Any, kind: str) -> None:
-        self.duck, self.kind = duck, kind
+    def __init__(self, glot: Any, kind: str) -> None:
+        self.glot, self.kind = glot, kind
         self.executor = Executor()
         self.stop_reason: str | None = None
         self.run_dir = Path(".")
@@ -68,8 +68,8 @@ def robot_file(**brain_and_meeting: Any) -> config.RobotFile:
 def slot(file: config.RobotFile | None = None, clock: Clock | None = None) -> RunSlot:
     built: list[Run] = []
 
-    def make(duck: Any, kind: str, front: Any) -> Run:
-        run = Run(duck, kind)
+    def make(glot: Any, kind: str, front: Any) -> Run:
+        run = Run(glot, kind)
         built.append(run)
         return run
 
@@ -218,7 +218,7 @@ def test_a_stop_takes_back_the_question_a_goal_waits_on() -> None:
     class Front:
         questions = Questions()
 
-    slot = RunSlot(robot_file(), lambda duck, kind, front: Run(duck, kind), safe_verbs=list)
+    slot = RunSlot(robot_file(), lambda glot, kind, front: Run(glot, kind), safe_verbs=list)
     hold = threading.Event()
     thread = threading.Thread(target=hold.wait, daemon=True)
     thread.start()

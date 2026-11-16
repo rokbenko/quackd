@@ -18,7 +18,7 @@ from mcp.client.session import ClientSession
 from mcp.shared.memory import create_client_server_memory_streams
 from PIL import Image
 
-from roboglot.mcp_server import DuckSession, build_server
+from roboglot.mcp_server import RobotSession, build_server
 from roboglot.transport.base import DEFAULT_CAMERA_NAME, CameraFrame, TransportError
 from roboglot.transport.mock import MockTransport
 from roboglot_lerobot import LeRobotAdapter
@@ -27,7 +27,7 @@ from roboglot_lerobot.verbs import TOL_DEG
 from roboglot_open_duck.mock import OpenDuckMock
 
 TOOLS = {
-    # 0.4: six fleet tools
+    # 0.4: six team tools
     "robot_list",
     "robot_list_verbs",
     "robot_run_verb",
@@ -45,7 +45,7 @@ TOOLS = {
 @contextlib.asynccontextmanager
 async def connected(
     transport: Any = None, **kwargs: Any
-) -> AsyncIterator[tuple[ClientSession, DuckSession, Any]]:
+) -> AsyncIterator[tuple[ClientSession, RobotSession, Any]]:
     """The server over one robot, driven by a real client. `transport` defaults to a bare mock,
     which says nothing of itself and accepts every intent; a test that needs a body which moves,
     or misbehaves on purpose, passes its own."""
@@ -136,7 +136,7 @@ async def test_tools_and_basic_calls() -> None:
         assert session.calls == 5
 
 
-async def test_contract_is_enforced_after_loading_a_duck() -> None:
+async def test_contract_is_enforced_after_loading_a_task_file() -> None:
     async with connected() as (client, _session, _transport):
         await _cleared(client)
         assert _data(await client.call_tool("robot_run_verb", {"verb": "kick"}))["ok"] is True
@@ -158,7 +158,7 @@ async def test_contract_is_enforced_after_loading_a_duck() -> None:
         assert bad["ok"] is False
 
 
-async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
+async def test_reloading_a_task_file_does_not_refund_the_budget() -> None:
     # regression: `robot_load_glotfile` is a tool the LLM holds, and adopting a contract
     # built a fresh Budget, so a pilot out of steps could load a wider duck and carry on
     async with connected() as (client, session, _transport):
@@ -179,7 +179,7 @@ async def test_reloading_a_duck_does_not_refund_the_budget() -> None:
         assert carried.limits.max_steps > 5  # a real widening, not a budget that happens to match
 
 
-async def test_reloading_a_duck_keeps_the_failure_tally() -> None:
+async def test_reloading_a_task_file_keeps_the_failure_tally() -> None:
     # the same escape by another door: abort_when counts consecutive failures, and adopting
     # a contract used to clear them, so a reload reset the count as well as the budget
     async with connected() as (client, session, _transport):
@@ -189,12 +189,12 @@ async def test_reloading_a_duck_keeps_the_failure_tally() -> None:
         assert session.executor.consecutive_failures == {"walk": 2}
 
 
-async def test_load_glotfile_refuses_team_ducks() -> None:
+async def test_load_glotfile_refuses_team_task_files() -> None:
     # regression: only serve() guarded team tasks; the load tool adopted them silently
     async with connected() as (client, session, _transport):
         res = _data(await client.call_tool("robot_load_glotfile", {"path": "team-hello"}))
         assert res["ok"] is False and "team" in res["error"]
-        assert session.duck is None  # nothing was adopted
+        assert session.glot is None  # nothing was adopted
 
 
 async def test_dry_run_sends_nothing() -> None:
@@ -228,7 +228,7 @@ async def test_confirm_gated_verbs_need_yes() -> None:
 
 
 @pytest.mark.parametrize("path", ["hello-world", "find-and-kick"])
-async def test_bundled_ducks_load_by_name(path: str) -> None:
+async def test_bundled_task_files_load_by_name(path: str) -> None:
     async with connected() as (client, _session, _transport):
         assert _data(await client.call_tool("robot_load_glotfile", {"path": path}))["ok"]
 
@@ -653,7 +653,7 @@ async def test_an_llm_cannot_answer_for_the_human() -> None:
 
 async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> None:
     """The loop's check, on the other surface. `robot_assess_task` matched `needs` against
-    every OTHER robot in the fleet to fill in `could`, and recorded a `feasible` against this
+    every OTHER robot in the team to fill in `could`, and recorded a `feasible` against this
     robot's own sheet without ever looking at it, so over MCP a body still moved on a need
     nobody published. The default body here is a bare mock with no manifest, which is
     structurally why nothing at this level had ever had a datasheet in hand."""

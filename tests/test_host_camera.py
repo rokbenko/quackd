@@ -145,13 +145,13 @@ def test_a_camera_task_on_a_blind_body_passes_validation_with_the_board(hostd: F
     would be refused for a camera the run will have. With the board's camera applied first it
     is not."""
     _client, hello = _board(hostd)
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe, go_to]\n"
         "verbs:\n  allow: [observe, go_to, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     blind = describe(parse_robot_spec("xlerobot:zmq"))
-    assert validate_glot(duck, [blind]), "refused without the board"
-    assert validate_glot(duck, [with_host_camera(blind, hello)]) == []
+    assert validate_glot(glot, [blind]), "refused without the board"
+    assert validate_glot(glot, [with_host_camera(blind, hello)]) == []
 
 
 # ── the wrapper ─────────────────────────────────────────────────────────────────────────
@@ -300,13 +300,13 @@ async def test_the_agent_loop_runs_a_camera_task_on_a_blind_body_through_the_hos
     connects, finds `observe` in the vocabulary the board's camera unlocked, builds the colour
     detector at the lens the daemon reported, and sees the fake frame's ball."""
     body = _blind_toddlerbot(hostd)
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, report_state, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="observe", arguments={}),
@@ -347,13 +347,13 @@ async def test_the_agent_loop_calibrates_the_boards_detector_at_connect(
     )
     assert isinstance(detector, HostDetector)
     assert (detector.fov_deg, detector.calibrated) == (90.0, True), "the mock's, for now"
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 1\nname: look-for-the-ball\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="observe", arguments={}),
@@ -464,13 +464,13 @@ def test_run_judges_a_camera_task_on_a_blind_body_with_the_boards_camera(
         raise TransportError("stopped where the body would have been built")
 
     monkeypatch.setattr("roboglot.adapters.factory.make_adapter", stop_here)
-    duck = tmp_path / "look.glot"
-    duck.write_text(
+    glot = tmp_path / "look.glot"
+    glot.write_text(
         "---\nglot: 1\nname: look\ndescription: d\nrequires: [observe]\n"
         "verbs:\n  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n",
         encoding="utf-8",
     )
-    args = ["run", str(duck), "--robot", "toddlerbot:bridge", "--llm", "fake", "--no-log"]
+    args = ["run", str(glot), "--robot", "toddlerbot:bridge", "--llm", "fake", "--no-log"]
     args += ["--runs-dir", str(tmp_path / "runs"), "--memory-dir", str(tmp_path / "mem")]
     without = runner.invoke(app, args)
     assert without.exit_code == 1 and "cannot run on" in " ".join(without.output.split())

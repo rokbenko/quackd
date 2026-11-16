@@ -33,8 +33,8 @@ from roboglot.safety import (
 from roboglot.transport.base import (
     DEFAULT_CAMERA_NAME,
     CameraFrame,
-    DuckState,
     Intent,
+    RobotState,
     TransportError,
 )
 from roboglot.transport.mock import MockTransport
@@ -50,7 +50,7 @@ from roboglot.verbs.registry import (
 )
 
 
-def duck(allow: str, confirm: str = "", abort: str = "") -> GlotFile:
+def glot(allow: str, confirm: str = "", abort: str = "") -> GlotFile:
     return parse_glot_text(
         f"""---
 glot: 0
@@ -69,7 +69,7 @@ x
 
 
 async def test_allowlist_is_enforced(registry: VerbRegistry, mock_transport: MockTransport) -> None:
-    ex = Executor(registry, mock_transport, contract=duck("quack, walk").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("quack, walk").frontmatter)
     with pytest.raises(VerbNotAllowed):
         await ex.run_verb("kick")
     assert mock_transport.intents == []
@@ -80,13 +80,13 @@ async def test_allowlist_is_enforced(registry: VerbRegistry, mock_transport: Moc
 async def test_stop_is_always_allowed(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    ex = Executor(registry, mock_transport, contract=duck("quack").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("quack").frontmatter)
     assert (await ex.run_verb("stop")).ok
     assert mock_transport.stops == 1
 
 
 async def test_confirm_gate(registry: VerbRegistry, mock_transport: MockTransport) -> None:
-    fm = duck("quack, kick", confirm="kick").frontmatter
+    fm = glot("quack, kick", confirm="kick").frontmatter
     ex = Executor(registry, mock_transport, contract=fm, confirm=deny_all)
     with pytest.raises(ConfirmDenied):
         await ex.run_verb("kick")
@@ -106,7 +106,7 @@ async def test_confirm_gate(registry: VerbRegistry, mock_transport: MockTranspor
 async def test_budget_hard_stop(registry: VerbRegistry, mock_transport: MockTransport) -> None:
     budget = Budget(Budgets(max_steps=2), now=mock_transport.now)
     budget.start()
-    ex = Executor(registry, mock_transport, contract=duck("quack").frontmatter, budget=budget)
+    ex = Executor(registry, mock_transport, contract=glot("quack").frontmatter, budget=budget)
     await ex.run_verb("quack")
     await ex.run_verb("quack")
     with pytest.raises(BudgetExceeded):
@@ -125,7 +125,7 @@ async def test_budget_minutes_uses_transport_clock(mock_transport: MockTransport
 
 async def test_dry_run_sends_nothing(registry: VerbRegistry, mock_transport: MockTransport) -> None:
     ex = Executor(
-        registry, mock_transport, contract=duck("walk, get_frame").frontmatter, dry_run=True
+        registry, mock_transport, contract=glot("walk, get_frame").frontmatter, dry_run=True
     )
     result = await ex.run_verb("walk", {"vx": 0.2})
     assert result.ok and result.data.get("dry_run") is True
@@ -145,7 +145,7 @@ async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
         return VerbResult.success("the ball is 1 m ahead")
 
     registry.register(Verb("locate", "reads where things are", locate, read_only=True))
-    contract = duck("locate, walk").frontmatter
+    contract = glot("locate, walk").frontmatter
     dry = Executor(registry, mock_transport, contract=contract, dry_run=True)
     assert (await dry.run_verb("locate")).ok
     assert (await dry.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})).ok
@@ -287,15 +287,15 @@ async def test_a_read_only_verb_sends_nothing(adapter: str) -> None:
 async def test_invalid_params_are_feedback_not_crash(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    ex = Executor(registry, mock_transport, contract=duck("walk").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("walk").frontmatter)
     result = await ex.run_verb("walk", {"vx": 5.0})
     assert not result.ok and "vx" in result.summary
     assert mock_transport.intents == []
 
 
 async def test_preconditions_block_unsafe_verbs(registry: VerbRegistry) -> None:
-    fallen = MockTransport(states=[DuckState(fallen=True, posture="fallen")])
-    ex = Executor(registry, fallen, contract=duck("walk, stand_up").frontmatter)
+    fallen = MockTransport(states=[RobotState(fallen=True, posture="fallen")])
+    ex = Executor(registry, fallen, contract=glot("walk, stand_up").frontmatter)
     result = await ex.run_verb("walk")
     assert not result.ok and "fallen" in result.summary
     assert fallen.intents_of("move") == []
@@ -306,7 +306,7 @@ async def test_repeat_failure_abort(registry: VerbRegistry) -> None:
     ex = Executor(
         registry,
         refusing,
-        contract=duck("kick", abort="Same verb fails 2 times in a row").frontmatter,
+        contract=glot("kick", abort="Same verb fails 2 times in a row").frontmatter,
     )
     assert not (await ex.run_verb("kick")).ok
     with pytest.raises(Aborted):
@@ -315,8 +315,8 @@ async def test_repeat_failure_abort(registry: VerbRegistry) -> None:
 
 
 async def test_battery_abort(registry: VerbRegistry) -> None:
-    low = MockTransport(states=[DuckState(battery_percent=10, posture="standing")])
-    ex = Executor(registry, low, contract=duck("quack", abort="Battery below 15%").frontmatter)
+    low = MockTransport(states=[RobotState(battery_percent=10, posture="standing")])
+    ex = Executor(registry, low, contract=glot("quack", abort="Battery below 15%").frontmatter)
     with pytest.raises(Aborted):
         await ex.run_verb("quack")
 
@@ -329,7 +329,7 @@ async def test_verb_timeout_stops_the_duck(mock_transport: MockTransport) -> Non
         return VerbResult.success("never")
 
     registry.register(Verb("slow", "slow", slow, timeout_s=0.05))
-    ex = Executor(registry, mock_transport, contract=duck("slow").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("slow").frontmatter)
     result = await ex.run_verb("slow")
     assert not result.ok and "timed out" in result.summary
     assert mock_transport.stops == 1
@@ -342,7 +342,7 @@ async def test_buggy_verb_stops_the_duck(mock_transport: MockTransport) -> None:
         raise RuntimeError("kaboom")
 
     registry.register(Verb("boom", "boom", boom))
-    ex = Executor(registry, mock_transport, contract=duck("boom").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("boom").frontmatter)
     result = await ex.run_verb("boom")
     assert not result.ok and "kaboom" in result.summary
     assert mock_transport.stops == 1
@@ -372,7 +372,7 @@ async def test_a_stop_that_raises_after_a_verb_that_raised_is_said_and_not_raise
     into a result. A run with an event log had `LoggedTransport` to catch it, and one without
     had nothing. The result says both now, and that the stop did not land."""
     transport = _DroppedLink()
-    ex = Executor(registry, transport, contract=duck("walk").frontmatter)
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
     result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
     assert not result.ok and transport.stops == 1
     assert result.summary == f"walk raised ConnectionResetError: Connection lost; {DROPPED}"
@@ -387,7 +387,7 @@ async def test_a_verb_that_timed_out_whose_stop_raises_is_said_and_not_raised() 
 
     registry.register(Verb("slow", "slow", slow, timeout_s=0.05))
     transport = _DroppedLink()
-    ex = Executor(registry, transport, contract=duck("slow").frontmatter)
+    ex = Executor(registry, transport, contract=glot("slow").frontmatter)
     result = await ex.run_verb("slow")
     assert not result.ok and transport.stops == 1
     assert result.summary == f"slow timed out after 0.05s; {DROPPED}"
@@ -407,7 +407,7 @@ async def test_an_abort_whose_stop_raises_is_still_the_abort() -> None:
 
     registry.register(Verb("waiting", "waits", waiting, timeout_s=30))
     transport = _DroppedLink()
-    ex = Executor(registry, transport, contract=duck("waiting").frontmatter)
+    ex = Executor(registry, transport, contract=glot("waiting").frontmatter)
     running = asyncio.create_task(ex.run_verb("waiting"))
     await asyncio.wait_for(started.wait(), timeout=5)
     ex.abort.set()
@@ -440,7 +440,7 @@ async def test_a_verb_that_timed_out_whose_stop_did_not_land_says_so() -> None:
 
     registry.register(Verb("slow", "slow", slow, timeout_s=0.05))
     transport = _UnheardStop()
-    ex = Executor(registry, transport, contract=duck("slow").frontmatter)
+    ex = Executor(registry, transport, contract=glot("slow").frontmatter)
     result = await ex.run_verb("slow")
     assert not result.ok and transport.stops == 1
     assert result.summary == f"slow timed out after 0.05s; {UNHEARD}"
@@ -457,7 +457,7 @@ async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -
 
     registry.register(Verb("waiting", "waits", waiting, timeout_s=30))
     transport = _UnheardStop()
-    ex = Executor(registry, transport, contract=duck("waiting").frontmatter)
+    ex = Executor(registry, transport, contract=glot("waiting").frontmatter)
     running = asyncio.create_task(ex.run_verb("waiting"))
     await asyncio.wait_for(started.wait(), timeout=5)
     ex.abort.set()
@@ -471,7 +471,7 @@ class _SilentBody(_UnheardStop):
     """A body gone silent: its reads fail, and its stop, which on the arm reads before it holds,
     holds nothing and says so in `stop_error`, as the arm's real backend does."""
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         raise TransportError("the arm did not answer: ConnectionError: no status packet", code=7)
 
 
@@ -489,7 +489,7 @@ async def test_a_read_that_failed_says_when_the_stop_sent_after_it_did_not_land(
     the read had failed, on `stop` too: neither the pilot nor a chat heard that nothing held the
     arm. The error is the read's own, its class and its code kept."""
     transport = _SilentBody()
-    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    ex = Executor(_still(), transport, contract=glot("still").frontmatter)
     with pytest.raises(TransportError) as failed:
         await ex.run_verb("still")
     read = "the arm did not answer: ConnectionError: no status packet"
@@ -499,11 +499,11 @@ async def test_a_read_that_failed_says_when_the_stop_sent_after_it_did_not_land(
 
 async def test_a_read_that_failed_over_a_stop_that_landed_says_only_the_read() -> None:
     class Unread(MockTransport):
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             raise TransportError("the link is down")
 
     transport = Unread()
-    ex = Executor(_still(), transport, contract=duck("still").frontmatter)
+    ex = Executor(_still(), transport, contract=glot("still").frontmatter)
     with pytest.raises(TransportError) as failed:
         await ex.run_verb("still")
     assert str(failed.value) == "the link is down" and transport.stops == 1
@@ -516,14 +516,14 @@ async def test_a_stop_whose_reason_the_read_already_gave_is_not_said_twice() -> 
     class Wedged(MockTransport):
         stop_error: str | None = None
 
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             raise TransportError("the bus is wedged")
 
         async def stop(self) -> None:
             self.stops += 1
             self.stop_error = "the bus is wedged"
 
-    ex = Executor(_still(), Wedged(), contract=duck("still").frontmatter)
+    ex = Executor(_still(), Wedged(), contract=glot("still").frontmatter)
     with pytest.raises(TransportError) as failed:
         await ex.run_verb("still")
     assert str(failed.value) == "the bus is wedged; the stop sent after it failed the same way"
@@ -535,10 +535,10 @@ async def test_an_error_a_link_raises_again_gains_the_stop_once() -> None:
     kept = TransportError("the arm did not answer: ConnectionError: no status packet")
 
     class Kept(_UnheardStop):
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             raise kept
 
-    ex = Executor(_still(), Kept(), contract=duck("still").frontmatter)
+    ex = Executor(_still(), Kept(), contract=glot("still").frontmatter)
     for _ in range(3):
         with pytest.raises(TransportError):
             await ex.run_verb("still")
@@ -552,7 +552,7 @@ async def test_a_composite_whose_nested_read_failed_says_the_stop_once() -> None
     class SecondReadFails(_UnheardStop):
         reads = 0
 
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             self.reads += 1
             if self.reads > 1:
                 raise TransportError("the arm did not answer: ConnectionError: no status packet")
@@ -564,7 +564,7 @@ async def test_a_composite_whose_nested_read_failed_says_the_stop_once() -> None
 
     registry = _still()
     registry.register(Verb("outer", "outer", outer))
-    ex = Executor(registry, SecondReadFails(), contract=duck("outer, still").frontmatter)
+    ex = Executor(registry, SecondReadFails(), contract=glot("outer, still").frontmatter)
     result = await ex.run_verb("outer")
     assert not result.ok
     assert result.summary.count("the stop sent after it failed") == 1, result.summary
@@ -582,7 +582,7 @@ async def test_no_contract_allows_safe_verbs_only(
 async def test_walk_feeds_the_deadman(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    ex = Executor(registry, mock_transport, contract=duck("walk").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("walk").frontmatter)
     await ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0})
     moves = mock_transport.intents_of("move")
     assert len(moves) == 10  # re-sent every 100 ms
@@ -667,7 +667,7 @@ async def test_an_abort_cancels_the_running_verb_and_stops(
         return VerbResult.success("finished on its own")
 
     registry.register(Verb("long_walk", "walks for a long time", long_walk, timeout_s=30))
-    ex = Executor(registry, mock_transport, contract=duck("long_walk").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("long_walk").frontmatter)
     running = asyncio.create_task(ex.run_verb("long_walk"))
     await asyncio.sleep(0.15)  # let it get going
     assert len(mock_transport.intents_of("move")) >= 1
@@ -689,7 +689,7 @@ async def test_stop_still_runs_on_an_aborted_executor(
     """The abort is set exactly when the pilot reaches for the brake — a failed heartbeat, a
     kill switch — so refusing `stop` closed the panic button at the only moment it mattered.
     Everything else stays refused."""
-    ex = Executor(registry, mock_transport, contract=duck("walk, stop").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("walk, stop").frontmatter)
     ex.abort.set()
 
     before = mock_transport.stops
@@ -707,7 +707,7 @@ async def test_a_stop_that_never_left_is_not_reported_as_a_stop(
     verbs/core.py reads `stop_error` off whatever it was handed, which in a real run is the
     adapter — and no adapter forwarded it, so the check was dead everywhere and an
     undeliverable stop was written into the transcript as a success."""
-    ex = Executor(registry, mock_transport, contract=duck("stop").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("stop").frontmatter)
     assert (await ex.run_verb("stop")).ok
 
     mock_transport.stop_error = "duck.stop: no answer within 2s"
@@ -780,7 +780,7 @@ def logged(
     ex = Executor(
         registry,
         transport,
-        contract=duck(allow, **kwargs).frontmatter,
+        contract=glot(allow, **kwargs).frontmatter,
         event_log=EventLog(observers=[seen.append]),
     )
     return ex, seen
@@ -1206,7 +1206,7 @@ async def test_the_dry_run_gate_shows_what_it_would_have_sent(
 async def test_a_precondition_refusal_carries_the_state_that_caused_it(
     registry: VerbRegistry,
 ) -> None:
-    transport = MockTransport(states=[DuckState(policy="p", posture="fallen", fallen=True)])
+    transport = MockTransport(states=[RobotState(policy="p", posture="fallen", fallen=True)])
     ex, seen = logged(registry, transport)
     result = await ex.run_verb("walk", {"vx": 0.1})
     assert not result.ok
@@ -1369,7 +1369,7 @@ async def test_a_state_read_that_fails_still_sends_a_stop(registry: VerbRegistry
     reading the state the gates need, was the one that did not."""
 
     class Dead(MockTransport):
-        async def get_state(self) -> DuckState:
+        async def get_state(self) -> RobotState:
             raise ConnectionError("the link is gone")
 
     transport = Dead()
@@ -1488,7 +1488,7 @@ async def test_a_record_sink_that_fails_on_verb_start_still_ends_the_verb(
     ex = Executor(
         registry,
         mock_transport,
-        contract=duck("quack").frontmatter,
+        contract=glot("quack").frontmatter,
         event_log=EventLog(record=record, observers=[seen.append]),
     )
     with pytest.raises(OSError, match="disk full"):
@@ -1501,7 +1501,7 @@ async def test_without_a_event_log_the_executor_is_silent_and_hands_over_the_rea
 ) -> None:
     """The team and every direct user build an Executor with no event log, and get exactly
     what they got before."""
-    ex = Executor(registry, mock_transport, contract=duck("quack").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("quack").frontmatter)
     assert ex.logged_transport() is mock_transport
     assert ex.context().transport is mock_transport
     assert (await ex.run_verb("quack")).ok
@@ -1525,7 +1525,7 @@ async def test_a_safety_stop_from_another_layer_ends_the_verb_with_its_own_word(
     seen: list[Any] = []
     event_log.add(seen.append)
     ex = Executor(
-        registry, mock_transport, contract=duck("handover").frontmatter, event_log=event_log
+        registry, mock_transport, contract=glot("handover").frontmatter, event_log=event_log
     )
     with pytest.raises(Preempted):
         await ex.run_verb("handover")
@@ -1572,7 +1572,7 @@ async def test_observe_hands_the_primary_to_on_frame_and_every_frame_to_on_frame
     ex = Executor(
         registry,
         transport,
-        contract=duck("observe").frontmatter,
+        contract=glot("observe").frontmatter,
         on_frame=lambda img, caption: steered.append((img, caption)),
         on_frames=lambda frames, caption: saved.append(([f.name for f in frames], caption)),
     )
@@ -1595,7 +1595,7 @@ async def test_a_single_camera_observe_says_exactly_what_it_said_before_there_we
     ex = Executor(
         registry,
         mock_transport,
-        contract=duck("observe").frontmatter,
+        contract=glot("observe").frontmatter,
         on_frames=lambda frames, _caption: saved.append([f.name for f in frames]),
     )
     result = await ex.run_verb("observe")
@@ -1628,7 +1628,7 @@ async def test_a_stop_from_beside_a_walk_ends_it_before_its_next_resend(
     """`move` resends its twist every tenth of a second, and a stop asked for beside it was
     undone by the next resend, the walk going on for the rest of its duration. It ends at its
     next slice now without sending it, and says how far it got."""
-    ex = Executor(registry, mock_transport, contract=duck("walk").frontmatter)
+    ex = Executor(registry, mock_transport, contract=glot("walk").frontmatter)
     result = await _walk_braked(ex, mock_transport, twists=3)
     assert not result.ok
     assert result.summary.startswith(f"move: {STOPPED}, so it stopped after ")
@@ -1642,7 +1642,7 @@ async def test_a_walk_a_stop_ended_is_no_failure_for_abort_when_to_count(
     """A person braking a walk three times is the brake working three times, and `abort_when`
     passes over it as it passes over a pause, where it would have ended the run on the same verb
     failing twice in a row."""
-    contract = duck("walk", abort="the same verb fails 2 times in a row").frontmatter
+    contract = glot("walk", abort="the same verb fails 2 times in a row").frontmatter
     ex = Executor(registry, mock_transport, contract=contract)
     for _ in range(3):
         result = await _walk_braked(ex, mock_transport, twists=2)
@@ -1660,7 +1660,7 @@ class _SlowState(MockTransport):
         self.answer = asyncio.Event()
         self._held = False
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         if not self._held:
             self._held = True
             self.reading.set()
@@ -1702,7 +1702,7 @@ async def test_a_newer_command_leaves_a_read_running_beside_it(registry: VerbReg
         return VerbResult.success("standing, battery 88%")
 
     registry.register(Verb("report_state", "reads the body", slow_state), replace=True)
-    ex = Executor(registry, MockTransport(), contract=duck("report_state").frontmatter)
+    ex = Executor(registry, MockTransport(), contract=glot("report_state").frontmatter)
     read = asyncio.create_task(ex.run_verb("report_state"))
     await asyncio.wait_for(reading.wait(), 5)
     assert ex.preempt("a newer command") == 0
@@ -1717,7 +1717,7 @@ async def test_a_walk_admitted_before_a_newer_command_does_not_start_after_it(
     and would start after the command that replaced it had. It is refused once the read returns,
     before it sends anything."""
     body = _SlowState()
-    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    ex = Executor(registry, body, contract=glot("walk").frontmatter)
     walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
     await asyncio.wait_for(body.reading.wait(), 5)
     assert ex.preempt("a newer command, sit") == 0
@@ -1734,7 +1734,7 @@ async def test_a_stop_asked_for_while_a_walk_reads_the_bodys_state_ends_the_walk
     state landed in the count the walk started from, so the walk ran its whole second after
     the stop had come back ok."""
     body = _SlowState()
-    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    ex = Executor(registry, body, contract=glot("walk").frontmatter)
     walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
     await asyncio.wait_for(body.reading.wait(), 5)
     assert (await ex.run_verb("stop")).ok
@@ -1752,7 +1752,7 @@ async def test_an_abort_set_while_a_walk_reads_the_bodys_state_refuses_the_walk(
     read the body's state, found nothing it could cancel, and the walk sent its first twist
     after the abort."""
     body = _SlowState()
-    ex = Executor(registry, body, contract=duck("walk").frontmatter)
+    ex = Executor(registry, body, contract=glot("walk").frontmatter)
     walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 1.0}))
     await asyncio.wait_for(body.reading.wait(), 5)
     ex.abort.set()
@@ -1767,8 +1767,8 @@ async def test_a_battery_the_rule_reads_as_too_low_still_lets_the_stop_through(
 ) -> None:
     """The rule is there to stop the body: the `stop` it refused was a stop never sent, and
     every call after it is refused as before."""
-    body = MockTransport(states=[DuckState(policy="mock", posture="standing", battery_percent=5)])
-    ex = Executor(registry, body, contract=duck("walk", abort="Battery below 15%").frontmatter)
+    body = MockTransport(states=[RobotState(policy="mock", posture="standing", battery_percent=5)])
+    ex = Executor(registry, body, contract=glot("walk", abort="Battery below 15%").frontmatter)
     assert (await ex.run_verb("stop")).ok
     assert body.stops == 1, "the stop was refused before it was sent"
     assert ex.abort.is_set()
@@ -1812,11 +1812,11 @@ async def test_a_stop_between_two_of_a_composites_calls_ends_the_second_before_i
     assert not result.ok
 
 
-def _battery_falls() -> list[DuckState]:
+def _battery_falls() -> list[RobotState]:
     """The admission's read, then the one a verb takes mid-way, below a 15% line."""
     return [
-        DuckState(policy="mock", posture="standing", battery_percent=40),
-        DuckState(policy="mock", posture="standing", battery_percent=10),
+        RobotState(policy="mock", posture="standing", battery_percent=40),
+        RobotState(policy="mock", posture="standing", battery_percent=10),
     ]
 
 
@@ -1916,7 +1916,7 @@ async def test_nobody_is_asked_about_a_composites_call_a_stop_overtook(
     ex = Executor(
         registry,
         mock_transport,
-        contract=duck("walk_then_kick, walk, kick", confirm="kick").frontmatter,
+        contract=glot("walk_then_kick, walk, kick", confirm="kick").frontmatter,
         confirm=confirm,
     )
     running = asyncio.create_task(ex.run_verb("walk_then_kick"))
@@ -1939,7 +1939,7 @@ class _BrakedRead(MockTransport):
         self.reads = 0
         self.executor: Executor | None = None
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         self.reads += 1
         if self.reads == self.nth and self.executor is not None:
             assert (await self.executor.run_verb("stop")).ok
@@ -1986,7 +1986,7 @@ class _BrakeBeforeTheKick(MockTransport):
         self.executor: Executor | None = None
         self.braked_for = 0
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         if (ex := self.executor) is not None:
             walks = sum(1 for name, _params, _result in ex.history if name == "go_to")
             if walks > self.braked_for:
@@ -2004,7 +2004,7 @@ async def test_an_approach_whose_kick_a_stop_kept_from_starting_is_no_failure_in
     ex = Executor(
         registry,
         body,
-        contract=duck(
+        contract=glot(
             "walk_to, kick, approach_and", abort="Same verb fails 2 times in a row"
         ).frontmatter,
         detector=_BallAhead(),

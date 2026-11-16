@@ -20,7 +20,7 @@ from PIL import Image, ImageDraw
 from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import where_record
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState
 from roboglot_rosbridge import upstream_api as up
 from roboglot_rosbridge.introspection import Introspection, parse_urdf
 
@@ -175,8 +175,8 @@ class RosbridgeMock:
         draw.ellipse([cx - r, ground_y - 2 * r, cx + r, ground_y], fill=BALL)
         return img
 
-    async def get_state(self) -> DuckState:
-        return DuckState(
+    async def get_state(self) -> RobotState:
+        return RobotState(
             t=self._t,
             policy="idle",
             posture="unknown",

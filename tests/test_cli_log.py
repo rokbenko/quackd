@@ -197,7 +197,7 @@ def test_log_with_no_argument_picks_the_newest_run(tmp_path: Path) -> None:
     assert first not in out
 
 
-def test_log_resolves_a_timestamp_prefix_and_a_duck_name(tmp_path: Path) -> None:
+def test_log_resolves_a_timestamp_prefix_and_a_task_name(tmp_path: Path) -> None:
     run_dir = _run(tmp_path)
     stamp = run_dir.name.split("-")[0]
     for typed in (stamp, "open-duck-scout"):

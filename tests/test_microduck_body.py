@@ -81,9 +81,9 @@ def test_a_verb_speaks_for_the_body_it_was_bound_to() -> None:
         body.name: roboglot_microduck.conditions_for(body)["standing"]
         for body in (MICRODUCK, HUEBOT)
     }
-    from roboglot.transport.base import DuckState
+    from roboglot.transport.base import RobotState
 
-    sitting = DuckState(posture="sitting")
+    sitting = RobotState(posture="sitting")
     assert conditions["microduck"](sitting) == "the duck is sitting; run stand first"
     assert conditions["huebot"](sitting) == "Huebot is sitting; run stand first"
 
@@ -141,12 +141,12 @@ async def test_a_kick_says_it_was_sent_and_nothing_of_the_ball() -> None:
     """Only the simulators ever wrote how far a kick moved the ball, and the Microduck's kick read
     it back as `ball_moved_m`. No body reports it, so a kick says it was sent and played out, and
     a state that still carries the simulators' field is not read for one."""
-    from roboglot.transport.base import DuckState
+    from roboglot.transport.base import RobotState
     from roboglot.transport.mock import MockTransport
     from roboglot.verbs.registry import VerbContext
     from roboglot_microduck.verbs import KickParams
 
-    said = DuckState(policy="mock", posture="standing", extras={"last_kick_ball_moved_m": 1.0})
+    said = RobotState(policy="mock", posture="standing", extras={"last_kick_ball_moved_m": 1.0})
     ctx = VerbContext(transport=MockTransport(states=[said]))
     for body in (MICRODUCK, HUEBOT):
         result = await verbs_for(body)["kick"].execute(ctx, KickParams(leg="right"))

@@ -22,7 +22,7 @@ from roboglot.glotfile.schema import Budgets
 from roboglot.log import EventLog, LogEvent
 from roboglot.mcp_server import RobotSession
 from roboglot.safety import Budget, Executor, Heartbeat
-from roboglot.transport.base import DuckState
+from roboglot.transport.base import RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import GoToParams
 from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbResult, default_registry
@@ -367,7 +367,7 @@ async def test_a_low_battery_ends_a_persons_command_as_it_ends_a_goals(tmp_path:
     drive.robot.adopt(
         session_glot([v.name for v in registry.verbs() if v.safety_class != "dangerous"])
     )
-    body._states = [DuckState(policy="mock", posture="standing", battery_percent=1)]
+    body._states = [RobotState(policy="mock", posture="standing", battery_percent=1)]
     walked = drive.submit("forward")
     await _settled(walked)
     assert (await walked.ended).outcome == "aborted"
@@ -375,7 +375,7 @@ async def test_a_low_battery_ends_a_persons_command_as_it_ends_a_goals(tmp_path:
     await drive.robot.close()
 
 
-async def test_a_goal_keeps_the_confirm_gates_of_the_sessions_duck(tmp_path: Path) -> None:
+async def test_a_goal_keeps_the_confirm_gates_of_the_sessions_task_file(tmp_path: Path) -> None:
     """A goal is a contract of its own, written from its line, and one written without the
     session's gates let the pilot run `search_scan` that the `.glot` asks a yes for."""
     drive, body, _records = await _drive(tmp_path)
@@ -554,7 +554,7 @@ async def test_a_question_put_once_is_never_recorded_as_two(tmp_path: Path) -> N
     assert asked == [str(e.data["question"]) for e in prompts], "a prompt row nobody was asked"
 
 
-async def test_a_duck_that_allows_walk_by_its_alias_can_be_driven(tmp_path: Path) -> None:
+async def test_a_task_file_that_allows_walk_by_its_alias_can_be_driven(tmp_path: Path) -> None:
     """`hello-world.glot` allows `walk`, which the executor reads as `move`, and drive matched
     the names alone: no presets, no `walk`, and goals with no `move`."""
     drive, _body, _records = await _drive(tmp_path)
@@ -599,7 +599,7 @@ async def test_a_yes_with_no_question_waiting_answers_nothing(tmp_path: Path) ->
 class _Blind(OpenDuckMock):
     """An Open Duck whose bridge reports what its real one does: no fall detection."""
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         state = await super().get_state()
         return state.model_copy(update={"extras": {**state.extras, "fall_detection": False}})
 

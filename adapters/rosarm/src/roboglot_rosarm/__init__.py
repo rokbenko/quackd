@@ -44,7 +44,7 @@ from roboglot.adapters.manifest import (
     SafetyAuthority,
     verb_spec,
 )
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState
 from roboglot.verbs.core import CORE
 from roboglot.verbs.registry import Precondition, Verb
 from roboglot_rosarm.bodies import BODIES, ROBOT_TYPE, ROBOT_TYPES, ArmBody, arm_body
@@ -207,7 +207,7 @@ class RosArmAdapter:
     async def close(self) -> None:
         await self.disconnect()
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self.transport.get_state()
 
     async def get_frame(self) -> Image.Image | None:

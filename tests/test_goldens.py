@@ -13,7 +13,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 GOLDEN = REPO / "tests" / "golden"
-V0_DUCKS = ("hello-world", "find-and-kick", "patrol-and-quack", "follow-me", "fetch")
+V0_TASKS = ("hello-world", "find-and-kick", "patrol-and-quack", "follow-me", "fetch")
 
 
 def _sha(data: bytes) -> str:
@@ -21,14 +21,14 @@ def _sha(data: bytes) -> str:
 
 
 def glot_hashes() -> dict[str, str]:
-    return {name: _sha((REPO / "tasks" / f"{name}.glot").read_bytes()) for name in V0_DUCKS}
+    return {name: _sha((REPO / "tasks" / f"{name}.glot").read_bytes()) for name in V0_TASKS}
 
 
 def _load(name: str) -> Any:
     return json.loads((GOLDEN / name).read_text(encoding="utf-8"))
 
 
-def test_v0_starter_ducks_are_unchanged() -> None:
+def test_v0_starter_task_files_are_unchanged() -> None:
     assert glot_hashes() == _load("glot_hashes.json")
 
 

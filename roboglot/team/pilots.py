@@ -66,7 +66,7 @@ TEAM_LOG = "team"
 def member_specs(
     members: list[str],
     robots: dict[str, str] | None,
-    duck_default: str | dict[str, str] | None,
+    glot_default: str | dict[str, str] | None,
 ) -> dict[str, RobotSpec]:
     """Each member's robot: `--robots`, else the task file's `robots:`, else this machine's.
 
@@ -77,10 +77,10 @@ def member_specs(
     to "which robot, then" is `default_spec()`: the one adapter installed if there is one, and
     otherwise a refusal that says what to install or lists what is here."""
     given: dict[str, str] = {}
-    if isinstance(duck_default, dict):
-        given = dict(duck_default)
-    elif isinstance(duck_default, str):
-        given = dict.fromkeys(members, duck_default)
+    if isinstance(glot_default, dict):
+        given = dict(glot_default)
+    elif isinstance(glot_default, str):
+        given = dict.fromkeys(members, glot_default)
     given.update(robots or {})
     specs: dict[str, RobotSpec] = {}
     chosen: RobotSpec | None = None
@@ -244,7 +244,7 @@ def aggregate_outcome(per_member: Mapping[str, tuple[Outcome, str]]) -> tuple[Ou
 
 
 async def run_pilot_team(
-    duck: GlotFile,
+    glot: GlotFile,
     roster: Roster,
     *,
     providers: Mapping[str, LLMProvider],
@@ -287,11 +287,11 @@ async def run_pilot_team(
         raise ValueError(f"no pilot for {', '.join(missing)}")
 
     manifests = {name: describe(entry.robot_spec) for name, entry in roster.items()}
-    problems = union_problems(duck, manifests)
+    problems = union_problems(glot, manifests)
     if problems:
         where = ", ".join(f"{name}={roster[name].robot_spec.key}" for name in members)
-        raise ValueError(f"{duck.name} cannot run on {where}: {'; '.join(problems)}")
-    contracts = {name: trim_contract(duck.frontmatter, manifests[name]) for name in members}
+        raise ValueError(f"{glot.name} cannot run on {where}: {'; '.join(problems)}")
+    contracts = {name: trim_contract(glot.frontmatter, manifests[name]) for name in members}
     # A real arm with no rest pose has nothing to be folded to when its member ends, and would
     # be left holding itself up wherever it stopped (ADR-0058). `roboglot run` refuses such a member
     # before anything is built; this is the same rule for a caller that reaches the team
@@ -327,7 +327,7 @@ async def run_pilot_team(
     if before_connect is not None:
         before_connect([roster[name].robot_spec for name in members])
 
-    stem = duck.name if duck.name.startswith("team") else f"team-{duck.name}"
+    stem = glot.name if glot.name.startswith("team") else f"team-{glot.name}"
     run_dir = new_run_dir(runs_dir, stem, run_label(run_name) if run_name else None)
     if on_run_dir is not None:
         # The first moment there is somewhere to write: the CLI's terminal capture
@@ -367,7 +367,7 @@ async def run_pilot_team(
         member_dir.mkdir(parents=True, exist_ok=True)  # `Transcript` opens, it does not mkdir
         loops[name] = AgentLoop(
             RunConfig(
-                duck=GlotFile(frontmatter=contracts[name], body=duck.body, path=duck.path),
+                glot=GlotFile(frontmatter=contracts[name], body=glot.body, path=glot.path),
                 provider=providers[name],
                 transport=adapters[name],
                 run_dir=member_dir,
@@ -393,10 +393,10 @@ async def run_pilot_team(
             )
         )
 
-    played, played_from = resolve_play(duck.frontmatter.play, play)
+    played, played_from = resolve_play(glot.frontmatter.play, play)
     transcript.write(
         "team_start",
-        duck=duck.name,
+        duck=glot.name,
         team=team_name,
         method="pilots",
         clock="wall",
@@ -415,7 +415,7 @@ async def run_pilot_team(
             for name in members
         },
         dry_run=dry_run,
-        contract=duck.frontmatter.model_dump(),
+        contract=glot.frontmatter.model_dump(),
         # as each member's `run_start` says it, so the team's own record agrees with them
         # when `--play` or `--no-play` overrode the file
         play={"on": played, "from": played_from},
@@ -524,7 +524,7 @@ async def run_pilot_team(
             if name not in results:  # cancelled before its own task could record anything
                 results[name] = _ended(name, "aborted", "interrupted")
         result = _finish(
-            duck=duck,
+            glot=glot,
             members=members,
             roster=roster,
             providers=providers,
@@ -554,20 +554,20 @@ which is the opposite of the point. `requires`, which is what the task actually 
 still checked against the union and still refuses."""
 
 
-def union_problems(duck: GlotFile, manifests: Mapping[str, RobotManifest]) -> list[str]:
+def union_problems(glot: GlotFile, manifests: Mapping[str, RobotManifest]) -> list[str]:
     """What no body in this team can do. Checked before anything connects."""
     from roboglot.glotfile.validate import validate_glot
 
     return [
         p.message
-        for p in validate_glot(duck, list(manifests.values()), team=True)
+        for p in validate_glot(glot, list(manifests.values()), team=True)
         if p.field not in ADVISORY_FIELDS
     ]
 
 
 def _finish(
     *,
-    duck: GlotFile,
+    glot: GlotFile,
     members: Sequence[str],
     roster: Roster,
     providers: Mapping[str, LLMProvider],
@@ -623,7 +623,7 @@ def _finish(
     backends = {roster[name].robot_spec.backend for name in members}
     log_dropped = story.dropped + sum(loops[name].event_log.dropped for name in members)
     summary: dict[str, Any] = {
-        "glot": duck.name,
+        "glot": glot.name,
         "outcome": outcome,
         "reason": reason,
         "team": {"members": list(members), "method": "pilots", "name": team_name},

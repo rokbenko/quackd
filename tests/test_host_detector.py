@@ -309,13 +309,13 @@ async def test_the_loop_and_observe_run_a_blocking_detector_off_the_event_loop(
     step, and the `observe` verb. `go_to` and `search_scan` go through `_see`, above."""
     loop_thread = threading.get_ident()
     probe = _Probe(blocking=True)
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: look\ndescription: d\nverbs:\n"
         "  allow: [observe, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="observe", arguments={}),
@@ -510,12 +510,12 @@ async def test_it_never_swaps_itself_for_the_colour_detector(
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
     assert detector_for(["camera"], detector, fov_deg=90.0, backend="mock") is detector
 
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: look-twice\ndescription: d\nverbs:\n"
         "  allow: [observe, report_state, stop]\nsuccess: [x]\n---\n# Task\nLook.\n"
     )
     cfg = RunConfig(
-        duck=duck,
+        glot=glot,
         provider=FakeProvider(
             script=[
                 ToolCall(name="observe", arguments={}),
@@ -581,14 +581,14 @@ async def test_a_flaky_link_is_a_note_per_outage_and_per_kind_of_reason_not_per_
         truncated.format(90),
         None,
     ]
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: wait\ndescription: d\nverbs:\n"
         "  allow: [report_state, stop]\nsuccess: [x]\n---\n# Task\nWait.\n"
     )
     script = [ToolCall(name="report_state", arguments={}) for _ in range(len(reasons) + 1)]
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(
                 script=[*script, ToolCall(name="declare_success", arguments={"reason": "done"})]
             ),
@@ -656,7 +656,7 @@ async def test_a_run_records_what_the_board_took_for_every_frame(
     hostd.detect_reply = {**default_detections(), "w": 64, "h": 64, "boxes": [], "ms": 31.5}
     hostd.delays["/detect"] = 0.02
     detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         "---\nglot: 0\nname: scan\ndescription: d\nverbs:\n"
         "  allow: [search_scan, observe, report_state, stop]\nsuccess: [x]\n"
         "abort_when: [Same verb fails 1 times in a row]\n---\n# Task\nScan.\n"
@@ -664,7 +664,7 @@ async def test_a_run_records_what_the_board_took_for_every_frame(
     verdict = {"verdict": "feasible", "reason": "a scan on a flat floor"}
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=FakeProvider(
                 script=[
                     ToolCall(name="assess_task", arguments=verdict),

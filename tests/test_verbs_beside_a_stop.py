@@ -17,7 +17,7 @@ import pytest
 
 from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import Executor, allow_all
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import TICK_S, _waited_out, send_or_fail
 from roboglot.verbs.registry import (
     STOP_ENDED,
@@ -242,8 +242,8 @@ async def test_a_stop_ends_the_wait_for_a_robot_to_get_up(stand_up: Any) -> None
         async def stop(self) -> None:
             self.stops += 1
 
-        async def get_state(self) -> DuckState:
-            return DuckState(posture="fallen", fallen=True)
+        async def get_state(self) -> RobotState:
+            return RobotState(posture="fallen", fallen=True)
 
         async def send_intent(self, intent: Intent) -> Any:
             self.sent.append(intent.kind)
@@ -282,8 +282,8 @@ class _Standing:
     async def stop(self) -> None:
         self.stops += 1
 
-    async def get_state(self) -> DuckState:
-        return DuckState(posture=self.posture)
+    async def get_state(self) -> RobotState:
+        return RobotState(posture=self.posture)
 
     async def send_intent(self, intent: Intent) -> Any:
         self.sent.append(intent)

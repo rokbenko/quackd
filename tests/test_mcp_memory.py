@@ -9,7 +9,7 @@ from typing import Any
 from roboglot.adapters.factory import RobotSpec, make_adapter
 from roboglot.mcp_server import TOOL_NAMES
 from roboglot.memory import RobotMemory
-from tests.test_mcp_fleet import _data, connected
+from tests.test_mcp_team import _data, connected
 
 
 def two_robots() -> dict[str, Any]:
@@ -24,7 +24,7 @@ def test_memory_tools_are_registered() -> None:
 
 
 async def test_remember_then_recall_per_robot(tmp_path: Path) -> None:
-    async with connected(two_robots(), memory_dir=tmp_path) as (client, fleet):
+    async with connected(two_robots(), memory_dir=tmp_path) as (client, team):
         tools = {t.name for t in (await client.list_tools()).tools}
         assert {"robot_recall", "robot_remember"} <= tools
         empty = _data(await client.call_tool("robot_recall", {}))
@@ -42,13 +42,13 @@ async def test_remember_then_recall_per_robot(tmp_path: Path) -> None:
         recalled = _data(await client.call_tool("robot_recall", {}))
         assert recalled["notes"] == ["the ball hides behind the sofa"]
         # the other body has its own file
-        other_robot = next(name for name in fleet.sessions if name != "duck")
+        other_robot = next(name for name in team.sessions if name != "duck")
         other = _data(await client.call_tool("robot_recall", {"robot": other_robot}))
         assert other["ok"] and other["notes"] == []
-        assert fleet.sessions["duck"].memory is not None
-        assert fleet.sessions["duck"].memory.path == tmp_path / "microduck-mock.jsonl"
-        assert fleet.sessions[other_robot].memory is not None
-        assert fleet.sessions[other_robot].memory.path != fleet.sessions["duck"].memory.path
+        assert team.sessions["duck"].memory is not None
+        assert team.sessions["duck"].memory.path == tmp_path / "microduck-mock.jsonl"
+        assert team.sessions[other_robot].memory is not None
+        assert team.sessions[other_robot].memory.path != team.sessions["duck"].memory.path
     # and it survives the server: a CLI run on the same robot would read the same file
     assert [e.text for e in RobotMemory("microduck:mock", tmp_path).notes()] == [
         "the ball hides behind the sofa"
@@ -56,12 +56,12 @@ async def test_remember_then_recall_per_robot(tmp_path: Path) -> None:
 
 
 async def test_memory_off(tmp_path: Path) -> None:
-    async with connected(two_robots(), memory=False, memory_dir=tmp_path) as (client, fleet):
+    async with connected(two_robots(), memory=False, memory_dir=tmp_path) as (client, team):
         off = _data(await client.call_tool("robot_recall", {}))
         assert not off["ok"] and "off" in off["summary"]
         saved: dict[str, Any] = _data(await client.call_tool("robot_remember", {"text": "x"}))
         assert not saved["ok"]
-        assert fleet.sessions["duck"].memory is None
+        assert team.sessions["duck"].memory is None
     assert os.listdir(tmp_path) == []
 
 
@@ -73,7 +73,7 @@ async def test_the_tool_descriptions_only_ask_for_a_recall_when_memory_is_on(
     answer that says memory is off. With memory off both descriptions say so instead."""
 
     async def described(**kwargs: Any) -> dict[str, str]:
-        async with connected(two_robots(), memory_dir=tmp_path, **kwargs) as (client, _fleet):
+        async with connected(two_robots(), memory_dir=tmp_path, **kwargs) as (client, _team):
             return {t.name: t.description or "" for t in (await client.list_tools()).tools}
 
     on = await described()
@@ -89,23 +89,23 @@ async def test_the_instructions_only_sell_memory_when_it_is_on(tmp_path: Path) -
     instruction to call robot_recall early is an instruction to waste a turn."""
     from roboglot.mcp_server import _instructions
 
-    async with connected(two_robots(), memory_dir=tmp_path) as (_client, fleet):
-        assert "robot_recall" in _instructions(fleet)
-    async with connected(two_robots(), memory=False, memory_dir=tmp_path) as (_client, fleet):
-        prompt = _instructions(fleet)
+    async with connected(two_robots(), memory_dir=tmp_path) as (_client, team):
+        assert "robot_recall" in _instructions(team)
+    async with connected(two_robots(), memory=False, memory_dir=tmp_path) as (_client, team):
+        prompt = _instructions(team)
         assert "robot_recall" not in prompt and "robot_remember" not in prompt
         assert "robot_list" in prompt  # the rest of the briefing is untouched
     # and the same for a lone robot, whose prompt is a different template
     one = {"duck": two_robots()["duck"]}
-    async with connected(one, memory=False, memory_dir=tmp_path) as (_client, fleet):
-        assert "robot_recall" not in _instructions(fleet)
+    async with connected(one, memory=False, memory_dir=tmp_path) as (_client, team):
+        assert "robot_recall" not in _instructions(team)
 
 
 async def test_a_note_remembered_over_mcp_keeps_where_the_robot_stood(tmp_path: Path) -> None:
     """robot_remember reads where the body stands off the body, never from the pilot, and
     robot_recall answers with the places it knows and how far each note was saved from them."""
     duck = make_adapter(RobotSpec("microduck", "mock", "duck"))
-    async with connected({"duck": duck}, memory_dir=tmp_path) as (client, _fleet):
+    async with connected({"duck": duck}, memory_dir=tmp_path) as (client, _team):
         marked = _data(
             await client.call_tool(
                 "robot_run_verb", {"verb": "mark_place", "params": {"name": "dock"}}

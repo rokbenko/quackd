@@ -23,7 +23,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState
 from roboglot_toddlerbot.verbs import look_degrees
 
 TICK_S = 0.05
@@ -148,8 +148,8 @@ class ToddlerBotMock:
         draw.ellipse([cx - r, ground_y - 2 * r, cx + r, ground_y], fill=BALL)
         return img
 
-    async def get_state(self) -> DuckState:
-        return DuckState(
+    async def get_state(self) -> RobotState:
+        return RobotState(
             t=self._t,
             policy=self.motion or ("walk" if any((self.vx, self.vy, self.wz)) else "idle"),
             posture="fallen" if self.fallen else "standing",

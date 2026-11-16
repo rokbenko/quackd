@@ -71,11 +71,11 @@ class _Held(MockTransport):
             self.loop.executor.abort.set()
 
 
-def _goal(duck: GlotFile, body: _Held, runs: Path) -> AgentLoop:
+def _goal(glot: GlotFile, body: _Held, runs: Path) -> AgentLoop:
     return AgentLoop(
         RunConfig(
-            duck=duck,
-            provider=FakeProvider.for_glot(duck.name),
+            glot=glot,
+            provider=FakeProvider.for_glot(glot.name),
             transport=AttachedBody(body, microduck_manifest("mock")),
             runs_dir=runs,
         )

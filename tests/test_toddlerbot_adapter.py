@@ -66,7 +66,7 @@ def _verb_column(output: str) -> set[str]:
 #: Verbs other robots have and this body has not, at this pin.
 ABSENT = {"say", "quack", "express", "play_sound", "wake_up", "sit", "kick", "grab", "stand_up"}
 
-DUCK = load_glot("toddlerbot-lookout")
+GLOT = load_glot("toddlerbot-lookout")
 
 
 def _executor(adapter: ToddlerBotAdapter, manifest: object) -> Executor:
@@ -199,8 +199,8 @@ def test_search_scan_sweeps_the_head_rather_than_turning_a_humanoid() -> None:
 def test_an_absent_verb_is_absent_everywhere() -> None:
     m = toddlerbot_manifest("mock", camera=True, walk=True)
     registry = registry_from_manifest(m, implementations=implementations(), conditions=conditions())
-    allow = DUCK.frontmatter.verbs.allow
-    prompt = build_system_prompt(DUCK, [registry.view(n) for n in allow], manifest=m)
+    allow = GLOT.frontmatter.verbs.allow
+    prompt = build_system_prompt(GLOT, [registry.view(n) for n in allow], manifest=m)
     offered = {line.split("`")[1] for line in prompt.splitlines() if line.startswith("- `")}
     for verb in ABSENT:
         with pytest.raises(VerbNotFound):
@@ -210,8 +210,8 @@ def test_an_absent_verb_is_absent_everywhere() -> None:
 
 
 def test_the_shipped_lookout_task_validates_and_moves_no_legs() -> None:
-    assert validate_glot(DUCK, [toddlerbot_manifest("mock", camera=True, walk=True)]) == []
-    allowed = set(DUCK.frontmatter.verbs.allow)
+    assert validate_glot(GLOT, [toddlerbot_manifest("mock", camera=True, walk=True)]) == []
+    allowed = set(GLOT.frontmatter.verbs.allow)
     assert not (allowed & {"move", "go_to", "approach_and", "perform", "stand"}), (
         "the first task pointed at a real humanoid must not move it"
     )

@@ -113,7 +113,7 @@ def run_with(
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     cfg = RunConfig(
-        duck=parse_glot_text(GLOT_FILE),
+        glot=parse_glot_text(GLOT_FILE),
         provider=provider,
         transport=MockTransport(),
         run_dir=run_dir,
@@ -158,7 +158,7 @@ async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: 
     arm = Arm()
     (tmp_path / "run").mkdir()
     cfg = RunConfig(
-        duck=parse_glot_text(GLOT_FILE),
+        glot=parse_glot_text(GLOT_FILE),
         provider=Script([DONE]),
         transport=arm,
         run_dir=tmp_path / "run",
@@ -172,7 +172,7 @@ async def test_the_rest_move_waits_out_a_pause_granted_to_a_robot_met(tmp_path: 
     assert arm.parked_at - asked >= 0.3  # the arm folded only once the pause was over
 
 
-ARM_DUCK = (
+ARM_GLOT = (
     "---\nglot: 1\nname: lift-the-mug\ndescription: Pick up the mug.\nverbs:\n"
     "  allow: [observe, report_state, stop]\nsuccess: [The mug is up.]\n---\n# Task\nPick it up.\n"
 )
@@ -220,7 +220,7 @@ async def test_a_pause_on_the_pilots_last_turn_holds_the_gripper_and_the_fold_un
     arm = Arm()
     provider = FakeProvider(script=[DONE])
     cfg = RunConfig(
-        duck=parse_glot_text(ARM_DUCK),
+        glot=parse_glot_text(ARM_GLOT),
         provider=provider,
         transport=LeRobotAdapter(arm),
         hand_off=Person(),
@@ -261,7 +261,7 @@ async def test_a_second_ctrl_c_while_waiting_out_a_pause_still_lets_the_arm_fold
     arm = Arm()
     provider = FakeProvider(script=[DONE])
     cfg = RunConfig(
-        duck=parse_glot_text(ARM_DUCK),
+        glot=parse_glot_text(ARM_GLOT),
         provider=provider,
         transport=LeRobotAdapter(arm),
         runs_dir=tmp_path,

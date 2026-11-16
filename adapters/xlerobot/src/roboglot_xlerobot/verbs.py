@@ -3,7 +3,7 @@
 The arms are the first bimanual pair in Roboglot, and nothing in the manifest vocabulary names
 an arm. So the side lives in the joint name (`left_arm_*`, `right_arm_*`, which are upstream's
 own keys, `upstream_api.STATE_FEATURES`) and in a `side` parameter on `gripper`. Per-hand
-holding lives in `DuckState.extras`, because `DuckState.holding` is one bool for the whole
+holding lives in `RobotState.extras`, because `RobotState.holding` is one bool for the whole
 body.
 
 Positions are normalised, not degrees: upstream's `use_degrees` defaults to False, so a body
@@ -22,7 +22,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import _ended_by, _waited_out, send_or_fail
 from roboglot.verbs.registry import Precondition, Verb, VerbContext, VerbResult
 
@@ -108,7 +108,7 @@ class GripperParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _link_fresh(state: DuckState) -> str | None:
+def _link_fresh(state: RobotState) -> str | None:
     """The host publishes at 30 Hz and stamps nothing, so Roboglot stamps on arrival.
 
     A stale reading means the host is gone: it exits by itself after an hour

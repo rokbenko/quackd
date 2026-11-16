@@ -46,8 +46,8 @@ from roboglot.transport.base import (
     DEFAULT_CAMERA_NAME,
     Ack,
     CameraFrame,
-    DuckState,
     Intent,
+    RobotState,
     frames_of,
 )
 from roboglot.verbs.core import CORE, REQUIREMENTS, core_requirements_unmet
@@ -276,7 +276,7 @@ class HostCameraAdapter:
 
     # ── everything else is the body's ───────────────────────────────────────────────────
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         return await self._inner.get_state()
 
     async def send_intent(self, intent: Intent) -> Ack:

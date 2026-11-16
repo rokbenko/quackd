@@ -23,7 +23,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import (
     SearchScanParams,
     _ended_by,
@@ -132,7 +132,7 @@ class GripParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _link_fresh(state: DuckState) -> str | None:
+def _link_fresh(state: RobotState) -> str | None:
     """The daemon owns the fifty hertz loop, so Roboglot going quiet is not what stops this
     robot: the daemon's own deadman is. What Roboglot must not do is claim a move it never
     delivered, so a verb refuses when the daemon has stopped answering."""
@@ -149,7 +149,7 @@ def _link_fresh(state: DuckState) -> str | None:
     )
 
 
-def _not_fallen(state: DuckState) -> str | None:
+def _not_fallen(state: RobotState) -> str | None:
     """There is no fall recovery on this robot and no get-up policy in the repository, so the
     refusal names no verb: a human has to stand it up. Saying otherwise would invite an LLM
     to thrash a fallen humanoid against the floor."""
@@ -161,7 +161,7 @@ def _not_fallen(state: DuckState) -> str | None:
     )
 
 
-def _calibrated(state: DuckState) -> str | None:
+def _calibrated(state: RobotState) -> str | None:
     """Zero calibration is per-instance, gitignored and absent from a fresh clone, so an
     uncalibrated robot's every commanded angle is offset by however it was assembled."""
     if state.extras.get("calibrated", True):

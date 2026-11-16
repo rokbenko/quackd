@@ -18,7 +18,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import SayParams, _ended_by, _waited_out, send_or_fail
 from roboglot.verbs.registry import STOPPED, NoParams, Precondition, Verb, VerbContext, VerbResult
 from roboglot.verbs.watch import HeadSpec, watch_verb
@@ -84,7 +84,7 @@ class GazeParams(BaseModel):
 # ── preconditions the manifest references by name ───────────────────────────────────────
 
 
-def _blind(state: DuckState) -> bool:
+def _blind(state: RobotState) -> bool:
     """True when nothing is reporting falls, so `state.fallen` is silence and not a verdict.
 
     `fall_detection` is absent on the backend that always knows (the mock), and
@@ -93,14 +93,14 @@ def _blind(state: DuckState) -> bool:
     return state.extras.get("fall_detection") is False
 
 
-def _why_unknown(state: DuckState) -> str:
+def _why_unknown(state: RobotState) -> str:
     """` (why)`, to follow the word `unknown`, when the transport said why posture is unknown;
     otherwise nothing. Only `jsonrpc` says, in `posture_reason`."""
     why = state.extras.get("posture_reason") if state.posture == "unknown" else None
     return f" ({why})" if why else ""
 
 
-def _held(body: Body, state: DuckState) -> str | None:
+def _held(body: Body, state: RobotState) -> str | None:
     """Why nothing may move a duck that is in somebody's hands, or None when it is not.
 
     Read before `fallen` everywhere. A duck held at an angle reads as fallen, and "fallen"
@@ -114,7 +114,7 @@ def _held(body: Body, state: DuckState) -> str | None:
     return None
 
 
-def _unread(state: DuckState) -> str | None:
+def _unread(state: RobotState) -> str | None:
     """Why the robot's own safety flags cannot be read just now, or None when they can. Only
     `jsonrpc` says, in `safety_unread`: a flag its peer sent that is neither a JSON boolean nor
     null, which also makes posture `unknown`, so every verb that walks refuses on it."""
@@ -122,7 +122,7 @@ def _unread(state: DuckState) -> str | None:
     return str(unread) if unread else None
 
 
-def _walk_held(state: DuckState) -> str | None:
+def _walk_held(state: RobotState) -> str | None:
     """Why a walk is held back for a verb that is still running, or None when none is.
 
     `jsonrpc` holds `robot.move` back for a verb that was walking when the duck stopped standing
@@ -135,7 +135,7 @@ def _walk_held(state: DuckState) -> str | None:
     return f"a verb that was walking is still running, and Roboglot holds its walk back ({hold})"
 
 
-def _answering_a_fall(body: Body, state: DuckState) -> str | None:
+def _answering_a_fall(body: Body, state: RobotState) -> str | None:
     """What the robot's own answer to a fall is doing with it, or None when it has none.
 
     A robotd whose `limp_fall` is on, as it is by default again from daemon-v0.16.2, takes a
@@ -149,7 +149,7 @@ def _answering_a_fall(body: Body, state: DuckState) -> str | None:
     return f"policy {state.policy!r}: {body.not_standing[state.policy]}"
 
 
-def _not_fallen(body: Body, state: DuckState) -> str | None:
+def _not_fallen(body: Body, state: RobotState) -> str | None:
     noun = body.words.noun
     if _blind(state):
         return f"nothing is reporting falls, so Roboglot cannot tell whether {noun} is upright"
@@ -162,7 +162,7 @@ def _not_fallen(body: Body, state: DuckState) -> str | None:
     return f"{noun} has fallen; run stand_up first" if state.fallen else None
 
 
-def _standing(body: Body, state: DuckState) -> str | None:
+def _standing(body: Body, state: RobotState) -> str | None:
     """Standing, and known to be: `unknown` refuses, where it used to pass.
 
     The mock always knows its posture. On a real robot `unknown` is
@@ -273,7 +273,7 @@ own 15 s timeout, and well past the about 2.1 s robotd's own answer to a fall ta
 Roboglot, which is why the verb reads the duck as it goes rather than once at a guessed moment."""
 
 
-def _upright(body: Body, state: DuckState) -> bool:
+def _upright(body: Body, state: RobotState) -> bool:
     """Whether a reading says the robot stands, and can be believed: something reports falls,
     nobody holds it, it has not fallen, and posture reads `standing`, which on `jsonrpc` is a
     fresh frame whose label is `walk` or `stand` and whose walk nothing holds back."""

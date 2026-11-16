@@ -27,7 +27,7 @@ from typing import Any
 from PIL import Image, ImageDraw
 
 from roboglot.perception.palette import BALL, FLOOR, HORIZON, SKY, focal_px
-from roboglot.transport.base import Ack, DuckState, HeartbeatError, Intent
+from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState
 from roboglot_xlerobot.verbs import ARMS, GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS, joint_range
 
 WATCHDOG_S = 0.5
@@ -147,8 +147,8 @@ class XLerobotMock:
         draw.ellipse([cx - r, ground_y - 2 * r, cx + r, ground_y], fill=BALL)
         return img
 
-    async def get_state(self) -> DuckState:
-        return DuckState(
+    async def get_state(self) -> RobotState:
+        return RobotState(
             t=self._t,
             policy="idle",
             posture="unknown",

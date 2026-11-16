@@ -25,7 +25,7 @@ from typing import Any, Literal, NamedTuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from roboglot.transport.base import DuckState, Intent
+from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import send_or_fail
 from roboglot.verbs.places import GO_TO_PLACE_MAX_S, GoToPlaceParams, place_to_walk
 from roboglot.verbs.registry import (
@@ -263,7 +263,7 @@ def _number(value: Any) -> float | None:
     return None
 
 
-def _cockpit_fresh(state: DuckState) -> str | None:
+def _cockpit_fresh(state: RobotState) -> str | None:
     """The base's telemetry arrives from the coordinator every half second, and the cockpit
     stamps it on arrival. Older than four periods, the coordinator has stopped. A firmware line
     older than the cockpit's own one second rule is the coordinator repeating itself with the
@@ -290,7 +290,7 @@ def _cockpit_fresh(state: DuckState) -> str | None:
     return None
 
 
-def _pose_fresh(state: DuckState) -> str | None:
+def _pose_fresh(state: RobotState) -> str | None:
     """The pose is the lidar odometry's, once per revolution. Its freshness rule comes from the
     rate the cockpit itself measured on /odom."""
     age = _number(state.extras.get("pose_age_s"))
@@ -305,7 +305,7 @@ def _pose_fresh(state: DuckState) -> str | None:
     return None
 
 
-def _battery_ok(state: DuckState) -> str | None:
+def _battery_ok(state: RobotState) -> str | None:
     """Judged by volts, the launcher's own way: under its floor the flight check refuses."""
     volts = _number(state.extras.get("battery_v"))
     floor = _number(state.extras.get("battery_floor_v")) or BATTERY_FLOOR_V
@@ -322,7 +322,7 @@ def _battery_ok(state: DuckState) -> str | None:
     return None
 
 
-def _not_stalled(state: DuckState) -> str | None:
+def _not_stalled(state: RobotState) -> str | None:
     """The base's stall guard stops a commanded track whose encoder did not move. The next
     accepted twist clears it, so `move` stays allowed to back away."""
     if state.extras.get("stalled") is True:
@@ -333,7 +333,7 @@ def _not_stalled(state: DuckState) -> str | None:
     return None
 
 
-def _bridge_up(state: DuckState) -> str | None:
+def _bridge_up(state: RobotState) -> str | None:
     if state.extras.get("bridge_up"):
         return None
     why = state.extras.get("bridge_error") or "it did not answer"
@@ -343,19 +343,19 @@ def _bridge_up(state: DuckState) -> str | None:
     )
 
 
-def _arm(state: DuckState) -> dict[str, Any]:
+def _arm(state: RobotState) -> dict[str, Any]:
     arm = state.extras.get("arm")
     return arm if isinstance(arm, dict) else {}
 
 
-def _arm_idle(state: DuckState) -> str | None:
+def _arm_idle(state: RobotState) -> str | None:
     job = _arm(state).get("job")
     if isinstance(job, dict) and job.get("state") in JOB_RUNNING:
         return "the arm is playing a cycle: wait for it to end, or stop it"
     return None
 
 
-def _arm_folded(state: DuckState) -> str | None:
+def _arm_folded(state: RobotState) -> str | None:
     """Every verb that moves the base needs the arm in its drive pose, by the coordinator's own
     start tolerance, `collect_litter` among them, whose mission drives off at once. With no
     moss-arm run nothing reports the arm and nothing holds it, so this can only refuse an arm
@@ -378,7 +378,7 @@ def _arm_folded(state: DuckState) -> str | None:
     return None
 
 
-def _explore_stack(state: DuckState) -> str | None:
+def _explore_stack(state: RobotState) -> str | None:
     stack = state.extras.get("stack")
     if stack == up.EXPLORE_STACK:
         return None
@@ -388,7 +388,7 @@ def _explore_stack(state: DuckState) -> str | None:
     )
 
 
-def _mission_up(state: DuckState) -> str | None:
+def _mission_up(state: RobotState) -> str | None:
     mission = state.extras.get("mission")
     if not isinstance(mission, dict) or not mission.get("answering"):
         if isinstance(mission, dict) and mission.get("stopped"):
@@ -424,7 +424,7 @@ def _goal_of(nav: Any) -> tuple[float, float] | None:
     return None if x is None or y is None else (x, y)
 
 
-def world_goal(state: DuckState, p: DriveToParams) -> tuple[float, float]:
+def world_goal(state: RobotState, p: DriveToParams) -> tuple[float, float]:
     """The goal in the world frame, from the pose the cockpit reports."""
     x, y, theta = float(state.x or 0.0), float(state.y or 0.0), float(state.theta or 0.0)
     if p.frame == "world":
@@ -485,7 +485,7 @@ async def drive_to_goal(
     ctx: VerbContext,
     gx: float,
     gy: float,
-    state: DuckState,
+    state: RobotState,
     *,
     deadline: float | None = None,
 ) -> Leg:
@@ -580,7 +580,7 @@ _LEG_GATES: tuple[Precondition, ...] = (_cockpit_fresh, _pose_fresh, _battery_ok
 before each of its goals. The executor reads every gate the verb has once, before it begins."""
 
 
-def _leg_refusal(state: DuckState) -> str | None:
+def _leg_refusal(state: RobotState) -> str | None:
     for gate in _LEG_GATES:
         if (why := gate(state)) is not None:
             return why
@@ -608,7 +608,7 @@ async def go_to_place(ctx: VerbContext, p: GoToPlaceParams) -> VerbResult:
     deadline = ctx.transport.now() + p.timeout_s
     goals = 0
 
-    def left_of(state: DuckState) -> float | None:
+    def left_of(state: RobotState) -> float | None:
         if state.x is None or state.y is None:
             return None
         return math.hypot(place.x - state.x, place.y - state.y)
@@ -715,7 +715,7 @@ async def explore(ctx: VerbContext, p: MinutesParams) -> VerbResult:
     return VerbResult(ok=ok, summary=summary, data=data)
 
 
-def _mission(state: DuckState) -> dict[str, Any]:
+def _mission(state: RobotState) -> dict[str, Any]:
     mission = state.extras.get("mission")
     return mission if isinstance(mission, dict) else {}
 

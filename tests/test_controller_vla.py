@@ -107,15 +107,15 @@ async def _run(
     provider: Any = None,
     mock: LeRobotMock | None = None,
 ) -> RunResult:
-    duck = parse_glot_text(_v3(total_s=total_s, name="stack"))
+    glot = parse_glot_text(_v3(total_s=total_s, name="stack"))
     return await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=provider
             or VlaProvider(
-                duck.frontmatter.effective_policy.instructions,
-                success=duck.frontmatter.success,
-                label=duck.name,
+                glot.frontmatter.effective_policy.instructions,
+                success=glot.frontmatter.success,
+                label=glot.name,
             ),
             transport=LeRobotAdapter(mock or LeRobotMock()),
             runs_dir=tmp_path,
@@ -326,10 +326,10 @@ async def test_nobody_to_judge_is_a_failure_after_the_segments(tmp_path: Path) -
 async def test_nobody_to_decide_ends_it_before_any_segment(tmp_path: Path) -> None:
     """A scripted pilot never answers its own doubt with `feasible`: with nobody to clear it,
     the arm never moves."""
-    duck = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
+    glot = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=VlaProvider(INSTRUCTIONS),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -383,14 +383,14 @@ async def test_a_budget_after_the_question_does_not_ask_it_twice(tmp_path: Path)
     right there ends the run without its declare. The reason carries the answer already given,
     and nobody is asked again."""
     heard: list[str] = []
-    duck = parse_glot_text(
+    glot = parse_glot_text(
         _v3(total_s=len(INSTRUCTIONS) * SEGMENT_S).replace(
             "success: [x]", "success: [x]\nbudgets:\n  max_llm_calls: 4"
         )
     )
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=VlaProvider(INSTRUCTIONS),
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -508,10 +508,10 @@ async def test_the_loop_holds_any_judged_pilot_to_a_persons_yes(tmp_path: Path) 
     trust: a pilot that says it cannot judge, and declares success with nobody asked, ends in
     failure. No new outcome: a run is still a success or it is not."""
     assert isinstance(_Claims(), JudgedPilot)
-    duck = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
+    glot = parse_glot_text(_v3(total_s=len(INSTRUCTIONS) * SEGMENT_S))
     result = await run_glot(
         RunConfig(
-            duck=duck,
+            glot=glot,
             provider=_Claims(),  # type: ignore[arg-type]
             transport=LeRobotAdapter(LeRobotMock()),
             runs_dir=tmp_path,
@@ -688,22 +688,22 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = tmp_path / "hand-off.glot"
-    duck.write_text(
+    glot = tmp_path / "hand-off.glot"
+    glot.write_text(
         "---\nglot: 1\nname: hand-off\ndescription: Hand the arm to its policy.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n---\nPut the block in the bowl.\n",
         encoding="utf-8",
     )
-    result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
+    result = _cli(tmp_path, str(glot), *ARM, "--controller", "vla")
     out = _flat(result.output)
     assert result.exit_code == 1 and "and hand-off lists none" in out, result.output
     assert "policy.instructions in a task file at glot: 3 or later" in out and _no_run(tmp_path)
 
 
 def _crane(tmp_path: Path, *, instructions: bool = True, played: bool = True) -> Path:
-    duck = tmp_path / "crane.glot"
-    duck.write_text(
+    glot = tmp_path / "crane.glot"
+    glot.write_text(
         "---\nglot: 4\nname: crane\ndescription: Play a crane.\nverbs:\n"
         "  allow: [manipulate, report_state, stop]\n  confirm: [manipulate]\n"
         "success: [the block is in the bowl]\n"
@@ -712,7 +712,7 @@ def _crane(tmp_path: Path, *, instructions: bool = True, played: bool = True) ->
         + "---\nYou are a crane. Put the block in the bowl.\n",
         encoding="utf-8",
     )
-    return duck
+    return glot
 
 
 @pytest.mark.parametrize("instructions", [True, False], ids=["instructions", "none"])
@@ -725,8 +725,8 @@ def test_a_task_file_that_plays_is_refused(
     refused for its part. The hint names the flag that turns the part off only where that
     leaves instructions for the policy to fly."""
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
-    duck = _crane(tmp_path, instructions=instructions)
-    result = _cli(tmp_path, str(duck), *ARM, "--controller", "vla")
+    glot = _crane(tmp_path, instructions=instructions)
+    result = _cli(tmp_path, str(glot), *ARM, "--controller", "vla")
     out = _flat(result.output)
     assert result.exit_code == 1, result.output
     assert "crane gives its pilot a part to play, and --controller vla flies the arm" in out

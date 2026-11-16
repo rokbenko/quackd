@@ -87,7 +87,7 @@ from tests.fake_robotd import (
     on_its_own_loop,
 )
 
-DUCK = parse_glot_text(
+GLOT = parse_glot_text(
     "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
     "success: [x]\n---\n# Task\nx\n"
 )
@@ -204,7 +204,7 @@ async def test_walk_verb_feeds_deadman_over_the_wire(
 ) -> None:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
-    ex = Executor(registry, t, contract=DUCK.frontmatter)
+    ex = Executor(registry, t, contract=GLOT.frontmatter)
     result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.3})
     assert result.ok
     notifications = await robotd.wait_notifications(3)
@@ -257,7 +257,7 @@ async def test_a_robotd_newer_than_the_read_is_served_and_says_so(
             "mediad_frame": None,
         }
         # and served: the duck walks
-        result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        result = await Executor(registry, t, contract=GLOT.frontmatter).run_verb(
             "walk", {"vx": 0.1, "duration_s": 0.2}
         )
         assert result.ok, result.summary
@@ -493,7 +493,7 @@ async def test_a_fallen_duck_refuses_to_walk(registry: VerbRegistry) -> None:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
         assert (await t.get_state()).posture == "fallen"
-        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        ex = Executor(registry, t, contract=GLOT.frontmatter)
         result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
         assert not result.ok and "fallen" in result.summary
         assert not [r for r in fake.notifications if r["method"] == "robot.move"]
@@ -507,7 +507,7 @@ async def test_a_blind_duck_refuses_to_walk(registry: VerbRegistry, robotd: Fake
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     t._last_state_at = None
-    ex = Executor(registry, t, contract=DUCK.frontmatter)
+    ex = Executor(registry, t, contract=GLOT.frontmatter)
     result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
     assert not result.ok and "cannot tell" in result.summary
     assert not [r for r in robotd.notifications if r["method"] == "robot.move"]
@@ -576,7 +576,7 @@ async def test_roboglot_never_sends_the_two_methods_that_move_or_drop_every_join
     """
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
-    ex = Executor(registry, t, contract=DUCK.frontmatter)
+    ex = Executor(registry, t, contract=GLOT.frontmatter)
     for verb, params in (
         ("walk", {"vx": 0.1, "duration_s": 0.2}),
         ("kick", {"leg": "left"}),
@@ -602,7 +602,7 @@ async def test_a_sitting_policy_reads_as_sitting(registry: VerbRegistry) -> None
         await t.connect()
         assert (await t.get_state()).posture == "sitting"
         # and a sitting duck is refused a walk, rather than dragged along the floor
-        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        ex = Executor(registry, t, contract=GLOT.frontmatter)
         result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
         assert not result.ok and "sitting" in result.summary
         await t.close()
@@ -724,7 +724,7 @@ async def test_a_call_the_robot_does_not_have_fails_the_verb_that_needs_it(
     try:
         t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{fake.port}")
         await t.connect()
-        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        ex = Executor(registry, t, contract=GLOT.frontmatter)
         result = await ex.run_verb("gaze", {"direction": "left"})
         assert not result.ok and str(up.ERR_METHOD_NOT_FOUND) in result.summary
         assert up.ROBOT_LOOK.name in result.summary
@@ -802,7 +802,7 @@ async def test_every_other_label_reads_as_unknown_and_refuses_a_walk(
         assert state.posture == "unknown" and state.extras["fall_detection"] is True
         assert repr(label) in state.extras["posture_reason"]
 
-        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        ex = Executor(registry, t, contract=GLOT.frontmatter)
         result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
         assert not result.ok and result.summary.startswith("cannot walk: posture is unknown")
         assert repr(label) in result.summary
@@ -857,7 +857,7 @@ async def test_a_limp_duck_is_not_standing_whatever_its_label_says(registry: Ver
         await t.connect()
         state = await t.get_state()
         assert state.posture == "unknown" and "safety.limp" in state.extras["posture_reason"]
-        ex = Executor(registry, t, contract=DUCK.frontmatter)
+        ex = Executor(registry, t, contract=GLOT.frontmatter)
         result = await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
         assert not result.ok and "safety.limp" in result.summary
         await _landed(t)
@@ -1974,7 +1974,7 @@ async def test_a_walk_an_emotion_stops_names_the_emotion_as_a_cause(
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     duration = 10 * move_echo_after_s(t.state_hz)
-    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+    result = await Executor(registry, t, contract=GLOT.frontmatter).run_verb(
         "walk", {"vx": 0.1, "duration_s": duration}
     )
     said = result.summary
@@ -2442,7 +2442,7 @@ async def test_a_walk_robotd_takes_is_shown_and_never_held(
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}")
     await t.connect()
     duration = 3 * move_echo_after_s(t.state_hz)
-    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+    result = await Executor(registry, t, contract=GLOT.frontmatter).run_verb(
         "walk", {"vx": 0.1, "duration_s": duration}
     )
     assert result.ok, result.summary
@@ -2526,7 +2526,7 @@ async def test_a_dropped_socket_fails_every_call_the_way_each_promises(
         await t.get_state()
         await t.stop()  # must not raise
         assert t.stop_error is not None and "Connection lost" in t.stop_error
-        result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+        result = await Executor(registry, t, contract=GLOT.frontmatter).run_verb(
             "walk", {"vx": 0.1, "duration_s": 0.3}
         )
         assert not result.ok and "the link to robotd is gone" in result.summary, result.summary
@@ -2795,7 +2795,7 @@ async def test_a_gaze_is_sent_again_until_something_ends_it(
     assert JsonRpcUnixTransport().gaze_hold_s == GAZE_HOLD_S == up.IDLE_AFTER_S / 2
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
     await t.connect()
-    result = await Executor(registry, t, contract=DUCK.frontmatter).run_verb(
+    result = await Executor(registry, t, contract=GLOT.frontmatter).run_verb(
         "gaze", {"direction": "left"}
     )
     assert result.ok, result.summary
@@ -2843,7 +2843,7 @@ async def test_a_stop_ends_the_held_gaze(
     elif how == "stop intent":
         assert (await t.send_intent(Intent.stop())).accepted
     else:
-        assert (await Executor(registry, t, contract=DUCK.frontmatter).run_verb("stop", {})).ok
+        assert (await Executor(registry, t, contract=GLOT.frontmatter).run_verb("stop", {})).ok
     extras = (await t.get_state()).extras
     assert extras["gaze_hold"] is None and extras["gaze_released"] == "stopped"
     await _nothing_more_goes_out(t, robotd)
@@ -3274,7 +3274,7 @@ async def test_a_dry_run_holds_no_gaze(registry: VerbRegistry, robotd: FakeRobot
     run's `gaze` leaves nothing behind that goes on sending."""
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", gaze_hold_s=HOLD_S)
     await t.connect()
-    ex = Executor(registry, t, contract=DUCK.frontmatter, dry_run=True)
+    ex = Executor(registry, t, contract=GLOT.frontmatter, dry_run=True)
     result = await ex.run_verb("gaze", {"direction": "left"})
     assert result.ok and result.data.get("dry_run") is True
     await _nothing_more_goes_out(t, robotd)

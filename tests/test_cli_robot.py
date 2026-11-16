@@ -801,7 +801,7 @@ def test_a_run_by_name_takes_the_robots_own_pilot_unless_a_flag_says_otherwise(
 
     def recorder(name: str, **kw: object) -> object:
         seen.append((name, kw.get("llm_id")))  # type: ignore[arg-type]
-        return real("fake", duck_name=kw.get("duck_name"))  # type: ignore[arg-type]
+        return real("fake", task_name=kw.get("task_name"))  # type: ignore[arg-type]
 
     monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", recorder)
     common = [

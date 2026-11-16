@@ -57,7 +57,7 @@ def _summary(tmp_path: Path) -> dict[str, Any]:
 # ── a name is a team of pilots ─────────────────────────────────────────────────────────
 
 
-def test_the_demo_duck_runs_with_no_registry_and_no_key(tmp_path: Path) -> None:
+def test_the_demo_task_file_runs_with_no_registry_and_no_key(tmp_path: Path) -> None:
     """`roboglot run team-hello --llm fake` has to work in a fresh checkout."""
     result = runner.invoke(app, ["run", "team-hello", *_run_args(tmp_path)])
     assert result.exit_code == 0, result.output
@@ -233,8 +233,8 @@ def test_a_stored_team_brings_its_own_robots(tmp_path: Path) -> None:
 
 
 def test_a_gated_verb_needs_yes(tmp_path: Path) -> None:
-    duck = tmp_path / "gated.glot"
-    duck.write_text(
+    glot = tmp_path / "gated.glot"
+    glot.write_text(
         "---\nglot: 1\nname: gated\ndescription: d\nverbs:\n  allow: [report_state, stop, pick]\n"
         "  confirm: [pick]\nsuccess: [x]\nrequires: [report_state]\n"
         "team:\n  members: [duck, arm]\n  allocation:\n    method: pilots\n"
@@ -246,7 +246,7 @@ def test_a_gated_verb_needs_yes(tmp_path: Path) -> None:
         {"duck": "microduck:mock", "arm": "lerobot:mock"},
         {"pair": ["duck", "arm"]},
     )
-    refused = runner.invoke(app, ["run", str(duck), "--team", "pair", *_run_args(tmp_path)])
+    refused = runner.invoke(app, ["run", str(glot), "--team", "pair", *_run_args(tmp_path)])
     assert refused.exit_code == 1, refused.output
     assert "cannot prompt y/N per member" in refused.output
 

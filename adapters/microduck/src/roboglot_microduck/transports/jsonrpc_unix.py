@@ -112,10 +112,10 @@ from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
     Ack,
-    DuckState,
     HeartbeatError,
     Intent,
     Posture,
+    RobotState,
     TransportError,
     camera_url_frame,
 )
@@ -1876,10 +1876,10 @@ class JsonRpcUnixTransport:
         """The newest state frame and what it says about the duck, without asking robotd
         anything: `robot.move` is held back on this, every tenth of a second, mid-verb."""
         # A duck nobody is watching reads as unknown, never as standing. `fallen` is a plain
-        # bool on the wire and in DuckState, so silence and "upright" are the same value there
-        # — the difference has to live in `posture` and in `fall_detection`, or a stream that
-        # never started looks exactly like a robot that is fine. Same invariant the Open Duck
-        # bridge states in `bridge.py`.
+        # bool on the wire and in Roboglot's RobotState, so silence and "upright" are the same
+        # value there — the difference has to live in `posture` and in `fall_detection`, or a
+        # stream that never started looks exactly like a robot that is fine. Same invariant the
+        # Open Duck bridge states in `bridge.py`.
         age = self.state_age_s()
         # a link that has ended sends no frame again, so the last one stops being believed at
         # once rather than once it has aged
@@ -1925,7 +1925,7 @@ class JsonRpcUnixTransport:
         picked_up = _flag(told, "picked_up")
         return StateRead(state, age, True, policy, fallen, picked_up, posture, why)
 
-    async def get_state(self) -> DuckState:
+    async def get_state(self) -> RobotState:
         health = self._last_health
         if health is None:
             with contextlib.suppress(TransportError):
@@ -1944,7 +1944,7 @@ class JsonRpcUnixTransport:
             # a duck ready to walk, and `report_state` said `standing` of it, with nothing a
             # pilot could read saying a walk was held. It reads as unknown until that verb ends.
             posture, reason = "unknown", f"{HELD_FOR_A_VERB}: {hold}"
-        return DuckState(
+        return RobotState(
             t=self.now(),
             policy=read.policy,
             posture=posture,

@@ -109,7 +109,7 @@ def _deprecated(msg: str) -> None:
 def _deprecated_backends(specs: Sequence[RobotSpec | str]) -> None:
     """`_deprecated`'s line for each backend these robots are on that its adapter is retiring
     (`deprecated_backend`), said once in a command however many of its robots are on the backend
-    and however many times this is asked, so a fleet of two ducks on one such backend is told
+    and however many times this is asked, so a team of two ducks on one such backend is told
     once.
 
     Asked just before a command connects the robots it is handed, and never earlier, because
@@ -774,7 +774,7 @@ def _refusals(
 
 
 def _robot_specs(
-    robot: str | None, robots: str | None, duck: Any, *, registry_dir: str | None = None
+    robot: str | None, robots: str | None, glot: Any, *, registry_dir: str | None = None
 ) -> list[Any]:
     """The robots a command talks about, as `Resolved`: --robots, else --robot (a registered
     name or a spec), else the task file's own `robots:` default, else this machine's default."""
@@ -786,7 +786,7 @@ def _robot_specs(
         # registry's, and a stored team is spelled `--team NAME` instead
         return [Resolved(spec) for spec in parse_robots(robots)]
     registry = Registry(registry_dir)
-    default = duck.frontmatter.robots if duck is not None else None
+    default = glot.frontmatter.robots if glot is not None else None
     if isinstance(default, dict):
         if robot:
             return [resolve_robot_ref(robot, registry)]
@@ -797,7 +797,7 @@ def _robot_specs(
             out.append(Resolved(RobotSpec(parsed.adapter, parsed.backend, name)))
         return out
     if isinstance(default, str) or default is None:
-        return [resolve_robot_ref(robot, registry, duck_default=default)]
+        return [resolve_robot_ref(robot, registry, glot_default=default)]
     return [resolve_robot_ref(robot, registry)]
 
 
@@ -840,23 +840,23 @@ def validate(
         row: dict[str, Any] = {"file": path, "name": None, "verbs": None, "robots": [], "ok": True}
         rows.append(row)
         try:
-            duck = load_glot(path)
+            glot = load_glot(path)
         except GlotParseError as e:
             row.update(ok=False, problems=[e.reason], summary=[e.reason])
             continue
-        row["name"] = duck.name
-        row["verbs"] = len(duck.frontmatter.verbs.allow)
-        if duck.frontmatter.team is not None:
-            row["team"] = len(duck.frontmatter.team.member_names)
+        row["name"] = glot.name
+        row["verbs"] = len(glot.frontmatter.verbs.allow)
+        if glot.frontmatter.team is not None:
+            row["team"] = len(glot.frontmatter.team.member_names)
         try:
             if robot or robots:
                 resolved = (
                     [resolve_robot_ref(r, registry_ref) for r in robot]
                     if robot
-                    else _robot_specs(None, robots, duck)
+                    else _robot_specs(None, robots, glot)
                 )
-            elif duck.frontmatter.robots is not None:
-                resolved = _robot_specs(None, None, duck)
+            elif glot.frontmatter.robots is not None:
+                resolved = _robot_specs(None, None, glot)
             else:
                 resolved = []
             manifests = [describe(r.spec) for r in resolved]
@@ -867,7 +867,7 @@ def validate(
         row["robots"] = [m.id for m in manifests]
         if not manifests and vocabulary is None:
             vocabulary = installed_vocabulary()
-        problems = validate_glot(duck, manifests, registry=vocabulary)
+        problems = validate_glot(glot, manifests, registry=vocabulary)
         if problems:
             # `str(p)` names the field it came from and is what the plain lines under the
             # table carry; `p.message` is the sentence, which is what fits in a cell
@@ -876,9 +876,9 @@ def validate(
                 problems=[str(p) for p in problems],
                 summary=[p.message for p in problems],
             )
-            # one body, as `run` has a board only for one: a fleet takes none, and no policy
+            # one body, as `run` has a board only for one: a team takes none, and no policy
             # server either, which is the only way an arm has pick and manipulate
-            if len(resolved) == 1 and not robots and duck.frontmatter.team is None:
+            if len(resolved) == 1 and not robots and glot.frontmatter.team is None:
                 notes = [
                     note
                     for note in (
@@ -1661,7 +1661,7 @@ def _someone_to_ask() -> bool:
 
 
 def _front_refusal(
-    *, by_hand: bool, team: str | None, robots: str | None, duck: Any, specs: Sequence[Any]
+    *, by_hand: bool, team: str | None, robots: str | None, glot: Any, specs: Sequence[Any]
 ) -> tuple[str, str] | None:
     """Why the page cannot drive this run, as a sentence and a hint, or None.
 
@@ -1680,9 +1680,9 @@ def _front_refusal(
             f"{'--team' if team is not None else '--robots'} names several",
             "run a team from a terminal",
         )
-    if duck is not None and duck.frontmatter.team is not None:
+    if glot is not None and glot.frontmatter.team is not None:
         return (
-            f"{duck.name} is a task for a team, and the page drives one robot at a time",
+            f"{glot.name} is a task for a team, and the page drives one robot at a time",
             "run it from a terminal",
         )
     if len(specs) > 1:
@@ -2006,11 +2006,11 @@ def _run_impl(
         )
         return
     try:
-        duck = load_glot(glotfile) if glotfile is not None else None
+        glot = load_glot(glotfile) if glotfile is not None else None
         resolved = (
             [Resolved(entry.robot_spec, entry) for entry in roster.values()]
             if roster is not None
-            else _robot_specs(robot, robots, duck, registry_dir=registry_dir)
+            else _robot_specs(robot, robots, glot, registry_dir=registry_dir)
         )
         specs = [r.spec for r in resolved]
         here = resolved[0]
@@ -2019,29 +2019,29 @@ def _run_impl(
         _fail(str(e))
         return
     if _FRONT is not None:
-        refused = _front_refusal(by_hand=by_hand, team=team, robots=robots, duck=duck, specs=specs)
+        refused = _front_refusal(by_hand=by_hand, team=team, robots=robots, glot=glot, specs=specs)
         if refused is not None:
             _fail(refused[0], hint=refused[1])
             return
-    if vla and duck is not None and resolve_play(duck.frontmatter.play, play)[0]:
+    if vla and glot is not None and resolve_play(glot.frontmatter.play, play)[0]:
         # Here rather than with the flags above, which run before the file is read, and before
         # the instructions, which a played file would otherwise be sent to add first. The
         # policy flies the arm with no pilot to read a part, so a run recorded as played would
         # be one nobody played. --no-play is the way out only for a file with instructions.
         _fail(
-            f"{duck.name} gives its pilot a part to play, and --controller vla flies the arm "
+            f"{glot.name} gives its pilot a part to play, and --controller vla flies the arm "
             "with no pilot to read it",
             hint="run it with --no-play, or without --controller vla"
-            if duck.frontmatter.effective_policy.instructions
+            if glot.frontmatter.effective_policy.instructions
             else "run it without --controller vla, or list policy.instructions in it and run "
             "it with --no-play",
         )
         return
-    if vla and duck is not None and not duck.frontmatter.effective_policy.instructions:
+    if vla and glot is not None and not glot.frontmatter.effective_policy.instructions:
         # a goal is its own one instruction, and was held to the rule for one above
         _fail(
             "--controller vla tells the arm's policy the instructions a task file lists, and "
-            f"{duck.name} lists none",
+            f"{glot.name} lists none",
             hint="list them under policy.instructions in a task file at glot: 3 or later "
             "(docs/reference/glot-spec.md), or give --goal",
         )
@@ -2051,40 +2051,40 @@ def _run_impl(
     # never arrived, and an arm nobody was asked to place. A goal is never a team.
     several = (
         roster is not None
-        or (duck is not None and duck.frontmatter.team is not None)
+        or (glot is not None and glot.frontmatter.team is not None)
         or len(specs) > 1
     )
-    # A host is one machine: one camera, one detector, the health of one board. A fleet is
+    # A host is one machine: one camera, one detector, the health of one board. A team is
     # several bodies, and one --host would have to be every member's camera at once, so it is
     # refused here with --image and --by-hand, before anything connects. `--robots` counts even
-    # with one member in it, because it is the fleet spelling. A host stored with a member is
+    # with one member in it, because it is the team spelling. A host stored with a member is
     # the same claim made in robots.json, and is refused by that member's name. ROBOGLOT_HOST is
     # not: it is the board you usually use rather than a claim about these bodies, and for a
-    # fleet it moves only the local presets' LLM server, which LocalProvider reads itself.
-    fleet = several or bool(robots)
+    # team it moves only the local presets' LLM server, which LocalProvider reads itself.
+    as_team = several or bool(robots)
     hosted = [r.entry.name for r in resolved if r.entry is not None and r.entry.host]
-    if fleet and (host or "").strip():
+    if as_team and (host or "").strip():
         _fail(
             "--host names one machine's camera and detector, and a fleet has several bodies",
             hint="drop --host, or run the task on one body at a time",
         )
         return
-    if fleet and hosted:
+    if as_team and hosted:
         _fail(
             f"{hosted[0]} has a host in robots.json, which names one machine's camera and "
             "detector, and a fleet has several bodies",
             hint=f"roboglot robot edit {hosted[0]} --clear host, or run it on its own",
         )
         return
-    if fleet and (host_token or "").strip():
+    if as_team and (host_token or "").strip():
         # refused as --host is, rather than dropped: `resolve_host` refuses a typed token with
-        # no board to go to, and a fleet never reaches it
+        # no board to go to, and a team never reaches it
         _fail(
             "--host-token is one board's token, and a fleet has several bodies and no board",
             hint="drop --host-token, or run the task on one body at a time",
         )
         return
-    if fleet and policy is not None:
+    if as_team and policy is not None:
         # one server, one session at a time, and one arm's calibration it was checked against:
         # every team path builds its own members, so it would be dropped without a word
         _fail(
@@ -2092,7 +2092,7 @@ def _run_impl(
             hint="drop --policy-url, or run the task on one arm at a time",
         )
         return
-    if fleet and map_address is not None:
+    if as_team and map_address is not None:
         _fail(
             "--map-address is where one robot's map answers, and a fleet has several bodies",
             hint="drop --map-address, or keep each robot's own: roboglot robot edit NAME "
@@ -2100,12 +2100,12 @@ def _run_impl(
         )
         return
     # The one place this run's board is settled, so everything that uses the board reads this
-    # value rather than deriving its own. A fleet has none, whatever the environment says.
+    # value rather than deriving its own. A team has none, whatever the environment says.
     stored = here.host_kwargs()
     try:
         host_choice = (
             HostChoice()
-            if fleet
+            if as_team
             else resolve_host(
                 host,
                 stored["host"],
@@ -2159,8 +2159,8 @@ def _run_impl(
                 if policy is not None and any("manipulate" in v for v in vocabularies)
                 else []
             )
-            duck = glot_from_goal(goal, safe, confirm=gated, memory=memory)
-        assert duck is not None
+            glot = glot_from_goal(goal, safe, confirm=gated, memory=memory)
+        assert glot is not None
         # Refuse before connecting, with the validator's words. `serve-mcp` has always done
         # this; `run` never did, and reached the loop's tool_schemas and died on a raw
         # VerbNotFound with the robot already connected and a run directory already made.
@@ -2170,7 +2170,7 @@ def _run_impl(
         described = manifests[0]
         if hello is not None:
             manifests[0] = with_host_camera(described, hello)
-        section = duck.frontmatter.team
+        section = glot.frontmatter.team
         pilots = section is not None or roster is not None
         # a task file with no `team:` block, run against a stored team, is still a team:
         # judged body by body the arm would be refused for not being able to walk. And a
@@ -2178,7 +2178,7 @@ def _run_impl(
         # its own vocabulary is its answer to it (`pilots.ADVISORY_FIELDS`).
         problems = [
             p
-            for p in validate_glot(duck, manifests, team=True if roster is not None else None)
+            for p in validate_glot(glot, manifests, team=True if roster is not None else None)
             if not (pilots and p.field in ADVISORY_FIELDS)
         ]
     except (GlotParseError, TransportError, RegistryError) as e:
@@ -2186,20 +2186,20 @@ def _run_impl(
         return
     if problems:
         _fail(
-            f"{duck.name} cannot run on {', '.join(s.key for s in specs)}: "
+            f"{glot.name} cannot run on {', '.join(s.key for s in specs)}: "
             + "; ".join(p.message for p in problems),
-            # an arm's pick and manipulate come only from --policy-url, which a fleet refuses
+            # an arm's pick and manipulate come only from --policy-url, which a team refuses
             hint=None
-            if fleet or policy is not None
+            if as_team or policy is not None
             else policy_hint(
                 [p.verb for p in problems if p.verb], [s.key for s in specs], "roboglot run"
             ),
         )
         return
-    if detector_choice is not None and fleet:
+    if detector_choice is not None and as_team:
         # every team path builds its own members' detectors, so a choice made here would be
         # dropped without a word, which is the thing a flag must never do. `--robots` counts
-        # even with one member, as it does for --host: serve-mcp serves one member as a fleet
+        # even with one member, as it does for --host: serve-mcp serves one member as a team
         # and would drop the choice there, and the two commands keep one rule
         _fail(
             "--detector is for one robot, and a fleet has several bodies",
@@ -2253,7 +2253,7 @@ def _run_impl(
             what="a run, a dry one included",
             address=address,
             camera_url=camera_url,
-            fleet=fleet,
+            as_team=as_team,
         )
         if refused is not None:
             _fail(refused[0], hint=refused[1])
@@ -2299,7 +2299,7 @@ def _run_impl(
             hint="drop it, or pass --decision-llm off for this run",
         )
         return
-    if roster is not None or duck.frontmatter.team is not None:
+    if roster is not None or glot.frontmatter.team is not None:
         if (decision != "off" or frames) and named_decision is not None:
             # One loop per member, each with its own executor and budget, and the stepper is
             # built per loop. Wiring it through a team is a thing to do deliberately with a
@@ -2322,7 +2322,7 @@ def _run_impl(
                     member_specs(
                         section.member_names,
                         {s.name: s.key for s in specs if s.name} or None,
-                        duck.frontmatter.robots,
+                        glot.frontmatter.robots,
                     )
                 )
             except _AdapterError as e:
@@ -2359,7 +2359,7 @@ def _run_impl(
             )
             return
         _run_pilots_impl(
-            duck,
+            glot,
             roster,
             llm=llm,
             dry_run=dry_run,
@@ -2423,9 +2423,9 @@ def _run_impl(
             # are written for an LLM, and the goal itself is the question. The robot's
             # registered pilot and `ROBOGLOT_LLM` name an LLM this run never asks.
             pilot = VlaProvider(
-                [goal] if goal is not None else duck.frontmatter.effective_policy.instructions,
-                success=duck.frontmatter.success if goal is None else (),
-                label=duck.name,
+                [goal] if goal is not None else glot.frontmatter.effective_policy.instructions,
+                success=glot.frontmatter.success if goal is None else (),
+                label=glot.name,
             )
         else:
             # a registered robot may name the pilot that drives it; a flag on the line still
@@ -2440,7 +2440,7 @@ def _run_impl(
                 vendor,
                 llm_id=llm_id,
                 source=llm_source,
-                duck_name=duck.name,
+                task_name=glot.name,
                 goal=goal,
                 base_url=base_url,
                 api_key=api_key,
@@ -2539,15 +2539,15 @@ def _run_impl(
                 # go, and on a run whose mode asks the stepper nothing, that it sends none, with
                 # what `watch` sends where the task lets the pilot call it on this body.
                 watch = (
-                    "watch" in described.verb_names() and "watch" in duck.frontmatter.verbs.allow
+                    "watch" in described.verb_names() and "watch" in glot.frontmatter.verbs.allow
                 )
                 _warn(_frames_notice(decision, decision_pilot.url, watch=watch))
-    if "watch" in duck.frontmatter.effective_requires and not frames:
+    if "watch" in glot.frontmatter.effective_requires and not frames:
         # A task that needs `watch` on a run with nothing for it to look through is refused here,
         # before the robot connects, rather than by the loop once it has (`withdraw_watch`).
         from roboglot.verbs.watch import NO_EYES
 
-        _fail(f"{duck.name} requires watch, and {NO_EYES}")
+        _fail(f"{glot.name} requires watch, and {NO_EYES}")
         return
     if decision == "on":
         # Nobody has run a stepper against a robot, so every speed and cost figure in
@@ -2623,7 +2623,7 @@ def _run_impl(
         robot_memory = RobotMemory(here.memory_key, memory_dir)
     front = _FRONT
     cfg = RunConfig(
-        duck=duck,
+        glot=glot,
         provider=pilot,
         transport=duck_transport,
         detector=detector,
@@ -2662,7 +2662,7 @@ def _run_impl(
     _deprecated_backends([spec])
     ui.console.print(
         ui.run_header(
-            duck.name,
+            glot.name,
             _header_rows(
                 provider=pilot,
                 robot=here.label,
@@ -2676,7 +2676,7 @@ def _run_impl(
                 sees="camera" in manifests[0].sensors,
                 policy=served,
                 play=play_row(
-                    *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
+                    *resolve_play(glot.frontmatter.play, play), file_play=glot.frontmatter.play
                 ),
                 effort=effort,
             ),
@@ -2850,7 +2850,7 @@ def _member_views(
 
 
 def _run_pilots_impl(
-    duck: Any,
+    glot: Any,
     roster: Any,
     *,
     llm: str | None,
@@ -2889,7 +2889,7 @@ def _run_pilots_impl(
     from roboglot.transport.base import TransportError
 
     members = list(roster)
-    if duck.frontmatter.verbs.confirm and not yes:
+    if glot.frontmatter.verbs.confirm and not yes:
         _fail("a pilot team cannot prompt y/N per member: empty verbs.confirm or pass --yes")
         return
     try:
@@ -2900,7 +2900,7 @@ def _run_pilots_impl(
                 vendor,
                 llm_id=llm_id,
                 source=llm_source,
-                duck_name=duck.name,
+                task_name=glot.name,
                 goal=goal,
                 base_url=base_url,
                 api_key=api_key,
@@ -2931,7 +2931,7 @@ def _run_pilots_impl(
     )
     ui.console.print(
         ui.run_header(
-            duck.name,
+            glot.name,
             _pilot_header_rows(
                 roster,
                 providers,
@@ -2939,7 +2939,7 @@ def _run_pilots_impl(
                 team_name=team_name,
                 dry_run=dry_run,
                 play=play_row(
-                    *resolve_play(duck.frontmatter.play, play), file_play=duck.frontmatter.play
+                    *resolve_play(glot.frontmatter.play, play), file_play=glot.frontmatter.play
                 ),
             ),
             hint="Ctrl-C or q stops every robot. Ctrl-C twice quits at once.",
@@ -2956,7 +2956,7 @@ def _run_pilots_impl(
         ks.install()
         try:
             return await run_pilot_team(
-                duck,
+                glot,
                 roster,
                 providers=providers,
                 runs_dir=runs_dir,
@@ -3075,7 +3075,7 @@ def _pilot_header_rows(
     return rows
 
 
-_DUCK_ARG = typer.Argument(
+_GLOT_ARG = typer.Argument(
     None, help="Path to a .glot file, or a bundled name (hello-world, find-and-kick, ...)."
 )
 _GOAL = typer.Option(
@@ -3616,7 +3616,7 @@ _LOG_PROMPT = typer.Option(
 
 @app.command(rich_help_panel="Run a task")
 def run(
-    glotfile: str | None = _DUCK_ARG,
+    glotfile: str | None = _GLOT_ARG,
     goal: str | None = _GOAL,
     image: list[str] = _IMAGE,
     by_hand: bool = _BY_HAND,
@@ -4249,7 +4249,7 @@ def _drive_command(
         _fail(str(e))
         return
     except SystemExit as e:
-        # `fleet_from_flags` refuses a robot it cannot build with a sentence of its own, which
+        # `team_from_flags` refuses a robot it cannot build with a sentence of its own, which
         # behind the page is the page's refusal; at a terminal it leaves as it always has
         if front is not None and isinstance(e.code, str):
             _fail(e.code)
@@ -7551,7 +7551,7 @@ def memory_show(
                 what.append(NEWLINE + joined, style=ui.STYLES["muted"])
             table.add_row(
                 Text(entry.date),
-                Text(str(entry.duck or "")),
+                Text(str(entry.task or "")),
                 Text(outcome, style=ui.STYLES["ok" if outcome == "success" else "warn"]),
                 what,
             )
@@ -7564,8 +7564,8 @@ def _plural(n: int, word: str) -> str:
 
 def _episode_detail(entry: Any) -> str:
     """An episode's text without the task and outcome it already has columns for."""
-    prefix = f"{entry.duck}: {entry.outcome} — "
-    if entry.duck and entry.outcome and entry.text.startswith(prefix):
+    prefix = f"{entry.task}: {entry.outcome} — "
+    if entry.task and entry.outcome and entry.text.startswith(prefix):
         return str(entry.text[len(prefix) :])
     return str(entry.text)
 

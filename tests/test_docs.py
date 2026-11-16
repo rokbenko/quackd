@@ -1796,7 +1796,7 @@ def test_the_pypi_summary_names_every_robot() -> None:
         )
 
 
-def test_the_readme_starter_table_lists_every_bundled_duck() -> None:
+def test_the_readme_starter_table_lists_every_bundled_task_file() -> None:
     """`open-duck-lookout` shipped in 0.5 and appeared nowhere in the README."""
     from roboglot.glotfile.parser import list_bundled_tasks
 
@@ -1834,7 +1834,7 @@ def test_no_living_document_claims_the_wrong_number_of_starters() -> None:
                 )
 
 
-def test_the_arm_guide_gives_the_duck_it_has_the_reader_load() -> None:
+def test_the_arm_guide_gives_the_task_file_it_has_the_reader_load() -> None:
     """M09 of the arm's first-run guide has the reader load `arm-look.glot` over MCP and quotes
     what loading it answers, down to `step 0/8, LLM calls 0/8, 0.0/3 min`, and the file itself
     was nowhere, not on the page and not in `tasks/`. The page gives it now, straight after the
@@ -2166,10 +2166,10 @@ def test_no_living_document_still_says_no_llm_is_on_film() -> None:
 def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
     """One word for a group of robots, because two words for one idea is two ideas to a reader.
 
-    ADR-0035 retired "fleet" from prose and from help text, and kept it in the code, where
-    `Fleet` and `build_fleet_server` are imported by name. The split is the point: this guard
-    reads what a person reads, which for `roboglot/` means docstrings and help strings rather
-    than identifiers, so it checks the CLI's rendered help rather than the source."""
+    ADR-0035 retired "fleet" from prose and from help text, and the code's own names have since
+    followed it (`ServedTeam`, `build_team_server`). This guard reads what a person reads, which
+    for `roboglot/` means docstrings and help strings rather than identifiers, so it checks the
+    CLI's rendered help rather than the source."""
     from typer.testing import CliRunner
 
     from roboglot.cli import app
@@ -2178,7 +2178,7 @@ def test_no_living_document_or_user_facing_string_still_says_fleet() -> None:
         prose = _prose(path.read_text(encoding="utf-8")).lower()
         assert "fleet" not in prose, f"{path.name} still says fleet"
     # the help a user actually sees, top level and every sub-app, which is where three of the
-    # stale ones were: a source grep would have been satisfied by `fleet_from_flags`
+    # stale ones were: a source grep would have been satisfied by an identifier with the word in it
     runner = CliRunner()
     argvs: tuple[list[str], ...] = ([], ["robot"], ["team"], ["memory"], ["run"], ["serve-mcp"])
     # Robot Passport's two groups since 0.29.0: `onboard` on a robot's own computer and
@@ -4869,9 +4869,9 @@ def test_the_arms_getting_started_says_what_the_task_files_say() -> None:
     examples = REPO / "docs" / "examples" / "lerobot"
     for path in set(re.findall(r"docs/examples/lerobot/[\w/.-]+\.(?:duck|py|png)", steps)):
         assert (REPO / path).exists(), f"the arm's steps name {path}, which is not there"
-    ducks = [duck.read_text(encoding="utf-8") for duck in examples.glob("*/*.glot")]
-    assert f"{len(ducks)} task" in steps and f"{len(ducks)} files valid" in steps
-    played = sum("play: true" in duck for duck in ducks)
+    glots = [glot.read_text(encoding="utf-8") for glot in examples.glob("*/*.glot")]
+    assert f"{len(glots)} task" in steps and f"{len(glots)} files valid" in steps
+    played = sum("play: true" in glot for glot in glots)
     assert f"{played} of the task files" in steps
     on_the_arm = re.findall(
         r"^\s*(roboglot run docs/examples/lerobot/([\w/.-]+\.glot) --robot arm-01 .*)$",
@@ -4879,8 +4879,8 @@ def test_the_arms_getting_started_says_what_the_task_files_say() -> None:
         flags=re.M,
     )
     assert len(on_the_arm) >= 4
-    for line, duck in on_the_arm:
-        assert line in (examples / duck).read_text(encoding="utf-8"), f"{duck} says otherwise"
+    for line, glot in on_the_arm:
+        assert line in (examples / glot).read_text(encoding="utf-8"), f"{glot} says otherwise"
 
 
 def test_the_arms_steps_name_the_row_list_models_prints_first(
@@ -4939,10 +4939,10 @@ def test_every_task_files_first_command_is_on_the_run_sheet() -> None:
     """Each task file opens with the command that runs it, and its card has to say the same."""
     commands = set(_run_sheet_commands())
     missing = []
-    for duck in sorted(_RUN_SHEET.parent.glob("*/*.glot")):
-        first = re.search(r"^#\s+(roboglot run\b.*)$", duck.read_text(encoding="utf-8"), re.M)
+    for glot in sorted(_RUN_SHEET.parent.glob("*/*.glot")):
+        first = re.search(r"^#\s+(roboglot run\b.*)$", glot.read_text(encoding="utf-8"), re.M)
         if first and first.group(1).strip() not in commands:
-            missing.append(f"{duck.parent.name}/{duck.name}")
+            missing.append(f"{glot.parent.name}/{glot.name}")
     assert not missing, f"no card has the first command of {missing}"
 
 

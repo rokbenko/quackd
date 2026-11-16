@@ -819,11 +819,11 @@ class FakeProvider:
 
     @classmethod
     def for_glot(
-        cls, duck_name: str, goal: str | None = None, *, vision: bool | None = None
+        cls, task_name: str, goal: str | None = None, *, vision: bool | None = None
     ) -> FakeProvider:
         """Pick a scripted strategy by task name, or by keywords in a plain-language goal."""
-        strategy = STRATEGIES.get(duck_name)
-        label = duck_name
+        strategy = STRATEGIES.get(task_name)
+        label = task_name
         if strategy is None and goal:
             text = goal.lower()
             if "kick" in text or "ball" in text:
