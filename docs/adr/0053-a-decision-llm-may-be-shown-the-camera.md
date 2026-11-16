@@ -2,6 +2,9 @@
 
 **Status:** accepted · **Date:** 2026-10-19 · Amends [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md) (what the stepper is sent, and what its record and its summary keep) and [ADR-0052](0052-openais-decisions-api-is-a-second-wire-format.md) (`openai` may be shown a picture, where it was sent text alone) · Implemented in `roboglot/agent/decision/frames.py`, with changes in `base.py`, the catalogue, the factory, `decisions_api.py`, the stepper, the loop, the CLI and `roboglot log` · Documented in [docs/guides/decision-llms/openai.md](../guides/decision-llms/openai.md#showing-it-the-camera---decision-frames)
 
+**Amended 2026-11-16:** `roboglot record`, which the Decision says pins the flag off, no longer
+exists: it went with every simulator on 2026-11-15. The decision otherwise stands.
+
 ## Context
 
 [ADR-0040](0040-a-discrete-stepper-in-front-of-the-pilot-llm.md)'s stepper reads a turn as text: a

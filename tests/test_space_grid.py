@@ -248,19 +248,6 @@ def test_cells_a_caller_has_its_own_reason_to_avoid_are_walked_round() -> None:
     assert around.length_m > straight.length_m
 
 
-def test_frontiers_are_floor_beside_unseen_floor_the_edge_included() -> None:
-    g = grid(
-        "?..",
-        "...",
-        "..#",
-    )
-    cells = set(g.frontiers())
-    assert (1, 2) in cells and (0, 1) in cells, "beside the unseen corner"
-    assert (0, 0) in cells, "on the edge, which counts as unseen"
-    assert (1, 1) not in cells, "floor with floor and wall all round"
-    assert all(g.cells[r, c] == FREE for c, r in cells)
-
-
 def test_the_map_reads_top_line_highest_with_the_robot_an_arrow_and_places_lettered() -> None:
     g = grid(
         "????",

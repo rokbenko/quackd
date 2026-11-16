@@ -59,10 +59,10 @@ class Pose2D:
 
 @dataclass(frozen=True)
 class FrameRef:
-    """The frame a pose belongs to. `key` names it (`odom:<connection>`, `map:<id>`,
-    `sim:<digest>`), `persistent` says whether it outlives the connection, and `epoch` counts the
-    times an odometry frame had to start again within one connection: a pick-up, a fall, a step
-    no gait could make."""
+    """The frame a pose belongs to. `key` names it (`odom:<connection>` or `map:<id>`),
+    `persistent` says whether it outlives the connection, and `epoch` counts the times an
+    odometry frame had to start again within one connection: a pick-up, a fall, a step no gait
+    could make."""
 
     kind: LocalizationKind
     key: str

@@ -261,8 +261,8 @@ def missing_needs_in(
       the fact the pilot was shown, rather than "(not published)", which it never was.
 
     A body with no datasheet at all gets none of the floor exceptions: its prompt says to treat
-    every physical limit as not published, terrain included, and a bid that carried no sheet
-    said nothing. `mobility` comes in apart from `facts` because it lives on the manifest.
+    every physical limit as not published, terrain included. `mobility` comes in apart from
+    `facts` because it lives on the manifest.
 
     `own_sheet` is the one place a pilot judging its own body is read more kindly than anybody
     judging a stranger's. With it, a `work_height_m` against a sheet that publishes no working

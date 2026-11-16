@@ -1384,7 +1384,7 @@ async def test_a_pilot_cleared_without_asking_anybody_is_not_told_a_person_did(
     hello_glot: GlotFile, tmp_path: Path, standing: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """`_assess` chose the "a person read that and said go" sentence on the answer alone, so a
-    run started with `--yes` (which `roboglot record` always passes) or a team's standing
+    run started with `--yes` or a team's standing
     answer told the pilot, and wrote into the assess event's summary, that a person had read its
     doubt, while the same run rightly wrote no `prompt` row because nobody was asked. A record
     that invents a witness is the one safety.md says is worse than none. The pilot is told the

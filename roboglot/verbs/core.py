@@ -595,7 +595,7 @@ async def _gaze_sweep(
             return await _ended_by(ctx, "search_scan", why, swept, steps=i)
         rad = math.radians(yaw)
         await ctx.transport.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))
-        await ctx.transport.sleep(TICK_S)  # let the head settle; the sim clock advances
+        await ctx.transport.sleep(TICK_S)  # let the head settle; a mock's clock advances
         img, hits = await _see(ctx, p.target, f"search_scan gaze {yaw:+.0f}")
         if img is None:
             return await _no_frame(ctx, "search_scan")

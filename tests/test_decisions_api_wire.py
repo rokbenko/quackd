@@ -142,7 +142,6 @@ def _run(stand_in: FakeOpenAIDecisions, tmp_path: Path, *extra: str, url: str | 
             "shadow",
             "--runs-dir",
             str(tmp_path),
-            "--no-gif",
             "--no-memory",
             *extra,
         ],

@@ -25,7 +25,7 @@ Posture = Literal["standing", "sitting", "fallen", "unknown"]
 IntentKind = Literal["move", "stop", "do", "look", "sound", "enable", "pose", "joint", "gripper"]
 
 # Neutral skill vocabulary. These strings are upstream's own (`duck-ipc-proto` `Skill` enum);
-# see `upstream_api.SKILLS`. The sim interprets the same names.
+# see `upstream_api.SKILLS`. A mock reads the same names.
 Skill = Literal["ground_pick", "kick_left", "kick_right", "sit_toggle", "roulade"]
 
 
@@ -226,7 +226,7 @@ class DuckTransport(Protocol):
         ...
 
     async def sleep(self, seconds: float) -> None:
-        """Let `seconds` of transport time pass (advancing the sim, or actually waiting)."""
+        """Let `seconds` of transport time pass (advancing a mock's clock, or actually waiting)."""
         ...
 
 

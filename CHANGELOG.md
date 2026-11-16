@@ -100,6 +100,12 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models` and
   TAB completion no longer offer it, and a run on it asks for its call with `auto` rather than
   insisting on one with `required`.
+- **`find-and-kick` tells the pilot to check a kick with a fresh frame or a person's word.** Its
+  strategy said the kick's result tells you whether the ball moved and by how much, which only a
+  simulator's ever did. It says now that the result says the kick was sent, not whether the ball
+  moved, and to verify with a fresh frame or a person's word. The success line is as it was. This
+  is one of the five `glot: 0` starters whose bytes `tests/golden/glot_hashes.json` holds, so its
+  bytes changed on purpose, with its hash there, and the README's copy of it says the same.
 
 ### Removed
 
@@ -142,7 +148,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
     an adapter of your own: `post_sleep`, `roboglot.adapters.factory.is_simulator`,
     `roboglot.perception.base.labels_of`, and `FRAME_HEAD_YAW_DEG` and `frame_head_yaw_of` in
     `roboglot.transport.base`, the head a frame was taken through, which only the coordinator's
-    members and `explore` read;
+    members and `explore` read, and `frontiers()` and `distances()` on
+    `roboglot.space.grid.OccupancyGrid`, which only `explore` read;
+  - how far a Microduck's `kick` said the ball moved, `ball_moved_m` in its result, which only a
+    simulator measured and a real duck left `null`. A kick says it was sent and played out, as a
+    Huebot's did, and `reads_the_ball` in `roboglot_microduck.body.Body` is gone with it;
   - the variables `ROBOGLOT_MUJOCO_BODY`, `ROBOGLOT_MUJOCO_SHADOWS`, `ROBOGLOT_MICRODUCK_ASSETS`,
     `ROBOGLOT_LEROBOT_SIM_ASSETS`, `ROBOGLOT_CACHE_DIR`, `ROBOGLOT_STRICT_SEEDS` and
     `ROBOGLOT_REQUIRE_GL`. The service `roboglot onboard` installs no longer sets
@@ -188,6 +198,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the broker's echo of each notice for a new message: the members heard it twice and
   `team.jsonl` kept it twice. A name the bus has published under is its own now, and its echo is
   dropped as a member's always was. The bus is a library's (`bus_factory=`), with no flag.
+- **The OpenAI Decisions API's wire tests run again.** `tests/test_decisions_api_wire.py` passed
+  `--no-gif` to `roboglot run`, a flag that went with the simulators, so 13 of its tests stopped at
+  the parser with exit code 2. CI could not see it: the file is skipped where the `openai` package
+  is missing, and no CI job installs it for that file. The flag is gone from the test, and the file
+  passes with the SDK installed.
+- **The scripted pilot no longer calls a kick a success when nothing says where the ball went.**
+  On `find-and-kick`, or a goal that names a kick or a ball, `--llm fake` read how far the ball
+  moved from the kick's result, which only a simulator filled in, and on a Microduck or a Huebot,
+  whose kick says nothing of the ball, it declared success on any kick the robot took. It judges
+  by the camera now, the frame after the kick against the one the kick was chosen on: a ball 0.3 m
+  or more from where it was is a quack and a success, a nearer one is another approach and kick,
+  and a ball the camera did not place both before and after ends the run as a failure that says
+  it cannot tell.
 - **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
   mapd names no map yet, and the place read as waiting for the robot's map to be known until the
   next session found it orphaned. It says `its map was wiped` from the moment of the wipe.

@@ -2320,10 +2320,9 @@ class AgentLoop:
                 asked = self.answered_by == A_PERSON
                 self._ask_recorded("decide", verdict.question(), answer, self.cfg.decide)
         if verdict.verdict == "feasible":
-            # The coordinator already holds another robot's bid to its datasheet, and nothing
-            # held a pilot's verdict about its OWN body to its own sheet, so a `needs` naming
-            # an unpublished figure passed straight through and the body moved. Measured on
-            # Qwen3-32B: a 45 minute patrol came back feasible six times out of six, twice
+            # Nothing held a pilot's verdict about its OWN body to its own sheet, so a `needs`
+            # naming an unpublished figure passed straight through and the body moved. Measured
+            # on Qwen3-32B: a 45 minute patrol came back feasible six times out of six, twice
             # with `needs: {"endurance_min": 45}` recorded beside it, on a body whose
             # endurance nobody published. Refused rather than warned, the same way a verdict
             # carrying `human` is refused: a warning in the log stops nothing.

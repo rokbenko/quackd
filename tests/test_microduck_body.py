@@ -137,6 +137,22 @@ def test_a_frame_url_on_a_body_with_no_mediad_is_somebodys_snapshot_server(url: 
     assert duck.camera_fov_assumed == up.BETA_UPRIGHT_FOV.name
 
 
+async def test_a_kick_says_it_was_sent_and_nothing_of_the_ball() -> None:
+    """Only the simulators ever wrote how far a kick moved the ball, and the Microduck's kick read
+    it back as `ball_moved_m`. No body reports it, so a kick says it was sent and played out, and
+    a state that still carries the simulators' field is not read for one."""
+    from roboglot.transport.base import DuckState
+    from roboglot.transport.mock import MockTransport
+    from roboglot.verbs.registry import VerbContext
+    from roboglot_microduck.verbs import KickParams
+
+    said = DuckState(policy="mock", posture="standing", extras={"last_kick_ball_moved_m": 1.0})
+    ctx = VerbContext(transport=MockTransport(states=[said]))
+    for body in (MICRODUCK, HUEBOT):
+        result = await verbs_for(body)["kick"].execute(ctx, KickParams(leg="right"))
+        assert (result.ok, result.summary, result.data) == (True, "kicked with right leg", {})
+
+
 def test_a_body_with_no_map_reports_none_to_doctor() -> None:
     """`doctor` prints a row for what became of a robot's map, and a robot that has none has no
     row, where a transport shared with one that does would otherwise say `not probed`."""

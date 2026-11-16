@@ -257,7 +257,6 @@ SENTENCES: dict[str, tuple[str, ...]] = {
         "The model is core",
         "## Invariants the model enforces",
     ),
-    "pyproject.toml": ("upstream's model",),
     "roboglot/adapters/export.py": ("regenerates  from the model.",),
     "roboglot/adapters/passport.py": ("than to its model, comes",),
     "roboglot/agent/decision/catalogue.py": (

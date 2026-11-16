@@ -157,8 +157,6 @@ class Body:
     """Whether it runs `mediad`, so that a `/frame` URL is mediad's picture and `webrtc://` its
     track. On any other body a URL of that shape is somebody's snapshot server, whose frames say
     nothing of when they were taken or which way up they are."""
-    reads_the_ball: bool = False
-    """Whether `kick` reports how far the ball moved, which the robot's state has to say."""
 
     @property
     def looks(self) -> bool:
@@ -367,7 +365,7 @@ MICRODUCK = Body(
             "Kick forward with one leg. Only connects if the ball is < 0.3 m away and roughly "
             "ahead."
         ),
-        kick_done="the kick animation finished; the result says whether the ball moved.",
+        kick_done="the kick animation finished; the robot reports nothing about the ball.",
         stand_up_text=(
             "Ask the robot's policy to get a fallen duck up. It may not manage, and the result "
             "says whether the duck is upright, or that the robot is still answering the fall "
@@ -382,6 +380,5 @@ MICRODUCK = Body(
     places_backends=PLACES_BACKENDS,
     map_backends=MAP_BACKENDS,
     mediad=True,
-    reads_the_ball=True,
 )
 """The Microduck: `robotd` and `mediad` as upstream ships them, on every backend it has."""
