@@ -125,6 +125,9 @@ TICK_STALE_S = 0.25
 #: this protocol already answers with are 2 (authentication), 3 (protocol) and 4 (a part this
 #: duck was not built with), so this is the next one free.
 ERR_SHUTTING_DOWN = 5
+#: What a refused move, `duck.health` and `duck.state`'s readers are told once a shutdown has
+#: begun, in one wording so the client can say the same.
+SHUTTING_DOWN = "the bridge is shutting down; nothing moves now"
 
 log = logging.getLogger("roboglot-duck-bridge")
 
@@ -407,6 +410,19 @@ class BridgeCore:
             return self._err(msg_id, 2, "say duck.hello first"), authed
 
         if method == "duck.command":
+            if not self.may_move():
+                # A notification has no answer, so a command refused in silence read as taken:
+                # the client's `move` went on reporting a walk the duck never made. This one is
+                # answered with a notification of its own that says why.
+                return {
+                    "jsonrpc": JSONRPC,
+                    "method": "duck.refused",
+                    "params": {
+                        "method": "duck.command",
+                        "code": ERR_SHUTTING_DOWN,
+                        "message": SHUTTING_DOWN,
+                    },
+                }, authed
             self._apply(params)
             return None, authed
         if method == "duck.stop":
@@ -449,9 +465,7 @@ class BridgeCore:
             if gesture not in ("perk", "droop", "wiggle"):
                 return self._err(msg_id, -32602, f"unknown antenna gesture {gesture!r}"), authed
             if not self.may_move():
-                return self._err(
-                    msg_id, ERR_SHUTTING_DOWN, "the bridge is shutting down; nothing moves now"
-                ), authed
+                return self._err(msg_id, ERR_SHUTTING_DOWN, SHUTTING_DOWN), authed
             self.gestures.append(gesture)
             self._gesture = (gesture, self.now())
             return self._ok(
@@ -589,6 +603,7 @@ class BridgeCore:
             "head_yaw_deg": math.degrees(self.head_now[HEAD_ORDER.index("head_yaw")]),
             "deadman_tripped": self.deadman_tripped,
             "stop_latched": not may_move or self.now() < self.stopped_until,
+            "shutting_down": not may_move,
             # so a client that missed a stop's reply can resynchronise from any state read
             # rather than having its commands dropped until the window expires
             "stop_epoch": self.stop_epoch,
@@ -623,6 +638,9 @@ class BridgeCore:
             )
         if self.fallen is True:
             healthy, reason = False, "the duck is down and this robot has no get-up policy"
+        if not self.may_move():
+            # last, so it is what a client's heartbeat reads: nothing it sends moves the duck now
+            healthy, reason = False, SHUTTING_DOWN
         return {
             "healthy": healthy,
             "reason": reason,

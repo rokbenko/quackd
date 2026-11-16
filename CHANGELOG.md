@@ -390,7 +390,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   in the middle of a `move` walked the duck again after 0.3 s, or at once after reading
   `duck.state`, and the settle cut the loop off mid-stride. A shutdown now refuses every command
   until the process ends, and an antenna gesture with `the bridge is shutting down; nothing moves
-  now`, and `duck.state` says the duck is still and the stop latched for the rest of it. The
+  now`. A refused command is answered with a `duck.refused` notification that says so, where it
+  was dropped in silence and read as taken. `duck.state` says the duck is still, the stop latched
+  and `shutting_down`, and `duck.health` is unhealthy with that sentence, so Roboglot's `move` and
+  `gaze` on this duck fail saying the bridge is shutting down rather than report a walk. The
   settle then ended in a hard exit with status 1, because the interrupt meant to end the loop
   ran the bridge's own signal handler, so upstream's cleanup never ran and every `systemctl stop`
   left the unit failed. It ends with a KeyboardInterrupt now, and only a second signal exits at
@@ -416,8 +419,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   named, and `urllib` opens `file:` URLs too, so a bridge could have the laptop read one of its
   pictures and pass it to the LLM as the camera's frame. Any other URL from the bridge is refused
   at connect, with the reason in the camera's error, and the duck then has no camera verbs unless
-  `--camera-url` names one. A `--camera-url` that is not http or https is refused before
-  anything connects, by a sentence that names the two.
+  `--camera-url` names one. A `--camera-url` that is not http or https, or names a port outside
+  1 to 65535, is refused before anything connects, by a sentence that says what a camera URL is.
+  Every refusal shows the URL with its password hidden, as Roboglot's records do.
 - **An Open Duck frame is fetched under one deadline and a byte cap, and a redirect is followed
   only to where it started.** `CAMERA_TIMEOUT_S` bounded each read of the socket, not the fetch,
   so a camera that sent a byte now and then held `get_frame` with no end, and its thread read on
@@ -433,7 +437,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a time with no deadline, and health read only the last call that had finished, so a call that
   never returned left `/healthz` saying ok while every `/detect` behind it was refused as busy.
   Once a call has run longer than a `/detect` waits for one, `/healthz` is not ok and its reason
-  says so, and the detector's part of it carries `hung_s`.
+  says so, and the detector's part of it carries `hung_s`. It is not ok either once a `/detect`
+  has been refused as busy and every slot is still held, as two slow uploads can hold them with
+  nothing in the model.
 - **The AlohaMini host wrapper and the Jetson daemon start under `python -OO`.** Each built its
   `--help` from its module docstring, which `-OO` strips, and died before it had parsed a flag.
   The description is spelled out now, and reads as it did.
@@ -485,9 +491,12 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   says what to run, unless the directory is no symlink, belongs to root, can be written by
   neither its group nor anyone else, and can be searched by the service user. The script also
   changed the group and mode of whatever was already at `TOKEN_FILE`, so `/etc/hostname` would
-  have become the token. It now changes only a token it wrote, this run or an earlier one (a
-  file of root's holding one line of 64 hexadecimal characters), stops on anything else there
-  and on any symlink, and creates a new token with its mode as it is written.
+  have become the token. It now changes an existing token only at its own default path, where
+  it is the one an earlier run wrote (and only if it is root's, one line of 64 hexadecimal
+  characters). At any other path it uses what is there only if that is already root's, the
+  service user's group's and mode 0640, and otherwise stops and says what to run, since it may
+  be another daemon's token: the MOSS bridge's and the Jetson daemon's look the same. It stops
+  on any symlink, and creates a new token with its mode as it is written.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,

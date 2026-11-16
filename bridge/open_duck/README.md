@@ -58,7 +58,9 @@ upstream imports to read a gamepad, then runs upstream's own script. Three thing
   carries them.
 - **A shutdown refuses every command until the process ends.** On SIGTERM or Ctrl-C the bridge
   zeroes the command and holds the loop at zero for `--settle-s`, and nothing a client sends
-  in that time moves the duck. A number in a command that is not finite refuses the whole
+  in that time moves the duck. A refused command is answered with `duck.refused`, and
+  `duck.state` (`shutting_down`) and `duck.health` say the bridge is shutting down, so the
+  client's moves fail saying so. A number in a command that is not finite refuses the whole
   command.
 
 ## Getting the files onto the Pi

@@ -42,27 +42,49 @@ case "$TOKEN_FILE" in
   Use letters, digits, dot, dash, underscore and slash." ;;
 esac
 
-# Whether the token file already there is one this script wrote, in this run or an earlier one,
-# and so one whose group and mode it may set: a regular file, no symlink, belonging to root and
-# holding one line of 64 hexadecimal characters, which is what openssl rand -hex 32 writes and
-# what every version of this script has written there. Anything else it never changes: it stops
-# and says what to run. The directory it is in has been checked first (secret_dir_or_die, or the
-# script's own), so nobody but root can swap the file for something else after this looks.
-token_file_is_ours_or_die() {
-  local owner mode
+# What is already at TOKEN_FILE has to be a regular file, and no symlink, which this script never
+# follows. The directory it is in has been checked first (secret_dir_or_die, or the script's
+# own), so nobody but root can swap the file for something else after this looks.
+token_file_is_a_file_or_die() {
   if sudo test -L "$TOKEN_FILE" || ! sudo test -f "$TOKEN_FILE"; then
     die "TOKEN_FILE=$TOKEN_FILE is already there and is not a regular file, or is a symlink,
   which this script never follows. Name a path that does not exist yet, or leave TOKEN_FILE
   unset for $TOKEN_DIR/duck-bridge.token."
   fi
-  read -r owner mode < <(sudo stat -c '%U %a' "$TOKEN_FILE")
+}
+
+# A token at the script's own default path is one it wrote in an earlier run, so it may put its
+# group and mode right, as it always has: that is how an install from before the group fix is
+# repaired. It knows it by the path, which is its own, and checks the shape as well: root's, one
+# line of 64 hexadecimal characters, what openssl rand -hex 32 writes. The shape alone proves
+# nothing, since the MOSS bridge's and the Jetson daemon's READMEs write their tokens the same.
+token_file_is_ours_or_die() {
+  local owner group mode
+  token_file_is_a_file_or_die
+  read -r owner group mode < <(sudo stat -c '%U %G %a' "$TOKEN_FILE")
   if [ "$owner" != root ] || [ "$(sudo grep -c '' "$TOKEN_FILE")" != 1 ] \
       || ! sudo grep -qxE '[0-9a-f]{64}' "$TOKEN_FILE"; then
     die "TOKEN_FILE=$TOKEN_FILE is already there and is not a token this script wrote (a file
   of root's holding one line of 64 hexadecimal characters), so it changes neither its group
-  nor its mode. Name a path that does not exist yet, or, if you mean to replace that file
-  with a new token, do it yourself: openssl rand -hex 32 | sudo install -m 0640 -o root -g
-  $SVC_USER /dev/stdin $TOKEN_FILE, then run this again."
+  nor its mode. If you mean to replace it with a new token, do it yourself: openssl rand -hex
+  32 | sudo install -m 0640 -o root -g $SVC_USER /dev/stdin $TOKEN_FILE, then run this again."
+  fi
+}
+
+# A file already at a path the person chose is not this script's to change, whatever it holds:
+# it may be another daemon's token. It is used as it is when it is already root's, the service
+# user's group's and mode 0640, which is what the bridge needs, and otherwise the script stops
+# and says what to run.
+token_file_is_set_right_or_die() {
+  local owner group mode
+  token_file_is_a_file_or_die
+  read -r owner group mode < <(sudo stat -c '%U %G %a' "$TOKEN_FILE")
+  if [ "$owner" != root ] || [ "$group" != "$SVC_USER" ] || [ "$mode" != 640 ]; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there, as $owner:$group mode $mode, and this script
+  changes no file at a path it did not choose: it may be another daemon's token. If it is the
+  token you mean the bridge to use, run sudo chown root:$SVC_USER $TOKEN_FILE and sudo chmod
+  0640 $TOKEN_FILE yourself and this again; or name a path that does not exist yet, or leave
+  TOKEN_FILE unset."
   fi
 }
 
@@ -212,9 +234,17 @@ if [ "$TOKEN_FILE_DIR" = "$TOKEN_DIR" ]; then
 else
   secret_dir_or_die "$TOKEN_FILE_DIR"
 fi
-if sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; then
-  # anything already there is changed only if it is a token this script wrote
+if [ "$TOKEN_FILE" = "$TOKEN_DIR/duck-bridge.token" ] \
+    && { sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; }; then
+  # its own default path: the token an earlier run wrote, put right for the service user.
+  # -h, so a symlink is never followed, though none can be there by now.
   token_file_is_ours_or_die
+  sudo chgrp -h "$SVC_USER" "$TOKEN_FILE"
+  sudo chmod 0640 "$TOKEN_FILE"
+  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
+elif sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; then
+  # a path of the person's choosing: used as it is, never changed
+  token_file_is_set_right_or_die
   printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
 else
   # created with its owner, group and mode as the token is written, so it is never readable
@@ -222,10 +252,7 @@ else
   openssl rand -hex 32 | sudo install -m 0640 -o root -g "$SVC_USER" /dev/stdin "$TOKEN_FILE"
   printf 'wrote a new token to %s\n' "$TOKEN_FILE"
 fi
-# Group-read for the service user, and verified rather than assumed. -h, so a symlink is never
-# followed, though none can be there by now.
-sudo chgrp -h "$SVC_USER" "$TOKEN_FILE"
-sudo chmod 0640 "$TOKEN_FILE"
+# Group-read for the service user, verified rather than assumed.
 sudo -u "$SVC_USER" test -r "$TOKEN_FILE" || die "$SVC_USER still cannot read $TOKEN_FILE.
   The bridge refuses to start rather than run with authentication silently disabled, so fix
   the ownership before starting it."

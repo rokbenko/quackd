@@ -708,6 +708,49 @@ def test_healthz_is_not_ok_while_one_detection_has_run_longer_than_a_detect_may_
     assert limit is not None and limit >= hostd.DETECT_WAIT_S, "a call a /detect may wait on"
 
 
+def test_healthz_is_not_ok_while_every_detect_is_refused_as_busy(
+    hostd: ModuleType,
+    fake_gpu: Callable[[bool], SimpleNamespace],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request takes one of `DETECT_SLOTS` before its body is read, so two slow uploads can
+    hold both, and every `/detect` behind them was refused 503 busy while `/healthz`, which
+    watched only a call in the model, said ok. Health now says so, from a busy refusal on, for
+    as long as every slot stays held. The wait for a slot is shortened here, as the uploads'
+    own read deadline equals it in the shipped constants."""
+    monkeypatch.setattr(hostd, "DETECT_WAIT_S", hostd.REQUEST_TIMEOUT_S / 5)
+    fake_gpu(False)
+    daemon = hostd.Hostd(engine=hostd.YoloEngine(), board_root=str(tmp_path))
+    holders: list[socket.socket] = []
+    with serving(hostd, daemon) as port:
+        try:
+            _, before = reply(port, "GET", "/healthz")
+            assert before["ok"] is True, before
+            for _ in range(hostd.DETECT_SLOTS):
+                upload = socket.create_connection(("127.0.0.1", port), timeout=10)
+                upload.sendall(
+                    b"POST /detect HTTP/1.1\r\nHost: x\r\nContent-Type: image/jpeg\r\n"
+                    b"Content-Length: 4096\r\n\r\n"
+                )
+                holders.append(upload)
+            deadline = time.monotonic() + 10
+            while daemon.detect_slots._value > 0 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            status, busy = reply(port, "POST", "/detect", body=jpeg_of())
+            assert status == 503 and "busy" in busy["reason"], f"setup: {status} {busy}"
+            _, health = reply(port, "GET", "/healthz")
+            assert health["ok"] is False and "busy" in health["reason"], health
+        finally:
+            for upload in holders:
+                upload.close()
+        deadline = time.monotonic() + 10
+        while daemon.detect_slots._value < hostd.DETECT_SLOTS and time.monotonic() < deadline:
+            time.sleep(0.01)
+        _, health = reply(port, "GET", "/healthz")
+        assert health["ok"] is True, f"ok again once the slots are free: {health}"
+
+
 # ── /snapshot.jpg, the Open Duck camera daemon's semantics ──────────────────────────────
 
 

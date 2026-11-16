@@ -36,6 +36,7 @@ from typing import Any
 
 from PIL import Image
 
+from roboglot.command import redacted_url
 from roboglot.transport.base import (
     Ack,
     HeartbeatError,
@@ -79,6 +80,10 @@ STATE = "duck.state"
 HEALTH = "duck.health"
 SOUND = "duck.sound"
 ANTENNAS = "duck.antennas"
+#: The bridge's answer to a `duck.command` it refuses, a notification since the command was one.
+REFUSED = "duck.refused"
+#: What the bridge says once its shutdown has begun, and so what this client says then too.
+SHUTTING_DOWN = "the bridge is shutting down; nothing moves now"
 
 #: Below this the walk loop is starving and the gait is degrading silently, so the
 #: heartbeat fails and the run aborts rather than letting the duck stumble (up.LOOP_HEADROOM).
@@ -135,16 +140,20 @@ class FrameTooSlow(TimeoutError):
 
 def camera_url_refusal(url: str) -> str | None:
     """Why `url` is not a camera URL this client fetches, or None when it is: http or https,
-    with a host."""
+    with a host, and a port, if it names one, that a connection can use (0 is none, and
+    `urlsplit` refuses one past 65535). A refusal shows the URL as Roboglot's records do, with
+    its password hidden (`redacted_url`): the fetch never sends it, so nothing needs it said."""
     try:
         parts = urllib.parse.urlsplit(url)
         fetched = parts.scheme.lower() in CAMERA_SCHEMES and bool(parts.hostname)
-    except ValueError:  # not a URL at all, such as an unclosed `[`: refused below, as named
-        fetched = False
-    if fetched:
+        port = parts.port  # raises ValueError for one out of range, as for no URL at all
+    except ValueError:  # recorded in the refusal below, which names what a camera URL is
+        fetched, port = False, None
+    if fetched and port != 0:
         return None
     return (
-        f"{url} is not a camera URL Roboglot fetches: a camera URL is http or https, such as "
+        f"{redacted_url(url)} is not a camera URL Roboglot fetches: a camera URL is http or "
+        "https, with a port from 1 to 65535 if it names one, such as "
         "http://127.0.0.1:9872/snapshot.jpg"
     )
 
@@ -325,7 +334,8 @@ def fetch_frame(url: str, *, deadline_s: float, max_bytes: int) -> tuple[bytes, 
                 same = False
             if not same:
                 raise TransportError(
-                    f"the camera answered HTTP {status}, a redirect to {moved}, and Roboglot "
+                    f"the camera answered HTTP {status}, a redirect to {redacted_url(moved)}, "
+                    "and Roboglot "
                     "follows one only to the same scheme, host and port: if that is your "
                     "camera, give --camera-url that URL"
                 )
@@ -368,16 +378,16 @@ def hello_camera_refusal(url: str, bridge_host: str, peer_host: str | None) -> s
         scheme, host = parts.scheme.lower(), parts.hostname or ""
     except ValueError:  # not a URL at all, such as an unclosed `[`: refused below, as named
         scheme, host = "", ""
-    if scheme in CAMERA_SCHEMES and host:
+    if camera_url_refusal(url) is None and scheme in CAMERA_SCHEMES and host:
         key = _host_key(host)
         if key == _host_key(bridge_host) or (peer_host and key == _host_key(peer_host)):
             return None
         if peer_host and _is_loopback(host) and _is_loopback(peer_host):
             return None
     return (
-        f"the bridge named its camera at {url}, which Roboglot does not fetch: a camera URL "
-        "from the bridge is followed only over http or https to the host Roboglot connected "
-        "to. If that is your camera, pass it with --camera-url."
+        f"the bridge named its camera at {redacted_url(url)}, which Roboglot does not fetch: a "
+        "camera URL from the bridge is followed only over http or https to the host Roboglot "
+        "connected to. If that is your camera, pass it with --camera-url."
     )
 
 
@@ -439,6 +449,11 @@ class OpenDuckBridge:
         #: Set when the read pump sees EOF. Without it every later request waited out the
         #: full timeout on a socket nobody was reading.
         self._closed = False
+        #: Why the bridge takes no move now, or None. Learned from its `duck.refused` answer to
+        #: a command or from a state read, and kept: a bridge shutting down does not come back
+        #: on this link. Every later move and look is refused with it rather than sent into a
+        #: bridge that would drop it in silence while the verb reported a walk.
+        self.moves_refused: str | None = None
         #: Frame bookkeeping, so `doctor` can prove the camera works before anything walks.
         self.camera_stale_after_s = CAMERA_STALE_AFTER_S
         self.frame_age_s: float | None = None
@@ -449,6 +464,7 @@ class OpenDuckBridge:
 
     async def connect(self) -> None:
         host, port = parse_address(self.address)
+        self.moves_refused = None  # a new link, to a bridge that may have been restarted
         try:
             self._reader, self._writer = await asyncio.open_connection(
                 host, port, limit=READER_LIMIT
@@ -615,6 +631,8 @@ class OpenDuckBridge:
                 return
             if msg["method"] == STATE:
                 self._last_state = params or {}
+            if msg["method"] == REFUSED:
+                self.moves_refused = str((params or {}).get("message") or SHUTTING_DOWN)
             with contextlib.suppress(asyncio.QueueFull):
                 self._notifications.put_nowait(msg)
 
@@ -723,6 +741,8 @@ class OpenDuckBridge:
         # command dropped for the rest of the window; one state read recovers it.
         if state.get("stop_epoch") is not None:
             self.stop_epoch = int(state["stop_epoch"])
+        if state.get("shutting_down") is True:
+            self.moves_refused = SHUTTING_DOWN
         # `fallen` is tri-state on the wire: None means the bridge cannot see falls at all.
         # A duck nobody is watching must read as unknown, never as standing (up.FALL_SIGNAL).
         raw_fallen = state.get("fallen")
@@ -760,6 +780,7 @@ class OpenDuckBridge:
                 "deadman_tripped": state.get("deadman_tripped"),
                 "pad_override": state.get("pad_override"),
                 "stop_error": self.stop_error,
+                "shutting_down": state.get("shutting_down"),
                 "state_stale": stale,
                 "assumptions": [up.FALL_SIGNAL.name, up.COMMAND_TTL.name],
             },
@@ -767,6 +788,8 @@ class OpenDuckBridge:
 
     async def send_intent(self, intent: Intent) -> Ack:
         p = intent.params
+        if intent.kind in ("move", "look") and self.moves_refused is not None:
+            return Ack(accepted=False, reason=self.moves_refused)
         try:
             match intent.kind:
                 case "move":

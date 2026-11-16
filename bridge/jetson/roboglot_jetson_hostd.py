@@ -949,6 +949,12 @@ class Hostd:
         self.token = token or None
         self.board_root = board_root
         self.detect_slots = threading.BoundedSemaphore(DETECT_SLOTS)
+        #: How many slots are held now, and when a `/detect` was last refused as busy, so health
+        #: can say what is true: a request takes a slot before its body is read, so two slow
+        #: uploads can hold both with nothing in the model at all.
+        self._slots_lock = threading.Lock()
+        self._slots_held = 0
+        self._refused_busy_at: float | None = None
         self.store = FrameStore()
         self.stale_after = stale_after_s(fps)
         self.started = time.monotonic()
@@ -1041,6 +1047,31 @@ class Hostd:
             "board_model": board_model,
         }
 
+    def take_detect_slot(self) -> bool:
+        """One of `DETECT_SLOTS` for a `/detect`, waiting at most `DETECT_WAIT_S`, or False when
+        none came, which refuses that request as busy and is noted for `health`."""
+        if not self.detect_slots.acquire(timeout=DETECT_WAIT_S):
+            with self._slots_lock:
+                self._refused_busy_at = time.monotonic()
+            return False
+        with self._slots_lock:
+            self._slots_held += 1
+        return True
+
+    def give_detect_slot(self) -> None:
+        with self._slots_lock:
+            self._slots_held -= 1
+        self.detect_slots.release()
+
+    def refusing_as_busy(self, now: float) -> bool:
+        """Whether a `/detect` is refused as busy now: one was, no longer ago than a request
+        waits for a slot, and every slot is still held. A slot freed since, and the next
+        request would have had it."""
+        with self._slots_lock:
+            refused_at, held = self._refused_busy_at, self._slots_held
+        recently = refused_at is not None and now - refused_at <= DETECT_WAIT_S
+        return recently and held >= DETECT_SLOTS
+
     def health(self) -> dict[str, Any]:
         """`ok` covers everything this daemon was asked to run: the camera's newest frame is
         fresh, the detector's last call worked, and neither was asked for and failed to start.
@@ -1085,6 +1116,11 @@ class Hostd:
                 )
             elif not detect["ok"]:
                 sick.append(f"the detector's last call failed: {detect['last_error']}")
+        if self.refusing_as_busy(now):
+            sick.append(
+                f"every /detect is refused as busy: all {DETECT_SLOTS} of its slots are held, "
+                "by uploads or by the model"
+            )
         body: dict[str, Any] = {
             "ok": not sick,
             "daemon_version": HOSTD_VERSION,
@@ -1329,14 +1365,14 @@ def make_handler(daemon: Hostd) -> type[BaseHTTPRequestHandler]:
                 return
             # the slot is taken before the body is read, so a request queued for the model
             # holds neither its body nor its decoded image (see DETECT_SLOTS)
-            if not daemon.detect_slots.acquire(timeout=DETECT_WAIT_S):
+            if not daemon.take_detect_slot():
                 reason = f"busy: {DETECT_SLOTS} detections are already under way; try again"
                 self._json(503, {"ok": False, "reason": reason}, close=True)
                 return
             try:
                 self._detect_body(engine, length, conf)
             finally:
-                daemon.detect_slots.release()
+                daemon.give_detect_slot()
 
         def _detect_body(self, engine: YoloEngine, length: int, conf: float | None) -> None:
             self._reader.allow(length)

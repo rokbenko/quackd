@@ -139,7 +139,9 @@ Safety, in the order it matters:
   authentication silently disabled, and it reports `auth: token` or `auth: none` at connect
   so the difference is visible from the laptop.
 - A shutdown (SIGTERM or Ctrl-C) zeroes the command and **refuses every command** until the
-  loop has settled and ended, and a command with a number that is not finite is refused whole.
+  loop has settled and ended, and says so: `move` and `gaze` fail with `the bridge is shutting
+  down; nothing moves now`, and so does the heartbeat. A command with a number that is not
+  finite is refused whole.
 - The only e-stop is the power switch.
 
 Every flag, the token, the ports, `--fake`, and how to get these files onto a Pi at all:

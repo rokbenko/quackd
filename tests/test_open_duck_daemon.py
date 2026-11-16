@@ -701,8 +701,10 @@ def _usable_bash() -> str | None:
 
 
 #: install.sh's token step run with `sudo` stood in for: every command it is given is logged,
-#: `test` and `grep` run against a folder standing in for /, `stat` answers root and 755 (as
-#: /etc's are), and `install` writes into that folder, so nothing on this machine is changed.
+#: `test` and `grep` run against a folder standing in for /, `install` writes into that folder,
+#: so nothing on this machine is changed. `stat` answers root and 755 for a directory (as /etc's
+#: are), and for a file what a `<file>.stat` beside it says, else root, pi and 640, which is
+#: what the script itself leaves a token as.
 INSTALL_HARNESS = """set -euo pipefail
 SVC_USER=pi
 TOKEN_DIR=/etc/roboglot
@@ -723,7 +725,10 @@ sudo() {
   local last="${args[${#args[@]}-1]}"
   case "$cmd" in
     test|grep) "$cmd" "${args[@]}" ;;
-    stat) printf 'root 755\\n' ;;
+    stat)
+      if [ -d "$last" ]; then printf 'root 755\\n'
+      elif [ -f "$last.stat" ]; then cat "$last.stat"
+      else printf 'root pi 640\\n'; fi ;;
     install) if [ "$1" = -d ]; then mkdir -p "$last"; else cat > "$last"; fi ;;
     *) return 0 ;;
   esac
@@ -737,7 +742,9 @@ sudo() {
         ("/etc/hostname", "a file of the system's"),
         ("/etc/roboglot", "the script's own directory"),
         ("/etc/roboglot/duck-bridge.token", "a symlink to a file of the system's"),
+        ("/etc/roboglot/moss-bridge.token", "another daemon's token"),
         ("/etc/roboglot/duck-bridge.token", "a token an earlier run wrote"),
+        ("/etc/duck.token", "a token set right already"),
         ("/etc/roboglot/duck-bridge.token", "nothing"),
         ("/etc/duck.token", "nothing"),
     ],
@@ -747,11 +754,13 @@ def test_install_sh_changes_no_path_it_did_not_write_and_follows_no_symlink(
 ) -> None:
     """The token step, as root, set its group and mode on whatever TOKEN_FILE named once its
     directory passed: `/etc/hostname` became the bridge's token and lost its mode, and
-    `TOKEN_FILE=/etc/roboglot` took the search bit off the script's own directory. It now stops
-    on anything already there that it did not write (a regular file of root's holding one line
-    of 64 hexadecimal characters, which is what it writes) and on any symlink, and changes only
-    a token it writes now or wrote before. The script's own lines run here, cut out of
-    install.sh, with `sudo` stood in for, so nothing on this machine is changed."""
+    `TOKEN_FILE=/etc/roboglot` took the search bit off the script's own directory. Telling its
+    own token by its shape then took the MOSS bridge's, which its README writes in the same
+    shape, and its daemon's group lost it. Now it changes a token only at its own default path,
+    where it is the one an earlier run wrote. At any other path it writes a new one, or uses
+    what is there only if it is already root's, the service user's group's and 0640, and else
+    stops; it never follows a symlink. The script's own lines run here, cut out of install.sh,
+    with `sudo` stood in for, so nothing on this machine is changed."""
     bash = _usable_bash()
     if bash is None:
         pytest.skip("needs a bash that runs this machine's paths")
@@ -770,13 +779,18 @@ def test_install_sh_changes_no_path_it_did_not_write_and_follows_no_symlink(
     root = tmp_path / "root"
     (root / "etc" / "roboglot").mkdir(parents=True)
     (root / "etc" / "hostname").write_text("duckpi\n", encoding="utf-8")
+    (root / "etc" / "hostname.stat").write_text("root root 644\n", encoding="utf-8")
     target = root / token_file.lstrip("/")
     if already == "a symlink to a file of the system's":
         try:
             os.symlink(root / "etc" / "hostname", target)
         except OSError:
             pytest.skip("this machine will not make a symlink for this user")
-    elif already == "a token an earlier run wrote":
+    elif already == "another daemon's token":
+        # as bridge/moss/README.md writes it: the same shape as the duck's, its own group
+        target.write_text("cd" * 32 + "\n", encoding="utf-8")
+        (root / "etc" / "roboglot" / "moss-bridge.token.stat").write_text("root moss 640\n")
+    elif already in ("a token an earlier run wrote", "a token set right already"):
         target.write_text("ab" * 32 + "\n", encoding="utf-8")
     log = tmp_path / "log.txt"
     log.write_text("", encoding="utf-8")
@@ -799,10 +813,15 @@ def test_install_sh_changes_no_path_it_did_not_write_and_follows_no_symlink(
         if re.match(r"sudo (chgrp|chmod|chown|install)\b", line) and line.split()[-1] == token_file
     ]
     stopped = [line for line in said if line.startswith("stopped:")]
-    if already in ("a token an earlier run wrote", "nothing"):
+    if already in ("a token an earlier run wrote", "a token set right already", "nothing"):
         assert not stopped and run.returncode == 0, (said, run.stderr)
-        assert any(line.startswith("sudo chgrp -h pi ") for line in changed), said
         assert (root / token_file.lstrip("/")).read_text(encoding="utf-8").strip(), "no token"
+        if already == "nothing":
+            assert changed == [f"sudo install -m 0640 -o root -g pi /dev/stdin {token_file}"]
+        elif already == "a token an earlier run wrote":  # its own path, put right
+            assert [line.split()[1] for line in changed] == ["chgrp", "chmod"], changed
+        else:  # a path of the person's choosing, used as it is
+            assert changed == [], changed
         if token_file.startswith("/etc/roboglot/"):
             assert "sudo chmod 0750 /etc/roboglot" in said, "its own directory is repaired"
         else:
@@ -1067,6 +1086,55 @@ def test_state_says_the_duck_is_still_and_stopped_once_a_shutdown_has_begun(
     assert state["moving"] is False and state["stop_latched"] is True, state
     clock.t += core.stop_latch_s * 10
     assert core.state()["stop_latched"] is True, "a shutdown's stop does not run out"
+
+
+async def test_a_client_hears_the_bridge_is_shutting_down_and_its_moves_fail_saying_so(
+    daemon: ModuleType,
+) -> None:
+    """Once the shutdown began, every `duck.command` was refused in silence, since a
+    notification has no answer, while `duck.state` said the walk policy was running and
+    `duck.health` healthy. So `move`'s preconditions passed and each intent came back accepted,
+    and a move shorter than what was left of the settle reported a distance the duck never
+    walked. Now the bridge answers a refused command with `duck.refused` and its reason, state
+    and health say the bridge is shutting down, and the client refuses every move after it,
+    saying so. The core, the server, the client and the precondition are the real ones."""
+    from roboglot.transport.base import HeartbeatError, Intent
+    from roboglot_open_duck.verbs import _policy_running
+
+    core = daemon.BridgeCore()
+    controller = daemon.NetworkController(core)
+    server = daemon.Server(core, "127.0.0.1", 0)
+    server.start()
+    reader = OpenDuckBridge(f"tcp://127.0.0.1:{server.port}")
+    walker = OpenDuckBridge(f"tcp://127.0.0.1:{server.port}")
+    try:
+        await reader.connect()
+        await walker.connect()
+        assert core.state()["shutting_down"] is False
+        core.begin_shutdown()
+        assert core.state()["shutting_down"] is True
+
+        state = await reader.get_state()
+        assert "shutting down" in str(_policy_running(state)), "the move precondition refuses"
+        health = await reader.request("duck.health")
+        assert health["healthy"] is False and "shutting down" in health["reason"], health
+        with pytest.raises(HeartbeatError, match="shutting down"):
+            await reader.heartbeat()
+
+        # a client that only walks hears it from the refusal of its first command
+        acks = []
+        for _ in range(3):
+            acks.append(await walker.send_intent(Intent.move(0.15, 0.0, 0.0)))
+            await asyncio.sleep(0.1)
+        assert not acks[-1].accepted and "shutting down" in str(acks[-1].reason), acks
+        look = await walker.send_intent(Intent.look(1.0, 0.0, 0.0))
+        assert not look.accepted and "shutting down" in str(look.reason)
+        assert float(controller.get_last_command()[0][0]) == 0.0
+    finally:
+        await reader.close()
+        await walker.close()
+        server.stop()
+        server.join(timeout=2)
 
 
 def test_the_settle_ends_the_loop_with_a_keyboard_interrupt_and_a_second_signal_exits_at_once(
