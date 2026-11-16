@@ -41,28 +41,45 @@ A humanoid that stops walking mid-stride falls. So on silence this slews to the 
 there is no velocity at this hardware boundary at all. It holds the whole body, the head and
 the grippers included, and its answer lists what it stopped.
 
-The deadman is armed by a client's first command, so a daemon nobody has commanded holds the
-robot where it stands. From then on the robot has one owner, whole: the connection whose
-command it is carrying out. That connection going quiet, or closing, trips the deadman,
-whatever any other connection sends.
+**Who owns what.** The robot is three kinds of part: the body (a walk, a stand or a motion), the
+neck, and each gripper. A part is owned by the connection whose command it is executing, and by
+nobody while it holds after a stop or has never been commanded. A connection's keepalive keeps
+alive only the parts it owns. When an owner goes quiet for half a second, or disconnects, the
+parts it owns, and only those, are brought to rest by the deadman: the body slews to the safe
+pose, waist first, and the neck and each gripper to their place in it, all at upstream's own
+0.3 rad/s. A command for one part never takes another over, so a second client's look or grip
+leaves a first client's walk to that client, and the walk ends when its client does.
 
-A stop is honoured from any connection, and it takes the robot over. So a second client's stop
-ends what a run in flight was doing, holds the robot where it is, and makes the second client
-the owner; when that client leaves, the deadman trips and the robot slews to its safe pose,
-though the run is still connected. `roboglot doctor` is such a client: it sends a stop as it
-disconnects, so a doctor check against a robot another run is driving stops that run's motion
-and, half a second after it leaves, sends the robot to its safe pose. The run's next command
-the daemon accepts makes it the owner again.
+A daemon nobody has commanded holds the robot where it stands, and so does one a stop left
+holding: nobody owns a part then, so the deadman moves nothing.
+
+**A stop.** It is honoured from any connection, and it stops every part: the robot holds where
+it was last measured, every part is owned by nobody, and the answer lists what it stopped. It
+arms nothing, so `roboglot doctor`, which sends a stop as it disconnects, moves nothing on a
+robot nobody is driving. Against a run in flight it does stop the run's motion, and the robot
+then holds: the run is told at its next keepalive (a `bot.lost` notification) or its next
+command (a `lost` field in the answer), and its heartbeat fails with the reason. So run a doctor
+check between runs. A stop that lands before the first good reading holds wherever that reading
+finds the robot.
+
+**A fall.** When a fall is read, whatever was in flight on the body ends, a walk, a stand, a
+motion or the deadman's own slew, and the robot holds where it lies. On a fallen robot rest is
+that hold, for every part: the deadman never drives a body on the floor towards standing.
+Upstream detects no fall and prescribes nothing for one.
 
 Once a shutdown begins, every command that moves the robot is refused with the reason, so a
-connected client cannot keep the settle from the safe pose. A bus that hangs cannot keep the
-process alive either: past the settle's own deadline plus five seconds, or five seconds into
-`close()`, the process exits hard.
+connected client cannot keep the settle from the safe pose, and `bot.health` says the daemon is
+shutting down. A stop is accepted, changes nothing, and its answer carries the note
+`the daemon is shutting down and settling the robot to its safe pose`. Shutdown is entered once,
+from whatever began it; a second signal does not cut the settle short, and `close()` is reached
+on every path. A bus that hangs cannot keep the process alive either: past the settle's own
+deadline plus five seconds, or five seconds into `close()`, the process exits hard, with or
+without a standard error to write its stacks to.
 
 After ten failing ticks in a row the loop takes no more orders, and settles the robot to the
 safe pose for as long as the bus answers; after twenty it stops. Only a restart lets the daemon
-take orders again. Until then every command that moves the robot, a stop included, is answered
-`accepted: false` with this reason:
+take orders again. Until then every command that moves the robot is answered `accepted: false`
+with this reason, and a stop is accepted with it as its note:
 
 ```
 the control loop gave up after 10 failing ticks in a row: it takes no orders, and it settles the robot to its safe pose for as long as the bus answers. Restart the daemon
@@ -71,9 +88,9 @@ the control loop gave up after 10 failing ticks in a row: it takes no orders, an
 and `bot.health` answers `ok: false`, with the fault while ticks are failing and this reason
 once they pass again. State, frames and the keepalive are answered as before.
 
-Health also fails once no tick has ended for half a second, because the deadman lives in the
-tick. A walk command is held to the envelope the walk checkpoint was trained on, whoever sends
-it, and a robot that falls while walking stops walking and holds where it lies.
+Health also fails once no tick has ended for half a second, the first tick included, because the
+deadman lives in the tick. A walk command is held to the envelope the walk checkpoint was
+trained on, whoever sends it.
 
 ## The protocol
 
@@ -82,15 +99,16 @@ Open Duck Mini already takes 9871 for its bridge and 9872 for its camera daemon,
 SECURITY.md tells people to tunnel that pair, so this robot starts after both.
 
 The client also sends `bot.keepalive` on its own timer, several times a second, for as long
-as it is connected. From the connection that is driving, that is the only thing that stops the
+as it is connected. For the parts that connection owns, that is the only thing that stops the
 deadman firing part way through a verb: `stand` takes three seconds and the deadman fires after
 half of one, so without it every long verb would be cancelled underneath itself by the
 safe-pose slew. Another connection's keepalive does not count, and neither does reading state
 or a frame, or a method this daemon has never heard of, so a client built against a newer
 protocol cannot hold the deadman off with calls this one is refusing. After a stop that got no
 answer, or was refused, Roboglot's client stops sending it, so this daemon's deadman trips within
-half a second and takes the robot to its safe pose, and the client's heartbeat fails saying why;
-the next command the daemon accepts starts it again.
+half a second and brings what that client was driving to rest, and the client's heartbeat fails
+saying why; the next command the daemon accepts starts it again, and so does the stop's own
+answer if it arrives late.
 
 Give the daemon a token and it refuses clients that do not send it. Put it in a file and pass
 `--token-file FILE`, or set `ROBOGLOT_TODDLERBOT_TOKEN`. `--token` works too, and warns, because

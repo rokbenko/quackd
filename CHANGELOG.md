@@ -295,58 +295,84 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
   its rover told it is `a small biped duck robot (25 cm, 800 g)`. It is told it is `a robot` now.
   Every body Roboglot ships has a blurb of its own, so none of them was affected.
-- **A ToddlerBot daemon no client has commanded leaves the robot where it stands.** Its deadman
-  was armed when it started, so with nobody connected it slewed the robot from wherever it stood
-  to the home pose half a second in. It is armed by a client's first command now.
+- **A ToddlerBot daemon moves nothing nobody is driving.** Its deadman was armed when it started,
+  so with nobody connected it slewed the robot from wherever it stood to the home pose half a
+  second in. A stop armed it too, the one Roboglot's client sends as it disconnects included, so a
+  `roboglot doctor` check sent an idle robot home half a second after it left, and a stop that
+  landed before the first good reading held the home pose, so the robot slewed there. The deadman
+  watches only the parts a client is driving now, a stop leaves it nothing to watch, and a stop
+  before the first reading holds wherever that reading finds the robot.
 - **A ToddlerBot stop stops the head and the grippers too.** `bot.stop` held the body and left the
   neck and gripper goals in place, so after a stop, the executor's brake after Ctrl+C included, a
   closing gripper went on closing to its limit and the head went on turning to its last aim. The
-  stop holds all of it, and the daemon's answer lists what it stopped.
-- **A connected client cannot keep the ToddlerBot daemon's shutdown from the safe pose.** Commands
-  from a client still connected, Roboglot's own stop among them, overrode the settle on the way
-  out, so it never reached the safe pose and torque went off wherever the robot stood. Once a
-  shutdown begins every command that moves the robot is refused with the reason, and the settle
-  runs to the safe pose.
-- **Only the ToddlerBot client that is driving keeps the deadman off.** A keepalive from any
-  connection fed it, so an idle second client, a `serve-mcp` session or a `doctor` probe, kept a
-  walk going after the client that started it had died. The robot has one owner now, the
-  connection whose command it is carrying out, and that connection going quiet, or closing, trips
-  the deadman. A stop is honoured from anyone and takes the robot over, so a `roboglot doctor`
-  check against a robot another run is driving, which sends a stop as it disconnects, stops that
-  run's motion and then trips the deadman, until the run's next accepted command takes it back.
+  stop holds all of it, leaves every part owned by nobody, and the daemon's answer lists what it
+  stopped.
+- **A connected client cannot keep the ToddlerBot daemon's shutdown from the safe pose, and a
+  second signal cannot cut it short.** Commands from a client still connected overrode the settle
+  on the way out, so it never reached the safe pose and torque went off wherever the robot stood.
+  Once a shutdown begins every command that moves the robot is refused with the reason, health
+  says the daemon is shutting down, where it said ok throughout, and the settle runs to the safe
+  pose. A signal during a shutdown begun by something else, the server failing for one, went
+  straight through the settle and skipped `close()`, so the interpreter's exit turned torque off
+  wherever the robot stood; two shutdowns could also race. Shutdown is entered once now, from
+  whatever began it, and reaches `close()` on every path.
+- **Each part of a ToddlerBot has its own owner, and only a silent owner's parts are brought to
+  rest.** A keepalive from any connection fed one deadman, so an idle second client, a
+  `serve-mcp` session or a `doctor` probe, kept a walk going after the client that started it had
+  died, and while one connection owned the whole robot a second client's look or grip took over a
+  walk it never asked for and kept it going the same way. The body, the neck and each gripper are
+  owned by the connection whose command each is executing, a connection's keepalive keeps alive
+  only its own parts, and when it goes quiet or away the deadman brings those parts, and only
+  those, to rest. A stop from any connection stops every part and leaves them all owned by nobody,
+  and a connection that lost a part to it, or to a shutdown, is told at its next keepalive or
+  command, where nothing said so, and its heartbeat fails with the reason.
 - **A ToddlerBot loop that gives up takes no more orders and settles.** After ten failing ticks in
   a row the loop stopped without settling, and every move went on answering accepted with nothing
-  to carry it out. It refuses every move with the reason now, a stop included, its health says
-  so, and it settles the robot to the safe pose for as long as the bus answers, stopping after
-  twenty failures in a row. Only a restart lets the daemon take orders again.
-- **The ToddlerBot daemon ends a walk on a fallen robot, and holds every walk to its envelope.** A
-  walk went on through a fall, and a new walk command was accepted on a fallen robot, which `stand`
-  and `perform` refuse. A walk command outside the envelope the daemon itself reports reached the
-  walk policy as sent. A fall ends the walk and the robot holds where it lies, a walk is refused
-  while it is down, and each axis is held to the envelope, the answer saying what it was held to.
+  to carry it out. It refuses every move with the reason now, its health says so, and it settles
+  the robot to the safe pose for as long as the bus answers, stopping after twenty failures in a
+  row. Only a restart lets the daemon take orders again; a stop is accepted, with the reason as its
+  note.
+- **A fall ends whatever was driving a ToddlerBot's body, and the deadman holds a fallen robot
+  where it lies.** A walk went on through a fall, and so did a stand or a motion accepted just
+  before it, and a new walk was accepted on a fallen robot, which `stand` and `perform` refuse;
+  the deadman meanwhile drove a fallen robot towards the standing pose. Whatever is in flight on
+  the body ends on the tick that reads the fall now, the robot holds where it lies, a walk is
+  refused while it is down, and on a fallen robot the deadman's rest is that hold.
+- **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
+  the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
+  now, the answer saying what it was held to.
 - **A hung bus cannot keep the ToddlerBot daemon from exiting, and nothing leaves the robot
   uncommanded on the way out.** The hard exit around `close()` was a Python timer, which cannot
   fire while `close()` holds the GIL, as it does on a dead bus, and a settle tick that hung had no
-  deadline at all. The deadline needs no GIL now and covers the settle too. Shutdown also closed
-  the camera, up to two seconds on a wedged USB read, between stopping the loop and settling, with
-  nothing commanding the robot; the camera closes after the settle.
+  deadline at all. The deadline needs no GIL now, covers the settle too, and is armed in a process
+  started with no standard error as well. Shutdown also closed the camera, up to two seconds on a
+  wedged USB read, between stopping the loop and settling, with nothing commanding the robot; the
+  camera closes after the settle.
 - **A stalled ToddlerBot tick fails the heartbeat.** Health read numbers the control thread writes
   after each tick, so a tick blocked on the bus answered healthy at the last rate while the deadman
-  inside it could not fire. Health fails once no tick has ended for half a second, and says why.
-- **A ToddlerBot stop that did not land is reported as not delivered.** The client swallowed every
-  failure of its stop, so the `stop` verb and the executor's brake recorded a stop that got no
-  answer, or was refused, as a stop. The verb says `stop could not be delivered` now. The client's
-  keepalive also went on feeding the daemon's deadman after such a stop, and with the walk the
-  stop was meant to end still running, it was the only thing keeping the robot walking. It stops
-  after a stop that did not land, so the daemon's deadman trips within half a second and takes the
-  robot to its safe pose, the heartbeat fails saying why, and the next command the daemon accepts
-  starts it again. A request, the heartbeat's and the stop's among them, also waited with no deadline on
-  a send buffer a silent daemon had let fill: its timeout covers the write too.
+  inside it could not fire, and a first tick that never ended read as healthy for ever. Health
+  fails once no tick has ended for half a second, the first included, and says why.
+- **A ToddlerBot stop that did not land is reported as not delivered, and one that landed is not.**
+  The client swallowed every failure of its stop, so the `stop` verb and the executor's brake
+  recorded a stop that got no answer, or was refused, as a stop. The verb says `stop could not be
+  delivered` now, in words that point at the daemon's deadman and away from the power switch,
+  which on this robot is a fall. The client's keepalive also went on feeding the daemon's deadman
+  after such a stop, and with the walk the stop was meant to end still running, it was the only
+  thing keeping the robot walking. It stops after a stop that did not land, so the daemon's
+  deadman trips within half a second and brings what the session was driving to rest, the
+  heartbeat fails saying why, and the next command the daemon accepts, or the stop's own late
+  answer, starts it again. The daemon accepts a stop in every state: while it shuts down, or after
+  its loop has given up, the robot is already being brought to rest and the stop's note says so,
+  where the stop was refused and recorded as one that never arrived. A request, the heartbeat's and
+  the stop's among them, also waited with no deadline on a send buffer a silent daemon had let
+  fill: its timeout covers the write too.
 - **Roboglot checks what a ToddlerBot daemon says about itself before repeating it.** The motion
   and robot names a daemon reported reached the manifest and the body summary the pilot reads as
   sent, and a name that was not a string made connect raise. A motion Roboglot does not offer is
   left out now, a robot name, motor count or envelope of the wrong kind refuses the connect, and
-  the `perform` tool names only the motions the daemon loaded, where it named all five.
+  the `perform` tool names only the motions the daemon loaded, where it named all five. An
+  envelope with a key Roboglot does not read made the connect raise with the link left open; the
+  key is left out now.
 - **The ToddlerBot daemon starts under `python -OO`.** It built its help from its docstring, which
   `-OO` removes, and raised before it read a flag.
 - **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
@@ -392,8 +418,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   token.** It took its token from `--token`, which every account on the robot can read (`ps`,
   `/proc/<pid>/cmdline`), or from `ROBOGLOT_TODDLERBOT_TOKEN`. `--token-file` reads it from a file,
   and refuses to start on a named file that is missing, unreadable or empty, as the Jetson and MOSS
-  daemons do. `--token` still works, and warns. An empty token, from the flag or the variable, is
-  no token: it was kept as an empty one, which a handshake that sent no token matched.
+  daemons do; one that is not UTF-8 text is refused without quoting the decoder, which would have
+  written a byte of the token to the journal. `--token` still works, and warns. An empty token,
+  from the flag or the variable, is no token: it was kept as an empty one, which a handshake that
+  sent no token matched.
 - **Roboglot says when a ToddlerBot it reached over the network checks no token.** The daemon's
   handshake said nothing about it, so a client that sent a token connected to a daemon that checked
   none exactly as to one that had. The handshake says whether a token is checked (`auth`), and

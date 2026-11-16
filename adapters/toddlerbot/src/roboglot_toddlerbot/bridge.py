@@ -68,6 +68,11 @@ PERFORM = "bot.perform"
 GRIP = "bot.grip"
 FRAME = "bot.frame"
 KEEPALIVE = "bot.keepalive"
+LOST = "bot.lost"  # from the daemon: a part this connection drove was taken, and why
+UNDELIVERED_STOP_ADVICE = (
+    "Roboglot has stopped keeping this robot alive, so its daemon's deadman brings what this "
+    "session was driving to rest. Do not cut its power: on this robot that is a fall"
+)
 
 KEEPALIVE_S = 0.15
 """How often the client says it is still there.
@@ -245,6 +250,11 @@ class ToddlerBotBridge:
         #: takes the robot to its safe pose within its window, the heartbeat says why, and the
         #: next command the daemon accepts starts the keepalive again.
         self.keepalive_withheld: str | None = None
+        #: Why a part this connection was driving was taken from it (another connection's stop,
+        #: the daemon shutting down), until the heartbeat has said so once.
+        self.lost_reason: str | None = None
+        #: The ids of stops that timed out, whose answers may still arrive.
+        self._late_stops: set[int] = set()
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -301,8 +311,12 @@ class ToddlerBotBridge:
         self.walk_available = bool(caps.get("walk", False))
         self.motions = _offered_motions(caps.get("motions"))
         envelope = caps.get("walk_envelope")
+        # Only the keys `_unfit_hello` checked: another key, a note a newer daemon might add, is
+        # not Roboglot's to read, and converting it raised out of the connect with the link open.
         self.walk_envelope = (
-            {k: float(v) for k, v in envelope.items()} if isinstance(envelope, dict) else None
+            {k: float(envelope[k]) for k in ENVELOPE_KEYS if k in envelope}
+            if isinstance(envelope, dict)
+            else None
         )
         self.deadman = bool(caps.get("deadman", False))
         self.robot_name = str(self.hello.get("robot") or self.robot_name)
@@ -398,6 +412,9 @@ class ToddlerBotBridge:
             return
         if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
             pending = self._pending.pop(int(msg["id"]), None)
+            if pending is None and int(msg["id"]) in self._late_stops:
+                self._late_stops.discard(int(msg["id"]))
+                self._stop_answered_late(msg.get("result"))
             if pending is not None and not pending.done():
                 if "error" in msg:
                     err = msg["error"]
@@ -409,6 +426,10 @@ class ToddlerBotBridge:
         elif "method" in msg:
             if msg["method"] == STATE:
                 self._last_state = msg.get("params") or {}
+            if msg["method"] == LOST:
+                # Another connection's stop, or the daemon's shutdown, took a part this
+                # connection was driving: the heartbeat says so next (`heartbeat`).
+                self.lost_reason = str((msg.get("params") or {}).get("reason") or LOST)
             with contextlib.suppress(asyncio.QueueFull):
                 self._notifications.put_nowait(msg)
 
@@ -435,6 +456,9 @@ class ToddlerBotBridge:
                 await self._writer.drain()
                 return await fut
         except TimeoutError as e:
+            if method == STOP:
+                # Its answer may yet come, and a stop that landed late landed (`_take_line`).
+                self._late_stops.add(req_id)
             raise TransportError(f"{method}: no answer within {self.request_timeout_s:g}s") from e
         finally:
             self._pending.pop(req_id, None)
@@ -596,7 +620,19 @@ class ToddlerBotBridge:
         ack = _ack(result)
         if ack.accepted:
             self.keepalive_withheld = None
+        if isinstance(result, dict) and result.get("lost"):
+            # what this connection had the robot doing was taken since its last command
+            self.lost_reason = str(result["lost"])
         return ack
+
+    def _stop_answered_late(self, result: Any) -> None:
+        """A stop that timed out has been answered after all. If the daemon took it, it landed,
+        so it is no longer recorded as one that did not, and the keepalive held back for it goes
+        on: a stop leaves the robot holding with nobody's deadman to feed or to trip."""
+        if isinstance(result, dict) and result.get("accepted") is not False:
+            log.info("the stop that timed out was answered after all, and it landed")
+            self.stop_error = None
+            self.keepalive_withheld = None
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self._writer is not None:
@@ -610,6 +646,9 @@ class ToddlerBotBridge:
                 "stopped keeping the robot alive and the daemon's deadman takes it to its safe "
                 "pose"
             )
+        if self.lost_reason is not None:
+            reason, self.lost_reason = self.lost_reason, None
+            raise HeartbeatError(reason)
         try:
             result = await self.request(HEALTH)
         except TransportError as e:
@@ -636,17 +675,23 @@ class ToddlerBotBridge:
         rather than raised, because a stop must never itself take a run down. It also holds the
         keepalive back (`keepalive_withheld`), so the daemon's deadman, not this client, decides
         what the robot does next; a stop that landed lets it go on."""
+        why: str | None
         try:
             result = await self.request(STOP)
         except Exception as e:
-            self.stop_error = str(e) or type(e).__name__
+            why = str(e) or type(e).__name__
         else:
             if isinstance(result, dict) and result.get("accepted") is False:
-                reason = result.get("reason") or "no reason given"
-                self.stop_error = f"the daemon refused it: {reason}"
+                why = f"the daemon refused it: {result.get('reason') or 'no reason given'}"
             else:
-                self.stop_error = None
-        self.keepalive_withheld = self.stop_error
+                why = None
+                if isinstance(result, dict) and result.get("note"):
+                    # accepted while the daemon was already bringing the robot to rest
+                    log.info("the stop landed: %s", result["note"])
+        # The record of a stop that did not land says what brings the robot to rest instead,
+        # and never points at the power switch, which on this robot is a fall.
+        self.stop_error = None if why is None else f"{why}. {UNDELIVERED_STOP_ADVICE}"
+        self.keepalive_withheld = why
 
     def now(self) -> float:
         return time.monotonic() - self._t0

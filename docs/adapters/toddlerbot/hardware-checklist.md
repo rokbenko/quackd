@@ -42,7 +42,7 @@ passed.
 
 6. Start the daemon for real. It will construct upstream's `RealWorld`, **which energises
    every motor the moment it returns.** Expect the robot to stiffen, and then to hold where it
-   stands: the deadman arms on a client's first command, so nothing moves before one. If it
+   stands: the deadman watches only what a client is driving, so nothing moves before one. If it
    hangs here, its constructor is busy-waiting on a silent IMU with the motors already live:
    kill it and check the IMU before anything else.
 7. `uv run roboglot doctor --robot toddlerbot:bridge --address tcp://<host>:9873`

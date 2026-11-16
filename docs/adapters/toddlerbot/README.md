@@ -61,7 +61,7 @@ file, so none of it was ever machine-verified by anyone.
 | A failed bulk read returns an all-zeros buffer, indistinguishable from every joint at zero. Believing it commands a full-scale move to zero. | Detects it, refuses it, and holds the last verified-good pose. |
 | A controller fault surfaces as a bare `KeyError`, because the C++ swallows it and inserts an empty map. | Catches it and treats it as a hardware fault, not a transient. |
 | No `reset` anywhere in the sim package: no home, no safe pose. | Builds one: upstream's default pose at upstream's own 0.3 rad/s, waist first. |
-| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. It is armed by a client's first command, and only the connection whose command the robot is carrying out keeps it off. |
+| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. It watches each part (the body, the neck, each gripper) for the connection whose command that part is executing, and brings only a silent owner's parts to rest. A part nobody owns, holding after a stop or never commanded, it never moves, and on a fallen robot rest is holding where it lies. |
 | No Python signal handler, and the C `atexit` does not run on `SIGTERM`. | Installs handlers that settle before anything may exit, and refuses every command that moves the robot while it settles. |
 | `close()` is bound without releasing the GIL and retries torque-off forever on a dead bus, so a stuck shutdown freezes every thread. | Arms a hard exit that needs no GIL before the settle and again before `close()`, so a hung bus cannot keep the process alive. |
 | The constructor busy-waits forever on a silent IMU, with the motors already live. | Runs construction in a thread it is willing to abandon. |
@@ -124,9 +124,13 @@ The core verbs come from the registry. These four are the robot's own.
 
 A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has,
 the head and the grippers included. A stop the daemon did not answer, or refused, is reported as
-not delivered rather than as a stop, and Roboglot then stops keeping the robot alive: the
-daemon's deadman trips within half a second and takes it to its safe pose, the heartbeat fails
-saying why, and the next command the daemon accepts starts the keepalive again.
+not delivered rather than as a stop, with words that point at the deadman and away from the
+power switch, which on this robot is a fall. Roboglot then stops keeping the robot alive: the
+daemon's deadman trips within half a second and brings what this session was driving to rest,
+the heartbeat fails saying why, and the next command the daemon accepts, or the stop's own late
+answer, starts the keepalive again. The daemon accepts a stop in every state; while it shuts down
+or after its loop has given up, the robot is already being brought to rest, and the stop's note
+says so.
 
 ## The motions, and which ones Roboglot offers
 
@@ -180,20 +184,23 @@ the clear, because there is no TLS. When a robot reached over an address that is
 checks no token, Roboglot warns, and `roboglot doctor` shows the warning. The daemon's README
 has the details and the exact messages.
 
-**One owner at a time.** The robot answers to one connection, whole: the one whose command it is
-carrying out, and that connection going quiet or closing trips the deadman, whatever another
-connection sends. A stop is honoured from anyone and takes the robot over. So a second client's
-stop ends what a run in flight was doing and holds the robot where it is, and when that client
-leaves, the deadman sends the robot to its safe pose though the run is still connected; the
-run's next accepted command takes it back. `roboglot doctor` sends a stop as it disconnects, so
-a doctor check against a robot another run is driving does exactly this: run it between runs.
+**Each part has its own owner.** The body (a walk, a stand or a motion), the neck and each
+gripper are owned by the connection whose command each is executing, and by nobody while
+holding after a stop or never commanded. A connection's keepalive keeps alive only its own
+parts, and when it goes quiet or away the deadman brings those parts, and only those, to rest.
+So a second client's look or grip never takes over a first client's walk, and the walk ends with
+its client. A stop is honoured from anyone, stops every part and leaves every part owned by
+nobody: it arms nothing, so a `roboglot doctor` check, which sends a stop as it disconnects,
+moves nothing on a robot nobody is driving. Against a run in flight it stops the run's motion
+and the robot holds; the run is told at its next keepalive or command, and its heartbeat fails
+with the reason. Run doctor checks between runs.
 
 **After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
 settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets
-it take orders again. Until then every command that moves the robot, a stop included, is
-refused with the reason (`the control loop gave up after 10 failing ticks in a row: ...
-Restart the daemon`), so Roboglot reports a stop as not delivered, and its heartbeat fails on
-the daemon's health, which says the same or names the fault.
+it take orders again. Until then every command that moves the robot is refused with the reason
+(`the control loop gave up after 10 failing ticks in a row: ... Restart the daemon`), a stop is
+accepted with that reason as its note, since the robot is already being brought to rest, and the
+heartbeat fails on the daemon's health, which says the same or names the fault.
 
 **The board it runs on can lend Roboglot its GPU, and Roboglot stays on the laptop.** This robot
 carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold an LLM

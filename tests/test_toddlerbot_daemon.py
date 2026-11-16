@@ -427,7 +427,8 @@ def test_a_connected_client_cannot_keep_the_shutdown_settle_from_the_safe_pose(
 def test_once_shutdown_begins_every_moving_method_is_refused_and_says_why() -> None:
     """The other side of the test above: what a client hears. Every method that moves the robot
     answers a refusal with the reason once shutdown has begun, where each used to answer
-    accepted and then be overridden, or override the settle."""
+    accepted and then be overridden, or override the settle. A stop moves nothing: it is
+    accepted, changes nothing the settle is doing, and its note says so."""
     robot = D.FakeRobot("toddlerbot_2xc_gripper")
     d = D.Daemon(robot, D.FakeSim(robot), fake=True)
     d.walk_policy = _Walk()
@@ -435,8 +436,9 @@ def test_once_shutdown_begins_every_moving_method_is_refused_and_says_why() -> N
     _ticks(d, 5)
     with _suite_watchdog_back():
         d.shutdown()
+    stop = _send(h, "bot.stop")
+    assert stop["accepted"] is True and "shutting down" in str(stop.get("note")), stop
     asks = {
-        "bot.stop": {},
         "bot.stand": {},
         "bot.perform": {"motion": "kneel"},
         "bot.look": {"yaw_deg": 10.0, "pitch_deg": 0.0},
@@ -526,8 +528,10 @@ class _Serving:
     full CI runner that is a failure for the machine's reasons. With no loop there is no rate,
     and the heartbeat judges none."""
 
-    def __init__(self, *, loop: bool = True, **caps: bool) -> None:
-        robot = D.FakeRobot()
+    def __init__(
+        self, *, loop: bool = True, robot_name: str = "toddlerbot_2xc", **caps: bool
+    ) -> None:
+        robot = D.FakeRobot(robot_name)
         self.daemon = D.Daemon(robot, D.FakeSim(robot), fake=True)
         D.Handler.daemon_ref = self.daemon
         D.Handler.token = caps.pop("token", None)  # type: ignore[assignment]
@@ -1107,8 +1111,8 @@ async def test_after_a_stop_that_did_not_land_the_client_stops_keeping_the_robot
     window, the heartbeat fails and says why, and the next accepted command starts it again.
 
     The real daemon on the fake body, its connection up throughout: "no answer" loses the stop
-    on the daemon's side, neither carried out nor answered, and "refused" has the daemon's one
-    gate refuse it."""
+    on the daemon's side, neither carried out nor answered, and "refused" stands in for a
+    daemon that answers a stop with a refusal (this one accepts a stop in every state)."""
     with _Serving(walk=True) as s:
         d = s.daemon
         d.walk_policy = _Walk()
@@ -1121,12 +1125,7 @@ async def test_after_a_stop_that_did_not_land_the_client_stops_keeping_the_robot
 
         monkeypatch.setattr(d, "heard", counted)
         if stop == "refused":
-            real_refusal = d.refusal
-
-            def refusal(method: str) -> str | None:
-                return "not now" if method == "bot.stop" else real_refusal(method)
-
-            monkeypatch.setattr(d, "refusal", refusal)
+            monkeypatch.setattr(d, "stop", lambda client=None: {"accepted": False, "reason": "no"})
         else:
             lost = object()
             real_dispatch, real_reply = D.Handler._dispatch, D.Handler._reply
@@ -1793,6 +1792,10 @@ class _FakeDaemon:
                 kind, value = self.answers.get(method, ("result", {}))
                 if kind == "silent":
                     continue
+                if kind == "late":  # ("late", (seconds, result)): answered, but only then
+                    delay, value = value
+                    await asyncio.sleep(delay)
+                    kind = "result"
                 payload = {"jsonrpc": "2.0", "id": msg["id"], kind: value}
                 writer.write((json.dumps(payload) + "\n").encode())
                 await writer.drain()
@@ -2099,3 +2102,393 @@ def test_the_token_need_not_travel_on_the_command_line(
     monkeypatch.setenv(D.TOKEN_ENV, "s3cret")
     rc, made, warnings = _run_main(["--fake"], monkeypatch, caplog)
     assert rc == 0 and made[0].token == "s3cret" and not warnings, warnings
+
+
+# ── 13. who owns which part, and what rest is ─────────────────────────────────────────────
+
+
+AWAY = 0.5
+"""Where a fake body is made to stand for a test about moving it: off the home pose (zeros)."""
+
+
+def _away(sim_cls: Any = None, robot_name: str = "toddlerbot_2xc") -> Any:
+    robot = D.FakeRobot(robot_name)
+    sim = (sim_cls or D.FakeSim)(robot)
+    sim.pos = np.full(robot.nu, AWAY, np.float32)
+    return D.Daemon(robot, sim, fake=True)
+
+
+def _tick_for(d: Any, seconds: float, keepalive_from: Any = None) -> None:
+    """The loop's own rate for `seconds`; `keepalive_from` keeps alive at the client's cadence."""
+    end, last = time.monotonic() + seconds, 0.0
+    while time.monotonic() < end:
+        if keepalive_from is not None and time.monotonic() - last >= KEEPALIVE_S:
+            _send(keepalive_from, "bot.keepalive")
+            last = time.monotonic()
+        d.tick()
+        time.sleep(D.CONTROL_DT)
+
+
+@pytest.mark.serial
+@pytest.mark.parametrize("second", ["look", "gripper"])
+async def test_a_second_clients_look_or_grip_does_not_take_over_a_walk(second: str) -> None:
+    """The last connection to command the robot owned all of it, and a look or a grip leaves a
+    walk running, so a second client that looked or gripped once took over a walk it never asked
+    for, and its keepalive went on holding the deadman off after the walking client died. A
+    part is owned by the connection whose command it is executing, so the walk ends with its
+    client, and the second client's head or gripper stays as it was told."""
+    with _Serving(walk=True, gripper=True, robot_name="toddlerbot_2xc_gripper") as s:
+        d = s.daemon
+        d.walk_policy = _Walk()
+        walker = ToddlerBotBridge(address=s.address)
+        other = ToddlerBotBridge(address=s.address)
+        await walker.connect()
+        await other.connect()
+        try:
+            assert (await walker.send_intent(Intent.move(vx=MAX_VX / 2))).accepted
+            await _until(lambda: d.command.mode == D.Command.WALK)
+            if second == "look":
+                ack = await other.send_intent(Intent.look(x=1.0, y=0.3, z=0.0))
+            else:
+                ack = await other.send_intent(
+                    Intent(kind="gripper", params={"side": "right", "open": False})
+                )
+            assert ack.accepted, ack.reason
+            assert walker._alive is not None and walker._writer is not None
+            walker._alive.cancel()
+            walker._writer.close()  # the walking client dies, with no stop
+            await _until(lambda: d.command.mode != D.Command.WALK, limit_s=4 * D.DEADMAN_S)
+            assert d.command.mode == D.Command.DEADMAN, "the walk was brought to rest"
+            kept = d.neck_goal is not None if second == "look" else bool(d.grip_goal)
+            assert kept, f"and the second client's {second} was left as it told it"
+        finally:
+            await other.close()
+            if walker._pump is not None:
+                walker._pump.cancel()
+
+
+@pytest.mark.serial
+async def test_a_session_that_connects_and_leaves_moves_nothing() -> None:
+    """The client's `close()` sends `bot.stop`, and a stop armed the deadman and made the
+    closing connection the owner, so half a second after it left the robot slewed home: that
+    is `roboglot doctor` against a robot nobody commanded. A stop arms nothing now."""
+    s = _Serving()
+    s.daemon.sim.pos = np.full(s.daemon.robot.nu, AWAY, np.float32)
+    with s:
+        d = s.daemon
+        await _until(lambda: d.seeded)
+        adapter = ToddlerBotAdapter(ToddlerBotBridge(address=s.address))
+        await adapter.connect()
+        await adapter.disconnect()
+        await asyncio.sleep(3 * D.DEADMAN_S)
+        drift = float(np.max(np.abs(d.target - AWAY)))
+        assert not d.deadman_tripped and drift <= D.MAX_STEP_RAD, (d.command.mode, drift)
+
+
+@pytest.mark.serial
+async def test_a_run_whose_part_another_clients_stop_took_is_told() -> None:
+    """A second client's stop (a doctor check's closing stop is one) ended a run's walk, and
+    the run was not told: its heartbeat and its adapter's health stayed ok. It learns it now at
+    its next keepalive, and its heartbeat fails with the reason. A stop arms nothing, so the
+    robot it left holding is not moved by any deadman."""
+    with _Serving(walk=True) as s:
+        d = s.daemon
+        d.walk_policy = _Walk()
+        run = ToddlerBotAdapter(ToddlerBotBridge(address=s.address))
+        await run.connect()
+        try:
+            assert (await run.send_intent(Intent.move(vx=MAX_VX / 2))).accepted
+            await _until(lambda: d.command.mode == D.Command.WALK)
+            doctor = ToddlerBotAdapter(ToddlerBotBridge(address=s.address))
+            await doctor.connect()
+            await doctor.disconnect()
+            assert d.command.mode == D.Command.HOLD, "the doctor's stop held the robot"
+            await asyncio.sleep(3 * KEEPALIVE_S)  # the run's next keepalives
+            health = await run.health()
+            assert not health.ok and "another connection" in str(health.reason), health
+            await asyncio.sleep(2 * D.DEADMAN_S)
+            assert not d.deadman_tripped, "holding with no owner, it is never moved"
+        finally:
+            await run.disconnect()
+
+
+def test_health_is_not_ok_while_the_daemon_is_shutting_down() -> None:
+    """Health read a fault, a stalled tick, a loop that gave up and a fall, and not a shutdown:
+    through a whole settle a run's heartbeat passed while every move it sent was refused."""
+    d = _daemon()
+    h = _handler(d)
+    d.tick()
+    d._shut = True  # what shutdown() sets first
+    d.tick()
+    health = _send(h, "bot.health")
+    assert health["ok"] is False and "shutting down" in str(health["reason"]), health
+
+
+@pytest.mark.parametrize("method", ["bot.stand", "bot.perform"])
+def test_a_stand_or_a_motion_under_way_when_the_robot_falls_stops_driving_it(method: str) -> None:
+    """The plan ended a walk on the tick that read a fall, but a stand or a motion accepted a
+    tick before went on driving the legs and the trunk on a body lying on the floor. When a
+    fall is read, everything in flight on the body ends, and it holds where it lies."""
+    d = _away(_TippableSim)
+    h = _handler(d)
+    d.tick()
+    assert _send(h, method, {"motion": "kneel"} if method == "bot.perform" else {})["accepted"]
+    for _ in range(3):
+        _send(h, "bot.keepalive")
+        d.tick()
+    d.sim.tilt_deg = D.FALL_TILT_DEG + 30.0
+    d.tick()
+    assert d.fallen
+    lying = d.target.copy()
+    for _ in range(25):
+        _send(h, "bot.keepalive")
+        d.tick()
+    moved = float(np.max(np.abs(d.target - lying)))
+    assert moved <= D.MAX_STEP_RAD, (method, d.command.mode, moved)
+
+
+@pytest.mark.parametrize("case", ["a look, then silence", "a slew under way"])
+def test_the_deadman_holds_a_fallen_robot_where_it_lies(case: str) -> None:
+    """The deadman brought a silent owner's robot to the standing pose, fallen or not, which is
+    the drive `FALLEN_REFUSES` keeps off a body on the floor. On a fallen robot rest is what the
+    daemon already does when it reads a fall, and what upstream, which detects no fall at all
+    (`upstream_api.FALL_DETECTION`), leaves to it: hold where it lies. "a slew under way" is the
+    deadman already taking a body home when it falls."""
+    d = _away(_TippableSim)
+    h = _handler(d)
+    d.tick()
+    if case == "a look, then silence":
+        d.sim.tilt_deg = D.FALL_TILT_DEG + 30.0
+        d.tick()
+        assert _send(h, "bot.look", {"yaw_deg": 10.0, "pitch_deg": 0.0})["accepted"]
+        _tick_for(d, 3 * D.DEADMAN_S)  # the connection says nothing again
+    else:
+        assert _send(h, "bot.stand")["accepted"]
+        _tick_for(d, 2 * D.DEADMAN_S)  # silence: the deadman takes the body home
+        assert d.deadman_tripped
+        d.sim.tilt_deg = D.FALL_TILT_DEG + 30.0
+        d.tick()
+    lying = d.target.copy()
+    _tick_for(d, 2 * D.DEADMAN_S)
+    moved = float(np.max(np.abs(d.target - lying)))
+    assert d.fallen and moved <= D.MAX_STEP_RAD, (case, d.command.mode, moved)
+
+
+def test_a_stop_before_the_first_reading_does_not_send_the_robot_home() -> None:
+    """Before the first good reading the held pose is the home pose, so a stop then held home,
+    and seeding honoured it: the robot slewed from where it stood to home. A stop before the
+    first reading holds wherever that reading finds the robot."""
+    d = _away()
+    h = _handler(d)
+    assert _send(h, "bot.stop")["accepted"]
+    for _ in range(25):
+        d.tick()
+    assert float(np.max(np.abs(d.target - AWAY))) <= D.MAX_STEP_RAD, d.command.goal[:3]
+
+
+@pytest.mark.parametrize("state", ["shutting down", "gave up"])
+def test_a_stop_is_answered_truthfully_while_the_daemon_brings_the_robot_to_rest(
+    state: str,
+) -> None:
+    """A stop was refused once a shutdown began and once the loop gave up, though the daemon was
+    then bringing the robot to rest, and the record told the person to use the hardware switch,
+    which on this robot is a fall. It is accepted, changes nothing the rest is doing, and says
+    which rest it is."""
+    d = _daemon()
+    h = _handler(d)
+    d.tick()
+    if state == "shutting down":
+        d._shut = True
+    else:
+        d.gave_up = True
+    answer = _send(h, "bot.stop")
+    assert answer["accepted"] is True and answer.get("note"), answer
+    assert ("shutting down" if state == "shutting down" else "gave up") in answer["note"]
+
+
+async def test_a_stop_that_could_not_be_delivered_advises_nothing_that_drops_the_robot() -> None:
+    """The record of a stop that never arrived must not send the person to the power switch,
+    which on this robot is a fall: the client's words say what is stopping the robot instead."""
+    async with _FakeDaemon({"bot.stop": ("silent", None)}) as fake:
+        link = ToddlerBotBridge(fake.address, request_timeout_s=KEEPALIVE_S)
+        await link.connect()
+        await link.stop()
+        await link.close()
+    said = str(link.stop_error)
+    assert "deadman" in said and "do not cut its power" in said.lower(), said
+
+
+async def test_a_stop_answered_late_is_recorded_as_landed_once_it_is() -> None:
+    """A stop answered after the request timeout did land, yet it stayed recorded as not landed,
+    with the keepalive held back and the heartbeat failing. Once its answer arrives it counts."""
+    late = ("late", (4 * KEEPALIVE_S, {"accepted": True, "stopped": []}))
+    async with _FakeDaemon({"bot.stop": late}) as fake:
+        link = ToddlerBotBridge(fake.address, request_timeout_s=2 * KEEPALIVE_S)
+        await link.connect()
+        try:
+            await link.stop()
+            assert link.stop_error and link.keepalive_withheld, "not answered in time"
+            await _until(lambda: link.keepalive_withheld is None, limit_s=8 * KEEPALIVE_S)
+            assert link.stop_error is None
+            await link.heartbeat()
+        finally:
+            await link.close()
+
+
+@pytest.mark.serial
+def test_a_loop_whose_first_tick_never_ends_is_not_healthy() -> None:
+    """Health judged a stall by the age of the last tick's end, and before any tick had ended
+    that was no age at all, so a bus that hung on the first read answered healthy for ever.
+    The stall counts from the loop's start until a tick ends."""
+    gate = threading.Event()
+
+    class _Hangs(D.FakeSim):  # type: ignore[name-defined,misc]
+        def get_observation(self) -> Any:
+            gate.wait(30)
+            return super().get_observation()
+
+    robot = D.FakeRobot()
+    d = D.Daemon(robot, _Hangs(robot), fake=True)
+    h = _handler(d)
+    loop = threading.Thread(target=d.run, daemon=True)
+    loop.start()
+    try:
+        time.sleep(3 * D.TICK_STALE_S)
+        health = _send(h, "bot.health")
+    finally:
+        d.running = False
+        gate.set()
+        loop.join(5)
+    assert health["ok"] is False and "tick" in str(health["reason"]), health
+
+
+@pytest.mark.serial
+def test_a_second_shutdown_waits_for_the_first_and_closes_once() -> None:
+    """Shutdown checked and set its flag with no lock, so two callers (a signal and the control
+    thread's excepthook) could both settle and close, and the first to finish cancelled the
+    deadline the other still needed; a later caller also returned at once, while the first was
+    still settling. It is entered once, and a caller from another thread waits for it."""
+    d = _daemon()
+    d.command.hold(np.full(d.robot.nu, 0.3, np.float32))
+    _ticks(d, 40)
+    closes = {"n": 0}
+    real_close = d.sim.close
+
+    def counted() -> None:
+        closes["n"] += 1
+        real_close()
+
+    d.sim.close = counted
+    with _suite_watchdog_back():
+        first = threading.Thread(target=d.shutdown)
+        first.start()
+        _until_sync = time.monotonic() + 5.0
+        while not d._shut and time.monotonic() < _until_sync:
+            time.sleep(0.001)
+        d.shutdown()  # another caller, while the first settles
+        closed_when_second_returned = d.sim.closed
+        first.join(30)
+    assert closed_when_second_returned, "the second caller returned before the first had closed"
+    assert closes["n"] == 1
+
+
+def test_a_signal_during_a_shutdown_it_did_not_start_does_not_abort_the_settle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`on_signal` guarded re-entry with its own flag, not the daemon's. When a shutdown was
+    begun by something else (main's `finally` after `serve_forever` raised), a SIGTERM during its
+    settle called `shutdown()`, which returned at once, and raised SystemExit into the settle:
+    the slew was abandoned, `close()` skipped, and the interpreter's exit ran upstream's atexit,
+    which disables torque wherever the robot was. The real `main(["--fake"])`, its server dying,
+    and the recorded SIGTERM handler run once inside a settle tick on the main thread, where
+    CPython runs it. No signal is sent."""
+    import logging
+    from types import SimpleNamespace
+
+    handlers: dict[int, Any] = {}
+    state = {"armed": False, "fired": False}
+    sims: list[Any] = []
+
+    class _Dies:
+        def __init__(self, *_a: Any) -> None:
+            pass
+
+        def __enter__(self) -> _Dies:
+            return self
+
+        def __exit__(self, *_a: Any) -> bool:
+            return False
+
+        def serve_forever(self) -> None:
+            state["armed"] = True
+            raise RuntimeError("serve_forever died")
+
+    class _Sim(D.FakeSim):  # type: ignore[name-defined,misc]
+        def __init__(self, robot: Any) -> None:
+            super().__init__(robot)
+            self.pos = np.full(robot.nu, AWAY, np.float32)
+            sims.append(self)
+
+        def set_motor_target(self, target: Any) -> None:
+            super().set_motor_target(target)
+            main = threading.current_thread() is threading.main_thread()
+            if state["armed"] and not state["fired"] and main:
+                state["fired"] = True
+                handlers[15](15, None)
+
+    with monkeypatch.context() as m:
+        m.setattr(D, "Server", _Dies)
+        m.setattr(D, "FakeSim", _Sim)
+        m.setattr(D, "signal", SimpleNamespace(SIGINT=2, SIGTERM=15, signal=handlers.__setitem__))
+        m.setattr(sys, "excepthook", sys.excepthook)
+        m.setattr(threading, "excepthook", threading.excepthook)
+        m.setattr(logging, "basicConfig", lambda **_k: None)
+        for name in ("daemon_ref", "token", "capabilities", "robot_name", "motors"):
+            m.setattr(D.Handler, name, getattr(D.Handler, name, None), raising=False)
+        with _suite_watchdog_back(), pytest.raises(BaseException) as left:
+            D.main(["--fake"])
+    away = float(np.max(np.abs(sims[0].pos)))
+    assert state["fired"]
+    assert sims[0].closed and away < 1e-2, (type(left.value).__name__, sims[0].closed, away)
+
+
+def test_the_hard_exit_fires_in_a_process_with_no_standard_error() -> None:
+    """The hard exit handed faulthandler the standard error, and a process started with it
+    closed has none, so faulthandler refused to arm and the shutdown went on with no deadline.
+    A child stands in, with both streams None as the interpreter leaves them then."""
+    import subprocess
+
+    code = (
+        "import importlib.util, sys, time\n"
+        f"spec = importlib.util.spec_from_file_location('d', {str(DAEMON)!r})\n"
+        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)\n"
+        "sys.stderr = None; sys.__stderr__ = None\n"
+        "m.hard_exit_after(0.5, 'probe')\n"
+        "time.sleep(5.0)\n"
+    )
+    child = subprocess.run([sys.executable, "-c", code], capture_output=True, timeout=60)
+    assert child.returncode == 1, (child.returncode, child.stderr[-300:])
+
+
+async def test_an_envelope_with_a_key_roboglot_does_not_read_is_left_out() -> None:
+    """The connect checked the three envelope keys Roboglot reads and then converted every
+    value, so one more key with a word in it raised ValueError out of `connect()` with the
+    socket left open. Only the keys it checked are kept."""
+    envelope = {"max_vx": 0.2, "max_vy": 0.1, "max_wz": 0.5, "note": "trained indoors"}
+    with _Serving(loop=False, walk=True, envelope=envelope) as s:  # type: ignore[arg-type]
+        link = ToddlerBotBridge(address=s.address)
+        await link.connect()
+        assert link.walk_envelope == {"max_vx": 0.2, "max_vy": 0.1, "max_wz": 0.5}
+        await link.close()
+
+
+def test_a_token_file_that_is_not_utf8_has_none_of_its_bytes_in_the_refusal(
+    tmp_path: Any,
+) -> None:
+    """The refusal quoted the decoder, which names the offending byte, so a random binary token
+    had one of its bytes written to the journal."""
+    path = tmp_path / "token"
+    path.write_bytes(b"\xe9" + b"k3y-material")
+    with pytest.raises(D.TokenFileError) as caught:
+        D.read_token(str(path))
+    assert "0xe9" not in str(caught.value) and "UTF-8" in str(caught.value), str(caught.value)
