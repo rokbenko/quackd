@@ -297,31 +297,38 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the first frame, with nothing sent but the look that centres the head, naming one it can: the
   nearest the detector measures before it marks the target as cut by the frame, a creeping step
   farther, rounded up to the centimetre, so that asked for, it is arrived at by measurement. A
-  detection of the target whose box the frame cuts, so that its reading is only an upper bound,
-  ends the approach with the body stopped, whether it is the one steered by or another one
-  beside it, as in `as near to the person as the camera can tell: it fills the frame and reads
-  ~1.80 m, the farthest it can be if it is the size the detector takes it for`, and so does a
-  detection with no distance, or with one that is not finite and above nought, quoting the last
-  reading. A box counts as cut within three of the network's input pixels of the frame's edge,
-  since a network seldom puts a cut edge on the frame's last row. The colour detector marks a
-  ball the frame cuts at the top, and one cut at the bottom once its middle row has left the
-  frame, whose width is then a chord: on the Open Duck's mock that ball's reading rose as the
-  duck came nearer, and `go_to` walked on and said it had lost the ball. That ending is not a
-  failure that `abort_when` counts and never says `reached`: its data has `at_most_m` and
-  `cannot_range` where an arrival has `distance_m`, and `another` when it was not the target
-  steered by. `approach_and` runs its `then` verb after it only when that upper bound is within
-  the stop distance; otherwise it leaves the body stopped and fails, naming the verb it did not
-  run, carrying `at_most_m` and saying the target may be farther than the stop distance. A
-  detection that gives no distance from the start is refused. `stop_distance` now goes up to
-  2.42 m, the distance a refusal names for a person on a 16:9 frame through the guessed lens, so
-  it can be asked for, and the parameter and the verb's description say all this, which moves
-  the fingerprint of every manifest that offers `go_to`. The detectors Roboglot ships say how
-  near they can measure and mark a detection the frame cuts; a detector of your own that says
-  neither is not guessed for, and one of its detections with no distance stops the approach.
-  `follow-me.glot` told the pilot to stop at 0.5 m and never come nearer
-  than 0.4, distances no detector can report for a person; it asks for 2 m now, takes the
-  distance a refusal names, and treats a frame the person fills as the end of a leg, and its
-  hash in `tests/golden/glot_hashes.json` is locked again to match.
+  detection of the target whose box the frame's edge cuts, so that its reading is only an upper
+  bound, ends the approach with the body stopped, whether it is the one steered by or another one
+  beside it, and the result says which one, that the frame's edge cuts it so its distance cannot
+  be measured, and its reading as the farthest it can be, as in `go_to stopped: the frame's edge
+  cuts the person, so its distance cannot be measured; it reads ~1.86 m, the farthest it can be
+  if it is the size the detector takes it for`. Where nothing had moved yet it says `go_to did
+  not start` and that the pilot can look or turn until that one is whole in the frame or out of
+  view. A detection with no distance, or with one that is not finite and above nought, ends it
+  the same way, quoting the last reading. A network's box counts as cut within three of its input
+  pixels, or two hundredths of the frame's height if that is more, of the frame's top or bottom:
+  a margin chosen on the safe side, not a measurement, since nobody has measured where a network
+  puts a cut edge, and it ends an approach a little sooner. The colour detector marks a ball
+  the frame cuts at the top, and one cut at the bottom once its middle row has left the frame,
+  whose width is then a chord: on the Open Duck's mock that ball's reading rose as the duck came
+  nearer, and `go_to` walked on and said it had lost the ball. That ending is not a failure that
+  `abort_when` counts and never says `reached`: its data has `at_most_m`, `cannot_range` and
+  `started` where an arrival has `distance_m`, and `another` with the reading of the one steered
+  by (`steered_m`) when it was not that one. `approach_and` runs its `then` verb after it only
+  when the target it walked toward has an upper bound within the stop distance; otherwise it
+  leaves the body stopped and fails, naming the verb it did not run, carrying `at_most_m`, and
+  saying why: the target may be farther than the stop distance, or the walk stopped for another
+  one of its kind. A detection that gives no distance from the start is refused.
+  `stop_distance` now goes up to 2.48 m, the distance a refusal names for a person on a 16:9
+  frame through the guessed lens, so it can be asked for, and the parameter and the verb's
+  description say all this, as do the Microduck's, Huebot's and Open Duck's own descriptions of
+  `go_to` and `approach_and`, which moves the fingerprint of every manifest that offers `go_to`.
+  The detectors Roboglot ships say how near they can measure and mark a detection the frame cuts;
+  a detector of your own that says neither is not guessed for, and one of its detections with no
+  distance stops the approach. `follow-me.glot` told the pilot to stop at 0.5 m and never come
+  nearer than 0.4, distances no detector can report for a person; it asks for 2 m now, takes the
+  distance a refusal names, and treats the frame's edge cutting the person as the end of a leg,
+  and its hash in `tests/golden/glot_hashes.json` is locked again to match.
 - **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
   pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
   twist nor zero it once its deadman window had passed, and the body kept walking on its last

@@ -30,7 +30,8 @@ as the camera can measure them and no nearer.
 
 1. `search_scan` until a `person` is detected.
 2. `walk_to` the person with `stop_distance` 2. It stops on its own: within that distance, or
-   sooner once the person fills the frame, as near as the camera can tell. Either ends a leg.
+   sooner once the frame's edge cuts the person and the camera can no longer measure them.
+   Either ends a leg.
    If it refuses the distance as nearer than the camera can measure a person, `walk_to` again
    with the distance it names.
 3. `gaze` at them, then `walk_to` again if they have moved.
@@ -41,8 +42,8 @@ as the camera can measure them and no nearer.
 
 ## Notes
 
-- Never try to get nearer than `walk_to` takes you. Once it says the person fills the frame,
-  the camera cannot tell how near they are.
+- Never try to get nearer than `walk_to` takes you. Once it says the frame's edge cuts the
+  person, the camera cannot tell how near they are.
 
 ## Memory
 

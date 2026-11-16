@@ -19,7 +19,7 @@ from typing import Any, ClassVar
 
 from PIL import Image
 
-from roboglot.perception.base import Detection, edge_band_px
+from roboglot.perception.base import Detection, box_edge_band_px
 
 logger = logging.getLogger("roboglot.perception")
 
@@ -64,11 +64,11 @@ def detections_from_boxes(
 
     A box the frame cuts at its top or its bottom is shorter than the target, so its distance
     is only an upper bound, and the detection is marked `clipped`: one whose top or bottom lies in
-    the frame's edge band (`edge_band_px`). One cut at a side only keeps its whole height and is
-    measured as any other.
+    the frame's edge band (`box_edge_band_px`). One cut at a side only keeps its whole height and
+    is measured as any other.
     """
     f = (w / 2) / math.tan(math.radians(fov_deg) / 2)
-    band = edge_band_px((w, h))
+    band = box_edge_band_px((w, h))
     out: list[Detection] = []
     for name, conf, *corners in boxes:
         label = COCO_TO_LABEL.get(name)
@@ -104,7 +104,7 @@ def nearest_box_m(label: str, size: tuple[float, float], fov_deg: float) -> floa
     if height is None:
         return None
     w, h = size
-    return box_reading_m(height, w, h - 2 * edge_band_px(size), fov_deg)
+    return box_reading_m(height, w, h - 2 * box_edge_band_px(size), fov_deg)
 
 
 class YoloDetector:

@@ -264,6 +264,23 @@ def test_a_cut_box_a_network_reports_two_of_its_pixels_inside_the_edge_is_still_
     assert cut.clipped and not inside.clipped
 
 
+@pytest.mark.parametrize(("w", "h"), [(640, 480), (1280, 720), (1920, 1080), (480, 640)])
+def test_a_cut_box_reported_five_rows_of_a_480_row_frame_inside_the_edge_is_still_marked(
+    w: int, h: int
+) -> None:
+    """Three of the network's pixels was a guess nobody measured, and a person's box reported
+    five rows inside the edge of a 640x480 frame went unmarked: its reading floored above the
+    distance a refusal named, and `go_to` walked on to 0.97 m. The band is at least a share of the
+    frame's height now, a safety margin, so a box that far inside, or the same share of any
+    frame's height, is marked, with room to spare: nine rows of 480, nearly twice that, too."""
+    for rows in (5, 9):
+        inset = rows / 480 * h
+        (cut,) = detections_from_boxes(
+            [("person", 0.9, w / 3, inset, 2 * w / 3, h - inset)], w, h, fov_deg=62.0
+        )
+        assert cut.clipped, (w, h, inset)
+
+
 def test_a_box_the_frame_cuts_at_its_top_or_bottom_says_its_distance_is_only_an_upper_bound() -> (
     None
 ):
@@ -297,12 +314,12 @@ def test_a_box_detector_names_as_its_nearest_reading_what_its_tallest_unmarked_b
     top and the bottom, to the last bit, for every label it has a height for, the same in this
     process and on a board, and nothing for a label it has none for. A box as tall as the frame
     named it before, and such a box is marked, so the distance named was never measured."""
-    from roboglot.perception.base import edge_band_px
+    from roboglot.perception.base import box_edge_band_px
     from roboglot.perception.host import HostDetector
 
     local = YoloDetector(fov_deg=fov_deg)
     board = HostDetector(SimpleNamespace(address="board:0"), fov_deg=fov_deg)  # type: ignore[arg-type]
-    band = edge_band_px((w, h))
+    band = box_edge_band_px((w, h))
     for coco, label in COCO_TO_LABEL.items():
         (tallest,) = detections_from_boxes(
             [(coco, 0.9, 0.0, band, w / 3, h - band)], w, h, fov_deg=fov_deg

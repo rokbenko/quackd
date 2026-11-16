@@ -1045,10 +1045,14 @@ class _World(OpenDuckMock):
         fov_deg: float = GUESSED_FOV_DEG,
         colour: bool = False,
         inset: float = 0.0,
+        fixed: tuple[tuple[str, float, float, float, float, float], ...] = (),
     ) -> None:
         super().__init__(ball_xy=None)
         self.size, self.targets, self.fov_deg = size, targets, fov_deg
         self.colour, self.inset = colour, inset
+        self.fixed = fixed
+        """Boxes at the same pixels on every frame, after the targets': a picture on a wall, or
+        a ball off to the side the walk does not bring nearer."""
 
     def _focal(self) -> float:
         return (self.size[0] / 2) / math.tan(math.radians(self.fov_deg) / 2)
@@ -1068,7 +1072,7 @@ class _World(OpenDuckMock):
             y1, y2 = max(0.0, h / 2 - half_h), min(float(h), h / 2 + half_h)
             y1, y2 = max(y1, self.inset), min(y2, h - self.inset)
             out.append((name, conf, x1, y1, x2, y2))
-        return out
+        return out + list(self.fixed)
 
     async def get_frame(self) -> Image.Image | None:
         img = Image.new("RGB", self.size, (40, 40, 40))
@@ -1226,8 +1230,8 @@ async def test_go_to_refuses_a_stop_distance_nearer_than_the_camera_can_measure_
     could never be reached, and the body walked on into the target. It is refused now on the
     first frame, with nothing sent but the look that centres the head, which the refusal says,
     naming a stop distance the camera can measure, and that distance can be asked for: here,
-    where every frame shows a box as tall as the frame, the walk it gives stops at once and says
-    it is as near as the camera can tell."""
+    where every frame shows a box as tall as the frame, the walk it gives does not start, and
+    says the frame's edge cuts the target."""
     body = _body_for(make())
     ex = Executor(registry, body, contract=GLOT.frontmatter, detector=make())
     refused = await ex.run_verb("walk_to", {"target": label, "stop_distance": stop})
@@ -1241,7 +1245,11 @@ async def test_go_to_refuses_a_stop_distance_nearer_than_the_camera_can_measure_
 
     asked = await ex.run_verb("walk_to", {"target": label, "stop_distance": need})
     assert asked.ok, asked.summary
-    assert asked.summary.startswith(f"as near to the {label} as the camera can tell"), asked
+    assert asked.summary.startswith(
+        f"go_to did not start: the frame's edge cuts the {label}, so its distance cannot be "
+        "measured"
+    ), asked
+    assert asked.data["started"] is False and asked.data["cannot_range"] == "cut by the frame"
     assert "distance_m" not in asked.data and asked.data["at_most_m"] >= nearest, asked.data
     assert not [i for i in body.intents_of("move") if i.params["vx"] > 0]
     assert body.intents[-1].kind == "stop"
@@ -1259,9 +1267,9 @@ async def test_go_to_stops_once_the_target_runs_off_the_frame_and_says_it_is_as_
     """A box the frame cuts at its top or bottom reads farther than the target is, since its
     distance comes from its height, and it only gets worse nearer in: the body kept walking on a
     reading that fell more slowly than the gap did. The approach ends at the first such frame now,
-    with the body stopped, and the result says the target fills the frame, that it is at most the
-    last reading away and that the camera cannot measure nearer. It is not a failure: follow-me
-    ends every leg that way, so three of them in a row do not trip its `abort_when`. Nor does it
+    with the body stopped, and the result says the frame's edge cuts the target, so its distance
+    cannot be measured, and gives the reading as the farthest it can be. It is not a failure:
+    follow-me ends every leg that way, so three in a row do not trip its `abort_when`. Nor does it
     say "reached" with a distance nobody measured: the data has `at_most_m`, not `distance_m`."""
     task = load_glot(str(TASKS / "follow-me.glot"))
     legs = task.frontmatter.repeat_failure_abort
@@ -1277,11 +1285,12 @@ async def test_go_to_stops_once_the_target_runs_off_the_frame_and_says_it_is_as_
         result = await ex.run_verb("walk_to", {"target": "pet", "stop_distance": stop})
         assert result.ok, result.summary
         assert result.summary.startswith(
-            "as near to the pet as the camera can tell: it fills the frame and reads "
-            f"~{cut:.2f} m, the farthest it can be if it is the size the detector takes it for"
+            "go_to stopped: the frame's edge cuts the pet, so its distance cannot be measured; "
+            f"it reads ~{cut:.2f} m, the farthest it can be if it is the size the detector takes "
+            "it for"
         ), result.summary
         assert result.data["at_most_m"] == cut and "distance_m" not in result.data
-        assert result.data["cannot_range"] == "fills the frame"
+        assert result.data["cannot_range"] == "cut by the frame" and result.data["started"]
         leg = body.intents[sent:]
         moves = [i for i in leg if i.kind == "move"]
         assert [m.params["vx"] > 0 for m in moves] == [True], f"one tick's walk, then: {leg}"
@@ -1308,8 +1317,8 @@ class _DistanceThenNone:
 async def test_approach_and_runs_its_then_verb_only_where_go_to_measured_the_stop_distance(
     registry: VerbRegistry,
 ) -> None:
-    """`then` is promised at the stop distance. Where `go_to` ends as near as the camera can
-    tell, it knows only that the target is at most so far away, which can be farther than the stop
+    """`then` is promised at the stop distance. Where `go_to` ends on a target the frame's edge
+    cuts, it knows only that the target is at most so far away, which can be farther than the stop
     distance: a ball whose box the frame cuts at the top while it is still out of reach. The kick
     went out all the same, since that ending is a success. `approach_and` now leaves the body
     stopped there, runs no `then`, and fails naming the verb it did not run and carrying
@@ -1331,9 +1340,9 @@ async def test_approach_and_runs_its_then_verb_only_where_go_to_measured_the_sto
     )
     assert not result.ok
     assert result.summary.startswith(
-        "approach_and did not run kick: go_to stopped as near to the ball as the camera can tell"
+        f"approach_and did not run kick: go_to read the ball at most ~{cut:.3f} m away, which may "
+        f"be farther than the stop_distance of {stop:g} m"
     ), result.summary
-    assert f"may be farther than the stop_distance of {stop:g} m" in result.summary
     assert result.data["at_most_m"] == cut and result.data["not_run"] == "kick", result.data
     assert "kick" not in [name for name, _params, _result in ex.history], "it kicked anyway"
     assert body.intents[-1].kind == "stop"
@@ -1349,7 +1358,7 @@ async def test_approach_and_runs_its_then_verb_only_where_go_to_measured_the_sto
         "approach_and", {"target": "ball", "stop_distance": STOP_DEFAULT, "then": "kick"}
     )
     assert kicked.ok and "kick" in [name for name, _params, _result in within.history], kicked
-    assert kicked.summary.startswith("as near to the ball as the camera can tell"), kicked
+    assert kicked.summary.startswith("go_to did not start: the frame's edge cuts the ball"), kicked
     assert "may be farther" not in kicked.summary
     assert kicked.data["go_to"]["at_most_m"] <= STOP_DEFAULT
 
@@ -1367,12 +1376,14 @@ async def test_a_detector_that_stops_giving_a_distance_ends_the_approach_at_its_
     """`dist is None` never arrived, so a detection that stopped giving a distance was walked
     toward at full speed until the timeout. A detector that never gave one is refused before
     anything moves (the case above); one that stops giving one mid-approach ends it with the body
-    stopped, as near as the camera can tell, the last reading quoted as at most that far."""
+    stopped, the last reading quoted."""
     body = MockTransport()
     ex = Executor(registry, body, contract=GLOT.frontmatter, detector=_DistanceThenNone())
     result = await ex.run_verb("walk_to", {"target": "ball", "timeout_s": 60})
     assert result.ok, result.summary
-    assert result.summary.startswith("as near to the ball as the camera can tell"), result
+    assert result.summary.startswith(
+        "go_to stopped: then_none gives no distance for the ball now; its last reading was ~3.00 m"
+    ), result
     assert result.data["at_most_m"] == 3.0 and result.data["cannot_range"] == "no distance"
     assert len(body.intents_of("move")) == 1 and body.intents[-1].kind == "stop"
 
@@ -1474,9 +1485,115 @@ async def test_a_near_target_the_frame_cuts_ends_the_approach_while_it_steers_by
         f"{result.summary!r}"
     )
     assert result.ok and result.summary.startswith(
-        "as near to the person as the camera can tell: another person fills the frame and reads ~"
+        "go_to did not start: the frame's edge cuts another person, bearing +0°, so its distance "
+        "cannot be measured; it reads ~"
     ), result.summary
-    assert result.data["another"] is True and result.data["cannot_range"] == "fills the frame"
+    assert result.data["another"] is True and result.data["cannot_range"] == "cut by the frame"
+    assert result.data["steered_m"] == 5.0
+
+
+#: A picture of a person at the frame's top right, 60 of 480 rows tall and cut by the frame's
+#: top, as a network boxes a poster on a wall: (COCO name, confidence, x1, y1, x2, y2).
+PICTURE = ("person", 0.8, 520.0, 0.0, 600.0, 60.0)
+
+
+async def test_a_small_box_the_frame_cuts_is_not_said_to_fill_the_frame(
+    registry: VerbRegistry,
+) -> None:
+    """A person stands whole 3 m ahead, and a picture of a person at the frame's top right is
+    boxed 60 rows tall, cut by the frame's top. Any cut detection of the label ends the approach,
+    the safe side, since a person beside the body can show as a small cut box. But the result said
+    "as near to the person as the camera can tell: another person fills the frame", which was
+    false twice over. It says what is known now: another person, at its bearing, is cut by the
+    frame's edge, so its distance cannot be measured; the person steered by reads 3 m; nothing
+    moved, and the pilot can look or turn until that one is whole or out of view."""
+    world = _World(FRAME, [("person", 3.0, HEIGHT_M["person"], 0.5, 0.9)], fixed=(PICTURE,))
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": 2.0})
+    assert "fills the frame" not in result.summary and "as near" not in result.summary, result
+    assert result.summary.startswith(
+        "go_to did not start: the frame's edge cuts another person, bearing -24°, so its distance "
+        "cannot be measured; it reads ~14.20 m, the farthest it can be if it is the size the "
+        "detector takes it for"
+    ), result.summary
+    assert ". The person it steered by reads ~3.00 m, bearing +0°. " in result.summary
+    assert result.summary.endswith(
+        "Nothing moved: look or turn until that person is whole in the frame or out of view, "
+        "then ask again."
+    ), result.summary
+    assert result.data["started"] is False and not _forward(world)
+
+
+async def test_a_ball_cut_by_the_frame_s_bottom_is_not_said_to_fill_the_frame(
+    registry: VerbRegistry,
+) -> None:
+    """On the ToddlerBot's mock, whose camera is 0.5 m up, a ball on the floor leaves the bottom of
+    the 128 px frame about 0.4 m off and 17 px wide. The approach rightly ends there, its width a
+    chord, but the result said "it fills the frame", which a pilot reads as a ball under the nose.
+    It says the frame's edge cuts the ball now."""
+    from roboglot_toddlerbot.mock import ToddlerBotMock
+
+    body = ToddlerBotMock(ball_xy=(1.0, 0.0))
+    await body.connect()
+    ex = Executor(registry, body, contract=GLOT.frontmatter, detector=ColorBlobDetector())
+    result = await ex.run_verb("walk_to", {"target": "ball", "stop_distance": STOP_MIN * 2})
+    assert body.ball_xy is not None
+    end = math.hypot(body.ball_xy[0] - body.x, body.ball_xy[1] - body.y)
+    assert "fills the frame" not in result.summary, (end, result.summary)
+    assert result.summary.startswith(
+        "go_to stopped: the frame's edge cuts the ball, so its distance cannot be measured"
+    ), result.summary
+    assert result.data["cannot_range"] == "cut by the frame" and result.data["at_most_m"] < end
+
+
+async def test_approach_and_does_not_run_then_when_another_target_ended_the_approach(
+    registry: VerbRegistry,
+) -> None:
+    """The ball steered by sits whole 1.5 m dead ahead, and another lies close by to the right,
+    its box cut by the frame's bottom. `go_to` rightly stops on the other one, and put that one's
+    reading in `at_most_m`, inside the stop distance, so `approach_and` kicked straight ahead at a
+    ball 1.5 m off that nothing had turned the body toward. `then` runs only when the target steered
+    by is the one known to be within the stop distance; here it is not run, and the result says
+    another ball ended the approach."""
+    near = ("sports ball", 0.5, 500.0, 80.0, 640.0, 480.0)
+    world = _World(
+        FRAME, [("sports ball", 1.5, HEIGHT_M["ball"], WIDTH_M["ball"], 0.9)], fixed=(near,)
+    )
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    result = await ex.run_verb(
+        "approach_and", {"target": "ball", "stop_distance": STOP_DEFAULT, "then": "kick"}
+    )
+    ran = [name for name, _params, _result in ex.history]
+    assert "kick" not in ran, f"history {ran}; {result.summary!r}"
+    assert result.data["go_to"]["another"] is True
+    assert result.data["go_to"]["at_most_m"] <= STOP_DEFAULT, "the other one's bound was within it"
+    assert not result.ok and result.summary.startswith(
+        "approach_and did not run kick: go_to stopped for another ball, not the ball it walked "
+        "toward, which reads ~1.50 m"
+    ), result.summary
+    assert result.data["not_run"] == "kick"
+
+
+@pytest.mark.parametrize("rows", [2.0, 5.0])
+async def test_a_box_reported_rows_inside_the_edge_still_ends_the_approach_at_the_named_distance(
+    registry: VerbRegistry, rows: float
+) -> None:
+    """A network puts the edge of a box the frame cut a little inside the frame's edge. A band of
+    three of its input pixels, three rows on a 640x480 frame, left a person's box reported five
+    rows inside unmarked: it floored at 1.813 m, over the 1.81 m the refusal named, and `go_to`
+    crept on toward a person filling the frame until it was 0.97 m off. The band is at least a
+    share of the frame's height now, a margin chosen on the safe side. Asked for the distance a
+    refusal names, the body ends no nearer than a person who fills the frame."""
+    world = _World(FRAME, [("person", 4.0, HEIGHT_M["person"], 0.5, 0.9)], inset=rows)
+    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
+    refused = await ex.run_verb("walk_to", {"target": "person", "stop_distance": STOP_MIN})
+    named = refused.data["nearest_m"]
+    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": named})
+    assert result.ok and "timed out" not in result.summary, result.summary
+    assert world.gap() > _frame_tall_m("person"), (
+        f"named {named} m; walk_to then ended {result.summary!r} with the person "
+        f"{world.gap():.2f} m away"
+    )
 
 
 async def test_a_ball_that_runs_off_the_bottom_of_the_frame_ends_the_approach(
@@ -1552,26 +1669,6 @@ async def test_a_distance_that_is_not_finite_and_above_nought_is_no_distance(
         "go_to: third gives no distance for the ball, so it cannot tell when to stop, and did not "
         "approach it"
     ), result.summary
-
-
-async def test_a_cut_box_a_network_reports_two_rows_inside_the_edge_still_ends_the_approach(
-    registry: VerbRegistry,
-) -> None:
-    """A network regresses a box on its own input, ultralytics' 640 pixels on the long side, and
-    scales it back, so the edge of a box the frame cut need not land on the frame's outer row.
-    With a one-row edge band, a box reported two rows in went unmarked, its reading floored just
-    above the distance a refusal names, and `go_to` crept on toward a person filling the frame
-    until its timeout. Asked for the distance named, the body stops short of the person."""
-    world = _World(FRAME, [("person", 4.0, HEIGHT_M["person"], 0.5, 0.9)], inset=2.0)
-    ex = Executor(registry, world, contract=GLOT.frontmatter, detector=_board_on(world))
-    refused = await ex.run_verb("walk_to", {"target": "person", "stop_distance": STOP_MIN})
-    named = refused.data["nearest_m"]
-    result = await ex.run_verb("walk_to", {"target": "person", "stop_distance": named})
-    assert result.ok and "timed out" not in result.summary, result.summary
-    assert world.gap() > _frame_tall_m("person"), (
-        f"walk_to(person, {named}) ended {result.summary!r} with the person {world.gap():.2f} m "
-        "away, nearer than a person tall enough to fill the frame"
-    )
 
 
 # ── what go_to's arrival says, the clamp, and a refused look ────────────────────────────

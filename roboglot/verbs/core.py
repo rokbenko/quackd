@@ -92,13 +92,13 @@ def _askable(nearest_m: float) -> float:
 
 #: The farthest `stop_distance` `go_to` takes: the one a refusal names for the tallest label a box
 #: detector knows (`HEIGHT_M`, a person, 1.6 m) on the widest frame Roboglot expects
-#: (`WIDEST_FRAME`, 16:9, taken at the network's own size, whose edge band is the same share of it
-#: as any 16:9 frame's) through the lens it guesses when nobody named one (`GUESSED_FOV_DEG`):
-#: 2.407 m, a creeping step more, rounded up (`_askable`). `go_to` refuses a stop distance nearer
-#: than its camera can measure the target and names one it can, and this is as far as the bound
-#: has to reach for that distance to be one a pilot can ask for on such a camera. It was 1.5 m,
-#: under the 1.775 m a person reads at the nearest on a 4:3 frame through that lens. A larger stop
-#: distance is the safe side.
+#: (`WIDEST_FRAME`, 16:9, taken at the network's own size; the edge band is a share of the frame's
+#: height there, as on any 16:9 frame) through the lens it guesses when nobody named one
+#: (`GUESSED_FOV_DEG`): 2.466 m, a creeping step more, rounded up (`_askable`). `go_to` refuses a
+#: stop distance nearer than its camera can measure the target and names one it can, and this is
+#: as far as the bound has to reach for that distance to be one a pilot can ask for on such a
+#: camera. It was 1.5 m, under the 1.775 m a person reads at the nearest on a 4:3 frame through
+#: that lens. A larger stop distance is the safe side.
 MAX_STOP_DISTANCE_M = _askable(
     nearest_box_m(
         max(HEIGHT_M, key=HEIGHT_M.__getitem__),
@@ -979,57 +979,85 @@ async def _no_nearer(
     ctx: VerbContext,
     p: GoToParams,
     stopper: Detection,
-    another: bool,
+    steered: Detection,
     last_m: float | None,
     tick: int,
 ) -> VerbResult:
-    """Stop the body where the camera can range the target no nearer, and say so: the target,
-    or `another` one beside the one it steered by, fills the frame (`Detection.clipped`), so its
-    reading is only an upper bound, or the detector gives no distance for it now (`usable_m`).
-    With no distance for the target steered by from its first sighting there is nothing to
-    approach by, and the verb is refused.
+    """Stop the body where the camera cannot range a detection of the target, and say what is
+    known: which one ended the approach (the one steered by, or another beside it), that the
+    frame's edge cuts it (`Detection.clipped`) so its distance cannot be measured, or that the
+    detector gives no distance for it (`usable_m`), the reading as the farthest it can be where
+    there is one, and, when nothing had moved yet, that the approach did not start and what the
+    pilot can do. With no distance for the target steered by from its first sighting there is
+    nothing to approach by, and the verb is refused.
 
-    `go_to` used to walk on through both until its timeout, at up to 0.2 m/s, into a person, a
-    pet or a ball under the nose. Stopping is not an error and not an arrival: a target that fills
-    the frame is the normal end of a walk toward a person, so the result is not a failure that
-    `abort_when` counts, and it never says "reached" with a distance nobody measured. Its data
-    has `at_most_m` and `cannot_range` where an arrival has `distance_m`, and `another` when it
-    was not the target steered by. A reading is an upper bound only if the target is the size
-    the detector takes it for: a person taller than that fills the frame farther off, so the
-    result says so rather than claiming the bound outright."""
+    `go_to` used to walk on through all of these until its timeout, at up to 0.2 m/s, into a
+    person, a pet or a ball under the nose. Stopping is not an error and not an arrival: a target
+    the frame's edge cuts is the normal end of a walk toward a person, so the result is not a
+    failure that `abort_when` counts, and it never says "reached" with a distance nobody
+    measured. Its data has `at_most_m` and `cannot_range` where an arrival has `distance_m`,
+    `started`, and `another`, with the steered one's `steered_m`, when it was not the target
+    steered by. Nor does it say the target fills the frame, which a pilot reads as under the nose:
+    a ball cut by the frame's bottom 0.4 m off, or a picture cut by its top, fills none of it. A
+    reading is the farthest it can be only if the target is the size the detector takes it for, so
+    the result says that rather than claiming the bound outright."""
     await ctx.transport.stop()
     name = getattr(ctx.detector, "name", "the detector")
+    another = stopper is not steered
+    started = tick > 1
     reading = usable_m(stopper.est_distance_m)
-    it = f"another {p.target}" if another else "it"
+    bearing = stopper.bearing_deg or 0.0
+    which = f"another {p.target}, bearing {bearing:+.0f}°," if another else f"the {p.target},"
     at_most: float | None
     if reading is not None:
-        at_most, why = reading, "fills the frame"
-        said = (
-            f"{it} fills the frame and reads ~{reading:.2f} m, the farthest it can be if it is the "
-            "size the detector takes it for"
+        at_most, why = reading, "cut by the frame"
+        what = (
+            f"the frame's edge cuts {which} so its distance cannot be measured; it reads "
+            f"~{reading:.2f} m, the farthest it can be if it is the size the detector takes it for"
         )
     elif another:
         at_most, why = None, "no distance"
-        said = f"{name} gives no distance for another {p.target}, which may be nearer"
+        what = f"{name} gives no distance for {which} so how near it is cannot be told"
     elif last_m is not None:
         at_most, why = last_m, "no distance"
-        said = f"{name} gives no distance for it now, and its last reading was ~{last_m:.2f} m"
+        what = (
+            f"{name} gives no distance for the {p.target} now; its last reading was ~{last_m:.2f} m"
+        )
     else:
         return VerbResult.fail(
             f"go_to: {name} gives no distance for the {p.target}, so it cannot tell when to stop, "
             "and did not approach it"
         )
     await ctx.transport.sleep(TICK_S)
-    bearing = stopper.bearing_deg or 0.0
     guess, guessed = _guessed(stopper)
+    if not another:
+        what += f", bearing {bearing:+.0f}°"
+    summary = f"go_to {'stopped' if started else 'did not start'}: {what}{guess}"
+    extra: dict[str, Any] = {}
+    if another:
+        steered_m = usable_m(steered.est_distance_m)
+        steered_bearing = steered.bearing_deg or 0.0
+        extra = {"another": True, "steered_m": steered_m, "steered_bearing_deg": steered_bearing}
+        if steered_m is not None:
+            summary += (
+                f". The {p.target} it steered by reads ~{steered_m:.2f} m, bearing "
+                f"{steered_bearing:+.0f}°"
+            )
+    if not started:
+        if not another and at_most is not None and at_most <= p.stop_distance:
+            summary += ". Nothing moved: by that reading it is within the stop_distance already."
+        else:
+            that = f"that {p.target}" if another else "it"
+            until = "whole in the frame or out of view" if reading is not None else "out of view"
+            summary += f". Nothing moved: look or turn until {that} is {until}, then ask again."
     return VerbResult.success(
-        f"as near to the {p.target} as the camera can tell: {said}, bearing {bearing:+.0f}°, and "
-        f"the camera cannot measure it any nearer{guess}",
+        summary,
         at_most_m=at_most,
         bearing_deg=bearing,
         ticks=tick,
         cannot_range=why,
-        **({"another": True} if another else {}),
+        started=started,
+        **extra,
         **guessed,
     )
 
@@ -1065,8 +1093,8 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
     gives up as on a camera that keeps up.
 
     It walks only toward a target it can range nearer: a stop distance the camera cannot measure
-    is refused on the first frame (`_out_of_range`), and a target that fills the frame, or that
-    the detector gives no distance for, ends the approach (`_no_nearer`)."""
+    is refused on the first frame (`_out_of_range`), and a detection of the target the frame's
+    edge cuts, or that the detector gives no distance for, ends the approach (`_no_nearer`)."""
     if ctx.detector is None:
         return VerbResult.fail("go_to needs a detector (none configured)")
     # the first frame acted on is one taken once the head has settled (`_look_ahead`)
@@ -1107,7 +1135,7 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
                 # would pass on its way, so walking on would be walking into it on a number that
                 # has stopped falling
                 stopper = stopper or d
-                return await _no_nearer(ctx, p, stopper, stopper is not d, last_m, tick)
+                return await _no_nearer(ctx, p, stopper, d, last_m, tick)
             if dist <= p.stop_distance:
                 held = None
                 await ctx.transport.stop()
@@ -1158,18 +1186,32 @@ async def approach_and(ctx: VerbContext, p: ApproachAndParams) -> VerbResult:
     if not first.ok:
         return first
     at_most = first.data.get("at_most_m")
-    within = isinstance(at_most, int | float) and at_most <= p.stop_distance
+    another = first.data.get("another") is True
+    within = not another and isinstance(at_most, int | float) and at_most <= p.stop_distance
     if "cannot_range" in first.data and not within:
-        # `then` is promised at the stop distance, and as near as the camera can tell is only an
-        # upper bound, which can lie beyond it: a ball whose box the frame cuts at the top while
-        # it is still out of reach. The body stays where go_to stopped it, and the pilot decides.
-        # A bound within the stop distance puts the target within it too, and `then` runs: a ball
-        # that fills the frame, read at 0.045 m against a stop of 0.1, was kicked before the
-        # camera-limit ending existed, and is kicked now
+        # `then` is promised at the stop distance of the target walked toward, and where the
+        # frame's edge cuts a detection its reading is only an upper bound, which can lie beyond
+        # it: a ball whose box the frame cuts at the top while it is still out of reach. A bound
+        # within the stop distance puts the target within it too, and `then` runs, as it did for
+        # a ball filling the frame before this ending existed, but only the bound of the target
+        # walked toward: another one's put a kick out straight ahead at a ball 1.5 m off, while
+        # the cut one lay to the side. The body stays where go_to stopped it, and the pilot decides
+        if another:
+            steered = first.data.get("steered_m")
+            reason = (
+                f"go_to stopped for another {p.target}, not the {p.target} it walked toward"
+                + (f", which reads ~{steered:.2f} m" if isinstance(steered, int | float) else "")
+            )
+        elif isinstance(at_most, int | float):
+            reason = (
+                f"go_to read the {p.target} at most ~{at_most:.3f} m away, which may be farther "
+                f"than the stop_distance of {p.stop_distance:g} m"
+            )
+        else:
+            reason = f"go_to has no distance for the {p.target}"
         return VerbResult.fail(
-            f"approach_and did not run {p.then}: go_to stopped {first.summary}, which may be "
-            f"farther than the stop_distance of {p.stop_distance:g} m. Run {p.then} yourself if "
-            "that is near enough.",
+            f"approach_and did not run {p.then}: {reason}. go_to said: {first.summary}. Run "
+            f"{p.then} yourself if it is near enough.",
             go_to=first.data,
             at_most_m=at_most,
             not_run=p.then,
@@ -1291,15 +1333,15 @@ CORE: dict[str, Verb] = {
         Verb(
             "go_to",
             "Go toward a detected target and stop at a distance. Closes the loop on the "
-            "camera itself. Stops sooner, as near as the camera can tell, once the target fills "
-            "the frame.",
+            "camera itself. Stops sooner, without arriving, once the frame's edge cuts the "
+            "target or another of its kind, whose distance the camera cannot then measure.",
             go_to,
             GoToParams,
             timeout_s=70,
             kind="composite",
             core=True,
-            done_condition="within stop_distance of the target, as near as the camera can tell, "
-            "the target was lost, or timed out.",
+            done_condition="within stop_distance of the target, stopped where the frame's edge "
+            "cuts a detection of it, the target was lost, or timed out.",
         ),
         Verb(
             "search_scan",

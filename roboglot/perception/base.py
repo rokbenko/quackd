@@ -97,12 +97,12 @@ def nearest_measurable(
     height) through its lens, in metres, or None when it does not say.
 
     A detector that reads distance off the size of a target's box cannot measure a box that
-    reaches the frame's edge band (`edge_band_px`), since it marks one as `clipped`, so the nearest
-    it measures is what the biggest box inside the band reads, and says so through
-    `nearest_m(label, size)`, as every detector Roboglot ships does. That reading assumes the
-    target is centred in the frame, as it is when the camera sits at the target's own height; a
-    target above or below the camera's height runs off the frame sooner, farther away, and the
-    approach ends there as near as the camera can tell. A detector that names no nearest
+    reaches the frame's edge band (`edge_band_px`, `box_edge_band_px`), since it marks one as
+    `clipped`, so the nearest it measures is what the biggest box inside the band reads, and says
+    so through `nearest_m(label, size)`, as every detector Roboglot ships does. That reading
+    assumes the target is centred in the frame, as it is when the camera sits at the target's own
+    height; a target above or below the camera's height runs off the frame sooner, farther away,
+    and the approach ends there, where the frame's edge cuts it. A detector that names no nearest
     reading, a third party's, is not guessed for: `go_to` then has only its detections' marks and
     distances to go on."""
     ask = getattr(detector, "nearest_m", None)
@@ -141,9 +141,32 @@ keeps: one of its pixels is `max(w, h) / NETWORK_INPUT_PX` of a frame's."""
 def edge_band_px(size: tuple[float, float]) -> float:
     """How near the edge of a frame of `size` (width, height), in its own pixels, a box or a
     blob has to come for the frame to have cut it (`EDGE_BAND_INPUT_PX`): never less than the
-    outermost row."""
+    outermost row. The colour detector's blobs, which are the frame's own pixels, are held to
+    this; a network's boxes to the wider `box_edge_band_px`."""
     w, h = size
     return max(1.0, EDGE_BAND_INPUT_PX * max(w, h) / NETWORK_INPUT_PX)
+
+
+EDGE_BAND_SHARE = 0.02
+"""The least share of a frame's height within which a box's top or bottom counts as cut by the
+frame's edge, for a detector that reads distance off a network's boxes.
+
+It is a safety margin chosen on the safe side, not a measurement: nobody has measured how far
+inside the frame a real network puts the edge of a box the frame cut. Three of its input pixels
+(`EDGE_BAND_INPUT_PX`) was a guess too, and a person's box reported five rows inside the edge of a
+640x480 frame went unmarked under it, so its reading floored above the stop distance a refusal
+named and `go_to` walked on to 0.97 m of the person. Two hundredths of the height is nearly ten
+rows there, about twice that. What it costs: the tallest box a detector still measures is that
+share shorter at the top and the bottom, so the nearest it measures, and the stop distance a
+refusal names, are about four hundredths farther, a person's 1.81 m becoming 1.86 m on such a
+frame, and an approach ends that much sooner."""
+
+
+def box_edge_band_px(size: tuple[float, float]) -> float:
+    """The edge band for a network's boxes on a frame of `size`, in rows: the wider of
+    `edge_band_px` and `EDGE_BAND_SHARE` of the frame's height, which is what a box detector
+    measures distance along."""
+    return max(edge_band_px(size), EDGE_BAND_SHARE * size[1])
 
 
 def detect_times(detector: Detector | None) -> dict[str, Any]:
