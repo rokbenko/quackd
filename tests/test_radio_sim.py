@@ -30,6 +30,7 @@ from roboglot.radio.sim import (
     OP_WRITE_ACK,
     OP_WRITE_REQ,
     STALE_S,
+    TICK_S,
     AirModel,
     AirRecord,
     Path,
@@ -270,6 +271,11 @@ async def test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air(
     tmp_path: FilePath,
 ) -> None:
     first, second = new_beacon_id(), new_beacon_id()
+
+    def on_air(radio: SimRadio, *, written_after: float = 0.0) -> str | None:
+        record = read_radio(tmp_path, radio.token)
+        return record.beacon.beacon_id if record and record.at > written_after else None
+
     fast = SimRadio(SimOptions(air=tmp_path, t0=time.time(), speed=100.0))
     await fast.start(
         advert=ble_service_data(first, lan=False, link=True),
@@ -278,12 +284,7 @@ async def test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air(
     )
     try:
         await fast.set_advert(ble_service_data(second, lan=False, link=True))
-
-        def on_air() -> str | None:
-            record = read_radio(tmp_path, fast.token)
-            return record.beacon.beacon_id if record else None
-
-        await until(lambda: on_air() == second, within_s=5.0)
+        await until(lambda: on_air(fast) == second, within_s=5.0)
     finally:
         await fast.stop()
     slow = SimRadio(SimOptions(air=tmp_path, t0=time.time()))
@@ -293,10 +294,15 @@ async def test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air(
         on_link=lambda p, a: None,
     )
     try:
+        # Its first advert goes on the air as it starts, or a tick later when that write was
+        # refused, as Windows refuses one while anything holds the file: so wait, not read once.
+        await until(lambda: on_air(slow) == first)
         await slow.set_advert(ble_service_data(second, lan=False, link=True))
-        await asyncio.sleep(0.6)
-        record = read_radio(tmp_path, slow.token)
-        assert record is not None and record.beacon.beacon_id == first
+        later = time.time() + 3 * TICK_S
+        # What it writes three ticks after the new advert was handed in, with the rate limit
+        # far from over, still carries the first.
+        await until(lambda: on_air(slow, written_after=later) is not None)
+        assert on_air(slow, written_after=later) == first
     finally:
         await slow.stop()
 

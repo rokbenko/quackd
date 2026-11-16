@@ -3,6 +3,7 @@ command a set of choices makes (`roboglot.webui.options`). Plain Python, no Stre
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -13,7 +14,7 @@ from roboglot.agent.providers.factory import EFFORTS
 from roboglot.cli import CONTROLLERS, app
 from roboglot.command import SECRET_FLAGS
 from roboglot.perception import DETECTOR_CHOICES
-from roboglot.webui.options import LEFT_OUT, PANELS, argv_for, by_panel, options, parsed
+from roboglot.webui.options import LEFT_OUT, PANELS, _kind, argv_for, by_panel, options, parsed
 
 
 def _visible(command: str) -> set[str]:
@@ -60,6 +61,39 @@ def test_every_kind_of_option_comes_back_through_roboglots_own_parser() -> None:
     assert {name: back[name] for name in chosen} == chosen
     kinds = {o.name: o.kind for o in options("run")}
     assert (kinds["max_steps"], kinds["fov_deg"]) == ("integer", "number")
+
+
+def _one_value_option(**carries: Any) -> SimpleNamespace:
+    """An option that takes one value, carrying its type the way one Typer or another does."""
+    return SimpleNamespace(param_type_name="option", is_flag=False, multiple=False, **carries)
+
+
+@pytest.mark.parametrize(
+    ("annotation", "kind"), [(int, "integer"), (float, "number"), (str, "text")]
+)
+def test_a_typer_0_29_option_is_read_by_its_annotation(annotation: type, kind: str) -> None:
+    """Typer 0.29 parses on an engine of its own, and its options carry `type_descriptor` with the
+    annotation in it, and no `type` at all, whichever Typer this suite runs under."""
+    option = _one_value_option(type_descriptor=SimpleNamespace(annotation=annotation))
+    assert _kind(option) == kind
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("int", "integer"),
+        ("int range", "integer"),
+        ("integer", "integer"),
+        ("float", "number"),
+        ("float range", "number"),
+        ("str", "text"),
+    ],
+)
+def test_an_earlier_typers_option_is_read_by_its_click_type(name: str, kind: str) -> None:
+    """Typer 0.28 and earlier carry a Click type, named in `type.name`, and no `type_descriptor`:
+    Typer's own Click names an integer `int`, click's `integer`."""
+    option = _one_value_option(type=SimpleNamespace(name=name))
+    assert _kind(option) == kind
 
 
 def test_a_secret_never_reaches_the_command_line() -> None:

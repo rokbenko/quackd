@@ -1,12 +1,15 @@
 """What a command waits for before it does anything.
 
 Help needs none of numpy, asyncio, pydantic or YAML, and they were over a third of what it waited
-for. Every real command still gets them before it runs, for a reason that has nothing to do with
-speed: on Windows a DLL loading behind a read pending on a pipe waits for the next line, so nothing
-may first load them after a command has started reading stdin (`front._waiting_reader`)."""
+for. Typer 0.29 loads pydantic for a command's help by itself, which Roboglot cannot spare it, so
+help is held to loading none of them that Typer's own help does not. Every real command still gets
+them before it runs, for a reason that has nothing to do with speed: on Windows a DLL loading
+behind a read pending on a pipe waits for the next line, so nothing may first load them after a
+command has started reading stdin (`front._waiting_reader`)."""
 
 from __future__ import annotations
 
+import functools
 import json
 import subprocess
 import sys
@@ -43,11 +46,33 @@ def test_importing_the_cli_loads_none_of_what_only_a_command_needs() -> None:
     assert not any(loaded.values()), f"roboglot.cli pulled in {loaded}"
 
 
+CONTROL = (
+    "import json, sys\nimport typer\n"
+    "app = typer.Typer()\n"
+    "@app.callback()\ndef root(name: str = 'x') -> None:\n    pass\n"
+    "@app.command()\ndef command(count: int = 1) -> None:\n    pass\n"
+    "sys.argv = ['control', *sys.argv[1:]]\n"
+    "try:\n    app()\nexcept SystemExit:\n    pass\n"
+    f"print('\\n' + json.dumps({{m: m in sys.modules for m in {HEAVY!r}}}))"
+)
+"""A Typer app of two options, one before its command and one after, which loads nothing of its
+own: what its help loads, Typer loaded."""
+
+
+@functools.cache
+def _typer_alone(argv: tuple[str, ...]) -> frozenset[str]:
+    """What of `HEAVY` Typer itself loads to print the help `argv` asks for, the control's own or
+    its command's. None of it on Typer 0.28. Typer 0.29 checks a value with pydantic, so a
+    command's help, which reads the root's options first, loads pydantic whoever asks for it."""
+    return frozenset(m for m, on in _inside(CONTROL, *argv).items() if on)
+
+
 @pytest.mark.parametrize(
     "argv",
     [["--help"], ["-h"], ["run", "--help"], ["run", "-h"], ["doctor", "--help"], ["--version"], []],
 )
 def test_asking_for_help_loads_none_of_it(argv: list[str]) -> None:
+    """None of it beyond what Typer's own help loads, in a control app asked the same way."""
     script = (
         "import json, sys\nimport roboglot.cli\n"
         "sys.argv = ['roboglot', *sys.argv[1:]]\n"
@@ -55,7 +80,13 @@ def test_asking_for_help_loads_none_of_it(argv: list[str]) -> None:
         f"print('\\n' + json.dumps({{m: m in sys.modules for m in {HEAVY!r}}}))"
     )
     loaded = _inside(script, *argv)
-    assert not any(loaded.values()), f"roboglot {' '.join(argv)} pulled in {loaded}"
+    asks_a_command = bool(argv) and not argv[0].startswith("-")
+    typer_alone = _typer_alone(("command", "--help") if asks_a_command else ("--help",))
+    beyond = sorted(m for m, on in loaded.items() if on and m not in typer_alone)
+    assert not beyond, (
+        f"roboglot {' '.join(argv)} pulled in {beyond}, which Typer's own help, "
+        f"loading {sorted(typer_alone)}, does not"
+    )
 
 
 @pytest.mark.parametrize(

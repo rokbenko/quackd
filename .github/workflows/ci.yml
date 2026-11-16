@@ -8,6 +8,19 @@ on:
     branches: [main, "release/**"]
     tags: ["v*"]
   pull_request:
+  # A push GitHub accepted and then gave no run, which has happened on main, can be run by hand.
+  workflow_dispatch:
+
+# A pull request's newer push makes its older run pointless, and each run holds two macOS
+# runners for about twelve minutes. A run on main, on a release branch or on a tag always
+# finishes: it is the record of that commit.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# No job here writes to the repository, so the token each step holds can only read it.
+permissions:
+  contents: read
 
 jobs:
   test:
@@ -71,6 +84,8 @@ jobs:
   packaging:
     name: a bare install brings no robot
     runs-on: ubuntu-latest
+    # It takes under a minute. Without a limit, a hang would run to GitHub's six hours.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7

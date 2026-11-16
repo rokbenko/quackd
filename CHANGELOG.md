@@ -178,6 +178,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Fixed
 
+- **`roboglot ui` reads its options under Typer 0.29 as it does under 0.28.** Roboglot asks for
+  `typer>=0.12` with no cap, so a fresh install took Typer 0.29 while the lock held 0.28.0, and
+  Typer 0.29 parses on an engine of its own: an option carries its annotation there, and no Click
+  type. The page read the type off every option of `roboglot run` and `roboglot drive`, so its
+  setup page, and every goal or chat started from it, stopped on `AttributeError: 'TyperOption'
+  object has no attribute 'type'`. It reads the type where the installed Typer keeps it now. Typer
+  0.29 also loads pydantic by itself for a command's `--help`, which the test that keeps help light
+  took for Roboglot's doing; that test now holds help to loading nothing Typer's own help does not.
+  Nothing changes for an install on Typer 0.28.
 - **A team run that names one member's robot takes the others' from the task file.** `roboglot
   run team-hello --robot arm`, with `arm` a registered robot, gave `arm` its registered body and
   every other member the machine's default, where the file's `robots:` named one: a member was
@@ -211,6 +220,17 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   centimetres either side of the half-metre bound: a body that walks exactly what it is told
   passed by a fraction of a millimetre. `tests/test_fake_provider.py` walks a true one now and
   counts four legs.
+- **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
+  changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
+  file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for
+  the first advert on the air now, then for what the radio writes three ticks after the new advert
+  is handed in, and asserts that this still carries the first.
+  `test_a_frame_over_asyncios_default_line_reaches_the_client` sent its heartbeat with the daemon's
+  control loop running, and the heartbeat fails a loop under 40 Hz: a full macOS runner ran it at
+  37. It and the test of a line over the limit serve without the loop now, so there is no rate to
+  judge. `test_a_terminal_this_process_is_behind_is_not_read` read its child's stdout and stderr
+  from one pipe, and on Python 3.12 the warning a fork gives with more than one thread running
+  came first. Its stderr has a pipe of its own now.
 - **A Mistral LLM with its reasoning on no longer ends a run on its first turn.** Mistral answers
   with `message.content` as a list of chunks then, a thinking chunk and the text, and always so on
   Z.ai's GLM 5.3, which Roboglot has carried since 0.13.0. Roboglot joined that content as a string,
