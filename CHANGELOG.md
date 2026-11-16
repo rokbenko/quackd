@@ -80,6 +80,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **The page `roboglot ui` serves forgets its saved choice of a bundled task file once.** The choice
   is kept in `ui-setup.json` under a new name, so one saved before is not read, and the Task file
   picker starts on `hello-world` until another is chosen.
+- **`uv.lock` moves 37 packages inside the ranges Roboglot already asks for, and `roboglot[dev]`
+  brings `pytest-cov` and `pytest-timeout`.** A refresh of the lock changes no requirement a user
+  installs against, so what it moves is a checkout and CI: `openai` 3.46.0 to 3.51.0, `laya` 0.4.26
+  to 0.4.35, `bleak` 3.0.2 to 3.1.0, `zeroconf` 0.153.0 to 0.154.0, `packaging` 25.0 to 26.3,
+  `watchdog` 6.0.0 to 7.1.0 under Streamlit, `pytest-asyncio` 1.4.1.post1 to 1.5.0 and `ruff`
+  0.17.4 to 0.17.5. `av`, which `aiortc` brings for the Microduck's WebRTC camera, goes from
+  17.1.0 to 18.1.0 on Python 3.11 and to 19.0.2 on 3.12 and later, since 19 needs 3.12. `dnspython`
+  2.9.1 to 2.9.2, which `aiortc` brings through `aioice`, closes the high advisory
+  GHSA-vvf4-9x63-8xvv. CI installs no provider SDK, so its checks say the lock resolves, and the
+  rest was checked by hand: the three OpenAI wire test files pass on 3.51.0, whose client and base
+  client are 3.46.0's unchanged, and laya's `Router` and `predict` take the same arguments they
+  did. `roboglot[dev]` asks for `pytest-cov>=7.1` and `pytest-timeout>=2.4`, the current releases,
+  and nothing configures either yet. The pre-commit hooks run `ruff check` and `ruff format`
+  through `uv run --no-sync`, so they are the `ruff` the lock holds where they were 0.6.9, and
+  pre-commit-hooks moves to v6.0.0, whose hooks do on this tree what v5.0.0's did. What changes
+  for a contributor: `uv sync --extra dev` again.
 - **`roboglot policy check --bench` says what a declared latency is for on the arm.** Its advice
   says `so the arm asks for each chunk in time`, where it said the simulator holds each chunk back
   as long.

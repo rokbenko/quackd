@@ -46,9 +46,10 @@ HERE = Path(__file__).resolve().parent
 OUT_GIF = HERE / "lerobot.gif"
 OUT_PNG = HERE / "lerobot-what-it-saw.png"
 
-#: The hero's own cap, in bytes. `.pre-commit-config.yaml` excludes this one file from the
-#: 2048 KB hook and `tests/test_pypi_readme.py` holds the two numbers together, so moving it
-#: means moving it in both places. Everything else in this directory keeps the general cap.
+#: The hero's own cap, in bytes. `.pre-commit-config.yaml` excludes this file, the only one in
+#: this directory, from the 2048 KB hook and `tests/test_pypi_readme.py` holds the two numbers
+#: together, so moving it means moving it in both places. Everything else in this directory
+#: keeps the general cap.
 HERO_MAX_BYTES = 12_582_912  # 12288 KB
 #: The general cap, for the frames sheet, which has no reason to be special.
 MAX_BYTES = 2_097_152  # 2048 KB, exactly the --maxkb the pre-commit hook is configured with

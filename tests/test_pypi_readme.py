@@ -119,12 +119,20 @@ def test_no_image_under_docs_assets_ships_in_the_sdist() -> None:
         )
 
 
-def _hook_cap() -> tuple[int, str]:
-    """The general cap in KB, and the one path the hook excludes from it."""
-    hook = (REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8")
-    maxkb = int(re.search(r"--maxkb=(\d+)", hook).group(1))  # type: ignore[union-attr]
-    excluded = re.search(r"exclude: \^(\S+?)\$", hook)
-    return maxkb, (excluded.group(1).replace("\\", "") if excluded else "")
+def _hook_cap() -> tuple[int, re.Pattern[str]]:
+    """The general cap in KB, and the pattern of the paths the hook leaves to caps of their own,
+    which pre-commit matches with `re.search` against each path, as this is used here."""
+    import yaml
+
+    config = yaml.safe_load((REPO / ".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    (hook,) = [
+        hook
+        for repo in config["repos"]
+        for hook in repo["hooks"]
+        if hook["id"] == "check-added-large-files"
+    ]
+    (maxkb,) = [int(a.removeprefix("--maxkb=")) for a in hook["args"] if a.startswith("--maxkb=")]
+    return maxkb, re.compile(hook.get("exclude", "(?!)"))
 
 
 def _script_constant(script: str, name: str) -> list[int]:
@@ -145,19 +153,24 @@ def test_the_one_asset_over_the_general_cap_is_the_hero_and_its_own_cap_is_writt
     the way a render does: the same seconds of bench cost megabytes at any width worth leading
     a page with. So it is excluded from the hook's cap and carries one of its own.
 
-    The exception has to be exactly one file and its own number has to be somewhere a person
-    can read it, or "excluded from the cap" quietly becomes "no cap". Both are checked here,
-    and the general cap still applies to everything else (the test below)."""
+    In `docs/assets` the exception has to be exactly one file and its own number has to be
+    somewhere a person can read it, or "excluded from the cap" quietly becomes "no cap". Both are
+    checked here, and the general cap still applies to every other asset (the test below)."""
     maxkb, excluded = _hook_cap()
-    assert excluded == "docs/assets/lerobot.gif", (
-        f"the large-file hook excludes {excluded!r}. The hero is the only file meant to be "
-        "over the cap, and a second exception needs its own reason and its own number."
+    exempt = sorted(
+        path.relative_to(REPO).as_posix()
+        for path in (REPO / "docs" / "assets").iterdir()
+        if excluded.search(path.relative_to(REPO).as_posix())
     )
-    hero = REPO / excluded
-    assert hero.exists(), f"{excluded} is excluded from the cap and is not there"
+    assert exempt == ["docs/assets/lerobot.gif"], (
+        f"the large-file hook excludes {exempt} in docs/assets. The hero is the only asset meant "
+        "to be over the cap, and a second exception needs its own reason and its own number."
+    )
+    (excluded_hero,) = exempt
+    hero = REPO / excluded_hero
     assert hero.stat().st_size // 1024 > maxkb, (
-        f"{excluded} is under the {maxkb} KB cap now, so it needs no exception: drop the "
-        "exclude from .pre-commit-config.yaml and let the hook hold it like the rest."
+        f"{excluded_hero} is under the {maxkb} KB cap now, so it needs no exception: drop it "
+        "from the exclude in .pre-commit-config.yaml and let the hook hold it like the rest."
     )
     found = _script_constant("lerobot_hero.py", "HERO_MAX_BYTES")
     assert len(found) == 1, f"docs/assets/lerobot_hero.py names HERO_MAX_BYTES {len(found)} times"
@@ -168,7 +181,7 @@ def test_the_one_asset_over_the_general_cap_is_the_hero_and_its_own_cap_is_writt
         f"refuses anything over {maxkb} KB ({maxkb * 1024} bytes). Move one of the two."
     )
     assert hero.stat().st_size <= found[0], (
-        f"{excluded} is {hero.stat().st_size} bytes against its own cap of {found[0]}. "
+        f"{excluded_hero} is {hero.stat().st_size} bytes against its own cap of {found[0]}. "
         "Lower --width, then --fps, then --colours."
     )
 
@@ -177,7 +190,55 @@ def test_every_recorded_asset_is_under_that_cap_today() -> None:
     maxkb, excluded = _hook_cap()
     for asset in (REPO / "docs" / "assets").iterdir():
         if asset.is_file() and asset.suffix.lower() != ".py":
-            if asset.relative_to(REPO).as_posix() == excluded:
+            if excluded.search(asset.relative_to(REPO).as_posix()):
                 continue  # the hero, held to its own cap by the test above
             kb = asset.stat().st_size // 1024
             assert kb <= maxkb, f"docs/assets/{asset.name} is {kb} KB; the cap is {maxkb} KB"
+
+
+def test_the_example_gifs_the_hook_leaves_out_are_held_to_a_cap_of_their_own() -> None:
+    """An example's log carries the whole video of its run on a real arm as a GIF, which weighs
+    megabytes at a width worth watching, so the large-file hook leaves those out and
+    `scripts/example_log.py` holds them to `GIF_LIMIT` instead: it makes each GIF to fit, and its
+    `check_all`, which `tests/test_example_logs.py` runs over every log, refuses one that does not.
+
+    So the exclude has to reach every GIF under `docs/examples` and nothing else there. Short of
+    one, a new example's log is refused by a hook it was never meant to meet; past the GIFs, a
+    file no cap holds goes past the hook unweighed."""
+    import importlib.util
+
+    maxkb, excluded = _hook_cap()
+    spec = importlib.util.spec_from_file_location(
+        "example_log", REPO / "scripts" / "example_log.py"
+    )
+    assert spec is not None and spec.loader is not None
+    script = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(script)
+    limit = script.GIF_LIMIT
+    assert limit > maxkb * 1024, (
+        f"GIF_LIMIT is {limit} bytes, inside the hook's {maxkb} KB, so the examples' GIFs need "
+        "no exception: drop them from the exclude in .pre-commit-config.yaml."
+    )
+    files = sorted(path for path in (REPO / "docs" / "examples").rglob("*") if path.is_file())
+    assert any(path.suffix == ".gif" for path in files), (
+        "docs/examples holds no GIF, so this test is not testing anything"
+    )
+    for path in files:
+        relative = path.relative_to(REPO).as_posix()
+        if path.suffix == ".gif":
+            assert excluded.search(relative), (
+                f"{relative} is an example's GIF, held to GIF_LIMIT, and the large-file hook "
+                f"would refuse it past {maxkb} KB: widen the exclude in .pre-commit-config.yaml"
+            )
+            assert path.stat().st_size <= limit, (
+                f"{relative} is {path.stat().st_size} bytes, over GIF_LIMIT"
+            )
+        else:
+            assert not excluded.search(relative), (
+                f"the large-file hook leaves out {relative}, which no cap of its own holds"
+            )
+    # and a GIF anywhere else, which nothing caps, is weighed by the hook like any other file
+    for elsewhere in ("docs/assets/next.gif", "docs/guides/run.gif", "web/run.gif", "run.gif"):
+        assert not excluded.search(elsewhere), (
+            f"the large-file hook would leave out {elsewhere}, which no cap of its own holds"
+        )
