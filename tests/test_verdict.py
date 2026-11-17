@@ -179,6 +179,38 @@ def test_a_need_outside_the_vocabulary_is_refused() -> None:
         check_needs({"arms": True})
 
 
+def test_a_need_that_is_nan_is_refused_and_never_read_as_met() -> None:
+    """Python's `json` parses `NaN`, so a tool call can carry one, and `NaN < 0` and `have < NaN`
+    are both false: a NaN need validated, and every minimum written as one read as met on any body
+    that publishes the figure, so a feasible with it passed the body's own sheet. A NaN is refused
+    as not a number now, and `missing_needs_in`, which reads needs off the wire before anything
+    validates them, never counts one as met. An infinite minimum still validates: no body meets
+    it, so every sheet refuses a feasible that names one, which is what such a need comes to. A
+    negative infinity was refused already, as below 0."""
+    import json
+    import math
+
+    sheet = {
+        "payload_kg": {"value": 0.5},
+        "reach_m": {"value": 0.3},
+        "arms": 1,
+        "workspace_height_m": {"low": 0.0, "high": 0.5},
+    }
+    for key in ("payload_kg", "reach_m", "work_height_m", "arms"):
+        with pytest.raises(ValueError, match=f"needs.{key} must be a number"):
+            check_needs({key: math.nan})
+        sent = '{"verdict": "feasible", "reason": "x", "needs": {"' + key + '": NaN}}'
+        with pytest.raises(ValidationError, match=f"needs.{key} must be a number"):
+            Verdict.model_validate(json.loads(sent))
+        assert missing_needs_in({key: math.nan}, sheet, "legged"), f"{key} = NaN read as met"
+    assert check_needs({"payload_kg": math.inf}) == {"payload_kg": math.inf}
+    assert missing_needs_in({"payload_kg": math.inf}, sheet, "legged") == [
+        "payload_kg >= inf (has 0.5)"
+    ]
+    with pytest.raises(ValueError, match="must be 0 or more"):
+        check_needs({"payload_kg": -math.inf})
+
+
 def test_a_verdict_validates_its_own_needs() -> None:
     with pytest.raises(ValidationError, match="not in the datasheet vocabulary"):
         Verdict(verdict="infeasible", reason="too heavy", needs={"oomph": 2})

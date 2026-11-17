@@ -171,8 +171,9 @@ def test_a_confirm_gate_is_answered_in_the_page_as_a_person(tmp_path: Path, yes:
 
 
 def test_a_stop_while_the_page_is_asked_takes_the_question_back(tmp_path: Path) -> None:
-    """Withdrawn, never answered no: the gate says the prompt raised, no `prompt` row claims a
-    person said anything, and the run ends as the Stop button ended it."""
+    """Withdrawn, never answered no: no `prompt` row claims a person said anything, the walk
+    ends at the `abort` gate as the abort ends any call, where its confirm gate used to say the
+    prompt raised, and the run ends as the Stop button ended it."""
     page = _Page(_run_args(tmp_path, str(_gated_glot(tmp_path))), tmp_path)
     page.wait_for(lambda line: line["ev"] == "ask")
     page.send(op="stop")
@@ -182,9 +183,8 @@ def test_a_stop_while_the_page_is_asked_takes_the_question_back(tmp_path: Path) 
     assert any(line.get("withdrawn") == "the run was stopped" for line in page.lines)
     records = _transcript(end["run_dir"])
     assert not [r for r in records if r["kind"] == "prompt"]
-    walk = next(r for r in records if r["kind"] == "gate" and r["name"] == "walk")
-    assert walk["reason"] == "the prompt raised QuestionWithdrawn: the run was stopped"
-    assert walk["answer"] is None
+    walk = [(r["gate"], r["outcome"], r["reason"]) for r in records if r["kind"] == "gate"]
+    assert walk == [("abort", "refused", "run aborted")], walk
     assert not [r for r in records if "human declined" in json.dumps(r)]
     assert records[-1]["kind"] == "run_end"
 
@@ -197,7 +197,9 @@ def test_the_end_of_the_page_input_is_a_stop_nobody_pressed(tmp_path: Path) -> N
     assert page.finish() == 1
     assert (end["outcome"], end["reason"]) == ("aborted", "the page went away")
     walk = next(r for r in _transcript(end["run_dir"]) if r["kind"] == "gate")
-    assert walk["reason"] == "the prompt raised QuestionWithdrawn: the page went away"
+    # the abort's gate, the page going away being a stop: its confirm gate used to say the
+    # prompt raised QuestionWithdrawn, the page went away
+    assert (walk["gate"], walk["reason"]) == ("abort", "run aborted")
 
 
 @pytest.mark.parametrize(

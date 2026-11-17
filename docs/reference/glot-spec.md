@@ -42,7 +42,7 @@ non-comment line must be `---`.
 | `verbs.confirm` | list ⊆ `allow` | no (default `[]`) | **executor** | Verbs that prompt a human y/N before running (`--yes` auto-accepts; MCP refuses unless `--yes`; a pipe on stdin opens the gate as it always has, and only an answer a person really gave is recorded as one, [concepts/safety.md](../concepts/safety.md#who-the-record-says-was-asked)). |
 | `budgets.max_steps` | int 1–1000 (default 40) | no | **executor** | Maximum verb executions. |
 | `budgets.max_minutes` | number > 0 ≤ 180 (default 5) | no | **loop** | Robot-clock cap (a mock's own clock on a mock, wall-clock on hardware). Checked before each LLM call and again the moment the LLM answers, so a provider that replies late cannot spend the overrun. A verb that watches for it ends at its next tick once the minutes are spent, as `move`, `go_to`, `watch` and the arm's `move_joints` do. One that does not runs to its own end, so a run can overshoot by that verb's own timeout. |
-| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the LLM's API could not answer, and Roboglot asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). |
+| `budgets.max_llm_calls` | int 1–2000 (default 40) | no | **loop** | Maximum provider calls (re-prompts count). A turn the LLM's API could not answer, and Roboglot asked again, counts once ([ADR-0059](../adr/0059-a-turn-the-api-could-not-answer-is-asked-again.md)). The verb the last allowed call chooses runs, and the run ends on this budget when it would make one call more. With the stepper on (`--decision-mode on`) a turn the stepper answers charges no call, so after the last allowed one the stepper's turns go on, each a decision LLM request and a verb, until it hands the turn back after its streak (eight turns in a row, or half of `max_steps`, whichever is less) or the steps or minutes run out, and the run ends on this budget when the pilot would be asked again. |
 | `success` | list of strings, ≥ 1 | yes | LLM | Criteria the LLM judges itself against via `declare_success(reason)`. |
 | `abort_when` | list of strings | no | **executor** for two phrasings; LLM otherwise | See below. |
 | `persona` | string | no | — | Tone. Inserted verbatim into the system prompt. |
@@ -130,6 +130,8 @@ Two phrasings are recognised (case-insensitive) and enforced by the executor:
   there rather than an error. An AlohaMini is the shipped example
   ([adapters/alohamini/README.md](../adapters/alohamini/README.md)).
 - `Same verb fails N times in a row` — N consecutive failed results of one verb abort the run.
+  A call refused for its arguments is one of them, so a pilot that sends the same speed past the
+  clamp N times in a row ends the run on this rule.
 
 Every other entry is handed to the LLM under *"Abort conditions you must respect yourself"*.
 The spec says this plainly rather than pretending prose is policy.

@@ -112,6 +112,7 @@ from roboglot.safety import (
     ConfirmFn,
     Executor,
     Heartbeat,
+    QuestionTakenBack,
     SafetyStop,
     VerbNotAllowed,
     VerdictRequired,
@@ -137,7 +138,12 @@ from roboglot.verbs.registry import (
     registry_from_manifest,
 )
 from roboglot.verbs.watch import WATCH, watch_lens, watch_record, withdraw_watch
-from roboglot.verdict import Verdict, own_sheet_objection, solo_hint
+from roboglot.verdict import (
+    STANDING_VERDICT_WITHDRAWN,
+    Verdict,
+    own_sheet_objection,
+    solo_hint,
+)
 
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
 
@@ -2339,6 +2345,16 @@ class AgentLoop:
         "with feasible or infeasible, on your own responsibility"
     )
 
+    def _refused_assessment(self, why: str) -> VerbResult:
+        """An assessment refused for its shape, which withdraws the verdict standing before it,
+        as the own-sheet refusal does: it may be the pilot changing its mind in words the
+        vocabulary refuses (an infeasible with units in a need), and an earlier feasible left
+        standing went on carrying the motion it meant to end. The pilot is told so."""
+        if self.executor.verdict is None:
+            return VerbResult.fail(why)
+        self.executor.verdict = None
+        return VerbResult.fail(f"{why}; {STANDING_VERDICT_WITHDRAWN}")
+
     async def _assess(self, arguments: dict[str, Any]) -> tuple[VerbResult, str | None]:
         """Record the pilot's verdict. Returns what it hears back, and the reason the run ends
         with when the verdict ends it.
@@ -2346,7 +2362,7 @@ class AgentLoop:
         An LLM cannot clear its own uncertainty: `assess_task` has no `human` field, and one
         that arrives with it is refused rather than quietly dropped."""
         if "human" in arguments:
-            return VerbResult.fail(
+            return self._refused_assessment(
                 "assess_task takes no `human` field: only a person sets it"
             ), None
         try:
@@ -2355,7 +2371,7 @@ class AgentLoop:
             msgs = "; ".join(
                 f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()
             )
-            return VerbResult.fail(f"invalid assess_task: {msgs}"), None
+            return self._refused_assessment(f"invalid assess_task: {msgs}"), None
         asked = False  # whether a person answered the doubt, as against a standing answer
         self.answered_by = self.unanswered = None
         if verdict.verdict == "uncertain":
@@ -2367,6 +2383,12 @@ class AgentLoop:
                     self.cfg.decide, verdict.question(), abort=self.executor.abort
                 )
             except Exception as e:
+                if self.executor.abort.is_set():
+                    # taken back because the run was stopped, a failed heartbeat, a drive
+                    # session's brake or the kill switch: it ends for that, as the judge's
+                    # question and the fall-blind acknowledgement do, where it used to end on
+                    # "the prompt raised QuestionWithdrawn" with the reason for the stop lost
+                    raise Aborted(self._abort_reason()) from e
                 # a prompt that raised on Ctrl-C or EOF has not said yes, the same way the
                 # confirm gate reads it, and nobody said no either: it is recorded as the
                 # question unanswered, never as a no from whatever put it, and it leaves no
@@ -3553,6 +3575,10 @@ class AgentLoop:
                     last_result = VerbResult.fail(str(e))
                 except ConfirmDenied as e:
                     last_result = VerbResult.fail(f"{e}; choose something else or declare_failure")
+                except QuestionTakenBack as e:
+                    # a confirm the run's own abort took back ends the run on why the abort was
+                    # set, as a doubt taken back the same way does (`_assess`)
+                    raise Aborted(self._abort_reason()) from e
                 self._emit(
                     "verb",
                     step=self.budget.steps,
