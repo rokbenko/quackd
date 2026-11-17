@@ -59,7 +59,7 @@ from roboglot.transport.base import (
     TransportError,
     spatial_of,
 )
-from roboglot.verbs.core import CORE, HOLD_TTL_S
+from roboglot.verbs.core import CORE, HOLD_TTL_S, WentOut, stop_fate
 from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -610,8 +610,11 @@ class Executor:
 
     def _timed_out(self, name: str, verb: Verb, *, unstopped: str | None = None) -> str:
         """What a verb this executor's own timeout ended says, asked after the stop that follows
-        it, and why that stop failed when it did (`unstopped`, from `_stop_after`)."""
-        stopped = "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+        it, and what became of that stop when it did not land (`unstopped`, from `_stop_after`,
+        said by `stop_fate`)."""
+        stopped = (
+            "stopped" if unstopped is None else f"the stop sent after it {stop_fate(unstopped)}"
+        )
         return f"{name} timed out after {verb.timeout_s:g}s; {stopped}"
 
     def logged_transport(self) -> Any:
@@ -623,7 +626,7 @@ class Executor:
 
     async def _stop_after(self) -> str | None:
         """Send the stop the executor owes a verb it ended, or one that ended in an error, and
-        return why it failed, or None when it did not. Never raises.
+        return why it did not land, or None when it did (`_answer_of`). Never raises.
 
         These stops run on the way out of a failure, and a link that has dropped is the commonest
         failure there is, so the stop is the call most likely to fail too. A transport whose stop
@@ -635,7 +638,8 @@ class Executor:
         A transport that knows its stop did not land says so in `stop_error` and does not raise,
         which is how the core `stop` verb hears it. This stop is the same call, so it reads the
         same attribute: without it, an abort said "a stop was sent" over an arm whose hold never
-        reached it.
+        reached it. One that went out and cannot tell whether it arrived says so beside it
+        (`stop_unconfirmed`), and is said so, in the core's words (`WentOut`, `stop_fate`).
 
         A cancel of the caller is the one thing it raises, and never by cancelling the stop. A
         cancel that landed while the stop waited its turn on the bus used to cancel the stop with
@@ -688,7 +692,9 @@ class Executor:
         """Why an owed stop failed, or None when it landed, and whether a cancel of the caller
         came while it was waited for. A stop not answered within `_stop_wait_s`, or by the time
         such a cancel came (or had come already, `cancelled`), is not waited for any longer: it
-        goes on by itself, and is said to be unconfirmed rather than sent."""
+        goes on by itself, and is said to be unconfirmed rather than sent. One the transport sent
+        and cannot tell arrived (`stop_unconfirmed`) is why, marked `WentOut`, so that every exit
+        says it went out, as the core `stop` verb does, and none that it failed (`stop_fate`)."""
         bound = self._stop_wait_s()
         if not cancelled:
             cancelled = await _waited({stopping}, bound)
@@ -702,6 +708,8 @@ class Executor:
         if (error := stopping.exception()) is not None:
             return f"{type(error).__name__}: {error}", cancelled
         undelivered = getattr(self.transport, "stop_error", None)
+        if undelivered and getattr(self.transport, "stop_unconfirmed", False) is True:
+            return WentOut(undelivered), cancelled
         return (str(undelivered) if undelivered else None), cancelled
 
     def _keep_going(self, stopping: asyncio.Future[Any], bound: float) -> None:
@@ -761,6 +769,7 @@ class Executor:
 
     def _late_stop(self, stopping: asyncio.Future[Any]) -> None:
         """How a stop that was no longer waited for ended, said on the log when it did not land,
+        or went out and cannot tell whether it arrived, in the core's words then (`WENT_OUT`),
         since nobody is waiting on it to say so (`_answer_of`). One cancelled at the loop's close
         is said by `_see_out`."""
         _STOPS_UNDER_WAY.discard(stopping)
@@ -771,7 +780,9 @@ class Executor:
             failed = f"{type(error).__name__}: {error}"
             self.log(f"an owed stop that was no longer waited for failed: {failed}")
         elif undelivered := getattr(self.transport, "stop_error", None):
-            self.log(f"an owed stop that was no longer waited for did not land: {undelivered}")
+            went_out = getattr(self.transport, "stop_unconfirmed", False) is True
+            fate = stop_fate(WentOut(undelivered)) if went_out else f"did not land: {undelivered}"
+            self.log(f"an owed stop that was no longer waited for {fate}")
 
     # ── policy ──────────────────────────────────────────────────────────────────────
 
@@ -1504,7 +1515,7 @@ class Executor:
         except Exception as e:  # a buggy verb must not take the run down un-stopped
             unstopped = await self._stop_after()
             stopped = (
-                "stopped" if unstopped is None else f"the stop sent after it failed: {unstopped}"
+                "stopped" if unstopped is None else f"the stop sent after it {stop_fate(unstopped)}"
             )
             said = f"{name} raised {type(e).__name__}: {e}"
             # a nested verb's failed read has said already that its stop did not land, and a
@@ -1705,7 +1716,7 @@ class Executor:
                     stopped = f"the verb was cancelled and a stop was sent, {unstopped}"
                 else:
                     stopped = (
-                        f"the verb was cancelled, and the stop sent after it failed: {unstopped}"
+                        f"the verb was cancelled, and the stop sent after it {stop_fate(unstopped)}"
                     )
                 self._emit_on_the_way_out(
                     "gate",
@@ -1842,15 +1853,15 @@ class Executor:
             outcome="fired",
             reason="aborted mid-verb: the verb was cancelled and a stop was sent"
             if unstopped is None
-            else f"aborted mid-verb: the verb was cancelled, and the stop sent after it failed: "
-            f"{unstopped}",
+            else f"aborted mid-verb: the verb was cancelled, and the stop sent after it "
+            f"{stop_fate(unstopped)}",
         )
         # the abort is what leaves here, even when the stop after it failed: a heartbeat that
         # lost the link sets it, and that stop's own error used to leave in its place
         if unstopped is not None:
             raise Aborted(
-                f"aborted mid-verb; the verb was cancelled, and the stop sent after it failed: "
-                f"{unstopped}"
+                f"aborted mid-verb; the verb was cancelled, and the stop sent after it "
+                f"{stop_fate(unstopped)}"
             )
         raise Aborted("aborted mid-verb; the verb was cancelled and a stop was sent")
 
@@ -1864,11 +1875,11 @@ class Executor:
             gate="preempted",
             outcome="fired",
             reason=f"ended by a newer command, {why}; a stop was sent"
-            + (f", and it failed: {unstopped}" if unstopped else ""),
+            + (f", and it {stop_fate(unstopped)}" if unstopped else ""),
         )
         raise Preempted(
             f"{called} ended: {why}; a stop was sent"
-            + (f", and it failed: {unstopped}" if unstopped else "")
+            + (f", and it {stop_fate(unstopped)}" if unstopped else "")
         )
 
     def _ended_by_pause(self, called: str, unstopped: str | None) -> VerbResult:
@@ -1881,12 +1892,12 @@ class Executor:
             gate="paused",
             outcome="fired",
             reason="ended by a pause this robot granted a robot it met; a stop was sent"
-            + (f", and it failed: {unstopped}" if unstopped else ""),
+            + (f", and it {stop_fate(unstopped)}" if unstopped else ""),
         )
         return VerbResult.fail(
             f"{called} ended: a robot this one met asked it to pause, and it is holding still "
             f"for {held:.0f} s more"
-            + (f"; the stop sent after it failed: {unstopped}" if unstopped else ""),
+            + (f"; the stop sent after it {stop_fate(unstopped)}" if unstopped else ""),
             ended_by=PAUSE_ENDED,
         )
 

@@ -42,7 +42,14 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, UnidentifiedImageError
 
 from roboglot.adapters.base import AdapterNotInstalled
-from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
+from roboglot.transport.base import (
+    CLOSE_STOP_NOTE,
+    Ack,
+    HeartbeatError,
+    Intent,
+    RobotState,
+    TransportError,
+)
 from roboglot_alohamini import upstream_api as up
 from roboglot_alohamini.verbs import (
     ARMS,
@@ -205,10 +212,13 @@ class AlohaMiniZmq:
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
         self.stop_error: str | None = None
-        self.stop_unconfirmed = False
-        """Whether that stop went out, and only whether the host read it is not known."""
         """Why the last stop could not be sent, or is not known to have reached the host, or
         None. A stop never raises: the core verbs and the executor read this instead."""
+        self.stop_unconfirmed = False
+        """Whether that stop went out, and only whether the host read it is not known."""
+        self.close_note: str | None = None
+        """What the close says of its own stop where it did not land (`CLOSE_STOP_NOTE`): nothing
+        reads `stop_error` after a close, and a run, a goal, a team member and drive say this."""
         self.camera_available = False
         self.cameras: tuple[str, ...] = ()
         self.arms_available = True
@@ -367,9 +377,12 @@ class AlohaMiniZmq:
         )
 
     async def close(self) -> None:
+        self.close_note = None
         if self._link is not None and self._connected:
             # never upstream's disconnect(): it disables torque and a loaded arm falls
             await self.stop()
+            if self.stop_error:
+                self.close_note = f"{CLOSE_STOP_NOTE}{self.stop_error}"
             with contextlib.suppress(Exception):
                 # Under the lock: a worker left behind by a timed-out `_call` may still be
                 # inside a poll on this socket, and closing it underneath one is undefined.
@@ -484,6 +497,15 @@ class AlohaMiniZmq:
                         f"arm_{side}_gripper": GRIPPER_OPEN if open_ else GRIPPER_CLOSED
                         for side in sides
                     }
+                # the grippers of the sides it names, and no other joint: a body joint's goal
+                # sent so would go unmarked (`_unheld`), and the next stop would not hold it
+                hands = {f"arm_{side}_gripper" for side in sides}
+                if others := sorted(set(goals) - hands):
+                    return Ack(
+                        accepted=False,
+                        reason=f"a gripper intent takes goals for {' and '.join(sorted(hands))} "
+                        f"only, not for {', '.join(others)}",
+                    )
                 # held to the range as the joint branch is: the goals come from whoever called
                 if refused := [why for k, v in goals.items() if (why := goal_refused(k, v))]:
                     return Ack(accepted=False, reason="; ".join(refused))

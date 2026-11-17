@@ -39,7 +39,14 @@ from urllib.parse import parse_qs, urlsplit
 from PIL import Image, UnidentifiedImageError
 
 from roboglot.adapters.base import AdapterNotInstalled
-from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
+from roboglot.transport.base import (
+    CLOSE_STOP_NOTE,
+    Ack,
+    HeartbeatError,
+    Intent,
+    RobotState,
+    TransportError,
+)
 from roboglot_xlerobot import upstream_api as up
 from roboglot_xlerobot.verbs import ARMS, GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
 
@@ -195,10 +202,13 @@ class XLerobotZmq:
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
         self.stop_error: str | None = None
-        self.stop_unconfirmed = False
-        """Whether that stop went out, and only whether the host read it is not known."""
         """Why the last stop could not be sent, or is not known to have reached the host, or
         None. A stop never raises: the core verbs and the executor read this instead."""
+        self.stop_unconfirmed = False
+        """Whether that stop went out, and only whether the host read it is not known."""
+        self.close_note: str | None = None
+        """What the close says of its own stop where it did not land (`CLOSE_STOP_NOTE`): nothing
+        reads `stop_error` after a close, and a run, a goal, a team member and drive say this."""
 
     # ── the link ────────────────────────────────────────────────────────────────────
 
@@ -296,9 +306,12 @@ class XLerobotZmq:
         )
 
     async def close(self) -> None:
+        self.close_note = None
         if self._link is not None and self._connected:
             # never upstream's disconnect(): that disables torque and the arms drop
             await self.stop()
+            if self.stop_error:
+                self.close_note = f"{CLOSE_STOP_NOTE}{self.stop_error}"
             with contextlib.suppress(Exception):
                 # closing a socket that is already gone is not a failure worth propagating
                 # Under the lock: a worker left behind by a timed-out `_call` may still be

@@ -17,7 +17,8 @@ from typing import Any
 
 import pytest
 
-from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.registry import _torque_phrase
+from roboglot.transport.base import CLOSE_STOP_NOTE, HeartbeatError, Intent, TransportError
 from roboglot_alohamini import AlohaMiniAdapter, zmq_host
 from roboglot_alohamini.verbs import LIFT_MAX_MM, LIFT_MIN_MM, alohamini_conditions
 from roboglot_alohamini.zmq_host import (
@@ -361,6 +362,32 @@ async def test_a_stale_reading_is_a_heartbeat_failure() -> None:
         await link.close()
 
 
+async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read() -> None:
+    """A run's last stop that came back unconfirmed or failed reached only the record, since
+    nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
+    as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
+    drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
+    A close to a host still publishing has nothing to say."""
+    with FakeAlohaMiniHost() as host:
+        adapter = AlohaMiniAdapter(await _connected(host))
+        await adapter.heartbeat()
+        await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        adapter = AlohaMiniAdapter(link)
+        try:
+            await link.heartbeat()
+            host.stop()  # stuck in a cycle: nothing read, nothing answered
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        note = adapter.close_note
+        assert note is not None and note.startswith(CLOSE_STOP_NOTE), note
+        assert "not known to have reached" in note, note
+        assert "torque" not in _torque_phrase(note), _torque_phrase(note)
+
+
 async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it() -> None:
     """A PUSH socket takes a send whether anything reads it or not, and the transport kept no
     `stop_error`, so a stop to a host stuck in a cycle said "stopped (velocity zeroed)" while its
@@ -529,6 +556,38 @@ async def test_a_lift_height_or_gripper_goal_past_its_range_is_refused_by_the_tr
             assert not ack.accepted and named in str(ack.reason) and "outside" in str(ack.reason)
             await asyncio.sleep(0.1)
             assert len(host.actions) == sent, "a goal out of range went out"
+        finally:
+            await link.close()
+
+
+@pytest.mark.parametrize(
+    ("positions", "named"),
+    [
+        ({"arm_left_shoulder_lift": 90.0}, "arm_left_shoulder_lift"),
+        ({"arm_left_gripper": 10.0, "arm_left_elbow_flex": 0.0}, "arm_left_elbow_flex"),
+        ({"arm_right_gripper": 10.0}, "arm_right_gripper"),
+        ({"left_gripper_typo": 10.0}, "left_gripper_typo"),
+    ],
+    ids=["a-shoulder", "an-elbow-beside-the-gripper", "the-other-hand", "no-such-joint"],
+)
+async def test_a_gripper_intent_takes_goals_for_the_grippers_it_names_and_no_other_joint(
+    positions: dict[str, float], named: str
+) -> None:
+    """The gripper branch held each goal to its range and took any joint it named, so a shoulder
+    goal of 90 went out through a gripper intent, and was not marked for the next stop to hold,
+    as the joint branch marks a body joint's. It takes a goal only for the gripper of a side it
+    names now, and refuses the intent, sending nothing, for any other."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        try:
+            sent = len(host.actions)
+            params = {"side": "left", "open": False, "positions": positions}
+            ack = await link.send_intent(Intent(kind="gripper", params=params))
+            assert not ack.accepted and named in str(ack.reason), ack.reason
+            await asyncio.sleep(0.1)
+            assert len(host.actions) == sent, "a goal for another joint went out"
+            ack = await link.send_intent(Intent(kind="gripper", params=_grip(10.0)))
+            assert ack.accepted, ack.reason  # the hand it names, as the `gripper` verb sends it
         finally:
             await link.close()
 

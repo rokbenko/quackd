@@ -313,6 +313,13 @@ class AlohaMiniAdapter:
         the core verbs say in those words rather than as a stop that could not be sent."""
         return getattr(self.transport, "stop_unconfirmed", False) is True
 
+    @property
+    def close_note(self) -> str | None:
+        """What the close has to say, which a run reads off this adapter after it: a stop the
+        close sent that did not land (`zmq_host`'s `close_note`)."""
+        note = getattr(self.transport, "close_note", None)
+        return str(note) if note else None
+
     async def go_to_rest(self) -> RestResult:
         """This is not a body Roboglot parks: make() refuses a rest pose for it, so there is
         nothing here to drive to."""

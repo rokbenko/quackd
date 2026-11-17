@@ -33,6 +33,7 @@ from roboglot.perception.base import (
 )
 from roboglot.perception.yolo import GUESSED_FOV_DEG, HEIGHT_M, WIDEST_FRAME, nearest_box_m
 from roboglot.transport.base import (
+    WENT_OUT,
     Intent,
     camera_names_of,
     frame_period_of,
@@ -187,6 +188,20 @@ class ApproachAndParams(BaseModel):
 # ── helpers shared with adapter verbs ───────────────────────────────────────────────────
 
 
+class WentOut(str):
+    """Why a stop that went out is not known to have reached the body, in the transport's words
+    (`stop_error` beside `stop_unconfirmed`): the reason itself, marked so that whoever says it
+    says the stop went out (`stop_fate`)."""
+
+
+def stop_fate(unstopped: str) -> str:
+    """What became of an owed stop that did not land, said after its name: `failed: <why>`, or,
+    of one that went out (`WentOut`), the core's words (`WENT_OUT`) and why."""
+    if isinstance(unstopped, WentOut):
+        return f"{WENT_OUT}: {unstopped}"
+    return f"failed: {unstopped}"
+
+
 @dataclass(frozen=True)
 class _Unlanded:
     """A stop that the transport does not say reached the body: why, in the transport's words
@@ -199,7 +214,7 @@ class _Unlanded:
     def said(self, stop: str) -> str:
         """What became of `stop`, in no more words than the transport gave."""
         if self.sent:
-            return f"{stop} went out but is not known to have reached the body"
+            return f"{stop} {WENT_OUT}"
         return f"{stop} could not be delivered"
 
 

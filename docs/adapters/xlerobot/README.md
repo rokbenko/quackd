@@ -132,7 +132,8 @@ fails at the same window. Neither says the
 watchdog has stopped the wheels, since it runs in the host's one loop and a host stuck in a cycle runs
 none: both say `Its own watchdog stops the base once it has read no command for 500 ms, if its loop
 still runs.` An observation that waited in the socket since the host went quiet reads as fresh once,
-to the heartbeat as to a stop.
+to the heartbeat as to a stop. The close sends a stop of its own, and one that did not land, or is not
+known to have, is said by the run after the close, beginning `at the close,` (`close_note`).
 
 ## Units, and the two that are easy to get wrong
 

@@ -20,6 +20,7 @@ import math
 import threading
 import time
 import uuid
+from collections import deque
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
@@ -30,7 +31,14 @@ from PIL import Image
 from roboglot.adapters.base import AdapterNotInstalled
 from roboglot.space.odometry import OdometrySource, OdometryTrack
 from roboglot.space.pose import Fix, where_record
-from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
+from roboglot.transport.base import (
+    CLOSE_STOP_NOTE,
+    Ack,
+    HeartbeatError,
+    Intent,
+    RobotState,
+    TransportError,
+)
 from roboglot_rosbridge import upstream_api as up
 from roboglot_rosbridge.introspection import (
     Introspection,
@@ -52,12 +60,28 @@ STALE_FLOOR_S = 1.0
 """How long a stream may bring nothing new before it is stale: five of its own periods, and a
 second at least, as a stream's stale window is reckoned across Roboglot (the Microduck's state
 stream, mapd's `STALE_S`). /odom is judged by it for where the base is
-(`RosbridgeWs._odom_staleness`), and the link by it, over the slowest gap any of its streams has
-left (`RosbridgeWs._quiet`), an answer within the floor counting as a message."""
+(`RosbridgeWs._odom_staleness`), and the link by it, over its streams' pace now
+(`RosbridgeWs._quiet`, `SLOWEST_PACE_S`), an answer counting as a message."""
 SILENT_BEATS = 2
 """How many heartbeats in a row the link must give no sign of life before the heartbeat fails:
 more than one, the fewest that tell a late answer or a slow message, which a live link gives,
 from a link that has gone, since one failed beat ends a run, and an MCP session for good."""
+SLOWEST_PACE_S = 2 * STALE_FLOOR_S
+"""The slowest pace a stream is taken at: half a hertz, the slowest /odom a base keeps its
+heartbeat on. A stream's pace is the slowest of its last `STALE_PERIODS` gaps, what it does now,
+and a slower stream, or a pause the link came back from, is taken at this one, so no pace
+stretches the link's window past `STALE_PERIODS` of it, ten seconds, and a pause in the past
+widens nothing once `STALE_PERIODS` fresh gaps have come."""
+ANSWER_WAIT_S = 2 * STALE_FLOOR_S
+"""How long a request to the bridge is given before a beat on a base with no stream counts it
+unanswered: the floor a message is given, and as long again, since an answer queued behind
+camera frames over Wi-Fi came half as late again as the floor. An answer after it is still a
+sign of life when it comes, up to the transport's own request deadline (`timeout_s`)."""
+LISTEN_PERIODS = 2
+"""How many of its streams' own periods a stop listens after its zero Twist for a sign that the
+link is alive: the next message is due within one, and the second lets one be lost. Nothing in
+that time, and the zero is not known to have reached the base; on a base with no stream there
+is nothing to listen to, and the stop says what the socket says."""
 FRAME_STALE_PERIODS = 4
 FRAME_STALE_FLOOR_S = 2.0
 """How old a camera image may be before `get_frame` stops handing it out: four of the image
@@ -388,7 +412,16 @@ class RosbridgeWs:
         """When a message last came on any topic this transport subscribes, on this machine's
         clock, under the lock."""
         self._heard_gap: float | None = None
-        """The longest two of those messages have come apart: the slowest pace the link has kept."""
+        """The streams' pace now: the slowest of their last `STALE_PERIODS` gaps, taken at no
+        slower than `SLOWEST_PACE_S`, or None before two messages have come."""
+        self._gaps: deque[float] = deque(maxlen=STALE_PERIODS)
+        """The last gaps between two messages on the link's streams, under the lock."""
+        self._asked_at: float | None = None
+        """When the newest request for the topic list went out (`_ask_in_background`)."""
+        self._asks: set[asyncio.Task[Any]] = set()
+        """Requests for the topic list still out, each in a task of its own, ended at the close."""
+        self._listeners: list[threading.Event] = []
+        """Stops listening for a sign of life after their zero Twist (`_hears_within`)."""
         self._answered_at: float | None = None
         """When the bridge last answered a request, in any words, or None while it has given no
         answer, so has no round trip to be asked by (`_ask_topics`)."""
@@ -424,24 +457,42 @@ class RosbridgeWs:
             self._feed_odom(self._latest_odom, at)
 
     def _heard(self, at: float) -> None:
-        """A message came over the link at `at`, under the lock: a sign of life, and the gap
-        since the one before it, the slowest of which sets how long the link may be quiet."""
+        """A message came over the link at `at`, under the lock: a sign of life, which wakes a
+        stop listening for one, and a gap since the one before it. The pace is the slowest of
+        the last few gaps, what the stream does now: kept as the slowest ever, one pause the link
+        came back from widened its window for the rest of the connection, and a dead link ran
+        unseen, and stops into it said `stopped`, for five times that pause."""
         if self._heard_at is not None:
-            gap = at - self._heard_at
-            self._heard_gap = gap if self._heard_gap is None else max(self._heard_gap, gap)
+            self._gaps.append(at - self._heard_at)
+            self._heard_gap = min(max(self._gaps), SLOWEST_PACE_S)
         self._heard_at = at
+        self._wake()
+
+    def _wake(self) -> None:
+        """Tell every stop listening after its zero Twist that the link is alive, under the
+        lock."""
+        for listener in self._listeners:
+            listener.set()
+
+    def _window(self) -> float | None:
+        """How long the link may bring nothing before it may be gone: five of its streams' pace
+        now, a second at least (`STALE_PERIODS`, `STALE_FLOOR_S`), and never more than five of
+        the slowest pace taken (`SLOWEST_PACE_S`), or None while no pace is known."""
+        with self._lock:
+            gap = self._heard_gap
+        return None if gap is None else max(STALE_FLOOR_S, STALE_PERIODS * gap)
 
     def _quiet(self) -> str | None:
         """Why the link's own streams say it may be gone, or None: nothing has come on any topic
-        this transport subscribes for longer than five of the slowest gaps they have left, a
-        second at least (`STALE_PERIODS`, `STALE_FLOOR_S`). None too while no gap is known, as
-        before a second message: a stream is not judged before its pace is, and one slower
-        than the floor was otherwise quiet between every two of its first three messages."""
+        this transport subscribes for longer than its window (`_window`). None too while no gap
+        is known, as before a second message: a stream is not judged before its pace is, and
+        one slower than the floor was otherwise quiet between every two of its first three
+        messages."""
         with self._lock:
-            at, gap = self._heard_at, self._heard_gap
-        if at is None or gap is None:
+            at = self._heard_at
+        window = self._window()
+        if at is None or window is None:
             return None
-        window = max(STALE_FLOOR_S, STALE_PERIODS * gap)
         age = time.monotonic() - at
         if age <= window:
             return None
@@ -536,8 +587,10 @@ class RosbridgeWs:
         self._closed = False
         self._answered_at, self._unanswered, self._silent_beats = None, None, 0
         self._refused, self._command_said, self.close_note = None, None, None
+        self._asked_at = None
         with self._lock:
             self._heard_at, self._heard_gap = None, None
+            self._gaps.clear()
         # only when nothing was injected: a test that hands over a ros and a topic factory but
         # no service factory gets a connection that drives and an introspection that says it
         # could not ask, which is exactly what a bridge without rosapi looks like
@@ -616,6 +669,8 @@ class RosbridgeWs:
             self.said_no = f"{name}: {type(e).__name__}: {e}"
             answer = None
         self._answered_at, self._unanswered = time.monotonic(), None
+        with self._lock:
+            self._wake()  # an answer is a sign of life to a stop listening for one
         if not isinstance(answer, dict):
             return {}, True
         names, types = answer.get("topics") or [], answer.get("types") or []
@@ -737,10 +792,15 @@ class RosbridgeWs:
         """Send the zero Twist and let go of this client. A zero that cannot go out is recorded
         in `stop_error`: the client closes as one that asked to, which roslibpy does not
         reconnect, so a zero held for the socket would never be sent. Nothing reads `stop_error`
-        after a close, so it goes into `close_note` too, which a run reads and says after it."""
+        after a close, so it goes into `close_note` too, which a run reads and says after it.
+        The close does not listen after its zero, as a stop does: it lets go of the client at
+        once, and says the zero is not known to have arrived where the link was quiet already."""
         self._closed = True
-        self._zero()
-        self.close_note = f"at the close, {self.stop_error}" if self.stop_error else None
+        if self._zero() and (unheard := self._unheard()) is not None:
+            self._not_known(unheard)
+        self.close_note = f"{CLOSE_STOP_NOTE}{self.stop_error}" if self.stop_error else None
+        for ask in list(self._asks):
+            ask.cancel()
         for topic in (self._odom, self._image):
             if topic is not None:
                 with contextlib.suppress(Exception):
@@ -776,21 +836,18 @@ class RosbridgeWs:
             return f"rosbridge at {self.endpoint.url} is not connected"
         return None
 
-    def _zero(self) -> None:
-        """Publish the zero Twist, and say in `stop_error` why it did not go out, or that it went
-        out and is not known to have reached the base (`stop_unconfirmed`), or nothing. Never
-        raises. A client never connected has sent nothing, and owes no zero.
-
-        A zero that went out while the link's streams have gone quiet and nothing else has been
-        heard from it (`_unheard`) went into a socket that may be half open, so it is not known to
-        have reached the base, and is not said to have failed to go. On a command topic the
-        bridge listed otherwise (`command_topic`) nothing goes out, and that is the reason."""
+    def _zero(self) -> bool:
+        """Publish the zero Twist, and say whether it went out; one that did not says why in
+        `stop_error`. Never raises. A client never connected has sent nothing, owes no zero, and
+        has nothing to say. On a command topic the bridge listed otherwise (`command_topic`)
+        nothing goes out, and that is the reason. Whether a zero that went out arrived is the
+        caller's to judge (`stop`, `close`)."""
         self.stop_error, self.stop_unconfirmed = None, False
         if self._cmd is None:
-            return
+            return False
         if self._refused is not None:
             self.stop_error = self._refused
-            return
+            return False
         try:
             self._publish_twist(0.0, 0.0, 0.0)
         except TransportError as e:
@@ -798,18 +855,50 @@ class RosbridgeWs:
         except Exception as e:
             why = f"the publish raised {type(e).__name__}: {e}"
         else:
-            if (unheard := self._unheard()) is not None:
-                self.stop_unconfirmed = True
-                self.stop_error = (
-                    f"rosbridge at {self.endpoint.url} reads connected, but {unheard}, so the "
-                    "zero Twist is not known to have reached the base, which has no deadman and "
-                    "keeps its last Twist if it did not"
-                )
-            return
+            return True
         self.stop_error = (
             f"{why}, so the zero Twist was not sent, and the base, which has no deadman, keeps "
             "the last Twist that reached it"
         )
+        return False
+
+    def _not_known(self, why: str) -> None:
+        """Say that the zero Twist went out into a socket that may be half open, so is not known
+        to have reached the base, and is not said to have failed to go (`stop_unconfirmed`)."""
+        self.stop_unconfirmed = True
+        self.stop_error = (
+            f"rosbridge at {self.endpoint.url} reads connected, but {why}, so the zero Twist is "
+            "not known to have reached the base, which has no deadman and keeps its last Twist "
+            "if it did not"
+        )
+
+    async def _hears_within(self, seconds: float) -> bool:
+        """Whether a message or an answer comes over the link within `seconds` from now, waited
+        for in a worker thread that roslibpy's own thread wakes (`_wake`)."""
+        heard = threading.Event()
+        with self._lock:
+            self._listeners.append(heard)
+        try:
+            return await asyncio.to_thread(heard.wait, seconds)
+        finally:
+            with self._lock:
+                self._listeners.remove(heard)
+
+    def _ask_in_background(self) -> None:
+        """Ask the bridge for its topic list in a task of its own, never waited on by whoever
+        asks: an answer within the transport's own request deadline is a sign of life when it
+        comes (`_ask_topics`), and none is the silence a beat counts. Ended at the close."""
+        self._asked_at = time.monotonic()
+        task = asyncio.ensure_future(self._ask_for_life())
+        self._asks.add(task)
+        task.add_done_callback(self._asks.discard)
+
+    async def _ask_for_life(self) -> None:
+        """One request for the topic list, for its answer alone (`_ask_in_background`)."""
+        try:
+            await self._ask_topics(self.timeout_s)
+        except TransportError as e:  # no client to ask through: nothing answers
+            self._unanswered = str(e)
 
     def _unheard(self) -> str | None:
         """Why a stop cannot vouch for the link, or None: its streams have gone quiet (`_quiet`)
@@ -924,42 +1013,59 @@ class RosbridgeWs:
         A link that dies without a close, as one over Wi-Fi does, leaves roslibpy reading the
         socket as up until TCP gives up, which can be minutes, and every Twist and every stop
         goes into it as sent while the base, which has no deadman, drives on. So the link has to
-        show it is alive. A sign of life is any message on a topic this transport subscribes,
-        within five of the slowest gaps they have left, a second at least (`_quiet`), or any
-        answer to a request within the floor, a failed one included. A stream is not judged
-        before its pace is known, so a base whose /odom comes once every two seconds is not
-        quiet between its first messages.
+        show it is alive. A sign of life is any message on a topic this transport subscribes, or
+        any answer from the bridge, a failed one included.
 
-        Where no stream vouches, the heartbeat asks: a round trip of the protocol's own, the
-        bridge's topic list, with the transport's own request deadline (`timeout_s`), on a
-        bridge that answered at connect. A base that publishes no /odom, or publishes it on a
-        topic the address does not name, is watched so and still driven. On a bridge that gave
-        no answer at connect, and with no stream whose pace is known, nothing but the socket's
+        With a stream whose pace is known, the link is alive while something has come within
+        its window, five of its pace now, a second at least, ten at most (`_window`), and a beat
+        past it is silent, whether or not the bridge has rosapi: a quiet beat asks the bridge
+        for its topic list in the background, and an answer, whenever it comes, is life, so a
+        stream that stopped over a link that answers keeps its run, but no beat waits on it,
+        and a link that is gone is noticed as soon with rosapi as without. A stream is not
+        judged before its pace is known, so a base whose /odom comes once every two seconds is
+        not quiet between its first messages.
+
+        With none, on a bridge that answered at connect, a beat asks once the last sign of life
+        is a floor old, and a beat is silent only once its ask has gone unanswered `ANSWER_WAIT_S`,
+        asking again; a base that publishes no /odom, or publishes it on a topic the address
+        does not name, is watched so and still driven. With neither, nothing but the socket's
         own state watches the link. One beat without a sign is a slow link, and fails nothing."""
         if self._closed:
             raise HeartbeatError("rosbridge ws transport is closed")
         if (down := self._link_down()) is not None:
             raise HeartbeatError(down)
-        quiet = self._quiet()
+        now = time.monotonic()
         with self._lock:
-            paced = self._heard_gap is not None
+            heard = self._heard_at
         answered = self._answered_at
-        if paced and quiet is None:
-            self._silent_beats = 0  # a stream says it is alive
-            return
-        if answered is not None and time.monotonic() - answered <= STALE_FLOOR_S:
-            self._silent_beats = 0  # an answer as recent as a message would have to be
-            return
-        if answered is not None:
-            if (await self._ask_topics(self.timeout_s))[1]:
+        lives = [t for t in (heard, answered) if t is not None]
+        life = max(lives) if lives else None
+        window = self._window()
+        if window is not None:
+            if life is not None and now - life <= window:
                 self._silent_beats = 0
                 return
-            unheard = f"the bridge did not answer the heartbeat's round trip ({self._unanswered})"
-            silent = unheard if quiet is None else f"{quiet}, and {unheard}"
-        elif quiet is None:
+            silent = self._quiet() or f"nothing has come over it for more than {window:.1f} s"
+            if answered is not None and not self._asks:
+                self._ask_in_background()  # its answer, whenever it comes, is life
+        elif answered is None or life is None:
             return  # nothing to go by but the socket, which reads up
         else:
-            silent = quiet
+            if now - life <= STALE_FLOOR_S:
+                self._silent_beats = 0
+                return
+            asked = self._asked_at
+            if asked is None or asked <= life:
+                self._ask_in_background()
+                return  # asked now: no verdict before it has had its time
+            if now - asked <= ANSWER_WAIT_S:
+                return
+            silent = (
+                f"the bridge did not answer a request for its topic list ({up.SVC_TOPICS.name}) "
+                f"within {ANSWER_WAIT_S:g} s"
+            )
+            if len(self._asks) < SILENT_BEATS:
+                self._ask_in_background()  # once more: an answer lost is not a link gone
         self._silent_beats += 1
         if self._silent_beats >= SILENT_BEATS:
             raise HeartbeatError(
@@ -968,10 +1074,35 @@ class RosbridgeWs:
             )
 
     async def stop(self) -> None:
-        """Publish the zero Twist, the only stop this base has (`up.NO_DEADMAN`). Never raises:
-        one that did not go out, or is not known to have arrived, says so in `stop_error` and
-        `stop_unconfirmed`, which the stop verb and the executor read."""
-        self._zero()
+        """Publish the zero Twist, the only stop this base has (`up.NO_DEADMAN`), and say
+        whether it arrived as far as the link can tell. Never raises: one that did not go out,
+        or is not known to have arrived, says so in `stop_error` and `stop_unconfirmed`, which
+        the stop verb and the executor read.
+
+        A window cannot tell a stop sent just after the link died from one sent just before it,
+        so a stop on a link whose streams have a pace listens after its zero Twist for a sign of
+        life, up to `LISTEN_PERIODS` of that pace (at most twice `SLOWEST_PACE_S`): a message, or
+        an answer to the ask it sends where the bridge answers, and the zero is said to have
+        landed; nothing, and it went out and is not known to have reached the base. It goes out
+        at once all the same, and the listening is what a stop costs here: up to a fifth of a
+        second on a 10 Hz stream, four seconds at the slowest pace taken. A base with no stream
+        has nothing to listen to, and its stop says what the socket says, as it always did."""
+        if not self._zero():
+            return
+        with self._lock:
+            pace = self._heard_gap
+        if pace is None:
+            return
+        listen = LISTEN_PERIODS * pace
+        if self._answered_at is not None and not self._asks:
+            self._ask_in_background()
+        if await self._hears_within(listen):
+            return
+        on = ", ".join(t for t in (self.endpoint.odom, self.endpoint.image) if t)
+        self._not_known(
+            f"nothing has come over it, on {on}, in the {listen:.1f} s after the zero Twist "
+            "went out"
+        )
 
     def now(self) -> float:
         return time.monotonic() - self._t0

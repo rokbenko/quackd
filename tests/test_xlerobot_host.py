@@ -19,7 +19,8 @@ from collections.abc import Callable
 
 import pytest
 
-from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.registry import _torque_phrase
+from roboglot.transport.base import CLOSE_STOP_NOTE, HeartbeatError, Intent, TransportError
 from roboglot.verbs.core import stop as stop_verb
 from roboglot.verbs.registry import NoParams, VerbContext
 from roboglot_xlerobot import XLerobotAdapter, zmq_host
@@ -479,6 +480,31 @@ async def test_a_stale_reading_is_a_heartbeat_failure_not_a_reading() -> None:
         state = await link.get_state()
         assert state.extras["stale_ms"] > link.stale_limit_ms
         await link.close()
+
+
+async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read() -> None:
+    """A run's last stop that came back unconfirmed or failed reached only the record, since
+    nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
+    as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
+    drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
+    A close to a host still publishing has nothing to say."""
+    with FakeXLerobotHost() as host:
+        adapter = XLerobotAdapter(await _connected(host))
+        await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        adapter = XLerobotAdapter(link)
+        try:
+            host.stop()  # stuck in a cycle: nothing read, nothing published
+            await link.get_state()  # take whatever its last cycle left in the socket
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        note = adapter.close_note
+        assert note is not None and note.startswith(CLOSE_STOP_NOTE), note
+        assert "not known to have reached" in note, note
+        assert "torque" not in _torque_phrase(note), _torque_phrase(note)
 
 
 async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it() -> None:

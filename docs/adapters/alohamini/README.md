@@ -163,7 +163,9 @@ when that is older than the host's 1000 ms watchdog window says `so this stop is
 reached it`, which `stop` and every verb that ends on a stop answer as such (`stop went out but is
 not known to have reached the body`), and the heartbeat fails at the same window. What the host does then is said only as far as it is known:
 `Its own watchdog stops the base and the lift once it has read no command for 1000 ms, if its loop
-still runs; the arms keep their last goal.` A host stuck in a cycle runs no watchdog.
+still runs; the arms keep their last goal.` A host stuck in a cycle runs no watchdog. The close
+sends a stop of its own, and one that did not land, or is not known to have, is said by the run
+after the close, beginning `at the close,` (`close_note`).
 
 ## Units
 
@@ -239,8 +241,10 @@ no per-step clamp at all unless the owner sets one, because the config declares
 so Roboglot validates every goal against the manifest before it is sent. A joint goal outside
 its normalised range, an infinity or a NaN is refused by `move_joints`, and again by the
 transport and the mock, in the same words: `shoulder_lift=250.0 is outside -100.0..100.0`. The
-transport holds a gripper goal to 0..100 the same way, and the transport and the mock hold a lift
-height to the 5 to 600 mm `lift` takes: a NaN height reads to the host's lift law as full speed.
+transport holds a gripper goal to 0..100 the same way, and takes one only for the gripper of a
+side the intent names: `a gripper intent takes goals for arm_left_gripper only, not for
+arm_left_shoulder_lift`. The transport and the mock hold a lift height to the 5 to 600 mm `lift`
+takes: a NaN height reads to the host's lift law as full speed.
 
 ## UNVERIFIED, and what Roboglot does about it
 

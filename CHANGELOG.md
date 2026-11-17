@@ -551,7 +551,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   ends at the first stop that did not land, and so do an AlohaMini's `lift` that runs out of time
   and its arm verbs a stop from beside them ended. Such a failure is no longer passed over by
   `abort_when`'s count of failures in a row as the brake working. With its stops landing, every
-  verb says what it said before.
+  verb says what it said before. The executor says the same of the stop it owes a verb that timed
+  out or raised, or that an abort, a cancel, a pause or a newer command ended, in the same words,
+  and a stop that went out is recorded as sent: its row is `accepted`, with `stop_unconfirmed:
+  true` beside the reason, which `roboglot log` draws as a warning of its own, where
+  `accepted: false`, drawn `stop REFUSED`, is a stop refused or never sent.
 - **`stop` says what it knows of a stop that did not land, and advises nothing it cannot know is
   safe.** It ended with `If this robot has a deadman it is what stops the legs now; otherwise use
   the hardware switch.` for every body, and on a body that stands cutting the power is a fall, and
@@ -560,6 +564,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   that is all the transport knows, and a body that has something true to add says it in its own
   reason: a Microduck and a Huebot name their deadman as their body files have it, and an Open Duck
   its bridge's, where the bridge said it keeps one.
+- **A drive session's record has what its robot's close said.** The close's own line, torque
+  left on an arm, went to the log alone, a bare line on stderr, and the session's record and the
+  page never had it. It is written in the record as a `note` now, which `roboglot log` replays and
+  the page shows.
 - **A rosbridge base whose link has dropped or gone quiet is said to be, and its stops to have
   gone nowhere.** roslibpy holds a publish while its socket is down and raises nothing, and the
   stop swallowed whatever happened, so with the link gone `move` said it walked, `stop` said
@@ -568,14 +576,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   is sent`), a stop and an abort say that the zero Twist was not sent, and a run says so after a
   close that could not send it. A link that dies without a close kept the socket reading up for
   minutes, and the heartbeat read nothing else: it fails now when the link has given no sign of
-  life for two beats in a row, a sign being any message on `/odom` or the camera within five of
-  the slowest gaps they have left, a second at least, or any answer from the bridge, a failed one
-  included. Where no stream vouches, as on a base with no `/odom`, it asks the bridge for its
-  topic list with the transport's own request deadline. A stream is not judged before its pace is
-  known, so a base whose `/odom` is slow is not cut off between its first messages. A stop while
-  the streams are quiet and nothing else is heard says its zero is not known to have reached the
-  base. A bridge that gave no answer at connect and a base with no `/odom` are still driven,
-  watched by the socket alone, as the page says.
+  life for two beats in a row, a sign being any message on `/odom` or the camera, within five of
+  the pace they keep now (the slowest of their last five gaps, no slower than half a hertz), a
+  second at least and ten at most, or any answer from the bridge, a failed one included. A
+  stream gone quiet asks the bridge for its topic list in the background, and no beat waits for
+  the answer, so a dead link under a 10 Hz `/odom` is noticed within about two seconds, with
+  `rosapi` or without. Where no stream vouches, as on a base with no `/odom`, the heartbeat asks
+  the bridge, gives the request two seconds and asks again, and notices a dead link within six
+  and a half seconds. A stream is not judged before its pace is known, so a base whose `/odom` is
+  slow is not cut off between its first messages. A stop on a link with a stream listens after its zero
+  Twist for two of the stream's pace, at most four seconds, for a message or an answer, and with
+  nothing heard says its zero is not known to have reached the base. A bridge that gave no
+  answer at connect and a base with no `/odom` are still driven, watched by the socket alone, as
+  the page says, with a table of how long a dead link can go unnoticed on each kind of base.
 - **A rosbridge base is driven only on a command topic the bridge lists as a Twist, and is told
   which one.** The topic was never held against the topic list, so a base on another topic, or
   one taking TwistStamped, got nothing while `move` said it walked. A topic the list does not
@@ -596,7 +609,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   XLeRobot's heartbeat said its watchdog `has already stopped the base`, though the watchdog runs
   in the loop that was stuck. A stop when no observation has come within the host's watchdog
   window says now that it went out and is `not known to have reached it`, and both say what the
-  watchdog does only `if its loop still runs`. A stop that could not be sent says so too.
+  watchdog does only `if its loop still runs`. A stop that could not be sent says so too, and the
+  close's own stop, which nothing read after the close, is said by the run after it, beginning
+  `at the close,`, as a rosbridge base's is, and `robot list --probe` says such a line as the stop
+  it is, not as torque left on.
 - **An AlohaMini refuses an arm goal, a gripper goal or a lift height outside its range.**
   `move_joints` checked only that a goal named a joint, so 250, an infinity or a NaN went out as
   the goal, and a gripper named without its arm's prefix was held to a body joint's range, so -50
@@ -604,6 +620,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   arm. Each is refused now, by the verb, the transport and the mock, as in `shoulder_lift=250.0
   is outside -100.0..100.0`, and the transport holds a gripper goal and a lift height to their
   ranges as well, as the mock does a lift height: a NaN height went to the host as full speed.
+  A gripper intent takes a goal only for the gripper of a side it names: a shoulder goal sent
+  through one went out, and the next stop did not hold it.
 - **An AlohaMini host that does not say the robot is calibrated is shown as not saying.** A
   missing `roboglot_calibrated` read as calibrated, and the string `"false"` read as true, for the
   arms' torque as well, so on upstream's own host the pilot was told `"calibrated": true` of a

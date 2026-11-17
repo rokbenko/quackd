@@ -39,6 +39,7 @@ from roboglot.safety import (
 )
 from roboglot.transport.base import (
     DEFAULT_CAMERA_NAME,
+    WENT_OUT,
     Ack,
     CameraFrame,
     HeartbeatError,
@@ -511,6 +512,121 @@ async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -
         await asyncio.wait_for(running, timeout=5)
     assert "a stop was sent" not in str(aborted.value)
     assert transport.stops == 1
+
+
+class _WentOutStop(MockTransport):
+    """A body whose stop went out over a link that has given no sign of life since, and says so
+    as the rosbridge, XLeRobot and AlohaMini transports do: why in `stop_error`, beside
+    `stop_unconfirmed`, without raising. Its stop takes `slow_s` first, for one answered after
+    the executor stopped waiting for it."""
+
+    def __init__(self, slow_s: float = 0.0) -> None:
+        super().__init__()
+        self.slow_s = slow_s
+        self.stop_error: str | None = None
+        self.stop_unconfirmed = False
+
+    async def stop(self) -> None:
+        if self.slow_s:
+            await asyncio.sleep(self.slow_s)
+        await super().stop()
+        self.stop_error, self.stop_unconfirmed = NOT_HEARD, True
+
+
+#: Why `_WentOutStop`'s stop is not known to have arrived, as its transport puts it.
+NOT_HEARD = "nothing has come over the link since its stop went out"
+
+
+@pytest.mark.parametrize("ending", ["timeout", "raised", "abort", "preempt", "pause", "cancelled"])
+async def test_an_owed_stop_that_went_out_unconfirmed_is_said_so_on_every_exit(
+    ending: str,
+) -> None:
+    """The executor read `stop_error` alone, so every exit said `the stop sent after it failed`
+    of a stop that went out over a link gone quiet and is not known to have arrived, where the
+    core `stop` verb says of the same stop that it went out. Each exit says it in the core's
+    words now (`WENT_OUT`), once, and none calls it a stop that failed: the result or the
+    error the caller is handed, and the gate the record keeps."""
+    started = asyncio.Event()
+
+    async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
+        started.set()
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    async def broken(ctx: VerbContext, _: NoParams) -> VerbResult:
+        raise RuntimeError("the twist could not be encoded")
+
+    registry = VerbRegistry()
+    registry.register(
+        Verb("waiting", "waits", waiting, timeout_s=0.05 if ending == "timeout" else 30)
+    )
+    registry.register(Verb("broken", "raises", broken))
+    seen: list[Any] = []
+    ex = Executor(
+        registry,
+        _WentOutStop(),
+        contract=glot("waiting, broken").frontmatter,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    told = ""
+    if ending == "raised":
+        told = (await ex.run_verb("broken")).summary
+    else:
+        running = asyncio.create_task(ex.run_verb("waiting"))
+        await asyncio.wait_for(started.wait(), timeout=5)
+        if ending == "abort":
+            ex.abort.set()
+        elif ending == "preempt":
+            assert ex.preempt("a newer command") == 1
+        elif ending == "pause":
+            ex.pause_for(5.0)
+        elif ending == "cancelled":
+            running.cancel()
+        try:
+            told = (await asyncio.wait_for(running, timeout=5)).summary
+        except (Aborted, Preempted) as e:
+            told = str(e)
+        except asyncio.CancelledError:
+            assert ending == "cancelled"
+    reasons = [
+        e.data["reason"]
+        for e in seen
+        if e.kind == "gate" and e.data["outcome"] == "fired" and NOT_HEARD in e.data["reason"]
+    ]
+    texts = [t for t in (told, *reasons) if t]
+    assert texts, f"nothing said the stop on the {ending} exit"
+    if ending in ("abort", "preempt", "pause", "cancelled"):
+        assert reasons, f"the {ending} gate said nothing of the stop: {gates(seen)}"
+    for text in texts:
+        assert text.count(f"{WENT_OUT}: {NOT_HEARD}") == 1, text
+        assert "failed" not in text, text
+
+
+async def test_an_owed_stop_answered_after_it_was_waited_for_says_it_went_out() -> None:
+    """One no longer waited for that then went out unconfirmed was said on the log to have not
+    landed (`_late_stop`), the words of a stop that never left."""
+    started = asyncio.Event()
+
+    async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
+        started.set()
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    registry = VerbRegistry()
+    registry.register(Verb("waiting", "waits", waiting, timeout_s=0.05))
+    registry.register(dataclasses.replace(CORE["stop"], timeout_s=0.05))
+    said: list[str] = []
+    transport = _WentOutStop(slow_s=0.3)
+    ex = Executor(registry, transport, contract=glot("waiting").frontmatter, log=said.append)
+    result = await ex.run_verb("waiting")
+    assert "goes on by itself" in result.summary, result.summary
+    for _ in range(100):
+        if transport.stops:
+            break
+        await asyncio.sleep(0.05)
+    await asyncio.sleep(0)
+    late = [line for line in said if "no longer waited for" in line]
+    assert late == [f"an owed stop that was no longer waited for {WENT_OUT}: {NOT_HEARD}"], said
 
 
 class _SilentBody(_UnheardStop):
