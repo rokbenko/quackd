@@ -11,6 +11,9 @@ on:
     - cron: "23 4 * * *"
   workflow_dispatch:
 
+# Read only, and every checkout drops its token once the code is fetched: the one job that writes,
+# `report`, asks for what it writes below. Nothing here sets UV_LOCKED, since no job installs
+# from the lock: the point is what resolves without it.
 permissions:
   contents: read
 
@@ -25,8 +28,14 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         python: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # the release tests/rosarm_contract/run.sh pins, as in every workflow here; the uv
+          # release decides nothing about which packages are newest
+          version: "0.12.21"
       - name: The newest of everything, with no lock
         shell: bash
         run: |
@@ -43,12 +52,16 @@ jobs:
       - name: The whole suite on them
         shell: bash
         run: |
-          "$PY" -m pytest -n auto -m "not serial"
+          "$PY" -m pytest -n auto -m "not serial" --junitxml="$RUNNER_TEMP/junit/tests.xml"
       - name: The tests that hold a margin on a wall clock, on their own
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          "$PY" -m pytest -m serial
+          "$PY" -m pytest -m serial --junitxml="$RUNNER_TEMP/junit/serial.xml"
+      - name: Failed tests, in the job's summary
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: uv run --no-project python scripts/ci_failed_tests.py "$RUNNER_TEMP/junit/tests.xml" "$RUNNER_TEMP/junit/serial.xml"
 
   # pytest above imports the checkout, whatever is installed, so this is what an installed wheel does.
   wheels:
@@ -60,8 +73,12 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.21"
       - name: Build every package
         run: uv build --all-packages --out-dir dist
       - name: A core and one robot, in a clean environment
@@ -82,3 +99,28 @@ jobs:
           run validate tasks/hello-world.glot
           mkdir first-run && cd first-run
           run run hello-world --llm fake --robot microduck:mock --no-memory
+
+  # A red night nobody opens the Actions tab for is a night nobody hears of. On a scheduled run,
+  # after the others, one issue says the nightly is red, takes a comment each night it stays red,
+  # and is closed the first night every job passes (scripts/nightly_issue.py). A run started by
+  # hand files nothing: whoever started it is watching it.
+  report:
+    name: an issue while the nightly is red
+    needs: [fresh, wheels]
+    if: ${{ !cancelled() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    # It takes seconds. Without a limit, a hang would run to GitHub's six hours.
+    timeout-minutes: 5
+    permissions:
+      contents: read # the checkout, for the script
+      issues: write # to open, comment on and close the one issue it keeps
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Open, comment on or close the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # each job's result, by its id: what the issue names, and nothing from any other host
+          RESULTS: ${{ toJSON(needs) }}
+        run: python scripts/nightly_issue.py

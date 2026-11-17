@@ -16,8 +16,10 @@ commits the result only when it changes. Run it by hand the same way:
 
     python docs/assets/contributors.py
 
-Set `GITHUB_TOKEN` to avoid the anonymous API rate limit. Standard library only, because
-this also runs on a bare CI image.
+Set `GITHUB_TOKEN` to avoid the anonymous API rate limit: it is sent to the API and nowhere
+else. The repository is the one `GITHUB_REPOSITORY` names, which a workflow always sets, and
+`REPO` for a person running it by hand. Standard library only, because this also runs on a
+bare CI image.
 """
 
 from __future__ import annotations
@@ -28,10 +30,15 @@ import os
 import re
 import subprocess
 import sys
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
 REPO = "rokbenko/quackd"
+"""The repository, for a run by hand: a workflow names its own, so a rename changes nothing
+there."""
+API_HOST = "api.github.com"
+"""The one host `GITHUB_TOKEN` is sent to."""
 OUT = Path(__file__).with_name("contributors.svg")
 
 SIZE = 64  # rendered diameter of one avatar
@@ -41,11 +48,25 @@ RING = "#d0d7de"  # a hairline, so a white or dark avatar still reads as a circl
 PNG_MAGIC = bytes.fromhex("89504e470d0a1a0a")  # the 8 bytes every PNG starts with
 
 
+def _repository() -> str:
+    return os.environ.get("GITHUB_REPOSITORY") or REPO
+
+
+def _is_api(url: str) -> bool:
+    """Whether a URL is the API's own: https, and its host exactly `API_HOST`. A test for the
+    words anywhere in the address took an avatar's host, path or query that carried them for
+    the API, and sent it the token."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.hostname == API_HOST
+
+
 def _get(url: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": "roboglot-contributors"})
     token = os.environ.get("GITHUB_TOKEN")
-    if token and "api.github.com" in url:
-        request.add_header("Authorization", f"Bearer {token}")
+    if token and _is_api(url):
+        # unredirected: urllib copies an ordinary header onto the request a redirect makes,
+        # whatever host that is
+        request.add_unredirected_header("Authorization", f"Bearer {token}")
     with urllib.request.urlopen(request, timeout=30) as response:
         return bytes(response.read())
 
@@ -58,7 +79,7 @@ def email_to_login() -> dict[str, str]:
     mapping: dict[str, str] = {}
     for page in range(1, 21):  # 2000 commits is far past where this stops being cheap
         batch = json.loads(
-            _get(f"https://api.github.com/repos/{REPO}/commits?per_page=100&page={page}")
+            _get(f"https://{API_HOST}/repos/{_repository()}/commits?per_page=100&page={page}")
         )
         for commit in batch:
             author, meta = commit.get("author"), commit.get("commit", {}).get("author", {})
@@ -133,7 +154,7 @@ def humans() -> list[dict[str, str]]:
     called from a runner seconds after two contributions merged, `/contributors` answered
     200 with one name and the image lost two people. So the two sources are unioned, and
     `main` refuses to write a set that has lost anybody."""
-    listed = json.loads(_get(f"https://api.github.com/repos/{REPO}/contributors?per_page=100"))
+    listed = json.loads(_get(f"https://{API_HOST}/repos/{_repository()}/contributors?per_page=100"))
     by_login = {c["login"]: c for c in listed if c.get("type") == "User"}
     added = lines_added()
     if not added:
