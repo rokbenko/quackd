@@ -132,6 +132,17 @@ def test_a_team_may_be_called_after_an_adapter_but_not_after_a_number() -> None:
         check_name("4", kind="team")
 
 
+def test_a_name_that_ends_in_a_newline_is_refused_as_any_bad_name_is() -> None:
+    """The pattern ended in `$`, which matches before a final newline, so `"arm-01\\n"` passed as
+    a robot's name, a team's name and a team's member, and read as `arm-01` wherever it was
+    printed. Each is refused now in the words a bad name already gets."""
+    for kind in ("robot", "team"):
+        with pytest.raises(RegistryError, match=rf"^'arm-01\\n' is not a valid {kind} name: "):
+            check_name("arm-01\n", kind=kind)
+    with pytest.raises(ValidationError, match=r"'arm-01\\n' is not a valid robot name"):
+        StoredTeam(name="pair", members=["arm-01\n", "duck-a"])
+
+
 def test_the_spec_is_normalised_and_a_bad_one_keeps_the_adapters_own_words() -> None:
     """A spec that parses is stored canonically. One that does not is kept as written, and the
     adapter table's own words say why on the robot that is refused for it."""

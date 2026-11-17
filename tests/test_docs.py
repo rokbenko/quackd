@@ -52,6 +52,26 @@ def test_every_body_roboglot_ships_has_a_row_on_the_safety_pages_other_bodies() 
     assert not missing, f"docs/concepts/safety.md has no row on other bodies for {missing}"
 
 
+def test_the_safety_page_and_the_readme_put_the_question_after_the_gates_that_refuse() -> None:
+    """The executor used to put the confirm question before the segment gate, the budget, the
+    battery rule and the preconditions, so a person said yes to a call they then refused, and both
+    pages listed that order. The gates now run before the question (`Executor._run_verb`), and
+    the table and the README's sentence are held to it, so neither can drift back to the old
+    one."""
+    page = (REPO / "docs" / "concepts" / "safety.md").read_text(encoding="utf-8")
+    table = page.split("## The executor", 1)[1].split("| Gate |", 1)[1].split("\n\n", 1)[0]
+    order = re.findall(r"^\| `(\w+)` \|", table, flags=re.M)
+    before = [
+        *("abort", "allowlist", "unknown", "verdict", "params", "segment", "budget"),
+        *("abort_when", "precondition", "confirm"),
+    ]
+    assert order[: len(before)] == before, order
+    assert (
+        "parameter validation, budgets, `abort_when`, preconditions, and only then the confirm "
+        "gate, so nobody is asked about a call a gate before it would refuse" in README
+    )
+
+
 def test_the_microduck_page_lists_every_microduck_upstream_ref() -> None:
     """The Microduck has two upstreams and its page carries both: `robotd`'s API, and
     `microduck_rl`'s walking task, whose velocity command ranges cap the duck's walk.

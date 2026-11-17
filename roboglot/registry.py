@@ -73,8 +73,10 @@ VERSION = 1
 MAX_MEMBERS = 8
 """What a stored team may hold, which is what a pilot team may run (`PILOTS_MAX_MEMBERS`)."""
 
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-"""The same slug every member name and team name in Roboglot already is (`factory._NAME_RE`)."""
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}\Z")
+"""The same slug every member name and team name in Roboglot already is (`factory._NAME_RE`).
+`\\Z` and not `$`, which matches before a final newline: `"arm-01\\n"` passed, and read as
+`arm-01` wherever it was printed."""
 
 
 def registry_dir(override: str | Path | None = None) -> Path:
