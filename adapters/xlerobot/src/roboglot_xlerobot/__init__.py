@@ -324,6 +324,14 @@ class XLerobotAdapter:
         the core `stop` verb reads it off what it was handed, which is this adapter."""
         return tuple(str(j) for j in getattr(self.transport, "stop_left_going", ()) or ())
 
+    @property
+    def stop_error(self) -> str | None:
+        """Why the last stop could not be sent, or is not known to have reached the host
+        (`zmq_host.XLerobotZmq.stop`). Proxied for the same reason: the core verbs and the
+        executor read it off what they were handed, which is this adapter."""
+        error = getattr(self.transport, "stop_error", None)
+        return str(error) if error else None
+
     async def go_to_rest(self) -> RestResult:
         """Roboglot keeps no rest pose for this cart, so there is nothing to drive it to: the
         wheels stop where the host's watchdog stopped them and the arms hold their last angles."""

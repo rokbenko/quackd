@@ -380,6 +380,67 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   centimetres either side of the half-metre bound: a body that walks exactly what it is told
   passed by a fraction of a millimetre. `tests/test_fake_provider.py` walks a true one now and
   counts four legs.
+- **A verb whose own stop did not reach the body no longer says it ended well.** Every core verb
+  that moves the body ends on a stop, and of those stops only the `stop` verb's read whether it
+  had landed, so a body whose link went in the last slice of a walk took every twist and not the
+  stop, and `move` said `walked`, `go_to` that it reached its target and `go_to_place` that it
+  arrived, while a body with no deadman drove on; `search_scan` turned on to its next view as if
+  its last turn had ended. Every stop the core verbs send goes through one helper now, which
+  reads the transport's word on it, and a verb whose stop did not land fails, keeping what it
+  would have said and adding, for instance, `But move's stop could not be delivered, so the body
+  may still be moving:` and the reason. A scan or a walk ends at the first stop that did not land.
+  Such a failure is no longer passed over by `abort_when`'s count of failures in a row as the
+  brake working. With its stops landing, every verb says what it said before.
+- **`stop` says what it knows of a stop that did not land, and advises nothing it cannot know is
+  safe.** It ended with `If this robot has a deadman it is what stops the legs now; otherwise use
+  the hardware switch.` for every body, and on a body that stands cutting the power is a fall, and
+  on an arm torque off drops it. It says `stop could not be delivered, so the body may still be
+  moving:` and the reason now, and a body that has something true to add says it in its own
+  reason: a Microduck and a Huebot name their deadman as their body files have it, and an Open Duck
+  its bridge's, where the bridge said it keeps one.
+- **A rosbridge base whose link has dropped or gone quiet is said to be, and its stops to have
+  gone nowhere.** roslibpy holds a publish while its socket is down and raises nothing, and the
+  stop swallowed whatever happened, so with the link gone `move` said it walked, `stop` said
+  `stopped (velocity zeroed)`, an abort said a stop was sent, and the base, which has no deadman,
+  kept its last Twist. A move over a dropped link is refused now (`is not connected, so no Twist
+  is sent`), and a stop, an abort and a close say that the zero Twist was not sent. A link that
+  dies without a close kept the socket reading up for minutes, and the heartbeat read nothing
+  else: it fails now once `/odom` has been quiet for five of its own periods, a second at least,
+  and on a base that has sent no `/odom`, once the bridge leaves a round trip for its topic list
+  unanswered for a second, and a stop over such a link says its zero is not known to have
+  reached the base. A bridge with no `rosapi` and a base with no `/odom` are still driven, watched
+  by the socket alone, as the page says.
+- **A rosbridge base is driven only on a command topic the bridge lists as a Twist, and is told
+  which one.** The topic was never held against the list read at connect, so a base on another
+  topic, or one taking TwistStamped, got nothing while `move` said it walked. A topic the list
+  does not name, or names as another type, is refused now with what the bridge listed, as in `the
+  bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
+  geometry_msgs/msg/Twist`, and where the list names more than one Twist topic the datasheet
+  says which is driven. A bridge with no `rosapi` drives as before.
+- **A rosbridge camera that stops is no longer steered by.** The newest image was handed out
+  however old it was, so `go_to` steered at a frozen picture for as long as its timeout. An image
+  older than four of the stream's own periods, two seconds at least, the Microduck's rule for the
+  same hazard, is not handed out, and the verb that wanted it says `the newest image on` the topic
+  and how old it is.
+- **An XLeRobot's or an AlohaMini's stop to a host that has gone silent no longer reads as
+  stopped.** Their command sockets take a send whether anything reads it or not, so a stop to a
+  host stuck in a cycle said `stopped (velocity zeroed)` while its wheels kept turning, and the
+  XLeRobot's heartbeat said its watchdog `has already stopped the base`, though the watchdog runs
+  in the loop that was stuck. A stop when no observation has come within the host's watchdog
+  window says now that it is `not known to have reached it`, and both say what the watchdog does
+  only `if its loop still runs`. A stop that could not be sent says so too.
+- **An AlohaMini refuses an arm goal outside its range.** `move_joints` checked only that a goal
+  named a joint, so 250, an infinity or a NaN went out as the goal, and a gripper named without
+  its arm's prefix was held to a body joint's range, so -50 went out too, while the mock clamped
+  all of it without a word and the verb said it moved the arm. Each is refused now, by the verb,
+  the transport and the mock, as in `shoulder_lift=250.0 is outside -100.0..100.0`.
+- **An AlohaMini host that does not say the robot is calibrated is shown as not saying.** A
+  missing `roboglot_calibrated` read as calibrated, and the string `"false"` read as true, for the
+  arms' torque as well, so on upstream's own host the pilot was told `"calibrated": true` of a
+  robot nothing had vouched for. Only a JSON boolean is read now: a host that sends none, or a
+  string, shows `"calibrated": null`, unknown, and a string for the arms' torque reads as off.
+  What is allowed on a host that does not say is as it was, the lift on upstream's own host among
+  it, and a robot the host says is not calibrated is refused as before.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for

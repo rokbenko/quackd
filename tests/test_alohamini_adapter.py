@@ -8,6 +8,7 @@ something that would move nothing.
 
 from __future__ import annotations
 
+import math
 import sys
 
 import pytest
@@ -288,6 +289,46 @@ async def test_the_mock_refuses_what_this_body_cannot_do() -> None:
     assert not (await adapter.send_intent(Intent.look(1.0, 0.0, 0.0))).accepted
     assert not (await adapter.send_intent(Intent.do("kick_left"))).accepted
     assert not (await adapter.send_intent(Intent.enable(False))).accepted
+
+
+@pytest.mark.parametrize(
+    ("positions", "named"),
+    [
+        ({"shoulder_lift": 250.0}, "shoulder_lift=250.0 is outside -100.0..100.0"),
+        ({"shoulder_lift": math.inf}, "shoulder_lift=inf is outside -100.0..100.0"),
+        ({"elbow_flex": math.nan}, "elbow_flex=nan is outside -100.0..100.0"),
+        ({"gripper": -50.0}, "gripper=-50.0 is outside 0.0..100.0"),
+    ],
+    ids=["past-the-range", "infinity", "nan", "gripper-below-zero"],
+)
+async def test_a_joint_goal_outside_its_normalised_range_is_refused_before_it_is_sent(
+    positions: dict[str, float], named: str
+) -> None:
+    """`move_joints` checked only that a goal named a joint, though the page says every goal is
+    validated: 250, an infinity or a NaN went out as the goal, and the mock clamped it without a
+    word, so the verb said "moved the left arm: shoulder_lift=250". The verb names a gripper
+    without the arm's prefix, which the range read as a body joint's, so -50 passed as well.
+    Refused now as the XLeRobot's same verb refuses, before anything is sent."""
+    mock = AlohaMiniMock()
+    adapter = AlohaMiniAdapter(mock)
+    ex = _executor(adapter, await adapter.connect())
+    before = dict(mock.joints)
+    result = await ex.run_verb("move_joints", {"arm": "left", "positions": positions})
+    assert not result.ok and "invalid params for move_joints" in result.summary, result.summary
+    assert named in result.summary
+    assert mock.joints == before
+
+
+async def test_the_mock_refuses_a_joint_goal_the_transport_refuses_rather_than_clamp_it() -> None:
+    """The mock held every goal to the range without a word, so no test could see a goal out of
+    it go through; it refuses one now, in the words the real transport uses."""
+    mock = AlohaMiniMock()
+    adapter = AlohaMiniAdapter(mock)
+    await adapter.connect()
+    ack = await adapter.send_intent(Intent.joint({"arm_left_shoulder_lift": 250.0}, 1.0))
+    assert not ack.accepted
+    assert "arm_left_shoulder_lift=250.0 is outside -100.0..100.0" in str(ack.reason)
+    assert mock.joints["arm_left_shoulder_lift"] == 0.0
 
 
 async def test_homing_leaves_the_lift_travelling_and_a_stop_is_what_ends_it() -> None:

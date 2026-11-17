@@ -21,7 +21,7 @@ import threading
 import time
 import uuid
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Protocol
 from urllib.parse import parse_qs, urlsplit
 
@@ -47,6 +47,19 @@ DEFAULT_URDF_PARAM = up.DESCRIPTION_PARAM.name
 DEFAULT_URDF_TOPIC = up.DESCRIPTION_TOPIC.name
 OFF = "off"
 """What either URDF source is set to in the address when a bridge should not be asked."""
+STALE_PERIODS = 5
+STALE_FLOOR_S = 1.0
+"""How long a stream may bring nothing new before it is stale: five of its own periods, and a
+second at least, as a stream's stale window is reckoned across Roboglot (the Microduck's state
+stream, mapd's `STALE_S`). /odom is judged by it (`RosbridgeWs._odom_staleness`), and the
+heartbeat's round trip is given the floor to be answered in."""
+FRAME_STALE_PERIODS = 4
+FRAME_STALE_FLOOR_S = 2.0
+"""How old a camera image may be before `get_frame` stops handing it out: four of the image
+stream's own periods, and two seconds at least, the rule the Microduck's transport keeps for the
+same hazard (`camera_stale_after_s`). A camera that stopped with the target in shot would show it
+in shot for as long as `go_to` steered at it. An image is as old as its arrival here: nothing
+on the wire says how long it was on the way."""
 
 
 def _off(value: str) -> str | None:
@@ -256,6 +269,47 @@ def odom_stamp(message: dict[str, Any]) -> float | None:
     return t if t > 0 and math.isfinite(t) else None
 
 
+def _same_type(listed: str, wanted: str) -> bool:
+    """Whether a type the bridge lists is `wanted`, in either form a bridge resolves
+    (`up.TYPE_STRING_FORMS`): `geometry_msgs/msg/Twist` or `geometry_msgs/Twist`."""
+    return str(listed).replace("/msg/", "/") == wanted.replace("/msg/", "/")
+
+
+def command_topic(name: str, topics: dict[str, str]) -> tuple[str | None, str | None]:
+    """What a topic list read off the bridge says of `name`, the topic Roboglot publishes its
+    Twist on: why it is not driven, or None, and what to say of it, or None.
+
+    A list that names no topic at all was not read, or says nothing, and nothing is held
+    against it, so a bridge without rosapi drives as before. Listed is no proof that a base
+    subscribes, only that somebody on the bridge has the topic."""
+    if not topics:
+        return None, None
+    twist = up.MSG_TWIST.name
+    twists = sorted(t for t, kind in topics.items() if _same_type(kind, twist))
+    found = f"the Twist topics it lists: {', '.join(twists) or 'none'}"
+    listed = topics.get(name)
+    if listed is None:
+        why = (
+            f"the bridge lists no {name}, so Roboglot sends no Twist there ({found}); name the "
+            "base's own in the address, as ?cmd_vel=/its/topic"
+        )
+        return why, why
+    if not _same_type(listed, twist):
+        why = (
+            f"the bridge lists {name} as {listed}, and Roboglot publishes only {twist}, so it "
+            f"sends no Twist there ({found})"
+        )
+        return why, why
+    others = [t for t in twists if t != name]
+    if not others:
+        return None, None
+    more = "topic" if len(others) == 1 else "topics"
+    return None, (
+        f"Roboglot drives {name}, the topic the address names; the bridge lists {len(others)} "
+        f"more Twist {more} it does not drive: {', '.join(others)}"
+    )
+
+
 def decode_compressed_image(message: dict[str, Any]) -> Image.Image:
     """A `sensor_msgs/msg/CompressedImage` (data base64 over rosbridge) to RGB."""
     fmt = str(message.get("format", "")).lower()
@@ -309,11 +363,28 @@ class RosbridgeWs:
         """Where the base is by its /odom (`_OdomReading`): set at connect, a reading from the
         first message on, and the place verbs walk by it."""
         self._latest_image: dict[str, Any] | None = None
+        self._image_at: float | None = None
+        """When the newest image arrived, on this machine's clock, under the lock."""
+        self._image_period: float | None = None
+        """How long the newest image came after the one before it: the stream's own period."""
         self._closed = False
         self._t0 = time.monotonic()
         self.last_twist = (0.0, 0.0, 0.0)
         self.published = 0
         self.roslibpy_version: str | None = None
+        self.stop_error: str | None = None
+        """Why the last stop, or the zero Twist `close()` sends, did not reach the base or is not
+        known to have, or None. A stop never raises: the core verbs and the executor read this."""
+        self._answered_at: float | None = None
+        """When the bridge last answered a call for its topic list, on this machine's clock, or
+        None while it never has, as a bridge without rosapi never does (`heartbeat`)."""
+        self._unanswered: str | None = None
+        """Why the heartbeat's last round trip went unanswered, or None."""
+        self._refused: str | None = None
+        """Why the command topic is not driven, from the topic list read at connect
+        (`command_topic`), or None while it is driven."""
+        self._command_said: str | None = None
+        """What that list said of the command topic, kept in every later look at the bridge."""
 
     @property
     def camera_available(self) -> bool:
@@ -374,18 +445,48 @@ class RosbridgeWs:
             period = self._track.period_s if self._track is not None else None
         if at is None:
             return None  # none yet, which the track says itself
-        window = max(1.0, 5 * period) if period else 1.0
+        window = max(STALE_FLOOR_S, STALE_PERIODS * period) if period else STALE_FLOOR_S
         age = time.monotonic() - at
         return f"no new {self.endpoint.odom} for {age:.1f} s" if age > window else None
 
     def _on_image(self, message: dict[str, Any]) -> None:  # roslibpy's thread
+        at = time.monotonic()
         with self._lock:
-            self._latest_image = dict(message)
+            if self._image_at is not None:
+                self._image_period = at - self._image_at
+            self._latest_image, self._image_at = dict(message), at
+
+    def _image_stale(self) -> str | None:
+        """Why the newest image is too old to hand out, or None: older than four of the stream's
+        own periods, and two seconds at least (`FRAME_STALE_FLOOR_S`), counted from its arrival."""
+        with self._lock:
+            at, period = self._image_at, self._image_period
+        if at is None:
+            return None
+        window = FRAME_STALE_FLOOR_S
+        if period is not None:
+            window = max(FRAME_STALE_FLOOR_S, FRAME_STALE_PERIODS * period)
+        age = time.monotonic() - at
+        if age <= window:
+            return None
+        return (
+            f"the newest image on {self.endpoint.image} is {age:.1f} s old, older than the "
+            f"{window:.1f} s Roboglot steers on"
+        )
+
+    @property
+    def camera_error(self) -> str | None:
+        """Why `get_frame` hands out no image although one came: it is too old (`_image_stale`).
+        `observe`, `go_to` and `search_scan` read it off what they were handed when a frame does
+        not come, so the camera going quiet is said rather than a frame that never came."""
+        return None if self._image is None else self._image_stale()
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
     async def connect(self) -> None:
         self._closed = False
+        self._answered_at, self._unanswered = None, None
+        self._refused, self._command_said = None, None
         # only when nothing was injected: a test that hands over a ros and a topic factory but
         # no service factory gets a connection that drives and an introspection that says it
         # could not ask, which is exactly what a bridge without rosapi looks like
@@ -419,6 +520,16 @@ class RosbridgeWs:
             # datasheet says nothing was discovered and the pilot declines what hinges on it
             self.introspection = Introspection.from_urdf(
                 None, errors=(f"introspection failed: {type(e).__name__}: {e}",)
+            )
+        # held against the list read here, before anything is published: roslibpy advertises
+        # the topic as a Twist on the first publish, so a list read after that shows Roboglot's
+        # own. What it says goes into the datasheet with the rest of what the bridge said
+        self._refused, self._command_said = command_topic(
+            self.endpoint.cmd_vel, self.introspection.topics
+        )
+        if self._command_said is not None:
+            self.introspection = replace(
+                self.introspection, errors=(*self.introspection.errors, self._command_said)
             )
 
     async def _bounded(
@@ -460,6 +571,7 @@ class RosbridgeWs:
             lambda: listing.call({}, timeout=left()), left(), up.SVC_TOPICS.name, errors
         )
         if isinstance(answer, dict):
+            self._answered_at = time.monotonic()  # a round trip the heartbeat can make again
             names, types = answer.get("topics") or [], answer.get("types") or []
             topics = dict(zip(names, types, strict=False))
 
@@ -491,6 +603,8 @@ class RosbridgeWs:
             intro = Introspection.from_urdf(
                 None, errors=(*errors, "nothing discovered on the bridge")
             )
+        if self._command_said is not None:  # what the list read at connect said (`connect`)
+            intro = replace(intro, errors=(*intro.errors, self._command_said))
         return intro
 
     async def _read_description(
@@ -538,9 +652,11 @@ class RosbridgeWs:
         return str(box.get("data", ""))
 
     async def close(self) -> None:
+        """Send the zero Twist and let go of this client. A zero that cannot go out is recorded
+        in `stop_error`: the client closes as one that asked to, which roslibpy does not
+        reconnect, so a zero held for the socket would never be sent."""
         self._closed = True
-        with contextlib.suppress(Exception):
-            self._publish_twist(0.0, 0.0, 0.0)
+        self.stop_error = self._send_zero()
         for topic in (self._odom, self._image):
             if topic is not None:
                 with contextlib.suppress(Exception):
@@ -558,16 +674,94 @@ class RosbridgeWs:
     def _publish_twist(self, vx: float, vy: float, wz: float) -> None:
         if self._cmd is None:
             raise TransportError("rosbridge ws: not connected")
+        if (down := self._link_down()) is not None:
+            raise TransportError(down)
         self.last_twist = (vx, vy, wz)
         self.published += 1
         self._cmd.publish(twist_message(vx, vy, wz))
 
+    def _link_down(self) -> str | None:
+        """Why no Twist can go out now, or None while roslibpy reads the socket as up.
+
+        roslibpy raises nothing for a publish with the socket down: it holds the message for the
+        socket to come back and sends it then (`up.QUEUED_UNTIL_READY`), when nobody is watching
+        the base, or drops it with a client that was asked to close. So the link is read before
+        every publish, as the industrial arm over this binding reads it before a goal. A socket
+        that reads up can still be half open; the heartbeat watches for that."""
+        if self._ros is None or not bool(self._ros.is_connected):
+            return f"rosbridge at {self.endpoint.url} is not connected"
+        return None
+
+    def _send_zero(self) -> str | None:
+        """Publish the zero Twist, and return why it did not go out, or is not known to have
+        reached the base, or None. Never raises. A client never connected has sent nothing, and
+        owes no zero.
+
+        A zero that went out on a link that has given no sign of life within its stale window
+        (`_silent`) went into a socket that may be half open, so it is not known to have reached
+        the base: said so, as one that did not go out is. On a command topic the bridge listed
+        otherwise (`command_topic`) nothing goes out, and that is the reason."""
+        if self._cmd is None:
+            return None
+        if self._refused is not None:
+            return self._refused
+        try:
+            self._publish_twist(0.0, 0.0, 0.0)
+        except TransportError as e:
+            why = str(e)
+        except Exception as e:
+            why = f"the publish raised {type(e).__name__}: {e}"
+        else:
+            if (silent := self._silent()) is None:
+                return None
+            return (
+                f"rosbridge at {self.endpoint.url} reads connected, but {silent}, so the zero "
+                "Twist is not known to have reached the base, which has no deadman and keeps its "
+                "last Twist if it did not"
+            )
+        return (
+            f"{why}, so the zero Twist was not sent, and the base, which has no deadman, keeps "
+            "the last Twist that reached it"
+        )
+
+    def _silent(self) -> str | None:
+        """Why the link has given no sign of life within its stale window, or None: /odom gone
+        quiet once it has come, or, on a base that has sent none, the heartbeat's last round trip
+        unanswered (`heartbeat`)."""
+        if (stale := self._odom_staleness()) is not None:
+            return f"there has been {stale}"
+        with self._lock:
+            odom_seen = self._odom_fresh_at is not None
+        if self._unanswered is not None and not odom_seen:
+            return f"the bridge did not answer the heartbeat's round trip ({self._unanswered})"
+        return None
+
+    async def _round_trip(self) -> None:
+        """Ask the bridge for its topic list, answered within `STALE_FLOOR_S` or not at all, and
+        keep why it was not (`_unanswered`): the heartbeat's sign of life on a base that has sent
+        no /odom. It is the protocol's own request and answer (`up.OP_CALL_SERVICE`) to a service
+        that answered at connect (`up.SVC_TOPICS`)."""
+        errors: list[str] = []
+        listing = self._service(up.SVC_TOPICS.name, up.SRV_TOPICS.name)
+        answer = await self._bounded(
+            lambda: listing.call({}, timeout=STALE_FLOOR_S),
+            STALE_FLOOR_S,
+            up.SVC_TOPICS.name,
+            errors,
+        )
+        if isinstance(answer, dict):
+            self._answered_at, self._unanswered = time.monotonic(), None
+        else:
+            self._unanswered = errors[-1] if errors else f"{up.SVC_TOPICS.name}: no answer"
+
     async def get_frame(self) -> Image.Image | None:
+        """The newest image, or None: no image topic, none yet, one that will not decode, or one
+        too old to steer on (`_image_stale`), which `camera_error` says."""
         if self._image is None:
             return None
         with self._lock:
             message = self._latest_image
-        if message is None:
+        if message is None or self._image_stale() is not None:
             return None
         try:
             return decode_compressed_image(message)
@@ -625,6 +819,12 @@ class RosbridgeWs:
 
     async def send_intent(self, intent: Intent) -> Ack:
         p = intent.params
+        if intent.kind in ("move", "stop") and self._cmd is not None:
+            if self._refused is not None:
+                return Ack(accepted=False, reason=self._refused)
+            if (down := self._link_down()) is not None:
+                # held for the socket, it would go out later with nobody watching the base
+                return Ack(accepted=False, reason=f"{down}, so no Twist is sent")
         try:
             match intent.kind:
                 case "move":
@@ -645,14 +845,40 @@ class RosbridgeWs:
             yield {"topic": topic, **(await self.get_state()).model_dump()}
 
     async def heartbeat(self) -> None:
+        """Fail when the link is closed, reads down, or has given no sign of life within its
+        stale window (`STALE_FLOOR_S`).
+
+        A link that dies without a close, as one over Wi-Fi does, leaves roslibpy reading the
+        socket as up until TCP gives up, which can be minutes, and every Twist and every stop
+        goes into it as sent while the base, which has no deadman, drives on. So the link has to
+        show it is alive. Once /odom has come, it is that sign: a stream quiet for its stale
+        window fails the heartbeat, whatever the socket says (`_odom_staleness`).
+
+        A base whose /odom has never come is not one whose /odom stopped: it may publish none,
+        or on a topic the address does not name, and it is still driven. How stale its /odom is
+        cannot be known, so the sign is a round trip of the protocol's own, the bridge's topic
+        list asked for and answered within `STALE_FLOOR_S` (`_round_trip`), on a bridge whose
+        rosapi answered it at connect. On a bridge whose rosapi did not, there is no such round
+        trip, and nothing but the socket's own state watches the link."""
         if self._closed:
             raise HeartbeatError("rosbridge ws transport is closed")
-        if self._ros is None or not bool(self._ros.is_connected):
-            raise HeartbeatError(f"rosbridge at {self.endpoint.url} is not connected")
+        if (down := self._link_down()) is not None:
+            raise HeartbeatError(down)
+        with self._lock:
+            odom_seen = self._odom_fresh_at is not None
+        if not odom_seen and self._answered_at is not None:
+            await self._round_trip()
+        if (silent := self._silent()) is not None:
+            raise HeartbeatError(
+                f"rosbridge at {self.endpoint.url} reads connected, but {silent}, so the link "
+                "may be gone"
+            )
 
     async def stop(self) -> None:
-        with contextlib.suppress(Exception):
-            self._publish_twist(0.0, 0.0, 0.0)
+        """Publish the zero Twist, the only stop this base has (`up.NO_DEADMAN`). Never raises:
+        one that did not go out says why in `stop_error`, which the stop verb and the executor
+        read."""
+        self.stop_error = self._send_zero()
 
     def now(self) -> float:
         return time.monotonic() - self._t0

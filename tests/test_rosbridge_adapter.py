@@ -17,10 +17,10 @@ from PIL import Image
 from roboglot.adapters.base import AdapterNotInstalled
 from roboglot.adapters.factory import describe, make_adapter, parse_robot_spec
 from roboglot.perception.color_blob import ColorBlobDetector
-from roboglot.safety import Executor
+from roboglot.safety import Aborted, Executor, Heartbeat
 from roboglot.space.places import Place, PlaceBook, PlaceStore
 from roboglot.transport.base import HeartbeatError, Intent, TransportError
-from roboglot.verbs.core import TICK_S, speed_limits
+from roboglot.verbs.core import MOVE_RESEND_S, TICK_S, speed_limits
 from roboglot.verbs.navigate import Gait
 from roboglot.verbs.places import PLACE_VERBS, GoToPlaceParams
 from roboglot.verbs.registry import VerbContext, VerbResult, registry_from_manifest
@@ -29,6 +29,8 @@ from roboglot_rosbridge import DATASHEET, RosbridgeAdapter, rosbridge_manifest
 from roboglot_rosbridge.introspection import datasheet_from_introspection, parse_urdf
 from roboglot_rosbridge.mock import MOCK_URDF, RosbridgeMock, mock_introspection
 from roboglot_rosbridge.ws import (
+    FRAME_STALE_FLOOR_S,
+    STALE_FLOOR_S,
     RosbridgeWs,
     decode_compressed_image,
     parse_address,
@@ -817,3 +819,260 @@ async def test_the_mocks_places_last_one_connection_as_the_ws_backends_do(tmp_pa
     assert second.spatial is not None
     book = PlaceBook(PlaceStore("base", base_dir=tmp_path), second.spatial)
     assert {v.place.name: v.status for v in book.views()} == {"dock": "orphaned"}
+
+
+# ── the topic it drives ─────────────────────────────────────────────────────────────────
+
+TWIST, STAMPED = "geometry_msgs/msg/Twist", "geometry_msgs/msg/TwistStamped"
+
+
+async def _listing(
+    listed: dict[str, str],
+) -> tuple[RosbridgeAdapter, Executor, dict[str, FakeTopic]]:
+    """A ws base on a bridge whose rosapi lists `listed`, topic by type, and an executor over it."""
+    answer = FakeService({"topics": list(listed), "types": list(listed.values())})
+    factory, _by_name, _types = _services(topics=answer)
+    made: dict[str, FakeTopic] = {}
+    adapter = RosbridgeAdapter(
+        RosbridgeWs(
+            "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
+            ros=FakeRos(),
+            topic_factory=lambda c, n, t: made.setdefault(n, FakeTopic(c, n, t)),
+            service_factory=factory,
+        )
+    )
+    manifest = await adapter.connect()
+    return (
+        adapter,
+        Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest),
+        made,
+    )
+
+
+@pytest.mark.parametrize(
+    ("listed", "found"),
+    [
+        ({"/cmd_vel": STAMPED, "/odom": "nav_msgs/msg/Odometry"}, f"lists /cmd_vel as {STAMPED}"),
+        ({"/cmd_vel_nav": TWIST, "/odom": "nav_msgs/msg/Odometry"}, "lists no /cmd_vel"),
+    ],
+    ids=["stamped", "absent"],
+)
+async def test_a_command_topic_the_bridge_lists_otherwise_is_refused_naming_what_it_found(
+    listed: dict[str, str], found: str
+) -> None:
+    """The command topic was never held against the topic list read at the same connect, so a
+    base listening on another topic, or taking TwistStamped, got nothing while every Twist was
+    accepted and `move` said it walked. The check is made before anything is published, since
+    roslibpy advertises the topic as a Twist on the first publish and a list read after that
+    would show Roboglot's own; it refuses with what the bridge listed, and sends nothing."""
+    adapter, ex, made = await _listing(listed)
+    result = await ex.run_verb("move", {"vx": 0.2, "duration_s": 2 * MOVE_RESEND_S})
+    assert not result.ok and "move refused" in result.summary and found in result.summary
+    twists = [name for name, kind in listed.items() if kind == TWIST]
+    assert f"the Twist topics it lists: {', '.join(twists) or 'none'}" in result.summary
+    assert made["/cmd_vel"].published == [], "a Twist went to a topic the bridge listed otherwise"
+    assert adapter.manifest is not None and adapter.manifest.datasheet is not None
+    assert any(found in note for note in adapter.manifest.datasheet.notes)
+
+
+async def test_with_more_than_one_twist_topic_it_says_which_it_drives() -> None:
+    """Introspection chose no topic and compared none, so where a bridge lists two a base could
+    take a Twist on, nobody was told which one Roboglot drives. It drives the one the address
+    names, as before, and the datasheet says so, naming the others."""
+    listed = {"/cmd_vel": TWIST, "/cmd_vel_nav": TWIST, "/odom": "nav_msgs/msg/Odometry"}
+    adapter, ex, made = await _listing(listed)
+    assert (await ex.run_verb("move", {"vx": 0.2, "duration_s": 2 * MOVE_RESEND_S})).ok
+    assert made["/cmd_vel"].published[0] == twist_message(0.2, 0.0, 0.0)
+    assert adapter.manifest is not None and adapter.manifest.datasheet is not None
+    said = [note for note in adapter.manifest.datasheet.notes if "Roboglot drives" in note]
+    assert said and "/cmd_vel_nav" in said[0], adapter.manifest.datasheet.notes
+
+
+# ── a link that drops ───────────────────────────────────────────────────────────────────
+
+
+async def _driving(
+    address: str = "ws://robot.local:9090",
+) -> tuple[FakeRos, dict[str, FakeTopic], RosbridgeAdapter, Executor]:
+    """A ws base connected over the stand-in link, and an executor over it. A publish handed to
+    a `FakeTopic` while `FakeRos.is_connected` is False is one roslibpy would hold until the
+    socket came back and send then, unwatched, or drop with a client asked to close
+    (`upstream_api.QUEUED_UNTIL_READY`): nothing should be handed over then."""
+    ros = FakeRos()
+    topics: dict[str, FakeTopic] = {}
+
+    def factory(client: Any, name: str, message_type: str) -> FakeTopic:
+        return topics.setdefault(name, FakeTopic(client, name, message_type))
+
+    adapter = RosbridgeAdapter(RosbridgeWs(address, ros=ros, topic_factory=factory))
+    manifest = await adapter.connect()
+    ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
+    return ros, topics, adapter, ex
+
+
+async def test_a_stop_into_a_dropped_link_says_its_zero_twist_was_not_sent() -> None:
+    """The stop published its zero Twist under a blanket suppress and kept no `stop_error`, and
+    roslibpy raises nothing for a publish with the socket down. So with the link gone the stop
+    verb said "stopped (velocity zeroed)" while the base, which has no deadman, went on at the
+    last Twist that reached it. The stop verb reads `stop_error` off the adapter, so this fails
+    again if the transport stops saying so or the adapter stops passing it on."""
+    ros, topics, adapter, ex = await _driving()
+    assert (await adapter.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+    cmd = topics["/cmd_vel"]
+    handed = len(cmd.published)
+    ros.is_connected = False  # the link drops
+    result = await ex.run_verb("stop")
+    assert not result.ok and "could not be delivered" in result.summary, result.summary
+    assert "is not connected" in result.summary and "no deadman" in result.summary
+    assert "switch" not in result.summary, "the core advised a physical act it cannot vouch for"
+    assert len(cmd.published) == handed, "a zero handed to a dropped link is sent later, or never"
+    ros.is_connected = True  # back: the next stop goes out, and says nothing went wrong
+    assert (await ex.run_verb("stop")).summary == "stopped (velocity zeroed)"
+    assert cmd.published[-1] == twist_message(0.0, 0.0, 0.0) and adapter.stop_error is None
+
+
+async def test_a_move_into_a_dropped_link_is_refused_and_hands_nothing_over() -> None:
+    """`send_intent` published with no look at the link, so every slice of a `move` waited in
+    roslibpy's queue for a socket that might come back, and the verb said the base walked."""
+    ros, topics, _adapter, ex = await _driving()
+    ros.is_connected = False
+    result = await ex.run_verb("move", {"vx": 0.2, "duration_s": 3 * MOVE_RESEND_S})
+    assert not result.ok and "move refused" in result.summary, result.summary
+    assert "is not connected" in result.summary
+    assert topics["/cmd_vel"].published == []
+
+
+async def test_the_abort_after_a_failed_heartbeat_says_its_stop_did_not_go_out() -> None:
+    """The heartbeat fails on the dropped link, the abort cancels the `move`, and the executor's
+    own stop read no `stop_error`, so the abort said "a stop was sent" over a zero Twist that
+    only waited in a queue. The heartbeat beats ten times a slice, so it, not the move's next
+    slice, is what finds the drop."""
+    ros, _topics, adapter, ex = await _driving()
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    beat = Heartbeat(adapter, ex.abort, period_s=MOVE_RESEND_S / 10)
+    real_sleep = ws.sleep
+
+    async def drop_then_sleep(seconds: float) -> None:
+        ros.is_connected = False  # gone just after the first slice went out
+        await real_sleep(seconds)
+
+    ws.sleep = drop_then_sleep  # type: ignore[method-assign]
+    beat.start()
+    try:
+        with pytest.raises(Aborted) as aborted:
+            await ex.run_verb("move", {"vx": 0.2, "duration_s": 10 * MOVE_RESEND_S})
+    finally:
+        await beat.stop()
+    said = str(aborted.value)
+    assert "the stop sent after it failed" in said and "is not connected" in said, said
+
+
+async def test_close_on_a_dropped_link_records_that_its_zero_twist_never_left() -> None:
+    """`close()` published its zero under a blanket suppress and then closed the client, which
+    drops whatever waited for the socket, so nothing recorded that the last word the base heard
+    was a moving Twist."""
+    ros, topics, adapter, _ex = await _driving()
+    assert (await adapter.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+    ros.is_connected = False
+    await adapter.close()
+    assert topics["/cmd_vel"].published == [twist_message(0.2, 0.0, 0.0)]
+    assert adapter.stop_error is not None and "is not connected" in adapter.stop_error
+
+
+# ── a camera that has gone quiet ────────────────────────────────────────────────────────
+
+
+async def test_an_image_older_than_the_window_it_is_steered_by_is_not_handed_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_frame` decoded the newest image however old it was, so a camera that stopped with
+    the ball in shot showed it in shot for as long as `go_to` steered at it, up to its timeout.
+    An image is stamped on arrival, and one older than the window the Microduck keeps for the
+    same hazard, four of the stream's periods and two seconds at least, is not handed out; the
+    verb that asked is told the camera went quiet (`camera_error`). The clock is moved on for
+    the one call that reads it, so no window is waited out."""
+    _ros, topics, adapter, _ex = await _driving("ws://robot.local:9090?image=/cam/compressed")
+    period = 0.1
+    for _ in range(3):
+        topics["/cam/compressed"].callback({"format": "png", "data": _png((255, 0, 0))})
+        await asyncio.sleep(period)
+    assert await adapter.get_frame() is not None
+    assert getattr(adapter, "camera_error", None) is None
+    later = time.monotonic() + FRAME_STALE_FLOOR_S + 1.0
+    with monkeypatch.context() as clock:
+        clock.setattr(time, "monotonic", lambda: later)
+        assert await adapter.get_frame() is None, "an image from a camera gone quiet"
+        why = getattr(adapter, "camera_error", None)
+    assert why is not None and why.startswith("the newest image on /cam/compressed is "), why
+    topics["/cam/compressed"].callback({"format": "png", "data": _png((0, 255, 0))})
+    assert await adapter.get_frame() is not None
+    assert getattr(adapter, "camera_error", None) is None
+
+
+# ── a link that reads up and has gone quiet ─────────────────────────────────────────────
+
+
+async def test_the_heartbeat_fails_once_odom_goes_quiet_on_a_link_that_reads_connected() -> None:
+    """A link that dies without a close leaves `is_connected` True until TCP gives up, and the
+    heartbeat read nothing else, although the transport kept how stale /odom was: every beat
+    passed, `move` said it walked, and the base, which has no deadman, drove on. `FakeRos` reads
+    connected throughout, and /odom streams at 20 Hz for a second and then stops, which is what
+    a dead link looks like from this end. The heartbeat passes while it streams and fails once
+    it has been quiet for its stale window, naming the topic, and a stop after that cannot say
+    its zero reached the base."""
+    ros, topics, adapter, _ex = await _driving()
+    period, t0 = 0.05, 1000.0
+    quiet_from = time.monotonic()
+    for i in range(20):
+        quiet_from = time.monotonic()  # no later than the transport dates this message
+        topics["/odom"].callback(_odom(0.01 * i, stamp=t0 + i * period))
+        await adapter.heartbeat()
+        await asyncio.sleep(period)
+    deadline = quiet_from + 10 * STALE_FLOOR_S
+    with pytest.raises(HeartbeatError, match="/odom") as failed:
+        while time.monotonic() < deadline:
+            await adapter.heartbeat()
+            await asyncio.sleep(period)
+    assert time.monotonic() - quiet_from >= STALE_FLOOR_S, f"failed while fresh: {failed.value}"
+    assert ros.is_connected
+    await adapter.stop()
+    assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
+    assert adapter.stop_error is not None and "/odom" in adapter.stop_error
+
+
+async def test_a_base_that_has_sent_no_odom_is_watched_by_a_round_trip_or_by_the_socket() -> None:
+    """A base whose /odom never came may publish none at all, and is still driven: its staleness
+    is unknown, so the heartbeat asks the bridge for its topic list, which rosapi answered at
+    connect, and fails when no answer comes within the stale window's floor. A bridge without
+    rosapi has no such round trip, and the socket's own state is all that watches it."""
+    topics = FakeService({"topics": ["/cmd_vel"], "types": ["geometry_msgs/msg/Twist"]})
+    factory, _by_name, _types = _services(topics=topics)
+    ws = RosbridgeWs(
+        "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
+        ros=FakeRos(),
+        topic_factory=lambda c, n, t: FakeTopic(c, n, t),
+        service_factory=factory,
+    )
+    adapter = RosbridgeAdapter(ws)
+    await adapter.connect()
+    asked = len(topics.calls)
+    await adapter.heartbeat()
+    assert len(topics.calls) == asked + 1, "the heartbeat made no round trip"
+    topics.hang_s = 1.5 * STALE_FLOOR_S  # the link has gone quiet
+    with pytest.raises(HeartbeatError, match="/rosapi/topics"):
+        await adapter.heartbeat()
+    await adapter.stop()
+    assert adapter.stop_error is not None and "/rosapi/topics" in adapter.stop_error
+
+    no_rosapi, _by_name, _types = _services(topics=FakeService(raise_with=RuntimeError("none")))
+    bare = RosbridgeWs(
+        "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
+        ros=FakeRos(),
+        topic_factory=lambda c, n, t: FakeTopic(c, n, t),
+        service_factory=no_rosapi,
+    )
+    await bare.connect()
+    await bare.heartbeat()  # nothing to watch it by but the socket, and that reads up
+    await bare.stop()
+    assert bare.stop_error is None

@@ -49,6 +49,7 @@ from roboglot_alohamini.verbs import (
     DEFAULT_MODEL,
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
+    goal_refused,
     joints_for,
     model_from_keys,
 )
@@ -60,8 +61,8 @@ OBS_PORT = int(up.PORT_ZMQ_OBSERVATIONS.name)
 edit when an upstream moves, and a port spelled twice can disagree with itself."""
 WATCHDOG_MS = float(up.WATCHDOG_TIMEOUT_MS.name)
 """The host's own watchdog window, from `upstream_api`, not retyped. By the time an
-observation is this old the host has already stopped the base and the lift, so this is
-the moment a cached reading stops being a reading."""
+observation is this old the host has stopped the base and the lift if its loop still runs, since
+the watchdog runs in that loop, so this is the moment a cached reading stops being a reading."""
 POLL_MS = 200
 """Upstream's own client poll window: it must exceed one host cycle at 30 Hz."""
 CONNECT_TIMEOUT_S = 5.0
@@ -202,11 +203,15 @@ class AlohaMiniZmq:
         """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
+        self.stop_error: str | None = None
+        """Why the last stop could not be sent, or is not known to have reached the host, or
+        None. A stop never raises: the core verbs and the executor read this instead."""
         self.camera_available = False
         self.cameras: tuple[str, ...] = ()
         self.arms_available = True
         self.arm_torque = False
-        self.calibrated = False
+        self.calibrated: bool | None = None
+        """Whether the host says the robot is calibrated, or None while it says nothing."""
         self.holding: dict[str, bool] = dict.fromkeys(ARMS, False)
 
     # ── the payload, which is the whole safety story ────────────────────────────────
@@ -313,9 +318,12 @@ class AlohaMiniZmq:
         self.camera_available = bool(self.cameras)
         self.robot_model = model_from_keys(self._state)
         self.arms_available = any(k.startswith("arm_") for k in self._state)
-        # Roboglot's own host wrapper says so; a stock host never enables arm torque
-        self.arm_torque = bool(observation.get("roboglot_arm_torque", False))
-        self.calibrated = bool(observation.get("roboglot_calibrated", True))
+        # Roboglot's own host wrapper says both, as JSON booleans, and a stock host says neither:
+        # it never enables arm torque, and what it never says of calibration is unknown, not
+        # calibrated. Only a real boolean is read, since `bool()` took the string "false" for true
+        self.arm_torque = observation.get("roboglot_arm_torque") is True
+        calibrated = observation.get("roboglot_calibrated")
+        self.calibrated = calibrated if isinstance(calibrated, bool) else None
         self._rx_at = time.monotonic()
         if parts[0].isdigit():
             self._answered = max(self._answered, int(parts[0]))
@@ -446,6 +454,10 @@ class AlohaMiniZmq:
                 unknown = sorted(set(goals) - known)
                 if unknown:
                     return Ack(accepted=False, reason=f"unknown joints {unknown}")
+                # checked here as well as by `move_joints`, for whatever else hands a goal over:
+                # past the range, an infinity or a NaN would go out as the arm's goal
+                if refused := [why for k, v in goals.items() if (why := goal_refused(k, v))]:
+                    return Ack(accepted=False, reason="; ".join(refused))
                 self._arm_goals.update({f"{k}.pos": v for k, v in goals.items()})
                 self._unheld.update(f"{k}.pos" for k in goals if not k.endswith("gripper"))
                 self._zero_base()
@@ -546,17 +558,44 @@ class AlohaMiniZmq:
         self.stop_left_going = tuple(sorted(k.removesuffix(".pos") for k in self._unheld))
 
     async def stop(self) -> None:
-        """Safe to call at any time, including when the link has already gone."""
+        """Safe to call at any time, including when the link has already gone. Never raises: a
+        stop that could not be sent, or that went to a host whose newest answer is older than its
+        own watchdog window, says so in `stop_error`.
+
+        A PUSH socket takes a send whether anything reads it or not, and ZMQ says nothing of a
+        peer that has gone. This wire answers only what is asked, and a stop asks nothing of its
+        own, so what can be known is how old the newest answer is: the heartbeat's, or the one
+        the stop itself waited for to hold the arms (`_reading_from_now_on`). One older than the
+        window says the host has stopped answering, and it may have stopped reading too."""
+        self.stop_error = None
         await self._stopping()
         if self._link is None:
             return
-        for _ in range(STOP_REPEATS):
+        for sent in range(STOP_REPEATS):  # how many went out before this one
             try:
                 await self._send()
-            except Exception:
-                # the host is unreachable, so its own watchdog is what stops the base and the
-                # lift now. Raising would turn a stop into a failed verb and hide that.
-                return
+            except Exception as e:
+                # Raising would turn a stop into a failed verb and hide that the stop failed
+                if not sent:
+                    self.stop_error = f"the stop could not be sent ({e}). {self._watchdog()}"
+                    return
+                break
+        if (stale := self._stale_ms()) > self.stale_limit_ms:
+            heard = "since it connected" if self._rx_at is None else f"for {stale:.0f} ms"
+            self.stop_error = (
+                f"no observation has come from the host {heard}, past its "
+                f"{self.stale_limit_ms:.0f} ms watchdog window, so this stop is not known to have "
+                f"reached it. {self._watchdog()}"
+            )
+
+    def _watchdog(self) -> str:
+        """What the host's own watchdog does, and only that: it runs inside the host's one loop
+        and stops the base and the lift, not the arms (`up.WATCHDOG_ACTION`), so a host stuck in
+        a cycle runs none, and nothing on this wire says which a silent host is."""
+        return (
+            f"Its own watchdog stops the base and the lift once it has read no command for "
+            f"{self.stale_limit_ms:.0f} ms, if its loop still runs; the arms keep their last goal."
+        )
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self._connected:

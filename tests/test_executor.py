@@ -714,7 +714,7 @@ async def test_a_stop_that_never_left_is_not_reported_as_a_stop(
     result = await ex.run_verb("stop")
     assert not result.ok
     assert "could not be delivered" in result.summary
-    assert "deadman" in result.summary
+    assert "may still be moving" in result.summary
 
 
 @pytest.mark.parametrize("sent_with_it", [{"now": True}, {"_unparsed": "{not json"}])

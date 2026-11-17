@@ -50,9 +50,9 @@ OBS_PORT = int(up.PORT_ZMQ_OBSERVATIONS.name)
 can disagree with itself, and this one is read from upstream's own host config."""
 STALE_LIMIT_MS = float(up.WATCHDOG_TIMEOUT_MS.name)
 """The host's own watchdog window, from `upstream_api`, not retyped. By the time an
-observation is this old the host has already stopped the base, so this is the moment a
-cached reading stops being a reading. A number spelled twice can disagree with itself."""
-"""The host's own watchdog window: by now it has already stopped the base."""
+observation is this old the host has stopped the base if its loop still runs, since the watchdog
+runs in that loop, so this is the moment a cached reading stops being a reading. A number spelled
+twice can disagree with itself."""
 POLL_MS = 50
 HOLD_READ_S = 0.2
 """How long a stop looks for a reading from after it began, once the wheels are stopped: six of the
@@ -194,6 +194,9 @@ class XLerobotZmq:
         """The arm joints sent a goal that no stop has held since (`_hold_the_arms`)."""
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
+        self.stop_error: str | None = None
+        """Why the last stop could not be sent, or is not known to have reached the host, or
+        None. A stop never raises: the core verbs and the executor read this instead."""
 
     # ── the link ────────────────────────────────────────────────────────────────────
 
@@ -488,22 +491,55 @@ class XLerobotZmq:
             raise HeartbeatError(
                 f"xlerobot: no observation for {stale:.0f} ms (limit {self.stale_limit_ms:.0f}). "
                 "The host has stopped answering; it exits by itself an hour after it was "
-                "started, and its own watchdog has already stopped the base."
+                f"started. {self._watchdog()}"
             )
+
+    def _watchdog(self) -> str:
+        """What the host's own watchdog does, and only that: it runs inside the host's one loop
+        (`up.WATCHDOG_ACTION`), so a host stuck in a cycle runs none, and nothing on this wire
+        says which a silent host is."""
+        return (
+            f"Its own watchdog stops the base once it has read no command for "
+            f"{self.stale_limit_ms:.0f} ms, if its loop still runs."
+        )
 
     async def stop(self) -> None:
         """Safe to call many times, from anywhere, at any time - including when the link is
-        already gone, which is exactly when the executor calls it."""
+        already gone, which is exactly when the executor calls it. Never raises: a stop that
+        could not be sent, or that went to a host which has published nothing within its own
+        watchdog window, says so in `stop_error`.
+
+        A PUSH socket takes a send whether anything reads it or not, and ZMQ says nothing of a
+        peer that has gone. What can be known is whether the host still publishes: the newest
+        observation waiting is taken, which sends nothing, and one older than the window says
+        the host has stopped reading too. One that waited in the socket since the host went
+        quiet reads as fresh once, as it does to the heartbeat."""
+        self.stop_error = None
         await self._stopping()
         if self._link is None:
             return
         try:
             await self._call(self._send_locked, dict(self._desired))
-        except Exception:
-            # Deliberately broad. A dead socket raises its own library's error, not ours, and
-            # the host is unreachable anyway, so its 500 ms watchdog is what stops the base
-            # now. Raising here would turn a stop into a failed verb and hide that.
+        except Exception as e:
+            # Deliberately broad. A dead socket raises its own library's error, not ours.
+            # Raising here would turn a stop into a failed verb and hide that the stop failed
+            self.stop_error = f"the stop could not be sent ({e}). {self._watchdog()}"
             return
+        try:
+            await self._pump(0)
+        except TransportError as e:
+            self.stop_error = (
+                f"the stop was sent and no observation could be read after it ({e}), so it is not "
+                f"known to have reached the host. {self._watchdog()}"
+            )
+            return
+        if (stale := self._stale_ms()) > self.stale_limit_ms:
+            heard = "since it connected" if self._rx_at is None else f"for {stale:.0f} ms"
+            self.stop_error = (
+                f"no observation has come from the host {heard}, past its "
+                f"{self.stale_limit_ms:.0f} ms watchdog window, so this stop is not known to have "
+                f"reached it. {self._watchdog()}"
+            )
 
     def now(self) -> float:
         return time.monotonic()

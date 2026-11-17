@@ -79,11 +79,22 @@ def joints_for(model: str) -> tuple[str, ...]:
 
 
 def is_gripper(joint: str) -> bool:
-    return joint.endswith("_gripper")
+    """Whether `joint` is a gripper, named in full (`arm_left_gripper`) or as `move_joints`
+    names it, without the arm's prefix (`gripper`): read by its suffix alone, the bare name was
+    a body joint, and a gripper goal of -50 passed a range check."""
+    return joint == "gripper" or joint.endswith("_gripper")
 
 
 def joint_range(joint: str) -> tuple[float, float]:
     return (0.0, JOINT_NORM) if is_gripper(joint) else (-JOINT_NORM, JOINT_NORM)
+
+
+def goal_refused(joint: str, goal: float) -> str | None:
+    """Why `goal` is no goal for `joint`, or None: one outside its normalised range
+    (`joint_range`), which a NaN is too, since it compares with nothing. The verb, the transport
+    and the mock refuse in these words, as the XLeRobot's `move_joints` does."""
+    lo, hi = joint_range(joint)
+    return None if lo <= goal <= hi else f"{joint}={goal} is outside {lo}..{hi}"
 
 
 def model_from_keys(keys: Iterable[object] | None) -> str:
@@ -112,9 +123,12 @@ class MoveJointsParams(BaseModel):
 
     @field_validator("positions")
     @classmethod
-    def _nonempty(cls, value: dict[str, float]) -> dict[str, float]:
+    def _goals(cls, value: dict[str, float]) -> dict[str, float]:
         if not value:
             raise ValueError("give at least one joint")
+        for joint, goal in value.items():
+            if (why := goal_refused(joint, goal)) is not None:
+                raise ValueError(why)
         return value
 
 
@@ -169,8 +183,13 @@ def _host_fresh(state: RobotState) -> str | None:
 def _calibrated(state: RobotState) -> str | None:
     """An uncalibrated robot never had its lift put into velocity mode, because upstream's
     `lift.configure()` is commented out and only `home()` sets it, and `home()` runs only when
-    calibrated. A velocity write to a servo that is not in velocity mode means nothing."""
-    if state.extras.get("calibrated", True):
+    calibrated. A velocity write to a servo that is not in velocity mode means nothing.
+
+    Refused only on a robot the host says is not calibrated. Only Roboglot's own host wrapper
+    says either way; on a host that does not, upstream's own among them, calibration is unknown
+    (None in the state, where its silence used to read as true), and the gate stays as open as
+    it always was there, which the pages' bring-up on the stock host relies on."""
+    if state.extras.get("calibrated") is not False:
         return None
     return (
         "this robot is not calibrated, so its lift was never put into velocity mode and its "
@@ -180,8 +199,9 @@ def _calibrated(state: RobotState) -> str | None:
 
 def _arm_torque(state: RobotState) -> str | None:
     """As shipped, the arms are limp: upstream disables torque and both re-enable calls are
-    commented out. Roboglot's own host wrapper turns it back on and says so in the state."""
-    if state.extras.get("arm_torque", False):
+    commented out. Roboglot's own host wrapper turns it back on and says so in the state, as a
+    JSON boolean, and nothing else is read as torque on."""
+    if state.extras.get("arm_torque") is True:
         return None
     return (
         "the arms have no torque, so a joint command would move nothing and a stop could not "
@@ -370,6 +390,7 @@ __all__ = [
     "MoveJointsParams",
     "alohamini_conditions",
     "alohamini_verbs",
+    "goal_refused",
     "is_gripper",
     "joint_range",
     "joints_for",

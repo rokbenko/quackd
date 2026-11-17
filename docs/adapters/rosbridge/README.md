@@ -114,6 +114,50 @@ Twist on `stop`, on `close()`, and when the heartbeat fails, and that is the onl
 authority. The manifest says exactly that (`native: none`, `deadman: false`). A base
 whose driver does implement a command timeout is safer than this page assumes.
 
+**What a stop can know.** roslibpy raises nothing for a publish with the socket down: it holds
+the message until the socket is back and sends it then, with nobody watching, or drops it with
+a client that was asked to close. So the link is read before every publish. With the socket
+down, `move` is refused (`is not connected, so no Twist is sent`), nothing is handed to the
+queue, and a stop says it was not sent: `stop could not be delivered, so the body may still be
+moving: rosbridge at ws://robot.local:9090 is not connected, so the zero Twist was not sent,
+and the base, which has no deadman, keeps the last Twist that reached it`. Every core verb that
+ends on a stop says the same of its own, and so does an abort, and a zero that `close()` could
+not send is kept in the adapter's `stop_error`. A socket that reads up is no proof that a
+message arrived: a link that dropped between the read and the publish is not seen, and
+roslibpy's own reconnect, which would send what it held, is not reproduced by the tests here.
+
+**What the heartbeat can know.** A link that dies without a close, as one over Wi-Fi does,
+leaves the socket reading up until TCP gives up, which can be minutes. So the heartbeat fails
+on more than a closed socket. Once `/odom` has come, a stream quiet for five of its own periods,
+a second at least, fails it, whatever the socket says: `reads connected, but there has been no
+new /odom for 1.3 s, so the link may be gone`. A base whose `/odom` has never come is not one
+whose `/odom` stopped: it may publish none, or on a topic the address does not name, and it is
+still driven. Its sign of life is a round trip of the protocol's own, the topic list that
+`rosapi` answered at connect, asked for again on every beat and answered within a second, or
+the heartbeat fails: `the bridge did not answer the heartbeat's round trip (/rosapi/topics: no
+answer within 1 s)`. On a bridge with no `rosapi` and a base with no `/odom`, nothing watches
+the link but the socket's own state. A stop sent while the link has given no sign of life went
+into a socket that may be half open, and says so: `so the zero Twist is not known to have
+reached the base, which has no deadman and keeps its last Twist if it did not`.
+
+**The topic it drives.** At connect, before anything is published, the command topic is held
+against the topic list the bridge gave, since roslibpy advertises the topic as a Twist on the
+first publish and a list read after that would show Roboglot's own. A topic the list does not
+name, or names as another type, is not driven: `move` is refused with what the bridge listed,
+for instance `the bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot
+publishes only geometry_msgs/msg/Twist, so it sends no Twist there (the Twist topics it lists:
+none)`, and the datasheet says the same. Where the list names more than one Twist topic, the
+datasheet says which one is driven: `Roboglot drives /cmd_vel, the topic the address names; the
+bridge lists 1 more Twist topic it does not drive: /cmd_vel_nav`. A bridge with no `rosapi`
+gives no list, and the topic is driven as before. Being listed is no proof that a base
+subscribes.
+
+**A camera that goes quiet.** Each image is dated by its arrival, as nothing on the wire says
+how long it was on the way, and one older than four of the stream's own periods, two seconds at
+least, is not handed out, the rule the Microduck keeps for the same hazard. `observe`, `go_to`
+and `search_scan` say why: `the newest image on /cam/compressed is 3.1 s old, older than the
+2.0 s Roboglot steers on`.
+
 `go_to_place` walks on `/odom`, every message taken into the reading as it arrives, so the
 stream's own period sizes the walk's windows however seldom Roboglot reads it. A message is dated
 by its header stamp, or by its arrival while the stack has stamped none; once one is stamped, an

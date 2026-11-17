@@ -481,6 +481,37 @@ async def test_a_stale_reading_is_a_heartbeat_failure_not_a_reading() -> None:
         await link.close()
 
 
+async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it() -> None:
+    """A PUSH socket takes a send whether anything reads it or not, and the transport kept no
+    `stop_error`, so a stop to a host stuck in a cycle said "stopped (velocity zeroed)" while the
+    host's watchdog, which runs in that same loop, never ran and the wheels kept turning; the
+    heartbeat said that watchdog "has already stopped the base". ZMQ says nothing of a dead
+    peer. What the transport can know is that no observation has come within the host's own
+    watchdog window, and that is what it says, and only then: a stop to a host still publishing
+    reads as before."""
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        adapter = XLerobotAdapter(link)
+        ctx = VerbContext(transport=adapter)
+        try:
+            assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+            await _until(lambda: host.state["x.vel"] == 0.2)
+            assert (await stop_verb(ctx, NoParams())).summary == "stopped (velocity zeroed)"
+            assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+            await _until(lambda: host.state["x.vel"] == 0.2)
+            host.stop()  # stuck in a cycle: nothing read, nothing published, no watchdog run
+            await link.get_state()  # take whatever its last cycle left in the socket
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+            with pytest.raises(HeartbeatError, match="if its loop still runs") as beat:
+                await link.heartbeat()
+            assert "already stopped" not in str(beat.value)
+            result = await stop_verb(ctx, NoParams())
+            assert not result.ok and "not known to have reached" in result.summary, result.summary
+            assert host.state["x.vel"] == 0.2, "the stuck host read the stop after all"
+        finally:
+            await link.close()  # an open socket keeps its context, and the run, alive
+
+
 async def test_the_state_never_claims_a_pose_or_a_battery() -> None:
     """There is no odometry anywhere in the observation and no data link to the power
     station, so both are unknowable rather than merely unknown."""

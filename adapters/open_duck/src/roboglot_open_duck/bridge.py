@@ -596,8 +596,15 @@ class OpenDuckBridge:
         except (TransportError, OSError) as e:
             # Recorded rather than raised: `stop` must never itself take a run down. What
             # actually zeroes the legs when this fails is the daemon's own deadman, 300 ms
-            # after the commands stop arriving — which is exactly what has just happened.
+            # after the commands stop arriving, which is exactly what has just happened. Said
+            # only where the bridge said it keeps one (`deadman_ms`): the core `stop` verb no
+            # longer guesses at what stops a body
             self.stop_error = str(e)
+            if self.deadman_ms is not None:
+                self.stop_error += (
+                    f". The bridge's deadman zeroes the legs {self.deadman_ms} ms after commands "
+                    "stop arriving, which is what stops them now"
+                )
         else:
             self.stop_error = None
 

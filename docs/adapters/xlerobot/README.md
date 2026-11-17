@@ -122,6 +122,17 @@ holds: it goes on to where it was sent, and `gripper` has to say which way, sinc
 default. A `stop` from beside `move_joints` or `gripper` ends the verb at once and says which of these
 it was. None of this has met a real arm.
 
+**What a stop and the heartbeat can know.** The command socket takes a send whether anything reads
+it or not, and ZeroMQ says nothing of a peer that has gone, so a stop cannot know it landed. What
+Roboglot can know is whether the host still publishes: after a stop it takes the newest observation
+waiting, which sends nothing, and a stop to a host that has published nothing within its 500 ms
+watchdog window says `so this stop is not known to have reached it`, which `stop` and every verb that
+ends on a stop answer as not delivered. The heartbeat fails at the same window. Neither says the
+watchdog has stopped the wheels, since it runs in the host's one loop and a host stuck in a cycle runs
+none: both say `Its own watchdog stops the base once it has read no command for 500 ms, if its loop
+still runs.` An observation that waited in the socket since the host went quiet reads as fresh once,
+to the heartbeat as to a stop.
+
 ## Units, and the two that are easy to get wrong
 
 - **`theta.vel` on the wire is degrees per second.** Roboglot's `wz` is rad/s, so the adapter

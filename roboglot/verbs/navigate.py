@@ -40,7 +40,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from roboglot.safety import SafetyStop
@@ -58,8 +58,11 @@ from roboglot.verbs.core import (
     _ended_by,
     _Interrupted,
     _Refused,
+    _stop,
     _stopped_by,
     _twist,
+    _Unstopped,
+    _unstopped,
     speed_limits,
 )
 from roboglot.verbs.places import settled_fix
@@ -93,6 +96,7 @@ Outcome = Literal[
     "timeout",
     "interrupted",
     "body",
+    "unstopped",
 ]
 
 
@@ -127,6 +131,14 @@ class Walked:
         if self.left_m is not None:
             out["left_m"] = round(self.left_m, 2)
         return {**out, **self.data}
+
+    def unstopped(self, verb: str, why: str | None) -> Walked:
+        """This walk's ending, or, where the stop it ended on did not reach the body (`why`), the
+        same ending saying so in `verb`'s words (`_unstopped`)."""
+        if why is None:
+            return self
+        said = _unstopped(verb, why, VerbResult.fail(self.said)).summary
+        return replace(self, said=said, data={**self.data, "stop_error": why})
 
 
 @dataclass(frozen=True)
@@ -367,11 +379,18 @@ class _Walk:
         await _twist(self.ctx, *twist)
         await self.ctx.transport.sleep(TICK_S)
 
+    async def halt(self) -> None:
+        """Stop the body partway through the walk, and end the walk with `_Unstopped` where that
+        stop did not reach it: a walk that went on to look, turn or plan from there would do so
+        on a body that may still be moving."""
+        if (why := await _stop(self.ctx)) is not None:
+            raise _Unstopped(why)
+
     async def stop_and_look(self, *, replan: bool = True) -> None:
         """Stand still and let a map that looks at stops look (`settled_fix`), read the battery
         rule there, and plan again when the map saw more or the reading was corrected, unless
         the walk is over."""
-        await self.ctx.transport.stop()
+        await self.halt()
         self.held = (0.0, 0.0, 0.0)
         before = self.last.pose if self.last is not None else None
         keyframes = self.last.keyframes if self.last is not None else 0
@@ -527,7 +546,7 @@ class _Walk:
             if self.blind_at(new.x, new.y):
                 self.blind_walked += step
                 if self.blind_walked >= self.gait.blind_m:
-                    await self.ctx.transport.stop()
+                    await self.halt()
                     raise _End(
                         Walked(
                             "capped",
@@ -600,7 +619,7 @@ class _Walk:
                     break
             await self.send(0.0, math.copysign(self.gait.w, error))
             pose = self.read(walking=True)
-        await self.ctx.transport.stop()
+        await self.halt()
         return pose
 
 
@@ -707,25 +726,34 @@ async def navigate(
         try:
             return await _navigate(walk)
         except _End as end:
-            await ctx.transport.stop()
-            return end.walked
+            unstopped = await _stop(ctx)
+            return end.walked.unstopped(verb, unstopped)
     except _Refused as refused:
         failed = await _stopped_by(ctx, verb, "the body stopped", refused)
-        return walk.walked("body", failed.summary, move_refused=str(refused))
+        return walk.walked("body", failed.summary, **failed.data)
     except _Interrupted as told:
         ended = await _ended_by(ctx, verb, told.why, "the body stopped")
         return walk.walked("interrupted", ended.summary, **ended.data)
+    except _Unstopped as unstopped:
+        # a stop partway through the walk, to look or at the end of its way, that did not reach
+        # the body: the walk ends there, and sends nothing more over a link its stop did not cross
+        said = f"it walked {walk.metres:.1f} m toward {label} and ended its walk there"
+        return walk.walked("unstopped", said).unstopped(verb, unstopped.why)
     except SafetyStop:
         # the run's own rule, read at a stop: its reader stopped the body before it raised, and a
         # stop awaited here would let the run's abort cancel this walk before its words are read.
         # One raised anywhere else, as a sleep raises one for a body handed to another goal, came
-        # with the last twist still standing
+        # with the last twist still standing. What became of this stop is in `stop_error` and the
+        # run's record of it (`LoggedTransport.stop`): the rule's words are what leave here
         if not walk.reading_rule:
-            await ctx.transport.stop()
+            await _stop(ctx)
         raise
     except BaseException:
-        # cancelled from outside, by the executor's own clock, or a fault: the body left stopped
-        await ctx.transport.stop()
+        # cancelled from outside, by the executor's own clock, or a fault: the body left stopped.
+        # The executor sends a stop of its own after this, which reads `stop_error` itself
+        # (`Executor._stop_after`, or the logged stop of a call cancelled from outside), so this
+        # one's reason goes no further than `stop_error`
+        await _stop(ctx)
         raise
 
 
@@ -762,7 +790,7 @@ async def _navigate(walk: _Walk) -> Walked:
             if walk.path:
                 await walk.stop_and_look()
                 pose = await walk.until_fresh()
-        await walk.ctx.transport.stop()
+        await walk.halt()
         if walk.goal_yaw is not None:
             pose = await walk.face(pose, walk.goal_yaw)
         await walk.stop_and_look(replan=False)
