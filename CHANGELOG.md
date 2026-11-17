@@ -554,6 +554,21 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   Z.ai's GLM 5.3, which Roboglot has carried since 0.13.0. Roboglot joined that content as a string,
   which raised, so the run ended at its first call. The chunks are now read as the turn's text and
   its thinking.
+- **Three Open Duck tests that failed on a busy machine no longer depend on its speed.** No
+  behaviour of Roboglot changed. `test_the_shim_intercepts_the_import_form_upstream_actually_uses`
+  slept a fixed three seconds and then looked for the ticks its child bridge writes, and a child
+  Python that a loaded machine took longer to start had not ticked yet. It waits for the ticks
+  now, and a child that ends first fails it at once with its exit code and stderr.
+  `test_a_slow_boot_is_not_mistaken_for_a_missing_shim` slept four seconds from starting the
+  child, against a watchdog that counts from the moment the daemon arms it, so on a slow machine
+  it looked before the boot was over. The stand-in now boots for three quarters of the budget
+  counted from that moment, on the daemon's clock, with numpy and its own modules read first, and
+  the test waits for it to say its boot is over. `test_the_client_keeps_the_deadman_fed_with_margin`
+  read the bridge's command age while the machine woke the event loop the client's resends wait
+  in late, and blamed the client for it. It times its own sleeps now: the latest the loop woke
+  within an age comes off that age before the bound is applied, an age within which it woke more
+  than 50 ms late is not judged, and the walk is taken again, five times at most, until more than
+  twenty ages are judged.
 - **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
   `north-mini-code-1-0`, its changelog entry's address, and it is priced at $0 now that its own
   page says it is free on trial and production keys alike.

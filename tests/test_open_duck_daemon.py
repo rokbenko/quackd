@@ -20,6 +20,7 @@ import threading
 import time
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 
@@ -1482,10 +1483,28 @@ FAKE_LOOP = """import json
 import os
 import time
 
-time.sleep(BOOT_DELAY)
+# The boot is counted as the daemon counts its patch watchdog: from the moment the watchdog
+# was armed (run.py notes it), on the same clock, as a share of the same budget. The child's
+# own start comes before that moment and is charged to neither.
+armed_at = float(os.environ["WATCHDOG_ARMED_AT"])
+budget_s = float(os.environ["WATCHDOG_BUDGET_S"])
+# Read before the boot, as a walk script reads its numpy at the top, rather than by the pad's
+# constructor after it: the daemon reads numpy only when it builds the pad. So what is left of
+# the budget after the boot covers building the pad, not a first read of modules from a disk
+# that a loaded machine is busy with.
+import numpy
+import mini_bdx_runtime.buttons
+
+time.sleep(max(0.0, armed_at + BOOT_SHARE * budget_s - time.monotonic()))
 from mini_bdx_runtime.xbox_controller import XBoxController
 
 pad = XBoxController(20)
+# Upstream holds its pad, so the boot is over and the watchdog has nothing left to wait for.
+# This is the fact a test of the watchdog waits on, with how long the boot took.
+part = os.environ["BOOTED"] + ".part"
+with open(part, "w") as fh:
+    json.dump(time.monotonic() - armed_at, fh)
+os.replace(part, os.environ["BOOTED"])
 seen = []
 # Written every tick rather than in a finally: Windows terminate() is TerminateProcess, so
 # no handler runs and no exit path is guaranteed. Ticks on disk while it runs is also the
@@ -1506,7 +1525,7 @@ while True:
 """
 
 
-def _fake_runtime(root: Path, *, boot_delay: float = 0.0) -> Path:
+def _fake_runtime(root: Path, *, boot_share: float = 0.0) -> Path:
     """Enough of `mini_bdx_runtime` and upstream's walk script for the shim to be real.
 
     The import form is the point. Upstream writes
@@ -1524,49 +1543,104 @@ def _fake_runtime(root: Path, *, boot_delay: float = 0.0) -> Path:
     scripts.mkdir(parents=True, exist_ok=True)
     (scripts / "polynomial_coefficients.pkl").write_bytes(b"")
     script = scripts / "v2_rl_walk_mujoco.py"
-    script.write_text(FAKE_LOOP.replace("BOOT_DELAY", str(boot_delay)))
+    script.write_text(FAKE_LOOP.replace("BOOT_SHARE", repr(boot_share)))
     return script
+
+
+#: Where the child bridge's stderr goes, beside the files it writes, so that a test can show it
+#: when the child ends early. A file rather than a pipe: nothing reads a pipe while the test
+#: waits, and a full one would stall the child.
+BRIDGE_STDERR = "bridge.stderr"
+#: How long a test gives its child bridge to show what the test asserts before calling it
+#: hung. Generous because the test waits on that fact, so a quick child costs nothing, and well
+#: inside pyproject's faulthandler_timeout of 300 s, so a hung child fails here with its stderr
+#: rather than as a hung test.
+CHILD_DEADLINE_S = 60.0
+#: How often a test looks for what its child writes: `_read_from_child`'s retry period.
+CHILD_POLL_S = 0.05
 
 
 def _serve_in_subprocess(tmp_path: Path, script: Path, watchdog_s: str) -> subprocess.Popen:
     runner = tmp_path / "run.py"
     runner.write_text(
-        "import sys, importlib.util\n"
+        "import os, sys, time, importlib.util\n"
         f"sys.path.insert(0, {str(tmp_path)!r})\n"
         f'spec = importlib.util.spec_from_file_location("qdb", {str(DAEMON)!r})\n'
         'm = importlib.util.module_from_spec(spec); sys.modules["qdb"] = m\n'
         "spec.loader.exec_module(m)\n"
+        # The moment the daemon arms its patch watchdog, and the budget it gives it, noted for
+        # the stand-in's boot, which runs in this process and is timed from that moment.
+        "watchdog = m.watchdog\n"
+        "def armed(core, seconds, server=None):\n"
+        '    os.environ["WATCHDOG_ARMED_AT"] = repr(time.monotonic())\n'
+        '    os.environ["WATCHDOG_BUDGET_S"] = repr(seconds)\n'
+        "    watchdog(core, seconds, server)\n"
+        "m.watchdog = armed\n"
         "sys.exit(m.main(["
         f'"serve", "--script", {str(script)!r}, "--port", "0",'
         '"--token-file", "",'
         f'"--patch-watchdog-s", "{watchdog_s}",'
         "]))\n"
     )
-    env = {**os.environ, "TICKS": str(tmp_path / "ticks.json"), "PYTHONPATH": str(tmp_path)}
-    return subprocess.Popen([sys.executable, str(runner)], env=env)
+    env = {
+        **os.environ,
+        "TICKS": str(tmp_path / "ticks.json"),
+        "BOOTED": str(tmp_path / "booted.json"),
+        "PYTHONPATH": str(tmp_path),
+    }
+    with (tmp_path / BRIDGE_STDERR).open("wb") as stderr:
+        return subprocess.Popen([sys.executable, "-X", "utf8", str(runner)], env=env, stderr=stderr)
+
+
+def _wait_for_child(proc: subprocess.Popen, path: Path, what: str) -> None:
+    """Wait until the child bridge has written `path`. The tests that start one slept a fixed
+    time and then looked, and a loaded machine that took longer than that to start a Python
+    failed them with nothing wrong. A child that ends first fails at once with its exit code
+    and stderr, and one still silent at CHILD_DEADLINE_S fails saying so."""
+    deadline = time.monotonic() + CHILD_DEADLINE_S
+    while not path.exists():
+        if proc.poll() is not None and not path.exists():
+            pytest.fail(
+                f"the bridge exited with {proc.returncode} before {what}; its stderr:\n"
+                + _child_stderr(path.parent)
+            )
+        if time.monotonic() >= deadline:
+            pytest.fail(
+                f"the bridge ran {CHILD_DEADLINE_S:.0f} s and {what} did not happen; its "
+                "stderr:\n" + _child_stderr(path.parent)
+            )
+        time.sleep(CHILD_POLL_S)
+
+
+def _child_stderr(folder: Path) -> str:
+    return (folder / BRIDGE_STDERR).read_text(encoding="utf-8", errors="replace")
 
 
 @pytest.mark.serial
 def test_the_shim_intercepts_the_import_form_upstream_actually_uses(tmp_path: Path) -> None:
     """PAD_SUBSTITUTION is the single assumption the whole bridge stands on, and nothing
     executed `install_shim`, `runpy` or `main()`'s serve path: NetworkController was always
-    constructed directly, so the rebind itself had no test at all."""
+    constructed directly, so the rebind itself had no test at all.
+
+    It slept a fixed three seconds and then looked for the ticks, and a child Python that a
+    loaded machine took longer than that to start had not ticked yet. It waits for the ticks
+    now, and reads them once the child is stopped, since a reader holding the file open on
+    Windows would make the stand-in's own replace of it fail."""
     script = _fake_runtime(tmp_path)
     proc = _serve_in_subprocess(tmp_path, script, "10")
+    ticks = tmp_path / "ticks.json"
     try:
-        time.sleep(3.0)
+        _wait_for_child(proc, ticks, "upstream's loop wrote a tick")
         assert proc.poll() is None, f"the bridge exited early with {proc.returncode}"
     finally:
         proc.terminate()
         proc.wait(timeout=15)
-    ticks = tmp_path / "ticks.json"
-    assert ticks.exists(), "upstream's loop never ran, so the shim never fed it"
-    seen = _read_ticks(ticks)
+    seen = _read_from_child(ticks)
     assert seen and all(len(v) == 7 for v in seen), "seven floats, every tick"
 
 
-def _read_ticks(path: Path, *, within_s: float = 3.0) -> list[list[float]]:
-    """The ticks the fake loop last moved into place. On Windows the file can stay held for a
+def _read_from_child(path: Path, *, within_s: float = 3.0) -> Any:
+    """What the fake loop last moved into place. On Windows the file can stay held for a
     moment after the writer is gone, by its last replace or by a scanner opening a file that has
     just appeared, and a read in that moment raises PermissionError. It failed a CI job once
     (PR #74's py3.11 Windows run, 2026-11-06), so the read waits for the file as it would for a
@@ -1578,28 +1652,78 @@ def _read_ticks(path: Path, *, within_s: float = 3.0) -> list[list[float]]:
         except PermissionError:
             if time.monotonic() >= deadline:
                 raise
-            time.sleep(0.05)
+            time.sleep(CHILD_POLL_S)
+
+
+#: The patch watchdog's budget in the slow boot test, in the seconds the daemon counts.
+SLOW_BOOT_WATCHDOG_S = 6.0
+#: The stand-in's boot in that test, as a share of the budget counted from the moment the
+#: watchdog is armed: midway between the half at which the daemon warns of a slow boot and
+#: the whole at which it exits.
+SLOW_BOOT_SHARE = 0.75
 
 
 def test_a_slow_boot_is_not_mistaken_for_a_missing_shim(tmp_path: Path) -> None:
     """The watchdog was a fixed 20 s covering onnxruntime, the Feetech bus, a hard two second
     settle and the IMU on a 512 MB Pi with a cold page cache — and it exits with os._exit
-    into fourteen energised servos."""
-    script = _fake_runtime(tmp_path, boot_delay=1.5)
-    proc = _serve_in_subprocess(tmp_path, script, "6")
+    into fourteen energised servos.
+
+    It slept a fixed four seconds from starting the child, against a 1.5 s boot and a 6 s
+    watchdog that both count from a later moment, the one at which the daemon arms the
+    watchdog. So the child's own start was charged to the test's clock and to neither of
+    theirs, and on a slow machine the test looked before the boot was over and proved
+    nothing. The stand-in now boots for SLOW_BOOT_SHARE of the budget it is given, counted
+    from that moment on the daemon's clock, so the boot is past half the budget and short of
+    the whole however long the child took to get there, and the test waits for the stand-in
+    to say its boot is over before it asks whether the child is still alive."""
+    script = _fake_runtime(tmp_path, boot_share=SLOW_BOOT_SHARE)
+    proc = _serve_in_subprocess(tmp_path, script, str(SLOW_BOOT_WATCHDOG_S))
+    booted = tmp_path / "booted.json"
     try:
-        time.sleep(4.0)
+        _wait_for_child(proc, booted, "the stand-in's boot was over")
         assert proc.poll() is None, "a boot slower than half the budget must not be killed"
     finally:
         proc.terminate()
         proc.wait(timeout=15)
+    boot_s = _read_from_child(booted)
+    assert boot_s > SLOW_BOOT_WATCHDOG_S / 2, (
+        f"the boot took {boot_s:.2f} s of a {SLOW_BOOT_WATCHDOG_S:g} s budget, so it was not "
+        "the slow boot this test is about"
+    )
+
+
+#: How often the margin test samples the bridge's command age. Its sleep is also how the test
+#: knows whether the machine ran its event loop, which the client's resends share.
+SAMPLE_PERIOD_S = 0.02
+#: How late, in sampling periods, the loop may wake within an age for that age to be judged.
+#: The bound leaves the client half the deadman less MOVE_RESEND_S, 50 ms or two and a half
+#: periods, and the test takes the loop's own lateness off an age as the machine's: up to that
+#: slack, and no further, since forgiving more would forgive a client that had used it all.
+#: An age whose span holds a later wake was a loop the machine starved, and is not judged.
+STARVED_AFTER_PERIODS = 2.5
+#: More ages than this must be judged for the sampler to have actually looked: the floor the
+#: test has always held for its one walk.
+MIN_JUDGED_AGES = 20
+#: How many one second walks the test may take to judge more than MIN_JUDGED_AGES ages. A
+#: machine that starves the loop through five walks running cannot hold a serial test's margin
+#: at all, and saying so is truer than a verdict on the client.
+MARGIN_ATTEMPTS = 5
 
 
 @pytest.mark.serial
 async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) -> None:
     """The one real-socket test moved for exactly DEADMAN_S, so `vx == 0` at the end passed
     whether the verb's own stop landed or the client had simply starved the deadman. Sample
-    the age *while* it walks instead, and require real margin rather than a survivable miss."""
+    the age *while* it walks instead, and require real margin rather than a survivable miss.
+
+    On a loaded machine the age also grew whenever the machine woke this test's event loop
+    late, and the client's resends wait in that loop beside the sampler, so the test blamed the
+    client for the machine. The sampler times its own sleeps now. The latest any of them woke
+    within an age is the machine's share of it and comes off before the bound is applied, and
+    an age within which one woke more than STARVED_AFTER_PERIODS periods late is not judged at
+    all. The walk is taken again until more than MIN_JUDGED_AGES ages are judged,
+    MARGIN_ATTEMPTS times at most, and a machine that never let the loop keep time fails the
+    test saying so."""
     core = daemon.BridgeCore(capabilities={"camera": False, "speaker": False})
     server = daemon.Server(core, "127.0.0.1", 0)
     server.start()
@@ -1607,29 +1731,69 @@ async def test_the_client_keeps_the_deadman_fed_with_margin(daemon: ModuleType) 
         adapter = OpenDuckAdapter(OpenDuckBridge(f"tcp://127.0.0.1:{server.port}"))
         manifest = await adapter.connect()
         ex = Executor(registry_from_manifest(manifest, adapter), adapter, contract=GLOT.frontmatter)
-        ages: list[int] = []
-
-        async def sample() -> None:
-            # Only once the duck is actually being driven. Before the first command the age
-            # is measured from connect, which says nothing about how the verb feeds it.
-            start_seq = core.snapshot.seq
-            while True:
-                if core.snapshot.seq > start_seq:
-                    ages.append(core.state()["command_age_ms"])
-                await asyncio.sleep(0.02)
-
-        watcher = asyncio.create_task(sample())
-        assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 1.0})).ok
-        watcher.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await watcher
-
-        assert len(ages) > 20, "the sampler has to have actually looked"
-        worst = max(ages)
         budget = core.deadman_s * 1000
-        assert worst < budget * 0.5, (
-            f"the worst command age was {worst} ms against a {budget:.0f} ms deadman; "
-            "the client is not feeding it with margin"
+        starved_after_s = STARVED_AFTER_PERIODS * SAMPLE_PERIOD_S
+
+        async def walk() -> tuple[list[tuple[float, int]], list[tuple[float, float]]]:
+            """Each age with when it was read, and each wake of the sampler's with how late it
+            came, both on perf_counter's clock."""
+            ages: list[tuple[float, int]] = []
+            wakes: list[tuple[float, float]] = []
+
+            async def sample() -> None:
+                # Only once the duck is actually being driven. Before the first command the age
+                # is measured from connect, which says nothing about how the verb feeds it.
+                start_seq = core.snapshot.seq
+                while True:
+                    if core.snapshot.seq > start_seq:
+                        ages.append((time.perf_counter(), core.state()["command_age_ms"]))
+                    asked = time.perf_counter()
+                    await asyncio.sleep(SAMPLE_PERIOD_S)
+                    woke = time.perf_counter()
+                    wakes.append((woke, woke - asked - SAMPLE_PERIOD_S))
+
+            watcher = asyncio.create_task(sample())
+            try:
+                assert (await ex.run_verb("move", {"vx": 0.1, "duration_s": 1.0})).ok
+            finally:
+                watcher.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await watcher
+            return ages, wakes
+
+        # each judged age: what the bridge read, and how late the loop woke within it, in ms
+        judged: list[tuple[int, float]] = []
+        excused = 0
+        for _ in range(MARGIN_ATTEMPTS):
+            ages, wakes = await walk()
+            for at, age in ages:
+                # The age's span, from when the last command arrived, and one period more for
+                # the stall the sampler cannot see and the age's own clock, which can be coarser.
+                since = at - age / 1000 - SAMPLE_PERIOD_S
+                late = max((lag for woke, lag in wakes if since <= woke <= at), default=0.0)
+                if late <= starved_after_s:
+                    judged.append((age, max(late, 0.0) * 1000))
+                else:
+                    excused += 1
+            worst = max((a - m for a, m in judged), default=0.0)
+            if len(judged) > MIN_JUDGED_AGES or worst >= budget * 0.5:
+                break
+        else:
+            pytest.fail(
+                f"no measurement could be made: in {MARGIN_ATTEMPTS} walks the sampler read "
+                f"{excused + len(judged)} ages, and within {excused} of them this machine woke a "
+                f"{SAMPLE_PERIOD_S * 1000:.0f} ms sleep of the test's event loop more than "
+                f"{starved_after_s * 1000:.0f} ms late, which leaves {len(judged)} to judge the "
+                f"client by, and the sampler has to have actually looked at more than "
+                f"{MIN_JUDGED_AGES}"
+            )
+
+        age, machine = max(judged, key=lambda j: j[0] - j[1])
+        assert age - machine < budget * 0.5, (
+            f"the worst command age was {age} ms against a {budget:.0f} ms deadman, and the "
+            f"test's event loop woke at most {machine:.0f} ms late within it, which leaves "
+            f"{age - machine:.0f} ms that are the client's; it is not feeding the deadman with "
+            "margin"
         )
         await adapter.disconnect()
     finally:
