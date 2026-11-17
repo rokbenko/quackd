@@ -128,9 +128,7 @@ class ControlServer:
         kept = False
         # the hello and the op inside `HELLO_S` in all, however slowly the bytes come, so no
         # client without the token holds one of the slots for longer than that
-        cut_off = threading.Timer(HELLO_S, _cut, args=(sock,))
-        cut_off.daemon = True
-        cut_off.start()
+        cut_off = _Deadline(sock)
         try:
             sock.settimeout(HELLO_S)
             hello = conn.read()
@@ -147,7 +145,8 @@ class ControlServer:
             if op is None or not isinstance(op.get("op"), str):
                 conn.send({"ev": "refused", "reason": "no op after the hello"})
                 return
-            cut_off.cancel()
+            if not cut_off.accept():
+                return  # cut off as the op came: its client heard nothing, and nothing is done
             sock.settimeout(None)
             reply = self._handle(op, conn)
             if reply is None:
@@ -161,6 +160,39 @@ class ControlServer:
             if not kept:
                 conn.close()
             self._clients.release()
+
+
+class _Deadline:
+    """One connection's `HELLO_S`, for its hello and its op together. The cut and the op's
+    acceptance are decided once, under one lock, whichever comes first, for both sides: an op
+    accepted is never cut, and once cut, no op the connection read is handled."""
+
+    def __init__(self, sock: socket.socket) -> None:
+        self._sock = sock
+        self._lock = threading.Lock()
+        self._cut = self._accepted = False
+        self._timer = threading.Timer(HELLO_S, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._accepted:
+                return
+            self._cut = True
+        _cut(self._sock)
+
+    def accept(self) -> bool:
+        """The op read is the service's to handle, unless the connection was cut first."""
+        with self._lock:
+            if self._cut:
+                return False
+            self._accepted = True
+        self._timer.cancel()
+        return True
+
+    def cancel(self) -> None:
+        self._timer.cancel()
 
 
 def _cut(sock: socket.socket) -> None:

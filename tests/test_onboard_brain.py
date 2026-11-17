@@ -347,6 +347,50 @@ def test_a_client_that_trickles_bytes_inside_every_read_timeout_is_cut_off_after
         server.close()
 
 
+@pytest.mark.parametrize("op_lands", ["just before the cut-off", "just as the cut-off fires"])
+def test_an_op_is_either_handled_and_answered_or_cut_off_and_never_handled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, op_lands: str
+) -> None:
+    """The cut-off was cancelled only once the op had been read, and a timer already firing
+    cannot be cancelled: an op read just as it fired was handled, a goal started or a run
+    stopped, while its client was cut off and told the service had not answered. The read here
+    holds the moment between the op's read and the cut-off's cancel open past `HELLO_S` when the
+    op lands as it fires, and lets it pass at once when it lands before."""
+    import time
+
+    monkeypatch.setattr(control, "HELLO_S", 0.5)
+    real_read = control.Connection.read
+    late = op_lands == "just as the cut-off fires"
+
+    def read(self: Any) -> Any:
+        got = real_read(self)
+        if late and not isinstance(self, control._Client) and got and got.get("op") == "status":
+            time.sleep(3 * control.HELLO_S)  # the op is read; the cut-off has not been stopped
+        return got
+
+    monkeypatch.setattr(control.Connection, "read", read)
+    handled: list[str] = []
+    server = control.ControlServer(
+        lambda op, conn: handled.append(str(op.get("op"))) or {"ev": "status"},
+        hello={"robot": "r"},
+    ).start(tmp_path / "control.json")
+    try:
+        try:
+            reply: Any = control.request(
+                tmp_path / "control.json", {"op": "status"}, timeout=WAIT_S
+            )
+        except control.ControlError as e:
+            reply = e
+        # past the held read, when a handler that runs after its client was cut would have run
+        time.sleep(4 * control.HELLO_S)
+        if late:
+            assert isinstance(reply, control.ControlError) and handled == [], (reply, handled)
+        else:
+            assert reply == {"ev": "status"} and handled == ["status"], (reply, handled)
+    finally:
+        server.close()
+
+
 def test_with_no_service_running_a_client_is_told_so(tmp_path: Path) -> None:
     with pytest.raises(control.ControlError, match="no service is running"):
         control.request(tmp_path / "control.json", {"op": "status"})

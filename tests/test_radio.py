@@ -319,6 +319,60 @@ async def test_a_start_cut_off_by_its_callers_bound_is_tried_again_by_the_watchd
         await built.stop()
 
 
+async def test_a_start_cut_off_in_its_listen_hears_bluez_once_the_watchdog_brings_it_up(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The bus and the handler for BlueZ's signals were set up only while the radio had no bus,
+    so a start cut off after the bus connected and before the handler went in was brought to
+    `ready` by the watchdog with no handler: it never heard a central gone, the adapter powered
+    off, or bluetoothd restarting, which forgets the advert and the GATT service. The first
+    AddMatch here answers after five times the caller's bound, as a D-Bus daemon slow at boot
+    would, and the caller cancels the start, as `LoopThread.call` does."""
+    bound_s, retry_s = 0.2, 0.05
+    handlers: list[Any] = []
+    matches: list[Any] = []
+
+    async def probe(bus: Any, adapter: str) -> Any:
+        return types.SimpleNamespace(
+            state="ready", detail=f"{adapter} is up", hint=None, adapter=None
+        )
+
+    class Bus:
+        def add_message_handler(self, handler: Any) -> None:
+            handlers.append(handler)
+
+        def disconnect(self) -> None:
+            return None
+
+    async def connect_bus(kind: str, address: str | None = None) -> Bus:
+        return Bus()
+
+    async def call(*args: Any, **kwargs: Any) -> list[Any]:
+        matches.append(args)
+        if len(matches) == 1:
+            await asyncio.sleep(5 * bound_s)
+        return []
+
+    module = bluez_on_stand_ins(monkeypatch, probe)
+    module.RETRY_S = (retry_s,)
+    module.connect_bus, module.call = connect_bus, call
+    built = module.BlueZRadio(scan=True)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            built.start(advert=b"", on_sighting=lambda s: None, on_link=lambda p, a: None),
+            bound_s,
+        )
+    try:
+        for _ in range(int(2.0 / retry_s)):
+            if built.status().state == "ready":
+                break
+            await asyncio.sleep(retry_s)
+        assert built.status().state == "ready", built.status()
+        assert handlers, f"ready with no handler for BlueZ's signals; {len(matches)} AddMatch"
+    finally:
+        await built.stop()
+
+
 async def test_closing_a_link_a_robot_opened_never_drops_one_this_robot_dialled_to_it() -> None:
     from roboglot.radio.bluez.core import ClientPipe
 

@@ -469,7 +469,13 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
         stopping = lines.index("the goal is stopping: the service is stopping")
         byes = [n for n, line in enumerate(lines) if line.startswith("bye to ")]
         assert len(byes) == 2 and stopping < min(byes), lines
-        assert onboard_service.RUN_LEFT.format(kind="goal") in lines
+        # this run waits on a call in a thread of its own, which nothing in Python ends: the
+        # line said the service stops, while that thread holds the process until systemd's kill
+        assert (
+            "the goal has not ended though it was told to stop: the service closes without it, "
+            "so its body may not be closed, nor its record ended, and while it waits on a call "
+            "in a thread of its own the process stays until systemd ends it at its stop timeout"
+        ) in lines
         left = [line for line in lines if line.startswith("the service stops before it finished")]
         # the server and the listener close beside the byes, which hold up only the radio
         assert left == [
@@ -480,6 +486,129 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
         hung.set()
         if closer.ident is not None:
             closer.join(DEADLINE_S)
+        running = service.slot.running if service.slot is not None else None
+        if running is not None and running.thread is not None:
+            running.thread.join(DEADLINE_S)
+
+
+def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """systemd's stop timeout runs from its SIGTERM, but the close's budget ran from the start of
+    `close`, which comes only once the look in hand when the stop arrived is over: a look slow on
+    a radio loop that does not answer can take two calls onto it, so the close could run on past
+    the unit's timeout by that much. The budget counts from the stop now. The budget here is
+    shortened, the run does not end, and the look in hand takes 1.5 s."""
+    import asyncio
+
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    monkeypatch.setattr(onboard_service, "CLOSE_S", 2.0)
+    monkeypatch.setattr(onboard_service, "AFTER_RUN_S", 1.0)
+    hung = threading.Event()
+
+    class Stuck(Run):
+        async def run(self) -> Any:
+            await asyncio.to_thread(hung.wait, DEADLINE_S)
+            return await super().run()
+
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lambda _line: None,
+    )
+    service._make_loop = lambda glot, kind, front: Stuck(glot, kind)  # type: ignore[method-assign]
+    try:
+        service.start()
+        assert service.talker is not None and service.slot is not None
+        # a robot met that does not answer, so the close has its whole budget to use
+        service.talker.peers_open = lambda: {"did:key:z6MkOne"}  # type: ignore[method-assign]
+        service.talker.leave = lambda peer: hung.wait(DEADLINE_S)  # type: ignore[method-assign]
+        assert service.slot.goal("Wait by the door.") is None
+        asked = time.monotonic()
+        service.stop()  # what the SIGTERM handler and the shutdown op call
+        time.sleep(1.5)  # the look in hand, on a radio loop slow to answer
+        service.close()
+        took = time.monotonic() - asked
+        assert took < onboard_service.CLOSE_S + 0.75, f"close ended {took:.1f} s after the stop"
+    finally:
+        hung.set()
+        running = service.slot.running if service.slot is not None else None
+        if running is not None and running.thread is not None:
+            running.thread.join(DEADLINE_S)
+
+
+def test_the_lan_record_is_withdrawn_inside_the_budget_whatever_the_run_and_the_radio_take(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The LAN record other robots find this one by was withdrawn last in the radio's close,
+    after its two calls onto the radio's loop, while one such call was all that was kept for
+    the parts after the run: after a run that took its whole share, a radio whose links and stop
+    each answered inside their own bound ran past the budget, and the record stayed announced
+    until its time to live ran out. The budget is shortened as the close test's is, `CALL_S`
+    with it; the run ends 1.5 s after its stop, the links and the radio's stop each take 0.6 of
+    `CALL_S`."""
+    import asyncio
+
+    from roboglot.onboard import radio_side
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    monkeypatch.setattr(onboard_service, "CLOSE_S", 2.0)
+    monkeypatch.setattr(onboard_service, "AFTER_RUN_S", 1.0)
+    monkeypatch.setattr(radio_side, "CALL_S", 1.0)
+    part_s = 0.6 * radio_side.CALL_S
+    withdrawn = threading.Event()
+
+    class Lan:
+        browser = None
+
+        def publish(self, txt: Any, *, host: str, port: int) -> bool:
+            return True
+
+        def withdraw(self) -> None:
+            withdrawn.set()
+
+        def lookup(self, beacon_id: str) -> Any:
+            return None
+
+    class SlowToStop(NoRadio):
+        async def stop(self) -> None:
+            await asyncio.sleep(part_s)
+
+    class Long(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            await asyncio.sleep(1.5)  # its teardown, a fold to rest that runs long
+            return await super().run()
+
+    def make_side() -> RadioSide:
+        side = RadioSide(SlowToStop(), lan=Lan(), server_host="127.0.0.1", record_host="127.0.0.1")
+        side.links.close_all = lambda *a, **k: asyncio.sleep(part_s)  # type: ignore[method-assign]
+        return side
+
+    lines: list[str] = []
+    service = Service(
+        home := robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=make_side,
+        log=lines.append,
+    )
+    service._make_loop = lambda glot, kind, front: Long(glot, kind)  # type: ignore[method-assign]
+    try:
+        service.start()
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        service.close()
+        assert withdrawn.is_set(), f"close() returned with the LAN record announced: {lines[-2:]}"
+        assert not home.control_json.exists()
+    finally:
+        wait_for(withdrawn.is_set, DEADLINE_S)
         running = service.slot.running if service.slot is not None else None
         if running is not None and running.thread is not None:
             running.thread.join(DEADLINE_S)
@@ -773,6 +902,196 @@ def test_talk_starts_once_when_a_reload_and_the_tick_both_find_it_off(
                 part.close()
 
 
+class SlowToStart:
+    """A radio whose start waits until the test releases it, or until it is cut short, as BlueZ
+    waiting on its controller at boot does, inside the start's bound; it says when its start
+    began, whether it was cut short, and whether its stop came while the start still ran."""
+
+    def __init__(self) -> None:
+        from roboglot.radio import NoRadio
+
+        self.inside, self.release = threading.Event(), threading.Event()
+        self.cut_short = threading.Event()
+        self.stopped_while_starting: list[bool] = []
+        self._starting = False
+        self._radio = NoRadio("off", "not started", kind="bluez")
+
+    @property
+    def kind(self) -> str:
+        return self._radio.kind
+
+    async def start(self, **kwargs: Any) -> Any:
+        import asyncio
+
+        self._starting = True
+        self.inside.set()
+        try:
+            await asyncio.to_thread(self.release.wait, DEADLINE_S)
+        except asyncio.CancelledError:
+            self.cut_short.set()
+            raise
+        finally:
+            self._starting = False
+        return await self._radio.start(**kwargs)
+
+    async def stop(self) -> None:
+        self.stopped_while_starting.append(self._starting)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._radio, name)
+
+
+@pytest.mark.parametrize("starter", ["a reload", "the tick's look"])
+def test_no_look_and_no_reload_waits_on_a_radio_that_is_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, starter: str
+) -> None:
+    """Talk's lock was held through the radio's start, up to 20 s with BlueZ slow at boot. With
+    `roboglot onboard sign`'s reload starting it, the main thread's next look waited on that
+    lock, and the look is where a SIGTERM's stop is read on its way to close(): a goal running
+    then might never be told to stop before systemd killed the service. With the tick's own look
+    starting it, the tick itself waited, and `roboglot onboard pin`'s reload with it, past its
+    client's wait. The radio here starts only when the test lets it, and the look, the tick
+    that started talk and a second reload must all be over while it is still starting; talk
+    still starts once."""
+    from roboglot.onboard.radio_side import RadioSide
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    radio, sides = SlowToStart(), []
+
+    def make_side() -> RadioSide:
+        sides.append(RadioSide(radio, lan=None, server_host="127.0.0.1", record_host=""))  # type: ignore[arg-type]
+        return sides[-1]
+
+    service = Service(home, facts=sim_facts(), radio_side=make_side, log=lambda _line: None)
+    first = threading.Thread(
+        target=(lambda: service._control({"op": "reload"}, None))
+        if starter == "a reload"
+        else service.tick,
+        daemon=True,
+    )
+    meanwhile = threading.Thread(target=lambda: None, daemon=True)
+    try:
+        service.start()
+        assert service.talker is None, "talk is off: its own passport has run out"
+        sign_again()
+        service._seen = (None, None)  # the files' times as the tick's look would find them changed
+        first.start()
+        assert radio.inside.wait(DEADLINE_S), "the radio's start never began"
+
+        def looks() -> None:
+            service._last_status = 0.0  # the next look is due
+            service.tick()
+            service._control({"op": "reload"}, None)  # what `roboglot onboard pin` sends
+
+        meanwhile = threading.Thread(target=looks, daemon=True)
+        meanwhile.start()
+        meanwhile.join(WINDOW_S)
+        first.join(WINDOW_S)
+        assert not radio.release.is_set()
+        assert not meanwhile.is_alive(), "a look or a reload waited on the radio's start"
+        assert not first.is_alive(), f"{starter} that started talk waited on the radio's start"
+        radio.release.set()
+        assert wait_for(lambda: service.radio_side is not None and service.radio_side.loop.running)
+        assert len(sides) == 1 and service.talker is not None
+    finally:
+        radio.release.set()
+        for thread in (first, meanwhile):
+            if thread.ident is not None:
+                thread.join(DEADLINE_S)
+        service.close()
+
+
+def test_a_close_while_the_radio_starts_cuts_the_start_short_before_the_radios_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A close that came while a radio was starting went ahead, but the radio's stop ran beside a
+    start still under way (BlueZ's stop then waits for its bring-up to let go, and is cut at its
+    own bound), and the loop's end then cancelled the start, which the start's caller logged as
+    `talk could not start` with talk on. The start is cut short first now, then the radio is
+    stopped, and the journal says the start was cut short."""
+    from roboglot.onboard.radio_side import RadioSide
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    radio, lines = SlowToStart(), []
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(
+            radio,  # type: ignore[arg-type]
+            lan=None,
+            server_host="127.0.0.1",
+            record_host="",
+            log=lines.append,
+        ),
+        log=lines.append,
+    )
+    reload = threading.Thread(
+        target=lambda: service._control({"op": "reload"}, None), name="reload", daemon=True
+    )
+    try:
+        service.start()
+        sign_again()
+        reload.start()
+        assert radio.inside.wait(DEADLINE_S), "the radio's start never began"
+        service.close()
+        assert radio.cut_short.is_set() and radio.stopped_while_starting == [False], lines
+        assert "radio bluez: its start was cut short, as the service stops" in lines
+        assert wait_for(lambda: not reload.is_alive())
+        assert not [line for line in lines if "talk could not start" in line], lines
+    finally:
+        radio.release.set()
+        reload.join(DEADLINE_S)
+
+
+def test_talk_does_not_turn_on_once_the_service_has_begun_to_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The control listener stays open while the close waits for the run in hand, and a reload
+    with a passport signed while talk was off turned talk on then: a Talker, a passport server
+    and a radio, started while the service stopped, and one started after the close had read
+    them was never closed. Talk is not turned on once the close has begun, and the reload's
+    answer says why it is not served. The run here holds the close at its join until the reload
+    is answered."""
+    import asyncio
+
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    answered = threading.Event()
+
+    class Slow(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            await asyncio.to_thread(answered.wait, DEADLINE_S)
+            return await super().run()
+
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lambda _line: None,
+    )
+    service._make_loop = lambda glot, kind, front: Slow(glot, kind)  # type: ignore[method-assign]
+    closer = threading.Thread(target=service.close, name="close", daemon=True)
+    try:
+        service.start()
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        closer.start()
+        assert wait_for(lambda: service._shutting)
+        sign_again()
+        told = service._control({"op": "reload"}, None)
+        answered.set()
+        closer.join(DEADLINE_S)
+        assert service.talker is None and service.server is None
+        assert told is not None and told.get("unserved") == "the service is stopping", told
+    finally:
+        answered.set()
+        if closer.ident is not None:
+            closer.join(DEADLINE_S)
+
+
 def test_a_talk_start_that_fails_on_the_ticks_look_is_said_and_tried_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -811,6 +1130,47 @@ def test_a_talk_start_that_fails_on_the_ticks_look_is_said_and_tried_again(
         service.tick()
         assert "talk could not start: address already in use" in lines
         assert service.talker is not None and service.server is not None
+    finally:
+        service.close()
+
+
+def test_a_reload_whose_talk_could_not_start_answers_that_the_passport_is_not_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reload with a passport signed while talk was off, whose talk then could not start (a
+    fixed port another program holds), answered as any other reload, and `roboglot onboard sign`
+    told the person the running service served the passport with no passport server running.
+    The answer says now that it is not served, and why, over the real control port."""
+    from roboglot import cli
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.passport.serve import PassportServer
+    from roboglot.radio import NoRadio
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+
+    class Taken(PassportServer):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            raise OSError("address already in use")
+
+    monkeypatch.setattr(onboard_service, "PassportServer", Taken)
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lambda _line: None,
+    )
+    try:
+        service.start()
+        sign_again()
+        told = cli._tell_service(home, {"op": "reload"})
+        assert service.server is None and told is not None
+        assert told == {
+            "ev": "reloaded",
+            "ok": True,
+            "pins": 0,
+            "unserved": "talk could not start: address already in use",
+        }
     finally:
         service.close()
 
@@ -864,10 +1224,46 @@ def test_a_radio_that_does_not_answer_in_time_is_a_radio_down_and_the_service_st
             service._seen = (None, None)  # the files' times as a look would find them changed
             service.tick()
         assert service.talker is not None and service.server is not None
+        # a look's radio starts on a thread of its own: its answer comes when it comes
+        assert wait_for(lambda: f"radio bluez: off, {said}" in lines), lines
         assert not [line for line in lines if "talk could not start" in line], lines
         radio = service.status()["radio"]
         assert (radio["kind"], radio["state"], radio["detail"]) == ("bluez", "off", said)
-        assert f"radio bluez: off, {said}" in lines
+    finally:
+        service.close()
+
+
+def test_a_radio_whose_own_start_times_out_is_a_radio_down_that_says_what_it_raised(
+    tmp_path: Path,
+) -> None:
+    """A radio whose start raised a `TimeoutError` of its own, a D-Bus call's inside BlueZ, was
+    read as one the start's bound had cut off, and the status and the journal took the error's
+    words, which can be none: `radio bluez: off, ` and nothing after it. It says what the radio
+    raised now, by name when it raised no words."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    class Own(NoRadio):
+        async def start(self, **kwargs: Any) -> Any:
+            raise TimeoutError
+
+    lines: list[str] = []
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(
+            Own("off", "not started", kind="bluez"),
+            lan=None,
+            server_host="127.0.0.1",
+            record_host="",
+            log=lines.append,
+        ),
+        log=lines.append,
+    )
+    try:
+        service.start()
+        assert service.status()["radio"]["detail"] == "TimeoutError()"
+        assert "radio bluez: off, TimeoutError()" in lines
     finally:
         service.close()
 

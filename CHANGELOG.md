@@ -485,7 +485,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   could not bind and the service ended. Talk now starts once, whichever asks first, and a start
   that fails on one of those looks, a port another program holds say, is said in the journal as
   `talk could not start:` and the reason, and tried again on the next look, where before it
-  could end the service.
+  could end the service. `roboglot onboard sign` then says `the running service does not serve
+  it:` and that reason, where it would have said the service serves it, and the wizard says
+  the same. A radio's start, which can take 20 s, holds nothing else up any more: the service's
+  next look, the way from a stop to its close, and the answer to `roboglot onboard sign`,
+  `pin` or `forget` go on while it starts.
 - **A radio slow to start no longer ends the onboard service.** A Bluetooth radio that took
   longer than its 20 s to start, BlueZ waiting on its controller at boot say, raised out of
   `roboglot onboard serve` once the passport server was up: the service ended, and after five
@@ -493,27 +497,33 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   on later instead, the journal said `talk could not start` though it had, and the radio was
   never tried again. A radio that does not answer in time is a radio that is down now: the
   service stays up with talk on, `roboglot onboard status` and the journal say `the radio did
-  not answer within 20 s`, and the radio is tried again as a radio that came up down is.
+  not answer within 20 s`, and the radio is tried again as a radio that came up down is, with
+  everything a first start sets up, its watch for what BlueZ says included. A service told to
+  stop while its radio starts cuts the start short before it stops the radio, and the journal
+  says `radio bluez: its start was cut short, as the service stops`.
 - **A slow client no longer holds the onboard service's control port.** The service gives a
   client 5 s in all to say hello with the token and send what it wants, however slowly its
   bytes come, but the cut-off at the end of those 5 s could not end a read under way, so a
   local process with no token that sent one byte every few seconds kept its place for as long
   as it liked, and eight of them turned away `roboglot onboard status`, `stop` and `goal`. The
-  cut-off ends the connection now.
+  cut-off ends the connection now, and what a client sent just as it came is either handled and
+  answered or not handled at all.
 - **The onboard service stops inside the time systemd gives it, and says what it left.** Told
   to stop, the service gave the run in hand 10 s and went on without a word, so a run whose
   stop took longer, a pause granted to a robot met waited out before the body's close, lost
   its close and the end of its record when the process exited; then it said bye to each robot
   met one after another, each with its own bound, and closed the radio, the passport server and
   the control listener, each with its own, so with two robots gone out of range it outlasted
-  the unit's `TimeoutStopSec=20` and systemd killed it partway. The whole stop keeps inside
-  18 s now, the unit's stop timeout less a margin for the process's exit, with the run's stop
-  first and up to 13 s for it; the byes go out all at once, beside the passport server's and
-  the listener's close. A run still going when its time is up is said in the journal as `the
-  goal has not ended though it was told to stop: the service stops without it, so its body may
-  not be closed, nor its record ended`, and whatever else had not finished as `the service
-  stops before it finished` and what it was, as in `saying bye to 2 robots met and closing the
-  radio`.
+  the unit's `TimeoutStopSec=20` and systemd killed it partway. The close keeps inside 18 s
+  now, counted from the stop as systemd counts its timeout, the unit's stop timeout less a
+  margin for the process's exit: the run's stop first, with up to 13 s for it, and beside it
+  the LAN record other robots find this one by, withdrawn at once; then the byes all at once,
+  beside the passport server's and the listener's close, and the radio last. A run still going
+  when its time is up is said in the journal as `the goal has not ended though it was told to
+  stop: the service closes without it, so its body may not be closed, nor its record ended,
+  and while it waits on a call in a thread of its own the process stays until systemd ends it
+  at its stop timeout`, and whatever else had not finished as `the service stops before it
+  finished` and what it was, as in `saying bye to 2 robots met and closing the radio`.
 - **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
   run in hand` as soon as the service had passed the stop on, so a run whose stop had not
   landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at

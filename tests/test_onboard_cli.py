@@ -540,6 +540,30 @@ def test_sign_says_so_when_the_running_service_will_not_take_it(
     assert "serves it from now on" in flat(runner.invoke(app, argv).output)
 
 
+def test_sign_says_so_when_the_running_service_could_not_serve_it(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A passport signed while talk was off, whose talk then could not start (a fixed port
+    another program holds), was answered as any other, and sign said the running service served
+    it from now on with no passport server running. The service says now that it does not, and
+    why, and sign and the wizard say so too."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    argv = ["onboard", "sign", "--board", "sim", "--dir", str(home)]
+    argv += ["--passphrase-file", str(secret)]
+    why = "talk could not start: address already in use"
+
+    def unserved(_home: Any, _op: Any) -> dict[str, Any]:
+        return {"ok": True, "pins": 0, "unserved": why}
+
+    monkeypatch.setattr("roboglot.cli._tell_service", unserved)
+    said = flat(runner.invoke(app, argv).output)
+    assert f"the running service does not serve it: {why}" in said
+    assert "serves it from now on" not in said
+    wizard = flat(onboard(tmp_path / "another", robot_file, secret).output)
+    assert f"the running service does not serve it: {why}" in wizard
+
+
 def test_the_wizard_says_so_when_the_running_service_will_not_take_it(
     tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

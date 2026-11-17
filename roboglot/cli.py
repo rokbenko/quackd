@@ -8263,11 +8263,17 @@ def _tell_service(home: Any, op: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _said_refused(told: dict[str, Any] | None) -> bool:
-    """Whether the running service refused the passport just signed, said if it did."""
-    if told is None or not told.get("passport_refused"):
+    """Whether the running service refused the passport just signed, or does not serve it, said
+    if so. A service from before never says it does not serve one."""
+    if told is None:
         return False
-    why = ui.printable(str(told["passport_refused"]))
-    said = f"the running service keeps the passport it had, and refuses this one: {why}"
+    if told.get("passport_refused"):
+        why = ui.printable(str(told["passport_refused"]))
+        said = f"the running service keeps the passport it had, and refuses this one: {why}"
+    elif told.get("unserved"):
+        said = f"the running service does not serve it: {ui.printable(str(told['unserved']))}"
+    else:
+        return False
     ui.console.print(Text(said, style=ui.STYLES["warn"]))
     return True
 

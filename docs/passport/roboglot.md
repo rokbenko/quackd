@@ -285,6 +285,10 @@ your owner key's passphrase:
 ✓ the running service serves it from now on
 ```
 
+A running service that cannot serve the passport, its passport server's port taken by another
+program say, makes `sign` say `the running service does not serve it:` and why, in place of that
+last line.
+
 ## The service
 
 `roboglot onboard serve` is the service, which systemd runs as `roboglot-onboard.service`: one process
@@ -292,10 +296,14 @@ holding the radio and its rotating beacon, near and far, talk over the LAN or a 
 run at a time, a meeting or a goal, and a control port on 127.0.0.1 for the other subcommands,
 guarded by a token in `control.json`. It reloads `robot.yaml` and `passport.jws` when they change,
 writes `status.json` every 2 seconds, and on a stop starts no further goal or meeting, ends the
-run in hand, says bye to every robot it is talking to, and goes, all inside the 20 seconds systemd
-gives it; the journal says what it had not finished by then. A radio that does not answer within
-20 seconds of starting is a radio that is down: the service stays up, `status` and the journal say
-`the radio did not answer within 20 s`, and the radio is tried again as one that came up down is.
+run in hand, withdraws its LAN record, says bye to every robot it is talking to, and goes, its
+close kept inside the 20 seconds systemd gives it from the stop; the journal says what it had not
+finished by then. A run left waiting on a call in a thread of its own keeps the process until
+systemd ends it at those 20 seconds, and the journal says that too. A radio that does not answer
+within 20 seconds of starting is a radio that is down: the service stays up, `status` and the
+journal say `the radio did not answer within 20 s`, and the radio is tried again as one that
+came up down is. Nothing else waits on a radio's start: the service's looks, its stop and the
+answers to `sign`, `pin` and `forget` go on while it starts, and a stop cuts it short.
 
 Three things turn its talk off until they are fixed, and `status` names each: no valid
 `passport.jws`, its own passport expired, and a clock earlier than the passport's `issued`, which a

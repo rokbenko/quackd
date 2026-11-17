@@ -35,7 +35,7 @@ from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from roboglot import __version__
 from roboglot.boards import BoardFacts, radio_of
@@ -44,10 +44,11 @@ from roboglot.onboard.brain import RunSlot
 from roboglot.onboard.config import RobotFile
 from roboglot.onboard.control import ANSWER_S
 from roboglot.onboard.keys import read_robot_key
-from roboglot.onboard.radio_side import CALL_S, RadioSide, board_side, proximity_policy, sim_side
+from roboglot.onboard.radio_side import RadioSide, board_side, proximity_policy, sim_side
 from roboglot.onboard.store import OnboardDir
 from roboglot.onboard.systemd import STOP_TIMEOUT_S
 from roboglot.passport import PassportError, document
+from roboglot.passport.fetch import FETCH_TIMEOUT_S
 from roboglot.passport.serve import PassportServer, Served
 from roboglot.passport.talk import MAX_HELLO_BYTES
 from roboglot.passport_talk import Heard, Talker
@@ -66,15 +67,21 @@ RUNS_KEPT = 200
 #: it takes: a host that sends nothing but refusals fills neither the disk nor the journal.
 MET_FILE_MAX = 1 << 20
 REFUSALS_PER_MINUTE = 30
-#: How long `close` may take in all. systemd kills the service `STOP_TIMEOUT_S` after asking it
-#: to stop, and close must be over before then with time left for the process's own exit once
-#: it returns, the lock let go and the interpreter's threads joined: a tenth of the timeout,
-#: a margin chosen, not measured.
+#: How long `close` may take in all, counted from the stop, as systemd's timeout is: systemd
+#: kills the service `STOP_TIMEOUT_S` after asking it to stop, and close must be over before
+#: then with time left for the process's own exit once it returns, the lock let go and the
+#: interpreter's threads joined: a tenth of the timeout, a margin chosen, not measured. A run
+#: left waiting on a call in a thread of its own holds that exit until systemd's kill
+#: (`RUN_LEFT`): nothing in Python ends a thread.
 CLOSE_S = STOP_TIMEOUT_S * 0.9
-#: Of that, what the parts after the run are kept however long the run takes to end, the byes,
-#: the radio, the passport server and the listener: one call onto the radio's loop (`CALL_S`),
-#: the bound each of those parts keeps to on its own.
-AFTER_RUN_S = CALL_S
+#: Of that, what is kept after the run however long it takes to end: the byes, which go out all
+#: at once beside the passport server's and the listener's close, each a post bounded by the
+#: fetch clock over the LAN (`FETCH_TIMEOUT_S`; over a link, `post_timeout`, a second or so
+#: more). The radio's own close, two calls onto its loop of `CALL_S` each and the loop's end,
+#: only tidies up what the process's exit drops anyway: it is kept nothing, and has whatever
+#: time is left. The LAN record, which other robots find this one by, needs none of it: it is
+#: withdrawn as the close begins, beside the run's stop.
+AFTER_RUN_S = FETCH_TIMEOUT_S
 #: How long a stop over the control port waits for the run it stopped to end before it
 #: answers: half of what `roboglot onboard stop` waits for that answer (`ANSWER_S`), so the
 #: answer always comes in time to be read.
@@ -90,9 +97,13 @@ LET_GO = (
     "and the service stays up"
 )
 #: What the journal says of a run that has not ended when the service must go on stopping.
+#: Nothing in Python ends a thread, and the interpreter waits at its exit for the calls a run
+#: handed to threads of their own (`asyncio.to_thread`, a verb's blocking call): a run left
+#: waiting on one holds the process until systemd's kill, and the line says so.
 RUN_LEFT = (
-    "the {kind} has not ended though it was told to stop: the service stops without it, so its "
-    "body may not be closed, nor its record ended"
+    "the {kind} has not ended though it was told to stop: the service closes without it, so its "
+    "body may not be closed, nor its record ended, and while it waits on a call in a thread of "
+    "its own the process stays until systemd ends it at its stop timeout"
 )
 
 
@@ -238,10 +249,17 @@ class Service:
         #: why robot.yaml, edited since the service read it, does not read, for status
         self.file_problem: str | None = None
         self._lock = threading.Lock()
-        #: talk on and off, and the reads of robot.yaml and passport.jws that turn it on, one at
-        #: a time whoever asks: the main thread's tick and a reload on a control thread can both
-        #: find talk off, and talk starts once
+        #: talk on and off, and the reads of robot.yaml and passport.jws that turn it on, decided
+        #: one at a time whoever asks: the main thread's tick and a reload on a control thread can
+        #: both find talk off, and talk starts once. Held to decide and to note, never to wait.
         self._talk = threading.RLock()
+        #: talk is being turned on or off, its radio starting above all: the looks and reloads
+        #: leave it alone meanwhile, and nobody waits for it
+        self._turning = False
+        #: the service has begun to close, and talk is not turned on again
+        self._shutting = False
+        #: why talk could not start the last time a look or a reload tried, for a reload's answer
+        self._talk_problem: str | None = None
         self._refusals: deque[float] = deque()
         self._refusals_dropped = 0
         self.file: RobotFile = config.load(home.robot_yaml)
@@ -253,6 +271,9 @@ class Service:
         )
         self.check = check_board(check_own_passport(self.token, self.robot_key.did), facts)
         self._stop = threading.Event()
+        #: when the stop was asked for, which systemd's stop timeout runs from, and so the close
+        #: budget too; None for a close that no stop came before (Ctrl-C in a terminal)
+        self._stop_asked: float | None = None
         self._last_status = 0.0
         #: when robot.yaml and passport.jws last changed, as the service last read them: a file
         #: a person edited is read again on the next look, with no command needed
@@ -276,7 +297,8 @@ class Service:
             holding=self._holding,
             released=self._released,
         )
-        self._start_talk()
+        # as it always has: the service's start waits for its radio, and nothing else runs yet
+        self._start_talk(wait_for_radio=True)
         from roboglot.onboard.control import ControlServer
 
         self.control = ControlServer(
@@ -289,34 +311,46 @@ class Service:
     def run(self) -> None:
         """Tick until stopped: what the radio says is due, the run slot, the status file."""
         with contextlib.suppress(ValueError):  # not the main thread: the caller handles signals
-            signal.signal(signal.SIGTERM, lambda *_: self._stop.set())
+            signal.signal(signal.SIGTERM, lambda *_: self.stop())
         while not self._stop.wait(TICK_S):
             self.tick()
 
-    def _start_talk(self) -> None:
+    def _start_talk(self, *, wait_for_radio: bool = False) -> None:
         """Talk on, for a passport that checks out: the Talker, the passport server and the
         radio. At start, and again whenever a check that failed passes, a passport signed or a
-        clock set: once, whichever thread asks first."""
+        clock set: once, whichever thread asks first.
+
+        Talk's lock is held to decide and to note what was made, never while it is made: the
+        radio's start can take `START_S`, BlueZ slow at boot, and the looks, a reload and the
+        way from a stop to `close` must not wait on it. So it runs on a thread of its own,
+        unless `wait_for_radio`, which the service's own start asks for."""
         with self._talk:
-            reading = self.check.reading
+            reading, token, kept = self.check.reading, self.token, self.radio_side
             if (
-                self.talker is not None
+                self._turning
+                or self._shutting
+                or self.talker is not None
                 or not self.check.ok
                 or reading is None
-                or self.token is None
+                or token is None
             ):
                 return
-            if self.radio_side is None:
-                if self._make_side is None:
-                    return  # a radio handed over once, and closed since, cannot be had again
-                self.radio_side = self._make_side()
-            side = self.radio_side
+            factory = self._make_side if kept is None else None
+            if kept is None and factory is None:
+                return  # a radio handed over once, and closed since, cannot be had again
+            self._turning = True
+        try:
+            # one of the two is there: checked under the lock just now
+            side = kept if kept is not None else cast("Callable[[], RadioSide]", factory)()
+            if side is not kept:
+                with self._talk:  # kept, started or not, as a side once made always was
+                    self.radio_side = side
             side.on_event = self._meet_event
             side.busy_elsewhere = self._in_a_meeting
             talker = Talker(
                 self.file.passport.name,
                 self.robot_key,
-                self.token,
+                token,
                 judge=self._judge_for(reading),
                 send=side.send,
                 runtime={"software": f"roboglot/{__version__}"},
@@ -325,7 +359,7 @@ class Service:
                 on_session=side.on_session,
                 on_refused=self._refused_hello,
             )
-            served = Served(self.file.passport.name, reading.raw, self.token)
+            served = Served(self.file.passport.name, reading.raw, token)
             server = PassportServer(
                 served,
                 host=side.lan_host,
@@ -334,10 +368,54 @@ class Service:
                 inbox_limit=MAX_HELLO_BYTES,
             ).start()
             talker.endpoint.runtime["reach"] = {"http_port": server.port}
-            self.talker, self.server = talker, server
-            side.start(
-                talker, short_id=reading.short_id, digest=reading.digest, http_port=server.port
-            )
+        except BaseException:
+            with self._talk:
+                self._turning = False
+            raise
+        with self._talk:
+            closing = self._shutting
+            if not closing:
+                self.talker, self.server = talker, server
+        if closing:
+            # the service began to close while talk was made, and has closed what it found: what
+            # was made here goes now, the radio never started
+            server.close()
+            with contextlib.suppress(Exception):  # as close() closes a radio: nothing to say
+                side.close()
+            with self._talk:
+                self._turning = False
+            return
+        if wait_for_radio:
+            self._start_radio(side, talker, reading, server.port)
+        else:
+            threading.Thread(
+                target=self._start_radio,
+                args=(side, talker, reading, server.port),
+                kwargs={"on_its_own": True},
+                name="onboard-radio-start",
+                daemon=True,
+            ).start()
+
+    def _start_radio(
+        self,
+        side: RadioSide,
+        talker: Talker,
+        reading: document.Reading,
+        port: int,
+        *,
+        on_its_own: bool = False,
+    ) -> None:
+        """The radio's start, the last part of talk's: one that does not answer in time, or that
+        the service's close cuts short, is said by the radio side, and talk stays on without it."""
+        try:
+            side.start(talker, short_id=reading.short_id, digest=reading.digest, http_port=port)
+        except Exception as e:
+            if not on_its_own:
+                raise
+            self.log(f"radio {side.radio.kind}: it did not start: {e}")
+        finally:
+            with self._talk:
+                self._turning = False
 
     def _try_talk(self) -> None:
         """`_start_talk` from a look rather than from start: a start that fails, a port taken
@@ -345,39 +423,52 @@ class Service:
         try:
             self._start_talk()
         except Exception as e:
-            self.log(f"talk could not start: {e}")
+            self._talk_problem = f"talk could not start: {e}"
+            self.log(self._talk_problem)
+        else:
+            self._talk_problem = None
 
     def _stop_talk(self, why: str) -> None:
         """Talk off, until the passport checks out again: a bye to every robot met, and the
-        radio and the passport server down."""
+        radio and the passport server down; the lock is held to take them, not to close them."""
         with self._talk:
-            talker, self.talker = self.talker, None
-            if talker is None:
+            if self._turning or self.talker is None:
                 return
+            talker, self.talker = self.talker, None
+            side, self.radio_side = self.radio_side, None
+            server, self.server = self.server, None
+            self._turning = True
+        try:
             for peer in list(talker.peers_open()):
                 with contextlib.suppress(Exception):
                     talker.leave(peer)
-            side, self.radio_side = self.radio_side, None
             if side is not None:
                 with contextlib.suppress(Exception):
                     side.close()
-            server, self.server = self.server, None
             if server is not None:
                 server.close()
             self.log(f"talk is off: {why}")
+        finally:
+            with self._talk:
+                self._turning = False
 
     def _recheck(self) -> None:
         """Its own passport against the clock again: one that ran out turns talk off, and a
-        clock set since, or a passport signed since, turns it back on."""
+        clock set since, or a passport signed since, turns it back on. While talk is being
+        turned on or off, its radio starting say, it is looked at again next time."""
         with self._talk:
+            if self._turning:
+                return
             was = self.check.ok
             self.check = check_board(check_own_passport(self.token, self.robot_key.did), self.facts)
-            if self.check.ok and self.talker is None:
-                if not was:
-                    self.log(f"onboard {self.file.passport.name}: {self.check.why}")
-                self._try_talk()
-            elif not self.check.ok and self.talker is not None:
-                self._stop_talk(self.check.why)
+            start = self.check.ok and self.talker is None
+            stop = not self.check.ok and self.talker is not None
+            if start and not was:
+                self.log(f"onboard {self.file.passport.name}: {self.check.why}")
+        if start:
+            self._try_talk()
+        elif stop:
+            self._stop_talk(self.check.why)
 
     def tick(self) -> None:
         if self.radio_side is not None and self.talker is not None:
@@ -412,6 +503,8 @@ class Service:
         return stamp(self.home.robot_yaml), stamp(self.home.passport_jws)
 
     def stop(self) -> None:
+        if self._stop_asked is None:
+            self._stop_asked = time.monotonic()
         self._stop.set()
 
     def close(self) -> None:
@@ -419,11 +512,22 @@ class Service:
         run first, its stop, the body's close and the end of its record; then a bye to every
         robot met and the radio, beside the passport server and the listener. What has not
         finished in that time is said in the journal, and the process goes without it."""
-        deadline = time.monotonic() + CLOSE_S
+        # from the stop, as systemd's timeout runs: the look in hand when it came is over first
+        asked = self._stop_asked
+        deadline = (asked if asked is not None else time.monotonic()) + CLOSE_S
+        with self._talk:
+            # talk is not turned on again: a start under way notes what it made, sees this and
+            # closes it, and a radio still starting is cut short when the radio closes below
+            self._shutting = True
         if self.slot is not None:
             # closed first: a goal or a meeting asked for from here on, over the control port,
             # by a robot coming near or by an op a control thread read already, is refused
             self.slot.close("the service is stopping")
+        # then, beside the run's stop, the LAN record other robots find this one by: a robot
+        # that meets nobody more is not to be found, and the record needs nothing of the radio
+        side = self.radio_side
+        record = self._closing("the LAN record", side.withdraw) if side is not None else None
+        if self.slot is not None:
             running = self.slot.running
             if running is not None and running.thread is not None:
                 running.thread.join(timeout=max(0.0, deadline - AFTER_RUN_S - time.monotonic()))
@@ -447,6 +551,10 @@ class Service:
             if part is not None
         ]
         unfinished: list[str] = []
+        if record is not None:
+            record.join(left_s())
+            if record.is_alive():
+                unfinished.append("withdrawing the LAN record")
         for bye in byes:
             bye.join(left_s())
         still = sum(bye.is_alive() for bye in byes)
@@ -733,6 +841,7 @@ class Service:
     def _reload(self) -> dict[str, Any]:
         """robot.yaml again, for the settings that change without a signature: the pins above
         all, which a session judged before keeps until it ends."""
+        start = False
         with self._talk:
             try:
                 self.file = config.load(self.home.robot_yaml)
@@ -755,7 +864,7 @@ class Service:
                     if self.talker is not None:
                         self.talker.endpoint.passport = token
                     else:
-                        self._try_talk()  # signed while talk was off: on, at once
+                        start = True  # signed while talk was off: on, at once, below
             if self.slot is not None:
                 self.slot.file = self.file
             if self.talker is not None and self.check.reading is not None:
@@ -764,7 +873,19 @@ class Service:
             reply: dict[str, Any] = {"ok": True, "pins": len(self.file.trust.pins)}
             if refused is not None:
                 reply["passport_refused"] = refused
-            return reply
+        if start:
+            self._try_talk()
+        with self._talk:
+            # a passport that checks out and is not served says why, so `roboglot onboard sign`
+            # never tells a person it is served with no passport server running; a talk start
+            # under way on another thread serves it in a moment
+            if self.check.ok and self.server is None and not self._turning:
+                reply["unserved"] = (
+                    "the service is stopping"
+                    if self._shutting
+                    else self._talk_problem or "talk is off"
+                )
+        return reply
 
     def _met_rows(self, limit: int) -> list[dict[str, Any]]:
         try:

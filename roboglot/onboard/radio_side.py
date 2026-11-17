@@ -18,8 +18,10 @@ passport server's threads and the meeter's workers reach it through `call`.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import dataclasses
+import threading
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -50,6 +52,9 @@ HEARD_WITHIN_S = 8.0
 #: How long the radio may take to start, and any one call onto its loop.
 START_S = 20.0
 CALL_S = 5.0
+#: What the journal says of a radio whose start the service's close cut short: the start is
+#: cancelled where it waits, and the radio's stop then takes down what it had brought up.
+CUT_SHORT = "radio {kind}: its start was cut short, as the service stops"
 
 
 class Lan(Protocol):
@@ -92,10 +97,11 @@ class DnsSdLan:
         return True
 
     def withdraw(self) -> None:
-        if self._announced is not None:
+        # taken in one step: the service's close and the radio's may both withdraw it at once
+        announced, self._announced = self._announced, None
+        if announced is not None:
             with contextlib.suppress(Exception):
-                self._announced.close()
-            self._announced = None
+                announced.close()
 
     def lookup(self, beacon_id: str) -> LanRecord | None:
         return self.browser.lookup(beacon_id) if self.browser is not None else None
@@ -168,6 +174,11 @@ class RadioSide:
         #: the radio's status as a start that did not answer in time left it, and the words
         #: that say so, which status shows until the radio's own status moves
         self._unanswered: tuple[RadioStatus, str] | None = None
+        #: the radio's start while it runs, and whether `close` came: a close cuts a start under
+        #: way short, and a start after a close never begins
+        self._state = threading.Lock()
+        self._starting: concurrent.futures.Future[RadioStatus] | None = None
+        self._closed = False
 
     # ── what the Talker takes ───────────────────────────────────────────────────────────
 
@@ -236,14 +247,18 @@ class RadioSide:
         self._port = http_port
         if self.lan is not None:
             self._on_lan = self.lan.publish(self._txt, host=self.record_host, port=http_port)
-        self.loop.start()
-        try:
-            status = self.loop.call(
+        with self._state:
+            if self._closed:  # closed before its start began: it never starts
+                self.log(CUT_SHORT.format(kind=self.radio.kind))
+                return self.radio.status()
+            self.loop.start()
+            starting = self._starting = self.loop.submit(
                 self.radio.start(
                     advert=self._advert(), on_sighting=self._sighting, on_link=self._linked
-                ),
-                START_S,
+                )
             )
+        try:
+            status = starting.result(START_S)
         except RadioUnavailable as e:
             self.radio = NoRadio.instead_of(e, kind=self.radio.kind)
             status = self.radio.status()
@@ -251,8 +266,20 @@ class RadioSide:
             # a radio that does not answer in time is a radio that is down, never the end of
             # the service: it is kept, and its own retries go on from where its start was cut,
             # as for a radio that came up down; until it moves, its status says what happened
-            self._unanswered = (self.radio.status(), str(e))
+            ours = not starting.done()
+            if ours:  # cancelled where it waits, as `LoopThread.call` does past its bound
+                starting.cancel()
+            why = f"the radio did not answer within {START_S:g} s" if ours else str(e) or repr(e)
+            self._unanswered = (self.radio.status(), why)
             status = self._as_said(self.radio.status())
+        except concurrent.futures.CancelledError:
+            # the service closed while the radio started: the start was cut short where it
+            # waited, and the radio's stop follows in `close`
+            self.log(CUT_SHORT.format(kind=self.radio.kind))
+            return self.radio.status()
+        finally:
+            with self._state:
+                self._starting = None
         if not status.ready:
             self.log(f"radio {status.kind}: {status.state}, {status.detail}")
         return status
@@ -278,8 +305,22 @@ class RadioSide:
             self.tracker.suspend(now)
         return self.tracker.tick(now)
 
+    def withdraw(self) -> None:
+        """This robot's LAN record withdrawn, alone and at once: it is what other robots find
+        this one by, and needs nothing of the radio, so the service's close does it first."""
+        if self.lan is not None:
+            self.lan.withdraw()
+
     def close(self) -> None:
-        """The meeter's workers, every link, the radio, the LAN record, the loop."""
+        """A start still under way cut short, then the meeter's workers, every link, the radio,
+        the LAN record if it is still there, the loop."""
+        with self._state:
+            self._closed = True
+            starting = self._starting
+        if starting is not None:
+            # first, so the radio's stop below never runs beside its own start: BlueZ's would
+            # wait for the bring-up to let go, and be cut at its bound
+            starting.cancel()
         if self.meeter is not None:
             self.meeter.shutdown()
         if self.loop.running:
