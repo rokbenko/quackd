@@ -415,6 +415,46 @@ async def test_a_call_that_ends_on_a_failed_read_after_its_yes_says_it_was_agree
     assert ran.ok and "after_confirm" not in ends(seen)[-1], ends(seen)[-1]
 
 
+class _DeadLink(MockTransport):
+    """A link that has gone: every read raises, and a stop is sent and never answered."""
+
+    async def get_state(self) -> RobotState:
+        raise TransportError("no answer from the robot")
+
+    async def stop(self) -> None:
+        await asyncio.Event().wait()
+
+
+async def test_what_a_probe_sets_off_for_the_body_is_on_the_record_as_a_calls_is(
+    registry: VerbRegistry,
+) -> None:
+    """A probe (`refusal_before_the_question`) writes none of a call's rows, which a context
+    variable marks, and a task started under it kept the mark: the stop a probe's failed read
+    owes, and the keeper that sees it out once its allowance is spent, ran marked, so the
+    keeper's line as the run ends, that the stop was never answered and was cancelled, never
+    reached the record, where the same stop owed by a real call is recorded. The mark covers the
+    probe's own checks and nothing it starts."""
+    registry.register(dataclasses.replace(CORE["stop"], timeout_s=ENDING_S), replace=True)
+    seen: list[Any] = []
+    ex = Executor(
+        registry,
+        _DeadLink(),
+        contract=glot("kick", confirm="kick").frontmatter,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    refusal = await ex.refusal_before_the_question("kick", {"leg": "right"}, source="person")
+    assert refusal is not None and "no answer from the robot" in refusal, refusal
+    await asyncio.sleep(0)  # the keeper takes its first step, as it has long before a close
+    keepers = [t for t in asyncio.all_tasks() if t.get_coro().__name__ == "_see_out"]  # type: ignore[union-attr]
+    assert keepers, "precondition: no stop was left to go on by itself"
+    for keeper in keepers:
+        keeper.cancel()  # as the loop's close cancels it
+    await asyncio.wait(set(keepers), timeout=4 * ENDING_S)
+    notes = [str(e.data.get("text")) for e in seen if e.kind == "note"]
+    assert any("still on its way as the run ended" in note for note in notes), notes
+    assert not [e for e in seen if e.kind in ("gate", "verb_start", "verb_end")], "a call's rows"
+
+
 async def test_budget_hard_stop(registry: VerbRegistry, mock_transport: MockTransport) -> None:
     budget = Budget(Budgets(max_steps=2), now=mock_transport.now)
     budget.start()
@@ -616,6 +656,146 @@ async def test_every_shipped_read_only_verb_does_on_a_dry_run_what_it_does_on_a_
     for verb, (live, dry_run) in answers.items():
         assert dry_run == live, f"{adapter}'s {verb} on a dry run: {dry_run[:2]} against {live[:2]}"
     assert refused == [], refused
+
+
+@dataclasses.dataclass(frozen=True)
+class _Limits:
+    max_vx: float = 0.3
+    max_wz: float = 1.0
+
+
+ROADS: dict[str, Any] = {
+    "a public backend": lambda t: t.transport,
+    "a dict holding it": lambda t: t.parts["arm"],
+    "a tuple holding it": lambda t: t.pair[1],
+    "a dataclass holding it": lambda t: t.holder.backend,
+}
+
+
+class _AdapterWithItsBackend(MockTransport):
+    """An adapter that keeps its backend public, as the shipped ones keep `.transport`, and some
+    plain data beside it."""
+
+    @dataclasses.dataclass
+    class _Holder:
+        backend: Any
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.transport = _ArmWithMotions()
+        self.parts = {"arm": self.transport, "name": "arm"}
+        self.pair = ("arm", self.transport)
+        self.holder = self._Holder(self.transport)
+        self.camera_keys = ("front",)
+        self.camera_error = None
+        self.limits = _Limits()
+        self.joint_names = ["shoulder_pan", "gripper"]
+        self.offsets = {"shoulder_pan": 0.5}
+
+
+@pytest.mark.parametrize("road", list(ROADS))
+async def test_a_dry_run_hands_a_verb_nothing_from_its_transport_that_can_act(road: str) -> None:
+    """The dry run held back the transport's own methods and handed every other value on as it
+    was, so a verb flagged `read_only` went one attribute further: `ctx.transport.transport`, the
+    backend every shipped adapter keeps public, is the real thing, and the arm's `go_to_rest` on
+    it moved the shipped LeRobot mock on a dry run while the verb answered success. On a dry run
+    the transport hands out the named reads and plain data, and refuses anything else, here the
+    backend itself and any container or dataclass that holds it, in the words its other
+    refusals use, and the verb fails."""
+
+    async def tidy(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ROADS[road](ctx.transport).go_to_rest()
+        return VerbResult.success("tidied")
+
+    reg = VerbRegistry()
+    reg.register(CORE["stop"])
+    reg.register(Verb("tidy", "reads, it says", tidy, read_only=True))
+    seen: list[Any] = []
+    transport = _AdapterWithItsBackend()
+    ex = Executor(
+        reg,
+        transport,
+        contract=glot("tidy").frontmatter,
+        dry_run=True,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    result = await ex.run_verb("tidy")
+    assert transport.transport.reached == [], f"{road} reached the body on a dry run"
+    attribute = {"a public backend": "transport", "a dict holding it": "parts"}.get(
+        road, {"a tuple holding it": "pair", "a dataclass holding it": "holder"}.get(road)
+    )
+    assert not result.ok and result.summary == (
+        f"[dry-run] tidy tried to send {attribute}, and a dry run sends nothing to the body"
+    ), result.summary
+    assert gates(seen) == [("dry_run", "refused")]
+
+
+async def test_the_shipped_lerobot_backend_is_not_reached_through_its_adapter_on_a_dry_run() -> (
+    None
+):
+    """The refuter's own case, on the shipped arm's mock: its adapter's public `.transport` is
+    the mock arm, and `go_to_rest` on it moved the arm on a dry run."""
+
+    async def tidy(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.transport.go_to_rest()
+        return VerbResult.success("tidied")
+
+    adapter = make_adapter("lerobot:mock")
+    await adapter.connect()
+    try:
+        reg = VerbRegistry()
+        reg.register(CORE["stop"])
+        reg.register(Verb("tidy", "reads, it says", tidy, read_only=True))
+        ex = Executor(reg, adapter, contract=glot("tidy").frontmatter, dry_run=True)
+        arm = adapter.transport  # type: ignore[attr-defined]
+        before = list(arm.sequence)
+        result = await ex.run_verb("tidy")
+        assert arm.sequence[len(before) :] == [], arm.sequence[len(before) :]
+        assert not result.ok and "a dry run sends nothing" in result.summary
+    finally:
+        await adapter.close()
+
+
+async def test_a_dry_run_hands_plain_data_on_as_it_is_or_as_a_copy() -> None:
+    """Plain data passes on a dry run: numbers, strings, booleans, None, enums, and tuples, frozen
+    sets and frozen dataclasses of those, as they are; a list, a set, a dict or a dataclass that
+    is not frozen, of the same, as a copy, so a verb reads it and cannot change the transport's
+    own. Nothing in any of them can act on the body."""
+    from enum import Enum
+
+    class Mode(Enum):
+        IDLE = "idle"
+
+    got: dict[str, Any] = {}
+
+    async def look(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        t = ctx.transport
+        got.update(
+            keys=t.camera_keys,
+            error=t.camera_error,
+            limits=t.limits,
+            joints=t.joint_names,
+            offsets=t.offsets,
+            mode=t.mode,
+        )
+        got["joints"].append("elbow")
+        got["offsets"]["gripper"] = 1.0
+        return VerbResult.success("looked")
+
+    reg = VerbRegistry()
+    reg.register(CORE["stop"])
+    reg.register(Verb("look_around", "reads", look, read_only=True))
+    transport = _AdapterWithItsBackend()
+    transport.mode = Mode.IDLE  # type: ignore[attr-defined]
+    ex = Executor(reg, transport, contract=glot("look_around").frontmatter, dry_run=True)
+    result = await ex.run_verb("look_around")
+    assert result.ok, result.summary
+    assert got["keys"] is transport.camera_keys and got["limits"] is transport.limits
+    assert got["mode"] is Mode.IDLE
+    assert got["error"] is None
+    assert got["joints"] == ["shoulder_pan", "gripper", "elbow"]
+    assert transport.joint_names == ["shoulder_pan", "gripper"], "the verb changed the original"
+    assert transport.offsets == {"shoulder_pan": 0.5}, "the verb changed the original"
 
 
 async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(

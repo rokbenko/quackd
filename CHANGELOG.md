@@ -483,12 +483,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   third party's verb that carried it and sent an intent moved the body in a run that promised to
   send nothing, and the close then took the run for one that had moved nothing. On a dry run the
   transport a verb is handed lets through its reads, `get_state`, `get_frame`, `get_frames`,
-  `introspect`, `now` and `sleep`, and nothing else: an intent, a stop intent, a stop, or any
-  other method of the transport, the arm's own `go_to_rest`, `let_go` and `take_hold` among
-  them, is refused before it reaches the body, recorded as a `dry_run` gate `refused`, and fails
-  the verb with `[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`.
-  The verbs Roboglot ships with the flag, `observe`, `report_state`, `map` and `introspect`, read
-  only those and run on a dry run exactly as before, on every body. The stops Roboglot sends of
+  `introspect`, `now` and `sleep`, and plain data, numbers, strings, booleans, None, enums and
+  containers and dataclasses of nothing else, a mutable one as a copy, and nothing else: an
+  intent, a stop intent, a stop, any other method of the transport, the arm's own `go_to_rest`,
+  `let_go` and `take_hold` among them, or any other value, the adapter's own backend behind its
+  public `transport` among them, is refused before it reaches the body, recorded as a `dry_run`
+  gate `refused`, and fails the verb with `[dry-run] <verb> tried to send <what>, and a dry run
+  sends nothing to the body`. The verbs Roboglot ships with the flag, `observe`, `report_state`,
+  `map` and `introspect`, read only those and run on a dry run exactly as before, on every body. The stops Roboglot sends of
   its own accord, after a verb it ended and as the run ends, go out as they did, and
   `docs/concepts/safety.md` says why. An adapter's verb that needs another read on a dry run has
   to say so, as `docs/adapters/writing-an-adapter.md` describes.

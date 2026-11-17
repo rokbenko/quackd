@@ -14,6 +14,9 @@ import asyncio
 import atexit
 import contextlib
 import contextvars
+import copy
+import dataclasses
+import enum
 import functools
 import math
 import os
@@ -354,8 +357,64 @@ The list is what the read-only verbs Roboglot ships call on their transports, on
 (`observe`, `report_state`, `map`, the rosbridge base's `introspect`, and each adapter's own;
 `tests/test_executor.py` runs each on every adapter's mock), and the clock: `get_state` reads
 the body's state, `get_frame` and `get_frames` its cameras, `introspect` the bridge's topic list
-and the robot's own description, `now` the transport's clock, and `sleep` lets its time pass. A
-transport's plain values, a camera's error and the like, are read as they always were."""
+and the robot's own description, `now` the transport's clock, and `sleep` lets its time pass.
+Beside these a verb gets plain data off its transport (`_plain`), and nothing else."""
+
+_PLAIN_SCALARS = (bool, int, float, complex, str, bytes, type(None))
+"""What plain data is made of on a dry run: these types exactly, never a subclass, which could
+carry methods of its own (`_plain`)."""
+
+_NOT_PLAIN = object()
+"""`_plain`'s answer for a value that is not plain data."""
+
+
+def _plain(value: Any, seen: frozenset[int] = frozenset()) -> Any:
+    """`value` as a verb may have it off its transport on a dry run, or `_NOT_PLAIN`.
+
+    Plain data acts on nothing: a number, a string, a boolean, bytes or None (`_PLAIN_SCALARS`),
+    an enum member whose value is plain, and a tuple, a frozen set, a list, a set, a dict or a
+    dataclass whose contents are plain, all checked to the bottom. One that cannot change is
+    handed on as it is, a tuple or a frozen dataclass of numbers such as a body's limits; one that
+    can, a list, a set, a dict or a dataclass that is not frozen, as a copy, so a verb that reads
+    it changes nothing of the transport's. Anything else is not plain, the adapter's backend above
+    all, which every shipped adapter keeps public as `transport` and which a verb on a dry run used
+    to reach and move the body through, and a container that holds itself (`seen`)."""
+    if type(value) in _PLAIN_SCALARS:
+        return value
+    if isinstance(value, enum.Enum):
+        return value if _plain(value.value, seen) is not _NOT_PLAIN else _NOT_PLAIN
+    if id(value) in seen:
+        return _NOT_PLAIN
+    seen = seen | {id(value)}
+    if type(value) in (tuple, frozenset, list, set):
+        items = [_plain(item, seen) for item in value]
+        if any(item is _NOT_PLAIN for item in items):
+            return _NOT_PLAIN
+        same = all(a is b for a, b in zip(items, value, strict=True))
+        if type(value) in (tuple, frozenset) and same:
+            return value
+        return type(value)(items)
+    if type(value) is dict:
+        pairs = [(_plain(k, seen), _plain(v, seen)) for k, v in value.items()]
+        if any(k is _NOT_PLAIN or v is _NOT_PLAIN for k, v in pairs):
+            return _NOT_PLAIN
+        return dict(pairs)
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        fields = {f.name: _plain(getattr(value, f.name), seen) for f in dataclasses.fields(value)}
+        # and nothing beside its fields, which a copy would carry on unchecked
+        if any(v is _NOT_PLAIN for v in fields.values()) or set(
+            getattr(value, "__dict__", {})
+        ) - set(fields):
+            return _NOT_PLAIN
+        frozen = type(value).__dataclass_params__.frozen  # type: ignore[attr-defined]
+        if frozen and all(fields[n] is getattr(value, n) for n in fields):
+            return value
+        copied = copy.copy(value)
+        for n, v in fields.items():
+            object.__setattr__(copied, n, v)
+        return copied
+    return _NOT_PLAIN
+
 
 _STOPS_UNDER_WAY: set[asyncio.Future[Any]] = set()
 """Stops still going out after the call that owed them stopped waiting (`Executor._answer_of`),
@@ -481,12 +540,21 @@ class _Leash:
         if name.startswith("_"):  # never delegate our own privates (copy, pickle, half-init)
             raise AttributeError(name)
         value = getattr(self._inner, name)
-        if self._dry is not None and callable(value) and name not in DRY_RUN_READS:
+        if self._dry is None or name in DRY_RUN_READS:
+            return value
+        if callable(value):
             # On a dry run a method that is not a read is refused, as a send is: it passed on to
             # the transport, so a verb flagged `read_only` that called the arm's own `go_to_rest`
             # or `let_go` moved the body on a run that promised to send nothing
             return self._dry_call(name)
-        return value
+        # and anything else but plain data, at once: a value went on as it was, and the
+        # adapter's own backend, public as `transport`, moved the arm on a dry run through its
+        # `go_to_rest`, one attribute further than the method above looked
+        plain = _plain(value)
+        if plain is _NOT_PLAIN:
+            self._dry_refusal(name)
+            raise _HeldOnADryRun(f"{name}: {DRY_RUN_SENDS_NOTHING}")
+        return plain
 
     def _dry_call(self, name: str) -> Callable[..., Any]:
         """What a verb gets on a dry run for a method of the transport that is not a read: a call
@@ -1769,7 +1837,14 @@ class Executor:
         try:
             return await self.transport.get_state()
         except Exception as e:
-            await self._stop_after_a_failed_read(e)
+            # The stop is the body's whoever read, and runs, with every task it starts, outside a
+            # probe's mark (`_PROBING`): a keeper it left to see the stop out, started marked,
+            # wrote nothing when it cancelled the stop at the run's end, where a call's writes it.
+            token = _PROBING.set(False)
+            try:
+                await self._stop_after_a_failed_read(e)
+            finally:
+                _PROBING.reset(token)
             raise
 
     def _on_the_reading(

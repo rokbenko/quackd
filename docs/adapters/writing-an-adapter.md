@@ -295,11 +295,17 @@ lives. The rules, enforced by the model itself
 
 **Everything a verb does to the body goes through the transport it is handed**, `ctx.transport`.
 That is where a dry run holds a verb back, whatever the verb is called or flagged: on a dry run
-it lets through the transport's reads and its plain values, and refuses `send_intent`, `stop`
-and every other method, the body's own motion methods among them, so the verb fails with
-`[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`. A verb that
-reaches its body any other way, an SDK handle, a socket, or the adapter held from before the
-call, sends on a dry run as well, and nothing in Roboglot can hold it back.
+it lets through the transport's reads and plain data, and refuses `send_intent`, `stop`, every
+other method, the body's own motion methods among them, and every other value, your backend
+behind the public `transport` attribute every shipped adapter has among them, so the verb fails
+with `[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`. Plain data
+is a number, a string, a boolean, bytes, None, an enum member, and a tuple, a list, a set, a
+dict or a dataclass whose contents are all plain, a list, a set, a dict or a dataclass that is
+not frozen handed over as a copy. A verb that reaches its body any other way, an SDK handle, a
+socket, or the adapter held from before the call, sends on a dry run as well, and nothing in
+Roboglot can hold it back. Nor can it hold back a verb that digs into the private fields of the
+transport it is handed, which no wrapper can close: the dry run is a promise about what a verb
+asks its transport for, not a sandbox.
 
 The reads are `DRY_RUN_READS` in `roboglot/safety.py`: `get_state`, `get_frame`, `get_frames`,
 `introspect`, `now` and `sleep`, each of them a read of the body's state, its cameras, a bridge's

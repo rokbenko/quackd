@@ -467,14 +467,18 @@ run the omission is the thing you are checking. The verbs whose adapter declared
 `introspect`, and whatever a body Roboglot never shipped flags for itself. Such a verb reads
 for real, and nothing else it does reaches the body. The transport it is handed lets through
 its reads, `get_state`, `get_frame`, `get_frames`, `introspect`, `now` and `sleep`
-(`DRY_RUN_READS` in `roboglot/safety.py`), and its plain values, a camera's error and the like.
-An intent, a stop intent, a stop, or any other method of the transport, the arm's own
-`go_to_rest`, `let_go` and `take_hold` among them, is refused on its way there, each is recorded
-as a `dry_run` gate `refused` with the reason `<verb> sent <what>, and a dry run sends nothing`,
-and the verb fails with `[dry-run] <verb> tried to send <what>, and a dry run sends nothing to
-the body`, whatever it says of itself. The flag is the verb's own word, and a verb that carried
-it and sent an intent, or called one of those methods, used to move the body in a run that
-promised to send nothing. Use it the first time you point a new `.glot` at hardware.
+(`DRY_RUN_READS` in `roboglot/safety.py`), and plain data, a camera's error or its names: a
+number, a string, a boolean, bytes, None, an enum member, and a tuple, a list, a set, a dict or a
+dataclass of nothing else, one that can change handed over as a copy. An intent, a stop intent,
+a stop, any other method of the transport, the arm's own `go_to_rest`, `let_go` and `take_hold`
+among them, or any other value, the adapter's own backend behind its public `transport` among
+them, is refused on its way there, each is recorded as a `dry_run` gate `refused` with the
+reason `<verb> sent <what>, and a dry run sends nothing`, and the verb fails with
+`[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`, whatever it
+says of itself. The flag is the verb's own word, and a verb that carried it and sent an intent,
+called one of those methods, or went one attribute further, to the backend, used to move the
+body in a run that promised to send nothing. Use it the first time you point a new `.glot` at
+hardware.
 
 A `stop` the pilot calls on a dry run sends nothing either, and is answered `[dry-run] stop not
 sent`, as every verb that is not a read is. A dry run still ends as any run does, on the kill
