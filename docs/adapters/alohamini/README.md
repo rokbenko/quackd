@@ -111,6 +111,10 @@ python roboglot_alohamini_host.py --robot_model alohamini2
 
 Without it, `arm_torque` is false on the wire and `move_joints`, `gripper` and `home_arms`
 refuse with a message naming the fix. The base, the lift and `stop` are unaffected.
+A stock host does not say whether the robot is calibrated either, and Roboglot's state then
+shows `"calibrated": null`, unknown rather than true, and refuses nothing on it. A field that is
+there vouches only as JSON `true`: `false`, `0`, `null` or any string is shown as
+`"calibrated": false` and refused, and the arms' torque is on only for `true`.
 
 ## The stop, which is the whole difficulty
 
@@ -150,6 +154,20 @@ would open on what it holds. From beside a verb it ends `lift`
 before its next send, `home_arms` before the next arm's, and `move_joints` and `gripper` at once,
 and what they answer says which of these it was. `gripper` has to say which way: `open` has no
 default. None of this has met a real arm.
+
+**What a stop and the heartbeat can know.** The command socket takes a send whether anything reads
+it or not, and ZeroMQ says nothing of a peer that has gone, so a stop cannot know it landed. This
+wire answers only what is asked, so what Roboglot can know is how old the newest answer is, the
+heartbeat's or the one a stop waited for to hold an arm. Where that is older than the host's
+1000 ms watchdog window, the stop asks the host once more after it is sent, since a host nothing
+asked for a while, as while a close waits out a pause, is not a silent one; one that does not
+answer that either says `so this stop is not known to have reached it`, which `stop` and every
+verb that ends on a stop answer as such (`stop went out but is not known to have reached the
+body`), and the heartbeat fails at the same window. What the host does then is said only as far as it is known:
+`Its own watchdog stops the base and the lift once it has read no command for 1000 ms, if its loop
+still runs; the arms keep their last goal.` A host stuck in a cycle runs no watchdog. The close
+sends a stop of its own, and one that did not land, or is not known to have, is said by the run
+after the close, beginning `at the close,` (`close_note`).
 
 ## Units
 
@@ -222,7 +240,13 @@ eight verbs rather than eleven: `report_state`, `stop`, `move`, `lift`, `observe
 One more, kept out of the table because a pipe character cannot live in one: the arms have
 no per-step clamp at all unless the owner sets one, because the config declares
 `max_relative_target: int | None = None`. It never applies to the base or the lift either,
-so Roboglot validates every goal against the manifest before it is sent.
+so Roboglot validates every goal against the manifest before it is sent. A joint goal outside
+its normalised range, an infinity or a NaN is refused by `move_joints`, and again by the
+transport and the mock, in the same words: `shoulder_lift=250.0 is outside -100.0..100.0`. The
+transport holds a gripper goal to 0..100 the same way, and takes one only for the gripper of a
+side the intent names: `a gripper intent takes goals for arm_left_gripper only, not for
+arm_left_shoulder_lift`. The transport and the mock hold a lift height to the 5 to 600 mm `lift`
+takes: a NaN height reads to the host's lift law as full speed.
 
 ## UNVERIFIED, and what Roboglot does about it
 

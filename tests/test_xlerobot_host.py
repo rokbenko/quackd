@@ -15,11 +15,14 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import time
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.registry import _torque_phrase
+from roboglot.transport.base import CLOSE_STOP_NOTE, HeartbeatError, Intent, TransportError
 from roboglot.verbs.core import stop as stop_verb
 from roboglot.verbs.registry import NoParams, VerbContext
 from roboglot_xlerobot import XLerobotAdapter, zmq_host
@@ -44,6 +47,11 @@ async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
             return
         await asyncio.sleep(0.01)
     raise AssertionError("the fake host never reached the expected state")
+
+
+A_MINUTE_MS = 60_000.0
+"""A watchdog window no machine is slow enough to outlast, for a test about a host that is
+publishing: only a host gone quiet can make an observation that old."""
 
 
 async def _connected(host: FakeXLerobotHost, **kwargs: object) -> XLerobotZmq:
@@ -479,6 +487,133 @@ async def test_a_stale_reading_is_a_heartbeat_failure_not_a_reading() -> None:
         state = await link.get_state()
         assert state.extras["stale_ms"] > link.stale_limit_ms
         await link.close()
+
+
+async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read() -> None:
+    """A run's last stop that came back unconfirmed or failed reached only the record, since
+    nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
+    as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
+    drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
+    A close to a host still publishing has nothing to say, however long the machine takes:
+    its window is a minute there, so only the host going quiet can make it stale."""
+    with FakeXLerobotHost() as host:
+        adapter = XLerobotAdapter(await _connected(host, stale_limit_ms=A_MINUTE_MS))
+        await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        adapter = XLerobotAdapter(link)
+        try:
+            host.stop()  # stuck in a cycle: nothing read, nothing published
+            await link.get_state()  # take whatever its last cycle left in the socket
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        note = adapter.close_note
+        assert note is not None and note.startswith(CLOSE_STOP_NOTE), note
+        assert "not known to have reached" in note, note
+        assert "torque" not in _torque_phrase(note), _torque_phrase(note)
+
+
+class _Publishing:
+    """The host's socket pair as the transport sees it, publishing only when the test says
+    (`publish`): an observation is waiting exactly when the test has put one there."""
+
+    def __init__(self) -> None:
+        self.waiting: list[str] = []
+        self.sent: list[str] = []
+
+    def open(self, host: str, cmd_port: int, obs_port: int) -> None:
+        return None
+
+    def send(self, text: str) -> None:
+        self.sent.append(text)
+
+    def recv(self, timeout_ms: int) -> str | None:
+        return self.waiting.pop() if self.waiting else None
+
+    def close(self) -> None:
+        return None
+
+    def publish(self) -> None:
+        self.waiting.append(json.dumps({"x.vel": 0.0, "y.vel": 0.0, "theta.vel": 0.0}))
+
+
+class _MovedClock:
+    """`time` as the transport's module reads it, its `monotonic` moved by the test, so how old
+    the newest observation is is the test's to say and not the machine's."""
+
+    def __init__(self) -> None:
+        self.t = time.monotonic()
+
+    def monotonic(self) -> float:
+        return self.t
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
+async def test_a_stop_reads_the_newest_observation_before_it_judges_the_host(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A PUSH socket says nothing of whether the host read a stop, so the stop judges by whether
+    the host still publishes. Judged by the last observation anybody had read, a host
+    publishing all along that nobody had read for longer than its watchdog window was said not
+    to have read the stop. The stop takes the newest observation waiting after its send
+    (`_pump(0)`): one the host published since says it is alive, and with none since the stop
+    is not known to have reached it."""
+    host = _Publishing()
+    host.publish()  # what the connect reads
+    link = XLerobotZmq(client=host)
+    await link.connect()
+    clock = _MovedClock()
+    monkeypatch.setattr(zmq_host, "time", clock)
+    clock.t += link.stale_limit_ms / 1000.0 + 1.0  # nobody has read the host for a while
+    host.publish()  # and it went on publishing
+    await link.stop()
+    assert host.sent, "the stop went out"
+    assert link.stop_error is None and not link.stop_unconfirmed, link.stop_error
+    clock.t += link.stale_limit_ms / 1000.0 + 1.0  # and now it has published nothing more
+    await link.stop()
+    assert link.stop_unconfirmed, "it went out, and only whether the host read it is not known"
+    assert link.stop_error is not None and "not known to have reached" in link.stop_error
+    await link.close()
+
+
+async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it() -> None:
+    """A PUSH socket takes a send whether anything reads it or not, and the transport kept no
+    `stop_error`, so a stop to a host stuck in a cycle said "stopped (velocity zeroed)" while the
+    host's watchdog, which runs in that same loop, never ran and the wheels kept turning; the
+    heartbeat said that watchdog "has already stopped the base". ZMQ says nothing of a dead
+    peer. What the transport can know is that no observation has come within the host's own
+    watchdog window, and that is what it says, and only then: a stop to a host still publishing
+    reads as before. While it publishes its window is a minute, so the machine's speed cannot
+    make it stale; once it is stuck, its own."""
+    with FakeXLerobotHost() as host:
+        link = await _connected(host)
+        adapter = XLerobotAdapter(link)
+        ctx = VerbContext(transport=adapter)
+        window_ms, link.stale_limit_ms = link.stale_limit_ms, A_MINUTE_MS
+        try:
+            assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+            await _until(lambda: host.state["x.vel"] == 0.2)
+            assert (await stop_verb(ctx, NoParams())).summary == "stopped (velocity zeroed)"
+            assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
+            await _until(lambda: host.state["x.vel"] == 0.2)
+            link.stale_limit_ms = window_ms
+            host.stop()  # stuck in a cycle: nothing read, nothing published, no watchdog run
+            await link.get_state()  # take whatever its last cycle left in the socket
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+            with pytest.raises(HeartbeatError, match="if its loop still runs") as beat:
+                await link.heartbeat()
+            assert "already stopped" not in str(beat.value)
+            result = await stop_verb(ctx, NoParams())
+            assert not result.ok and "not known to have reached" in result.summary, result.summary
+            # it went out, and is said to have, not to have been undeliverable
+            assert result.summary.startswith("stop went out but is not known to have reached")
+            assert host.state["x.vel"] == 0.2, "the stuck host read the stop after all"
+        finally:
+            await link.close()  # an open socket keeps its context, and the run, alive
 
 
 async def test_the_state_never_claims_a_pose_or_a_battery() -> None:

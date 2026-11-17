@@ -13,11 +13,14 @@ import json
 import math
 import time
 from collections.abc import Callable
+from typing import Any
 
 import pytest
 
-from roboglot.transport.base import HeartbeatError, Intent, TransportError
+from roboglot.registry import _torque_phrase
+from roboglot.transport.base import CLOSE_STOP_NOTE, HeartbeatError, Intent, TransportError
 from roboglot_alohamini import AlohaMiniAdapter, zmq_host
+from roboglot_alohamini.verbs import LIFT_MAX_MM, LIFT_MIN_MM, alohamini_conditions
 from roboglot_alohamini.zmq_host import (
     LIFT_HEIGHT_KEY,
     LIFT_VEL_KEY,
@@ -49,6 +52,12 @@ async def _lands(link: AlohaMiniZmq, host: FakeAlohaMiniHost, intent: Intent) ->
     ack = await link.send_intent(intent)
     assert ack.accepted, ack.reason
     await _until(lambda: len(host.actions) > seen)
+
+
+ANSWERED_WITHIN_S = 30.0
+"""How long a test gives a host that is answering to answer a stop's own request
+(`zmq_host.HOLD_READ_S`): long enough for any machine, so it is the host and not the
+machine's speed that says whether an answer came."""
 
 
 async def _connected(host: FakeAlohaMiniHost, **kwargs: object) -> AlohaMiniZmq:
@@ -359,6 +368,92 @@ async def test_a_stale_reading_is_a_heartbeat_failure() -> None:
         await link.close()
 
 
+async def test_a_host_that_was_only_not_asked_is_not_taken_for_a_silent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """This wire answers only what is asked, and a stop asked nothing unless an arm was unheld,
+    so it judged the host by the newest answer anybody else had got: a stop, or a close, after a
+    second in which nothing asked, as one after a pause granted to a robot met (MCP's and
+    drive's close), said a host answering every request was not known to have read it. A stop
+    whose newest answer is past the window asks the host once, and is judged by what it asked
+    and what came back. The quiet is waited out on the real clock, which can only make it
+    longer; the host's answer is waited for however long the machine takes to give it."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        adapter = AlohaMiniAdapter(link)
+        try:
+            await link.heartbeat()
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)  # nobody asks for a while
+            await adapter.stop()
+            assert adapter.stop_error is None, adapter.stop_error
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+
+
+async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run's last stop that came back unconfirmed or failed reached only the record, since
+    nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
+    as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
+    drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
+    A close to a host still publishing has nothing to say, however long the machine takes."""
+    with FakeAlohaMiniHost() as host, monkeypatch.context() as patched:
+        patched.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
+        adapter = AlohaMiniAdapter(await _connected(host))
+        await adapter.heartbeat()
+        await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        adapter = AlohaMiniAdapter(link)
+        try:
+            await link.heartbeat()
+            host.stop()  # stuck in a cycle: nothing read, nothing answered
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        note = adapter.close_note
+        assert note is not None and note.startswith(CLOSE_STOP_NOTE), note
+        assert "not known to have reached" in note, note
+        assert "torque" not in _torque_phrase(note), _torque_phrase(note)
+
+
+async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A PUSH socket takes a send whether anything reads it or not, and the transport kept no
+    `stop_error`, so a stop to a host stuck in a cycle said "stopped (velocity zeroed)" while its
+    watchdog, which runs in that same loop, never ran. ZMQ says nothing of a dead peer, and a
+    stop asks for no reading here, since this wire answers only what is asked. What the
+    transport can know is how old its newest answer is, and a stop past the host's watchdog
+    window says it is not known to have reached the host; one within it reads as before. The
+    host still answering is waited for however long the machine takes."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        adapter = AlohaMiniAdapter(link)
+        try:
+            with monkeypatch.context() as patched:
+                patched.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
+                await link.heartbeat()
+                await adapter.stop()
+            assert adapter.stop_error is None, "a host that answered within its window"
+            host.stop()  # stuck in a cycle: nothing read, nothing answered, no watchdog run
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+            with pytest.raises(HeartbeatError, match="no fresh observation"):
+                await link.heartbeat()
+            await adapter.stop()
+            assert adapter.stop_error is not None, "a stop to a silent host read as delivered"
+            assert "not known to have reached" in adapter.stop_error
+            assert "if its loop still runs" in adapter.stop_error
+            assert adapter.stop_unconfirmed, "it went out, and only its arrival is not known"
+        finally:
+            await link.close()  # an open socket keeps its context, and the run, alive
+
+
 # ── what the wire tells Roboglot about the robot ─────────────────────────────────────────
 
 
@@ -413,6 +508,146 @@ async def test_a_stock_host_refuses_the_arm_verbs_instead_of_pretending() -> Non
         state = await link.get_state()
         assert state.extras["arm_torque"] is False
         await link.close()
+
+
+class _StockHost(FakeAlohaMiniHost):
+    """Upstream's own host, which sends neither of the fields Roboglot's wrapper adds."""
+
+    def observation(self) -> dict[str, Any]:
+        obs = super().observation()
+        obs.pop("roboglot_calibrated", None)
+        obs.pop("roboglot_arm_torque", None)
+        return obs
+
+
+def _saying(**fields: Any) -> type[FakeAlohaMiniHost]:
+    """A host other than Roboglot's wrapper, which writes these `roboglot_*` fields as given."""
+
+    class _Saying(FakeAlohaMiniHost):
+        def observation(self) -> dict[str, Any]:
+            return {**super().observation(), **fields}
+
+    return _Saying
+
+
+@pytest.mark.parametrize(
+    ("host_type", "calibrated"),
+    [
+        (_StockHost, None),
+        (_saying(roboglot_calibrated="false", roboglot_arm_torque="false"), False),
+        (_saying(roboglot_calibrated="true", roboglot_arm_torque="true"), False),
+        (_saying(roboglot_calibrated=0, roboglot_arm_torque=0), False),
+        (_saying(roboglot_calibrated=None, roboglot_arm_torque=None), False),
+    ],
+    ids=["stock", "false-strings", "true-strings", "zero", "null"],
+)
+async def test_a_host_that_says_no_true_of_calibration_is_not_taken_to_vouch_for_it(
+    host_type: type[FakeAlohaMiniHost], calibrated: bool | None
+) -> None:
+    """A stock host never sends `roboglot_calibrated`, and its absence read as calibrated, so the
+    pilot was told `calibrated: true` of a robot nothing had vouched for; `bool()` read the
+    string "false" as true, for the arms' torque as well. A field that is missing is unknown, and
+    the gate stays as open as it always was there, the pages' bring-up on the stock host among
+    it. A field that is present and not JSON `true`, `false`, `0`, `null` or any string, vouches
+    for nothing: not calibrated, refused, as `0` and `null` were before. Torque is on only for
+    `true`."""
+    with host_type() as host:
+        link = await _connected(host)
+        try:
+            state = await link.get_state()
+        finally:
+            await link.close()
+    assert state.extras["calibrated"] is calibrated and state.extras["arm_torque"] is False
+    gates = alohamini_conditions()
+    shut = gates["calibrated"](state)
+    assert (shut is None) is (calibrated is None), shut
+    assert gates["arm_torque"](state) is not None
+
+
+def _grip(goal: float) -> dict[str, Any]:
+    """A `gripper` intent's params with a goal of its own for the left hand."""
+    return {"side": "left", "open": False, "positions": {"arm_left_gripper": goal}}
+
+
+@pytest.mark.parametrize(
+    ("kind", "params", "named"),
+    [
+        ("pose", {"lift_height_mm": math.nan}, "nan"),
+        ("pose", {"lift_height_mm": math.inf}, "inf"),
+        ("pose", {"lift_height_mm": 10 * LIFT_MAX_MM}, "6000"),
+        ("pose", {"lift_height_mm": LIFT_MIN_MM / 2}, "2.5"),
+        ("gripper", _grip(-50.0), "-50"),
+        ("gripper", _grip(math.nan), "nan"),
+    ],
+    ids=["height-nan", "height-inf", "height-past-the-top", "height-below", "grip-50", "grip-nan"],
+)
+async def test_a_lift_height_or_gripper_goal_past_its_range_is_refused_by_the_transport(
+    kind: str, params: dict[str, Any], named: str
+) -> None:
+    """Only the joint branch held a goal to its range. A `pose` went out with any height, a NaN
+    among them, which the host's lift law reads as full speed, and a `gripper` with any goal:
+    only the verbs bounded them, and the transport is handed goals by whatever calls it."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        try:
+            sent = len(host.actions)
+            ack = await link.send_intent(Intent(kind=kind, params=params))
+            assert not ack.accepted and named in str(ack.reason) and "outside" in str(ack.reason)
+            await asyncio.sleep(0.1)
+            assert len(host.actions) == sent, "a goal out of range went out"
+        finally:
+            await link.close()
+
+
+@pytest.mark.parametrize(
+    ("positions", "named"),
+    [
+        ({"arm_left_shoulder_lift": 90.0}, "arm_left_shoulder_lift"),
+        ({"arm_left_gripper": 10.0, "arm_left_elbow_flex": 0.0}, "arm_left_elbow_flex"),
+        ({"arm_right_gripper": 10.0}, "arm_right_gripper"),
+        ({"left_gripper_typo": 10.0}, "left_gripper_typo"),
+    ],
+    ids=["a-shoulder", "an-elbow-beside-the-gripper", "the-other-hand", "no-such-joint"],
+)
+async def test_a_gripper_intent_takes_goals_for_the_grippers_it_names_and_no_other_joint(
+    positions: dict[str, float], named: str
+) -> None:
+    """The gripper branch held each goal to its range and took any joint it named, so a shoulder
+    goal of 90 went out through a gripper intent, and was not marked for the next stop to hold,
+    as the joint branch marks a body joint's. It takes a goal only for the gripper of a side it
+    names now, and refuses the intent, sending nothing, for any other."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        try:
+            sent = len(host.actions)
+            params = {"side": "left", "open": False, "positions": positions}
+            ack = await link.send_intent(Intent(kind="gripper", params=params))
+            assert not ack.accepted and named in str(ack.reason), ack.reason
+            await asyncio.sleep(0.1)
+            assert len(host.actions) == sent, "a goal for another joint went out"
+            ack = await link.send_intent(Intent(kind="gripper", params=_grip(10.0)))
+            assert ack.accepted, ack.reason  # the hand it names, as the `gripper` verb sends it
+        finally:
+            await link.close()
+
+
+async def test_a_joint_goal_outside_its_range_is_refused_by_the_transport_as_well() -> None:
+    """The joint branch checked names only, so a goal past the normalised range, an infinity or a
+    NaN went out on the wire as the arm's goal to whatever called the transport. It refuses
+    those itself now, as `move_joints` does before it, and sends nothing."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        try:
+            sent = len(host.actions)
+            goals = {"arm_left_gripper": -50.0, "arm_left_elbow_flex": math.nan}
+            ack = await link.send_intent(Intent.joint(goals, 0.2))
+            assert not ack.accepted
+            assert "arm_left_gripper=-50.0 is outside 0.0..100.0" in str(ack.reason)
+            assert "arm_left_elbow_flex=nan" in str(ack.reason)
+            await asyncio.sleep(0.1)
+            assert len(host.actions) == sent, "a goal out of range went out"
+        finally:
+            await link.close()
 
 
 async def test_turn_rate_goes_out_in_degrees_per_second() -> None:

@@ -34,7 +34,7 @@ from roboglot.log import (
     render_lines,
     thinking_limit_default,
 )
-from roboglot.transport.base import Ack, Intent
+from roboglot.transport.base import WENT_OUT, Ack, Intent
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.watch import CAMERA_SAID
 
@@ -174,6 +174,35 @@ async def test_a_stop_that_did_not_land_is_not_logged_as_accepted() -> None:
     await LoggedTransport(Unanswered(), event_log).stop()
     assert seen[0].data["accepted"] is False
     assert seen[0].data["reason"] == "no answer to the cancel within 8 s"
+    assert "stop_unconfirmed" not in seen[0].data
+
+
+async def test_a_stop_that_went_out_unconfirmed_is_neither_refused_nor_a_plain_stop() -> None:
+    """A stop that went out over a link gone quiet, and is not known to have arrived, was written
+    `accepted: false`, so its row read as one refused or never sent, and `roboglot log` drew it
+    `stop REFUSED`. It was sent: the row says so, `stop_unconfirmed` beside the reason, and the
+    log draws it as a warning in the core's words, on a line of its own, never in a burst."""
+
+    class WentOut(MockTransport):
+        stop_error: str | None = None
+        stop_unconfirmed = False
+
+        async def stop(self) -> None:
+            await super().stop()
+            self.stop_error = "nothing has come over the link since"
+            self.stop_unconfirmed = True
+
+    event_log = EventLog()
+    seen = events(event_log)
+    logged = LoggedTransport(WentOut(), event_log)
+    await logged.stop()
+    row = seen[-1].data
+    assert row["accepted"] is True and row["stop_unconfirmed"] is True, row
+    assert row["reason"] == "nothing has come over the link since"
+    await logged.stop()
+    shown = [" ".join(line.split()) for line in lines(seen)]  # the label column is padded
+    assert shown == [f"-> stop {WENT_OUT}: nothing has come over the link since"] * 2, shown
+    assert not any("REFUSED" in line for line in render_lines(seen[0]))
 
 
 def test_everything_else_is_delegated() -> None:

@@ -44,6 +44,8 @@ script that ignores it.
 
    With no torque on the arms, Roboglot refuses `move_joints`, `gripper` and `home_arms` and
    says why. The base, the lift and `stop` work. This is the state to learn the robot in.
+   This host does not say whether the robot is calibrated, so Roboglot's state shows
+   `"calibrated": null`, unknown rather than true.
 5. `alohamini-lookout`. It moves no wheel, no arm and no lift.
 6. **`lift` to a height you can watch**, then `stop` mid-travel. Confirm it actually stops:
    every payload Roboglot sends carries a lift key, because an action carrying neither leaves

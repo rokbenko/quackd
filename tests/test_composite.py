@@ -40,7 +40,14 @@ from roboglot.verbs.core import (
     scan_steps,
     views_round,
 )
-from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbContext, VerbRegistry, VerbResult
+from roboglot.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
+    NoParams,
+    VerbContext,
+    VerbRegistry,
+    VerbResult,
+)
 from roboglot_open_duck.mock import OpenDuckMock
 
 GLOT = parse_glot_text(
@@ -631,6 +638,155 @@ async def test_a_stop_after_the_walk_of_approach_and_ends_it_before_its_then_ver
     assert "reached the ball" in result.summary
     assert result.data["ended_by"] == STOP_ENDED
     assert "kick" not in [name for name, _params, _result in ex.history], "it kicked anyway"
+
+
+#: What `_StopLost` says of a stop that did not reach the body, as a transport that knows its link
+#: is gone says it in words of its own.
+LOST = "the link to the body is gone"
+
+#: A task that lets each core verb that moves the body run.
+MOVES = parse_glot_text(
+    """---
+glot: 0
+name: t
+description: d
+verbs:
+  allow: [walk, walk_to, search_scan]
+success: [x]
+---
+# Task
+x
+"""
+)
+
+
+class _StopLost(MockTransport):
+    """A body whose stops stop reaching it once `lost` says so: each says why in `stop_error` and
+    raises nothing, as a transport that knows its stop did not land does, and the one before it
+    is forgotten, as each transport's own stop forgets it."""
+
+    def __init__(self, lost: Callable[[_StopLost], bool]) -> None:
+        super().__init__()
+        self.lost = lost
+        self.stop_error: str | None = None
+
+    async def stop(self) -> None:
+        await super().stop()
+        self.stop_error = LOST if self.lost(self) else None
+
+
+@pytest.mark.parametrize(
+    ("verb", "params", "detector", "canonical", "said"),
+    [
+        ("walk", {"vx": 0.2, "duration_s": 0.3}, None, "move", "walked vx=0.20"),
+        ("walk_to", {"target": "ball"}, _BallHere(), "go_to", "reached the ball"),
+        ("walk_to", {"target": "ball", "timeout_s": 1}, _BallAway(), "go_to", "timed out"),
+        (
+            "search_scan",
+            {"target": "ball", "step_deg": 90, "max_steps": 4},
+            _Empty(),
+            "search_scan",
+            "the scan stopped after 1 of 4 turns (90°)",
+        ),
+    ],
+    ids=["move-ends", "go_to-arrives", "go_to-times-out", "search_scan-turn-ends"],
+)
+async def test_a_verb_whose_stop_did_not_reach_the_body_fails_saying_it_may_still_move(
+    registry: VerbRegistry,
+    verb: str,
+    params: dict[str, Any],
+    detector: Any,
+    canonical: str,
+    said: str,
+) -> None:
+    """Of the stops the core verbs end on, only the `stop` verb's read `stop_error`. So a body
+    whose link went in the last slice of a walk had every twist of it and not the stop, and
+    `move` said it walked, `go_to` that it arrived, and `search_scan` turned on to its next
+    view as if the last turn had ended. Each fails now at the stop that did not land, naming
+    itself, the reason and that the body may still be moving, and keeps what it would have
+    said; with its stops landing, it says exactly what it said before."""
+    lost = _StopLost(lambda _b: True)
+    result = await Executor(registry, lost, contract=MOVES.frontmatter, detector=detector).run_verb(
+        verb, params
+    )
+    assert not result.ok, result.summary
+    assert said in result.summary
+    said = f"{canonical}'s stop could not be delivered, so the body may still be moving: {LOST}"
+    assert said in result.summary
+    assert result.data["stop_error"] == LOST
+    assert lost.stops == 1, "a verb went on after a stop that did not land"
+
+    landed = await Executor(
+        registry, _StopLost(lambda _b: False), contract=MOVES.frontmatter, detector=detector
+    ).run_verb(verb, params)
+    plain = await Executor(
+        registry, MockTransport(), contract=MOVES.frontmatter, detector=detector
+    ).run_verb(verb, params)
+    assert landed == plain
+
+
+def test_every_stop_a_verb_here_sends_goes_through_the_one_that_reads_whether_it_landed() -> None:
+    """Fourteen stops in the core verbs and seven in the walk to a place were sent straight to
+    the transport, and of them only the `stop` verb's read `stop_error`. Each goes through
+    `core._stop` now, which reads it; one sent around it would go back to saying nothing."""
+    sent = {
+        path.name: path.read_text(encoding="utf-8").count("transport.stop()")
+        for path in Path(core.__file__).parent.glob("*.py")
+    }
+    assert sent.pop("core.py") == 1, "core sends a stop other than through `_stop`"
+    assert not any(sent.values()), sent
+
+
+async def test_a_brake_whose_stop_did_not_land_is_a_failure_abort_when_counts() -> None:
+    """A verb a stop from beside ended is marked `ended_by`, so `abort_when`'s count of failures
+    in a row passes over it as the brake working. A stop of its own that did not land is not the
+    brake working, and is said, and counted."""
+    body = _StopLost(lambda _b: True)
+    ctx = VerbContext(transport=body, interrupted=lambda: STOPPED)
+    result = await core.move(ctx, core.MoveParams(vx=0.2, duration_s=0.3))
+    assert not result.ok
+    assert result.summary.startswith(f"move: {STOPPED}, so it stopped after 0.0 of 0.3 s. ")
+    assert f"move's stop could not be delivered, so the body may still be moving: {LOST}" in (
+        result.summary
+    )
+    assert "ended_by" not in result.data and result.data["interrupted"] == STOPPED
+
+
+class _StopUnknown(_StopLost):
+    """A body whose stops go out and are not known to have arrived, as a transport over a link
+    that reads up and has gone quiet says of them (`stop_unconfirmed`)."""
+
+    stop_unconfirmed = True
+
+
+async def test_a_stop_that_went_out_but_is_not_known_to_have_arrived_is_not_said_undelivered() -> (
+    None
+):
+    """The core said `could not be delivered` of every stop a transport did not vouch for, where
+    a transport over a link that reads up and has gone quiet says only that its stop is not known
+    to have arrived: the zero went out. The verbs say what the transport said."""
+    ctx = VerbContext(transport=_StopUnknown(lambda _b: True))
+    stopped = await core.stop(ctx, NoParams())
+    assert not stopped.ok and "could not be delivered" not in stopped.summary, stopped.summary
+    assert stopped.summary == (
+        f"stop went out but is not known to have reached the body, so the body may still be "
+        f"moving: {LOST}"
+    )
+    moved = await core.move(ctx, core.MoveParams(vx=0.2, duration_s=0.3))
+    assert "But move's stop went out but is not known to have reached the body" in moved.summary
+    assert moved.data["stop_unconfirmed"] is True and "could not be delivered" not in moved.summary
+
+
+async def test_a_verb_ended_before_its_send_names_itself_and_never_its_intent() -> None:
+    """`send_or_fail` ends a verb told to end before anything goes out, and its stop that did not
+    land was said to be the intent's, `joint's stop`, a name no pilot called. It is the verb's,
+    named where the verb gives its name, and unnamed where it does not."""
+    ctx = VerbContext(transport=_StopLost(lambda _b: True), interrupted=lambda: STOPPED)
+    unnamed = await core.send_or_fail(ctx, Intent.joint({"shoulder_pan": 0.0}, 1.0))
+    assert unnamed is not None and "joint's stop" not in unnamed.summary, unnamed.summary
+    assert "But the stop could not be delivered" in unnamed.summary
+    named = await core.send_or_fail(ctx, Intent.joint({"shoulder_pan": 0.0}, 1.0), "move_joints")
+    assert named is not None and "But move_joints's stop could not be delivered" in named.summary
 
 
 class _Confirming(_Refusing):
