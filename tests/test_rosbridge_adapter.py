@@ -9,7 +9,9 @@ import inspect
 import io
 import json
 import math
+import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -448,9 +450,42 @@ class FakeService:
         self.raise_with = raise_with
         self.hang_s = hang_s
         self.calls: list[dict[str, Any]] = []
+        self._held: list[threading.Event] = []
+        self._holding = False
+        self._lock = threading.Lock()
+
+    def hold(self) -> None:
+        """From now on each call waits until the test lets it go (`release`): when an answer
+        comes, and whether it comes before the transport's own deadline, is the test's to say,
+        and not the machine's."""
+        with self._lock:
+            self._holding = True
+
+    @property
+    def held(self) -> int:
+        """How many calls have come since `hold`."""
+        with self._lock:
+            return len(self._held)
+
+    def release(self, k: int | None = None) -> None:
+        """Let the `k`th call held (from 1) answer, or every one, and stop holding."""
+        with self._lock:
+            if k is None:
+                self._holding = False
+                gates = list(self._held)
+            else:
+                gates = [self._held[k - 1]]
+        for gate in gates:
+            gate.set()
 
     def call(self, args: dict[str, Any], *, timeout: float) -> dict[str, Any]:
         self.calls.append(dict(args))
+        with self._lock:
+            gate = threading.Event() if self._holding else None
+            if gate is not None:
+                self._held.append(gate)
+        if gate is not None:
+            gate.wait(GUARD_S)  # the test lets it go; the guard only ends a test that forgot
         if self.hang_s:
             time.sleep(self.hang_s)
         if self.raise_with is not None:
@@ -1102,13 +1137,12 @@ async def test_the_heartbeat_fails_once_odom_goes_quiet_on_a_link_that_reads_con
     assert adapter.stop_error is not None and "/odom" in adapter.stop_error
     assert adapter.stop_unconfirmed, "a zero that went out is not one that was not sent"
 
-    async def life_returns() -> None:  # a message while the stop listens after its zero
-        await asyncio.sleep(period / 2)
-        topics["/odom"].callback(_odom(0.5, stamp=t0 + 100.0))
-
-    returning = asyncio.ensure_future(life_returns())
-    await adapter.stop()
-    await returning
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    stopping = asyncio.ensure_future(adapter.stop())
+    await _until(lambda: bool(ws._listeners), "the stop listens after its zero")
+    topics["/odom"].callback(_odom(0.5, stamp=t0 + 100.0))  # a message while it listens
+    await stopping
     assert adapter.stop_error is None and not adapter.stop_unconfirmed
 
 
@@ -1124,6 +1158,15 @@ class _Clock:
         return self.t
 
 
+GUARD_S = 60.0
+"""How long a test waits for something it has made sure will happen before it calls the wait
+broken: a guard against a hang, never what decides a test, however slow the machine."""
+REQUEST_S: float = inspect.signature(RosbridgeWs.__init__).parameters["timeout_s"].default
+"""The transport's own request deadline, as a run has it: what an answer that must count is
+given, since no machine is so slow that an answer made at once misses it."""
+LOST_AFTER_S = 2.0
+"""A request deadline short enough that a test can wait out the ones it never answers, and long
+enough that an answer made at once never misses it."""
 QUICK_S = 0.3
 """A transport's own request deadline in these tests (`RosbridgeWs(timeout_s=...)`), short so
 that a round trip left unanswered is waited out in a fraction of a second."""
@@ -1183,24 +1226,94 @@ def _paced(clock: _Clock, odom: FakeTopic, gap: float, count: int, stamp: float)
 
 
 async def _asks_settled(ws: RosbridgeWs) -> None:
-    """Let the round trips a beat set going finish, on the event loop's own clock, as they do
-    between two beats of a run: each ends within the transport's request deadline, and the
-    bound here is only for a machine so loaded that a worker thread is slow to start."""
+    """Let the round trips a beat set going finish, as they do between two beats of a run: each
+    ends with its answer or at the transport's own request deadline, whichever the stand-in
+    makes it, however long the machine takes to get there."""
     if ws._asks:
-        await asyncio.wait(set(ws._asks), timeout=10 * QUICK_S)
+        await asyncio.wait(set(ws._asks), timeout=GUARD_S)
 
 
-async def _noticed_within(ws: RosbridgeWs, clock: _Clock, limit_s: float) -> float:
+async def _until(ready: Callable[[], bool], what: str) -> None:
+    """Let the event loop run until `ready()`, however long the machine takes (`GUARD_S`)."""
+    end = time.monotonic() + GUARD_S
+    while not ready():
+        assert time.monotonic() < end, f"never came: {what}"
+        await asyncio.sleep(0.01)
+
+
+async def _noticed_within(
+    ws: RosbridgeWs, clock: _Clock, limit_s: float, *, waits_for_nothing: bool = False
+) -> float:
     """Beat every `BEAT_S` on the transport's clock until the heartbeat fails, and say how long
-    that took; a link still unnoticed past `limit_s` fails the test."""
+    that took; a link still unnoticed past `limit_s` fails the test. With `waits_for_nothing`,
+    a beat must come back within half the transport's own request deadline, which a beat that
+    waits for an ask held unanswered cannot."""
     start = clock.t
     while clock.t - start <= limit_s:
         clock.t += BEAT_S
         try:
-            await ws.heartbeat()
+            if waits_for_nothing:
+                await asyncio.wait_for(ws.heartbeat(), ws.timeout_s / 2)
+            else:
+                await ws.heartbeat()
         except HeartbeatError:
             return clock.t - start
     pytest.fail(f"a dead link went unnoticed for {limit_s:.1f} s")
+
+
+def _listens(monkeypatch: pytest.MonkeyPatch, ws: RosbridgeWs) -> list[tuple[float, bool]]:
+    """Every listen a stop of `ws` makes from now on, how long and whether for /odom alone, as
+    it begins: its length read off the transport, not off the machine's clock."""
+    made: list[tuple[float, bool]] = []
+    listen = ws._hears_within
+
+    async def recorded(seconds: float, *, base_only: bool = False) -> bool:
+        made.append((seconds, base_only))
+        return await listen(seconds, base_only=base_only)
+
+    monkeypatch.setattr(ws, "_hears_within", recorded)
+    return made
+
+
+async def _stopped_while_listening(
+    ex: Executor, ws: RosbridgeWs, then: Callable[[], Any]
+) -> VerbResult:
+    """`ex` stops the body, and once the stop listens after its zero Twist, `then` happens, a
+    message the test delivers: when it comes is the test's to say, and the machine's speed
+    decides nothing, since a listen already begun hears it however late its thread starts."""
+    stopping = asyncio.ensure_future(ex.run_verb("stop"))
+    await _until(lambda: bool(ws._listeners) or stopping.done(), "the stop listens")
+    then()
+    return await stopping
+
+
+async def _stopped_once_answered(
+    monkeypatch: pytest.MonkeyPatch,
+    ex: Executor,
+    ws: RosbridgeWs,
+    answer: Callable[[], Any] | None = None,
+) -> VerbResult:
+    """`ex` stops the body, and `answer`, the test letting the bridge answer, runs after the zero
+    Twist went out and before the stop listens, which waits for it: an answer the stop judges
+    by has come by the time it judges, however slow the machine."""
+    listen = ws._hears_within
+    begun, answered = asyncio.Event(), asyncio.Event()
+
+    async def after_the_answer(seconds: float, *, base_only: bool = False) -> bool:
+        begun.set()
+        await answered.wait()
+        return bool(await listen(seconds, base_only=base_only))
+
+    monkeypatch.setattr(ws, "_hears_within", after_the_answer)
+    try:
+        stopping = asyncio.ensure_future(ex.run_verb("stop"))
+        await _until(lambda: begun.is_set() or stopping.done(), "the stop's zero goes out")
+        if answer is not None:
+            await answer()
+        answered.set()
+        return await stopping
+    finally:
+        monkeypatch.setattr(ws, "_hears_within", listen)
 
 
 @pytest.mark.parametrize("answer", ["late", "a-failure"])
@@ -1212,32 +1325,30 @@ async def test_a_bridge_whose_round_trip_answers_late_or_says_no_is_alive(
     queued behind camera frames over Wi-Fi, ended the run, and so did a failed answer, which the
     bridge gives at once while its rosapi node restarts. A beat waits for no answer; one of any
     kind is a sign of life, and one that comes after a beat gave up on it still is when it
-    comes, and the count of silent beats begins again."""
+    comes, and the count of silent beats begins again. The stand-in answers when the test lets
+    it, after the beat that gave up on it, and the one asked again never does."""
     ws, listing, _topics = _asked()
     await ws.connect()
     clock = _Clock()
     monkeypatch.setattr(ws_module, "time", clock)
-    late = 1.5 * STALE_FLOOR_S
-    if answer == "late":
-        answer_of, calls = listing.call, [0]
-
-        def late_then_later(args: dict[str, Any], *, timeout: float) -> dict[str, Any]:
-            calls[0] += 1  # the first ask comes back late; the one asked again, later still
-            time.sleep(late if calls[0] == 1 else late + 2 * QUICK_S)
-            return answer_of(args, timeout=timeout)
-
-        monkeypatch.setattr(listing, "call", late_then_later)
-    else:
+    if answer == "a-failure":
         listing.raise_with = RuntimeError("Service /rosapi/topics does not exist")
-    clock.t += STALE_FLOOR_S + BEAT_S
-    await ws.heartbeat()  # asks, and waits for nothing
-    await asyncio.sleep(QUICK_S / 3)  # the ask is on its way, as between two beats of a run
-    clock.t += ANSWER_WAIT_S + BEAT_S
-    await ws.heartbeat()  # the ask has had its time: one silent beat, which fails nothing
-    await asyncio.sleep(late)  # the first answer comes, on the event loop's own clock
-    for _ in range(int((ANSWER_WAIT_S + BEAT_S) / BEAT_S) + 1):  # past the second ask's time
-        clock.t += BEAT_S
-        await ws.heartbeat()
+    listing.hold()
+    try:
+        clock.t += STALE_FLOOR_S + BEAT_S
+        await ws.heartbeat()  # asks, and waits for nothing
+        (first,) = ws._asks
+        await _until(lambda: listing.held >= 1, "the first ask reaches the bridge")
+        clock.t += ANSWER_WAIT_S + BEAT_S
+        await ws.heartbeat()  # the ask has had its time: one silent beat; it asks again
+        await _until(lambda: listing.held >= 2, "the second ask reaches the bridge")
+        listing.release(1)  # the first answer comes, late, after a beat gave up on it
+        await asyncio.wait({first}, timeout=GUARD_S)
+        for _ in range(int((ANSWER_WAIT_S + BEAT_S) / BEAT_S) + 1):  # past the second ask's time
+            clock.t += BEAT_S
+            await ws.heartbeat()
+    finally:
+        listing.release()
 
 
 async def test_a_base_with_no_stream_is_noticed_within_its_bound_and_judges_no_stop_by_it(
@@ -1247,67 +1358,76 @@ async def test_a_base_with_no_stream_is_noticed_within_its_bound_and_judges_no_s
     and fails on the second silent beat in a row, naming the round trip: within the floor, a
     beat's phase, and two asks' time and beats, a bound of the constants. A stop says only what
     it can see, so one after the bridge answers again is not judged by the failed beats. A
-    bridge that gave no answer at connect has no round trip, and the socket is all there is."""
-    ws, listing, topics = _asked(timeout_s=QUICK_S)
+    bridge that gave no answer at connect has no round trip, and the socket is all there is.
+    Half open is a stand-in that answers nothing until the test lets it, and only the asks it
+    holds are given a short deadline, which they cannot meet however fast the machine."""
+    ws, listing, topics = _asked()  # the connect's answer counts, however slow the machine
     adapter = RosbridgeAdapter(ws)
     await adapter.connect()
+    ws.timeout_s = QUICK_S  # the asks held from here are waited out quickly
     clock = _Clock()
     monkeypatch.setattr(ws_module, "time", clock)
-    listing.hang_s = 2 * QUICK_S  # half open: nothing is answered within the request deadline
-    bound = STALE_FLOOR_S + BEAT_S + SILENT_BEATS * (ANSWER_WAIT_S + BEAT_S)
-    took = await _noticed_within(ws, clock, bound)
-    assert STALE_FLOOR_S + ANSWER_WAIT_S < took <= bound, took
-    with pytest.raises(HeartbeatError, match="/rosapi/topics") as failed:
-        await ws.heartbeat()
-    assert "beats in a row" in str(failed.value)
-    await _asks_settled(ws)  # the asks the beats gave up on end, unanswered
-    listing.hang_s = 0.0  # it answers again
+    listing.hold()  # half open: nothing is answered
+    try:
+        bound = STALE_FLOOR_S + BEAT_S + SILENT_BEATS * (ANSWER_WAIT_S + BEAT_S)
+        took = await _noticed_within(ws, clock, bound)
+        assert STALE_FLOOR_S + ANSWER_WAIT_S < took <= bound, took
+        with pytest.raises(HeartbeatError, match="/rosapi/topics") as failed:
+            await ws.heartbeat()
+        assert "beats in a row" in str(failed.value)
+        await _asks_settled(ws)  # the asks the beats gave up on end, at their deadline
+    finally:
+        listing.release()  # it answers again
+    ws.timeout_s = REQUEST_S  # and an answer is given the run's own deadline to come back in
     await adapter.stop()
     assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
     assert adapter.stop_error is None, adapter.stop_error
     clock.t += BEAT_S
     with pytest.raises(HeartbeatError):
         await ws.heartbeat()  # nothing has answered yet, and it asks again
-    await asyncio.sleep(QUICK_S)  # and is answered
+    await _asks_settled(ws)  # and is answered
     for _ in range(SILENT_BEATS + 1):
         clock.t += BEAT_S
         await ws.heartbeat()  # the count began again with the answer
 
     bare, silent, _topics = _asked(timeout_s=QUICK_S)
-    silent.hang_s = 2 * QUICK_S  # no answer at connect: no round trip to make
-    await bare.connect()
-    for _ in range(3):
-        await bare.heartbeat()  # the socket reads up, and nothing else can be asked
-    await bare.stop()
-    assert bare.stop_error is None
+    silent.hold()  # no answer at connect: no round trip to make
+    try:
+        await bare.connect()
+        for _ in range(3):
+            await bare.heartbeat()  # the socket reads up, and nothing else can be asked
+        await bare.stop()
+        assert bare.stop_error is None
+    finally:
+        silent.release()
 
 
 @pytest.mark.parametrize("rosapi", [True, False], ids=["with-rosapi", "without-rosapi"])
 async def test_a_half_open_link_under_a_paced_stream_is_noticed_as_soon_with_rosapi_as_without(
-    rosapi: bool,
+    monkeypatch: pytest.MonkeyPatch, rosapi: bool
 ) -> None:
     """Once a paced stream went quiet, a bridge that answered at connect was asked for its topic
     list on each silent beat with the five-second request deadline, so a half-open link ran
     unseen for about twelve seconds with rosapi, where it was two without. A paced stream's
-    silence counts on every beat and no beat waits on an ask. Real clock: a timing test."""
+    silence counts on every beat and no beat waits on an ask: within the window and two beats on
+    the transport's clock, the test's, and each beat back within half the request deadline while
+    every ask is held unanswered, which a beat that waited for one could not be."""
     ws, listing, topics = _asked()  # the transport's own request deadline, as a run has it
     if not rosapi:
         ws._service_factory = None  # a bridge with no rosapi: nothing can be asked
     await ws.connect()
-    for k in range(12):  # a little over a second of a healthy 10 Hz stream
-        topics["/odom"].callback(_odom(0.0, stamp=100.0 + k / 10))
-        await asyncio.sleep(0.1)
-    listing.hang_s = ws.timeout_s + QUICK_S  # half open: nothing comes, nothing is answered
-    last = time.monotonic()
-    window = max(STALE_FLOOR_S, STALE_PERIODS * float(ws._heard_gap or 0.0))
-    promised = window + (SILENT_BEATS + 1) * BEAT_S  # a beat's phase of slack
-    while time.monotonic() - last <= promised:
-        try:
-            await ws.heartbeat()
-        except HeartbeatError:
-            return
-        await asyncio.sleep(BEAT_S)
-    pytest.fail(f"a half-open link went unnoticed past {promised:.1f} s")
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    _paced(clock, topics["/odom"], 0.1, 12, 100.0)  # a little over a second at 10 Hz
+    listing.hold()  # half open: nothing comes, nothing is answered
+    try:
+        window = ws._window()
+        assert window is not None
+        bound = window + SILENT_BEATS * BEAT_S
+        took = await _noticed_within(ws, clock, bound, waits_for_nothing=True)
+        assert took <= bound, took
+    finally:
+        listing.release()
 
 
 @pytest.mark.parametrize("pause_s", [3.0, 30.0], ids=["a-hiccup-it-survived", "a-stall"])
@@ -1319,9 +1439,9 @@ async def test_a_pause_in_the_past_widens_no_window_once_the_stream_is_back(
     a 3 s hiccup a 10 Hz base's dead link ran unseen for fifteen seconds, and a stop into it
     said `stopped (velocity zeroed)`. The pace is the stream's last few gaps, capped, so once it
     is back the window is its own again, the heartbeat notices within it, and a stop that hears
-    nothing after its zero says so. Between beats real time passes, as in a run, so the
-    answers that keep the link alive through the pause can come."""
-    ws, listing, topics = _asked(timeout_s=QUICK_S)
+    nothing after its zero says so. Between beats the answers that keep the link alive through
+    the pause come, however long they take, and the dead link answers nothing at all."""
+    ws, listing, topics = _asked()
     adapter = RosbridgeAdapter(ws)
     manifest = await adapter.connect()
     ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
@@ -1337,14 +1457,17 @@ async def test_a_pause_in_the_past_widens_no_window_once_the_stream_is_back(
     _paced(clock, odom, 0.1, STALE_PERIODS + 15, stamp + pause_s)
     assert ws._heard_gap is not None and ws._heard_gap <= 0.1 + 1e-9
     clock.t += 10 * STALE_FLOOR_S  # the link dies, half open: nothing comes, nothing answers
-    listing.hang_s = 2 * QUICK_S
-    sent = len(topics["/cmd_vel"].published)
-    stopped = await ex.run_verb("stop")
-    assert topics["/cmd_vel"].published[sent:] == [twist_message(0.0, 0.0, 0.0)]
-    assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
-    clock.t -= 10 * STALE_FLOOR_S - 0.1
-    took = await _noticed_within(ws, clock, STALE_FLOOR_S + (SILENT_BEATS + 1) * BEAT_S)
-    assert took <= STALE_FLOOR_S + (SILENT_BEATS + 1) * BEAT_S
+    listing.hold()
+    try:
+        sent = len(topics["/cmd_vel"].published)
+        stopped = await ex.run_verb("stop")
+        assert topics["/cmd_vel"].published[sent:] == [twist_message(0.0, 0.0, 0.0)]
+        assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
+        clock.t -= 10 * STALE_FLOOR_S - 0.1
+        took = await _noticed_within(ws, clock, STALE_FLOOR_S + (SILENT_BEATS + 1) * BEAT_S)
+        assert took <= STALE_FLOOR_S + (SILENT_BEATS + 1) * BEAT_S
+    finally:
+        listing.release()
 
 
 async def test_no_pace_stretches_the_window_past_the_slowest_one_taken(
@@ -1361,12 +1484,11 @@ async def test_no_pace_stretches_the_window_past_the_slowest_one_taken(
     clock = _Clock()
     monkeypatch.setattr(ws_module, "time", clock)
     _paced(clock, topics["/odom"], 3 * SLOWEST_PACE_S, STALE_PERIODS + 1, 100.0)
-    began = time.monotonic()
+    made = _listens(monkeypatch, ws)
     stopped = await ex.run_verb("stop")
-    listened = time.monotonic() - began
     assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
     assert f"in the {LISTEN_PERIODS * SLOWEST_PACE_S:.1f} s after" in stopped.summary
-    assert listened < LISTEN_PERIODS * SLOWEST_PACE_S + QUICK_S, listened
+    assert made == [(LISTEN_PERIODS * SLOWEST_PACE_S, False)], made
     bound = STALE_PERIODS * SLOWEST_PACE_S + (SILENT_BEATS + 1) * BEAT_S
     took = await _noticed_within(ws, clock, bound)
     assert STALE_PERIODS * SLOWEST_PACE_S < took <= bound, took
@@ -1376,12 +1498,12 @@ async def test_a_stop_into_a_quiet_stream_says_what_answered_and_listens_no_long
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stream can stop while its link lives, a driver gone or a topic remapped; the bridge
-    answers still. A stop into it asks, and the answer, which comes after its zero Twist, says
-    the bridge took that zero, and the stop says so, and that the base, whose /odom is quiet, is
-    not known to have; on the same base whose bridge answers nothing either it went out and
-    nothing came. Each listens `LISTEN_FLOOR_S`, the floor of two of a 10 Hz pace, and no
-    longer."""
-    ws, listing, topics = _asked(timeout_s=QUICK_S)
+    answers still. A stop into it asks, and the answer to that request, sent after its zero
+    Twist, says the zero reached the bridge, and the stop says so, and that the base, whose
+    /odom is quiet, is not known to have taken it; on the same base whose bridge answers nothing
+    either it went out and nothing came. Each listens `LISTEN_FLOOR_S`, the floor of two of a
+    10 Hz pace, for /odom alone, and no longer."""
+    ws, listing, topics = _asked()
     adapter = RosbridgeAdapter(ws)
     manifest = await adapter.connect()
     ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
@@ -1389,17 +1511,21 @@ async def test_a_stop_into_a_quiet_stream_says_what_answered_and_listens_no_long
     monkeypatch.setattr(ws_module, "time", clock)
     _paced(clock, topics["/odom"], 0.1, STALE_PERIODS + 1, 100.0)
     clock.t += 10 * STALE_FLOOR_S  # the stream stops; the bridge goes on answering
-    began = time.monotonic()
-    stopped = await ex.run_verb("stop")
-    assert not stopped.ok and "the bridge took it" in stopped.summary, stopped.summary
-    assert time.monotonic() - began < LISTEN_FLOOR_S + QUICK_S
-    listing.hang_s = 2 * QUICK_S  # and now it answers nothing either
-    await _asks_settled(ws)
-    clock.t += BEAT_S
-    began = time.monotonic()
-    stopped = await ex.run_verb("stop")
-    assert not stopped.ok and "nothing has come over it" in stopped.summary, stopped.summary
-    assert time.monotonic() - began < LISTEN_FLOOR_S + QUICK_S
+    made = _listens(monkeypatch, ws)
+
+    async def answered() -> None:
+        await _until(lambda: not ws._asks, "the stop's own ask is answered")
+
+    stopped = await _stopped_once_answered(monkeypatch, ex, ws, answered)
+    assert not stopped.ok and "so the zero reached the bridge" in stopped.summary, stopped.summary
+    listing.hold()  # and now it answers nothing either
+    try:
+        clock.t += BEAT_S
+        stopped = await ex.run_verb("stop")
+        assert not stopped.ok and "nothing has come over it" in stopped.summary, stopped.summary
+    finally:
+        listing.release()
+    assert made == [(LISTEN_FLOOR_S, True)] * 2, made
     assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
 
 
@@ -1408,44 +1534,45 @@ async def test_a_bridge_that_loses_every_other_answer_keeps_a_base_with_no_strea
 ) -> None:
     """A rosapi that answers once in a while, one request in two lost past its deadline, is a
     live link: a beat whose ask went unanswered asks again, so one lost answer is one silent
-    beat, and the next answer begins the count again. Real time passes between beats, as in a
-    run, for the answers to come."""
-    ws, listing, _topics = _asked(timeout_s=QUICK_S)
+    beat, and the next answer begins the count again. Between beats the asks a beat set going
+    end, as in a run: a lost one is held until the transport has given up on it, and the others
+    answer, given a deadline no machine is slow enough to miss."""
+    ws, listing, _topics = _asked(timeout_s=LOST_AFTER_S)
     await ws.connect()
     clock = _Clock()
     monkeypatch.setattr(ws_module, "time", clock)
     answer = listing.call
     asked = [0]
+    lost: list[threading.Event] = []
 
     def every_other(args: dict[str, Any], *, timeout: float) -> dict[str, Any]:
         asked[0] += 1
         if asked[0] % 2:
-            time.sleep(2 * QUICK_S)  # lost: no answer within the request deadline
+            gone = threading.Event()
+            lost.append(gone)
+            gone.wait(GUARD_S)  # lost: no answer before the transport gives up on it
         return answer(args, timeout=timeout)
 
     monkeypatch.setattr(listing, "call", every_other)
-    for _ in range(int(4 * (STALE_FLOOR_S + ANSWER_WAIT_S) / BEAT_S)):
-        clock.t += BEAT_S
-        await ws.heartbeat()
-        await _asks_settled(ws)
+    try:
+        for _ in range(int(4 * (STALE_FLOOR_S + ANSWER_WAIT_S) / BEAT_S)):
+            clock.t += BEAT_S
+            await ws.heartbeat()
+            await _asks_settled(ws)
+            for gone in lost:
+                gone.set()  # given up on: its thread may go
+    finally:
+        for gone in lost:
+            gone.set()
     assert asked[0] >= 4, asked
 
 
 async def _a_stop_hearing(
-    ex: Executor, topic: FakeTopic, message: dict[str, Any], after_s: float
+    ex: Executor, ws: RosbridgeWs, topic: FakeTopic, message: dict[str, Any]
 ) -> VerbResult:
-    """`ex` stops the body while `message` comes on `topic` `after_s` later, on the event loop's
-    own clock, as the next message of a live stream would; the stop's result."""
-
-    async def comes() -> None:
-        await asyncio.sleep(after_s)
-        topic.callback(message)
-
-    coming = asyncio.ensure_future(comes())
-    try:
-        return await ex.run_verb("stop")
-    finally:
-        await coming
+    """`ex` stops the body, and `message` comes on `topic` once the stop listens, as the next
+    message of a live stream would; the stop's result."""
+    return await _stopped_while_listening(ex, ws, lambda: topic.callback(message))
 
 
 async def test_a_stop_right_after_held_messages_come_together_listens_for_the_next_one(
@@ -1466,8 +1593,10 @@ async def test_a_stop_right_after_held_messages_come_together_listens_for_the_ne
     clock.t += 0.6  # the hiccup
     stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 1, stamp + 0.6)
     assert ws._heard_gap is not None and ws._heard_gap >= 0.1, ws._heard_gap
-    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 0.1), 0.05)
+    made = _listens(monkeypatch, ws)
+    stopped = await _a_stop_hearing(ex, ws, topics["/odom"], _odom(0.0, stamp=stamp + 0.1))
     assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+    assert made == [(LISTEN_PERIODS * ws._heard_gap, False)], made  # the hiccup's gap, not 1 ms
 
 
 async def test_no_stop_listens_less_than_the_floor_whatever_its_pace(
@@ -1484,8 +1613,10 @@ async def test_no_stop_listens_less_than_the_floor_whatever_its_pace(
     stamp = _paced(clock, topics["/odom"], 0.1, 10, 100.0)
     stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 1, stamp)  # the flush
     assert ws._heard_gap is not None and ws._heard_gap < 0.01, ws._heard_gap
-    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 0.1), 0.1)
+    made = _listens(monkeypatch, ws)
+    stopped = await _a_stop_hearing(ex, ws, topics["/odom"], _odom(0.0, stamp=stamp + 0.1))
     assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+    assert made == [(LISTEN_FLOOR_S, False)], made
 
 
 async def test_held_messages_set_neither_the_window_nor_the_listen_of_a_slow_stream(
@@ -1505,8 +1636,10 @@ async def test_held_messages_set_neither_the_window_nor_the_listen_of_a_slow_str
     stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 2, stamp + 8.0)
     window = ws._window()
     assert window is not None and window > 1.25 + SILENT_BEATS * BEAT_S, window
-    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 1.25), 1.2)
+    made = _listens(monkeypatch, ws)
+    stopped = await _a_stop_hearing(ex, ws, topics["/odom"], _odom(0.0, stamp=stamp + 1.25))
     assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+    assert made == [(LISTEN_PERIODS * SLOWEST_PACE_S, False)], made  # longer than its 1.25 s
 
 
 @pytest.mark.parametrize("death", ["the-base-side-only", "the-whole-link"])
@@ -1517,30 +1650,40 @@ async def test_a_stop_after_the_base_went_silent_is_not_said_to_have_stopped_it(
     answers. The stop asked rosapi, heard the answer, and said `stopped (velocity zeroed)`; the
     answer, asked after the zero over the same socket, says the zero reached the bridge, and
     nothing of the base. Where /odom had a pace and is quiet past its window, only /odom
-    vouches for the base: the stop listens for it, and with only the bridge heard says the
-    bridge took the zero and the base is not known to have. With the whole link gone it says
-    nothing came at all."""
-    ws, listing, topics = _asked(timeout_s=QUICK_S)
+    vouches for the base: the stop listens for it, and with only the bridge heard says the zero
+    reached the bridge and the base is not known to have taken it. With the whole link gone it
+    says nothing came at all. The stop's own ask is answered before it judges, or never."""
+    ws, listing, topics = _asked()
     adapter = RosbridgeAdapter(ws)
     manifest = await adapter.connect()
     ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
     clock = _Clock()
     monkeypatch.setattr(ws_module, "time", clock)
     _paced(clock, topics["/odom"], 0.1, 20, 100.0)
-    if death == "the-whole-link":
-        listing.hang_s = 2 * QUICK_S
     clock.t += 3.0
+    listing.hold()
     sent = len(topics["/cmd_vel"].published)
-    stopped = await ex.run_verb("stop")
+    try:
+
+        async def answered() -> None:
+            await _until(lambda: listing.held >= 1, "the stop's own ask reaches the bridge")
+            listing.release(1)
+            await _until(lambda: not ws._asks, "the answer comes")
+
+        stopped = await _stopped_once_answered(
+            monkeypatch, ex, ws, answered if death == "the-base-side-only" else None
+        )
+    finally:
+        listing.release()
     assert topics["/cmd_vel"].published[sent:] == [twist_message(0.0, 0.0, 0.0)]
     assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
     assert stopped.data.get("stop_unconfirmed") is True, stopped.data
     if death == "the-base-side-only":
-        assert "the bridge took it" in stopped.summary, stopped.summary
+        assert "answered a request sent after the zero Twist" in stopped.summary, stopped.summary
+        assert "so the zero reached the bridge" in stopped.summary, stopped.summary
         assert "/odom has brought nothing for 3.0 s" in stopped.summary, stopped.summary
     else:
         assert "nothing has come over it" in stopped.summary, stopped.summary
-    await _asks_settled(ws)
 
 
 async def test_odometry_that_comes_back_during_the_stop_vouches_for_the_base(
@@ -1548,7 +1691,8 @@ async def test_odometry_that_comes_back_during_the_stop_vouches_for_the_base(
 ) -> None:
     """A base whose /odom was quiet, standing still, and comes on as the stop listens, is heard:
     the stop says `stopped`. A camera image in the same while vouches for the link and not for
-    the base: the stop says the bridge took the zero and the base is not known to have."""
+    the base, nor for the zero, since it travels the other way: the stop says what came, when,
+    and that the base is not known to have taken the zero."""
     _ros, topics, adapter, ex = await _driving("ws://robot.local:9090?image=/cam/compressed")
     ws = adapter.transport
     assert isinstance(ws, RosbridgeWs)
@@ -1557,11 +1701,14 @@ async def test_odometry_that_comes_back_during_the_stop_vouches_for_the_base(
     stamp = _paced(clock, topics["/odom"], 0.1, 20, 100.0)
     clock.t += 3.0
     frame = {"format": "jpeg", "data": ""}
-    imaged = await _a_stop_hearing(ex, topics["/cam/compressed"], frame, 0.05)
-    assert not imaged.ok and "the bridge took it" in imaged.summary, imaged.summary
+    made = _listens(monkeypatch, ws)
+    imaged = await _a_stop_hearing(ex, ws, topics["/cam/compressed"], frame)
+    assert not imaged.ok and "sent an image on /cam/compressed 0.0 s after" in imaged.summary
+    assert "not that the zero reached the bridge" in imaged.summary, imaged.summary
     assert "/odom has brought nothing" in imaged.summary, imaged.summary
-    back = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 3.0), 0.05)
+    back = await _a_stop_hearing(ex, ws, topics["/odom"], _odom(0.0, stamp=stamp + 3.0))
     assert back.ok and back.summary.startswith("stopped"), back.summary
+    assert made == [(LISTEN_FLOOR_S, True)] * 2, made
 
 
 async def test_a_base_that_never_had_odometry_is_vouched_for_by_its_link(
@@ -1579,7 +1726,7 @@ async def test_a_base_that_never_had_odometry_is_vouched_for_by_its_link(
         clock.t += 0.1
         topics["/cam/compressed"].callback(frame)
     clock.t += 3.0
-    stopped = await _a_stop_hearing(ex, topics["/cam/compressed"], frame, 0.05)
+    stopped = await _a_stop_hearing(ex, ws, topics["/cam/compressed"], frame)
     assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
 
 
@@ -1603,3 +1750,56 @@ async def test_a_stream_that_starts_again_at_its_own_rate_sets_its_pace_at_once(
         assert ws._window() == pytest.approx(
             STALE_FLOOR_S if floor else STALE_PERIODS * SLOWEST_PACE_S
         ), k
+
+
+async def test_with_odometry_quiet_the_stop_says_only_what_the_bridge_showed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With /odom quiet, anything that came after the zero Twist was read as `the bridge took
+    it`: an answer to a request a beat had sent before the zero among it, since the stop sent no
+    ask of its own while one was out. Over one socket only an answer to a request sent after the
+    zero shows the zero reached the bridge; an earlier one shows only that the link is up. The
+    stop sends its own whatever is out, and says which it heard, and when. Which answer comes,
+    and when, is the test's to say."""
+    ws, listing, topics = _asked()  # the transport's own request deadline, as a run has it
+    adapter = RosbridgeAdapter(ws)
+    manifest = await adapter.connect()
+    ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    _paced(clock, topics["/odom"], 0.1, 20, 100.0)
+    clock.t += 3.0
+    listing.hold()
+    try:
+        clock.t += BEAT_S
+        await ws.heartbeat()  # past the window: a beat asks, before any zero
+        (earlier,) = ws._asks
+        await _until(lambda: listing.held >= 1, "the beat's ask reaches the bridge")
+
+        async def the_earlier_answer() -> None:
+            await _until(lambda: listing.held >= 2, "the stop's own ask reaches the bridge")
+            listing.release(1)
+            await _until(earlier.done, "the earlier answer comes")
+
+        heard_before = await _stopped_once_answered(monkeypatch, ex, ws, the_earlier_answer)
+        assert "answered a request sent before the zero Twist" in heard_before.summary
+        assert "which shows the link is up" in heard_before.summary, heard_before.summary
+        assert "so the zero reached the bridge" not in heard_before.summary
+
+        clock.t += BEAT_S
+        out = set(ws._asks)
+
+        async def its_own_answer() -> None:
+            await _until(lambda: len(set(ws._asks) - out) == 1, "the stop asks")
+            (mine,) = set(ws._asks) - out
+            await _until(lambda: listing.held >= 3, "the stop's own ask reaches the bridge")
+            listing.release(3)
+            await _until(mine.done, "its answer comes")
+
+        heard_after = await _stopped_once_answered(monkeypatch, ex, ws, its_own_answer)
+        assert "answered a request sent after the zero Twist" in heard_after.summary
+        assert "so the zero reached the bridge" in heard_after.summary, heard_after.summary
+        for said in (heard_before, heard_after):
+            assert not said.ok and said.data.get("stop_unconfirmed") is True, said
+    finally:
+        listing.release()

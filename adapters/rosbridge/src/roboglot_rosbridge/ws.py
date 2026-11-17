@@ -977,31 +977,67 @@ class RosbridgeWs:
             with self._lock:
                 self._listeners.remove(listening)
 
-    def _bridge_took_it(self, why: str) -> None:
-        """Say that the bridge was heard from after the zero Twist went out, so took it, and
-        that the base, whose /odom is quiet (`why`), is not known to have (`stop_unconfirmed`)."""
+    def _heard_after(self, sent_at: float, mine: asyncio.Task[float | None] | None) -> str | None:
+        """What came from the bridge after a zero Twist went out at `sent_at`, and what it shows,
+        or None for nothing. Over one socket only the answer to a request sent after the zero
+        (`mine`, the stop's own) shows that the zero reached the bridge; an image travels the
+        other way, and an answer to a request sent before it shows only that the link is up."""
+        answered = None
+        if mine is not None and mine.done() and not mine.cancelled() and mine.exception() is None:
+            answered = mine.result()
+        if answered is not None:
+            return (
+                f"answered a request sent after the zero Twist, {answered - sent_at:.1f} s after "
+                "it went out, so the zero reached the bridge"
+            )
+        with self._lock:
+            image_at = self._image_at
+        if image_at is not None and image_at >= sent_at:
+            return (
+                f"sent an image on {self.endpoint.image} {image_at - sent_at:.1f} s after the zero "
+                "Twist went out, which shows the link is up and not that the zero reached the "
+                "bridge"
+            )
+        answered_at = self._answered_at
+        if answered_at is not None and answered_at >= sent_at:
+            return (
+                f"answered a request sent before the zero Twist, {answered_at - sent_at:.1f} s "
+                "after it went out, which shows the link is up and not that the zero reached the "
+                "bridge"
+            )
+        return None
+
+    def _base_not_known(self, heard: str, why: str) -> None:
+        """Say what came from the bridge after the zero Twist went out (`_heard_after`), and that
+        the base, whose /odom is quiet (`why`), is not known to have taken it
+        (`stop_unconfirmed`)."""
         self.stop_unconfirmed = True
         self.stop_error = (
-            f"rosbridge at {self.endpoint.url} was heard from after the zero Twist went out, so "
-            f"the bridge took it, but {why}, so the base is not known to have taken it, and it has "
-            "no deadman and keeps its last Twist if it did not"
+            f"rosbridge at {self.endpoint.url} {heard}, but {why}, so the base is not known to "
+            "have taken the zero Twist, and it has no deadman and keeps its last Twist if it did "
+            "not"
         )
 
-    def _ask_in_background(self) -> None:
+    def _ask_in_background(self) -> asyncio.Task[float | None]:
         """Ask the bridge for its topic list in a task of its own, never waited on by whoever
         asks: an answer within the transport's own request deadline is a sign of life when it
-        comes (`_ask_topics`), and none is the silence a beat counts. Ended at the close."""
+        comes (`_ask_topics`), and none is the silence a beat counts. Ended at the close. The
+        task ends with when it was answered, or None."""
         self._asked_at = time.monotonic()
         task = asyncio.ensure_future(self._ask_for_life())
         self._asks.add(task)
         task.add_done_callback(self._asks.discard)
+        return task
 
-    async def _ask_for_life(self) -> None:
-        """One request for the topic list, for its answer alone (`_ask_in_background`)."""
+    async def _ask_for_life(self) -> float | None:
+        """One request for the topic list, for its answer alone (`_ask_in_background`): when it
+        was answered, in any words, or None."""
         try:
-            await self._ask_topics(self.timeout_s)
+            if (await self._ask_topics(self.timeout_s))[1]:
+                return time.monotonic()
         except TransportError as e:  # no client to ask through: nothing answers
             self._unanswered = str(e)
+        return None
 
     def _unheard(self) -> str | None:
         """Why a stop cannot vouch for the link, or None: its streams have gone quiet (`_quiet`)
@@ -1194,10 +1230,11 @@ class RosbridgeWs:
         Where /odom had a pace and has gone quiet past its window, only /odom vouches for the
         base: a base's driver can die while the bridge and rosapi run on, and an answer, or a
         camera's image, says the zero reached the bridge and nothing of the base. So the stop
-        listens for /odom alone, and with only the bridge heard says the bridge took the zero
-        and the base is not known to have (`_bridge_took_it`). A base that never had /odom, or
-        has none, is vouched for by its link, and one with no stream at all by its socket, as it
-        always was."""
+        listens for /odom alone, asks the bridge with a request of its own whatever else is out,
+        and with only the bridge heard says what it heard and when, and that the base is not
+        known to have taken the zero (`_heard_after`, `_base_not_known`). A base that never had
+        /odom, or has none, is vouched for by its link, and one with no stream at all by its
+        socket, as it always was."""
         if not self._zero():
             return
         sent_at = time.monotonic()
@@ -1206,8 +1243,11 @@ class RosbridgeWs:
         if pace is None:
             return
         base = self._base_quiet()
-        if self._answered_at is not None and not self._asks:
-            self._ask_in_background()
+        mine: asyncio.Task[float | None] | None = None
+        if self._answered_at is not None and (base is not None or not self._asks):
+            # with /odom quiet, an ask of its own whatever else is out: only an answer to a
+            # request sent after the zero shows the zero reached the bridge (`_heard_after`)
+            mine = self._ask_in_background()
         if base is None:
             listen = _listen_s(pace)
             if await self._hears_within(listen):
@@ -1216,11 +1256,8 @@ class RosbridgeWs:
             listen = _listen_s(odom_pace if odom_pace is not None else pace)
             if await self._hears_within(listen, base_only=True):
                 return
-            with self._lock:
-                heard = self._arrivals.at
-            lives = [t for t in (heard, self._answered_at) if t is not None]
-            if lives and max(lives) >= sent_at:
-                self._bridge_took_it(base)
+            if (heard := self._heard_after(sent_at, mine)) is not None:
+                self._base_not_known(heard, base)
                 return
         on = ", ".join(t for t in (self.endpoint.odom, self.endpoint.image) if t)
         self._not_known(

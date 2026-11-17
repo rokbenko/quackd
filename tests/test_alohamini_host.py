@@ -54,6 +54,12 @@ async def _lands(link: AlohaMiniZmq, host: FakeAlohaMiniHost, intent: Intent) ->
     await _until(lambda: len(host.actions) > seen)
 
 
+ANSWERED_WITHIN_S = 30.0
+"""How long a test gives a host that is answering to answer a stop's own request
+(`zmq_host.HOLD_READ_S`): long enough for any machine, so it is the host and not the
+machine's speed that says whether an answer came."""
+
+
 async def _connected(host: FakeAlohaMiniHost, **kwargs: object) -> AlohaMiniZmq:
     link = AlohaMiniZmq(address=host.address, **kwargs)  # type: ignore[arg-type]
     host.start()
@@ -362,13 +368,17 @@ async def test_a_stale_reading_is_a_heartbeat_failure() -> None:
         await link.close()
 
 
-async def test_a_host_that_was_only_not_asked_is_not_taken_for_a_silent_one() -> None:
+async def test_a_host_that_was_only_not_asked_is_not_taken_for_a_silent_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """This wire answers only what is asked, and a stop asked nothing unless an arm was unheld,
     so it judged the host by the newest answer anybody else had got: a stop, or a close, after a
     second in which nothing asked, as one after a pause granted to a robot met (MCP's and
     drive's close), said a host answering every request was not known to have read it. A stop
     whose newest answer is past the window asks the host once, and is judged by what it asked
-    and what came back. Timing: waits the host's own window twice, on the real clock."""
+    and what came back. The quiet is waited out on the real clock, which can only make it
+    longer; the host's answer is waited for however long the machine takes to give it."""
+    monkeypatch.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
     with FakeAlohaMiniHost() as host:
         link = await _connected(host)
         adapter = AlohaMiniAdapter(link)
@@ -383,13 +393,16 @@ async def test_a_host_that_was_only_not_asked_is_not_taken_for_a_silent_one() ->
         assert adapter.close_note is None, adapter.close_note
 
 
-async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read() -> None:
+async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A run's last stop that came back unconfirmed or failed reached only the record, since
     nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
     as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
     drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
-    A close to a host still publishing has nothing to say."""
-    with FakeAlohaMiniHost() as host:
+    A close to a host still publishing has nothing to say, however long the machine takes."""
+    with FakeAlohaMiniHost() as host, monkeypatch.context() as patched:
+        patched.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
         adapter = AlohaMiniAdapter(await _connected(host))
         await adapter.heartbeat()
         await adapter.close()
@@ -409,19 +422,24 @@ async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_re
         assert "torque" not in _torque_phrase(note), _torque_phrase(note)
 
 
-async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it() -> None:
+async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """A PUSH socket takes a send whether anything reads it or not, and the transport kept no
     `stop_error`, so a stop to a host stuck in a cycle said "stopped (velocity zeroed)" while its
     watchdog, which runs in that same loop, never ran. ZMQ says nothing of a dead peer, and a
     stop asks for no reading here, since this wire answers only what is asked. What the
     transport can know is how old its newest answer is, and a stop past the host's watchdog
-    window says it is not known to have reached the host; one within it reads as before."""
+    window says it is not known to have reached the host; one within it reads as before. The
+    host still answering is waited for however long the machine takes."""
     with FakeAlohaMiniHost() as host:
         link = await _connected(host)
         adapter = AlohaMiniAdapter(link)
         try:
-            await link.heartbeat()
-            await adapter.stop()
+            with monkeypatch.context() as patched:
+                patched.setattr(zmq_host, "HOLD_READ_S", ANSWERED_WITHIN_S)
+                await link.heartbeat()
+                await adapter.stop()
             assert adapter.stop_error is None, "a host that answered within its window"
             host.stop()  # stuck in a cycle: nothing read, nothing answered, no watchdog run
             await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)

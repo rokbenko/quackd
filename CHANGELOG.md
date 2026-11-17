@@ -588,9 +588,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   slow is not cut off between its first messages. A stop on a link with a stream listens after
   its zero Twist for two of the stream's pace, a second at least and four at most, for a message
   or an answer, and with nothing heard says its zero is not known to have reached the base. Where
-  `/odom` had a pace and has gone quiet, only `/odom` vouches for the base: a stop that hears
-  the bridge, an answer or a camera's image, and no `/odom` says the bridge took the zero and the
-  base is not known to have, since a base's driver can die while the bridge runs on. A bridge
+  `/odom` had a pace and has gone quiet, only `/odom` vouches for the base, since a base's
+  driver can die while the bridge runs on: a stop that hears the bridge and no `/odom` says what
+  it heard and when, that the zero reached the bridge only where its own request, sent after the
+  zero, was answered, and that the base is not known to have taken the zero. A bridge
   that gave no answer at connect and a base with no `/odom` are still driven, watched by the
   socket alone, as the page says, with a table of how long a dead link can go unnoticed on each
   kind of base.

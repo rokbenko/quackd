@@ -170,15 +170,19 @@ Twist if it did not`.
 
 Where `/odom` had a pace and has gone quiet past its window, only `/odom` vouches for the base.
 A base's driver can die, or the cable to its motor board come out, while rosbridge and `rosapi`
-run on: an answer from the bridge, or a camera's image, says the zero reached the bridge and
-nothing of the base. So such a stop listens for `/odom` alone, and with only the bridge heard
-says so: `stop went out but is not known to have reached the body, so the body may still be
-moving: rosbridge at ws://robot.local:9090 was heard from after the zero Twist went out, so the
-bridge took it, but /odom has brought nothing for 3.0 s, longer than the 1.0 s its pace gives
-it, so the base is not known to have taken it, and it has no deadman and keeps its last Twist if
-it did not`. A base that publishes `/odom` only while it moves says this of a stop sent after it
-has stood still past that window. A base that never had `/odom`, a camera's base among them, is
-vouched for by its link, as before.
+run on, and the bridge's answers say nothing of the base. So such a stop listens for `/odom`
+alone, asks the bridge for its topic list with a request of its own, whatever else is out, and
+with only the bridge heard says what it heard and when. Over one socket only the answer to that
+request, sent after the zero, shows the zero reached the bridge: `stop went out but is not known
+to have reached the body, so the body may still be moving: rosbridge at ws://robot.local:9090
+answered a request sent after the zero Twist, 0.0 s after it went out, so the zero reached the
+bridge, but /odom has brought nothing for 3.0 s, longer than the 1.0 s its pace gives it, so the
+base is not known to have taken the zero Twist, and it has no deadman and keeps its last Twist if
+it did not`. A camera's image, which travels the other way, or the answer to a request sent
+before the zero, is said as what it is, `which shows the link is up and not that the zero
+reached the bridge`. A base that publishes `/odom` only while it moves says this of a stop sent
+after it has stood still past that window. A base that never had `/odom`, a camera's base among
+them, is vouched for by its link, as before.
 
 Listening is what a stop costs here. On a live link it ends with the next message or the answer,
 and at worst, on a stream at the slowest pace taken, a stop's answer comes four seconds after its
@@ -198,7 +202,7 @@ and a stop listens two of its stream's pace, a second at least.
 | `/odom` at 10 Hz, with `rosapi` or without | a second, then 2B: 2 s | `went out but is not known to have reached the body`, after listening 1 s |
 | `/odom` at half a hertz, or slower | 5 × 2 s, then 2B: 11 s, the most for any stream | the same, after listening 4 s |
 | `/odom` at 10 Hz after a pause it came back from, of 3 s or 30 s | 2 s again once five fresh gaps have come, and 11 s at most before then | the same, after listening 1 s, and 4 s at most before then |
-| `/odom` at 10 Hz gone quiet, while the bridge answers or a camera still sends: the base's driver gone | never: the bridge is alive, and the heartbeat does not fail | `went out but is not known to have reached the body`, `the bridge took it, but /odom has brought nothing`, after listening 1 s for `/odom` |
+| `/odom` at 10 Hz gone quiet, while the bridge answers or a camera still sends: the base's driver gone | never: the bridge is alive, and the heartbeat does not fail | `went out but is not known to have reached the body`, what the bridge sent and when, `but /odom has brought nothing`, after listening 1 s for `/odom` |
 | no stream, a bridge that answered at connect | a second, B, then twice 2 s and B: 6.5 s | `stopped (velocity zeroed)`, while the socket reads up |
 | no stream, a bridge that did not answer at connect | never: only the socket's own state | `stopped (velocity zeroed)`, while the socket reads up |
 

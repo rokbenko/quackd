@@ -47,6 +47,11 @@ async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
     raise AssertionError("the fake host never reached the expected state")
 
 
+A_MINUTE_MS = 60_000.0
+"""A watchdog window no machine is slow enough to outlast, for a test about a host that is
+publishing: only a host gone quiet can make an observation that old."""
+
+
 async def _connected(host: FakeXLerobotHost, **kwargs: object) -> XLerobotZmq:
     link = XLerobotZmq(address=host.address, **kwargs)  # type: ignore[arg-type]
     host.start()
@@ -487,9 +492,10 @@ async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_re
     nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,
     as the rosbridge close says its zero Twist, which a run, an onboard goal, a team member and
     drive say after it, and `robot list --probe` shortens as a stop, never as torque left on.
-    A close to a host still publishing has nothing to say."""
+    A close to a host still publishing has nothing to say, however long the machine takes:
+    its window is a minute there, so only the host going quiet can make it stale."""
     with FakeXLerobotHost() as host:
-        adapter = XLerobotAdapter(await _connected(host))
+        adapter = XLerobotAdapter(await _connected(host, stale_limit_ms=A_MINUTE_MS))
         await adapter.close()
         assert adapter.close_note is None, adapter.close_note
     with FakeXLerobotHost() as host:
@@ -514,17 +520,20 @@ async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached
     heartbeat said that watchdog "has already stopped the base". ZMQ says nothing of a dead
     peer. What the transport can know is that no observation has come within the host's own
     watchdog window, and that is what it says, and only then: a stop to a host still publishing
-    reads as before."""
+    reads as before. While it publishes its window is a minute, so the machine's speed cannot
+    make it stale; once it is stuck, its own."""
     with FakeXLerobotHost() as host:
         link = await _connected(host)
         adapter = XLerobotAdapter(link)
         ctx = VerbContext(transport=adapter)
+        window_ms, link.stale_limit_ms = link.stale_limit_ms, A_MINUTE_MS
         try:
             assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
             await _until(lambda: host.state["x.vel"] == 0.2)
             assert (await stop_verb(ctx, NoParams())).summary == "stopped (velocity zeroed)"
             assert (await link.send_intent(Intent.move(0.2, 0.0, 0.0))).accepted
             await _until(lambda: host.state["x.vel"] == 0.2)
+            link.stale_limit_ms = window_ms
             host.stop()  # stuck in a cycle: nothing read, nothing published, no watchdog run
             await link.get_state()  # take whatever its last cycle left in the socket
             await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
