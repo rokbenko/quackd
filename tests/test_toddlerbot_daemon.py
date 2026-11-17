@@ -869,18 +869,22 @@ def test_a_hung_bus_at_shutdown_still_ends_the_process_on_time(mode: str) -> Non
     on a dead bus, so in the one case the timer was for it could not fire, and the settle before
     `close()` made bus calls with no deadline armed at all.
 
-    In a child process, with the deadlines shrunk through their own constants: "close holds the
-    GIL" must be gone about CLOSE_TIMEOUT_S after close() starts, and "a settle tick hangs" by
-    one tick's bound, SETTLE_FLOOR_S, plus CLOSE_TIMEOUT_S. The child is killed by PID if it
-    outlives that, and nothing here sends a signal."""
+    In a child process, with the deadlines shrunk through their own constants, and judged by the
+    order of events rather than by a clock, which a loaded machine stretches: the process ends
+    with the hard exit's code, the watchdog's own header names the deadline that fired (for "close
+    holds the GIL" the one armed for `close()`, CLOSE_TIMEOUT_S; for "a settle tick hangs" one
+    tick's bound, SETTLE_FLOOR_S plus CLOSE_TIMEOUT_S), and the hang it ended, ten times that
+    deadline, never released: `shutdown()` did not return. The child is killed by PID if it
+    outlives the hang, and nothing here sends a signal."""
+    import datetime
     import subprocess
 
     close_s = D.CLOSE_TIMEOUT_S / 10
     floor_s = D.SETTLE_FLOOR_S / 8
-    # Half a second for the watchdog to wake and write the stacks; in the hung settle, a tick's
-    # (shrunk) bound twice over.
-    limit = close_s + 0.5 if mode == "close holds the GIL" else 2 * (floor_s + close_s) + 1.0
-    hold = 10 * limit
+    armed = close_s if mode == "close holds the GIL" else floor_s + close_s
+    # faulthandler's own first line, which says which deadline it was armed with
+    header = f"Timeout ({datetime.timedelta(seconds=armed)})!"
+    hold = 10 * (armed + 1.0)
     proc = subprocess.Popen(
         [sys.executable, "-c", _HUNG_BUS, str(DAEMON), mode, str(hold), str(close_s), str(floor_s)],
         stdout=subprocess.PIPE,
@@ -894,7 +898,8 @@ def test_a_hung_bus_at_shutdown_still_ends_the_process_on_time(mode: str) -> Non
         for line in proc.stdout:
             lines.append((time.monotonic(), line.rstrip()))
 
-    threading.Thread(target=pump, daemon=True).start()
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
     marker = "close start" if mode == "close holds the GIL" else "ready"
     try:
         started = time.monotonic()
@@ -902,16 +907,16 @@ def test_a_hung_bus_at_shutdown_still_ends_the_process_on_time(mode: str) -> Non
             assert proc.poll() is None, f"the child ended before {marker!r}: {lines}"
             assert time.monotonic() - started < 120, f"the child never said {marker!r}"
             time.sleep(0.01)
-        began = next(t for t, text in lines if text == marker)
         with contextlib.suppress(subprocess.TimeoutExpired):
-            proc.wait(timeout=3 * limit)
-        took = time.monotonic() - began
-        assert proc.poll() is not None and took <= limit, (
-            f"{mode}: {took:.1f} s after {marker!r} the process was "
-            f"{'still alive' if proc.poll() is None else 'only just gone'}; the hard exit "
-            f"should have ended it within {limit:.1f} s. Its last lines: {lines[-4:]}"
+            proc.wait(timeout=2 * hold)
+        reader.join(timeout=hold)  # every line the child wrote, once its pipe has closed
+        texts = [text for _, text in lines]
+        assert proc.poll() is not None, f"{mode}: still alive past its hang. {texts[-4:]}"
+        assert "shutdown returned" not in texts, f"{mode}: the hang ended before the hard exit"
+        assert proc.returncode == 1, f"{mode}: exit {proc.returncode}, not the hard exit's 1"
+        assert header in texts[texts.index(marker) :], (
+            f"{mode}: no {header!r} after {marker!r}, not the deadline it should be. {texts[-4:]}"
         )
-        assert proc.returncode == 1, "a hard exit, not a clean one"
     finally:
         if proc.poll() is None:
             proc.kill()
@@ -3176,3 +3181,204 @@ def test_a_settle_whose_target_cannot_close_ends_by_its_ticks(
     slew = math.ceil(travel / (D.RESET_VEL * D.CONTROL_DT))
     assert r["closed"] is not None and not r["held"], r["held"]
     assert r["ticks"] <= slew + D.FRAME_DWELL_LIMIT + 1, f"the settle ran {r['ticks']} ticks"
+
+
+# ── 18. a bus that fails, a body that trails, and what the stall says ─────────────────────
+
+
+class _FailingBus(D.FakeSim):  # type: ignore[name-defined,misc]
+    """The fake body on a bus that fails its next `bad_writes` writes (the body does not move) or
+    its next `bad_reads` reads, with the RuntimeError a serial binding raises, then answers."""
+
+    bad_writes = 0
+    bad_reads = 0
+
+    def get_observation(self) -> Any:
+        if self.bad_reads:
+            self.bad_reads -= 1
+            raise RuntimeError("bus read failed")
+        return super().get_observation()
+
+    def set_motor_target(self, target: Any) -> None:
+        if self.bad_writes:
+            self.bad_writes -= 1
+            raise RuntimeError("bus write failed")
+        super().set_motor_target(target)
+
+
+@pytest.mark.parametrize("path", ["a stand", "a motion", "the deadman's slew"])
+def test_a_write_that_fails_leaves_the_target_where_the_last_write_did(path: str) -> None:
+    """`_tick` moved the target on before the write, so a write that raised still moved it: a
+    stand, a motion and the settle judged arrival on poses the bus was never sent, and a bus that
+    came back was handed every step it had missed in one write, which is a snap. The target is what
+    the last write that landed carried: through 30 failed writes it does not move, the command does
+    not move on, a client's state shows that pose, and the first write that lands moves one step."""
+    d = _away(_FailingBus)
+    h = _handler(d)
+    d.tick()
+    if path == "a stand":
+        assert _send(h, "bot.stand")["accepted"]
+    elif path == "a motion":
+        d.motion_library = {"kneel": [np.full(d.robot.nu, v, np.float32) for v in (0.2, 0.1)]}
+        assert _send(h, "bot.perform", {"motion": "kneel"})["accepted"]
+    else:
+        with d.lock:
+            d.command.trip(d.command.default_pose)
+    for _ in range(3):
+        _send(h, "bot.keepalive")
+        d.tick()
+    mode, frame, written = d.command.mode, d.command.frame_index, d.target.copy()
+    outage = 30
+    d.sim.bad_writes = outage
+    for _ in range(outage):
+        _send(h, "bot.keepalive")
+        with pytest.raises(RuntimeError):
+            d.tick()
+    assert np.array_equal(d.target, written), "the target moved on writes that never landed"
+    assert (d.command.mode, d.command.frame_index) == (mode, frame), "and the command moved on"
+    assert list(d.state()["joints"].values()) == [round(float(v), 3) for v in written]
+    _send(h, "bot.keepalive")
+    d.tick()
+    step = float(np.max(np.abs(d.target - written)))
+    assert 0.0 < step <= D.MAX_STEP_RAD, f"the bus came back to a jump of {step:.3f} rad"
+
+
+def test_a_settle_through_failed_writes_arrives_only_with_the_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round seven judged arrival after a tick that raised as after any other, so a run of failed
+    writes as long as the slew read as settled with the body where the failure found it, and the
+    close took torque off it there. A tick that raised is judged neither way, and the target moves
+    only on a write that lands, so the settle arrives when the body does."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _away(_FailingBus)
+    d.tick()
+    d.sim.bad_writes = math.ceil(AWAY / (D.RESET_VEL * D.CONTROL_DT)) + 30
+    assert d.settle() is True
+    away = float(np.max(np.abs(d.sim.pos - d.command.default_pose)))
+    assert away < 1e-2, f"settled with the body {away:.3f} rad from the safe pose"
+
+
+@pytest.mark.parametrize("outage", ["for a while", "for good"])
+def test_a_settle_waits_for_a_failing_bus_and_holds_the_robot_if_it_never_answers(
+    outage: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A read that raised counted towards the stall, so two seconds of a failing bus ended the
+    settle and the close dropped a robot that had not moved, where 7068011f waited for the bus. A
+    tick that raised counts neither way: a bus that answers again is waited for and the slew
+    arrives; one that never does meets the cap, and the robot is left holding with a line that
+    says how many of the ticks failed, so it reads as the bus and not the loop's rate."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    monkeypatch.setattr(D, "hard_exit_after", lambda seconds, what: None)
+    held: list[str] = []
+
+    def leave_holding(reason: str) -> None:
+        held.append(reason)
+        raise _Held(reason)
+
+    monkeypatch.setattr(D, "leave_holding", leave_holding)
+    d = _away(_FailingBus)
+    d.tick()
+    d.sim.bad_reads = D.FRAME_DWELL_LIMIT + 20 if outage == "for a while" else 10**9
+    with _suite_watchdog_back(), contextlib.suppress(_Held):
+        d.shutdown()
+    if outage == "for a while":
+        away = float(np.max(np.abs(d.sim.pos - d.command.default_pose)))
+        assert not held and d.sim.closed and away < 1e-2, (held, d.sim.closed, away)
+    else:
+        assert held and not d.sim.closed, "a bus that never answered ended in a close"
+        assert "not reached" in held[0] and "failed" in held[0], held
+
+
+class _Trailing(D.FakeSim):  # type: ignore[name-defined,misc]
+    """The fake body, trailing every target it is sent by `lag` radians on the side away from
+    `home`, as a joint that sags under load or lags its command does, and reaching a target that
+    is home. A parameter, not a sleep. The joints in `stuck` never move at all."""
+
+    lag = 0.0
+    home: Any = None
+    stuck: Any = ()
+
+    def set_motor_target(self, target: Any) -> None:
+        was = self.pos.copy()
+        super().set_motor_target(target)
+        sent = np.asarray(target, np.float32)
+        self.pos = (sent + self.lag * np.sign(sent - self.home)).astype(np.float32)
+        self.pos[list(self.stuck)] = was[list(self.stuck)]
+
+
+def _trailing_daemon(lag: float, waist: float, stuck_waist: bool = False) -> Any:
+    """A daemon whose body trails by `lag` on every joint, standing 0.3 rad from home with its
+    waist twisted `waist` rad, and that waist jammed if `stuck_waist`."""
+    robot = D.FakeRobot()
+    sim = _Trailing(robot)
+    d = D.Daemon(robot, sim, fake=True)
+    sim.home, sim.lag = d.command.default_pose.copy(), lag
+    sim.stuck = list(d.waist) if stuck_waist else []
+    start = np.full(robot.nu, 0.3, np.float32)
+    start[d.waist] = waist
+    sim.pos = start
+    d.tick()
+    return d
+
+
+@pytest.mark.parametrize("lag", [0.0, 0.1, 0.3, 0.45, 0.6, 1.0])
+def test_the_stall_never_ends_a_settle_still_closing_whatever_the_body_trails_by(
+    lag: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stall counted the sum of what every joint had left, which falls on every tick of a slew
+    that is getting there except in the waist's stage: while the waist reads twisted past
+    WAIST_THRESHOLD, `waist_first` holds every other joint at the measured pose, so a body that
+    trails its targets drags them back, the sum rises while only the waist closes, and
+    FRAME_DWELL_LIMIT ticks of it ended the settle with the robot on its way. The stall counts what
+    the slew's own stage closes on: the waist alone while it untwists, the whole pose after. Here
+    the waist starts at 1.2 rad, and the lags run past WAIST_THRESHOLD."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _trailing_daemon(lag, 1.2)
+    assert d.settle() is True, f"a body trailing by {lag} rad was given up on, still closing"
+    assert float(np.max(np.abs(d.target - d.command.default_pose))) < 1e-2
+
+
+def test_a_waist_that_never_reads_straight_ends_the_settle_once_its_own_slew_is_done(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A jammed waist never reads straight, so the waist's stage never ends and nothing else may
+    move, while the other joints, trailing their targets, drag them back. The stall ends that
+    settle, but only once the waist's own target has reached zero and nothing has closed for
+    FRAME_DWELL_LIMIT ticks: the sum of every joint stalled it with the waist still closing."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _trailing_daemon(0.3, 1.2, stuck_waist=True)
+    with caplog.at_level("WARNING"):
+        assert d.settle() is False
+    assert float(np.max(np.abs(d.target[d.waist]))) < 1e-2, "given up with the waist still closing"
+    assert any("stopped closing" in r.getMessage() for r in caplog.records), caplog.text
+
+
+@pytest.mark.parametrize("held_off_by", ["a joint's limits", "the floor"])
+def test_the_stall_says_what_it_saw_and_nothing_it_did_not(
+    held_off_by: str, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The stall's line said "held off it by a joint's limits by the look of it" whatever held the
+    slew, a robot lying face down after a floor motion included, which the deadman's rest holds
+    where it lies. It says how far short, for how many ticks nothing closed, and, where the daemon
+    knows it, that the robot is down."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    if held_off_by == "the floor":
+        d = _floor_daemon()
+        h = _handler(d)
+        d.tick()
+        assert _send(h, "bot.perform", {"motion": "crawl"})["accepted"]
+        for _ in range(200):
+            _send(h, "bot.keepalive")
+            d.tick()
+        assert d.lying and d.down_by == "crawl" and not d.fallen
+    else:
+        d = _away()
+        d.lo[d.robot.motor_ordering.index("joint_0")] = 0.1  # home, 0, is below its limit
+        d.tick()
+    with caplog.at_level("WARNING"):
+        assert d.settle() is False
+    line = next(r.getMessage() for r in caplog.records if "stopped closing" in r.getMessage())
+    assert "rad short" in line and f"{D.FRAME_DWELL_LIMIT} ticks" in line, line
+    assert "limits" not in line, line
+    assert ("down after crawl" in line) == (held_off_by == "the floor"), line

@@ -114,14 +114,20 @@ shutting down. A stop is accepted, changes nothing, and its answer carries the n
 `the daemon is shutting down and settling the robot to its safe pose`. Shutdown is entered once,
 from whatever began it, and a second signal does not cut the settle short. The settle goes on
 for as long as it keeps closing on the safe pose, however slowly the loop runs, since its slew
-is handed out a tick at a time; it ends once the slew has stopped closing (a place outside a
-joint's limits), and then `close()` follows. One path does not close: a settle still closing
-after `SETTLE_MAX_S` (120 s, which only a loop making under about four ticks a second reaches)
-leaves the robot torqued and holding where it is, since closing takes torque off and would drop
-it. The log says the safe pose was not reached, how far is left and the rate the loop made, and
-the daemon exits with 3. A bus that hangs cannot keep the process alive either: a settle tick
-that does not come back ends it within thirteen seconds, and so does `close()` five seconds in,
-with or without a standard error to write its stacks to.
+is handed out a tick at a time. A tick that fails on the bus moves nothing (the target is what
+the last write that landed carried, so a bus that comes back is handed one step, not a jump) and
+is simply waited through. The settle ends once its slew has stopped closing for a hundred ticks
+that landed, the waist alone while it untwists and the whole pose after: a place outside a
+joint's limits, or a robot lying on the floor, which rest holds where it lies. Then `close()`
+follows. One path does not close: a settle still short of the safe pose after `SETTLE_MAX_S`
+(120 s, which only a loop making under about four ticks a second, or a bus that never answers
+again, reaches) leaves the robot torqued and holding where it is, since closing takes torque off
+and would drop it. The log says the safe pose was not reached, how far is left, the rate the
+loop made and how many of its ticks failed, and ends `the robot is left torqued and holding where
+it is, and the daemon exits with 3: support it before you power it off`; the daemon then exits
+with 3. A bus that hangs cannot keep the process alive either: a settle tick that does not come
+back ends it within thirteen seconds, and so does `close()` five seconds in, with or without a
+standard error to write its stacks to.
 
 After ten failing ticks in a row the loop takes no more orders, and settles the robot to the
 safe pose for as long as the bus answers; after twenty it stops. Only a restart lets the daemon
@@ -242,7 +248,9 @@ protect, and nobody has measured it.
 Read `docs/adapters/toddlerbot/hardware-checklist.md` before the first bring-up and follow its
 order. It keeps the feet off the ground until step 14, and the two steps that matter most are 11 and
 12, both taken on the stand: pull the network cable mid-move and confirm the deadman slews
-rather than drops, then send `SIGTERM` and confirm the same.
+rather than drops, then send `SIGTERM` and confirm the same. An exit code of 3 there means the
+settle could not reach the safe pose and left the robot torqued and holding: support it before
+you power it off.
 
 This robot cannot get up by itself. There is no get-up policy for this body at this pin, so a
 fall ends the run and needs a human. Ask for less than you think.

@@ -650,10 +650,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a deadline in seconds sized to the distance, while its slew is handed out a tick at a time, so
   on a loop making a few ticks a second instead of fifty it gave up partway and took torque off a
   robot still on its way. It goes on now for as long as the slew keeps closing on the safe pose,
-  ends once it has stopped closing, and stops at 120 s whatever the loop does: a robot still on
-  its way then is left torqued and holding where it is rather than dropped, the log says the safe
-  pose was not reached, how far is left and the rate the loop made, and the daemon exits with 3.
-  The hard exit, there for a tick that hangs, moves on as the settle's ticks come back.
+  waiting through ticks that fail on the bus, ends once nothing has closed for a hundred ticks
+  that landed (the waist alone while it untwists first, the whole pose after), and stops at 120 s
+  whatever the loop or the bus does: a robot still short of the safe pose then is left torqued and
+  holding where it is rather than dropped, the log says the safe pose was not reached, how far is
+  left, the rate the loop made and how many of its ticks failed, and asks for the robot to be
+  supported before it is powered off, and the daemon exits with 3. The hard exit, there for a
+  tick that hangs, moves on as the settle's ticks come back.
+- **A ToddlerBot bus that comes back is handed one step, not every step it missed.** The loop
+  moved its target on before writing it, so a write that failed moved it all the same: a stand, a
+  motion or the shutdown's settle went on as if it had been sent, and the first write to land
+  after a run of failures carried every step missed at once, a snap on a body where a position
+  command is full torque. The target moves only on a write that lands now, and the joints a
+  client reads are the ones last sent.
 - **A stalled ToddlerBot tick fails the heartbeat.** Health read numbers the control thread writes
   after each tick, so a tick blocked on the bus answered healthy at the last rate while the deadman
   inside it could not fire, and a first tick that never ended read as healthy for ever. Health

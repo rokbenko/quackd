@@ -71,7 +71,10 @@ script that ignores it.
     forever and Roboglot's daemon is the only thing that makes it mean anything else.
 12. **Send the daemon `SIGTERM`.** It should settle to the safe pose first and only then
     release, refusing every command that moves it while it settles. Upstream's own exit path
-    does not do this, which is why the daemon exists.
+    does not do this, which is why the daemon exists. If it cannot reach the safe pose within
+    two minutes, it does not release: its last log line ends `the robot is left torqued and
+    holding where it is, and the daemon exits with 3: support it before you power it off`, and
+    the exit code is 3. Do exactly that, and say in an issue what the line before it reported.
 13. **Read which way face down is, before `crawl` or `push_up` is ever tried.** Start the
     daemon again, tip the robot nose down on its stand by hand, about 30 degrees, short of the
     50 that reads as a fall, and hold it there. From the MCP client, run `robot_run_verb` with

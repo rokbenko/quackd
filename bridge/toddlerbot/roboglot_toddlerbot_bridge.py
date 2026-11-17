@@ -833,8 +833,13 @@ class Daemon:
                 log.error("a non-finite target reached the loop; holding the last good pose")
                 wanted = self.target
             wanted = clamp_to_limits(wanted, self.lo, self.hi)
-            self.target = rate_limit(wanted, self.target)
-            self.sim.set_motor_target(self.target)
+            sent = rate_limit(wanted, self.target)
+            # The target is what the bus was last told. A write that raises told it nothing, so
+            # the target stays where the last write that landed left it: nothing is judged
+            # reached that was never sent, and a bus that comes back is handed one step from
+            # there, not every step it missed in one write, which is a snap.
+            self.sim.set_motor_target(sent)
+            self.target = sent
             self.sim.step()
             return self.target
 
@@ -1220,9 +1225,14 @@ class Daemon:
         robot still on its way, which is the fall this method exists to get in front of. So the
         settle goes on for as long as the slew keeps closing on the safe pose, however slowly,
         and returns the moment the pose arrives. It ends short of it when the robot is down,
-        when the slew has come no nearer for FRAME_DWELL_LIMIT ticks (a place outside a joint's
-        limits, which the clamp holds it from), or at SETTLE_MAX_S (`timeout_s`, if given), so a
+        when the slew's own stage has come no nearer for FRAME_DWELL_LIMIT ticks that landed (a
+        place outside a joint's limits, which the clamp holds it from, or a body on the floor,
+        which rest holds where it lies), or at SETTLE_MAX_S (`timeout_s`, if given), so a
         shutdown always ends; `held_short` says why when that last one ended it.
+
+        A tick that raised moved nothing (`_tick` moves the target only on a write that lands),
+        so it is judged neither as arrival nor as a tick that came no nearer: a bus that fails
+        for a while is waited for, and one that never answers again meets the cap.
 
         While shutting down, the hard exit is moved on as ticks come back, so it ends a tick
         that hangs and never a settle that is still closing."""
@@ -1240,53 +1250,78 @@ class Daemon:
             self.command.trip(self.command.default_pose)
         cap = SETTLE_MAX_S if timeout_s is None else timeout_s
         began = armed = time.monotonic()
-        nearest, still, ticks = math.inf, 0, 0
+        nearest, still, ticks, failed, failing = math.inf, 0, 0, 0, 0
+        stage: str | None = None
         self.held_short = None
         while True:
             try:
                 self.tick()
             except Exception:
-                # `tick()` swallows a bad read; a bad WRITE still propagates. Letting it out
-                # of here would abandon the slew halfway and go straight to close(), which is
-                # the torque-off this whole method exists to get in front of. Keep trying: a
-                # tick that moves nothing counts towards the stall, and the cap still holds.
-                log.exception("a tick failed while settling; going on")
+                # `tick()` swallows a dropped read; a write, or a read that fails another way,
+                # still raises. Letting it out of here would abandon the slew and go straight to
+                # close(), the torque-off this method exists to get in front of. It moved
+                # nothing, so it is judged neither way below, and once a run, not every tick.
+                if not failing:
+                    log.exception("a tick failed while settling; waiting for the bus")
+                failed += 1
+                failing += 1
+            else:
+                if failing:
+                    log.warning("the bus answered again after %d failed ticks", failing)
+                failing = 0
             ticks += 1
             now = time.monotonic()
             if self._shut and now - armed >= SETTLE_FLOOR_S / 2:
                 # a tick came back, so the hard exit, there for one that does not, moves on
                 hard_exit_after(SETTLE_FLOOR_S + CLOSE_TIMEOUT_S, "settling, still closing")
                 armed = now
+            landed = not failing
             with self.lock:
                 left = np.abs(self.command.default_pose - self.target)
-                if float(np.max(left)) < 1e-2:
+                short = float(np.max(left))
+                now_stage, measure = self._settle_stage(left)
+                down = self.down_by if self.lying else None
+                if landed and short < 1e-2:
                     log.info("settled")
                     return True
-                if self.fallen:
-                    # Rest for a body on the floor is holding where it lies (`plan`), which
-                    # this tick has done: waiting longer would change nothing.
+                if landed and self.fallen:
+                    # Rest for a body on the floor is holding where it lies (`plan`), which this
+                    # tick has done: waiting longer would change nothing.
                     log.warning("the robot is down, so it holds where it lies rather than settle")
                     return False
-            # Every joint short of its place closes on it each tick, the waist first, so the sum
-            # of what is left falls on every tick of a slew that is getting there.
-            total = float(np.sum(left))
-            nearest, still = (total, 0) if total < nearest else (nearest, still + 1)
-            if still >= FRAME_DWELL_LIMIT:
-                log.warning(
-                    "the slew stopped closing on the safe pose %.3f rad short, held off it by a "
-                    "joint's limits by the look of it; this is as near as it gets",
-                    float(np.max(left)),
-                )
-                return False
+            if landed:
+                if now_stage != stage:
+                    stage, nearest, still = now_stage, math.inf, 0
+                nearest, still = (measure, 0) if measure < nearest else (nearest, still + 1)
+                if still >= FRAME_DWELL_LIMIT:
+                    log.warning(
+                        "the slew stopped closing on the safe pose: %.3f rad short, nothing "
+                        "nearer for %d ticks%s",
+                        short,
+                        still,
+                        f"; the robot is down after {down}, held where it lies" if down else "",
+                    )
+                    return False
             if now - began >= cap:
                 self.held_short = (
-                    f"the safe pose was not reached in {cap:.0f} s: {float(np.max(left)):.3f} "
-                    f"rad still to go, the loop making {ticks / (now - began):.1f} of its "
-                    f"{CONTROL_HZ:.0f} ticks a second"
+                    f"the safe pose was not reached in {cap:.0f} s: {short:.3f} rad still to go, "
+                    f"the loop making {ticks / (now - began):.1f} of its {CONTROL_HZ:.0f} ticks a "
+                    f"second, {failed} of its {ticks} ticks failed"
                 )
                 log.error("%s", self.held_short)
                 return False
             time.sleep(CONTROL_DT)
+
+    def _settle_stage(self, left: Any) -> tuple[str, float]:
+        """The stage the settle's slew is in, and what it has left to close in it, which falls on
+        every tick that lands while the slew is getting there. While the waist reads twisted past
+        WAIST_THRESHOLD, `waist_first` drives the waist alone to zero and holds every other joint
+        at the measured pose, which a body trailing its targets drags back, so the stage's measure
+        is the waist's own distance from zero. After that every joint closes on its place, and
+        the measure is the sum of what is left (`left`). The caller holds `lock`."""
+        if len(self.waist) and float(np.max(np.abs(self.safe.pose[self.waist]))) > WAIST_THRESHOLD:
+            return "the waist", float(np.sum(np.abs(self.target[self.waist])))
+        return "the pose", float(np.sum(left))
 
     def shutdown(self) -> None:
         """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`):
