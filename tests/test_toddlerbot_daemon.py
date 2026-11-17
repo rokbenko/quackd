@@ -358,7 +358,7 @@ def test_shutdown_settles_and_then_closes() -> None:
 @pytest.mark.serial
 @pytest.mark.parametrize("client", ["bot.stop", "bot.look", "bot.command"])
 def test_a_connected_client_cannot_keep_the_shutdown_settle_from_the_safe_pose(
-    client: str, monkeypatch: pytest.MonkeyPatch
+    client: str,
 ) -> None:
     """`shutdown()` settles while the handler threads of connected clients go on serving, and
     nothing refused their commands. A `bot.stop` (Roboglot's client sends one at the end of every
@@ -367,10 +367,10 @@ def test_a_connected_client_cannot_keep_the_shutdown_settle_from_the_safe_pose(
     `close()`, which is torque-off on a real body, ran with the robot wherever it stood.
 
     The real `shutdown()` with the real loop running, while a client thread sends its method at
-    the client's keepalive cadence. The settle budget is shrunk through its own constants so a
-    failing run costs seconds: this slew needs travel / RESET_VEL = 1 s of the 4 s it gets."""
-    monkeypatch.setattr(D, "SETTLE_FLOOR_S", 1.0)
-    monkeypatch.setattr(D, "SETTLE_OVERHEAD", 3.0)
+    the client's keepalive cadence. It once shrank the settle's deadline in seconds to 4 s for a
+    slew of 50 ticks, which a loop under 12.5 ticks a second (macOS CI) missed. The settle is
+    bounded by its own progress now, whatever the loop's rate, and a client that held the slew
+    would stall it, which ends it within FRAME_DWELL_LIMIT ticks: a failing run costs seconds."""
     d = _daemon()
     d.walk_policy = _Walk()
     h = _handler(d, walk=True)
@@ -794,8 +794,14 @@ def test_a_loop_that_gave_up_takes_no_orders_and_settles_when_the_bus_answers() 
     loop = threading.Thread(target=d.run, daemon=True)
     loop.start()
     try:
-        deadline = time.monotonic() + D.settle_budget(pose)
-        while time.monotonic() < deadline and float(np.max(np.abs(d.target))) > 1e-2:
+        # The slew is handed out a tick at a time, so the wait counts the loop's ticks (its bus
+        # writes), not seconds: twice the slew's own, after the failing ones. SETTLE_MAX_S is
+        # there only so a loop that stopped cannot hang the suite.
+        slew = math.ceil(pose / (D.RESET_VEL * D.CONTROL_DT))
+        enough = D.FAULT_LIMIT + 2 * slew
+        give_up = time.monotonic() + D.SETTLE_MAX_S
+        while float(np.max(np.abs(d.target))) > 1e-2 and writes["n"] < enough:
+            assert time.monotonic() < give_up, f"the loop made {writes['n']} ticks"
             time.sleep(D.CONTROL_DT)
         answer = _send(h, "bot.stand")
         health = _send(h, "bot.health")
@@ -865,14 +871,14 @@ def test_a_hung_bus_at_shutdown_still_ends_the_process_on_time(mode: str) -> Non
 
     In a child process, with the deadlines shrunk through their own constants: "close holds the
     GIL" must be gone about CLOSE_TIMEOUT_S after close() starts, and "a settle tick hangs" by
-    the settle's own budget plus CLOSE_TIMEOUT_S. The child is killed by PID if it outlives
-    that, and nothing here sends a signal."""
+    one tick's bound, SETTLE_FLOOR_S, plus CLOSE_TIMEOUT_S. The child is killed by PID if it
+    outlives that, and nothing here sends a signal."""
     import subprocess
 
     close_s = D.CLOSE_TIMEOUT_S / 10
     floor_s = D.SETTLE_FLOOR_S / 8
-    # Half a second for the watchdog to wake and write the stacks; in the hung settle, the
-    # settle's whole (shrunk) budget twice over.
+    # Half a second for the watchdog to wake and write the stacks; in the hung settle, a tick's
+    # (shrunk) bound twice over.
     limit = close_s + 0.5 if mode == "close holds the GIL" else 2 * (floor_s + close_s) + 1.0
     hold = 10 * limit
     proc = subprocess.Popen(
@@ -2813,15 +2819,18 @@ def test_a_real_fall_around_a_floor_motion_is_still_a_fall(when: str, way: str) 
     assert _send(h, "bot.stand")["accepted"] is False, "and a stand is refused on a fallen robot"
 
 
-@pytest.mark.serial
 def test_a_stand_that_cannot_lift_the_robot_does_not_report_it_standing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A stand ended when its commanded pose arrived, which it always does, so a robot that could
     not lift itself from the floor ended its stand holding, still lying, with posture standing
     and health ok. A stand from the floor is done when the trunk reads upright, within the
-    settle's own deadline for that travel (shrunk here through its own constants), and otherwise
-    ends as not having got up, and says so."""
+    settle's own deadline for that travel, and otherwise ends as not having got up, and says so.
+
+    The deadline is in seconds and the slew in ticks, so the loop runs on `_SlowClock` at its
+    nominal rate: a wait in real seconds once missed the stand's end on a loaded machine."""
+    clock = _SlowClock(1)
+    monkeypatch.setattr(D, "time", clock)
     d = _floor_daemon()
     h = _handler(d)
     d.tick()
@@ -2830,18 +2839,15 @@ def test_a_stand_that_cannot_lift_the_robot_does_not_report_it_standing(
         _send(h, "bot.keepalive")
         d.tick()
     assert d.lying and d.down_by == "crawl"
-    # The slew home is handed out a tick at a time, so on a loaded machine it runs several times
-    # slower than its arithmetic (SETTLE_OVERHEAD's own note). The deadline is shrunk; the wait
-    # for the stand to end is the settle's own, unshrunk, for this travel.
     travel = float(np.max(np.abs(d.command.default_pose - d.target)))
-    longest = time.monotonic() + D.settle_budget(travel)
-    monkeypatch.setattr(D, "SETTLE_FLOOR_S", 0.5)
-    monkeypatch.setattr(D, "SETTLE_OVERHEAD", 1.0)
+    longest = clock.now + 2 * D.settle_budget(travel)
     d.sim.stuck = True
     answer = _send(h, "bot.stand")
     assert answer["accepted"] and "upright" in str(answer.get("note")), answer
-    while d.command.mode == D.Command.STAND and time.monotonic() < longest:
-        _tick_for(d, KEEPALIVE_S, h)
+    while d.command.mode == D.Command.STAND and clock.now < longest:
+        _send(h, "bot.keepalive")
+        d.tick()
+        clock.sleep(D.CONTROL_DT)
     state, health = d.state(), _send(h, "bot.health")
     assert d.command.mode == D.Command.HOLD and not state["moving"]
     assert state["posture"] != "standing", state["posture"]
@@ -3054,3 +3060,119 @@ def test_the_state_reports_the_worlds_up_in_the_bodys_frame() -> None:
     up = d.state()["up_in_body"]
     assert up == pytest.approx([-0.5, 0.0, 0.866], abs=1e-3), up
     assert D.leans_face_down(up[0], up[1]), "the reading the checklist names is FACE_DOWN's"
+
+
+# ── 17. the settle on a loop slower than its rate ─────────────────────────────────────────
+
+
+class _SlowClock:
+    """The daemon's `time`, standing in for the wall clock: `sleep` moves `monotonic` on by what
+    it was asked times `slow`, and nothing else moves it, so a loop that sleeps CONTROL_DT a tick
+    runs at 1/`slow` of its rate in these seconds, and at full speed in real ones. Everything else
+    is the real module's."""
+
+    def __init__(self, slow: float) -> None:
+        self.now, self.slow = time.monotonic(), slow
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds * self.slow
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(time, name)
+
+
+class _Held(BaseException):
+    """What `leave_holding` raises here, where the daemon's own ends the process."""
+
+
+def _shutdown_on_a_slow_loop(
+    monkeypatch: pytest.MonkeyPatch, slow: float, travel: float = 0.3, d: Any = None
+) -> dict[str, Any]:
+    """The real `shutdown()` of a daemon `travel` from its safe pose, its loop at 1/`slow` of its
+    rate by `_SlowClock`. What came of it: whether the robot was left holding and why, the target
+    when the bus was closed (None if it never was), every hard exit armed, and the settle's ticks.
+    """
+    clock = _SlowClock(slow)
+    monkeypatch.setattr(D, "time", clock)
+    armed: list[tuple[float, float]] = []
+    monkeypatch.setattr(
+        D, "hard_exit_after", lambda seconds, what: armed.append((clock.now, seconds))
+    )
+    held: list[str] = []
+
+    def leave_holding(reason: str) -> None:
+        held.append(reason)
+        raise _Held(reason)
+
+    monkeypatch.setattr(D, "leave_holding", leave_holding, raising=False)
+    d = d if d is not None else _daemon()
+    d.command.hold(np.full(d.robot.nu, travel, np.float32))
+    _ticks(d, int(2 * travel / D.MAX_STEP_RAD) + 5)
+    closed: dict[str, Any] = {"target": None}
+    real_close = d.sim.close
+
+    def close() -> None:
+        closed["target"] = d.target.copy()
+        real_close()
+
+    d.sim.close = close
+    before = d.sim.writes
+    with _suite_watchdog_back(), contextlib.suppress(_Held):
+        d.shutdown()
+    return {
+        "held": held,
+        "closed": closed["target"],
+        "armed": armed,
+        "ticks": d.sim.writes - before,
+    }
+
+
+@pytest.mark.parametrize("slow", [1, 10, 40])
+def test_the_shutdown_settle_reaches_the_safe_pose_on_a_slow_loop(
+    slow: float, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The settle gave itself a deadline in seconds sized to the distance (`settle_budget`, 28 s
+    for 0.3 rad), while the slew it waited for is handed out one tick at a time: 50 ticks for 0.3
+    rad. A loop making fewer than 50 in 28 s, under a twenty-eighth of its rate, missed it, and
+    `close()` took torque off a robot still on its way. The settle goes on while the slew closes,
+    however slowly; the bus is closed only at the safe pose, and every tick moves the hard exit
+    on before it can fire."""
+    r = _shutdown_on_a_slow_loop(monkeypatch, slow)
+    assert not r["held"], r["held"]
+    assert r["closed"] is not None, "the bus was closed"
+    away = float(np.max(np.abs(r["closed"])))
+    assert away < 1e-2, f"at 1/{slow} of its rate close() ran {away:.3f} rad from the safe pose"
+    for (at, seconds), (later, _) in zip(r["armed"], r["armed"][1:], strict=False):
+        assert later <= at + seconds, f"the hard exit armed at {at} for {seconds} s ran out first"
+
+
+def test_a_settle_still_on_its_way_at_its_cap_leaves_the_robot_holding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A loop so slow that SETTLE_MAX_S is not enough: 50 ticks at 4 s each is 200 s. Closing at
+    the end of it took torque off a robot partway home, which drops it. It is left torqued and
+    holding where it is, as the hard exit leaves it: `leave_holding` is told the safe pose was not
+    reached, how far is left and the rate the loop made, and the bus is never closed."""
+    r = _shutdown_on_a_slow_loop(monkeypatch, 200)
+    assert r["closed"] is None, "close() took torque off a robot still on its way"
+    assert r["held"] and "not reached" in r["held"][0] and "to go" in r["held"][0], r["held"]
+
+
+def test_a_settle_whose_target_cannot_close_ends_by_its_ticks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A joint whose place in the safe pose is outside its limits is held off it by the clamp, and
+    the settle waited out its whole deadline for it, 1400 ticks for 0.3 rad at full rate. It ends
+    once the slew has come no nearer for FRAME_DWELL_LIMIT ticks, and closes, as it did: the
+    target is as near the safe pose as the limits let it be, and nothing is left holding."""
+    d = _daemon()
+    j = d.robot.motor_ordering.index("joint_0")
+    d.lo[j] = 0.1  # home is 0 on the fake body, so its place is below this joint's limit
+    travel = 0.3
+    r = _shutdown_on_a_slow_loop(monkeypatch, 1, travel, d)
+    slew = math.ceil(travel / (D.RESET_VEL * D.CONTROL_DT))
+    assert r["closed"] is not None and not r["held"], r["held"]
+    assert r["ticks"] <= slew + D.FRAME_DWELL_LIMIT + 1, f"the settle ran {r['ticks']} ticks"

@@ -112,10 +112,16 @@ Once a shutdown begins, every command that moves the robot is refused with the r
 connected client cannot keep the settle from the safe pose, and `bot.health` says the daemon is
 shutting down. A stop is accepted, changes nothing, and its answer carries the note
 `the daemon is shutting down and settling the robot to its safe pose`. Shutdown is entered once,
-from whatever began it; a second signal does not cut the settle short, and `close()` is reached
-on every path. A bus that hangs cannot keep the process alive either: past the settle's own
-deadline plus five seconds, or five seconds into `close()`, the process exits hard, with or
-without a standard error to write its stacks to.
+from whatever began it, and a second signal does not cut the settle short. The settle goes on
+for as long as it keeps closing on the safe pose, however slowly the loop runs, since its slew
+is handed out a tick at a time; it ends once the slew has stopped closing (a place outside a
+joint's limits), and then `close()` follows. One path does not close: a settle still closing
+after `SETTLE_MAX_S` (120 s, which only a loop making under about four ticks a second reaches)
+leaves the robot torqued and holding where it is, since closing takes torque off and would drop
+it. The log says the safe pose was not reached, how far is left and the rate the loop made, and
+the daemon exits with 3. A bus that hangs cannot keep the process alive either: a settle tick
+that does not come back ends it within thirteen seconds, and so does `close()` five seconds in,
+with or without a standard error to write its stacks to.
 
 After ten failing ticks in a row the loop takes no more orders, and settles the robot to the
 safe pose for as long as the bus answers; after twenty it stops. Only a restart lets the daemon

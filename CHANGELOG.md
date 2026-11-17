@@ -552,6 +552,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   started with no standard error as well. Shutdown also closed the camera, up to two seconds on a
   wedged USB read, between stopping the loop and settling, with nothing commanding the robot; the
   camera closes after the settle.
+- **A ToddlerBot daemon's shutdown reaches the safe pose on a slow loop.** The settle gave itself
+  a deadline in seconds sized to the distance, while its slew is handed out a tick at a time, so
+  on a loop making a few ticks a second instead of fifty it gave up partway and took torque off a
+  robot still on its way. It goes on now for as long as the slew keeps closing on the safe pose,
+  ends once it has stopped closing, and stops at 120 s whatever the loop does: a robot still on
+  its way then is left torqued and holding where it is rather than dropped, the log says the safe
+  pose was not reached, how far is left and the rate the loop made, and the daemon exits with 3.
+  The hard exit, there for a tick that hangs, moves on as the settle's ticks come back.
 - **A stalled ToddlerBot tick fails the heartbeat.** Health read numbers the control thread writes
   after each tick, so a tick blocked on the bus answered healthy at the last rate while the deadman
   inside it could not fire, and a first tick that never ended read as healthy for ever. Health

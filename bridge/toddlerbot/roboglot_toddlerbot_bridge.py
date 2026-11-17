@@ -122,9 +122,17 @@ It is handed out one `CONTROL_DT` tick at a time, and every one of those ticks c
 round trip on top of its sleep: about 1.8x on an idle machine, and over 6x on a loaded CI
 runner. `settle()` is a deadline for a body that is stuck, so it is sized well past both."""
 SETTLE_FLOOR_S = 8.0
-"""The shortest settle deadline, for a body already at the safe pose."""
+"""The shortest settle deadline, for a body already at the safe pose; and, while shutting down,
+how long one tick of the settle may take before the hard exit ends the process: one tick is less
+work than any slew."""
 SETTLE_MAX_S = 120.0
-"""The longest, so a jammed joint is not waited on forever."""
+"""The longest anything waits on a slew in seconds. A settle, which counts its own progress,
+stops here even while it still closes, so a shutdown always ends: the full-scale slew, 1.5 rad
+with the waist first, is 500 ticks, so only a loop making under 4.2 of its fifty ticks a second
+reaches it. A robot still on its way then is left holding (`leave_holding`)."""
+HELD_EXIT = 3
+"""The exit code of a shutdown that left the robot torqued and holding short of the safe pose,
+because closing would have dropped it. The hard exit's is 1, and a start-up that failed is 2."""
 WAIST_THRESHOLD = 0.5
 """Untwist the waist first if it is further than this from zero, as upstream's reset does."""
 MAX_STEP_RAD = RESET_VEL * CONTROL_DT * 4.0
@@ -461,6 +469,22 @@ def hard_exit_after(seconds: float, what: str) -> None:
         log.exception("could not arm the hard exit for %s; going on without it", what)
 
 
+def leave_holding(reason: str) -> None:
+    """End the process now with HELD_EXIT, every motor still torqued and holding its last target,
+    as the hard exit leaves them. `close()` takes torque off, which drops a robot still on its way
+    to the safe pose, and so does the exit handler upstream registers (`dynamixel_cleanup_handler`,
+    which a normal exit runs); `os._exit` runs neither."""
+    log.critical(
+        "%s. Closing would take torque off and drop it, so the robot is left torqued and holding "
+        "where it is, and the daemon exits with %d: support it before you power it off",
+        reason,
+        HELD_EXIT,
+    )
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    os._exit(HELD_EXIT)
+
+
 class Daemon:
     """Owns the robot, the loop and the safe pose. Everything else asks it politely."""
 
@@ -494,6 +518,9 @@ class Daemon:
         #: The world's up read in the body's frame, as `observe` last read it, or None before any
         #: orientation: the reading that settles FACE_DOWN's sign, so `state` reports it.
         self.up_in_body: tuple[float, float, float] | None = None
+        #: Why the last settle stopped at SETTLE_MAX_S with the robot still on its way to the
+        #: safe pose, which `shutdown` then leaves holding rather than close; None otherwise.
+        self.held_short: str | None = None
         #: When the last tick ended, however it ended, or None before the first. `bot.health`
         #: reads it without `lock`, because a tick blocked on the bus holds the lock and leaves
         #: everything else the loop writes frozen at its last good value.
@@ -1187,12 +1214,18 @@ class Daemon:
         Nothing upstream does this: its own shutdown disables torque with no lowering and no
         ramp, which on a standing humanoid is a fall.
 
-        Left to itself this gives the slew a deadline sized to the distance it has to cover.
-        A fixed 8s used to be less than a full-scale slew needs -- 1.5 rad at RESET_VEL is 5s
-        of slew and closer to 9s of wall time -- so a shutdown from a wide pose gave up partway
-        and torqued off a robot that was still moving, which is the fall this method exists to
-        get in front of. The deadline is a ceiling for a body that is stuck, not a schedule:
-        this returns the moment the pose arrives."""
+        The slew is handed out one tick at a time, so the seconds it takes are its ticks over the
+        rate the loop really makes, which a slow or busy machine lowers. A deadline in seconds
+        sized to the distance (`settle_budget`) gave up partway on such a loop and torqued off a
+        robot still on its way, which is the fall this method exists to get in front of. So the
+        settle goes on for as long as the slew keeps closing on the safe pose, however slowly,
+        and returns the moment the pose arrives. It ends short of it when the robot is down,
+        when the slew has come no nearer for FRAME_DWELL_LIMIT ticks (a place outside a joint's
+        limits, which the clamp holds it from), or at SETTLE_MAX_S (`timeout_s`, if given), so a
+        shutdown always ends; `held_short` says why when that last one ended it.
+
+        While shutting down, the hard exit is moved on as ticks come back, so it ends a tick
+        that hangs and never a settle that is still closing."""
         log.info("settling to the safe pose before shutdown")
         # The overlays are goals Roboglot asked for, and the safe pose is the whole body.
         self.release_grip()
@@ -1204,42 +1237,68 @@ class Daemon:
                 self._tell(owner, SHUTTING_DOWN)
             self.owners.clear()
             self.resting.clear()
-            travel = float(np.max(np.abs(self.command.default_pose - self.target)))
             self.command.trip(self.command.default_pose)
-        if timeout_s is None:
-            timeout_s = settle_budget(travel)
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+        cap = SETTLE_MAX_S if timeout_s is None else timeout_s
+        began = armed = time.monotonic()
+        nearest, still, ticks = math.inf, 0, 0
+        self.held_short = None
+        while True:
             try:
                 self.tick()
             except Exception:
                 # `tick()` swallows a bad read; a bad WRITE still propagates. Letting it out
                 # of here would abandon the slew halfway and go straight to close(), which is
-                # the torque-off this whole method exists to get in front of. Keep trying: the
-                # deadline is what ends this, not the first fault.
-                log.exception("a tick failed while settling; continuing to the deadline")
-                time.sleep(CONTROL_DT)
-                continue
+                # the torque-off this whole method exists to get in front of. Keep trying: a
+                # tick that moves nothing counts towards the stall, and the cap still holds.
+                log.exception("a tick failed while settling; going on")
+            ticks += 1
+            now = time.monotonic()
+            if self._shut and now - armed >= SETTLE_FLOOR_S / 2:
+                # a tick came back, so the hard exit, there for one that does not, moves on
+                hard_exit_after(SETTLE_FLOOR_S + CLOSE_TIMEOUT_S, "settling, still closing")
+                armed = now
             with self.lock:
-                if float(np.max(np.abs(self.command.default_pose - self.target))) < 1e-2:
+                left = np.abs(self.command.default_pose - self.target)
+                if float(np.max(left)) < 1e-2:
                     log.info("settled")
                     return True
                 if self.fallen:
                     # Rest for a body on the floor is holding where it lies (`plan`), which
-                    # this tick has done: waiting out the deadline would change nothing.
+                    # this tick has done: waiting longer would change nothing.
                     log.warning("the robot is down, so it holds where it lies rather than settle")
                     return False
+            # Every joint short of its place closes on it each tick, the waist first, so the sum
+            # of what is left falls on every tick of a slew that is getting there.
+            total = float(np.sum(left))
+            nearest, still = (total, 0) if total < nearest else (nearest, still + 1)
+            if still >= FRAME_DWELL_LIMIT:
+                log.warning(
+                    "the slew stopped closing on the safe pose %.3f rad short, held off it by a "
+                    "joint's limits by the look of it; this is as near as it gets",
+                    float(np.max(left)),
+                )
+                return False
+            if now - began >= cap:
+                self.held_short = (
+                    f"the safe pose was not reached in {cap:.0f} s: {float(np.max(left)):.3f} "
+                    f"rad still to go, the loop making {ticks / (now - began):.1f} of its "
+                    f"{CONTROL_HZ:.0f} ticks a second"
+                )
+                log.error("%s", self.held_short)
+                return False
             time.sleep(CONTROL_DT)
-        log.warning("did not settle within %.0fs; leaving it where it is", timeout_s)
-        return False
 
     def shutdown(self) -> None:
-        """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`).
+        """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`):
+        for the settle, one tick's, moved on as its ticks come back, so a slow loop is waited
+        for and a hung tick is not.
 
         `close()` is bound without releasing the GIL and retries torque-off forever on an
         unresponsive bus, and a settle tick on a dead bus can block for good, so a stuck
         shutdown freezes every thread including this one. A torqued robot and a dead process
-        beats a frozen process nobody can signal.
+        beats a frozen process nobody can signal, and for the same reason a settle that its
+        cap stopped with the robot still on its way leaves it holding rather than closes
+        (`leave_holding`).
 
         The settle starts as soon as the loop is told to stop, so the body is never left
         uncommanded in between: closing the camera, which can wait seconds on a wedged USB
@@ -1265,16 +1324,19 @@ class Daemon:
         # From here every moving method is refused (`refusal`), so a connected client cannot
         # keep the settle from the safe pose.
         self._shut = True
-        # Read without the lock: a tick blocked on the bus may hold it, and the deadline has to
-        # be armed before anything here waits on the lock or on the bus.
-        travel = float(np.max(np.abs(self.command.default_pose - self.target)))
-        hard_exit_after(settle_budget(travel) + CLOSE_TIMEOUT_S, "settling to the safe pose")
+        # Armed before anything here waits on the lock or on the bus, where a tick blocked on the
+        # bus may hold it: one tick's bound, which the settle moves on as its ticks come back.
+        hard_exit_after(SETTLE_FLOOR_S + CLOSE_TIMEOUT_S, "settling to the safe pose")
         try:
             self.running = False
             try:
                 self.settle()
             except Exception:  # never let settling stop the close
                 log.exception("settling failed; closing anyway")
+            if self.held_short is not None:
+                # Still on its way to the safe pose when the settle's cap came: closing takes
+                # torque off, which drops it, so it is left torqued and holding where it is.
+                leave_holding(self.held_short)
             if self.camera is not None:
                 hard_exit_after(CAMERA_JOIN_S + CLOSE_TIMEOUT_S, "closing the camera")
                 try:
