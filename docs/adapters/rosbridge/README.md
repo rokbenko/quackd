@@ -114,6 +114,124 @@ Twist on `stop`, on `close()`, and when the heartbeat fails, and that is the onl
 authority. The manifest says exactly that (`native: none`, `deadman: false`). A base
 whose driver does implement a command timeout is safer than this page assumes.
 
+**What a stop can know.** roslibpy raises nothing for a publish with the socket down: it holds
+the message until the socket is back and sends it then, with nobody watching, or drops it with
+a client that was asked to close. So the link is read before every publish. With the socket
+down, `move` is refused (`is not connected, so no Twist is sent`), nothing is handed to the
+queue, and a stop says it was not sent: `stop could not be delivered, so the body may still be
+moving: rosbridge at ws://robot.local:9090 is not connected, so the zero Twist was not sent,
+and the base, which has no deadman, keeps the last Twist that reached it`. Every core verb that
+ends on a stop says the same of its own, and so does an abort, and a zero that `close()` could
+not send is said by the run after its close (`close_note`). A socket that reads up is no proof
+that a message arrived: a link that dropped between the read and the publish is not seen, and
+roslibpy's own reconnect, which would send what it held, is not reproduced by the tests here.
+
+**What the heartbeat can know.** A link that dies without a close, as one over Wi-Fi does,
+leaves the socket reading up until TCP gives up, which can be minutes. So the heartbeat fails
+on more than a closed socket, and on nothing less than a link that has given no sign of life
+for two beats in a row: one beat without one is a slow link. A sign of life is any message on a
+topic it subscribes, `/odom` or the camera's, or any answer from the bridge, a failed one
+included, as a bridge gives while its `rosapi` node restarts. A stream is judged by its pace
+now, the slowest of its last five gaps and no slower than half a hertz, and is given five of
+that pace, a second at least and ten at most: a pause the link came back from, a Wi-Fi hiccup or
+a stalled process, widens nothing once five fresh gaps have come. Messages that a long gap held
+and that come back to back once it ends, a hundredth of a second apart or less, are not its
+pace, and set nothing: the gap that held them is the pace until the stream's own gaps come
+again. A stream is not judged before
+its pace is known, so a base whose `/odom` comes once every two seconds is not quiet between its
+first messages. A beat past that window is silent whether the bridge has `rosapi` or not. It
+asks the bridge for its topic list in the background, and the answer is a sign of life when it
+comes, but no beat waits for it, so a link that is gone is noticed as soon with `rosapi` as
+without. A stream that stopped over a link that still answers, a base whose `/odom` went quiet
+while its bridge runs on among them (see the stop, below), keeps its run only while the bridge
+answers each ask before the next beat, within half a second. An answer later than that leaves the
+next beat silent too, and the run ends at that second silent beat, within the window and two
+beats of the last sign of life: 2 s at 10 Hz, 11 s at the slowest pace, as on a link that is
+gone. Where no stream
+vouches, as on a base that publishes no `/odom`, or publishes it on a topic the address does not
+name, the heartbeat asks for the topic list on a bridge that answered at connect, once the last
+sign of life is a second old, and counts a beat silent only once that request has gone two seconds
+unanswered, and then asks again, so one lost answer is not a link gone. Two silent beats in a
+row fail it, in words such as `reads connected, but nothing has come over it for 2.0 s, on
+/odom, longer than the 1.0 s its streams are given, 2 beats in a row, so the link may be gone`,
+or, with no stream, `reads connected, but the bridge did not answer a request for its topic list
+(/rosapi/topics) within 2 s, 2 beats in a row, so the link may be gone`. On a bridge that gave no
+answer at connect, and with no stream whose pace is known, nothing watches the link but the
+socket's own state.
+
+**What a stop can tell of a quiet link.** A window cannot tell a stop sent just after the link
+died from one sent just before it, so a stop listens. Its zero Twist goes out at once; then, on a
+link whose streams have a pace, it waits for a sign of life for two of that pace, and a second
+at least: a message, or the answer to a request for the topic list it sends where the bridge
+answers. The second is the window's own floor, since a pace is measured from arrivals, and
+messages that came together, a driver flushing its queue, measure one far shorter than the
+stream's. Something comes, and the zero is taken to have landed. Nothing comes, and the stop
+says it went out and is not known to have arrived: `stop went out but is not known to have
+reached the body, so the body may still be moving: rosbridge at ws://robot.local:9090 reads
+connected, but nothing has come over it, on /odom, in the 1.0 s after the zero Twist went out,
+so the zero Twist is not known to have reached the base, which has no deadman and keeps its last
+Twist if it did not`.
+
+Where `/odom` had a pace and has gone quiet past its window, only `/odom` vouches for the base.
+A base's driver can die, or the cable to its motor board come out, while rosbridge and `rosapi`
+run on, and the bridge's answers say nothing of the base. So such a stop listens for `/odom`
+alone, asks the bridge for its topic list with a request of its own, whatever else is out, and
+with only the bridge heard says what it heard and when. Over one socket only the answer to that
+request, sent after the zero, shows the zero reached the bridge: `stop went out but is not known
+to have reached the body, so the body may still be moving: rosbridge at ws://robot.local:9090
+answered a request sent after the zero Twist, 0.0 s after it went out, so the zero reached the
+bridge, but /odom has brought nothing for 3.0 s, longer than the 1.0 s its pace gives it, so the
+base is not known to have taken the zero Twist, and it has no deadman and keeps its last Twist if
+it did not`. A camera's image, which travels the other way, is said as what it is, `which shows
+the link is up and not that the zero reached the bridge`, and so is an answer to a request other
+than the stop's own, a beat's sent before the zero or during the listen, `which shows the link
+is up`. A base that publishes `/odom` only while it moves says this of a stop sent
+after it has stood still past that window. A base that never had `/odom`, a camera's base among
+them, is vouched for by its link, as before.
+
+Listening is what a stop costs here. On a live link it ends with the next message or the answer,
+and at worst, on a stream at the slowest pace taken, a stop's answer comes four seconds after its
+zero, inside the five the `stop` verb is given and the executor waits for a stop it owes. A base
+with no stream has nothing to listen to, and its stop says what the socket says. The close does
+not listen: it lets go of the client at once, and where the streams had gone quiet past their
+window and nothing had answered, it says its zero is not known to have arrived, in `close_note`,
+which the run says after the close.
+
+The worst cases follow from the constants: the heartbeat beats every half second (B), the
+floor is a second, a window is five of a stream's pace, two silent beats fail it, the slowest
+pace taken is two seconds, a request is given two seconds before a beat counts it unanswered,
+and a stop listens two of its stream's pace, a second at least.
+
+| Kind of base | Longest a dead link goes unnoticed | What a stop says meanwhile |
+|---|---|---|
+| `/odom` at 10 Hz, with `rosapi` or without | a second, then 2B: 2 s | `went out but is not known to have reached the body`, after listening 1 s |
+| `/odom` at half a hertz, or slower | 5 × 2 s, then 2B: 11 s, the most for any stream | the same, after listening 4 s |
+| `/odom` at 10 Hz after a pause it came back from, of 3 s or 30 s | 2 s again once five fresh gaps have come, and 11 s at most before then | the same, after listening 1 s, and 4 s at most before then |
+| `/odom` at 10 Hz gone quiet, while the bridge answers or a camera still sends: the base's driver gone | never while a camera still sends or the bridge answers each ask within a beat, half a second; a bridge slower than that ends the run as a dead link does, a second, then 2B: 2 s after `/odom` went quiet | `went out but is not known to have reached the body`, what the bridge sent and when, `but /odom has brought nothing`, after listening 1 s for `/odom` |
+| no stream, a bridge that answered at connect | a second, B, then twice 2 s and B: 6.5 s | `stopped (velocity zeroed)`, while the socket reads up |
+| no stream, a bridge that did not answer at connect | never: only the socket's own state | `stopped (velocity zeroed)`, while the socket reads up |
+
+**The topic it drives.** The command topic is held against the topic list the bridge gives,
+each time one is read: at connect, before anything is published, whenever `introspect` reads
+the bridge again, and when a move would be refused. A topic the list does not name, or names as
+another type, is not driven: `move` is refused with what the bridge listed, for instance `the
+bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
+geometry_msgs/msg/Twist, so it sends no Twist there (the Twist topics it lists: none)`, and the
+datasheet says the same. A base driver that comes up after the connect is driven once the
+bridge lists its topic. roslibpy advertises the topic as a Twist on the first publish, so after
+Roboglot has sent on it the list shows Roboglot's own, and a topic that went is seen as gone
+only while Roboglot has sent nothing on it. Where the list names more than one Twist topic, the
+datasheet says which one is driven: `Roboglot drives /cmd_vel, the topic the address names; the
+bridge lists 1 more Twist topic it does not drive: /cmd_vel_nav`. A bridge with no `rosapi`
+gives no list, and the topic is driven as before. Being listed is no proof that a base
+subscribes.
+
+**A camera that goes quiet.** Each image is dated by its arrival, as nothing on the wire says
+how long it was on the way, and one older than four of the stream's own periods, two seconds at
+least, is not handed out, the rule the Microduck keeps for the same hazard. `observe`, `go_to`
+and `search_scan` say why: `the newest image on /cam/compressed is 3.1 s old, older than the
+2.0 s Roboglot steers on`.
+
 `go_to_place` walks on `/odom`, every message taken into the reading as it arrives, so the
 stream's own period sizes the walk's windows however seldom Roboglot reads it. A message is dated
 by its header stamp, or by its arrival while the stack has stamped none; once one is stamped, an
