@@ -14,9 +14,11 @@ import importlib.util
 import io
 import json
 import re
+import subprocess
 import sys
 import types
 import urllib.error
+import urllib.request
 from collections.abc import Mapping
 from pathlib import Path
 from types import ModuleType
@@ -724,6 +726,62 @@ def test_a_url_that_failed_is_not_asked_again_and_a_failing_host_is_asked_nothin
     assert cache.requests == 2
 
 
+def test_a_host_that_keeps_failing_slowly_is_left_alone_while_other_hosts_answer() -> None:
+    """S8-c09: an answer from any host started every host's count again, so with the raw host
+    failing slowly between the API's answers the breaker need never trip, each failure costs
+    its timeout and its retry, and three hundred files could run past the job's fifteen minutes
+    with no report written. Only the failing host's own answers start its count again."""
+    script = _script()
+    urls: dict[str, Any] = {}
+    for n in range(6):
+        urls[f"{script.RAW}/{WIDGET}/{PIN}/f{n}.py"] = script.Unreachable("raw: x", slow=True)
+        urls[f"{script.API}/repos/{WIDGET}/commits/c{n}"] = b"{}"
+    store = Store(urls)
+    cache = script.Cache(store)
+    for n in range(6):
+        with pytest.raises(script.Unreachable):
+            cache.get(f"{script.RAW}/{WIDGET}/{PIN}/f{n}.py")
+        assert cache.get(f"{script.API}/repos/{WIDGET}/commits/c{n}") == b"{}"
+    raw = [url for url in store.calls if url.startswith(script.RAW)]
+    assert len(raw) == script.HOST_FAILURES, raw
+
+
+def test_a_night_that_outruns_its_budget_asks_nothing_more_and_says_what_it_left(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S8-c09: the script kept no clock, so a night of slow answers would run on until the job's
+    own limit cancelled it, and the report, the JSON and the issues would never be written: the
+    night would not even say it was unchecked. Past `BUDGET_S` it asks nothing more, and what it did
+    not reach is unchecked, which exits 2 and closes nothing."""
+    script = _script()
+    now = [0.0]
+    monkeypatch.setattr(script.time, "monotonic", lambda: now[0])
+    refs = [_ref(f"R{n}", f"src/f{n}.py", 1) for n in range(4)]
+    store = Store(_github(script, {f"src/f{n}.py": (PINNED, PINNED) for n in range(4)}))
+
+    def slow(url: str) -> bytes | None:
+        now[0] += 3600.0  # an hour an answer: past any budget a fifteen minute job can hold
+        return store(url)
+
+    report = _one(script, _module(refs), slow)
+    assert len(store.calls) == 1, store.calls
+    assert report.counts["unchecked"] == 4 and report.drift is False
+    (cause,) = report.blocked
+    assert "ran out" in cause
+    assert script.exit_code([report]) == 2
+
+
+def test_the_budget_leaves_the_job_time_for_its_report_and_its_issues() -> None:
+    """The budget is checked before each request, so the last one may start just before it
+    ends and take two timeouts and the longest wait between them: that still ends inside the
+    job's own limit, with the rest left for the report and the issues."""
+    script = _script()
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    (job,) = workflow["jobs"].values()
+    last_request = 2 * script.TIMEOUT_S + script.RETRY_AFTER_MAX_S
+    assert script.BUDGET_S + last_request < job["timeout-minutes"] * 60
+
+
 def test_the_markdown_report_and_the_json_carry_the_same_rows() -> None:
     script = _script()
     module = _module([_ref("READ", "src/thing.py", 2), _ref("BUS", "src/thing.py", 5)])
@@ -800,6 +858,55 @@ def test_a_tick_of_a_backtick_in_a_line_does_not_end_its_code_span() -> None:
     assert script._code("a `b` c") == "``a `b` c``"
     assert script._code("`edge`") == "`` `edge` ``"
     assert script._code("plain") == "`plain`"
+
+
+def _outside_code_spans(text: str) -> str:
+    """What of a Markdown text is read as Markdown: everything but its code spans, each closed
+    by the first run of backticks as long as the one that opened it."""
+    return re.sub(r"(`+)(.+?)(?<!`)\1(?!`)", "", text, flags=re.S)
+
+
+def test_a_double_backtick_in_a_line_does_not_end_its_code_span() -> None:
+    """S8-t10: the span's fence was two backticks whenever the text held one, so a quoted line
+    that held two ended the span there and the rest of it was read as Markdown."""
+    script = _script()
+    assert script._code("a `` b") == "```a `` b```"
+    assert script._code("``x``") == "``` ``x`` ```"
+    assert _outside_code_spans(script._code("a `` @someone")) == ""
+
+
+def test_a_version_or_a_name_from_another_host_reaches_the_issue_only_in_a_code_span() -> None:
+    """S8-t10: the version PyPI or an API document serves, the one upstream's pyproject.toml
+    gives at its head, and the name of the branch the API calls the default went into the
+    issue's body as written, and with no bound on their length: an `@name` there notifies that
+    account, a link or an image renders, and a body past GitHub's limit fails `gh` every night.
+    A plain version or name is shown as it is; anything else is shown in a code span, cut short."""
+    script = _script()
+    api_doc = "https://api.example.test/openapi.json"
+    module = _module(
+        [_ref("READ", "src/thing.py", 2)],
+        PACKAGE=UpstreamRef("widget", "VERIFIED", f"{GITHUB}/blob/{PIN}/pyproject.toml#L3", ""),
+        PYPI_VERSION_READ="1.0.0",
+        VERSION_AT_PIN=UpstreamRef(
+            "1.0.1", "VERIFIED", f"{GITHUB}/blob/{PIN}/pyproject.toml#L4", ""
+        ),
+        API_DOC=api_doc,
+        API_VERSION="2.0.0",
+    )
+    hostile = "2.0 @someone ![x](https://example.org/x.png) " + "y" * 5000
+    branch = "@someone"
+    urls = _github(script, {"src/thing.py": (PINNED, PINNED)}, default=branch)
+    urls[f"{script.PYPI}/widget/json"] = json.dumps({"info": {"version": hostile}}).encode()
+    urls[f"{script.RAW}/{WIDGET}/{HEAD}/pyproject.toml"] = f'version = "{hostile}"\n'.encode()
+    urls[api_doc] = json.dumps({"info": {"version": "[x](https://example.org)"}}).encode()
+    report = _one(script, module, Store(urls))
+    assert report.drift is True and len(report.versions) == 3
+    text = script.section(report)
+    read = _outside_code_spans(text)
+    assert "@someone" not in read and "](" not in read and "example.org" not in read, read
+    assert "y" * (script.QUOTED + 1) not in text, "a value from another host is cut short"
+    assert len(text) < 2000
+    assert script._needing(text) == {line for line, _moved in report.versions}
 
 
 def test_line_endings_and_a_byte_order_mark_are_no_change() -> None:
@@ -1152,6 +1259,62 @@ def test_the_token_goes_to_the_api_and_to_nothing_else(monkeypatch: pytest.Monke
     assert "Authorization" not in raw and "Authorization" not in pypi
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://api.github.com.example.org/x",
+        "https://example.org/?u=api.github.com",
+        "https://api.github.com@example.org/x",
+        "http://api.github.com/repos/acme/widget",
+    ],
+)
+def test_the_token_goes_to_no_host_whose_address_only_starts_like_the_api(
+    monkeypatch: pytest.MonkeyPatch, url: str
+) -> None:
+    """The token went to any URL whose text started as the API's does, so a host named
+    `api.github.com.example.org`, or one behind `api.github.com@`, would have been handed a token
+    that can write issues (code scanning alert 3, review finding S8-t11). It goes only over https
+    and only to the API's own host now, whatever the rest of the address says."""
+    script = _script()
+    seen: list[Any] = []
+
+    def urlopen(request: Any, timeout: float) -> _Answer:
+        seen.append(request)
+        return _Answer(b"body")
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setattr(script.urllib.request, "urlopen", urlopen)
+    assert script.web_fetch(url) == b"body"
+    (request,) = seen
+    assert not request.has_header("Authorization"), url
+
+
+def test_the_token_is_not_carried_to_wherever_the_api_redirects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """urllib copies a header added with `add_header` onto the request a redirect makes, to
+    whatever host the redirect names, so a redirect from the API would have carried the token
+    there. The token is the API's alone: the request a redirect builds goes without it."""
+    script = _script()
+    seen: list[Any] = []
+
+    def urlopen(request: Any, timeout: float) -> _Answer:
+        seen.append(request)
+        return _Answer(b"body")
+
+    monkeypatch.setenv("GITHUB_TOKEN", "t0ken")
+    monkeypatch.setattr(script.urllib.request, "urlopen", urlopen)
+    script.web_fetch(f"{script.API}/repos/{WIDGET}")
+    (request,) = seen
+    assert request.get_header("Authorization") == "Bearer t0ken"
+    elsewhere = "https://elsewhere.example.org/x"
+    moved = urllib.request.HTTPRedirectHandler().redirect_request(
+        request, io.BytesIO(), 302, "Found", http.client.HTTPMessage(), elsewhere
+    )
+    assert moved is not None and moved.full_url == elsewhere
+    assert not moved.has_header("Authorization")
+
+
 # ── issues ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -1251,6 +1414,42 @@ def test_a_night_that_could_not_check_closes_nothing_and_rewrites_nothing() -> N
     assert gh.verbs() == ["label create", "issue list", "issue create"]
 
 
+def test_a_night_that_could_not_check_everything_still_adds_what_it_newly_found() -> None:
+    """S8-09: a night with any cause it could not check returned before the issue was touched,
+    so an upstream with a cause that stays (a version page renamed away, answering 404 every
+    night) would freeze its issue at the night it opened, and later drift would reach only each
+    night's summary. Such a night still rewrites nothing and closes nothing, since a table
+    without the rows nobody could fetch would read as drift that went away: it adds the rows and
+    versions it newly found under the issue's own text, says so in one comment, and the next
+    night with nothing new does neither."""
+    script = _script()
+    refs = [_ref("READ", "src/thing.py", 2), _ref("BUS", "src/thing.py", 5)]
+    opened = script.section(_drifted_report(script))
+    assert "| `READ` |" in opened and "`BUS`" not in opened
+
+    both = CHANGED.replace(b"class Bus:", b"class Wheel:")
+    urls = _github(script, {"src/thing.py": (PINNED, both)})
+    urls[f"{script.RAW}/{WIDGET}/{PIN}/src/hub.py"] = script.Unreachable("raw: HTTP 503")
+    half = _one(script, _module([*refs, _ref("HUB", "src/hub.py", 1)]), Store(urls))
+    assert half.blocked and half.drift
+
+    gh = FakeGh(_open(7, opened))
+    done = script.sync_issues([half], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list", "issue edit", "issue comment"]
+    assert gh.calls[2][2] == "7"
+    body = gh.calls[2][gh.calls[2].index("--body") + 1]
+    assert body.startswith(opened), "nothing the issue said is rewritten"
+    assert "| `BUS` | `src/thing.py:5` | changed |" in body[len(opened) :]
+    assert body[len(opened) :].count("`READ`") == 0, "a row it already had is not added again"
+    assert script._needing(body) == {"READ: changed", "BUS: changed"}
+    assert done == ["widget: not all of it could be checked, issue #7 given what was new"]
+
+    gh = FakeGh(_open(7, body))
+    done = script.sync_issues([half], "rokbenko/quackd", gh)
+    assert gh.verbs() == ["label create", "issue list"], "nothing new, nothing written"
+    assert done == ["widget: not all of it could be checked, issue #7 left"]
+
+
 def test_a_ref_that_cannot_be_followed_opens_an_issue_too() -> None:
     script = _script()
     module = _module([_ref("BLANK", "src/thing.py", 3)])
@@ -1303,6 +1502,25 @@ def test_no_gh_on_the_machine_is_an_answer_and_not_a_traceback(
     monkeypatch.setattr(script.subprocess, "run", missing)
     with pytest.raises(script.Unreachable, match="gh could not be run"):
         script.gh_run(["issue", "list"])
+
+
+def test_a_gh_call_that_hangs_ends_as_an_answer_and_not_with_the_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """S8-c09: `gh` ran with no timeout, so one call that hung held the job until its limit
+    cancelled it, and what the issues had done was never said. A call that does not answer in
+    `TIMEOUT_S` is an `Unreachable`, which the summary says, like any refusal."""
+    script = _script()
+    seen: dict[str, Any] = {}
+
+    def hangs(*args: Any, **kwargs: Any) -> Any:
+        seen.update(kwargs)
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout", 0))
+
+    monkeypatch.setattr(script.subprocess, "run", hangs)
+    with pytest.raises(script.Unreachable, match="did not answer"):
+        script.gh_run(["issue", "list"])
+    assert seen.get("timeout") == script.TIMEOUT_S
 
 
 def _comment(call: list[str]) -> str:
@@ -1600,22 +1818,39 @@ def test_another_repository_a_module_cites_at_a_release_is_compared_with_its_new
 
 
 def test_the_nightly_runs_the_script_with_what_it_needs_and_nothing_more() -> None:
-    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    """The issues go to the repository the run names, and only where the project's owner runs
+    it: the slug was written into the workflow twice, so a rename of the repository would have
+    stopped every issue, and a fork's schedule must open none. `issues: write` is the job's
+    alone, the workflow's token reads."""
+    import tomllib
+    from urllib.parse import urlsplit
+
+    text = WORKFLOW.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
     triggers = workflow.get("on", workflow.get(True))  # YAML 1.1 reads a bare `on:` key as true
     assert triggers["schedule"] == [{"cron": "23 5 * * *"}]
     assert "workflow_dispatch" in triggers
-    assert workflow["permissions"] == {"contents": "read", "issues": "write"}
+    assert workflow["permissions"] == {"contents": "read"}
     (job,) = workflow["jobs"].values()
+    assert job["permissions"] == {"contents": "read", "issues": "write"}
     assert job["timeout-minutes"] == 15
     assert "continue-on-error" not in job
     steps = job["steps"]
     assert all("continue-on-error" not in step for step in steps)
     run = next(step["run"] for step in steps if "upstream_drift.py" in step.get("run", ""))
     assert '--report "$GITHUB_STEP_SUMMARY"' in run
-    assert "github.repository == 'rokbenko/quackd'" in run, "a fork's schedule must open no issue"
-    assert "--issues rokbenko/quackd" in run
+    assert '${ISSUES_REPO:+--issues "$ISSUES_REPO"}' in run
+    assert "${{" not in run, "an expression expanded into the shell"
+    project = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    owner, name = urlsplit(project["project"]["urls"]["Repository"]).path.strip("/").split("/")
     env = next(step.get("env", {}) for step in steps if "upstream_drift.py" in step.get("run", ""))
-    assert env == {"GITHUB_TOKEN": "${{ github.token }}"}
+    assert env == {
+        "GITHUB_TOKEN": "${{ github.token }}",
+        "ISSUES_REPO": (
+            f"${{{{ github.repository_owner == '{owner}' && github.repository || '' }}}}"
+        ),
+    }
+    assert f"{owner}/{name}" not in text, "the slug is the run's, never written here"
 
 
 def test_the_script_is_type_checked_and_its_offline_mode_takes_no_network() -> None:

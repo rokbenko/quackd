@@ -11,8 +11,9 @@ on:
     - cron: "17 4 * * 1"
   workflow_dispatch:
 
+# Read only, as in every workflow here: the one job that writes asks for it below.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: contributors
@@ -23,9 +24,14 @@ jobs:
     runs-on: ubuntu-latest
     # It takes about twenty seconds. Without a limit, a hang would run to GitHub's six hours.
     timeout-minutes: 10
+    permissions:
+      contents: write # to push the refreshed image to main
     steps:
-      - uses: actions/checkout@v7
-        with:
+      # The one checkout that keeps its token (persist-credentials is left at its default, true):
+      # the last step's `git push` is the token in .git/config. Nothing runs here but the script
+      # below and git, and the job holds no other secret.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: # zizmor: ignore[artipacked] the push below is made with the token this keeps
           fetch-depth: 0  # lines added is counted from the git history
       - name: Regenerate the contributors image (humans only, one size)
         run: python docs/assets/contributors.py

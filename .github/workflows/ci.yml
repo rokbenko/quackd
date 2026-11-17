@@ -18,9 +18,17 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
-# No job here writes to the repository, so the token each step holds can only read it.
+# No job here writes to the repository, so the token each step holds can only read it, and every
+# checkout drops it once the code is fetched (`persist-credentials: false`): no step pushes, and a
+# token left in .git/config is one any later step could read.
 permissions:
   contents: read
+
+# Every `uv sync` and `uv run` here installs from uv.lock as it is: a lock that no longer matches
+# a pyproject.toml fails the step, where uv would otherwise write a new one on the runner and test
+# that. `packaging` builds wheels and installs them with `uv pip`, which reads no lock, on purpose.
+env:
+  UV_LOCKED: "1"
 
 jobs:
   test:
@@ -50,10 +58,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          enable-cache: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # One uv everywhere: the release the rosarm contract's run.sh pins, which
+          # tests/test_workflows.py holds every setup-uv step to.
+          version: "0.12.21"
+          enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Lock is current
         # `uv sync` re-locks in silence when pyproject has drifted, so a stale lock used to
         # reach a release rather than a CI failure. roboglot[alohamini] once shipped unlocked.
@@ -67,16 +80,21 @@ jobs:
       - name: Types
         run: uv run mypy
       - name: Tests (no network, no API keys)
-        run: uv run pytest -n auto -m "not serial"
+        # Each pytest step writes a JUnit file outside the checkout, and the last step of the job
+        # puts the tests that failed in the job's summary, so nobody reads a log to find them.
+        run: uv run pytest -n auto -m "not serial" --junitxml="${{ runner.temp }}/junit/tests.xml"
       - name: The tests that hold a margin on a wall clock, on their own
         # Whatever the stage above did: a run that failed there still says how these went.
         if: ${{ !cancelled() }}
-        run: uv run pytest -m serial
+        run: uv run pytest -m serial --junitxml="${{ runner.temp }}/junit/serial.xml"
       - name: Validate starter tasks
         # bash explicitly: pwsh is the default shell on the Windows runner and does not expand
         # a glob for an external command, so this would hand Roboglot the literal `tasks/*.glot`.
         shell: bash
         run: uv run roboglot validate tasks/*.glot
+      - name: Failed tests, in the job's summary
+        if: ${{ !cancelled() }}
+        run: uv run --no-project python scripts/ci_failed_tests.py "${{ runner.temp }}/junit/tests.xml" "${{ runner.temp }}/junit/serial.xml"
 
   # The claim the split exists to make: the core on its own is the loop and no robot, and it
   # says so rather than failing somewhere confusing. Proven against built wheels rather than
@@ -87,10 +105,13 @@ jobs:
     # It takes under a minute. Without a limit, a hang would run to GitHub's six hours.
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          enable-cache: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.21"
+          enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Build every package
         run: uv build --all-packages --out-dir dist
       - name: Install the core alone
@@ -167,16 +188,19 @@ jobs:
     # what this job adds is Streamlit itself, which is the same on each.
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          enable-cache: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.21"
+          enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Sync (dev + the ui extra, Streamlit and what it brings)
         run: uv sync --python 3.12 --extra dev --extra ui
       - name: Types, with Streamlit's own present
         run: uv run mypy roboglot/webui
       - name: The page, and a goal, a chat and a Stop run through it
-        run: uv run pytest tests/test_webui_app.py tests/test_webui_options.py tests/test_webui_jobs.py tests/test_webui_catalog.py
+        run: uv run pytest tests/test_webui_app.py tests/test_webui_options.py tests/test_webui_jobs.py tests/test_webui_catalog.py --junitxml="${{ runner.temp }}/junit/ui.xml"
       - name: roboglot ui starts and answers
         run: |
           uv run roboglot ui --port 8599 --no-browser > ui.log 2>&1 &
@@ -188,6 +212,9 @@ jobs:
           for _ in $(seq 1 20); do grep -q "roboglot ui: http://127.0.0.1:8599" ui.log && break; sleep 1; done
           grep -q "roboglot ui: http://127.0.0.1:8599" ui.log || { sed -E 's/token=[^ &]+/token=(hidden)/g' ui.log; exit 1; }
           kill "$page"
+      - name: Failed tests, in the job's summary
+        if: ${{ !cancelled() }}
+        run: uv run --no-project python scripts/ci_failed_tests.py "${{ runner.temp }}/junit/ui.xml"
 
   onboard:
     name: onboard · py${{ matrix.python }} · bleak and dbus-fast
@@ -213,14 +240,17 @@ jobs:
       # and go green having proved nothing
       ROBOGLOT_REQUIRE_DBUS: "1"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: A D-Bus daemon, for the private bus the tests run on
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends dbus
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
-          enable-cache: true
+          version: "0.12.21"
+          enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Sync (dev + the onboard extra, which on Linux brings bleak and dbus-fast)
         run: uv sync --python ${{ matrix.python }} --extra dev --extra onboard
       - name: Prove the imports before blaming the radio
@@ -228,7 +258,10 @@ jobs:
       - name: Types, with bleak's and dbus-fast's own present
         run: uv run mypy
       - name: The radio with the extra installed, the BlueZ half against a fake BlueZ, and the LAN browse on loopback
-        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py
+        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py --junitxml="${{ runner.temp }}/junit/onboard.xml"
+      - name: Failed tests, in the job's summary
+        if: ${{ !cancelled() }}
+        run: uv run --no-project python scripts/ci_failed_tests.py "${{ runner.temp }}/junit/onboard.xml"
 
   # The one place CI loads LeRobot checkpoints: a tiny random ACT, built by the test from
   # LeRobot's own classes with no pretrained backbone, saved naming LeRobot's default one, which
@@ -266,10 +299,13 @@ jobs:
       # the same for the arm's bus: no rustypot is a failure here, not a skip
       ROBOGLOT_REQUIRE_LEROBOT_BUS: "1"
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          enable-cache: true
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.21"
+          enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Sync (default deps + dev extra)
         run: uv sync --python 3.12 --extra dev
       - name: torch from its CPU wheel index, then LeRobot 0.7.0
@@ -280,4 +316,46 @@ jobs:
         run: |
           uv run --no-sync python -c "import torch, lerobot, transformers, rustypot; from lerobot.policies.act.modeling_act import ACTPolicy; from lerobot.policies.xvla.modeling_xvla import XVLAPolicy; print('torch', torch.__version__, 'lerobot', lerobot.__version__, 'transformers', transformers.__version__, 'cuda', torch.cuda.is_available())"
       - name: A tiny ACT and a tiny X-VLA through the real server, the protocol with torch installed, and the arm over LeRobot's own bus
-        run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py tests/test_lerobot_real_bus.py
+        run: uv run --no-sync pytest tests/test_policy_pipeline.py tests/test_policy_contract.py tests/test_upstream_api.py tests/test_lerobot_real_bus.py --junitxml="${{ runner.temp }}/junit/policy.xml"
+      - name: Failed tests, in the job's summary
+        if: ${{ !cancelled() }}
+        run: uv run --no-project python scripts/ci_failed_tests.py "${{ runner.temp }}/junit/policy.xml"
+
+  # The five files under .github/workflows/ read by two linters, each at a pinned release:
+  # actionlint for what GitHub would refuse or misread (an expression, a key, a needs), zizmor
+  # for what an attacker could use (an unpinned action, a token left on disk, a template expanded
+  # into a shell), and zizmor reads .github/dependabot.yml too. A finding is fixed in the file, or
+  # silenced on its own line saying why.
+  workflows:
+    name: the workflows pass actionlint and zizmor
+    runs-on: ubuntu-latest
+    # It takes under a minute. Without a limit, a hang would run to GitHub's six hours.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.21"
+          # uvx fetches one wheel here, and there is no lock to key a cache on
+          enable-cache: false
+      - name: actionlint
+        # The release binary from actionlint's own repository, checked against the sha256 its
+        # release lists for it, rather than a PyPI wrapper somebody else repackages. Its
+        # shellcheck and pyflakes passes are off: they would run whatever release the runner's
+        # image carries, which no line here pins.
+        env:
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint.tar.gz"
+          curl -fsSL -o "$archive" "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  ${archive}" | sha256sum --check --strict -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color -shellcheck= -pyflakes=
+      - name: zizmor
+        # Offline: what the files say, and not what an advisory database says tonight, which
+        # Dependabot's alerts already carry for every action pinned here.
+        run: uvx zizmor==1.32.0 --offline --no-progress .github/workflows .github/dependabot.yml

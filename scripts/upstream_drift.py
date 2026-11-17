@@ -41,8 +41,8 @@ defect here, not a move there.
 
 **Unchecked** is a night something did not answer as it should: an outage, a rate limit, or a
 404 from a page a module's version is read off. A URL that failed is not asked again that night,
-and a host that has cost three slow failures running, with nothing answering between them, is
-asked nothing more.
+a host that has cost three slow failures running, with no answer from it between them, is asked
+nothing more, and a night that has spent `BUDGET_S` asks nothing more of any host.
 
 A cited line that reads like others in its own file at the pin is a `weak anchor`: it compares
 as `same` while it stays on its line number, but once it leaves it cannot be followed and reads
@@ -114,7 +114,15 @@ HOST_FAILURES = 3
 """How many slow failures running a host may cost before nothing more is asked of it that night.
 An outage with a retry and a wait on every URL is two hours of waiting for three hundred files,
 and the job that runs this has fifteen minutes. A refusal that answers at once costs nothing, so
-it does not count, and anything answering anywhere starts the count again."""
+it does not count, and an answer from that host starts its count again. An answer from another
+host does not: with the raw host failing between the API's answers, the count need never reach
+three, and the night could run past the job's limit."""
+BUDGET_S = 10 * 60
+"""How long a night may spend asking before it asks nothing more: ten of the fifteen minutes the
+job has (upstream-drift.yml). It is checked before each request, and the last may take two
+timeouts and the longest wait between them, two minutes more; what is left is the report's and
+the issues'. A night that runs out says what it did not reach, as unchecked, rather
+than being cancelled with nothing written."""
 TAG_PAGES = 5
 """How many pages of a hundred tags are read to find the newest release."""
 NAMED = 5
@@ -144,16 +152,25 @@ class Fetch(Protocol):
 # ── fetching ────────────────────────────────────────────────────────────────────────────
 
 
+def is_api(url: str) -> bool:
+    """Whether a URL is the API's own: https, and its host exactly the API's. A test of the
+    address's text took `https://api.github.com.example.org/` and `https://api.github.com@...`
+    for it, and either would have been handed the token."""
+    parts = urllib.parse.urlsplit(url)
+    return parts.scheme == "https" and parts.hostname == urllib.parse.urlsplit(API).hostname
+
+
 def web_fetch(url: str) -> bytes | None:
     """The real thing: one retry on a rate limit or a server error. `GITHUB_TOKEN`, when set,
     goes to the API and nowhere else: the raw host answers a token it does not like with a 404,
-    which here would read as a file that is not there."""
+    which here would read as a file that is not there. It is added so that urllib leaves it off
+    the request a redirect makes, which may be to any host."""
     request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     token = os.environ.get("GITHUB_TOKEN")
-    if url.startswith(API):
+    if is_api(url):
         request.add_header("Accept", "application/vnd.github+json")
         if token:
-            request.add_header("Authorization", f"Bearer {token}")
+            request.add_unredirected_header("Authorization", f"Bearer {token}")
     for attempt in (1, 2):
         try:
             with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:
@@ -218,11 +235,13 @@ class Cache:
     """Every URL asked once per run, whichever modules cite it, and whatever it answered:
     huebot's refs are the Microduck's files, a file cited forty times is one request, and a
     URL that failed is not asked forty times more. A host that costs `HOST_FAILURES` slow
-    failures running, with nothing answering anywhere between them, is asked nothing else that
-    night, and the refs it holds up say what the last of them was."""
+    failures running, with no answer from it between them, is asked nothing else that night,
+    and the refs it holds up say what the last of them was. Past `deadline`, a reading of
+    `time.monotonic`, nothing more is asked of any host."""
 
-    def __init__(self, fetch: Fetch) -> None:
+    def __init__(self, fetch: Fetch, deadline: float | None = None) -> None:
         self._fetch = fetch
+        self._deadline = deadline
         self._seen: dict[str, bytes | None] = {}
         self._failed: dict[str, Unreachable] = {}
         self._strikes: dict[str, tuple[int, str]] = {}
@@ -233,6 +252,10 @@ class Cache:
             return self._seen[url]
         if url in self._failed:
             raise self._failed[url]
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise Unreachable(
+                f"the night's {BUDGET_S // 60} minutes ran out, so nothing more was asked"
+            )
         host = _host(url)
         strikes, last = self._strikes.get(host, (0, ""))
         if strikes >= HOST_FAILURES:
@@ -248,7 +271,7 @@ class Cache:
             if e.slow:
                 self._strikes[host] = (strikes + 1, str(e))
             raise
-        self._strikes.clear()
+        self._strikes.pop(host, None)
         self._seen[url] = body
         return body
 
@@ -437,8 +460,10 @@ def resolve(cache: Cache, repo: str, baseline: Baseline) -> Baseline:
         baseline = Baseline("tag", newest, prefix=baseline.prefix)
     head = cache.json(f"{API}/repos/{repo}/commits/{baseline.name}")
     if head is None:
-        raise BaselineGone(f"{repo} has no {baseline.kind} called {baseline.name} any more")
-    if not isinstance(head, dict) or not head.get("sha"):
+        name = _outside(baseline.name)
+        raise BaselineGone(f"{repo} has no {baseline.kind} called {name} any more")
+    # the sha is quoted in the report as it is, so it is held to what a commit's sha is
+    if not isinstance(head, dict) or not re.fullmatch(r"[0-9a-f]{40}", str(head.get("sha"))):
         raise Unreachable(f"{repo}: {baseline.name} did not resolve to a commit")
     baseline.sha = str(head["sha"])
     return baseline
@@ -497,10 +522,33 @@ def _digest(body: bytes) -> bytes:
 
 def _code(text: str) -> str:
     """Upstream's words in a code span, wherever a person reads them: a line of XML is otherwise
-    taken for markup and read as nothing, and `@contextmanager` for a mention of somebody."""
-    fence = "``" if "`" in text else "`"
+    taken for markup and read as nothing, and `@contextmanager` for a mention of somebody. The
+    fence is longer than the longest run of backticks in the text, which ends the span early
+    otherwise and leaves the rest to be read as Markdown."""
+    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    fence = "`" * (longest + 1)
     pad = " " if text.startswith("`") or text.endswith("`") else ""
     return f"{fence}{pad}{text}{pad}{fence}"
+
+
+QUOTED = 60
+"""How many characters of an upstream line, or of a value another host gave, the report quotes:
+enough to recognise it by, and a value with no bound made the issue's body as long as the host
+liked, past the length GitHub takes."""
+_PLAIN = re.compile(r"(?!www\.)[A-Za-z0-9][A-Za-z0-9.+!/-]*")
+"""A version or a branch's or a tag's name as it usually is: no character in it can mention
+anybody, link anywhere or begin a Markdown construct, and `www.` would be read as a link."""
+
+
+def _outside(text: str) -> str:
+    """A value another host gave (a version, a branch's or a tag's name), as the report and the
+    issue show it: as it is when it is a plain word, and otherwise on one line in a code span,
+    cut to `QUOTED` characters, so an `@name`, a link or an image from there is shown and never
+    acted on."""
+    flat = " ".join(text.split())
+    if len(flat) <= QUOTED and _PLAIN.fullmatch(flat):
+        return flat
+    return _code(flat if len(flat) <= QUOTED else f"{flat[:QUOTED]}...")
 
 
 #: Words that name nothing alone, so a ref and a line that share only these share nothing:
@@ -649,7 +697,7 @@ def compare(cited: Cited, pinned: bytes, current: bytes | None, head_sha: str) -
             f"reads the same on lines {places} at {head_sha[:7]}",
             stray=stray,
         )
-    gone = f"no line reads {_code(wanted[:60])} at {head_sha[:7]}"
+    gone = f"no line reads {_code(wanted[:QUOTED])} at {head_sha[:7]}"
     return Row(cited.ref, where, "changed", gone, stray=stray)
 
 
@@ -771,7 +819,7 @@ def check_versions(
         if not latest:
             unknown.append(f"{url} names no version")
         elif latest != read:
-            lines.append((f"{label} is {latest}; Roboglot read {read}", True))
+            lines.append((f"{label} is {_outside(latest)}; Roboglot read {read}", True))
         else:
             lines.append((f"{label} is still {read}", False))
 
@@ -796,14 +844,15 @@ def check_versions(
         else:
             match = PYPROJECT_VERSION.search(body.decode("utf-8", "replace") if body else "")
             now = match.group(1) if match else ""
+            at = _outside(baseline.name)
             if not now:
                 unknown.append(f"{url} names no version")
             elif now != was:
                 lines.append(
-                    (f"pyproject.toml says {now} at {baseline.name}; {was} at the pin", True)
+                    (f"pyproject.toml says {_outside(now)} at {at}; {was} at the pin", True)
                 )
             else:
-                lines.append((f"pyproject.toml still says {was} at {baseline.name}", False))
+                lines.append((f"pyproject.toml still says {was} at {at}", False))
     api_doc = getattr(module, "API_DOC", None)
     api_version = getattr(module, "API_VERSION", None)
     if isinstance(api_doc, str) and isinstance(api_version, str):
@@ -843,7 +892,7 @@ def upstream_rows() -> list[tuple[str, ModuleType]]:
 
 
 def run(rows: Sequence[tuple[str, ModuleType]], fetch: Fetch) -> list[Report]:
-    cache = Cache(fetch)
+    cache = Cache(fetch, deadline=time.monotonic() + BUDGET_S)
     seen: dict[tuple[str, str, str, int | None], str] = {}
     return [check_module(name, module, cache, seen) for name, module in rows]
 
@@ -870,7 +919,8 @@ ORDER = (
 def summary_line(report: Report) -> str:
     counts = ", ".join(f"{report.counts[k]} {k}" for k in ORDER if report.counts.get(k))
     against = "; ".join(
-        f"{repo} {b.kind} {b.name} at {b.sha[:7] or '?'}" for repo, b in report.baselines.items()
+        f"{repo} {b.kind} {_outside(b.name)} at {b.sha[:7] or '?'}"
+        for repo, b in report.baselines.items()
     )
     return f"pin {report.pin} read {report.read_on} vs {against or 'nothing resolved'}: {counts}"
 
@@ -897,6 +947,16 @@ def _cell(text: str) -> str:
     return text.replace("\r", " ").replace("\n", " ").replace("|", "\\|")
 
 
+def _table(rows: Sequence[Row]) -> str:
+    """Rows as the report's table, which `_needing` reads back out of an issue's body."""
+    out = ["| ref | cited | status | now |", "| --- | --- | --- | --- |"]
+    out += [
+        f"| `{_cell(row.ref)}` | `{_cell(row.cited)}` | {row.status} | {_cell(row.now)} |"
+        for row in rows
+    ]
+    return "\n".join(out)
+
+
 def section(report: Report) -> str:
     """One upstream's part of the report, which is also the body of its issue."""
     out = [f"## {report.name} (`{report.module}`)\n\n{summary_line(report)}"]
@@ -905,11 +965,7 @@ def section(report: Report) -> str:
     for cause, refs in report.blocked.items():
         out.append(f"- could not check: {_code(cause)} ({_named(refs)})")
     if report.rows:
-        out.append("\n| ref | cited | status | now |\n| --- | --- | --- | --- |")
-        for row in report.rows:
-            out.append(
-                f"| `{_cell(row.ref)}` | `{_cell(row.cited)}` | {row.status} | {_cell(row.now)} |"
-            )
+        out.append(f"\n{_table(report.rows)}")
     if report.weak:
         names = ", ".join(f"`{_cell(row.ref)}` (`{_cell(row.cited)}`)" for row in report.weak)
         out.append(
@@ -994,10 +1050,14 @@ Gh = Callable[[Sequence[str]], str]
 
 
 def gh_run(args: Sequence[str]) -> str:
-    """`gh` with these arguments, its stdout; a non-zero exit, or no `gh` here at all, is an
-    `Unreachable`."""
+    """`gh` with these arguments, its stdout; a non-zero exit, no answer in `TIMEOUT_S`, the
+    bound one request has, or no `gh` here at all, is an `Unreachable`."""
     try:
-        result = subprocess.run(["gh", *args], capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            ["gh", *args], capture_output=True, text=True, check=False, timeout=TIMEOUT_S
+        )
+    except subprocess.TimeoutExpired as e:
+        raise Unreachable(f"gh {' '.join(args[:2])} did not answer in {TIMEOUT_S} s") from e
     except OSError as e:
         raise Unreachable(f"gh could not be run: {e}") from e
     if result.returncode != 0:
@@ -1081,7 +1141,31 @@ def _sync_one(
     title = f"{TITLE}{report.name}"
     number = str(issues[0]["number"]) if issues else ""
     if report.blocked and issues:
-        done.append(f"{report.name}: not all of it could be checked, issue #{number} left")
+        # Nothing the issue says is rewritten on such a night, since a table without the rows
+        # nobody could fetch would read as drift that went away. What it newly found is added
+        # under it, or a cause that stays every night (a page that answers 404) would freeze
+        # the issue at the night it opened.
+        said = str(issues[0].get("body", ""))
+        added = _newly_found(report, said)
+        if not added:
+            done.append(f"{report.name}: not all of it could be checked, issue #{number} left")
+            return
+        gh(["issue", "edit", number, "--repo", repo, "--body", f"{said}\n\n{added}"])
+        gh(
+            [
+                "issue",
+                "comment",
+                number,
+                "--repo",
+                repo,
+                "--body",
+                "Not all of it could be checked tonight, so the body above keeps what it said, "
+                "and what was newly found is added under it.",
+            ]
+        )
+        done.append(
+            f"{report.name}: not all of it could be checked, issue #{number} given what was new"
+        )
         return
     if not report.needs_somebody:
         for issue in issues:
@@ -1202,6 +1286,25 @@ _NEEDING_ROW = re.compile(
     re.M,
 )
 _MOVED_VERSION = re.compile(r"^- \*\*moved:\*\* (.+)$", re.M)
+
+
+def _newly_found(report: Report, before: str) -> str:
+    """What a night that could not check everything adds under an open issue's body: the rows
+    and the versions that need somebody which the body does not already name, or nothing."""
+    named = _needing(before)
+    rows = [
+        row
+        for row in report.rows
+        if row.status in DRIFT | BROKEN and f"{_cell(row.ref)}: {row.status}" not in named
+    ]
+    moved = [line for line, drifted in report.versions if drifted and line not in named]
+    if not rows and not moved:
+        return ""
+    out = ["Found on a night not all of it could be checked:"]
+    out += [f"- **moved:** {line}" for line in moved]
+    if rows:
+        out.append(f"\n{_table(rows)}")
+    return "\n".join(out)
 
 
 def _needing(body: str) -> set[str]:
