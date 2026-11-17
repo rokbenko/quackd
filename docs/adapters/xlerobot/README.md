@@ -127,7 +127,8 @@ it or not, and ZeroMQ says nothing of a peer that has gone, so a stop cannot kno
 Roboglot can know is whether the host still publishes: after a stop it takes the newest observation
 waiting, which sends nothing, and a stop to a host that has published nothing within its 500 ms
 watchdog window says `so this stop is not known to have reached it`, which `stop` and every verb that
-ends on a stop answer as not delivered. The heartbeat fails at the same window. Neither says the
+ends on a stop answer as such: `stop went out but is not known to have reached the body`. The heartbeat
+fails at the same window. Neither says the
 watchdog has stopped the wheels, since it runs in the host's one loop and a host stuck in a cycle runs
 none: both say `Its own watchdog stops the base once it has read no command for 500 ms, if its loop
 still runs.` An observation that waited in the socket since the host went quiet reads as fresh once,

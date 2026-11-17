@@ -50,6 +50,7 @@ from roboglot_alohamini.verbs import (
     GRIPPER_CLOSED,
     GRIPPER_OPEN,
     goal_refused,
+    height_refused,
     joints_for,
     model_from_keys,
 )
@@ -204,6 +205,8 @@ class AlohaMiniZmq:
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
         self.stop_error: str | None = None
+        self.stop_unconfirmed = False
+        """Whether that stop went out, and only whether the host read it is not known."""
         """Why the last stop could not be sent, or is not known to have reached the host, or
         None. A stop never raises: the core verbs and the executor read this instead."""
         self.camera_available = False
@@ -320,10 +323,14 @@ class AlohaMiniZmq:
         self.arms_available = any(k.startswith("arm_") for k in self._state)
         # Roboglot's own host wrapper says both, as JSON booleans, and a stock host says neither:
         # it never enables arm torque, and what it never says of calibration is unknown, not
-        # calibrated. Only a real boolean is read, since `bool()` took the string "false" for true
+        # calibrated. A field that is there vouches only as JSON `true`: `false`, `0` and `null`
+        # are not calibrated, as they always were, and so is any string, since `bool()` took
+        # the string "false" for true
         self.arm_torque = observation.get("roboglot_arm_torque") is True
-        calibrated = observation.get("roboglot_calibrated")
-        self.calibrated = calibrated if isinstance(calibrated, bool) else None
+        if "roboglot_calibrated" in observation:
+            self.calibrated = observation["roboglot_calibrated"] is True
+        else:
+            self.calibrated = None
         self._rx_at = time.monotonic()
         if parts[0].isdigit():
             self._answered = max(self._answered, int(parts[0]))
@@ -444,6 +451,8 @@ class AlohaMiniZmq:
                 target = p.get("lift_height_mm")
                 if target is None:
                     return Ack(accepted=False, reason="pose needs a lift_height_mm")
+                if (unreachable := height_refused(float(target))) is not None:
+                    return Ack(accepted=False, reason=unreachable)  # as `lift` itself refuses it
                 self._lift_target_mm = float(target)
                 self._zero_base()
             case "joint":
@@ -475,6 +484,9 @@ class AlohaMiniZmq:
                         f"arm_{side}_gripper": GRIPPER_OPEN if open_ else GRIPPER_CLOSED
                         for side in sides
                     }
+                # held to the range as the joint branch is: the goals come from whoever called
+                if refused := [why for k, v in goals.items() if (why := goal_refused(k, v))]:
+                    return Ack(accepted=False, reason="; ".join(refused))
                 self._arm_goals.update({f"{k}.pos": v for k, v in goals.items()})
                 for side in sides:
                     self.holding[side] = not open_  # commanded, never sensed
@@ -567,7 +579,7 @@ class AlohaMiniZmq:
         own, so what can be known is how old the newest answer is: the heartbeat's, or the one
         the stop itself waited for to hold the arms (`_reading_from_now_on`). One older than the
         window says the host has stopped answering, and it may have stopped reading too."""
-        self.stop_error = None
+        self.stop_error, self.stop_unconfirmed = None, False
         await self._stopping()
         if self._link is None:
             return
@@ -582,6 +594,7 @@ class AlohaMiniZmq:
                 break
         if (stale := self._stale_ms()) > self.stale_limit_ms:
             heard = "since it connected" if self._rx_at is None else f"for {stale:.0f} ms"
+            self.stop_unconfirmed = True  # it went out; only whether the host read it is unknown
             self.stop_error = (
                 f"no observation has come from the host {heard}, past its "
                 f"{self.stale_limit_ms:.0f} ms watchdog window, so this stop is not known to have "

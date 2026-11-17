@@ -195,6 +195,8 @@ class XLerobotZmq:
         self.stop_left_going: tuple[str, ...] = ()
         """The joints the last stop could not hold, for want of a recent reading."""
         self.stop_error: str | None = None
+        self.stop_unconfirmed = False
+        """Whether that stop went out, and only whether the host read it is not known."""
         """Why the last stop could not be sent, or is not known to have reached the host, or
         None. A stop never raises: the core verbs and the executor read this instead."""
 
@@ -514,7 +516,7 @@ class XLerobotZmq:
         observation waiting is taken, which sends nothing, and one older than the window says
         the host has stopped reading too. One that waited in the socket since the host went
         quiet reads as fresh once, as it does to the heartbeat."""
-        self.stop_error = None
+        self.stop_error, self.stop_unconfirmed = None, False
         await self._stopping()
         if self._link is None:
             return
@@ -525,6 +527,8 @@ class XLerobotZmq:
             # Raising here would turn a stop into a failed verb and hide that the stop failed
             self.stop_error = f"the stop could not be sent ({e}). {self._watchdog()}"
             return
+        # from here on it went out, and what is not known is only whether the host read it
+        self.stop_unconfirmed = True
         try:
             await self._pump(0)
         except TransportError as e:
@@ -540,6 +544,8 @@ class XLerobotZmq:
                 f"{self.stale_limit_ms:.0f} ms watchdog window, so this stop is not known to have "
                 f"reached it. {self._watchdog()}"
             )
+        else:
+            self.stop_unconfirmed = False  # a host still publishing: nothing to say
 
     def now(self) -> float:
         return time.monotonic()

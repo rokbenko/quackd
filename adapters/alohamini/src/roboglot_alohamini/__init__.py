@@ -307,6 +307,12 @@ class AlohaMiniAdapter:
         error = getattr(self.transport, "stop_error", None)
         return str(error) if error else None
 
+    @property
+    def stop_unconfirmed(self) -> bool:
+        """Whether that stop went out and is only not known to have been read by the host, which
+        the core verbs say in those words rather than as a stop that could not be sent."""
+        return getattr(self.transport, "stop_unconfirmed", False) is True
+
     async def go_to_rest(self) -> RestResult:
         """This is not a body Roboglot parks: make() refuses a rest pose for it, so there is
         nothing here to drive to."""

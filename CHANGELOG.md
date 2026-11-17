@@ -388,14 +388,18 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   its last turn had ended. Every stop the core verbs send goes through one helper now, which
   reads the transport's word on it, and a verb whose stop did not land fails, keeping what it
   would have said and adding, for instance, `But move's stop could not be delivered, so the body
-  may still be moving:` and the reason. A scan or a walk ends at the first stop that did not land.
-  Such a failure is no longer passed over by `abort_when`'s count of failures in a row as the
-  brake working. With its stops landing, every verb says what it said before.
+  may still be moving:` and the reason, or, where the transport says its stop went out and only
+  its arrival is not known, `went out but is not known to have reached the body`. A scan or a walk
+  ends at the first stop that did not land, and so do an AlohaMini's `lift` that runs out of time
+  and its arm verbs a stop from beside them ended. Such a failure is no longer passed over by
+  `abort_when`'s count of failures in a row as the brake working. With its stops landing, every
+  verb says what it said before.
 - **`stop` says what it knows of a stop that did not land, and advises nothing it cannot know is
   safe.** It ended with `If this robot has a deadman it is what stops the legs now; otherwise use
   the hardware switch.` for every body, and on a body that stands cutting the power is a fall, and
   on an arm torque off drops it. It says `stop could not be delivered, so the body may still be
-  moving:` and the reason now, and a body that has something true to add says it in its own
+  moving:` and the reason now, or `stop went out but is not known to have reached the body` where
+  that is all the transport knows, and a body that has something true to add says it in its own
   reason: a Microduck and a Huebot name their deadman as their body files have it, and an Open Duck
   its bridge's, where the bridge said it keeps one.
 - **A rosbridge base whose link has dropped or gone quiet is said to be, and its stops to have
@@ -403,20 +407,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   stop swallowed whatever happened, so with the link gone `move` said it walked, `stop` said
   `stopped (velocity zeroed)`, an abort said a stop was sent, and the base, which has no deadman,
   kept its last Twist. A move over a dropped link is refused now (`is not connected, so no Twist
-  is sent`), and a stop, an abort and a close say that the zero Twist was not sent. A link that
-  dies without a close kept the socket reading up for minutes, and the heartbeat read nothing
-  else: it fails now once `/odom` has been quiet for five of its own periods, a second at least,
-  and on a base that has sent no `/odom`, once the bridge leaves a round trip for its topic list
-  unanswered for a second, and a stop over such a link says its zero is not known to have
-  reached the base. A bridge with no `rosapi` and a base with no `/odom` are still driven, watched
-  by the socket alone, as the page says.
+  is sent`), a stop and an abort say that the zero Twist was not sent, and a run says so after a
+  close that could not send it. A link that dies without a close kept the socket reading up for
+  minutes, and the heartbeat read nothing else: it fails now when the link has given no sign of
+  life for two beats in a row, a sign being any message on `/odom` or the camera within five of
+  the slowest gaps they have left, a second at least, or any answer from the bridge, a failed one
+  included. Where no stream vouches, as on a base with no `/odom`, it asks the bridge for its
+  topic list with the transport's own request deadline. A stream is not judged before its pace is
+  known, so a base whose `/odom` is slow is not cut off between its first messages. A stop while
+  the streams are quiet and nothing else is heard says its zero is not known to have reached the
+  base. A bridge that gave no answer at connect and a base with no `/odom` are still driven,
+  watched by the socket alone, as the page says.
 - **A rosbridge base is driven only on a command topic the bridge lists as a Twist, and is told
-  which one.** The topic was never held against the list read at connect, so a base on another
-  topic, or one taking TwistStamped, got nothing while `move` said it walked. A topic the list
-  does not name, or names as another type, is refused now with what the bridge listed, as in `the
-  bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
+  which one.** The topic was never held against the topic list, so a base on another topic, or
+  one taking TwistStamped, got nothing while `move` said it walked. A topic the list does not
+  name, or names as another type, is refused now with what the bridge listed, as in `the bridge
+  lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
   geometry_msgs/msg/Twist`, and where the list names more than one Twist topic the datasheet
-  says which is driven. A bridge with no `rosapi` drives as before.
+  says which is driven. The list is read again by `introspect` and before a move is refused, so a
+  base driver that comes up after the connect is driven once the bridge lists it. A bridge with no
+  `rosapi` drives as before.
 - **A rosbridge camera that stops is no longer steered by.** The newest image was handed out
   however old it was, so `go_to` steered at a frozen picture for as long as its timeout. An image
   older than four of the stream's own periods, two seconds at least, the Microduck's rule for the
@@ -427,20 +437,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   host stuck in a cycle said `stopped (velocity zeroed)` while its wheels kept turning, and the
   XLeRobot's heartbeat said its watchdog `has already stopped the base`, though the watchdog runs
   in the loop that was stuck. A stop when no observation has come within the host's watchdog
-  window says now that it is `not known to have reached it`, and both say what the watchdog does
-  only `if its loop still runs`. A stop that could not be sent says so too.
-- **An AlohaMini refuses an arm goal outside its range.** `move_joints` checked only that a goal
-  named a joint, so 250, an infinity or a NaN went out as the goal, and a gripper named without
-  its arm's prefix was held to a body joint's range, so -50 went out too, while the mock clamped
-  all of it without a word and the verb said it moved the arm. Each is refused now, by the verb,
-  the transport and the mock, as in `shoulder_lift=250.0 is outside -100.0..100.0`.
+  window says now that it went out and is `not known to have reached it`, and both say what the
+  watchdog does only `if its loop still runs`. A stop that could not be sent says so too.
+- **An AlohaMini refuses an arm goal, a gripper goal or a lift height outside its range.**
+  `move_joints` checked only that a goal named a joint, so 250, an infinity or a NaN went out as
+  the goal, and a gripper named without its arm's prefix was held to a body joint's range, so -50
+  went out too, while the mock clamped all of it without a word and the verb said it moved the
+  arm. Each is refused now, by the verb, the transport and the mock, as in `shoulder_lift=250.0
+  is outside -100.0..100.0`, and the transport holds a gripper goal and a lift height to their
+  ranges as well, as the mock does a lift height: a NaN height went to the host as full speed.
 - **An AlohaMini host that does not say the robot is calibrated is shown as not saying.** A
   missing `roboglot_calibrated` read as calibrated, and the string `"false"` read as true, for the
   arms' torque as well, so on upstream's own host the pilot was told `"calibrated": true` of a
-  robot nothing had vouched for. Only a JSON boolean is read now: a host that sends none, or a
-  string, shows `"calibrated": null`, unknown, and a string for the arms' torque reads as off.
-  What is allowed on a host that does not say is as it was, the lift on upstream's own host among
-  it, and a robot the host says is not calibrated is refused as before.
+  robot nothing had vouched for. A host that sends no field shows `"calibrated": null`, unknown,
+  and what is allowed there is as it was, the lift on upstream's own host among it. A field that
+  is there vouches only as JSON `true`: `false`, `0` and `null` are not calibrated and refused,
+  as before, and so is any string, and the arms' torque is on only for `true`.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for

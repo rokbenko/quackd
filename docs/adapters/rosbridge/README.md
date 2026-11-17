@@ -122,31 +122,40 @@ queue, and a stop says it was not sent: `stop could not be delivered, so the bod
 moving: rosbridge at ws://robot.local:9090 is not connected, so the zero Twist was not sent,
 and the base, which has no deadman, keeps the last Twist that reached it`. Every core verb that
 ends on a stop says the same of its own, and so does an abort, and a zero that `close()` could
-not send is kept in the adapter's `stop_error`. A socket that reads up is no proof that a
-message arrived: a link that dropped between the read and the publish is not seen, and
+not send is said by the run after its close (`close_note`). A socket that reads up is no proof
+that a message arrived: a link that dropped between the read and the publish is not seen, and
 roslibpy's own reconnect, which would send what it held, is not reproduced by the tests here.
 
 **What the heartbeat can know.** A link that dies without a close, as one over Wi-Fi does,
 leaves the socket reading up until TCP gives up, which can be minutes. So the heartbeat fails
-on more than a closed socket. Once `/odom` has come, a stream quiet for five of its own periods,
-a second at least, fails it, whatever the socket says: `reads connected, but there has been no
-new /odom for 1.3 s, so the link may be gone`. A base whose `/odom` has never come is not one
-whose `/odom` stopped: it may publish none, or on a topic the address does not name, and it is
-still driven. Its sign of life is a round trip of the protocol's own, the topic list that
-`rosapi` answered at connect, asked for again on every beat and answered within a second, or
-the heartbeat fails: `the bridge did not answer the heartbeat's round trip (/rosapi/topics: no
-answer within 1 s)`. On a bridge with no `rosapi` and a base with no `/odom`, nothing watches
-the link but the socket's own state. A stop sent while the link has given no sign of life went
-into a socket that may be half open, and says so: `so the zero Twist is not known to have
-reached the base, which has no deadman and keeps its last Twist if it did not`.
+on more than a closed socket, and on nothing less than a link that has gone quiet for two beats
+in a row: one beat without a sign of life is a slow link. A sign of life is any message on a
+topic it subscribes, `/odom` or the camera's, within five of the slowest gaps they have left,
+a second at least, or any answer from the bridge, a failed one included, as a bridge gives
+while its `rosapi` node restarts. A stream is not judged before its pace is known, so a base
+whose `/odom` comes once every two seconds is not quiet between its first messages. Where no
+stream vouches, as on a base that publishes no `/odom`, or publishes it on a topic the address
+does not name, the heartbeat asks for the topic list, with the transport's own five-second
+request deadline, on a bridge that answered at connect. Two silent beats in a row fail it, in
+words such as `reads connected, but nothing has come over it for 2.0 s, on /odom, longer than
+the 1.0 s its streams are given, 2 beats in a row, so the link may be gone`. On a bridge that
+gave no answer at connect, and with no stream whose pace is known, nothing watches the link but
+the socket's own state. A stop sent while its streams are quiet and nothing else has been heard
+went out into a socket that may be half open, and it says so, as having gone out: `stop went out
+but is not known to have reached the body`, and `so the zero Twist is not known to have reached
+the base, which has no deadman and keeps its last Twist if it did not`. A message or an answer
+clears that, and no beat is held against a stop after it.
 
-**The topic it drives.** At connect, before anything is published, the command topic is held
-against the topic list the bridge gave, since roslibpy advertises the topic as a Twist on the
-first publish and a list read after that would show Roboglot's own. A topic the list does not
-name, or names as another type, is not driven: `move` is refused with what the bridge listed,
-for instance `the bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot
-publishes only geometry_msgs/msg/Twist, so it sends no Twist there (the Twist topics it lists:
-none)`, and the datasheet says the same. Where the list names more than one Twist topic, the
+**The topic it drives.** The command topic is held against the topic list the bridge gives,
+each time one is read: at connect, before anything is published, whenever `introspect` reads
+the bridge again, and when a move would be refused. A topic the list does not name, or names as
+another type, is not driven: `move` is refused with what the bridge listed, for instance `the
+bridge lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
+geometry_msgs/msg/Twist, so it sends no Twist there (the Twist topics it lists: none)`, and the
+datasheet says the same. A base driver that comes up after the connect is driven once the
+bridge lists its topic. roslibpy advertises the topic as a Twist on the first publish, so after
+Roboglot has sent on it the list shows Roboglot's own, and a topic that went is seen as gone
+only while Roboglot has sent nothing on it. Where the list names more than one Twist topic, the
 datasheet says which one is driven: `Roboglot drives /cmd_vel, the topic the address names; the
 bridge lists 1 more Twist topic it does not drive: /cmd_vel_nav`. A bridge with no `rosapi`
 gives no list, and the topic is driven as before. Being listed is no proof that a base

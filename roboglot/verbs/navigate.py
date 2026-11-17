@@ -61,6 +61,7 @@ from roboglot.verbs.core import (
     _stop,
     _stopped_by,
     _twist,
+    _Unlanded,
     _Unstopped,
     _unstopped,
     speed_limits,
@@ -132,13 +133,15 @@ class Walked:
             out["left_m"] = round(self.left_m, 2)
         return {**out, **self.data}
 
-    def unstopped(self, verb: str, why: str | None) -> Walked:
-        """This walk's ending, or, where the stop it ended on did not reach the body (`why`), the
-        same ending saying so in `verb`'s words (`_unstopped`)."""
-        if why is None:
+    def unstopped(self, verb: str, missed: _Unlanded | None) -> Walked:
+        """This walk's ending, or, where the stop it ended on did not reach the body (`missed`),
+        the same ending saying so in `verb`'s words (`_unstopped`)."""
+        if missed is None:
             return self
-        said = _unstopped(verb, why, VerbResult.fail(self.said)).summary
-        return replace(self, said=said, data={**self.data, "stop_error": why})
+        told = _unstopped(verb, missed, VerbResult.fail(self.said))
+        kept = ("stop_error", "stop_unconfirmed")
+        data: dict[str, Any] = {key: told.data[key] for key in kept if key in told.data}
+        return replace(self, said=told.summary, data={**self.data, **data})
 
 
 @dataclass(frozen=True)
@@ -383,8 +386,8 @@ class _Walk:
         """Stop the body partway through the walk, and end the walk with `_Unstopped` where that
         stop did not reach it: a walk that went on to look, turn or plan from there would do so
         on a body that may still be moving."""
-        if (why := await _stop(self.ctx)) is not None:
-            raise _Unstopped(why)
+        if (missed := await _stop(self.ctx)) is not None:
+            raise _Unstopped(missed)
 
     async def stop_and_look(self, *, replan: bool = True) -> None:
         """Stand still and let a map that looks at stops look (`settled_fix`), read the battery
@@ -738,7 +741,7 @@ async def navigate(
         # a stop partway through the walk, to look or at the end of its way, that did not reach
         # the body: the walk ends there, and sends nothing more over a link its stop did not cross
         said = f"it walked {walk.metres:.1f} m toward {label} and ended its walk there"
-        return walk.walked("unstopped", said).unstopped(verb, unstopped.why)
+        return walk.walked("unstopped", said).unstopped(verb, unstopped.missed)
     except SafetyStop:
         # the run's own rule, read at a stop: its reader stopped the body before it raised, and a
         # stop awaited here would let the run's abort cancel this walk before its words are read.

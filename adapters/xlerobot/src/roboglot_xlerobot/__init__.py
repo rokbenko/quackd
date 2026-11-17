@@ -332,6 +332,12 @@ class XLerobotAdapter:
         error = getattr(self.transport, "stop_error", None)
         return str(error) if error else None
 
+    @property
+    def stop_unconfirmed(self) -> bool:
+        """Whether that stop went out and is only not known to have been read by the host, which
+        the core verbs say in those words rather than as a stop that could not be sent."""
+        return getattr(self.transport, "stop_unconfirmed", False) is True
+
     async def go_to_rest(self) -> RestResult:
         """Roboglot keeps no rest pose for this cart, so there is nothing to drive it to: the
         wheels stop where the host's watchdog stopped them and the arms hold their last angles."""

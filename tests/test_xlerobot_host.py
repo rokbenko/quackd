@@ -507,6 +507,8 @@ async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached
             assert "already stopped" not in str(beat.value)
             result = await stop_verb(ctx, NoParams())
             assert not result.ok and "not known to have reached" in result.summary, result.summary
+            # it went out, and is said to have, not to have been undeliverable
+            assert result.summary.startswith("stop went out but is not known to have reached")
             assert host.state["x.vel"] == 0.2, "the stuck host read the stop after all"
         finally:
             await link.close()  # an open socket keeps its context, and the run, alive

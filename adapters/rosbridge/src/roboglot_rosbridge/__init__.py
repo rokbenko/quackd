@@ -229,6 +229,19 @@ class RosbridgeAdapter:
         return str(error) if error else None
 
     @property
+    def stop_unconfirmed(self) -> bool:
+        """Whether that stop's zero Twist went out and is only not known to have arrived, which
+        the core verbs say in those words rather than as a stop that could not be sent."""
+        return getattr(self.transport, "stop_unconfirmed", False) is True
+
+    @property
+    def close_note(self) -> str | None:
+        """What the close has to say, which a run reads off this adapter after it: a zero Twist
+        the close could not send."""
+        note = getattr(self.transport, "close_note", None)
+        return str(note) if note else None
+
+    @property
     def camera_error(self) -> str | None:
         """Why the camera hands out no image just now, when the transport knows: one too old to
         steer on. `observe`, `go_to` and `search_scan` read it off this adapter."""

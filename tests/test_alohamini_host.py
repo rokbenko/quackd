@@ -19,7 +19,7 @@ import pytest
 
 from roboglot.transport.base import HeartbeatError, Intent, TransportError
 from roboglot_alohamini import AlohaMiniAdapter, zmq_host
-from roboglot_alohamini.verbs import alohamini_conditions
+from roboglot_alohamini.verbs import LIFT_MAX_MM, LIFT_MIN_MM, alohamini_conditions
 from roboglot_alohamini.zmq_host import (
     LIFT_HEIGHT_KEY,
     LIFT_VEL_KEY,
@@ -383,6 +383,7 @@ async def test_a_stop_to_a_host_gone_silent_says_it_is_not_known_to_have_reached
             assert adapter.stop_error is not None, "a stop to a silent host read as delivered"
             assert "not known to have reached" in adapter.stop_error
             assert "if its loop still runs" in adapter.stop_error
+            assert adapter.stop_unconfirmed, "it went out, and only its arrival is not known"
         finally:
             await link.close()  # an open socket keeps its context, and the run, alive
 
@@ -453,39 +454,83 @@ class _StockHost(FakeAlohaMiniHost):
         return obs
 
 
-class _StringFlagsHost(FakeAlohaMiniHost):
-    """A host other than Roboglot's wrapper, which writes both fields as JSON strings."""
+def _saying(**fields: Any) -> type[FakeAlohaMiniHost]:
+    """A host other than Roboglot's wrapper, which writes these `roboglot_*` fields as given."""
 
-    def observation(self) -> dict[str, Any]:
-        return {
-            **super().observation(),
-            "roboglot_calibrated": "false",
-            "roboglot_arm_torque": "false",
-        }
+    class _Saying(FakeAlohaMiniHost):
+        def observation(self) -> dict[str, Any]:
+            return {**super().observation(), **fields}
+
+    return _Saying
 
 
-@pytest.mark.parametrize("host_type", [_StockHost, _StringFlagsHost], ids=["stock", "strings"])
-async def test_a_host_that_says_no_boolean_of_calibration_is_shown_as_unknown_not_calibrated(
-    host_type: type[FakeAlohaMiniHost],
+@pytest.mark.parametrize(
+    ("host_type", "calibrated"),
+    [
+        (_StockHost, None),
+        (_saying(roboglot_calibrated="false", roboglot_arm_torque="false"), False),
+        (_saying(roboglot_calibrated="true", roboglot_arm_torque="true"), False),
+        (_saying(roboglot_calibrated=0, roboglot_arm_torque=0), False),
+        (_saying(roboglot_calibrated=None, roboglot_arm_torque=None), False),
+    ],
+    ids=["stock", "false-strings", "true-strings", "zero", "null"],
+)
+async def test_a_host_that_says_no_true_of_calibration_is_not_taken_to_vouch_for_it(
+    host_type: type[FakeAlohaMiniHost], calibrated: bool | None
 ) -> None:
     """A stock host never sends `roboglot_calibrated`, and its absence read as calibrated, so the
-    pilot was told `calibrated: true` of a robot nothing had vouched for; and `bool()` read the
-    string "false" as true, for the arms' torque as well. Only a JSON boolean is read now: a host
-    that sends none, or a string, shows calibration as unknown, and torque as off, the safe side.
-    What the calibration gate lets through on such a host is as it was, the pages' bring-up on
-    the stock host among it, and a robot the host says is not calibrated is still refused."""
+    pilot was told `calibrated: true` of a robot nothing had vouched for; `bool()` read the
+    string "false" as true, for the arms' torque as well. A field that is missing is unknown, and
+    the gate stays as open as it always was there, the pages' bring-up on the stock host among
+    it. A field that is present and not JSON `true`, `false`, `0`, `null` or any string, vouches
+    for nothing: not calibrated, refused, as `0` and `null` were before. Torque is on only for
+    `true`."""
     with host_type() as host:
         link = await _connected(host)
         try:
             state = await link.get_state()
         finally:
             await link.close()
-    assert state.extras["calibrated"] is None and state.extras["arm_torque"] is False
+    assert state.extras["calibrated"] is calibrated and state.extras["arm_torque"] is False
     gates = alohamini_conditions()
-    assert gates["calibrated"](state) is None, "the gate shut where it was open"
-    said_not = state.model_copy(update={"extras": {**state.extras, "calibrated": False}})
-    assert gates["calibrated"](said_not) is not None
+    shut = gates["calibrated"](state)
+    assert (shut is None) is (calibrated is None), shut
     assert gates["arm_torque"](state) is not None
+
+
+def _grip(goal: float) -> dict[str, Any]:
+    """A `gripper` intent's params with a goal of its own for the left hand."""
+    return {"side": "left", "open": False, "positions": {"arm_left_gripper": goal}}
+
+
+@pytest.mark.parametrize(
+    ("kind", "params", "named"),
+    [
+        ("pose", {"lift_height_mm": math.nan}, "nan"),
+        ("pose", {"lift_height_mm": math.inf}, "inf"),
+        ("pose", {"lift_height_mm": 10 * LIFT_MAX_MM}, "6000"),
+        ("pose", {"lift_height_mm": LIFT_MIN_MM / 2}, "2.5"),
+        ("gripper", _grip(-50.0), "-50"),
+        ("gripper", _grip(math.nan), "nan"),
+    ],
+    ids=["height-nan", "height-inf", "height-past-the-top", "height-below", "grip-50", "grip-nan"],
+)
+async def test_a_lift_height_or_gripper_goal_past_its_range_is_refused_by_the_transport(
+    kind: str, params: dict[str, Any], named: str
+) -> None:
+    """Only the joint branch held a goal to its range. A `pose` went out with any height, a NaN
+    among them, which the host's lift law reads as full speed, and a `gripper` with any goal:
+    only the verbs bounded them, and the transport is handed goals by whatever calls it."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        try:
+            sent = len(host.actions)
+            ack = await link.send_intent(Intent(kind=kind, params=params))
+            assert not ack.accepted and named in str(ack.reason) and "outside" in str(ack.reason)
+            await asyncio.sleep(0.1)
+            assert len(host.actions) == sent, "a goal out of range went out"
+        finally:
+            await link.close()
 
 
 async def test_a_joint_goal_outside_its_range_is_refused_by_the_transport_as_well() -> None:

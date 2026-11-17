@@ -112,9 +112,9 @@ python roboglot_alohamini_host.py --robot_model alohamini2
 Without it, `arm_torque` is false on the wire and `move_joints`, `gripper` and `home_arms`
 refuse with a message naming the fix. The base, the lift and `stop` are unaffected.
 A stock host does not say whether the robot is calibrated either, and Roboglot's state then
-shows `"calibrated": null`, unknown rather than true, and refuses nothing on it. Only a JSON
-boolean is read as an answer: a host that writes either field as a string has its calibration
-shown as unknown and its arms' torque taken as off.
+shows `"calibrated": null`, unknown rather than true, and refuses nothing on it. A field that is
+there vouches only as JSON `true`: `false`, `0`, `null` or any string is shown as
+`"calibrated": false` and refused, and the arms' torque is on only for `true`.
 
 ## The stop, which is the whole difficulty
 
@@ -160,8 +160,8 @@ it or not, and ZeroMQ says nothing of a peer that has gone, so a stop cannot kno
 wire answers only what is asked, and a stop asks nothing of its own, so what Roboglot can know is
 how old the newest answer is, the heartbeat's or the one a stop waited for to hold an arm. A stop
 when that is older than the host's 1000 ms watchdog window says `so this stop is not known to have
-reached it`, which `stop` and every verb that ends on a stop answer as not delivered, and the
-heartbeat fails at the same window. What the host does then is said only as far as it is known:
+reached it`, which `stop` and every verb that ends on a stop answer as such (`stop went out but is
+not known to have reached the body`), and the heartbeat fails at the same window. What the host does then is said only as far as it is known:
 `Its own watchdog stops the base and the lift once it has read no command for 1000 ms, if its loop
 still runs; the arms keep their last goal.` A host stuck in a cycle runs no watchdog.
 
@@ -238,7 +238,9 @@ no per-step clamp at all unless the owner sets one, because the config declares
 `max_relative_target: int | None = None`. It never applies to the base or the lift either,
 so Roboglot validates every goal against the manifest before it is sent. A joint goal outside
 its normalised range, an infinity or a NaN is refused by `move_joints`, and again by the
-transport and the mock, in the same words: `shoulder_lift=250.0 is outside -100.0..100.0`.
+transport and the mock, in the same words: `shoulder_lift=250.0 is outside -100.0..100.0`. The
+transport holds a gripper goal to 0..100 the same way, and the transport and the mock hold a lift
+height to the 5 to 600 mm `lift` takes: a NaN height reads to the host's lift law as full speed.
 
 ## UNVERIFIED, and what Roboglot does about it
 

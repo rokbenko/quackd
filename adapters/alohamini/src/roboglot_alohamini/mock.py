@@ -35,6 +35,7 @@ from roboglot_alohamini.verbs import (
     LIFT_MAX_MM,
     LIFT_MIN_MM,
     goal_refused,
+    height_refused,
     joint_range,
     joints_for,
 )
@@ -235,6 +236,8 @@ class AlohaMiniMock:
                 target = p.get("lift_height_mm")
                 if target is None:
                     return Ack(accepted=False, reason="pose needs a lift_height_mm")
+                if (unreachable := height_refused(float(target))) is not None:
+                    return Ack(accepted=False, reason=unreachable)  # as the transport refuses it
                 self.lift_target_mm = float(target)
                 self._last_cmd_t = self._t
             case "joint":

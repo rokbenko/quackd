@@ -603,7 +603,7 @@ class OpenDuckBridge:
             if self.deadman_ms is not None:
                 self.stop_error += (
                     f". The bridge's deadman zeroes the legs {self.deadman_ms} ms after commands "
-                    "stop arriving, which is what stops them now"
+                    "stop arriving, if the bridge's own loop still runs"
                 )
         else:
             self.stop_error = None

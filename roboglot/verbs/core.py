@@ -187,8 +187,25 @@ class ApproachAndParams(BaseModel):
 # ── helpers shared with adapter verbs ───────────────────────────────────────────────────
 
 
-async def _stop(ctx: VerbContext) -> str | None:
-    """Stop the body, and return why that stop did not reach it, or None when nothing says so.
+@dataclass(frozen=True)
+class _Unlanded:
+    """A stop that the transport does not say reached the body: why, in the transport's words
+    (`stop_error`), and whether it went out at all. A transport that sent it and cannot tell
+    whether it arrived says so (`stop_unconfirmed`), and is not said to have failed to send it."""
+
+    why: str
+    sent: bool
+
+    def said(self, stop: str) -> str:
+        """What became of `stop`, in no more words than the transport gave."""
+        if self.sent:
+            return f"{stop} went out but is not known to have reached the body"
+        return f"{stop} could not be delivered"
+
+
+async def _stop(ctx: VerbContext) -> _Unlanded | None:
+    """Stop the body, and return what the transport says of a stop that did not reach it, or None
+    when nothing says so.
 
     Every stop a verb here sends goes through this. A transport's stop does not raise, since it
     runs on the way out of every failure: one that knows it did not land says why in
@@ -198,20 +215,24 @@ async def _stop(ctx: VerbContext) -> str | None:
     that cannot tell says nothing, and then nothing here changes (`_unstopped`)."""
     await ctx.transport.stop()
     undelivered = getattr(ctx.transport, "stop_error", None)
-    return str(undelivered) if undelivered else None
+    if not undelivered:
+        return None
+    return _Unlanded(str(undelivered), getattr(ctx.transport, "stop_unconfirmed", False) is True)
 
 
-def _unstopped(verb: str, why: str | None, result: VerbResult) -> VerbResult:
-    """`result`, when the stop `verb` ended on reached the body (`why` is None, `_stop`), or else
-    a failure that says what `result` said, then that the stop could not be delivered and the
-    body may still be moving, and why, with the reason as `stop_error` in its data. A result
-    that has said so already is not said twice, nor a reason it has given already, as a twist
-    refused for the same reason the stop did not go gives it. It is no longer marked `ended_by`:
-    a brake that did not reach the body is not the brake working, and `abort_when` counts it."""
-    if why is None or "stop_error" in result.data:
+def _unstopped(verb: str, missed: _Unlanded | None, result: VerbResult) -> VerbResult:
+    """`result`, when the stop `verb` ended on reached the body (`missed` is None, `_stop`), or
+    else a failure that says what `result` said, then what became of the stop as the transport
+    put it (`_Unlanded.said`) and that the body may still be moving, and why, with the reason as
+    `stop_error` in its data. A `verb` of "" is a stop named by no verb. A result that has said
+    so already is not said twice, nor a reason it has given already, as a twist refused for the
+    same reason the stop did not go gives it. It is no longer marked `ended_by`: a brake that
+    did not reach the body is not the brake working, and `abort_when` counts it."""
+    if missed is None or "stop_error" in result.data:
         return result
+    why = missed.why
     said = result.summary[:-1] if result.summary.endswith(".") else result.summary
-    unstopped = f"{verb}'s stop could not be delivered"
+    unstopped = missed.said(f"{verb}'s stop" if verb else "the stop")
     if why in said:
         told = f"{unstopped} either, for the same reason, so the body may still be moving"
     else:
@@ -219,26 +240,35 @@ def _unstopped(verb: str, why: str | None, result: VerbResult) -> VerbResult:
         # body has something true to say (`stop`): the core advises nothing physical
         told = f"{unstopped}, so the body may still be moving: {why}"
     data = {key: value for key, value in result.data.items() if key != "ended_by"}
+    if missed.sent:
+        data["stop_unconfirmed"] = True
     return VerbResult.fail(f"{said}. But {told}", **{**data, "stop_error": why})
 
 
 class _Unstopped(Exception):
     """A stop sent partway through a verb, the end of one of `search_scan`'s turns or a walk's
-    stop to look, that did not reach the body (`_stop`), carried with the reason out of the helper
-    that sent it to the verb that ends on it (`_unstopped`), as `_Refused` carries a twist's."""
+    stop to look, that did not reach the body (`_stop`), carried with what was said of it out of
+    the helper that sent it to the verb that ends on it (`_unstopped`), as `_Refused` carries a
+    twist's."""
 
-    def __init__(self, why: str) -> None:
-        super().__init__(why)
-        self.why = why
+    def __init__(self, missed: _Unlanded) -> None:
+        super().__init__(missed.why)
+        self.missed = missed
 
 
-async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
+async def send_or_fail(
+    ctx: VerbContext, intent: Intent, verb: str | None = None
+) -> VerbResult | None:
     """Send an intent; return a failure result if the robot refused it, or if the verb has been
     told to end (`VerbContext.interrupted`), when nothing goes out. A stop that came while a verb
     read the body's state was followed by the goal that verb went on to send. What only speaks
-    goes out all the same, as it runs beside a stop (`Executor._overtaken`)."""
+    goes out all the same, as it runs beside a stop (`Executor._overtaken`).
+
+    `verb` is the verb that sends it, which a stop that did not land is said of; a caller that
+    names none has its intent lead the sentence, as it always did, and the stop is the verb's
+    unnamed (`_unstopped`), not the intent's: `joint's stop` named no verb a pilot called."""
     if intent.kind != "sound" and (why := ctx.interrupted()) is not None:
-        return await _ended_by(ctx, intent.kind, why, "nothing more was sent")
+        return await _ended_by(ctx, intent.kind, why, "nothing more was sent", stop_of=verb or "")
     ack = await ctx.transport.send_intent(intent)
     if not ack.accepted:
         return VerbResult.fail(f"{intent.kind} refused: {ack.reason or 'no reason given'}")
@@ -318,9 +348,18 @@ async def _stopped_by(
     )
 
 
-async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data: Any) -> VerbResult:
+async def _ended_by(
+    ctx: VerbContext,
+    verb: str,
+    why: str,
+    stopped: str,
+    *,
+    stop_of: str | None = None,
+    **data: Any,
+) -> VerbResult:
     """Stop the body for a verb told to end from beside it, and fail saying why and how far it
-    got, as `watch` does.
+    got, as `watch` does. `stop_of` is the verb a stop that did not land is said of, when it is
+    not `verb` (`send_or_fail`, whose `verb` is its intent).
 
     The `stop` that ended it has stopped the body already, and this stops it again, after the
     last twist the verb sent rather than before it. A `stop` is marked `ended_by` (`STOP_ENDED`),
@@ -330,7 +369,9 @@ async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data:
     if why == STOPPED:
         data["ended_by"] = STOP_ENDED
     return _unstopped(
-        verb, unstopped, VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data)
+        verb if stop_of is None else stop_of,
+        unstopped,
+        VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data),
     )
 
 
@@ -464,8 +505,8 @@ async def _turn(ctx: VerbContext, radians: float) -> None:
     for _ in range(ticks):
         await _twist(ctx, 0.0, 0.0, wz)
         await ctx.transport.sleep(duration / ticks)
-    if (why := await _stop(ctx)) is not None:
-        raise _Unstopped(why)
+    if (missed := await _stop(ctx)) is not None:
+        raise _Unstopped(missed)
 
 
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
@@ -618,9 +659,11 @@ async def stop(ctx: VerbContext, _: NoParams) -> VerbResult:
     # It says what is known and advises nothing: the hardware switch it used to send everyone
     # to is a fall on a body that stands and a drop on an arm whose torque goes with it, so what
     # to do about it is the body's own to say, in its `stop_error`, where it has something true
-    if undelivered := await _stop(ctx):
+    # and it says no more than the transport did: a stop sent that is not known to have arrived
+    # is not one that could not be delivered
+    if (missed := await _stop(ctx)) is not None:
         return VerbResult.fail(
-            f"stop could not be delivered, so the body may still be moving: {undelivered}"
+            f"{missed.said('stop')}, so the body may still be moving: {missed.why}"
         )
     # A body that left joints out of its hold says which (the arm, for a joint read past its
     # travel, where "stay here" would reach the servo as "go to the limit"). Without the clause
@@ -900,7 +943,7 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             starts.append(begun)
             so, turned = _scan_stopped(ctx, starts, steps, step)
             return _unstopped(
-                "search_scan", unstopped.why, VerbResult.fail(f"search_scan: {so}", steps=turned)
+                "search_scan", unstopped.missed, VerbResult.fail(f"search_scan: {so}", steps=turned)
             )
         except _Interrupted as told:
             # the turn it was told in not counted either, since it was cut short

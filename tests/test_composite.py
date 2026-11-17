@@ -40,7 +40,14 @@ from roboglot.verbs.core import (
     scan_steps,
     views_round,
 )
-from roboglot.verbs.registry import STOP_ENDED, STOPPED, VerbContext, VerbRegistry, VerbResult
+from roboglot.verbs.registry import (
+    STOP_ENDED,
+    STOPPED,
+    NoParams,
+    VerbContext,
+    VerbRegistry,
+    VerbResult,
+)
 from roboglot_open_duck.mock import OpenDuckMock
 
 GLOT = parse_glot_text(
@@ -743,6 +750,43 @@ async def test_a_brake_whose_stop_did_not_land_is_a_failure_abort_when_counts() 
         result.summary
     )
     assert "ended_by" not in result.data and result.data["interrupted"] == STOPPED
+
+
+class _StopUnknown(_StopLost):
+    """A body whose stops go out and are not known to have arrived, as a transport over a link
+    that reads up and has gone quiet says of them (`stop_unconfirmed`)."""
+
+    stop_unconfirmed = True
+
+
+async def test_a_stop_that_went_out_but_is_not_known_to_have_arrived_is_not_said_undelivered() -> (
+    None
+):
+    """The core said `could not be delivered` of every stop a transport did not vouch for, where
+    a transport over a link that reads up and has gone quiet says only that its stop is not known
+    to have arrived: the zero went out. The verbs say what the transport said."""
+    ctx = VerbContext(transport=_StopUnknown(lambda _b: True))
+    stopped = await core.stop(ctx, NoParams())
+    assert not stopped.ok and "could not be delivered" not in stopped.summary, stopped.summary
+    assert stopped.summary == (
+        f"stop went out but is not known to have reached the body, so the body may still be "
+        f"moving: {LOST}"
+    )
+    moved = await core.move(ctx, core.MoveParams(vx=0.2, duration_s=0.3))
+    assert "But move's stop went out but is not known to have reached the body" in moved.summary
+    assert moved.data["stop_unconfirmed"] is True and "could not be delivered" not in moved.summary
+
+
+async def test_a_verb_ended_before_its_send_names_itself_and_never_its_intent() -> None:
+    """`send_or_fail` ends a verb told to end before anything goes out, and its stop that did not
+    land was said to be the intent's, `joint's stop`, a name no pilot called. It is the verb's,
+    named where the verb gives its name, and unnamed where it does not."""
+    ctx = VerbContext(transport=_StopLost(lambda _b: True), interrupted=lambda: STOPPED)
+    unnamed = await core.send_or_fail(ctx, Intent.joint({"shoulder_pan": 0.0}, 1.0))
+    assert unnamed is not None and "joint's stop" not in unnamed.summary, unnamed.summary
+    assert "But the stop could not be delivered" in unnamed.summary
+    named = await core.send_or_fail(ctx, Intent.joint({"shoulder_pan": 0.0}, 1.0), "move_joints")
+    assert named is not None and "But move_joints's stop could not be delivered" in named.summary
 
 
 class _Confirming(_Refusing):

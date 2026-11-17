@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import importlib.util
+import inspect
 import io
 import json
 import math
@@ -14,6 +15,7 @@ from typing import Any
 import pytest
 from PIL import Image
 
+import roboglot_rosbridge.ws as ws_module
 from roboglot.adapters.base import AdapterNotInstalled
 from roboglot.adapters.factory import describe, make_adapter, parse_robot_spec
 from roboglot.perception.color_blob import ColorBlobDetector
@@ -30,6 +32,7 @@ from roboglot_rosbridge.introspection import datasheet_from_introspection, parse
 from roboglot_rosbridge.mock import MOCK_URDF, RosbridgeMock, mock_introspection
 from roboglot_rosbridge.ws import (
     FRAME_STALE_FLOOR_S,
+    SILENT_BEATS,
     STALE_FLOOR_S,
     RosbridgeWs,
     decode_compressed_image,
@@ -888,6 +891,57 @@ async def test_with_more_than_one_twist_topic_it_says_which_it_drives() -> None:
     assert said and "/cmd_vel_nav" in said[0], adapter.manifest.datasheet.notes
 
 
+async def test_the_command_topic_is_judged_again_when_needed_and_when_the_bridge_reads_anew() -> (
+    None
+):
+    """The topic was judged once, against the list read at connect, and a refusal was never
+    lifted: a base driver that came up a few seconds after Roboglot connected was refused for the
+    whole session, even once `introspect` listed it as a Twist. It is judged again whenever the
+    bridge is read, and a refused move reads it first: missing then and listed now is driven,
+    and listed then and gone now, before Roboglot has published on it, is refused."""
+    later = {"topics": ["/odom", "/cmd_vel"], "types": ["nav_msgs/msg/Odometry", TWIST]}
+    for re_read in ("introspect", "the move itself"):
+        listing = FakeService({"topics": ["/odom"], "types": ["nav_msgs/msg/Odometry"]})
+        adapter, ex, made = await _listed_by(listing)
+        assert not (await ex.run_verb("move", {"vx": 0.2, "duration_s": 0.2})).ok
+        listing.answer = later  # the base driver is up
+        if re_read == "introspect":
+            assert (await adapter.introspect()).topics.get("/cmd_vel") == TWIST
+        moved = await ex.run_verb("move", {"vx": 0.2, "duration_s": 0.2})
+        assert moved.ok, f"{re_read}: {moved.summary}"
+        assert made["/cmd_vel"].published[0] == twist_message(0.2, 0.0, 0.0)
+
+    listing = FakeService(dict(later))
+    adapter, ex, made = await _listed_by(listing)
+    listing.answer = {"topics": ["/odom"], "types": ["nav_msgs/msg/Odometry"]}  # gone
+    await adapter.introspect()
+    gone = await ex.run_verb("move", {"vx": 0.2, "duration_s": 0.2})
+    assert not gone.ok and "lists no /cmd_vel" in gone.summary, gone.summary
+    assert made["/cmd_vel"].published == []
+
+
+async def _listed_by(
+    listing: FakeService,
+) -> tuple[RosbridgeAdapter, Executor, dict[str, FakeTopic]]:
+    """A ws base on a bridge whose rosapi answers as `listing` does, and an executor over it."""
+    factory, _by_name, _types = _services(topics=listing)
+    made: dict[str, FakeTopic] = {}
+    adapter = RosbridgeAdapter(
+        RosbridgeWs(
+            "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
+            ros=FakeRos(),
+            topic_factory=lambda c, n, t: made.setdefault(n, FakeTopic(c, n, t)),
+            service_factory=factory,
+        )
+    )
+    manifest = await adapter.connect()
+    return (
+        adapter,
+        Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest),
+        made,
+    )
+
+
 # ── a link that drops ───────────────────────────────────────────────────────────────────
 
 
@@ -978,6 +1032,8 @@ async def test_close_on_a_dropped_link_records_that_its_zero_twist_never_left() 
     await adapter.close()
     assert topics["/cmd_vel"].published == [twist_message(0.2, 0.0, 0.0)]
     assert adapter.stop_error is not None and "is not connected" in adapter.stop_error
+    # and where a run reads after a close, so a person hears it (`close_note`, `agent/loop.py`)
+    assert adapter.close_note is not None and "zero Twist was not sent" in adapter.close_note
 
 
 # ── a camera that has gone quiet ────────────────────────────────────────────────────────
@@ -1039,40 +1095,125 @@ async def test_the_heartbeat_fails_once_odom_goes_quiet_on_a_link_that_reads_con
     await adapter.stop()
     assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
     assert adapter.stop_error is not None and "/odom" in adapter.stop_error
+    assert adapter.stop_unconfirmed, "a zero that went out is not one that was not sent"
+    topics["/odom"].callback(_odom(0.5, stamp=t0 + 100.0))  # life returns
+    await adapter.stop()
+    assert adapter.stop_error is None and not adapter.stop_unconfirmed
 
 
-async def test_a_base_that_has_sent_no_odom_is_watched_by_a_round_trip_or_by_the_socket() -> None:
-    """A base whose /odom never came may publish none at all, and is still driven: its staleness
-    is unknown, so the heartbeat asks the bridge for its topic list, which rosapi answered at
-    connect, and fails when no answer comes within the stale window's floor. A bridge without
-    rosapi has no such round trip, and the socket's own state is all that watches it."""
-    topics = FakeService({"topics": ["/cmd_vel"], "types": ["geometry_msgs/msg/Twist"]})
-    factory, _by_name, _types = _services(topics=topics)
+class _Clock:
+    """`time` as the transport's module reads it, moved on by hand, so a stream's pace is the
+    test's and not the machine's. The event loop keeps its own clock, which a round trip's
+    deadline runs on."""
+
+    def __init__(self) -> None:
+        self.t = time.monotonic()
+
+    def monotonic(self) -> float:
+        return self.t
+
+
+QUICK_S = 0.3
+"""A transport's own request deadline in these tests (`RosbridgeWs(timeout_s=...)`), short so
+that a round trip left unanswered is waited out in a fraction of a second."""
+
+
+def _asked(*, timeout_s: float = 5.0) -> tuple[RosbridgeWs, FakeService, dict[str, FakeTopic]]:
+    """A ws base on a bridge whose rosapi lists only /cmd_vel, a Twist, as `FakeService`."""
+    listing = FakeService({"topics": ["/cmd_vel"], "types": ["geometry_msgs/msg/Twist"]})
+    factory, _by_name, _types = _services(topics=listing)
+    topics: dict[str, FakeTopic] = {}
     ws = RosbridgeWs(
         "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
         ros=FakeRos(),
-        topic_factory=lambda c, n, t: FakeTopic(c, n, t),
+        topic_factory=lambda c, n, t: topics.setdefault(n, FakeTopic(c, n, t)),
         service_factory=factory,
+        timeout_s=timeout_s,
     )
+    return ws, listing, topics
+
+
+@pytest.mark.parametrize("period_s", [2.0, 1.25], ids=["half-a-hertz", "four-fifths-of-a-hertz"])
+async def test_a_base_whose_odom_comes_seldom_but_steadily_keeps_its_heartbeat(
+    monkeypatch: pytest.MonkeyPatch, period_s: float
+) -> None:
+    """The stale window sat on its one-second floor until two intervals of /odom had come, so a
+    healthy base sending it less than once a second failed its heartbeat between its first and
+    third message, and one failed beat ends a run, or an MCP session for good. A stream is not
+    judged before its pace is known. Beats come every `Heartbeat`'s default period."""
+    _ros, topics, _adapter, _ex = await _driving()
+    ws = _adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    start, beat_s = clock.t, inspect.signature(Heartbeat.__init__).parameters["period_s"].default
+    arrivals = [start + k * period_s for k in range(4)]
+    fed, beat = 0, start + beat_s / 5
+    while beat < arrivals[-1] + period_s:
+        while fed < len(arrivals) and arrivals[fed] <= beat:
+            topics["/odom"].callback(_odom(0.0, stamp=100.0 + fed * period_s))
+            fed += 1
+        clock.t = beat
+        await ws.heartbeat()  # raises, and fails the test, on a healthy base
+        beat += beat_s
+
+
+@pytest.mark.parametrize("answer", ["late", "a-failure"])
+async def test_a_bridge_whose_round_trip_answers_late_or_says_no_is_alive(
+    monkeypatch: pytest.MonkeyPatch, answer: str
+) -> None:
+    """On a base with no /odom the heartbeat asked for the topic list within the stream's stale
+    floor, a second, and read anything else as silence: an answer half as late again, as one
+    queued behind camera frames over Wi-Fi, ended the run, and so did a failed answer, which the
+    bridge gives at once while its rosapi node restarts. A request has the transport's own
+    deadline, and an answer of any kind is a sign of life."""
+    ws, listing, _topics = _asked()
+    await ws.connect()
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    clock.t += 2 * STALE_FLOOR_S  # no answer since connect within the floor: the beat asks
+    asked = len(listing.calls)
+    if answer == "late":
+        listing.hang_s = 1.5 * STALE_FLOOR_S
+    else:
+        listing.raise_with = RuntimeError("Service /rosapi/topics does not exist")
+    for _ in range(SILENT_BEATS):  # as many beats in a row as silence would take to fail
+        clock.t += 2 * STALE_FLOOR_S
+        await ws.heartbeat()
+    assert len(listing.calls) == asked + SILENT_BEATS, "a beat made no round trip"
+
+
+async def test_a_base_with_no_odom_takes_two_unanswered_beats_to_fail_and_none_after_it_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With no stream to go by the heartbeat asks the bridge, and one unanswered round trip is a
+    slow link, not a gone one: it fails on the second in a row, naming the round trip. A stop
+    is judged by what the stop can see, so one after the bridge answers again is not judged by a
+    beat long gone; it was, for the rest of the session. A bridge that gave no answer at connect
+    has no round trip, and the socket's own state is all that watches it."""
+    ws, listing, topics = _asked(timeout_s=QUICK_S)
     adapter = RosbridgeAdapter(ws)
     await adapter.connect()
-    asked = len(topics.calls)
-    await adapter.heartbeat()
-    assert len(topics.calls) == asked + 1, "the heartbeat made no round trip"
-    topics.hang_s = 1.5 * STALE_FLOOR_S  # the link has gone quiet
-    with pytest.raises(HeartbeatError, match="/rosapi/topics"):
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    listing.hang_s = 2 * QUICK_S  # the link has gone quiet
+    clock.t += 2 * STALE_FLOOR_S
+    await adapter.heartbeat()  # one silent beat is no failure
+    with pytest.raises(HeartbeatError, match="/rosapi/topics") as failed:
         await adapter.heartbeat()
+    assert "2 beats in a row" in str(failed.value)
+    listing.hang_s = 0.0  # it answers again
     await adapter.stop()
-    assert adapter.stop_error is not None and "/rosapi/topics" in adapter.stop_error
+    assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
+    assert adapter.stop_error is None, adapter.stop_error
+    clock.t += 2 * STALE_FLOOR_S
+    await adapter.heartbeat()
+    await adapter.heartbeat()  # the count began again with the answer
 
-    no_rosapi, _by_name, _types = _services(topics=FakeService(raise_with=RuntimeError("none")))
-    bare = RosbridgeWs(
-        "ws://robot.local:9090?urdf_param=off&urdf_topic=off",
-        ros=FakeRos(),
-        topic_factory=lambda c, n, t: FakeTopic(c, n, t),
-        service_factory=no_rosapi,
-    )
+    bare, silent, _topics = _asked(timeout_s=QUICK_S)
+    silent.hang_s = 2 * QUICK_S  # no answer at connect: no round trip to make
     await bare.connect()
-    await bare.heartbeat()  # nothing to watch it by but the socket, and that reads up
+    for _ in range(3):
+        await bare.heartbeat()  # the socket reads up, and nothing else can be asked
     await bare.stop()
     assert bare.stop_error is None
