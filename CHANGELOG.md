@@ -489,7 +489,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   it:` and that reason, where it would have said the service serves it, and the wizard says
   the same. A radio's start, which can take 20 s, holds nothing else up any more: the service's
   next look, the way from a stop to its close, and the answer to `roboglot onboard sign`,
-  `pin` or `forget` go on while it starts.
+  `pin` or `forget` go on while it starts, and a radio's start that never comes back no longer
+  keeps talk on once the passport runs out. A passport signed again while talk is being set up
+  is the one served, and the robot's hellos carry it.
 - **A radio slow to start no longer ends the onboard service.** A Bluetooth radio that took
   longer than its 20 s to start, BlueZ waiting on its controller at boot say, raised out of
   `roboglot onboard serve` once the passport server was up: the service ended, and after five
@@ -514,16 +516,21 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   its close and the end of its record when the process exited; then it said bye to each robot
   met one after another, each with its own bound, and closed the radio, the passport server and
   the control listener, each with its own, so with two robots gone out of range it outlasted
-  the unit's `TimeoutStopSec=20` and systemd killed it partway. The close keeps inside 18 s
-  now, counted from the stop as systemd counts its timeout, the unit's stop timeout less a
-  margin for the process's exit: the run's stop first, with up to 13 s for it, and beside it
-  the LAN record other robots find this one by, withdrawn at once; then the byes all at once,
-  beside the passport server's and the listener's close, and the radio last. A run still going
-  when its time is up is said in the journal as `the goal has not ended though it was told to
-  stop: the service closes without it, so its body may not be closed, nor its record ended,
-  and while it waits on a call in a thread of its own the process stays until systemd ends it
-  at its stop timeout`, and whatever else had not finished as `the service stops before it
-  finished` and what it was, as in `saying bye to 2 robots met and closing the radio`.
+  the unit's `TimeoutStopSec=20` and systemd killed it partway. The run in hand is told to
+  stop the moment the stop comes now, whatever the service was doing, and the close keeps
+  inside 18 s, counted from the stop as systemd counts its timeout, the unit's stop timeout
+  less a margin for the process's exit: the run has all of it but 5 s for the byes when robots
+  are met, and all of it when none is; beside the run's stop the LAN record other robots find
+  this one by is withdrawn at once, and no rotation or late start publishes it again; then the
+  byes go out all at once, beside the passport server's and the listener's close, and the
+  radio last. Whatever had not finished is said as `the service stops before it finished` and
+  what it was, as in `saying bye to 2 robots met and closing the radio`. A run, or a call one
+  handed to a thread of its own, still going when the time is spent held the process for good,
+  until systemd's kill or, in a terminal, until a person ended it: the service says so in one
+  line now, in the journal and on stderr, as in `the goal has not ended though it was told to
+  stop, and the service ends its process now with exit code 70: the body took the stop it was
+  sent; not done: the body's close, the run's end record`, and ends its process with exit code
+  70. A run that is only slow and ends inside the time is never cut.
 - **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
   run in hand` as soon as the service had passed the stop on, so a run whose stop had not
   landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at

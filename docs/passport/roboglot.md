@@ -295,11 +295,13 @@ last line.
 holding the radio and its rotating beacon, near and far, talk over the LAN or a Bluetooth link, one
 run at a time, a meeting or a goal, and a control port on 127.0.0.1 for the other subcommands,
 guarded by a token in `control.json`. It reloads `robot.yaml` and `passport.jws` when they change,
-writes `status.json` every 2 seconds, and on a stop starts no further goal or meeting, ends the
-run in hand, withdraws its LAN record, says bye to every robot it is talking to, and goes, its
-close kept inside the 20 seconds systemd gives it from the stop; the journal says what it had not
-finished by then. A run left waiting on a call in a thread of its own keeps the process until
-systemd ends it at those 20 seconds, and the journal says that too. A radio that does not answer
+writes `status.json` every 2 seconds, and on a stop starts no further goal or meeting, tells the
+run in hand to stop the moment the stop comes, withdraws its LAN record, says bye to every robot
+it is talking to, and goes, its close kept inside the 20 seconds systemd gives it from the stop;
+the journal says what it had not finished by then. A run, or a call one handed to a thread of its
+own, still going when that time is spent would hold the process for good, so the service says
+so in one line, on stderr too, and ends its process with exit code 70, in a terminal as under
+systemd. A radio that does not answer
 within 20 seconds of starting is a radio that is down: the service stays up, `status` and the
 journal say `the radio did not answer within 20 s`, and the radio is tried again as one that
 came up down is. Nothing else waits on a radio's start: the service's looks, its stop and the

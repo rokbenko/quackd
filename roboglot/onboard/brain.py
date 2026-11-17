@@ -15,6 +15,7 @@ the owner said `with_strangers`.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
 import threading
 import time
@@ -36,6 +37,9 @@ LINGER_S = 20.0
 FOR_A_GOAL = "a goal came, and a goal takes the slot from a meeting"
 EVERYONE_LEFT = "the robots it met all left"
 STOPPED = "stopped by roboglot onboard stop"
+#: How the threads a run's calls run on are named, its kind after it: nothing in Python ends a
+#: thread, and the interpreter waits at its exit for these, so one still going holds the process.
+CALL_THREADS = "onboard-call-"
 #: How long a goal waits for the meeting it takes the slot from to end, holding nothing that
 #: status, a stop or the service's tick needs. A meeting moves nothing (`meeting_glot` offers it
 #: what reports and what stops), so its teardown is a stop and a last look at the state; the
@@ -255,8 +259,10 @@ class RunSlot:
         """The service has begun to close: the run in hand is stopped, and from now on no goal
         and no meeting starts, whoever asks, `why` being the reason given. Set under the lock
         every start takes, so a start either came first, and is the run stopped here, or is
-        refused."""
+        refused. Once only: the service's stop and its close both close it."""
         with self._lock:
+            if self._closed is not None:
+                return
             self._closed = why
             self.stop(why)
 
@@ -294,6 +300,12 @@ class RunSlot:
 
     def _run(self, running: Running) -> None:
         aio = asyncio.new_event_loop()
+        # the calls this run hands to threads of their own (`asyncio.to_thread`, a verb's
+        # blocking call) on threads named for it, so the service's close can find one that would
+        # hold the process at its exit (`CALL_THREADS`)
+        aio.set_default_executor(
+            concurrent.futures.ThreadPoolExecutor(thread_name_prefix=CALL_THREADS + running.kind)
+        )
         running.aio = aio
         front = running.front
         try:

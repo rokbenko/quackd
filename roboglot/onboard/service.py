@@ -40,7 +40,7 @@ from typing import Any, cast
 from roboglot import __version__
 from roboglot.boards import BoardFacts, radio_of
 from roboglot.onboard import config
-from roboglot.onboard.brain import RunSlot
+from roboglot.onboard.brain import CALL_THREADS, RunSlot
 from roboglot.onboard.config import RobotFile
 from roboglot.onboard.control import ANSWER_S
 from roboglot.onboard.keys import read_robot_key
@@ -67,25 +67,29 @@ RUNS_KEPT = 200
 #: it takes: a host that sends nothing but refusals fills neither the disk nor the journal.
 MET_FILE_MAX = 1 << 20
 REFUSALS_PER_MINUTE = 30
-#: How long `close` may take in all, counted from the stop, as systemd's timeout is: systemd
-#: kills the service `STOP_TIMEOUT_S` after asking it to stop, and close must be over before
-#: then with time left for the process's own exit once it returns, the lock let go and the
-#: interpreter's threads joined: a tenth of the timeout, a margin chosen, not measured. A run
-#: left waiting on a call in a thread of its own holds that exit until systemd's kill
-#: (`RUN_LEFT`): nothing in Python ends a thread.
+#: The close's shares, each from the unit's stop timeout, `STOP_TIMEOUT_S`, which systemd counts
+#: from the stop it asks for, and so does the close (`Service.stop` notes when it came, and tells
+#: the run in hand at once, whatever the look in hand is doing):
+#: - the close in all, `CLOSE_S`: nine tenths of the timeout. The tenth after it is the process's
+#:   own exit, a margin chosen, not measured; a run, or a call one left behind, still going at
+#:   its end would hold that exit for good, so the close ends the process itself (`LEFT_EXIT`).
+#: - the run: from its stop, all of `CLOSE_S` but the byes' share when there are robots met.
+#: - the byes, `AFTER_RUN_S`, kept after the run only on a close with a robot to say bye to:
+#:   they go out all at once, each a post on the fetch clock over the LAN (`FETCH_TIMEOUT_S`;
+#:   over a link, `post_timeout`, a second or so more).
+#: - the LAN record: nothing kept; it goes as the close begins, beside the run's stop.
+#: - the radio, the passport server and the listener: nothing kept; they only tidy up what the
+#:   process's exit drops anyway, and have what time is left.
 CLOSE_S = STOP_TIMEOUT_S * 0.9
-#: Of that, what is kept after the run however long it takes to end: the byes, which go out all
-#: at once beside the passport server's and the listener's close, each a post bounded by the
-#: fetch clock over the LAN (`FETCH_TIMEOUT_S`; over a link, `post_timeout`, a second or so
-#: more). The radio's own close, two calls onto its loop of `CALL_S` each and the loop's end,
-#: only tidies up what the process's exit drops anyway: it is kept nothing, and has whatever
-#: time is left. The LAN record, which other robots find this one by, needs none of it: it is
-#: withdrawn as the close begins, beside the run's stop.
 AFTER_RUN_S = FETCH_TIMEOUT_S
 #: How long a stop over the control port waits for the run it stopped to end before it
 #: answers: half of what `roboglot onboard stop` waits for that answer (`ANSWER_S`), so the
 #: answer always comes in time to be read.
 STOP_WAITS_S = ANSWER_S / 2
+#: How long a reload's answer waits for talk being made on another thread (its radio side,
+#: Talker and passport server, never its radio's start) to be noted or to fail, so the answer
+#: says whether the passport asked about is served: the same half of `ANSWER_S`.
+TALK_WAITS_S = ANSWER_S / 2
 #: What a goal's terminal is told, and what the journal says, when its second Ctrl-C lets it
 #: go while the run it gave is still ending.
 STILL_ENDING = (
@@ -96,15 +100,48 @@ LET_GO = (
     "a goal: {text}, its terminal asked to quit at once and is let go; the run is still ending, "
     "and the service stays up"
 )
-#: What the journal says of a run that has not ended when the service must go on stopping.
-#: Nothing in Python ends a thread, and the interpreter waits at its exit for the calls a run
-#: handed to threads of their own (`asyncio.to_thread`, a verb's blocking call): a run left
-#: waiting on one holds the process until systemd's kill, and the line says so.
+#: The exit code of a process the close ends because a run, or a call one left behind, is still
+#: going when its budget is spent: sysexits' EX_SOFTWARE, the service unable to finish its own
+#: work. Any code but 0 reads as a failure to systemd: after a stop it was asked for, the unit
+#: shows as failed and is not restarted; after a stop it was not asked for (a crash, a
+#: `shutdown` over the control port), `Restart=on-failure` starts it again `RestartSec` later.
+LEFT_EXIT = 70
+#: Why the run in hand stops when the service does, as its record says.
+STOPPING = "the service is stopping"
+#: The one line, in the journal and on stderr, of a close that ends the process because a run,
+#: or a call it handed to a thread of its own, is still going when the budget is spent: nothing
+#: in Python ends a thread, and the interpreter would wait for it at its exit, until systemd's
+#: kill or, in a terminal, for good. What was sent to the body comes from the run's own record
+#: as it was written (`_StopsHeard`); a run's thread that is only slow is never cut, since the
+#: process is ended only once the whole budget is spent.
 RUN_LEFT = (
-    "the {kind} has not ended though it was told to stop: the service closes without it, so its "
-    "body may not be closed, nor its record ended, and while it waits on a call in a thread of "
-    "its own the process stays until systemd ends it at its stop timeout"
+    "the {kind} has not ended though it was told to stop, and the service ends its process now "
+    "with exit code {code}: {stop}; not done: the body's close, the run's end record"
 )
+CALL_LEFT = (
+    "a call the {kind} handed to a thread of its own has not ended, and would hold the process "
+    "for good: the service ends its process now with exit code {code}"
+)
+
+
+class _StopsHeard:
+    """The stops a run's body answered, read off the run's own record as it is written (the
+    `intent` rows its transport writes once a stop has come back), for the line a close says of
+    a run it leaves; every row also goes on to the run's own view, a goal's terminal."""
+
+    def __init__(self, view: Callable[[Any], None] | None) -> None:
+        self._view = view
+        self.landed = False
+        self.failed: str | None = None
+
+    def __call__(self, event: Any) -> None:
+        if event.kind == "intent" and event.data.get("intent") == "stop":
+            if event.data.get("accepted"):
+                self.landed = True
+            else:
+                self.failed = str(event.data.get("reason") or "refused")
+        if self._view is not None:
+            self._view(event)
 
 
 @dataclass
@@ -234,9 +271,16 @@ class Service:
         facts: BoardFacts,
         radio_side: RadioSide | Callable[[], RadioSide],
         log: Callable[[str], None],
+        clock: Callable[[], float] = time.monotonic,
+        end_process: Callable[[int], None] | None = None,
     ) -> None:
         self.home = home
         self.facts = facts
+        #: what the close's budget is counted on, from the stop as systemd counts its timeout
+        self._clock = clock
+        #: how the process ends when a close leaves a run, or a call it left, still going: a
+        #: flush and `os._exit` (`end_process`), or a test's stand-in
+        self._end_process = end_process or _end_process
         #: the radio while talk is on, and how to make one, since talk turns off when the
         #: robot's own passport stops checking out and on again when it does
         self.radio_side: RadioSide | None = None
@@ -260,6 +304,8 @@ class Service:
         self._shutting = False
         #: why talk could not start the last time a look or a reload tried, for a reload's answer
         self._talk_problem: str | None = None
+        #: told whenever talk's making ends, noted or failed, for a reload's answer to wait on
+        self._made = threading.Condition(self._talk)
         self._refusals: deque[float] = deque()
         self._refusals_dropped = 0
         self.file: RobotFile = config.load(home.robot_yaml)
@@ -274,6 +320,10 @@ class Service:
         #: when the stop was asked for, which systemd's stop timeout runs from, and so the close
         #: budget too; None for a close that no stop came before (Ctrl-C in a terminal)
         self._stop_asked: float | None = None
+        #: why the stop could not tell the run itself, for the close to say
+        self._stop_untold: str | None = None
+        #: the stops the run in hand's body answered, by the run (`_make_loop`)
+        self._stops_heard: dict[int, _StopsHeard] = {}
         self._last_status = 0.0
         #: when robot.yaml and passport.jws last changed, as the service last read them: a file
         #: a person edited is read again on the next look, with no command needed
@@ -371,11 +421,22 @@ class Service:
         except BaseException:
             with self._talk:
                 self._turning = False
+                self._made.notify_all()
             raise
         with self._talk:
             closing = self._shutting
             if not closing:
+                if self.token != token and self.token is not None and self.check.reading:
+                    # signed again while talk was made: what is served is what was signed last
+                    newest = self.check.reading
+                    server.update(Served(self.file.passport.name, newest.raw, self.token))
+                    talker.endpoint.passport = self.token
+                    talker._judge = self._judge_for(newest)
                 self.talker, self.server = talker, server
+                # talk is on from here: its radio's start is apart from the turning, so one that
+                # never comes back keeps no look from turning talk off, which cuts it short
+                self._turning = False
+            self._made.notify_all()
         if closing:
             # the service began to close while talk was made, and has closed what it found: what
             # was made here goes now, the radio never started
@@ -384,10 +445,12 @@ class Service:
                 side.close()
             with self._talk:
                 self._turning = False
+                self._made.notify_all()
             return
         if wait_for_radio:
             self._start_radio(side, talker, reading, server.port)
-        else:
+            return
+        try:
             threading.Thread(
                 target=self._start_radio,
                 args=(side, talker, reading, server.port),
@@ -395,6 +458,8 @@ class Service:
                 name="onboard-radio-start",
                 daemon=True,
             ).start()
+        except RuntimeError as e:  # no thread to be had: talk is on without its radio, as said
+            self.log(f"radio {side.radio.kind}: it did not start: {e}")
 
     def _start_radio(
         self,
@@ -413,9 +478,6 @@ class Service:
             if not on_its_own:
                 raise
             self.log(f"radio {side.radio.kind}: it did not start: {e}")
-        finally:
-            with self._talk:
-                self._turning = False
 
     def _try_talk(self) -> None:
         """`_start_talk` from a look rather than from start: a start that fails, a port taken
@@ -503,8 +565,20 @@ class Service:
         return stamp(self.home.robot_yaml), stamp(self.home.passport_jws)
 
     def stop(self) -> None:
+        """The stop SIGTERM and the `shutdown` op ask for: when it came is noted, the run in hand
+        is told at once, and the ticks end at the next look."""
         if self._stop_asked is None:
-            self._stop_asked = time.monotonic()
+            self._stop_asked = self._clock()
+            if self.slot is not None:
+                # on a thread of its own: a signal handler takes no lock and writes no journal,
+                # and the look in hand, which `run()` finishes before `close()`, saying bye to
+                # robots out of range say, must not hold the run's stop
+                try:
+                    threading.Thread(
+                        target=self.slot.close, args=(STOPPING,), name="onboard-stop", daemon=True
+                    ).start()
+                except RuntimeError as e:  # no thread to be had: the close tells the run
+                    self._stop_untold = str(e)
         self._stop.set()
 
     def close(self) -> None:
@@ -514,28 +588,32 @@ class Service:
         finished in that time is said in the journal, and the process goes without it."""
         # from the stop, as systemd's timeout runs: the look in hand when it came is over first
         asked = self._stop_asked
-        deadline = (asked if asked is not None else time.monotonic()) + CLOSE_S
+        deadline = (asked if asked is not None else self._clock()) + CLOSE_S
         with self._talk:
             # talk is not turned on again: a start under way notes what it made, sees this and
             # closes it, and a radio still starting is cut short when the radio closes below
             self._shutting = True
+        if self._stop_untold is not None:
+            self.log(f"the run in hand was told to stop only now: {self._stop_untold}")
         if self.slot is not None:
-            # closed first: a goal or a meeting asked for from here on, over the control port,
-            # by a robot coming near or by an op a control thread read already, is refused
-            self.slot.close("the service is stopping")
+            # closed first, if the stop has not closed it already: a goal or a meeting asked for
+            # from here on, over the control port, by a robot coming near or by an op a control
+            # thread read already, is refused
+            self.slot.close(STOPPING)
         # then, beside the run's stop, the LAN record other robots find this one by: a robot
         # that meets nobody more is not to be found, and the record needs nothing of the radio
         side = self.radio_side
         record = self._closing("the LAN record", side.withdraw) if side is not None else None
-        if self.slot is not None:
-            running = self.slot.running
-            if running is not None and running.thread is not None:
-                running.thread.join(timeout=max(0.0, deadline - AFTER_RUN_S - time.monotonic()))
-                if running.thread.is_alive():
-                    self.log(RUN_LEFT.format(kind=running.kind))
+        # the run has all that is left of the budget but the byes' share, which is kept only
+        # when there is a robot to say bye to (`AFTER_RUN_S`)
+        talker = self.talker
+        kept = AFTER_RUN_S if talker is not None and talker.peers_open() else 0.0
+        running = self.slot.running if self.slot is not None else None
+        if running is not None and running.thread is not None:
+            running.thread.join(timeout=max(0.0, deadline - kept - self._clock()))
 
         def left_s() -> float:
-            return max(0.0, deadline - time.monotonic())
+            return max(0.0, deadline - self._clock())
 
         # a bye to every robot met, all at once, each bounded by the way it goes, and beside
         # them the parts that carry none: the passport server and the listener
@@ -575,6 +653,37 @@ class Service:
             self.log(f"the service stops before it finished {' and '.join(unfinished)}")
         with contextlib.suppress(OSError):
             self.home.control_json.unlink()
+        # last, with what is left of the budget: a run still going, or a call one handed to a
+        # thread of its own, would hold the process at its exit for good, so it is ended here
+        calls = [t for t in threading.enumerate() if t.name.startswith(CALL_THREADS)]
+        for call in calls:
+            call.join(left_s())
+        calls = [t for t in calls if t.is_alive()]
+        if running is not None and running.thread is not None and running.thread.is_alive():
+            said = RUN_LEFT.format(
+                kind=running.kind, code=LEFT_EXIT, stop=self._stop_said(running.agent)
+            )
+        elif calls:
+            kind = calls[0].name.removeprefix(CALL_THREADS).split("_")[0]
+            said = CALL_LEFT.format(kind=kind, code=LEFT_EXIT)
+        else:
+            return
+        self.log(said)
+        with contextlib.suppress(Exception):  # a stderr that has gone: the journal has the line
+            sys.stderr.write(said + "\n")
+            sys.stderr.flush()
+        self._end_process(LEFT_EXIT)
+
+    def _stop_said(self, agent: Any) -> str:
+        """What the run's own record says the body was sent as it stopped, in words."""
+        heard = self._stops_heard.get(id(agent))
+        if heard is None:
+            return "its record says what stop the body was sent"
+        if heard.landed:
+            return "the body took the stop it was sent"
+        if heard.failed is not None:
+            return f"the stop it was sent did not land: {heard.failed}"
+        return "no stop it was sent has come back"
 
     @staticmethod
     def _bye(talker: Talker, peer: str) -> None:
@@ -747,6 +856,7 @@ class Service:
         from roboglot.memory import RobotMemory
         from roboglot.safety import deny_all
 
+        heard = _StopsHeard(front.view if front is not None else None)
         brain = self.file.brain
         vendor, llm_id, _source = resolve_llm(None, brain.llm, robot=self.file.passport.name)
         provider = make_provider(
@@ -765,7 +875,9 @@ class Service:
             confirm=front.confirm if front is not None else deny_all,
             decide=front.decide if front is not None else _meeting_go,
             acknowledge=front.acknowledge if front is not None else None,
-            view=front.view if front is not None else None,
+            # the run's rows as written, to the goal's terminal as before, and the stops the body
+            # answered noted on the way, for the line a close says of a run it leaves
+            view=heard,
             # a goal's notes are the robot's; a meeting keeps none, since what it would note
             # is what a robot it met claimed, and a note comes back to a later run as the
             # robot's own word
@@ -775,7 +887,9 @@ class Service:
             price=brain.price,
             nearby=self.talker,
         )
-        return AgentLoop(cfg)
+        agent = AgentLoop(cfg)
+        self._stops_heard = {id(agent): heard}  # one run in the slot at a time
+        return agent
 
     # ── control ─────────────────────────────────────────────────────────────────────────
 
@@ -793,7 +907,7 @@ class Service:
             return {"ev": "met", "rows": self._met_rows(int(op.get("limit") or 20))}
         if name == "reload":
             self._seen = self._stamps()
-            return {"ev": "reloaded", **self._reload()}
+            return {"ev": "reloaded", **self._reload(answering=True)}
         if name == "shutdown":
             self.stop()
             return {"ev": "bye"}
@@ -838,9 +952,11 @@ class Service:
         with contextlib.suppress(OSError):
             conn.sock.shutdown(socket.SHUT_RDWR)
 
-    def _reload(self) -> dict[str, Any]:
+    def _reload(self, *, answering: bool = False) -> dict[str, Any]:
         """robot.yaml again, for the settings that change without a signature: the pins above
-        all, which a session judged before keeps until it ends."""
+        all, which a session judged before keeps until it ends. `answering`, for a client over
+        the control port, waits a bounded while for talk being made on another thread, so the
+        answer is true for the passport it was asked about; the tick's own look never waits."""
         start = False
         with self._talk:
             try:
@@ -876,13 +992,20 @@ class Service:
         if start:
             self._try_talk()
         with self._talk:
+            if answering:
+                # talk being made on another thread notes its parts with the newest passport, or
+                # fails: the answer waits for which, and says the truth either way
+                self._made.wait_for(
+                    lambda: not (self._turning and self.talker is None), TALK_WAITS_S
+                )
             # a passport that checks out and is not served says why, so `roboglot onboard sign`
-            # never tells a person it is served with no passport server running; a talk start
-            # under way on another thread serves it in a moment
-            if self.check.ok and self.server is None and not self._turning:
+            # never tells a person it is served with no passport server running
+            if self.check.ok and self.server is None:
                 reply["unserved"] = (
                     "the service is stopping"
                     if self._shutting
+                    else "talk is still being made"
+                    if self._turning
                     else self._talk_problem or "talk is off"
                 )
         return reply
@@ -941,6 +1064,15 @@ class Service:
 
         with contextlib.suppress(OSError):
             write_private(self.home.status_json, json.dumps(self.status(), default=str) + "\n")
+
+
+def _end_process(code: int) -> None:
+    """The process ends here, with `code`, its output flushed first: what systemd's kill at the
+    unit's stop timeout would do a moment later, done on every path, a terminal's too."""
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):  # a stream already gone has nothing left to flush
+            stream.flush()
+    os._exit(code)
 
 
 def _browser(log: Callable[[str], None]) -> Any:

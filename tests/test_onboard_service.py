@@ -420,8 +420,9 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
     the listener, each with its own: with a run slow to end and two robots that do not answer
     it outlasted the unit's stop timeout, and systemd killed it partway with nothing said of
     what was left. It keeps inside one budget now, the unit's stop timeout less a margin, the
-    run's stop first, and the journal says what did not finish. The budget is shortened here,
-    and the run and both byes wait on an event the test sets only once close() is over."""
+    run's stop first, and the journal says what did not finish. The service's clock is the
+    test's, and the close comes as the budget ends; the run and both byes wait on an event the
+    test sets only once close() is over, and the process's end is the test's stand-in."""
     import asyncio
 
     from roboglot.onboard import service as onboard_service
@@ -433,9 +434,7 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
     unit = systemd.unit_text(user="robot", directory=tmp_path, roboglot="/usr/bin/roboglot")
     assert f"\nTimeoutStopSec={systemd.STOP_TIMEOUT_S}\n" in unit
     assert onboard_service.CLOSE_S < systemd.STOP_TIMEOUT_S
-    monkeypatch.setattr(onboard_service, "CLOSE_S", 2.0)
-    monkeypatch.setattr(onboard_service, "AFTER_RUN_S", 1.0)
-    hung = threading.Event()
+    hung, now = threading.Event(), [0.0]
 
     class Stuck(Run):
         async def run(self) -> Any:
@@ -443,12 +442,15 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
             return await super().run()
 
     lines: list[str] = []
+    ended: list[int] = []
     home = robot(tmp_path, HOUSEHOLD)
     service = Service(
         home,
         facts=sim_facts(),
         radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
         log=lines.append,
+        clock=lambda: now[0],
+        end_process=ended.append,
     )
     service._make_loop = lambda glot, kind, front: Stuck(glot, kind)  # type: ignore[method-assign]
 
@@ -463,24 +465,29 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
         service.talker.peers_open = lambda: {"did:key:z6MkOne", "did:key:z6MkTwo"}  # type: ignore[method-assign]
         service.talker.leave = leave  # type: ignore[method-assign]
         assert service.slot.goal("Wait by the door.") is None
+        service.stop()
+        assert wait_for(lambda: "the goal is stopping: the service is stopping" in lines)
+        now[0] = onboard_service.CLOSE_S  # the run took the whole budget
         closer.start()
-        closer.join(10 * onboard_service.CLOSE_S)
+        closer.join(DEADLINE_S)
         assert not closer.is_alive(), f"close() outlasted its budget; {lines}"
+        assert wait_for(lambda: sum(line.startswith("bye to ") for line in lines) == 2), lines
         stopping = lines.index("the goal is stopping: the service is stopping")
         byes = [n for n, line in enumerate(lines) if line.startswith("bye to ")]
         assert len(byes) == 2 and stopping < min(byes), lines
-        # this run waits on a call in a thread of its own, which nothing in Python ends: the
-        # line said the service stops, while that thread holds the process until systemd's kill
+        # this run waits on a call in a thread of its own, which nothing in Python ends and the
+        # interpreter waits for at its exit: the process is ended, on every path, and said
         assert (
-            "the goal has not ended though it was told to stop: the service closes without it, "
-            "so its body may not be closed, nor its record ended, and while it waits on a call "
-            "in a thread of its own the process stays until systemd ends it at its stop timeout"
+            "the goal has not ended though it was told to stop, and the service ends its process "
+            "now with exit code 70: its record says what stop the body was sent; not done: the "
+            "body's close, the run's end record"
         ) in lines
+        assert ended == [onboard_service.LEFT_EXIT] == [70]
         left = [line for line in lines if line.startswith("the service stops before it finished")]
-        # the server and the listener close beside the byes, which hold up only the radio
-        assert left == [
+        # the byes hold up only the radio, which had no time left to start its close
+        assert len(left) == 1 and left[0].startswith(
             "the service stops before it finished saying bye to 2 robots met and closing the radio"
-        ], lines
+        ), lines
         assert not home.control_json.exists()
     finally:
         hung.set()
@@ -497,8 +504,11 @@ def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
     """systemd's stop timeout runs from its SIGTERM, but the close's budget ran from the start of
     `close`, which comes only once the look in hand when the stop arrived is over: a look slow on
     a radio loop that does not answer can take two calls onto it, so the close could run on past
-    the unit's timeout by that much. The budget counts from the stop now. The budget here is
-    shortened, the run does not end, and the look in hand takes 1.5 s."""
+    the unit's timeout by that much. The budget counts from the stop now. The service's clock
+    here is the test's: the stop comes at its nought, and the close at a moment past the whole
+    budget, as after a look that held the stop that long, so the close waits for nothing; the
+    run does not end and a robot met does not answer, either of which would hold a close
+    counted from its own start for the whole budget."""
     import asyncio
 
     from roboglot.onboard import service as onboard_service
@@ -506,9 +516,7 @@ def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
     from roboglot.radio import NoRadio
     from tests.test_onboard_brain import Run
 
-    monkeypatch.setattr(onboard_service, "CLOSE_S", 2.0)
-    monkeypatch.setattr(onboard_service, "AFTER_RUN_S", 1.0)
-    hung = threading.Event()
+    hung, now, ended = threading.Event(), [0.0], []
 
     class Stuck(Run):
         async def run(self) -> Any:
@@ -520,26 +528,230 @@ def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
         facts=sim_facts(),
         radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
         log=lambda _line: None,
+        clock=lambda: now[0],
+        end_process=ended.append,
     )
     service._make_loop = lambda glot, kind, front: Stuck(glot, kind)  # type: ignore[method-assign]
+    closer = threading.Thread(target=service.close, name="close", daemon=True)
     try:
         service.start()
         assert service.talker is not None and service.slot is not None
-        # a robot met that does not answer, so the close has its whole budget to use
+        # a robot met that does not answer, so a close counted from its own start would wait
         service.talker.peers_open = lambda: {"did:key:z6MkOne"}  # type: ignore[method-assign]
         service.talker.leave = lambda peer: hung.wait(DEADLINE_S)  # type: ignore[method-assign]
         assert service.slot.goal("Wait by the door.") is None
-        asked = time.monotonic()
-        service.stop()  # what the SIGTERM handler and the shutdown op call
-        time.sleep(1.5)  # the look in hand, on a radio loop slow to answer
-        service.close()
-        took = time.monotonic() - asked
-        assert took < onboard_service.CLOSE_S + 0.75, f"close ended {took:.1f} s after the stop"
+        service.stop()  # what the SIGTERM handler and the shutdown op call, at nought
+        now[0] = onboard_service.CLOSE_S + 1.0  # the look in hand held the stop past it all
+        closer.start()
+        closer.join(WINDOW_S)
+        assert not closer.is_alive(), "the close waited, though its budget was spent"
+        assert ended == [onboard_service.LEFT_EXIT]
     finally:
         hung.set()
+        closer.join(DEADLINE_S)
         running = service.slot.running if service.slot is not None else None
         if running is not None and running.thread is not None:
             running.thread.join(DEADLINE_S)
+
+
+def test_a_call_an_ended_run_left_behind_ends_the_process_and_says_so(tmp_path: Path) -> None:
+    """A verb whose blocking call would not end is left behind by the executor while its run
+    goes on and ends, and the interpreter waits at its exit for every such call: the close
+    found nothing unfinished and said nothing, and the process then stayed until systemd's
+    kill, or for good in a terminal, where nothing ends it. A close whose budget ends with such a
+    call still going says so in one line now, and ends the process with a failing exit code.
+    The service's clock is the test's, the close comes as the budget ends, and the process's end
+    is the test's stand-in."""
+    import asyncio
+
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    never, now, lines, ended = threading.Event(), [0.0], [], []
+
+    class LeavesACall(Run):
+        async def run(self) -> Any:
+            # a verb's blocking call that would not end, left behind as the executor leaves one
+            asyncio.get_running_loop().run_in_executor(None, never.wait, DEADLINE_S)
+            return await super().run()
+
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lines.append,
+        clock=lambda: now[0],
+        end_process=ended.append,
+    )
+    service._make_loop = lambda glot, kind, front: LeavesACall(glot, kind)  # type: ignore[method-assign]
+    try:
+        service.start()
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        service.stop()
+        assert running is not None and running.thread is not None
+        running.thread.join(DEADLINE_S)
+        assert not running.thread.is_alive(), "the run itself ended on its stop"
+        now[0] = onboard_service.CLOSE_S
+        service.close()
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        assert lines[-1] == (
+            "a call the goal handed to a thread of its own has not ended, and would hold the "
+            "process for good: the service ends its process now with exit code 70"
+        ), lines
+    finally:
+        never.set()
+
+
+def test_the_line_of_a_run_left_says_what_its_record_says_of_the_stop_the_body_was_sent(
+    tmp_path: Path,
+) -> None:
+    """The line a close says of a run it ends the process on names what was sent to the body,
+    from the run's own record as it was written: the `intent` row its transport writes once a
+    stop has come back, taken or not. Each row still goes on to the goal's terminal."""
+    from roboglot.log import LogEvent
+    from roboglot.onboard import service as onboard_service
+
+    shown: list[Any] = []
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: None,  # type: ignore[arg-type,return-value]
+        log=lambda _line: None,
+    )
+    agent = object()
+    assert service._stop_said(agent) == "its record says what stop the body was sent"
+    heard = onboard_service._StopsHeard(shown.append)
+    service._stops_heard = {id(agent): heard}
+    assert service._stop_said(agent) == "no stop it was sent has come back"
+    refused = LogEvent("intent", 1.0, {"intent": "stop", "accepted": False, "reason": "link down"})
+    heard(refused)
+    assert service._stop_said(agent) == "the stop it was sent did not land: link down"
+    heard(LogEvent("intent", 2.0, {"intent": "stop", "accepted": True, "reason": None}))
+    assert service._stop_said(agent) == "the body took the stop it was sent"
+    assert [event.t for event in shown] == [1.0, 2.0]
+
+
+class JoinSpy:
+    """A run's thread whose joins are noted with the time each was given, and which lets the run
+    end as the close begins its wait, so what the close gave the run is read off the join and
+    never off a clock."""
+
+    def __init__(self, thread: threading.Thread, release: threading.Event) -> None:
+        self.thread, self.release, self.given = thread, release, []
+
+    def join(self, timeout: float | None = None) -> None:
+        self.given.append(timeout)
+        self.release.set()
+        self.thread.join(timeout)
+
+    def is_alive(self) -> bool:
+        return self.thread.is_alive()
+
+
+def test_a_stop_tells_the_run_at_once_whatever_the_look_in_hand_is_doing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A stop reached the run only once `run()` had finished the look in hand, and a look that
+    turned talk off said bye to each robot met one after another before it: with robots out of
+    range, a goal running then got its stop seconds late, near systemd's kill. The stop tells
+    the run at once now, on a thread of its own, whatever the look is doing. The look here turns
+    talk off, a passport that ran out, and its bye waits until the test ends it."""
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    hung, lines = threading.Event(), []
+    real = onboard_service.check_own_passport
+    failing = [False]
+
+    def check(token: str | None, did: str, *, now: int | None = None) -> Any:
+        if failing[0]:
+            return onboard_service.SelfCheck(False, "its own passport does not check out: 4.5")
+        return real(token, did, now=now)
+
+    monkeypatch.setattr(onboard_service, "check_own_passport", check)
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lines.append,
+    )
+    service._make_loop = lambda glot, kind, front: Run(glot, kind)  # type: ignore[method-assign]
+    look = threading.Thread(target=service.tick, name="look", daemon=True)
+    try:
+        service.start()
+        assert service.talker is not None and service.slot is not None
+        service.talker.peers_open = lambda: {"did:key:z6MkOne"}  # type: ignore[method-assign]
+        service.talker.leave = lambda peer: hung.wait(DEADLINE_S)  # type: ignore[method-assign]
+        assert service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        failing[0] = True
+        service._last_status = 0.0  # the next look is due, and turns talk off
+        look.start()
+        assert wait_for(lambda: service._turning), "the look never began to turn talk off"
+        service.stop()
+        assert wait_for(lambda: running is not None and running.stop_wanted is not None, 10)
+        assert look.is_alive(), "told while the look still says its byes"
+        assert running is not None and running.stop_wanted == "the service is stopping"
+    finally:
+        hung.set()
+        look.join(DEADLINE_S)
+        service.close()
+
+
+def test_a_run_is_given_what_is_left_of_the_budget_and_nothing_is_kept_for_byes_to_nobody(
+    tmp_path: Path,
+) -> None:
+    """The run was joined until the deadline less the share kept for byes, whether any robot was
+    met or not, and counted from the stop: after a look that held the stop, a run that would
+    have ended inside what systemd gives was left, with most of the budget unused. With nobody
+    met the run is given all that is left now. The service's clock is the test's, the close
+    comes at a moment where a share kept for byes would leave the run nothing, and what the
+    close gave the run is read off its join."""
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    release, now, lines, ended = threading.Event(), [0.0], [], []
+
+    class EndsWhenLet(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            import asyncio
+
+            await asyncio.to_thread(release.wait, DEADLINE_S)
+            return await super().run()
+
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lines.append,
+        clock=lambda: now[0],
+        end_process=ended.append,
+    )
+    service._make_loop = lambda glot, kind, front: EndsWhenLet(glot, kind)  # type: ignore[method-assign]
+    try:
+        service.start()
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        assert running is not None and running.thread is not None
+        spy = JoinSpy(running.thread, release)
+        running.thread = spy  # type: ignore[assignment]
+        service.stop()
+        left_s = onboard_service.AFTER_RUN_S / 2  # less than a share kept for byes
+        now[0] = onboard_service.CLOSE_S - left_s
+        service.close()
+        assert spy.given[:1] == [left_s], spy.given
+        assert not spy.is_alive() and ended == [], lines
+    finally:
+        release.set()
+        service.close()
 
 
 def test_the_lan_record_is_withdrawn_inside_the_budget_whatever_the_run_and_the_radio_take(
@@ -549,22 +761,18 @@ def test_the_lan_record_is_withdrawn_inside_the_budget_whatever_the_run_and_the_
     after its two calls onto the radio's loop, while one such call was all that was kept for
     the parts after the run: after a run that took its whole share, a radio whose links and stop
     each answered inside their own bound ran past the budget, and the record stayed announced
-    until its time to live ran out. The budget is shortened as the close test's is, `CALL_S`
-    with it; the run ends 1.5 s after its stop, the links and the radio's stop each take 0.6 of
-    `CALL_S`."""
+    until its time to live ran out. The service's clock is the test's: the close comes as the
+    budget ends, after a run that took it all, so nothing after the run is waited for, and the
+    record is withdrawn all the same, as the close begins; the run here ends only once the test
+    lets it, and the process's end the close then asks for is the test's stand-in."""
     import asyncio
 
-    from roboglot.onboard import radio_side
     from roboglot.onboard import service as onboard_service
     from roboglot.onboard.radio_side import RadioSide
     from roboglot.radio import NoRadio
     from tests.test_onboard_brain import Run
 
-    monkeypatch.setattr(onboard_service, "CLOSE_S", 2.0)
-    monkeypatch.setattr(onboard_service, "AFTER_RUN_S", 1.0)
-    monkeypatch.setattr(radio_side, "CALL_S", 1.0)
-    part_s = 0.6 * radio_side.CALL_S
-    withdrawn = threading.Event()
+    withdrawn, release, now, ended = threading.Event(), threading.Event(), [0.0], []
 
     class Lan:
         browser = None
@@ -578,37 +786,35 @@ def test_the_lan_record_is_withdrawn_inside_the_budget_whatever_the_run_and_the_
         def lookup(self, beacon_id: str) -> Any:
             return None
 
-    class SlowToStop(NoRadio):
-        async def stop(self) -> None:
-            await asyncio.sleep(part_s)
-
     class Long(Run):
         async def run(self) -> Any:
             await self.executor.abort.wait()
-            await asyncio.sleep(1.5)  # its teardown, a fold to rest that runs long
+            await asyncio.to_thread(release.wait, DEADLINE_S)  # its teardown, a long fold
             return await super().run()
-
-    def make_side() -> RadioSide:
-        side = RadioSide(SlowToStop(), lan=Lan(), server_host="127.0.0.1", record_host="127.0.0.1")
-        side.links.close_all = lambda *a, **k: asyncio.sleep(part_s)  # type: ignore[method-assign]
-        return side
 
     lines: list[str] = []
     service = Service(
         home := robot(tmp_path, HOUSEHOLD),
         facts=sim_facts(),
-        radio_side=make_side,
+        radio_side=lambda: RadioSide(
+            NoRadio(), lan=Lan(), server_host="127.0.0.1", record_host="127.0.0.1"
+        ),
         log=lines.append,
+        clock=lambda: now[0],
+        end_process=ended.append,
     )
     service._make_loop = lambda glot, kind, front: Long(glot, kind)  # type: ignore[method-assign]
     try:
         service.start()
         assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        service.stop()
+        now[0] = onboard_service.CLOSE_S  # the run took the whole budget
         service.close()
-        assert withdrawn.is_set(), f"close() returned with the LAN record announced: {lines[-2:]}"
+        assert wait_for(withdrawn.is_set), f"the LAN record stayed announced: {lines[-2:]}"
+        assert any("closing the radio" in line for line in lines), lines  # it had no time at all
         assert not home.control_json.exists()
     finally:
-        wait_for(withdrawn.is_set, DEADLINE_S)
+        release.set()
         running = service.slot.running if service.slot is not None else None
         if running is not None and running.thread is not None:
             running.thread.join(DEADLINE_S)
@@ -813,9 +1019,9 @@ def test_talk_goes_off_when_its_own_passport_stops_checking_out_and_on_when_it_d
 
 def talk_off_until_signed_again(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> tuple[OnboardDir, Callable[[], None]]:
+) -> tuple[OnboardDir, Callable[..., None]]:
     """A robot whose own passport has run out, so its service starts with talk off, and how to
-    sign it again, as `roboglot onboard sign` does."""
+    sign it again, as `roboglot onboard sign` does, for `days` days."""
     from roboglot.onboard import service as onboard_service
 
     home = robot(tmp_path, HOUSEHOLD)
@@ -829,14 +1035,14 @@ def talk_off_until_signed_again(
 
     monkeypatch.setattr(onboard_service, "check_own_passport", check)
 
-    def sign_again() -> None:
+    def sign_again(days: int = 2) -> None:
         wizard.sign(
             home,
             config.load(home.robot_yaml),
             sim_facts().passport(),
             ask=NoQuestions(),
             passphrase_file=tmp_path / f"{home.root.name}.passphrase",
-            days=2,
+            days=days,
         )
 
     return home, sign_again
@@ -900,6 +1106,61 @@ def test_talk_starts_once_when_a_reload_and_the_tick_both_find_it_off(
         for part in [*servers, *sides]:
             with contextlib.suppress(Exception):
                 part.close()
+
+
+def test_a_passport_signed_again_while_talk_is_being_made_is_the_one_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Talk's parts are made outside its lock, and a reload that came meanwhile, a second
+    `roboglot onboard sign`, took the newer passport as the service's own but found no Talker
+    and no passport server to hand it to; the start under way then noted parts made with the
+    older one, which the robot's hellos and its server carried for the life of the service while
+    status checked the newer, and the second sign was told the service served it. The radio
+    factory holds the making open until the second reload has taken the newer passport, as
+    making a board's radio side, its DNS-SD browse, can; nothing here waits on a clock."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.passport.beacon import WELL_KNOWN_JWS
+    from roboglot.radio import NoRadio
+
+    making, go_on = threading.Event(), threading.Event()
+    sides: list[RadioSide] = []
+
+    def make_side() -> RadioSide:
+        sides.append(RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""))
+        if len(sides) == 1:
+            making.set()
+            go_on.wait(DEADLINE_S)
+        return sides[-1]
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    service = Service(home, facts=sim_facts(), radio_side=make_side, log=lambda _line: None)
+    answers: list[Any] = []
+    first = threading.Thread(target=lambda: service._control({"op": "reload"}, None), daemon=True)
+    second = threading.Thread(
+        target=lambda: answers.append(service._control({"op": "reload"}, None)), daemon=True
+    )
+    try:
+        service.start()
+        sign_again()
+        first.start()
+        assert making.wait(DEADLINE_S), "the first reload never began to make talk"
+        sign_again(days=3)
+        newest = home.passport_jws.read_text(encoding="utf-8").strip()
+        second.start()
+        assert wait_for(lambda: service.token == newest), "the second reload took nothing"
+        go_on.set()
+        for thread in (first, second):
+            thread.join(DEADLINE_S)
+        assert service.talker is not None and service.server is not None
+        assert service.talker.endpoint.passport == newest, "the hellos carry the older passport"
+        assert service.server._routes[WELL_KNOWN_JWS][0] == newest.encode("ascii")
+        assert answers and "unserved" not in answers[0], answers
+    finally:
+        go_on.set()
+        for thread in (first, second):
+            if thread.ident is not None:
+                thread.join(DEADLINE_S)
+        service.close()
 
 
 class SlowToStart:
@@ -985,8 +1246,10 @@ def test_no_look_and_no_reload_waits_on_a_radio_that_is_starting(
 
         meanwhile = threading.Thread(target=looks, daemon=True)
         meanwhile.start()
-        meanwhile.join(WINDOW_S)
-        first.join(WINDOW_S)
+        # the radio's start ends only when the test lets it, so a thread that waits on it is
+        # still waiting at any deadline, however generous
+        meanwhile.join(DEADLINE_S)
+        first.join(DEADLINE_S)
         assert not radio.release.is_set()
         assert not meanwhile.is_alive(), "a look or a reload waited on the radio's start"
         assert not first.is_alive(), f"{starter} that started talk waited on the radio's start"
@@ -1041,6 +1304,117 @@ def test_a_close_while_the_radio_starts_cuts_the_start_short_before_the_radios_s
     finally:
         radio.release.set()
         reload.join(DEADLINE_S)
+
+
+def test_a_record_published_as_the_close_came_is_withdrawn_once_its_publish_returns(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A radio's start published the LAN record before it looked at whether a close had come, and
+    a start from a look or a reload runs on a thread the close does not wait for: a close that
+    came while the record was going out withdrew nothing, and the publish then landed for a
+    service that had gone, found by other robots until its time to live ran out. The LAN
+    stand-in's publish here goes out only once the close is over, as zeroconf's, with its
+    probes first, can come back after it."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    publishing, let_out = threading.Event(), threading.Event()
+    announced: list[bool] = []
+
+    class SlowLan:
+        def publish(self, txt: Any, *, host: str, port: int) -> bool:
+            publishing.set()
+            let_out.wait(DEADLINE_S)
+            announced.append(True)
+            return True
+
+        def withdraw(self) -> None:
+            announced.append(False)
+
+        def lookup(self, beacon_id: str) -> Any:
+            return None
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(
+            NoRadio(), lan=SlowLan(), server_host="127.0.0.1", record_host="127.0.0.1"
+        ),
+        log=lambda _line: None,
+    )
+    try:
+        service.start()
+        sign_again()
+        service._control({"op": "reload"}, None)
+        assert publishing.wait(DEADLINE_S), "the radio's start never published the record"
+        service.close()
+        let_out.set()  # the publish comes back after the close
+        starting = [t for t in threading.enumerate() if t.name == "onboard-radio-start"]
+        for thread in starting:
+            thread.join(DEADLINE_S)
+        assert announced[-1:] == [False], f"announced last: {announced}"
+    finally:
+        let_out.set()
+
+
+def test_a_radio_start_that_never_comes_back_keeps_no_look_from_turning_talk_off(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Talk was marked as turning until its radio's start came back, so a start stuck in a LAN
+    record's publish that never returned, or a thread that could not be had to run it, kept the
+    mark for good: every later look left talk alone, and a passport that ran out never turned
+    talk off. The mark ends with talk's own parts now, and the radio's start is apart from it.
+    The publish here comes back only once the test has looked."""
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    publishing, let_out = threading.Event(), threading.Event()
+
+    class StuckLan:
+        def publish(self, txt: Any, *, host: str, port: int) -> bool:
+            publishing.set()
+            let_out.wait(DEADLINE_S)
+            return True
+
+        def withdraw(self) -> None:
+            return None
+
+        def lookup(self, beacon_id: str) -> Any:
+            return None
+
+    home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    inner, expired = onboard_service.check_own_passport, [False]
+
+    def check(token: str | None, did: str, *, now: int | None = None) -> Any:
+        if expired[0]:
+            return onboard_service.SelfCheck(False, "its own passport does not check out: 4.5")
+        return inner(token, did, now=now)
+
+    monkeypatch.setattr(onboard_service, "check_own_passport", check)
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(
+            NoRadio(), lan=StuckLan(), server_host="127.0.0.1", record_host="127.0.0.1"
+        ),
+        log=lambda _line: None,
+    )
+    try:
+        service.start()
+        sign_again()
+        service._control({"op": "reload"}, None)
+        assert publishing.wait(DEADLINE_S), "the radio's start never published the record"
+        expired[0] = True  # the passport runs out while the start is stuck
+        service._last_status = 0.0  # the next look is due
+        service.tick()
+        assert service.talker is None and service.server is None, "talk stayed on"
+    finally:
+        let_out.set()
+        for thread in [t for t in threading.enumerate() if t.name == "onboard-radio-start"]:
+            thread.join(DEADLINE_S)
+        service.close()
 
 
 def test_talk_does_not_turn_on_once_the_service_has_begun_to_close(
@@ -1354,6 +1728,38 @@ def test_an_id_held_past_its_time_ends_what_held_it_and_only_then_changes() -> N
         assert parted == [], "nothing open: a rotation like any other"
     finally:
         side.meeter = None
+        side.loop.stop()
+
+
+def test_a_rotation_after_the_record_was_withdrawn_does_not_publish_it_again() -> None:
+    """The service's close withdraws the LAN record first, and a rotation that came after, from
+    the meeter parting from everyone and then rotating on a thread of its own, published the
+    record again for a service that had gone: other robots found it until its time to live ran
+    out. A record withdrawn for the close stays withdrawn."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    published: list[Any] = []
+
+    class Lan:
+        def publish(self, txt: Any, *, host: str, port: int) -> bool:
+            published.append(txt)
+            return True
+
+        def withdraw(self) -> None:
+            return None
+
+        def lookup(self, beacon_id: str) -> Any:
+            return None
+
+    side = RadioSide(NoRadio(), lan=Lan(), server_host="127.0.0.1", record_host="127.0.0.1")
+    side.loop.start()  # the rotation's new advert goes onto it
+    try:
+        side._txt = {"id": "abcd", "sha": "0" * 64, "bt": side.rotor.current}
+        side.withdraw()
+        side._rotated("0123456789abcdef")
+        assert published == [], "the rotation published the withdrawn record again"
+    finally:
         side.loop.stop()
 
 

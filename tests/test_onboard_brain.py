@@ -353,21 +353,26 @@ def test_an_op_is_either_handled_and_answered_or_cut_off_and_never_handled(
 ) -> None:
     """The cut-off was cancelled only once the op had been read, and a timer already firing
     cannot be cancelled: an op read just as it fired was handled, a goal started or a run
-    stopped, while its client was cut off and told the service had not answered. The read here
-    holds the moment between the op's read and the cut-off's cancel open past `HELLO_S` when the
-    op lands as it fires, and lets it pass at once when it lands before."""
-    import time
-
-    monkeypatch.setattr(control, "HELLO_S", 0.5)
-    real_read = control.Connection.read
+    stopped, while its client was cut off and told the service had not answered. When the op
+    lands as the cut-off fires, the read here holds the moment between the op's read and its
+    acceptance open until the cut has happened; when it lands before, `HELLO_S` is longer than
+    the test. Nothing waits on a clock: the test waits for the cut, and for the connection's
+    slot to come back, which is when its handler, if any, has run."""
     late = op_lands == "just as the cut-off fires"
+    monkeypatch.setattr(control, "HELLO_S", 0.5 if late else WAIT_S * 10)
+    cut, real_cut, real_read = threading.Event(), control._cut, control.Connection.read
+
+    def cutting(sock: Any) -> None:
+        real_cut(sock)
+        cut.set()
 
     def read(self: Any) -> Any:
         got = real_read(self)
         if late and not isinstance(self, control._Client) and got and got.get("op") == "status":
-            time.sleep(3 * control.HELLO_S)  # the op is read; the cut-off has not been stopped
+            cut.wait(WAIT_S)  # the op is read; the cut-off fires before it is accepted
         return got
 
+    monkeypatch.setattr(control, "_cut", cutting)
     monkeypatch.setattr(control.Connection, "read", read)
     handled: list[str] = []
     server = control.ControlServer(
@@ -381,8 +386,8 @@ def test_an_op_is_either_handled_and_answered_or_cut_off_and_never_handled(
             )
         except control.ControlError as e:
             reply = e
-        # past the held read, when a handler that runs after its client was cut would have run
-        time.sleep(4 * control.HELLO_S)
+        # the connection's slot comes back once its thread is done, a handler and all
+        assert wait_until(lambda: server._clients._value == control.CLIENTS)  # type: ignore[attr-defined]
         if late:
             assert isinstance(reply, control.ControlError) and handled == [], (reply, handled)
         else:

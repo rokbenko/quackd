@@ -179,6 +179,8 @@ class RadioSide:
         self._state = threading.Lock()
         self._starting: concurrent.futures.Future[RadioStatus] | None = None
         self._closed = False
+        #: the LAN record withdrawn for good, as the service closes (`withdraw`)
+        self._gone = False
 
     # ── what the Talker takes ───────────────────────────────────────────────────────────
 
@@ -245,10 +247,9 @@ class RadioSide:
         )
         self._txt = txt_record(short_id=short_id, digest=digest, beacon=self.rotor.current)
         self._port = http_port
-        if self.lan is not None:
-            self._on_lan = self.lan.publish(self._txt, host=self.record_host, port=http_port)
+        self._on_lan = self._publish(self._txt, http_port)
         with self._state:
-            if self._closed:  # closed before its start began: it never starts
+            if self._closed or self._gone:  # closed before its start began: it never starts
                 self.log(CUT_SHORT.format(kind=self.radio.kind))
                 return self.radio.status()
             self.loop.start()
@@ -306,10 +307,30 @@ class RadioSide:
         return self.tracker.tick(now)
 
     def withdraw(self) -> None:
-        """This robot's LAN record withdrawn, alone and at once: it is what other robots find
-        this one by, and needs nothing of the radio, so the service's close does it first."""
+        """This robot's LAN record withdrawn, alone and at once, and for good: it is what other
+        robots find this one by, and needs nothing of the radio, so the service's close does it
+        first, and no start or rotation after it publishes the record again."""
+        with self._state:
+            self._gone = True
         if self.lan is not None:
             self.lan.withdraw()
+
+    def _publish(self, txt: Mapping[str, str], port: int) -> bool:
+        """The LAN record out, unless it has been withdrawn for good or the side has closed, and
+        withdrawn again when that came while it went out: a publish is a blocking call, a second
+        or so of zeroconf's probes, and a robot that has gone must not stay findable."""
+        if self.lan is None:
+            return False
+        with self._state:
+            if self._gone or self._closed:
+                return False
+        published = self.lan.publish(txt, host=self.record_host, port=port)
+        with self._state:
+            late = self._gone or self._closed
+        if late:
+            self.lan.withdraw()
+            return False
+        return published
 
     def close(self) -> None:
         """A start still under way cut short, then the meeter's workers, every link, the radio,
@@ -423,7 +444,7 @@ class RadioSide:
             self.talker.endpoint.runtime["beacon"] = fresh
         if self.lan is not None and self._txt is not None:
             self._txt = {**self._txt, "bt": fresh}
-            self._on_lan = self.lan.publish(self._txt, host=self.record_host, port=self._port)
+            self._on_lan = self._publish(self._txt, self._port)
         self.log(f"radio: the beacon id is now {fresh}")
 
     async def _advertise(self, fresh: str) -> None:
