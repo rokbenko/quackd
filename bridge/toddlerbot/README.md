@@ -54,8 +54,15 @@ does. A command that takes a part another connection was driving tells that conn
 stop does (below).
 
 A motion moves every joint, the head and the hands too, so it takes the neck and the grippers
-with the body. It is refused, with the reason, while another connection is driving one of them
-or the deadman is still bringing one to rest, rather than played round a head it cannot reach.
+with the body, except what its own client holds by a look or a grip: that stays held through
+the motion, which plays on the rest without waiting for it, and the answer lists it as `kept`.
+So a hand closed on something stays closed. It is refused, with the reason, while another
+connection is driving one of them or the deadman is still bringing one to rest, rather than
+played round a head it cannot reach. A head's or a gripper's rest that stops closing on its
+place in the safe pose (a place outside the joint's limits) ends after as many ticks as a
+keyframe that cannot be reached is given, and says so in the log; until then a stop ends it.
+Whatever ends a motion early (a fall, a stop, another command for the body) lets go of every
+part the motion took.
 
 A daemon nobody has commanded holds the robot where it stands, and so does one a stop or a
 finished motion left holding: nobody owns a part then, so the deadman moves nothing.
@@ -75,10 +82,22 @@ is that hold, for every part: the deadman never drives a body on the floor towar
 Upstream detects no fall and prescribes nothing for one.
 
 **A motion that goes to the floor is not a fall.** `crawl` and `push_up` take the robot down on
-purpose, past the fall threshold, so they play to their end, and the robot lying after one is
-not read as fallen: `stand` brings it back up, and a walk or an upright motion is refused until
-it has. The daemon cannot tell this from the keyframes, which carry motor targets and no
-orientation of the trunk, so `FLOOR_MOTIONS` is a table of those two, by what each is named for.
+purpose, face down and past the fall threshold, so they play to their end, and the robot lying
+face down after one is not read as fallen: its posture reads `unknown` (it is not standing), a
+walk or an upright motion is refused until it is up, and `stand` brings it back up. The daemon
+cannot tell this from the keyframes, which carry motor targets and no orientation of the trunk,
+so `FLOOR_MOTIONS` is a table of those two, by what each is named for.
+
+Down on purpose is one way only. A lean past the threshold any other way, more than
+`FLOOR_HEADING_DEG` (45 degrees, half the way to a robot on its side) from face down, is a fall
+during the motion, while lying after it, and during the stand back up, and it ends whatever is
+running as a fall always does. Which way is face down in the orientation the daemon reads
+(`FACE_DOWN`) follows from upstream's orientation being the body's in the world, and has not met
+a robot.
+
+A stand from the floor counts as done only once the trunk reads upright. If it does not by the
+settle's own deadline for that distance, the stand ends holding, the posture still reads
+`unknown`, and health says the stand did not get the robot up, until it is up.
 
 Once a shutdown begins, every command that moves the robot is refused with the reason, so a
 connected client cannot keep the settle from the safe pose, and `bot.health` says the daemon is

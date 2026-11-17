@@ -510,9 +510,12 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   to another connection's command is told at its next keepalive or command, where nothing said
   so, and its heartbeat fails with the reason. A motion moves the head and the hands too, and
   played a hundred times slower round a head another client held, or one the deadman had put to
-  rest, which stayed at rest for good; it takes them with the body now, is refused with the reason
-  while another connection drives one or one is still coming to rest, and a rest ends once the
-  part is there.
+  rest, which stayed at rest for good; it takes them with the body now, except what its own client
+  holds by a look or a grip, which stays held through it (a hand closed on something stays closed,
+  and the answer lists it as kept), is refused with the reason while another connection drives
+  one or one is still coming to rest, and a rest ends once the part is there, or, when it stops
+  closing on its goal, as soon as a keyframe that cannot be reached would be given up on, saying
+  so. Whatever ends a motion early lets go of every part it took.
 - **A ToddlerBot loop that gives up takes no more orders and settles.** After ten failing ticks in
   a row the loop stopped without settling, and every move went on answering accepted with nothing
   to carry it out. It refuses every move with the reason now, its health says so, and it settles
@@ -525,9 +528,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the deadman meanwhile drove a fallen robot towards the standing pose. Whatever is in flight on
   the body ends on the tick that reads the fall now, the robot holds where it lies, a walk is
   refused while it is down, and on a fallen robot the deadman's rest is that hold. `crawl` and
-  `push_up` go to the floor on purpose, so they play to their end, the robot lying after one is
-  not read as fallen, and `stand` brings it back up; which motions those are is a table in the
-  daemon, by what each is named for, since the keyframes carry no orientation of the trunk.
+  `push_up` go to the floor on purpose, face down, so they play to their end, the robot lying
+  face down after one is not read as fallen and its posture reads `unknown` rather than
+  `standing`, and `stand` brings it back up, done only once the trunk reads upright, and saying
+  in health that it did not get the robot up if it cannot. A lean any other way, on its side or
+  its back, during such a motion, after it or standing back up, is a fall. Which motions those are
+  is a table in the daemon, by what each is named for, since the keyframes carry no orientation of
+  the trunk, and which way is face down in the orientation it reads has not met a robot.
 - **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
   the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
   now, the answer saying what it was held to.

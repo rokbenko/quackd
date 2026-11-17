@@ -2497,18 +2497,49 @@ def test_a_token_file_that_is_not_utf8_has_none_of_its_bytes_in_the_refusal(
 # ── 14. motions that go to the floor, parts taken, and motions that end ───────────────────
 
 
+class _Up:
+    """An orientation whose `apply([0, 0, 1], inverse=True)` is the world's up read in the body's
+    own frame, `deg` off the body's up and leaning `way`. Face down, the body's front (+x) is
+    towards the floor, so up lies along -x; on its back, along +x; on its side, along y. The
+    daemon's `FACE_DOWN` is the same reading, and as unverified as this stand-in."""
+
+    WAYS = {"face down": (-1.0, 0.0), "on its back": (1.0, 0.0), "on its side": (0.0, 1.0)}
+
+    def __init__(self, deg: float, way: str) -> None:
+        self.deg, self.way = deg, way
+
+    def apply(self, v: Any, inverse: bool = False) -> list[float]:
+        s, c = math.sin(math.radians(self.deg)), math.cos(math.radians(self.deg))
+        x, y = self.WAYS[self.way]
+        return [s * x, s * y, c]
+
+
 def _lying_down(hip: str, up: float, down: float) -> Any:
-    """The fake body with an orientation that tips from upright to the trunk level as `hip`
-    goes from `up` to `down`: a stand-in for a crawl or a push-up, whose real tilt through
-    upstream's keyframes nobody has measured. Past FALL_TILT_DEG on the way, whatever the path."""
+    """The fake body with an orientation that goes from upright to face down, the trunk level, as
+    `hip` goes from `up` to `down`: a stand-in for a crawl or a push-up, whose real tilt through
+    upstream's keyframes nobody has measured. Past FALL_TILT_DEG on the way, whatever the path.
+    `fall` overrides it with (degrees, way), as a body on the floor lies whatever it is told, and
+    `stuck` keeps it where it is whatever it is told (a robot that cannot lift itself)."""
 
     class _Tips(D.FakeSim):  # type: ignore[name-defined,misc]
+        fall: tuple[float, str] | None = None
+        stuck = False
+
         def get_observation(self) -> Any:
             obs = super().get_observation()
+            if self.fall is not None:
+                obs.rot = _Up(*self.fall)
+                return obs
             i = self.robot.motor_ordering.index(hip)
             progress = (float(self.pos[i]) - up) / (down - up)
-            obs.rot = _Tilted(90.0 * min(1.0, max(0.0, progress)))
+            obs.rot = _Up(90.0 * min(1.0, max(0.0, progress)), "face down")
             return obs
+
+        def set_motor_target(self, target: Any) -> None:
+            if self.stuck:
+                self.writes += 1
+                return
+            super().set_motor_target(target)
 
     return _Tips
 
@@ -2539,11 +2570,13 @@ def test_a_motion_that_lies_the_robot_down_plays_to_its_end_and_stand_brings_it_
     assert d.tilt_deg > D.FALL_TILT_DEG and not d.fallen, "lying down on purpose is no fall"
     walk = _send(h, "bot.command", {"walk_x": MAX_VX / 2, "walk_y": 0.0, "walk_turn": 0.0})
     assert walk["accepted"] is False and "stand" in walk["reason"], walk
+    assert d.state()["posture"] == "unknown", "lying down on purpose, it is not standing"
     assert _send(h, "bot.stand")["accepted"], "stand is the way back up"
     for _ in range(600):
         _send(h, "bot.keepalive")
         d.tick()
     assert float(np.max(np.abs(d.target))) < 0.05 and not d.fallen, d.target[:3]
+    assert d.state()["posture"] == "standing" and d.command.mode == D.Command.HOLD
 
 
 @pytest.mark.serial
@@ -2715,3 +2748,213 @@ def test_a_signal_anywhere_in_shutdowns_entry_neither_deadlocks_it_nor_runs_it_t
         worker.join(10)
         assert not worker.is_alive(), f"a signal at line {at} of shutdown deadlocked it"
         assert closes["n"] == 1, f"a signal at line {at} closed the bus {closes['n']} times"
+
+
+# ── 15. which way down, getting up, and what a motion keeps ───────────────────────────────
+
+
+def _floor_daemon(robot_name: str = "toddlerbot_2xc") -> Any:
+    """A daemon whose fake body goes face down as a crawl's keyframes go down (`_lying_down`),
+    with a crawl and a kneel to play."""
+    up, down = 0.01, 0.4
+    robot = D.FakeRobot(robot_name)
+    d = D.Daemon(robot, _lying_down("joint_0", up, down)(robot), fake=True)
+    d.walk_policy = _Walk()
+    d.motion_library = {
+        "crawl": [np.full(robot.nu, up + (down - up) * k / 8, np.float32) for k in range(9)],
+        "kneel": [np.full(robot.nu, v, np.float32) for v in (0.02, 0.03)],
+    }
+    return d
+
+
+@pytest.mark.parametrize(
+    ("when", "way"),
+    [
+        ("during the crawl", "on its side"),
+        ("during the crawl", "on its back"),
+        ("lying after it", "on its side"),
+        ("lying after it", "on its back"),
+        ("standing back up", "on its side"),
+    ],
+)
+def test_a_real_fall_around_a_floor_motion_is_still_a_fall(when: str, way: str) -> None:
+    """Once a floor motion began, any tilt past FALL_TILT_DEG counted as the motion, so a robot
+    that fell on its side or its back halfway down a crawl, lying after it, or standing back up,
+    was not read as fallen: the legs went on being driven, health said ok, the posture standing,
+    and a stand was accepted. Down on purpose is one way only, face down, and a lean any other
+    way is a fall, which ends whatever is running."""
+    d = _floor_daemon()
+    h = _handler(d, walk=True)
+    d.tick()
+    assert _send(h, "bot.perform", {"motion": "crawl"})["accepted"]
+    for _ in range(6 if when == "during the crawl" else 200):
+        _send(h, "bot.keepalive")
+        d.tick()
+    if when != "during the crawl":
+        assert d.lying and d.down_by == "crawl" and not d.fallen, "lying face down on purpose"
+    if when == "standing back up":
+        assert _send(h, "bot.stand")["accepted"]
+        for _ in range(3):
+            _send(h, "bot.keepalive")
+            d.tick()
+        assert d.command.mode == D.Command.STAND
+    d.sim.fall = (90.0, way)
+    for _ in range(2):
+        _send(h, "bot.keepalive")
+        d.tick()
+    lying = d.target.copy()
+    for _ in range(30):
+        _send(h, "bot.keepalive")
+        d.tick()
+    moved = float(np.max(np.abs(d.target - lying)))
+    health, state = _send(h, "bot.health"), d.state()
+    assert d.fallen and moved <= D.MAX_STEP_RAD, (when, way, d.command.mode, moved)
+    assert health["ok"] is False and state["posture"] == "fallen", (health, state["posture"])
+    assert _send(h, "bot.stand")["accepted"] is False, "and a stand is refused on a fallen robot"
+
+
+@pytest.mark.serial
+def test_a_stand_that_cannot_lift_the_robot_does_not_report_it_standing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stand ended when its commanded pose arrived, which it always does, so a robot that could
+    not lift itself from the floor ended its stand holding, still lying, with posture standing
+    and health ok. A stand from the floor is done when the trunk reads upright, within the
+    settle's own deadline for that travel (shrunk here through its own constants), and otherwise
+    ends as not having got up, and says so."""
+    d = _floor_daemon()
+    h = _handler(d)
+    d.tick()
+    assert _send(h, "bot.perform", {"motion": "crawl"})["accepted"]
+    for _ in range(200):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.lying and d.down_by == "crawl"
+    # The slew home is handed out a tick at a time, so on a loaded machine it runs several times
+    # slower than its arithmetic (SETTLE_OVERHEAD's own note). The deadline is shrunk; the wait
+    # for the stand to end is the settle's own, unshrunk, for this travel.
+    travel = float(np.max(np.abs(d.command.default_pose - d.target)))
+    longest = time.monotonic() + D.settle_budget(travel)
+    monkeypatch.setattr(D, "SETTLE_FLOOR_S", 0.5)
+    monkeypatch.setattr(D, "SETTLE_OVERHEAD", 1.0)
+    d.sim.stuck = True
+    answer = _send(h, "bot.stand")
+    assert answer["accepted"] and "upright" in str(answer.get("note")), answer
+    while d.command.mode == D.Command.STAND and time.monotonic() < longest:
+        _tick_for(d, KEEPALIVE_S, h)
+    state, health = d.state(), _send(h, "bot.health")
+    assert d.command.mode == D.Command.HOLD and not state["moving"]
+    assert state["posture"] != "standing", state["posture"]
+    assert health["ok"] is False and "did not get" in str(health["reason"]), health
+
+
+@pytest.mark.parametrize("held", ["a grip", "a look"])
+def test_a_perform_keeps_what_its_own_client_holds(held: str) -> None:
+    """A perform took the hands with the body and cleared its own client's grip, so a hand
+    closed on something was driven open and the robot dropped it, under a bare accepted. A part
+    its own client holds by a grip or a look stays held through that client's perform, which
+    plays on the rest without waiting for it, and the answer says what it kept."""
+    d = _away(robot_name="toddlerbot_2xc_gripper")
+    h = _handler(d, gripper=True)
+    d.tick()
+    if held == "a grip":
+        assert _send(h, "bot.grip", {"side": "right", "close": True})["accepted"]
+        joint, part = d.grippers["right"][0], "right_gripper"
+    else:
+        assert _send(h, "bot.look", {"yaw_deg": 30.0, "pitch_deg": 0.0})["accepted"]
+        joint, part = d.neck_yaw, "neck"
+    for _ in range(150):
+        _send(h, "bot.keepalive")
+        d.tick()
+    before = float(d.target[joint])
+    frame = np.full(d.robot.nu, AWAY, np.float32)
+    frame[joint] = before + 0.6  # the keyframes want the held part somewhere else
+    d.motion_library = {"cuddle": [frame.copy() for _ in range(5)]}
+    answer = _send(h, "bot.perform", {"motion": "cuddle"})
+    assert answer["accepted"] and part in answer.get("kept", []), answer
+    ticks = 0
+    while d.command.mode == D.Command.MOTION and ticks < 6 * D.FRAME_DWELL_LIMIT:
+        _send(h, "bot.keepalive")
+        d.tick()
+        ticks += 1
+    assert ticks <= D.FRAME_DWELL_LIMIT, f"the perform took {ticks} ticks"
+    assert abs(float(d.target[joint]) - before) <= D.MAX_STEP_RAD, (before, d.target[joint])
+
+
+def test_a_rest_that_cannot_arrive_ends_and_says_so(caplog: pytest.LogCaptureFixture) -> None:
+    """A head's rest ended only on arrival, so one whose place in the safe pose lies outside its
+    joint's limits (a mis-built config) never ended, and every perform was refused until a stop,
+    "which takes a moment". A rest that stops closing on its goal ends, after FRAME_DWELL_LIMIT
+    ticks with no progress, as a keyframe that cannot be reached does, says so in the journal,
+    and the refusal meanwhile names the stop that clears it."""
+    d = _away()
+    d.command.default_pose[d.neck_yaw] = float(d.hi[d.neck_yaw]) + 0.5  # outside the limit
+    a, b = _handler(d), _handler(d)
+    d.tick()
+    assert _send(b, "bot.look", {"yaw_deg": 10.0, "pitch_deg": 0.0})["accepted"]
+    d.left(b)
+    d.tick()
+    assert D.NECK in d.resting
+    d.motion_library = {"kneel": [np.full(d.robot.nu, AWAY, np.float32)]}
+    refused = _send(a, "bot.perform", {"motion": "kneel"})
+    assert refused["accepted"] is False and "stop" in refused["reason"], refused
+    with caplog.at_level("WARNING"):
+        for _ in range(2000):
+            if D.NECK not in d.resting:
+                break
+            d.tick()
+    assert D.NECK not in d.resting, "the rest that could not arrive ended"
+    assert any("stopped closing" in r.getMessage() for r in caplog.records), caplog.text
+    assert _send(a, "bot.perform", {"motion": "kneel"})["accepted"]
+
+
+@pytest.mark.parametrize("ended_by", ["a fall", "another connection's walk"])
+def test_a_motion_that_is_ended_lets_go_of_every_part_it_took(ended_by: str) -> None:
+    """A fall, or another connection taking the body, ended a motion and dropped only the body's
+    owner: the neck and the hands the motion had taken stayed with its client while it drove
+    nothing, so it was told later that it had lost a part it was not driving, and a perform from
+    the other connection was refused on its account. Every part the motion took is let go."""
+    d = _away(_TippableSim)
+    d.walk_policy = _Walk()
+    a, b = _handler(d, walk=True), _handler(d, walk=True)
+    d.tick()
+    d.motion_library = {"kneel": [np.full(d.robot.nu, v, np.float32) for v in (0.45, 0.4) * 20]}
+    assert _send(a, "bot.perform", {"motion": "kneel"})["accepted"]
+    for _ in range(3):
+        _send(a, "bot.keepalive")
+        d.tick()
+    if ended_by == "a fall":
+        d.sim.tilt_deg = D.FALL_TILT_DEG + 30.0
+        d.tick()
+        assert d.fallen and d.command.mode == D.Command.HOLD
+    else:
+        walk = {"walk_x": MAX_VX / 2, "walk_y": 0.0, "walk_turn": 0.0}
+        assert _send(b, "bot.command", walk)["accepted"]
+    assert a not in d.owners.values(), d.owners
+    d.lost.pop(a, None)  # told of the body, which it was driving
+    assert _send(b, "bot.look", {"yaw_deg": 10.0, "pitch_deg": 0.0})["accepted"]
+    assert a not in d.lost, "not told of a head it was not driving"
+    if ended_by != "a fall":
+        assert _send(b, "bot.perform", {"motion": "kneel"})["accepted"]
+
+
+def test_a_notice_is_written_under_the_lock_a_connection_leaves_under() -> None:
+    """`_tell` checked that a connection was still there and then wrote its notice, and `left()`
+    took no lock, so a connection leaving between the two left a notice that nothing would ever
+    read. `left()` takes the lock the notice is written under."""
+    d = _daemon()
+    a = _handler(d)
+    d.heard(a)
+    gone = threading.Event()
+
+    def leave() -> None:
+        d.left(a)
+        gone.set()
+
+    with d.lock:
+        worker = threading.Thread(target=leave, daemon=True)
+        worker.start()
+        assert not gone.wait(0.2), "left() went ahead while the lock was held"
+        d._tell(a, "a notice")
+    worker.join(2)
+    assert gone.is_set() and a not in d.lost and a not in d.heard_at

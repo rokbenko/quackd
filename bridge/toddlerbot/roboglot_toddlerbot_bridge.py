@@ -204,6 +204,17 @@ carry motor targets alone (`upstream_api.MOTION_ACTION_ARRAY`), with no orientat
 trunk to compare against the threshold. So the table goes by what each motion is named for, which
 this repository's own pages call "crawling or prone". `hold`, `kneel` and `cuddle` are taken as
 upright, which is as unmeasured as this table until a robot plays them."""
+FACE_DOWN = (-1.0, 0.0)
+"""Which way the world's up leans, read in the body's own frame as `observe` reads it, when the
+robot is face down, its front (+x) towards the floor. Both FLOOR_MOTIONS go down this way, by
+their own reasons in that table: hands and knees, and prone. UNVERIFIED, like FALL_TILT_DEG: it
+follows from upstream's orientation being the body's in the world, so `apply(..., inverse=True)`
+reads the world in the body's frame, and from +x being the body's front. Neither the IMU's
+mounting nor this sign has met a robot."""
+FLOOR_HEADING_DEG = 45.0
+"""How far a lean may turn from FACE_DOWN and still be the floor motion's own. Half the way to a
+robot on its side, which is 90 degrees round from face down (on its back is 180), so a lean
+nearer face down than on its side is the motion, and any other is a fall."""
 BODY = "body"
 """The part a walk, a stand, a motion and the deadman's slew drive. The neck and each gripper
 are parts of their own, each owned by the connection whose command it is executing."""
@@ -277,6 +288,14 @@ def looks_like_a_dropped_read(pos: Any, vel: Any) -> bool:
 def tilt_degrees(gravity_z: float) -> float:
     """How far off upright, from the body-frame gravity vector's vertical component."""
     return math.degrees(math.acos(max(-1.0, min(1.0, gravity_z))))
+
+
+def leans_face_down(up_x: float, up_y: float) -> bool:
+    """Whether the world's up, read in the body's frame, leans within FLOOR_HEADING_DEG of
+    FACE_DOWN: the robot going down the way a floor motion goes, and not on its side or back."""
+    fx, fy = FACE_DOWN
+    turned = math.degrees(math.atan2(fx * up_y - fy * up_x, fx * up_x + fy * up_y))
+    return abs(turned) <= FLOOR_HEADING_DEG
 
 
 def slew(current: Any, goal: Any, dt: float, vel: float = RESET_VEL) -> Any:
@@ -462,6 +481,13 @@ class Daemon:
         self.lying = False
         self.fallen = False
         self.down_by: str | None = None
+        #: A stand from the floor counts as done only once the trunk reads upright: by when it
+        #: must (`stand`), and, if it did not, what health says until the robot is up.
+        self.rise_deadline: float | None = None
+        self.rise_failed: str | None = None
+        #: For each part at rest, the nearest it has come to its goal and the ticks since it
+        #: came any nearer, so a rest that cannot arrive ends (`_with_neck`).
+        self._rest_progress: dict[str, tuple[float, int]] = {}
         #: The parts the motion now playing took, released when it ends.
         self.motion_parts: list[str] = []
         self.tilt_deg = 0.0
@@ -600,9 +626,18 @@ class Daemon:
                 gravity = obs.rot.apply([0.0, 0.0, 1.0], inverse=True)
                 self.tilt_deg = tilt_degrees(float(gravity[2]))
                 self.lying = self.tilt_deg > FALL_TILT_DEG
+                face_down = leans_face_down(float(gravity[0]), float(gravity[1]))
+                if self.down_by and self.lying and not face_down:
+                    # Down on purpose is face down and no other way. A robot on its side or
+                    # its back during a floor motion, lying after one, or standing back up
+                    # has fallen, and it stays fallen until a person rights it.
+                    log.warning("the robot went down another way than %s: a fall", self.down_by)
+                    self.down_by = None
                 playing = self.command.mode == Command.MOTION and self.command.motion
                 if self.down_by and not self.lying and playing not in FLOOR_MOTIONS:
                     self.down_by = None  # upright again, so a tilt is a fall again
+                if self.down_by is None:
+                    self.rise_failed = None
                 self.fallen = self.lying and self.down_by is None
             except Exception:  # orientation is advisory, never fatal
                 pass
@@ -625,7 +660,9 @@ class Daemon:
                 "the robot is down; ending %s and holding where it lies", cmd.motion or cmd.mode
             )
             cmd.hold(current)
-            self.owners.pop(BODY, None)
+            # every part a motion took is let go with the body, so its client is not told later
+            # that it lost a part it was no longer driving
+            self._finished([*self.motion_parts, BODY])
             self.resting.discard(BODY)
             return current
         if cmd.mode in (Command.STAND, Command.DEADMAN):
@@ -643,6 +680,17 @@ class Daemon:
             goal = waist_first(cmd.goal, current, self.waist)
             nxt = slew(self.target, goal, dt)
             if float(np.max(np.abs(goal - nxt))) < ARRIVED_RAD and cmd.mode == Command.STAND:
+                if self.down_by and self.lying:
+                    # From the floor the commanded pose arrives whatever the body does, so the
+                    # stand is done only once the trunk reads upright (`observe` then clears
+                    # `down_by`), and past its deadline it ends as not having got up.
+                    if self.rise_deadline is not None and time.monotonic() < self.rise_deadline:
+                        return nxt
+                    self.rise_failed = (
+                        "the stand did not get the robot up from the floor: its trunk still "
+                        f"reads {self.tilt_deg:.0f} degrees from upright"
+                    )
+                    log.warning("%s", self.rise_failed)
                 cmd.hold(goal)
                 self._finished([BODY])
             return nxt
@@ -769,8 +817,24 @@ class Daemon:
         for part in sorted(self.resting - {BODY}):
             joints = self._joints(part)
             away = float(np.max(np.abs(home[joints] - self.target[joints]), initial=0.0))
-            if away < ARRIVED_RAD:
+            best, still = self._rest_progress.get(part, (math.inf, 0))
+            best, still = (away, 0) if away < best else (best, still + 1)
+            self._rest_progress[part] = (best, still)
+            # A rest that has stopped closing on its goal (a place in the safe pose outside the
+            # joint's limits, which the clamp holds it from) ends after as many ticks as a
+            # keyframe that cannot be reached is given, rather than refuse every motion for good.
+            if away < ARRIVED_RAD or still >= FRAME_DWELL_LIMIT:
+                if away >= ARRIVED_RAD:
+                    log.warning(
+                        "the %s's rest stopped closing on its place in the safe pose %.3f rad "
+                        "short, outside its joint's limits by the look of it; it ends here and "
+                        "the %s holds where it is",
+                        part,
+                        away,
+                        part,
+                    )
                 self.resting.discard(part)
+                self._rest_progress.pop(part, None)
                 if self.command.mode == Command.HOLD:
                     # held where it arrived, not sent back to where the body's hold had it
                     self.command.goal[joints] = self.target[joints]
@@ -882,21 +946,24 @@ class Daemon:
         self.motion_parts = []
         return stopped
 
-    def play(self, name: str, frames: list[Any], client: Any = None) -> None:
+    def play(self, name: str, frames: list[Any], client: Any = None) -> list[str]:
         """Start the motion `name`, as `client`'s change through `obey`: the caller holds `lock`.
+        Answers the parts it kept as `client` holds them.
 
         A motion's keyframes move every joint, the head and the hands too, so it takes the neck
-        and the grippers with the body, from nobody or from `client` itself (its own look ends).
-        It does not take one another connection is driving: it is refused, with the reason,
-        rather than played round a head it cannot reach, which stalled every frame. Nor one the
-        deadman is still bringing to rest, which it soon is not. While the robot is down after a
-        floor motion, only another floor motion plays: an upright one waits for a stand."""
+        and the grippers with the body from nobody. A head or hand `client` itself holds by a look
+        or a grip stays held through the motion, which plays on the rest and does not wait for it:
+        taking it would open a closed hand and drop what it held. A part another connection holds
+        refuses the motion, with the reason, rather than play round a head it cannot reach, which
+        stalled every frame; so does one the deadman is still bringing to rest, which it soon is
+        not. While the robot is down after a floor motion, only another floor motion plays: an
+        upright one waits for a stand."""
         if self.down_by and name not in FLOOR_MOTIONS:
             raise NotNow(f"the robot is down after {self.down_by}: stand it up first")
         others = [
             part.replace("_", " ")
             for part in self.parts
-            if part != BODY and self.owners.get(part) not in (None, client)
+            if part != BODY and self.owners.get(part) not in (None, client) and self._holds(part)
         ]
         if others:
             raise NotNow(
@@ -907,14 +974,67 @@ class Daemon:
         if resting:
             raise NotNow(
                 f"the {' and the '.join(resting)} is still being brought to rest, which takes a "
-                "moment; this motion moves it too"
+                "moment, and a stop ends it at once; this motion moves it too"
             )
-        self.neck_goal = None
-        self.grip_goal.clear()
+        self._end_motion()
+        kept = [
+            part
+            for part in self.parts
+            if part != BODY and self.owners.get(part) is client and self._holds(part)
+        ]
+        for part in self.parts:
+            if part != BODY and part not in kept:
+                self._let_go(part)
         self.command.play(name, frames)
-        self.motion_parts = list(self.parts)
+        self.motion_parts = [part for part in self.parts if part not in kept]
         if name in FLOOR_MOTIONS:
             self.down_by = name
+        return kept
+
+    def stand(self) -> dict[str, Any]:
+        """Stand, as `obey`'s change: the caller holds `lock`. Answers what the reply adds.
+
+        From the floor, after a floor motion, the commanded pose arrives whatever the body does,
+        so the stand is done only once the trunk reads upright, by the settle's own deadline for
+        a body to reach the safe pose from that far; past it, it ends as not having got up."""
+        self._end_motion()
+        self.command.stand()
+        self.rise_failed = None
+        self.rise_deadline = None
+        if not (self.down_by and self.lying):
+            return {}
+        travel = float(np.max(np.abs(self.command.default_pose - self.target)))
+        self.rise_deadline = time.monotonic() + settle_budget(travel)
+        return {"note": "from the floor: done once the trunk reads upright, and said if it is not"}
+
+    def drive(self, walk_x: float, walk_y: float, walk_turn: float) -> None:
+        """Walk, as `obey`'s change: the caller holds `lock`."""
+        self._end_motion()
+        self.command.drive(walk_x, walk_y, walk_turn)
+
+    def _end_motion(self) -> None:
+        """A new command for the body ends a motion that is playing: the head and the hands it
+        took go back to nobody, so its client is not told later that it lost a part it was no
+        longer driving, and nobody's motion is refused on its account. The body stays with the
+        motion's client for the new command to take, and that is what tells it."""
+        if self.command.mode == Command.MOTION:
+            self._finished([part for part in self.motion_parts if part != BODY])
+
+    def _holds(self, part: str) -> bool:
+        """Whether a look or a grip is holding `part` this tick."""
+        if part == BODY:
+            return False
+        if part == NECK:
+            return self.neck_goal is not None
+        return any(index in self.grip_goal for index in self._joints(part))
+
+    def _let_go(self, part: str) -> None:
+        """Drop the look or grip on `part`, if there is one."""
+        if part == NECK:
+            self.neck_goal = None
+        elif part != BODY:
+            for index in self._joints(part):
+                self.grip_goal.pop(index, None)
 
     def stop(self, client: Any = None) -> dict[str, Any]:
         """A stop from any connection, answered truthfully whatever the daemon is doing.
@@ -1164,7 +1284,13 @@ class Daemon:
             return {
                 "t": round(time.monotonic(), 3),
                 "policy": self.command.motion or self.command.mode,
-                "posture": "fallen" if self.fallen else "standing",
+                # The client's posture words are a closed set (standing, sitting, fallen,
+                # unknown), and a client from before refuses any other. A trunk past the
+                # threshold that is no fall (down after a floor motion, or a stand from the floor
+                # that did not get it up) is none of the first three, so it is `unknown`, never
+                # `standing`; `down` says why.
+                "posture": "fallen" if self.fallen else "unknown" if self.lying else "standing",
+                "down": self.down_by,
                 "fallen": self.fallen,
                 "tilt_deg": round(self.tilt_deg, 1),
                 "joints": {
@@ -1218,9 +1344,11 @@ class Daemon:
 
     def left(self, client: Any) -> None:
         """`client`'s connection has closed: its clock goes, so the next tick brings what it
-        owned to rest, and nothing is kept for it."""
-        self.heard_at.pop(client, None)
-        self.lost.pop(client, None)
+        owned to rest, and nothing is kept for it. Under `lock`, which every notice is written
+        under (`_tell`), so none can be written between its check and this."""
+        with self.lock:
+            self.heard_at.pop(client, None)
+            self.lost.pop(client, None)
 
     def _silent(self, client: Any) -> bool:
         last = self.command.last_client if client is None else self.heard_at.get(client)
@@ -1241,6 +1369,7 @@ class Daemon:
         for part in silent:
             del self.owners[part]
             self.resting.add(part)
+            self._rest_progress.pop(part, None)
             if part == BODY:
                 self.command.trip(self.command.default_pose)
             elif part == NECK:
@@ -1384,6 +1513,8 @@ class Handler(socketserver.StreamRequestHandler):
                 reason = GAVE_UP
             elif d.fallen:
                 reason = "the robot has fallen"
+            elif d.rise_failed is not None:
+                reason = d.rise_failed
             return {
                 "ok": reason is None,
                 "reason": reason,
@@ -1402,15 +1533,15 @@ class Handler(socketserver.StreamRequestHandler):
         if method == "bot.stop":
             return d.stop(self)
         if method == "bot.stand":
-            d.obey(method, d.command.stand, self, [BODY])
-            return {"accepted": True}
+            return {"accepted": True, **d.obey(method, d.stand, self, [BODY])}
         if method == "bot.perform":
             name = str(params.get("motion", ""))
             frames = d.motion_library.get(name)
             if not frames:
                 return {"accepted": False, "reason": f"no motion named {name!r}"}
-            d.obey(method, lambda: d.play(name, frames, self), self, d.parts)
-            return {"accepted": True}
+            kept = d.obey(method, lambda: d.play(name, frames, self), self, d.parts)
+            # what this connection's own look or grip still holds through the motion
+            return {"accepted": True, "kept": kept} if kept else {"accepted": True}
         if method == "bot.look":
             if not self.capabilities.get("neck"):
                 return {"accepted": False, "reason": "this build has no neck"}
@@ -1429,7 +1560,7 @@ class Handler(socketserver.StreamRequestHandler):
                 _number(params, "walk_turn"),
             )
             walk = within_envelope(asked, d.walk_envelope)
-            d.obey(method, lambda: d.command.drive(*walk), self, [BODY])
+            d.obey(method, lambda: d.drive(*walk), self, [BODY])
             if walk == asked:
                 return {"accepted": True}
             return {"accepted": True, "clamped_to": dict(zip(WALK_KEYS, walk, strict=True))}

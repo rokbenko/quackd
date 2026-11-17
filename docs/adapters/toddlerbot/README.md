@@ -191,18 +191,24 @@ commanded. A connection's keepalive keeps alive only its own parts, and when it 
 away the deadman brings those parts, and only those, to rest. So a second client's look or grip
 never takes over a first client's walk, and the walk ends with its client. A command that takes
 a part another connection was driving tells that connection. A motion moves the head and the
-hands too, so it takes them with the body, and is refused, with the reason, while another
-connection drives one of them or one is still coming to rest. A stop is honoured from anyone,
+hands too, so it takes them with the body, except what its own client holds by a look or a grip,
+which stays held through it (a hand closed on something stays closed, and the answer lists it as
+kept); it is refused, with the reason, while another connection drives one of them or one is
+still coming to rest, which a stop ends at once. A stop is honoured from anyone,
 stops every part and leaves every part owned by nobody: it arms nothing, so a `roboglot doctor`
 check, which sends a stop as it disconnects, moves nothing on a robot nobody is driving. Against
 a run in flight it stops the run's motion and the robot holds; the run is told at its next
 keepalive or command, and its heartbeat fails with the reason. Run doctor checks between runs.
 
-**Motions that go to the floor.** `crawl` and `push_up` lie the robot down on purpose, past the
-fall threshold, so they play to their end and the robot lying after one is not read as fallen:
-`stand` brings it back up, and a walk or an upright motion waits for that. Which motions those
+**Motions that go to the floor.** `crawl` and `push_up` lie the robot down on purpose, face down
+and past the fall threshold, so they play to their end and the robot lying face down after one is
+not read as fallen. Its posture reads `unknown`, never `standing`, a walk or an upright motion
+waits, and `stand` brings it back up. A stand from the floor is done only once the trunk reads
+upright; one that cannot lift the robot ends with health saying so. A lean any other way, on its
+side or its back, during the motion, after it or standing back up, is a fall. Which motions those
 are is a table in the daemon (`FLOOR_MOTIONS`), by what each is named for, because the keyframes
-carry no orientation of the trunk to read it from.
+carry no orientation of the trunk to read it from, and which way is face down in the orientation
+it reads is an assumption no robot has checked yet.
 
 **After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
 settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets
