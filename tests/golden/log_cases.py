@@ -454,6 +454,18 @@ def events() -> list[tuple[str, LogEvent]]:
             ),
         ),
         ("intent_refused_silent", _e("intent", 0.7, intent="do", params={}, accepted=False)),
+        (
+            "intent_stop_unconfirmed",
+            _e(
+                "intent",
+                0.7,
+                intent="stop",
+                params={},
+                accepted=True,
+                reason="nothing has come over the link since",
+                stop_unconfirmed=True,
+            ),
+        ),
         # ── verb_end ──
         (
             "verb_end_ok",

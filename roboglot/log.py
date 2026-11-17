@@ -31,7 +31,7 @@ from typing import Any
 from rich.text import Text
 
 from roboglot.agent.providers.pricing import VLA_PILOT, fmt_usd
-from roboglot.transport.base import Ack, Intent
+from roboglot.transport.base import WENT_OUT, Ack, Intent
 from roboglot.verbs.watch import EDGE_AFTER, ERRORS_AFTER, LOST_AFTER, STALE_AFTER
 
 
@@ -328,14 +328,19 @@ class LoggedTransport:
             )
             raise
         self._count("stop")
-        # one the transport knows did not land raises nothing and says so here (`_stop_after`)
+        # one the transport knows did not land raises nothing and says so here (`_stop_after`);
+        # one it sent and cannot tell arrived was sent, and its row says that it went out
+        # (`stop_unconfirmed`): `accepted: false` is a stop refused or never sent, which `roboglot
+        # log` draws as REFUSED, and a stop that went out is neither
         undelivered = getattr(self._inner, "stop_error", None)
+        went_out = bool(undelivered) and getattr(self._inner, "stop_unconfirmed", False) is True
         self._event_log.emit(
             "intent",
             intent="stop",
             params={},
-            accepted=not undelivered,
+            accepted=not undelivered or went_out,
             reason=str(undelivered) if undelivered else None,
+            **({"stop_unconfirmed": True} if went_out else {}),
             **self._robot_t(),
         )
 
@@ -1129,6 +1134,9 @@ def intent_log_line(events: list[LogEvent]) -> LogLine:
         if not first.data.get("accepted", True):
             reason = first.data.get("reason") or "no reason given"
             return LogLine("->", f"{text} REFUSED: {reason}", "red", mark="fail")
+        if first.data.get("stop_unconfirmed"):
+            reason = first.data.get("reason") or "no reason given"
+            return LogLine("->", f"{text} {WENT_OUT}: {reason}", "yellow", mark="warn")
         return LogLine("->", text, "dim", mark="send")
     if (first_t := first.data.get("robot_t")) is not None and (
         last_t := events[-1].data.get("robot_t")
@@ -1226,7 +1234,11 @@ class LineLog:
         self._out(*_flatten(line))
 
     def __call__(self, event: LogEvent) -> None:
-        if event.kind == "intent" and event.data.get("accepted", True):
+        if (
+            event.kind == "intent"
+            and event.data.get("accepted", True)
+            and not event.data.get("stop_unconfirmed")  # a warning of its own, never a burst's
+        ):
             if self._pending and self._pending[0].data.get("intent") != event.data.get("intent"):
                 self.flush()
             self._pending.append(event)
