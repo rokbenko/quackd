@@ -362,6 +362,27 @@ async def test_a_stale_reading_is_a_heartbeat_failure() -> None:
         await link.close()
 
 
+async def test_a_host_that_was_only_not_asked_is_not_taken_for_a_silent_one() -> None:
+    """This wire answers only what is asked, and a stop asked nothing unless an arm was unheld,
+    so it judged the host by the newest answer anybody else had got: a stop, or a close, after a
+    second in which nothing asked, as one after a pause granted to a robot met (MCP's and
+    drive's close), said a host answering every request was not known to have read it. A stop
+    whose newest answer is past the window asks the host once, and is judged by what it asked
+    and what came back. Timing: waits the host's own window twice, on the real clock."""
+    with FakeAlohaMiniHost() as host:
+        link = await _connected(host)
+        adapter = AlohaMiniAdapter(link)
+        try:
+            await link.heartbeat()
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)  # nobody asks for a while
+            await adapter.stop()
+            assert adapter.stop_error is None, adapter.stop_error
+            await asyncio.sleep(link.stale_limit_ms / 1000.0 + 0.2)
+        finally:
+            await adapter.close()
+        assert adapter.close_note is None, adapter.close_note
+
+
 async def test_a_close_to_a_host_gone_silent_says_its_stop_where_the_close_is_read() -> None:
     """A run's last stop that came back unconfirmed or failed reached only the record, since
     nothing reads `stop_error` after a close. The close says its own stop in `close_note` now,

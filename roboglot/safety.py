@@ -668,13 +668,25 @@ class Executor:
 
     def _start_stop(self) -> asyncio.Future[Any]:
         """The owed stop, set going in a task of its own, so no cancel of the caller cuts it off
-        half sent. One that raises as it is called is a failed stop, as one that raises later."""
+        half sent, which ends with what the transport said of it (`_stop_and_its_word`). One that
+        raises as it is called is a failed stop, as one that raises later."""
         try:
-            return asyncio.ensure_future(self.logged_transport().stop())
+            return asyncio.ensure_future(self._stop_and_its_word())
         except Exception as e:
             failed: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
             failed.set_exception(e)
             return failed
+
+    async def _stop_and_its_word(self) -> str | None:
+        """Send the owed stop, and return why it did not land, a `WentOut` where it went out and
+        cannot tell whether it arrived, or None: read as it ends, in the same step. Read a turn of
+        the loop later, a stop that had started meanwhile, the heartbeat's or a second caller's,
+        had cleared `stop_error`, and an abort said `a stop was sent` of one that had not landed."""
+        await self.logged_transport().stop()
+        undelivered = getattr(self.transport, "stop_error", None)
+        if undelivered and getattr(self.transport, "stop_unconfirmed", False) is True:
+            return WentOut(undelivered)
+        return str(undelivered) if undelivered else None
 
     def _stop_wait_s(self) -> float:
         """How long an owed stop's answer is waited for: as long as this body gives its own `stop`
@@ -694,7 +706,8 @@ class Executor:
         such a cancel came (or had come already, `cancelled`), is not waited for any longer: it
         goes on by itself, and is said to be unconfirmed rather than sent. One the transport sent
         and cannot tell arrived (`stop_unconfirmed`) is why, marked `WentOut`, so that every exit
-        says it went out, as the core `stop` verb does, and none that it failed (`stop_fate`)."""
+        says it went out, as the core `stop` verb does, and none that it failed (`stop_fate`). The
+        word is the stop's own, read as it ended (`_stop_and_its_word`)."""
         bound = self._stop_wait_s()
         if not cancelled:
             cancelled = await _waited({stopping}, bound)
@@ -707,10 +720,8 @@ class Executor:
             return "it was cancelled before it went out", cancelled
         if (error := stopping.exception()) is not None:
             return f"{type(error).__name__}: {error}", cancelled
-        undelivered = getattr(self.transport, "stop_error", None)
-        if undelivered and getattr(self.transport, "stop_unconfirmed", False) is True:
-            return WentOut(undelivered), cancelled
-        return (str(undelivered) if undelivered else None), cancelled
+        word = stopping.result()
+        return (word if isinstance(word, str) else None), cancelled
 
     def _keep_going(self, stopping: asyncio.Future[Any], bound: float) -> None:
         """A stop no longer waited for, which goes on by itself: held (`_STOPS_UNDER_WAY`), said
@@ -779,9 +790,8 @@ class Executor:
         if (error := stopping.exception()) is not None:
             failed = f"{type(error).__name__}: {error}"
             self.log(f"an owed stop that was no longer waited for failed: {failed}")
-        elif undelivered := getattr(self.transport, "stop_error", None):
-            went_out = getattr(self.transport, "stop_unconfirmed", False) is True
-            fate = stop_fate(WentOut(undelivered)) if went_out else f"did not land: {undelivered}"
+        elif isinstance(word := stopping.result(), str):
+            fate = stop_fate(word) if isinstance(word, WentOut) else f"did not land: {word}"
             self.log(f"an owed stop that was no longer waited for {fate}")
 
     # ── policy ──────────────────────────────────────────────────────────────────────

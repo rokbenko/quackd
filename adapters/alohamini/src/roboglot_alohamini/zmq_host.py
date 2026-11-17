@@ -534,19 +534,21 @@ class AlohaMiniZmq:
         self._zero_base()
         self._lift_target_mm = None  # so `_payload` emits the lift velocity zero
 
-    async def _stopping(self) -> None:
-        """The wheels and the lift, at once, and then the arms where they stand.
+    async def _stopping(self) -> bool:
+        """The wheels and the lift, at once, and then the arms where they stand; whether it asked
+        the host for a reading to hold them by.
 
         A stop that left the goals alone was a stop only for the base: an arm on its way
         somewhere got there, with a person's hand in the way or not. A reading here takes a
         request and a reply, so the base does not wait on it."""
         self._halt()
-        fresh = False
+        fresh = asked = False
         if self._unheld:
             with contextlib.suppress(Exception):
                 await self._send()
-            fresh = await self._reading_from_now_on()
+            fresh, asked = await self._reading_from_now_on(), True
         self._hold_the_arms(fresh)
+        return asked
 
     async def _reading_from_now_on(self) -> bool:
         """Whether the host has answered, `HOLD_READ_ANSWERS` times, requests sent after this began.
@@ -597,12 +599,14 @@ class AlohaMiniZmq:
         own watchdog window, says so in `stop_error`.
 
         A PUSH socket takes a send whether anything reads it or not, and ZMQ says nothing of a
-        peer that has gone. This wire answers only what is asked, and a stop asks nothing of its
-        own, so what can be known is how old the newest answer is: the heartbeat's, or the one
-        the stop itself waited for to hold the arms (`_reading_from_now_on`). One older than the
-        window says the host has stopped answering, and it may have stopped reading too."""
+        peer that has gone. This wire answers only what is asked, so what can be known is how old
+        the newest answer is: the heartbeat's, or the one the stop waited for to hold the arms
+        (`_reading_from_now_on`). Where that is older than the window and the stop asked nothing
+        of its own, it asks the host after its sends, the same way, since a host that nothing
+        asked for a while, as while a close waits out a pause, is not a silent one: one that
+        still has not answered has stopped answering, and it may have stopped reading too."""
         self.stop_error, self.stop_unconfirmed = None, False
-        await self._stopping()
+        asked = await self._stopping()
         if self._link is None:
             return
         for sent in range(STOP_REPEATS):  # how many went out before this one
@@ -614,6 +618,8 @@ class AlohaMiniZmq:
                     self.stop_error = f"the stop could not be sent ({e}). {self._watchdog()}"
                     return
                 break
+        if not asked and self._stale_ms() > self.stale_limit_ms:
+            await self._reading_from_now_on()  # asked after the stop went: what does it say now
         if (stale := self._stale_ms()) > self.stale_limit_ms:
             heard = "since it connected" if self._rx_at is None else f"for {stale:.0f} ms"
             self.stop_unconfirmed = True  # it went out; only whether the host read it is unknown

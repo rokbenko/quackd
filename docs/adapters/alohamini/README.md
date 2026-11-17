@@ -157,11 +157,13 @@ default. None of this has met a real arm.
 
 **What a stop and the heartbeat can know.** The command socket takes a send whether anything reads
 it or not, and ZeroMQ says nothing of a peer that has gone, so a stop cannot know it landed. This
-wire answers only what is asked, and a stop asks nothing of its own, so what Roboglot can know is
-how old the newest answer is, the heartbeat's or the one a stop waited for to hold an arm. A stop
-when that is older than the host's 1000 ms watchdog window says `so this stop is not known to have
-reached it`, which `stop` and every verb that ends on a stop answer as such (`stop went out but is
-not known to have reached the body`), and the heartbeat fails at the same window. What the host does then is said only as far as it is known:
+wire answers only what is asked, so what Roboglot can know is how old the newest answer is, the
+heartbeat's or the one a stop waited for to hold an arm. Where that is older than the host's
+1000 ms watchdog window, the stop asks the host once more after it is sent, since a host nothing
+asked for a while, as while a close waits out a pause, is not a silent one; one that does not
+answer that either says `so this stop is not known to have reached it`, which `stop` and every
+verb that ends on a stop answer as such (`stop went out but is not known to have reached the
+body`), and the heartbeat fails at the same window. What the host does then is said only as far as it is known:
 `Its own watchdog stops the base and the lift once it has read no command for 1000 ms, if its loop
 still runs; the arms keep their last goal.` A host stuck in a cycle runs no watchdog. The close
 sends a stop of its own, and one that did not land, or is not known to have, is said by the run

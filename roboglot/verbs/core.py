@@ -677,8 +677,10 @@ async def stop(ctx: VerbContext, _: NoParams) -> VerbResult:
     # and it says no more than the transport did: a stop sent that is not known to have arrived
     # is not one that could not be delivered
     if (missed := await _stop(ctx)) is not None:
+        # one that went out says so in its data too, as a verb that ends on a stop does
         return VerbResult.fail(
-            f"{missed.said('stop')}, so the body may still be moving: {missed.why}"
+            f"{missed.said('stop')}, so the body may still be moving: {missed.why}",
+            **({"stop_unconfirmed": True} if missed.sent else {}),
         )
     # A body that left joints out of its hold says which (the arm, for a joint read past its
     # travel, where "stay here" would reach the servo as "go to the limit"). Without the clause

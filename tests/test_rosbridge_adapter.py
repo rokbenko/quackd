@@ -33,6 +33,7 @@ from roboglot_rosbridge.mock import MOCK_URDF, RosbridgeMock, mock_introspection
 from roboglot_rosbridge.ws import (
     ANSWER_WAIT_S,
     FRAME_STALE_FLOOR_S,
+    LISTEN_FLOOR_S,
     LISTEN_PERIODS,
     SILENT_BEATS,
     SLOWEST_PACE_S,
@@ -1183,9 +1184,10 @@ def _paced(clock: _Clock, odom: FakeTopic, gap: float, count: int, stamp: float)
 
 async def _asks_settled(ws: RosbridgeWs) -> None:
     """Let the round trips a beat set going finish, on the event loop's own clock, as they do
-    between two beats of a run."""
+    between two beats of a run: each ends within the transport's request deadline, and the
+    bound here is only for a machine so loaded that a worker thread is slow to start."""
     if ws._asks:
-        await asyncio.wait(set(ws._asks), timeout=2 * QUICK_S)
+        await asyncio.wait(set(ws._asks), timeout=10 * QUICK_S)
 
 
 async def _noticed_within(ws: RosbridgeWs, clock: _Clock, limit_s: float) -> float:
@@ -1370,14 +1372,15 @@ async def test_no_pace_stretches_the_window_past_the_slowest_one_taken(
     assert STALE_PERIODS * SLOWEST_PACE_S < took <= bound, took
 
 
-async def test_a_stop_into_a_quiet_stream_on_a_bridge_that_answers_has_landed(
+async def test_a_stop_into_a_quiet_stream_says_what_answered_and_listens_no_longer_than_it_must(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A stream can stop while its link lives, a driver restarted or a topic remapped; the
-    bridge answers still. A stop into it asks, and the answer, which comes after its zero
-    Twist, says the link carried that zero, so it says `stopped`; on the same base whose
-    bridge answers nothing either it went out and is not known to have arrived. Each listens
-    `LISTEN_PERIODS` of the stream's pace and no longer."""
+    """A stream can stop while its link lives, a driver gone or a topic remapped; the bridge
+    answers still. A stop into it asks, and the answer, which comes after its zero Twist, says
+    the bridge took that zero, and the stop says so, and that the base, whose /odom is quiet, is
+    not known to have; on the same base whose bridge answers nothing either it went out and
+    nothing came. Each listens `LISTEN_FLOOR_S`, the floor of two of a 10 Hz pace, and no
+    longer."""
     ws, listing, topics = _asked(timeout_s=QUICK_S)
     adapter = RosbridgeAdapter(ws)
     manifest = await adapter.connect()
@@ -1386,14 +1389,17 @@ async def test_a_stop_into_a_quiet_stream_on_a_bridge_that_answers_has_landed(
     monkeypatch.setattr(ws_module, "time", clock)
     _paced(clock, topics["/odom"], 0.1, STALE_PERIODS + 1, 100.0)
     clock.t += 10 * STALE_FLOOR_S  # the stream stops; the bridge goes on answering
-    stopped = await ex.run_verb("stop")
-    assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
-    listing.hang_s = 2 * QUICK_S  # and now it answers nothing either
-    await _asks_settled(ws)
     began = time.monotonic()
     stopped = await ex.run_verb("stop")
-    assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
-    assert time.monotonic() - began < LISTEN_PERIODS * 0.1 + QUICK_S
+    assert not stopped.ok and "the bridge took it" in stopped.summary, stopped.summary
+    assert time.monotonic() - began < LISTEN_FLOOR_S + QUICK_S
+    listing.hang_s = 2 * QUICK_S  # and now it answers nothing either
+    await _asks_settled(ws)
+    clock.t += BEAT_S
+    began = time.monotonic()
+    stopped = await ex.run_verb("stop")
+    assert not stopped.ok and "nothing has come over it" in stopped.summary, stopped.summary
+    assert time.monotonic() - began < LISTEN_FLOOR_S + QUICK_S
     assert topics["/cmd_vel"].published[-1] == twist_message(0.0, 0.0, 0.0)
 
 
@@ -1423,3 +1429,177 @@ async def test_a_bridge_that_loses_every_other_answer_keeps_a_base_with_no_strea
         await ws.heartbeat()
         await _asks_settled(ws)
     assert asked[0] >= 4, asked
+
+
+async def _a_stop_hearing(
+    ex: Executor, topic: FakeTopic, message: dict[str, Any], after_s: float
+) -> VerbResult:
+    """`ex` stops the body while `message` comes on `topic` `after_s` later, on the event loop's
+    own clock, as the next message of a live stream would; the stop's result."""
+
+    async def comes() -> None:
+        await asyncio.sleep(after_s)
+        topic.callback(message)
+
+    coming = asyncio.ensure_future(comes())
+    try:
+        return await ex.run_verb("stop")
+    finally:
+        await coming
+
+
+async def test_a_stop_right_after_held_messages_come_together_listens_for_the_next_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 10 Hz base over Wi-Fi: a hiccup of a little over half a second holds six messages in the
+    bridge's socket, and they come back to back. The pace was the slowest of the last five gaps,
+    so it became a millisecond, a stop listened two of it, and said its zero was not known to
+    have reached a base whose next message came 50 ms later: the verb that sent it failed on a
+    healthy link, and `abort_when` counted it. Messages a long gap held, come together, are not
+    the stream's pace, and no stop listens less than `LISTEN_FLOOR_S`."""
+    _ros, topics, adapter, ex = await _driving()
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    stamp = _paced(clock, topics["/odom"], 0.1, 10, 100.0)
+    clock.t += 0.6  # the hiccup
+    stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 1, stamp + 0.6)
+    assert ws._heard_gap is not None and ws._heard_gap >= 0.1, ws._heard_gap
+    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 0.1), 0.05)
+    assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+
+
+async def test_no_stop_listens_less_than_the_floor_whatever_its_pace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A driver that flushes what it queued sends a few messages back to back with no long gap
+    before them to say they were held, and the pace measured over them is a millisecond. A stop
+    listens `LISTEN_FLOOR_S` at least, so the next message of a live stream is heard."""
+    _ros, topics, adapter, ex = await _driving()
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    stamp = _paced(clock, topics["/odom"], 0.1, 10, 100.0)
+    stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 1, stamp)  # the flush
+    assert ws._heard_gap is not None and ws._heard_gap < 0.01, ws._heard_gap
+    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 0.1), 0.1)
+    assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+
+
+async def test_held_messages_set_neither_the_window_nor_the_listen_of_a_slow_stream(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stream at 0.8 Hz whose link held it eight seconds and then let seven messages through
+    together: taken as its pace, they set its window to the floor, a second, and its stops'
+    listen to the same, shorter than the 1.25 s its next message takes. The gap that held them
+    is the pace until the stream's own gaps come again."""
+    _ros, topics, adapter, ex = await _driving()
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    stamp = _paced(clock, topics["/odom"], 1.25, STALE_PERIODS + 1, 100.0)
+    clock.t += 8.0
+    stamp = _paced(clock, topics["/odom"], 0.001, STALE_PERIODS + 2, stamp + 8.0)
+    window = ws._window()
+    assert window is not None and window > 1.25 + SILENT_BEATS * BEAT_S, window
+    stopped = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 1.25), 1.2)
+    assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+
+
+@pytest.mark.parametrize("death", ["the-base-side-only", "the-whole-link"])
+async def test_a_stop_after_the_base_went_silent_is_not_said_to_have_stopped_it(
+    monkeypatch: pytest.MonkeyPatch, death: str
+) -> None:
+    """A base's driver can die while rosbridge and rosapi run on: /odom stops, and the bridge
+    answers. The stop asked rosapi, heard the answer, and said `stopped (velocity zeroed)`; the
+    answer, asked after the zero over the same socket, says the zero reached the bridge, and
+    nothing of the base. Where /odom had a pace and is quiet past its window, only /odom
+    vouches for the base: the stop listens for it, and with only the bridge heard says the
+    bridge took the zero and the base is not known to have. With the whole link gone it says
+    nothing came at all."""
+    ws, listing, topics = _asked(timeout_s=QUICK_S)
+    adapter = RosbridgeAdapter(ws)
+    manifest = await adapter.connect()
+    ex = Executor(registry_from_manifest(manifest, adapter), adapter, manifest=manifest)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    _paced(clock, topics["/odom"], 0.1, 20, 100.0)
+    if death == "the-whole-link":
+        listing.hang_s = 2 * QUICK_S
+    clock.t += 3.0
+    sent = len(topics["/cmd_vel"].published)
+    stopped = await ex.run_verb("stop")
+    assert topics["/cmd_vel"].published[sent:] == [twist_message(0.0, 0.0, 0.0)]
+    assert not stopped.ok and "not known to have reached" in stopped.summary, stopped.summary
+    assert stopped.data.get("stop_unconfirmed") is True, stopped.data
+    if death == "the-base-side-only":
+        assert "the bridge took it" in stopped.summary, stopped.summary
+        assert "/odom has brought nothing for 3.0 s" in stopped.summary, stopped.summary
+    else:
+        assert "nothing has come over it" in stopped.summary, stopped.summary
+    await _asks_settled(ws)
+
+
+async def test_odometry_that_comes_back_during_the_stop_vouches_for_the_base(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A base whose /odom was quiet, standing still, and comes on as the stop listens, is heard:
+    the stop says `stopped`. A camera image in the same while vouches for the link and not for
+    the base: the stop says the bridge took the zero and the base is not known to have."""
+    _ros, topics, adapter, ex = await _driving("ws://robot.local:9090?image=/cam/compressed")
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    stamp = _paced(clock, topics["/odom"], 0.1, 20, 100.0)
+    clock.t += 3.0
+    frame = {"format": "jpeg", "data": ""}
+    imaged = await _a_stop_hearing(ex, topics["/cam/compressed"], frame, 0.05)
+    assert not imaged.ok and "the bridge took it" in imaged.summary, imaged.summary
+    assert "/odom has brought nothing" in imaged.summary, imaged.summary
+    back = await _a_stop_hearing(ex, topics["/odom"], _odom(0.0, stamp=stamp + 3.0), 0.05)
+    assert back.ok and back.summary.startswith("stopped"), back.summary
+
+
+async def test_a_base_that_never_had_odometry_is_vouched_for_by_its_link(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A base with a camera and no /odom it ever published has nothing but the link to go by,
+    as before: an image after the zero Twist, and the stop says `stopped`."""
+    _ros, topics, adapter, ex = await _driving("ws://robot.local:9090?image=/cam/compressed")
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    frame = {"format": "jpeg", "data": ""}
+    for _ in range(STALE_PERIODS + 1):
+        clock.t += 0.1
+        topics["/cam/compressed"].callback(frame)
+    clock.t += 3.0
+    stopped = await _a_stop_hearing(ex, topics["/cam/compressed"], frame, 0.05)
+    assert stopped.ok and stopped.summary.startswith("stopped"), stopped.summary
+
+
+async def test_a_stream_that_starts_again_at_its_own_rate_sets_its_pace_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only messages that come back to back after a long gap are taken as ones it held
+    (`BACK_TO_BACK_S`): a stream that ran slow and comes back at 10 Hz is at 10 Hz, and its
+    window is the floor again once `STALE_PERIODS` of its own gaps have come, not later."""
+    _ros, topics, adapter, _ex = await _driving()
+    ws = adapter.transport
+    assert isinstance(ws, RosbridgeWs)
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    stamp = _paced(clock, topics["/odom"], 0.1, 1, 100.0)
+    stamp = _paced(clock, topics["/odom"], 3 * SLOWEST_PACE_S, STALE_PERIODS, stamp)
+    assert ws._window() == STALE_PERIODS * SLOWEST_PACE_S
+    for k in range(1, STALE_PERIODS + 1):
+        stamp = _paced(clock, topics["/odom"], 0.1, 1, stamp)
+        floor = k == STALE_PERIODS
+        assert ws._window() == pytest.approx(
+            STALE_FLOOR_S if floor else STALE_PERIODS * SLOWEST_PACE_S
+        ), k

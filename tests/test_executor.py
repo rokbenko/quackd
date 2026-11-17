@@ -629,6 +629,57 @@ async def test_an_owed_stop_answered_after_it_was_waited_for_says_it_went_out() 
     assert late == [f"an owed stop that was no longer waited for {WENT_OUT}: {NOT_HEARD}"], said
 
 
+class _StoppedAgainAsItEnds(MockTransport):
+    """A body whose first stop did not land, and which another stop starts on just as that one
+    ends, as the heartbeat's or a second caller's does: a stop begins by clearing what the last
+    one said (`stop_error`), as every transport's does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_error: str | None = None
+        self.again = asyncio.Event()
+
+    async def stop(self) -> None:
+        self.stop_error = None
+        await super().stop()
+        if self.stops > 1:
+            self.again.set()
+            await asyncio.sleep(30)  # still on its way
+            return
+        await asyncio.sleep(0.01)
+        self.stop_error = "the first stop did not reach the body"
+        loop = asyncio.get_running_loop()
+        loop.call_soon(lambda: asyncio.ensure_future(self.stop()))  # starts as this one ends
+
+
+async def test_an_owed_stop_is_judged_by_its_own_word_and_not_by_one_that_started_after_it() -> (
+    None
+):
+    """The executor read the transport's `stop_error` a turn of the loop after its owed stop had
+    ended, and a stop that began in that turn had cleared it, so an abort said `a stop was sent`
+    of a stop that had said it did not reach the body. The owed stop's own word is read as it
+    ends, in the same step, and nothing that starts after it can take it back."""
+    started = asyncio.Event()
+
+    async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
+        started.set()
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    registry = VerbRegistry()
+    registry.register(Verb("waiting", "waits", waiting, timeout_s=30))
+    transport = _StoppedAgainAsItEnds()
+    ex = Executor(registry, transport, contract=glot("waiting").frontmatter)
+    running = asyncio.create_task(ex.run_verb("waiting"))
+    await asyncio.wait_for(started.wait(), timeout=5)
+    ex.abort.set()
+    with pytest.raises(Aborted) as aborted:
+        await asyncio.wait_for(running, timeout=5)
+    assert transport.again.is_set(), "the second stop never started: the race was not run"
+    assert "the first stop did not reach the body" in str(aborted.value), str(aborted.value)
+    assert "a stop was sent" not in str(aborted.value)
+
+
 class _SilentBody(_UnheardStop):
     """A body gone silent: its reads fail, and its stop, which on the arm reads before it holds,
     holds nothing and says so in `stop_error`, as the arm's real backend does."""

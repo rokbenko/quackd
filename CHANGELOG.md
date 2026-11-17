@@ -577,18 +577,23 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   close that could not send it. A link that dies without a close kept the socket reading up for
   minutes, and the heartbeat read nothing else: it fails now when the link has given no sign of
   life for two beats in a row, a sign being any message on `/odom` or the camera, within five of
-  the pace they keep now (the slowest of their last five gaps, no slower than half a hertz), a
-  second at least and ten at most, or any answer from the bridge, a failed one included. A
+  the pace they keep now (the slowest of their last five gaps, no slower than half a hertz, and
+  never the gaps of messages a hiccup held and let through together), a second at least and ten
+  at most, or any answer from the bridge, a failed one included. A
   stream gone quiet asks the bridge for its topic list in the background, and no beat waits for
   the answer, so a dead link under a 10 Hz `/odom` is noticed within about two seconds, with
   `rosapi` or without. Where no stream vouches, as on a base with no `/odom`, the heartbeat asks
   the bridge, gives the request two seconds and asks again, and notices a dead link within six
   and a half seconds. A stream is not judged before its pace is known, so a base whose `/odom` is
-  slow is not cut off between its first messages. A stop on a link with a stream listens after its zero
-  Twist for two of the stream's pace, at most four seconds, for a message or an answer, and with
-  nothing heard says its zero is not known to have reached the base. A bridge that gave no
-  answer at connect and a base with no `/odom` are still driven, watched by the socket alone, as
-  the page says, with a table of how long a dead link can go unnoticed on each kind of base.
+  slow is not cut off between its first messages. A stop on a link with a stream listens after
+  its zero Twist for two of the stream's pace, a second at least and four at most, for a message
+  or an answer, and with nothing heard says its zero is not known to have reached the base. Where
+  `/odom` had a pace and has gone quiet, only `/odom` vouches for the base: a stop that hears
+  the bridge, an answer or a camera's image, and no `/odom` says the bridge took the zero and the
+  base is not known to have, since a base's driver can die while the bridge runs on. A bridge
+  that gave no answer at connect and a base with no `/odom` are still driven, watched by the
+  socket alone, as the page says, with a table of how long a dead link can go unnoticed on each
+  kind of base.
 - **A rosbridge base is driven only on a command topic the bridge lists as a Twist, and is told
   which one.** The topic was never held against the topic list, so a base on another topic, or
   one taking TwistStamped, got nothing while `move` said it walked. A topic the list does not
@@ -609,7 +614,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   XLeRobot's heartbeat said its watchdog `has already stopped the base`, though the watchdog runs
   in the loop that was stuck. A stop when no observation has come within the host's watchdog
   window says now that it went out and is `not known to have reached it`, and both say what the
-  watchdog does only `if its loop still runs`. A stop that could not be sent says so too, and the
+  watchdog does only `if its loop still runs`. An AlohaMini's stop asks the host once before it
+  says so, since a host that nothing asked for a while is not a silent one. A stop that could
+  not be sent says so too, and the
   close's own stop, which nothing read after the close, is said by the run after it, beginning
   `at the close,`, as a rosbridge base's is, and `robot list --probe` says such a line as the stop
   it is, not as torque left on.
