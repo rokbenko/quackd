@@ -1230,6 +1230,45 @@ async def test_a_stepper_turn_charges_no_llm_call(tmp_path: Any) -> None:
     )
 
 
+async def test_after_the_last_allowed_pilot_call_the_stepper_takes_its_turns_and_no_more(
+    tmp_path: Any,
+) -> None:
+    """What a run does once its pilot's LLM calls are spent, with the stepper on. A verb's step
+    reads the steps and the minutes and not `max_llm_calls`, which is read where a pilot LLM call
+    is about to be charged, and a stepper's turn charges none. So after the last allowed pilot
+    call the verb that call chose runs, and then the stepper's turns go on, each a decision LLM
+    request and a verb, until it hands the turn back after its streak (`Stepper.streak_limit`,
+    `MAX_IN_A_ROW` or half the steps, whichever is less), or the repeat rule, the steps or the
+    minutes end it first, and the run ends `budget` on `max_llm_calls (2) reached` when the
+    pilot would be asked again. Before, the first of those verbs was refused for the calls.
+    Measured here with a decision LLM that declines the first two turns, so the pilot spends
+    both its calls, and then answers every turn, never twice the same in a row."""
+    from roboglot.agent.decision.stepper import MAX_IN_A_ROW
+
+    calls = 2
+    glot = _lookout()  # read afresh, so this run's budget is its own
+    glot.frontmatter.budgets.max_llm_calls = calls
+    # `Stepper.streak_limit`'s own rule, which on this task's twelve steps is six
+    streak = min(MAX_IN_A_ROW, glot.frontmatter.budgets.max_steps // 2)
+    declined = [fake_systemone.turn("report_state", 0.01)] * calls
+    taken = [fake_systemone.turn("stop" if i % 2 else "report_state", 0.99) for i in range(40)]
+    result, _rec = await _on_run(tmp_path, _fake(script=declined + taken), glot=glot)
+    rows = sorted(
+        _records(result, "llm")
+        + [r for r in _records(result, "verb_start") if not r.get("nested")],
+        key=lambda r: r["t"],
+    )
+    after_the_last = [
+        r["source"]
+        for r in rows[[i for i, r in enumerate(rows) if r["kind"] == "llm"][-1] + 1 :]
+        if r["kind"] == "verb_start"
+    ]
+    assert len(_records(result, "llm")) == calls
+    # the last call's own verb, then the stepper's streak, and nothing after it
+    assert after_the_last == ["agent"] + ["decision"] * streak, after_the_last
+    assert (result.outcome, result.reason) == ("budget", f"max_llm_calls ({calls}) reached")
+
+
 async def test_the_stepper_does_not_answer_twice_running_with_the_same_call(tmp_path: Any) -> None:
     """A reflex that fires twice identically is looping, not deciding.
 
