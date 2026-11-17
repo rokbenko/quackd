@@ -8,6 +8,8 @@ import dataclasses
 import importlib.util
 import platform
 import sys
+import types
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -207,6 +209,114 @@ async def test_dials_at_once_pause_the_scanner_once_and_the_last_starts_it_again
     with pytest.raises(ConnectionError):
         await second
     assert calls == ["stop", "open 0", "open 1", "start"]
+
+
+def bluez_on_stand_ins(monkeypatch: pytest.MonkeyPatch, probe: Any) -> Any:
+    """roboglot/radio/bluez/radio.py, loaded under a name of its own with its D-Bus and bleak
+    edges stood in for, so it runs where neither is installed: a bus that answers nothing, an
+    adapter `probe` reports, a peripheral that takes the GATT service and the advert, a scanner
+    that starts. Every stand-in leaves `sys.modules` as the test found it."""
+    import roboglot.radio.bluez as package
+
+    class Bus:
+        def add_message_handler(self, handler: Any) -> None:
+            return None
+
+        def disconnect(self) -> None:
+            return None
+
+    class Peripheral:
+        def __init__(self, bus: Any, adapter: str, core: Any) -> None:
+            self.serving = self.advertising = False
+
+        async def serve(self) -> None:
+            self.serving = True
+
+        async def advertise(self, advert: bytes) -> None:
+            self.advertising = True
+
+        async def close(self) -> None:
+            self.serving = self.advertising = False
+
+    class Scanner:
+        def __init__(self, *, adapter: str, on_sighting: Any) -> None:
+            self.running, self.devices, self.heard = False, {}, 0
+
+        async def start(self) -> None:
+            self.running = True
+
+        async def stop(self) -> None:
+            self.running = False
+
+    async def connect_bus(kind: str, address: str | None = None) -> Bus:
+        return Bus()
+
+    async def call(*args: Any, **kwargs: Any) -> list[Any]:
+        return []  # a bus that answers every call with nothing
+
+    def stub(name: str, **members: Any) -> None:
+        module = types.ModuleType(name)
+        module.__dict__.update(members)
+        monkeypatch.setitem(sys.modules, name, module)
+
+    names = types.SimpleNamespace(SIGNAL="signal", SYSTEM=1, SESSION=2)
+    stub("dbus_fast", Message=object, MessageType=names, BusType=names, Variant=object)
+    stub("dbus_fast.aio", MessageBus=Bus)
+    stub(
+        "roboglot.radio.bluez.probe",
+        DBUS="org.freedesktop.DBus",
+        Probe=object,
+        connect_bus=connect_bus,
+        probe=probe,
+    )
+    stub("roboglot.radio.bluez.peripheral", BlueZError=OSError, Peripheral=Peripheral, call=call)
+    stub("roboglot.radio.bluez.central", Scanner=Scanner, open_pipe=None)
+    stub("roboglot.radio.bluez.objects", plain=lambda value: value)
+    path = Path(package.__file__).with_name("radio.py")
+    spec = importlib.util.spec_from_file_location("bluez_radio_on_stand_ins", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+async def test_a_start_cut_off_by_its_callers_bound_is_tried_again_by_the_watchdog(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The watchdog that tries a radio again while it is down was made only once the first
+    bring-up returned, so a start its caller cut off, as the onboard service's does after its
+    bound with BlueZ slow at boot, never made one: the radio stayed `off`, `not started`, for
+    the life of the service. The first look at the adapter here takes longer than the caller
+    waits, and the caller cancels it, as `LoopThread.call` does."""
+    looks: list[str] = []
+    bound_s, retry_s = 0.2, 0.05
+
+    async def probe(bus: Any, adapter: str) -> Any:
+        looks.append(adapter)
+        if len(looks) == 1:
+            await asyncio.sleep(5 * bound_s)
+        return types.SimpleNamespace(
+            state="ready", detail=f"{adapter} is up", hint=None, adapter=None
+        )
+
+    module = bluez_on_stand_ins(monkeypatch, probe)
+    module.RETRY_S = (retry_s,)
+    built = module.BlueZRadio(scan=True)
+    with pytest.raises(TimeoutError):
+        await asyncio.wait_for(
+            built.start(advert=b"", on_sighting=lambda s: None, on_link=lambda p, a: None),
+            bound_s,
+        )
+    try:
+        for _ in range(int(2.0 / retry_s)):
+            if built.status().state == "ready":
+                break
+            await asyncio.sleep(retry_s)
+        status = built.status()
+        assert status.state == "ready" and status.scanning, (status, looks)
+        assert len(looks) >= 2, "looked again"
+    finally:
+        await built.stop()
 
 
 async def test_closing_a_link_a_robot_opened_never_drops_one_this_robot_dialled_to_it() -> None:

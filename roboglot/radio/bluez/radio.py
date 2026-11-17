@@ -117,9 +117,12 @@ class BlueZRadio:
         self._advert, self._advert_at = advert, time.monotonic()
         self._on_sighting, self._on_link = on_sighting, on_link
         self._stopped = False
+        # the watchdog before the first bring-up: a start its caller cuts off, BlueZ slow at
+        # boot, leaves a radio that is down, and that is tried again like any other
+        if self._watchdog is None or self._watchdog.done():
+            self._watchdog = asyncio.get_running_loop().create_task(self._watch())
         async with self._lifecycle:
             await self._bring_up()
-        self._watchdog = asyncio.get_running_loop().create_task(self._watch())
         return self.status()
 
     async def set_advert(self, advert: bytes) -> None:

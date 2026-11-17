@@ -8574,9 +8574,19 @@ def onboard_stop(directory: str | None = _ONBOARD_DIR) -> None:
     if reply is None:
         _fail("no service is running for this robot")
         return
-    ui.console.print(
-        _ok_line("stopped the run in hand" if reply.get("was") else "nothing was running")
-    )
+    told = "told the run in hand to stop"
+    if not reply.get("was"):
+        ui.console.print(_ok_line("nothing was running"))
+    elif "ended" not in reply:  # a service from before, which answers before the run has ended
+        ui.console.print(_ok_line(told))
+    elif reply["ended"]:
+        ui.console.print(_ok_line("stopped the run in hand"))
+    else:
+        ui.console.print(
+            _warn_line(
+                f"{told}, and it has not ended yet: roboglot onboard status shows when it has"
+            )
+        )
 
 
 @onboard_app.command("met")

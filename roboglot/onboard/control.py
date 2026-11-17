@@ -32,6 +32,8 @@ from typing import Any
 PROTOCOL = 1
 #: How long a client may take to say hello, and to send its op after it.
 HELLO_S = 5.0
+#: How long a client waits for the service's answer to one op (`request`).
+ANSWER_S = 10.0
 #: The most clients at once: a person's terminals, never a crowd.
 CLIENTS = 8
 #: The longest line either side sends.
@@ -126,7 +128,7 @@ class ControlServer:
         kept = False
         # the hello and the op inside `HELLO_S` in all, however slowly the bytes come, so no
         # client without the token holds one of the slots for longer than that
-        cut_off = threading.Timer(HELLO_S, _close_quietly, args=(sock,))
+        cut_off = threading.Timer(HELLO_S, _cut, args=(sock,))
         cut_off.daemon = True
         cut_off.start()
         try:
@@ -161,7 +163,12 @@ class ControlServer:
             self._clients.release()
 
 
-def _close_quietly(sock: socket.socket) -> None:
+def _cut(sock: socket.socket) -> None:
+    """End a connection from another thread. A close alone only marks the socket closed while
+    the connection's two files hold it, and the read in hand goes on; a shutdown ends that read
+    on every platform, as `PassportServer` ends a connection past its time."""
+    with contextlib.suppress(OSError):
+        sock.shutdown(socket.SHUT_RDWR)
     with contextlib.suppress(OSError):
         sock.close()
 
@@ -232,7 +239,9 @@ def connect(
         conn.close()
 
 
-def request(control_json: Path, op: Mapping[str, Any], *, timeout: float = 10.0) -> dict[str, Any]:
+def request(
+    control_json: Path, op: Mapping[str, Any], *, timeout: float = ANSWER_S
+) -> dict[str, Any]:
     """One op and the service's reply to it."""
     with connect(control_json, timeout=timeout, then=timeout) as conn:
         conn.send(dict(op))

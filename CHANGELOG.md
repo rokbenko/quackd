@@ -455,6 +455,80 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   while it reads any other real number set there, a numpy number or a Decimal as much as a
   float. A body whose transport gives an endless `head_fade_s` is no longer waited on before
   `go_to` looks.
+- **No goal and no meeting starts on a robot whose onboard service is closing.** `roboglot onboard
+  serve`, told to stop, stopped the run in hand and then went on with its byes, its radio and its
+  passport server, and a goal given meanwhile with `roboglot onboard goal`, a goal op a control
+  thread had read just before the listener closed, or a meeting a robot coming near started took
+  the empty slot and ran on: the process then exited under it, and the body kept its last intent
+  until its own deadman, with no stop, no close and no end in the run's record. From the moment
+  the service begins to close, a goal is refused with `the service is stopping`, which the goal's
+  terminal prints and the journal keeps as `a goal: <text>, refused: the service is stopping`,
+  and a robot coming near is told `no meeting: the service is stopping`.
+- **A goal never runs beside a meeting that has not stopped.** `roboglot onboard goal` stopped the
+  meeting in hand, waited up to 15 s for it while it held the run slot, and started the goal
+  whether the meeting had ended or not. Two runs then held one body: the meeting's teardown sent
+  its own stop in the middle of the goal, and its end took away the courtesy the goal had just
+  offered the robots met, so every pause one asked for was refused while the goal moved the body.
+  Meanwhile `roboglot onboard status` and `roboglot onboard stop` waited too, and could give up
+  with `the service stopped answering`. The goal still waits up to 15 s, holding nothing status,
+  a stop or the service's tick need, so all three answer meanwhile; a meeting still running
+  then refuses the goal with `the meeting in hand is still stopping: give the goal again once
+  roboglot onboard status says idle`. While a goal waits, a robot coming near is told `no
+  meeting: a goal is taking the slot`, a second goal is refused with `a goal is taking the slot
+  from a meeting: roboglot onboard stop ends it`, and `roboglot onboard stop` ends the waiting
+  goal before it starts. What a run does as it ends changes nothing of a run that came after
+  it.
+- **Talk starts once when a passport is signed while it is off.** `roboglot onboard sign` tells
+  the running service to read its files again, and the service also looks at them every two
+  seconds; with talk off, both could start it at once, and the robot then ran two passport
+  servers and two radios, one of each never closed, or, with a fixed `lan.port`, the second
+  could not bind and the service ended. Talk now starts once, whichever asks first, and a start
+  that fails on one of those looks, a port another program holds say, is said in the journal as
+  `talk could not start:` and the reason, and tried again on the next look, where before it
+  could end the service.
+- **A radio slow to start no longer ends the onboard service.** A Bluetooth radio that took
+  longer than its 20 s to start, BlueZ waiting on its controller at boot say, raised out of
+  `roboglot onboard serve` once the passport server was up: the service ended, and after five
+  such starts systemd stopped restarting it, leaving the robot with no service. When talk turned
+  on later instead, the journal said `talk could not start` though it had, and the radio was
+  never tried again. A radio that does not answer in time is a radio that is down now: the
+  service stays up with talk on, `roboglot onboard status` and the journal say `the radio did
+  not answer within 20 s`, and the radio is tried again as a radio that came up down is.
+- **A slow client no longer holds the onboard service's control port.** The service gives a
+  client 5 s in all to say hello with the token and send what it wants, however slowly its
+  bytes come, but the cut-off at the end of those 5 s could not end a read under way, so a
+  local process with no token that sent one byte every few seconds kept its place for as long
+  as it liked, and eight of them turned away `roboglot onboard status`, `stop` and `goal`. The
+  cut-off ends the connection now.
+- **The onboard service stops inside the time systemd gives it, and says what it left.** Told
+  to stop, the service gave the run in hand 10 s and went on without a word, so a run whose
+  stop took longer, a pause granted to a robot met waited out before the body's close, lost
+  its close and the end of its record when the process exited; then it said bye to each robot
+  met one after another, each with its own bound, and closed the radio, the passport server and
+  the control listener, each with its own, so with two robots gone out of range it outlasted
+  the unit's `TimeoutStopSec=20` and systemd killed it partway. The whole stop keeps inside
+  18 s now, the unit's stop timeout less a margin for the process's exit, with the run's stop
+  first and up to 13 s for it; the byes go out all at once, beside the passport server's and
+  the listener's close. A run still going when its time is up is said in the journal as `the
+  goal has not ended though it was told to stop: the service stops without it, so its body may
+  not be closed, nor its record ended`, and whatever else had not finished as `the service
+  stops before it finished` and what it was, as in `saying bye to 2 robots met and closing the
+  radio`.
+- **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
+  run in hand` as soon as the service had passed the stop on, so a run whose stop had not
+  landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at
+  most, for the run to end before it answers; the command prints `stopped the run in hand` when
+  it ended, and `told the run in hand to stop, and it has not ended yet: roboglot onboard status
+  shows when it has` when it had not. A stop that finds a goal waiting for a meeting to end
+  ends that goal before it starts.
+- **A second Ctrl-C at `roboglot onboard goal` lets the terminal go.** The first Ctrl-C stops
+  the run; the second asks to quit at once, and the service, there for every terminal and every
+  robot met, must not quit for one, so it did nothing: the terminal went on waiting on a run
+  whose stop had not landed, and the journal said `stop: quitting at once`. Now the terminal
+  is told `the run is still ending on the robot, and the service runs on: roboglot onboard
+  status shows when it has ended` and let go at once, and the journal says `a goal: <text>, its
+  terminal asked to quit at once and is let go; the run is still ending, and the service stays
+  up` before that line.
 - **A head sweep the body refused no longer reads as one that found nothing.** `search_scan` on a
   body that only looks threw each look's answer away, so a body that refused every look was
   reported as having swept its range without the target, as in `ball not found in a gaze sweep of

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -164,6 +165,9 @@ class RadioSide:
         #: adverts heard so far, and the rate status shows of them
         self._sightings = 0
         self._rate = Rate()
+        #: the radio's status as a start that did not answer in time left it, and the words
+        #: that say so, which status shows until the radio's own status moves
+        self._unanswered: tuple[RadioStatus, str] | None = None
 
     # ── what the Talker takes ───────────────────────────────────────────────────────────
 
@@ -243,6 +247,12 @@ class RadioSide:
         except RadioUnavailable as e:
             self.radio = NoRadio.instead_of(e, kind=self.radio.kind)
             status = self.radio.status()
+        except TimeoutError as e:
+            # a radio that does not answer in time is a radio that is down, never the end of
+            # the service: it is kept, and its own retries go on from where its start was cut,
+            # as for a radio that came up down; until it moves, its status says what happened
+            self._unanswered = (self.radio.status(), str(e))
+            status = self._as_said(self.radio.status())
         if not status.ready:
             self.log(f"radio {status.kind}: {status.state}, {status.detail}")
         return status
@@ -398,15 +408,26 @@ class RadioSide:
                 snapshot = self.loop.call(self._snapshot(), CALL_S)
         if snapshot is None:
             snapshot = radio_snapshot(
-                status=self.radio.status(), now=self.clock(), rotor=self.rotor
+                status=self._as_said(self.radio.status()), now=self.clock(), rotor=self.rotor
             )
         snapshot["on_lan"] = self._on_lan
         return snapshot
 
+    def _as_said(self, status: RadioStatus) -> RadioStatus:
+        """`status`, naming the start that did not answer in time for as long as nothing of the
+        radio has moved since: once it has, a retry under way or done, the radio's own words."""
+        unanswered = self._unanswered
+        if unanswered is None:
+            return status
+        if status != unanswered[0]:
+            self._unanswered = None
+            return status
+        return dataclasses.replace(status, detail=unanswered[1])
+
     async def _snapshot(self) -> dict[str, Any]:
         now = self.clock()
         return radio_snapshot(
-            status=self.radio.status(),
+            status=self._as_said(self.radio.status()),
             now=now,
             rotor=self.rotor,
             tracker=self.tracker,

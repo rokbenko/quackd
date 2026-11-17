@@ -1223,6 +1223,31 @@ def test_what_needs_a_service_says_none_is_running(
     assert served.exit_code == 1 and "no robot here" in flat(served.output)
 
 
+def test_stop_says_the_run_stopped_only_once_the_service_saw_it_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`roboglot onboard stop` printed "stopped the run in hand" as soon as the service had
+    posted the stop. It says so now only when the service saw the run end; otherwise that the
+    run was told to stop and has not ended yet, and, to a service from before that does not
+    say, only that it was told."""
+    from roboglot import cli
+
+    told = "told the run in hand to stop"
+    for reply, said in (
+        ({"ev": "stopped", "was": True, "ended": True}, "stopped the run in hand"),
+        (
+            {"ev": "stopped", "was": True, "ended": False},
+            f"{told}, and it has not ended yet: roboglot onboard status shows when it has",
+        ),
+        ({"ev": "stopped", "was": True}, told),
+        ({"ev": "stopped", "was": False}, "nothing was running"),
+    ):
+        monkeypatch.setattr(cli, "_tell_service", lambda _home, _op, reply=reply: reply)
+        answered = runner.invoke(app, ["onboard", "stop", "--dir", str(tmp_path / "robot")])
+        assert answered.exit_code == 0, answered.output
+        assert flat(answered.output).endswith(said), (reply, answered.output)
+
+
 def test_the_demo_asks_which_brain_before_it_starts_anything(tmp_path: Path) -> None:
     asked = runner.invoke(app, ["onboard", "demo", "--keep", str(tmp_path / "kept")])
     assert asked.exit_code == 1 and "--offline" in flat(asked.output)

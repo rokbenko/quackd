@@ -36,6 +36,19 @@ LINGER_S = 20.0
 FOR_A_GOAL = "a goal came, and a goal takes the slot from a meeting"
 EVERYONE_LEFT = "the robots it met all left"
 STOPPED = "stopped by roboglot onboard stop"
+#: How long a goal waits for the meeting it takes the slot from to end, holding nothing that
+#: status, a stop or the service's tick needs. A meeting moves nothing (`meeting_glot` offers it
+#: what reports and what stops), so its teardown is a stop and a last look at the state; the
+#: 15 s it has always been given is kept, and a meeting not ended by then is stuck.
+MEETING_STOPS_S = 15.0
+#: Why a goal is refused while the meeting it would take the slot from has not ended.
+STILL_STOPPING = (
+    "the meeting in hand is still stopping: give the goal again once roboglot onboard status "
+    "says idle"
+)
+#: Why a robot coming near, and a second goal, start nothing while a goal waits for its meeting.
+NO_MEETING_FOR_A_GOAL = "no meeting: a goal is taking the slot"
+GOAL_WAITING = "a goal is taking the slot from a meeting: roboglot onboard stop ends it"
 
 
 @dataclass
@@ -57,6 +70,18 @@ class Running:
     emptied_at: float | None = None
     #: a stop asked for, kept so a run stopped before its loop existed stops as it starts
     stop_wanted: str | None = None
+
+
+@dataclass
+class _Waiting:
+    """A goal waiting for the meeting it took the slot from to end, and the stop, if any, that
+    was asked for meanwhile, which the goal then ends with before it starts."""
+
+    stopped: str | None = None
+
+
+def _alive(running: Running | None) -> bool:
+    return running is not None and running.thread is not None and running.thread.is_alive()
 
 
 #: Builds one run's loop: (task file, kind, front or None) to an `AgentLoop` ready to run.
@@ -90,6 +115,10 @@ class RunSlot:
         self.running: Running | None = None
         self._met_at: dict[str, float] = {}
         self._meetings: deque[float] = deque()
+        #: why the slot takes no run any more, once the service has begun to close (`close`)
+        self._closed: str | None = None
+        #: a goal waiting for the meeting it took the slot from to end, while nothing else starts
+        self._waiting: _Waiting | None = None
 
     # ── which run may start ─────────────────────────────────────────────────────────────
 
@@ -113,6 +142,10 @@ class RunSlot:
         """A robot this one may talk to came close: it joins the run in the slot, or starts a
         meeting when the slot is empty and the rules allow one. Says what happened."""
         with self._lock:
+            if self._closed is not None:
+                return f"no meeting: {self._closed}"
+            if self._waiting is not None:
+                return NO_MEETING_FOR_A_GOAL
             running = self.running
             if running is not None and running.thread is not None and running.thread.is_alive():
                 running.with_peers.add(peer)
@@ -149,36 +182,83 @@ class RunSlot:
                 self._stop(running, EVERYONE_LEFT)
 
     def goal(self, text: str, front: Any = None, *, max_steps: int | None = None) -> str | None:
-        """Start a goal, taking the slot from a meeting. None when it started; otherwise why not."""
+        """Start a goal, taking the slot from a meeting. None when it started; otherwise why not.
+
+        A meeting in hand is told to stop and waited for, `MEETING_STOPS_S` at most and without
+        the lock, so status, a stop and the tick are answered meanwhile. One that has not ended
+        by then refuses the goal: two runs never hold one body."""
         with self._lock:
-            running = self.running
-            if running is not None and running.thread is not None and running.thread.is_alive():
-                if running.kind == "goal":
-                    return "a goal is running: roboglot onboard stop ends it"
-                self._stop(running, FOR_A_GOAL)
-                if running.thread is not None:
-                    running.thread.join(timeout=15)
-            glot = glot_from_goal(
-                f"{text.strip()}\n\n{NEARBY_LINE}", self._safe_verbs(), memory=True
+            if self._closed is not None:
+                return self._closed
+            if self._waiting is not None:
+                return GOAL_WAITING
+            meeting = self.running
+            thread = meeting.thread if meeting is not None else None
+            if meeting is None or thread is None or not thread.is_alive():
+                return self._start_goal(text, front, max_steps)
+            if meeting.kind == "goal":
+                return "a goal is running: roboglot onboard stop ends it"
+            self._stop(meeting, FOR_A_GOAL)
+            waiting = self._waiting = _Waiting()
+        try:
+            thread.join(timeout=MEETING_STOPS_S)
+        except BaseException:
+            with self._lock:
+                self._waiting = None
+            raise
+        with self._lock:
+            self._waiting = None
+            # no run started in the wait: a robot coming near and a second goal were refused
+            why = self._closed or waiting.stopped or (STILL_STOPPING if thread.is_alive() else None)
+            if why is not None:
+                return why
+            return self._start_goal(text, front, max_steps)
+
+    def _start_goal(self, text: str, front: Any, max_steps: int | None) -> str | None:
+        """Under the lock, with the slot empty: the goal's run, or why it did not start."""
+        glot = glot_from_goal(f"{text.strip()}\n\n{NEARBY_LINE}", self._safe_verbs(), memory=True)
+        if max_steps is not None:
+            front_matter = glot.frontmatter
+            budgets = front_matter.budgets.model_copy(update={"max_steps": max_steps})
+            glot = glot.model_copy(
+                update={"frontmatter": front_matter.model_copy(update={"budgets": budgets})}
             )
-            if max_steps is not None:
-                front_matter = glot.frontmatter
-                budgets = front_matter.budgets.model_copy(update={"max_steps": max_steps})
-                glot = glot.model_copy(
-                    update={"frontmatter": front_matter.model_copy(update={"budgets": budgets})}
-                )
-            if not self._start("goal", glot, front, set()):
-                return "the goal did not start"
-            return None
+        if not self._start("goal", glot, front, set()):
+            return "the goal did not start"
+        return None
 
     def stop(self, why: str = STOPPED) -> bool:
-        """Stop the run in hand, a goal or a meeting; the slot stays. False when it was empty."""
+        """Stop the run in hand, a goal or a meeting, and a goal waiting for its meeting to end;
+        the slot stays. False when it was empty."""
         with self._lock:
+            waiting = self._waiting
+            if waiting is not None and waiting.stopped is None:
+                waiting.stopped = why
             running = self.running
-            if running is None or running.thread is None or not running.thread.is_alive():
-                return False
+            if running is None or not _alive(running):
+                return waiting is not None
             self._stop(running, why)
             return True
+
+    def stop_and_wait(self, within: float, why: str = STOPPED) -> tuple[bool, bool]:
+        """`stop`, then up to `within` seconds, holding no lock, for the run it stopped to end:
+        whether there was one to stop, and whether it has ended."""
+        with self._lock:
+            running = self.running
+            was = self.stop(why)
+        thread = running.thread if was and running is not None else None
+        if thread is not None:
+            thread.join(timeout=within)
+        return was, thread is None or not thread.is_alive()
+
+    def close(self, why: str) -> None:
+        """The service has begun to close: the run in hand is stopped, and from now on no goal
+        and no meeting starts, whoever asks, `why` being the reason given. Set under the lock
+        every start takes, so a start either came first, and is the run stopped here, or is
+        refused."""
+        with self._lock:
+            self._closed = why
+            self.stop(why)
 
     def state(self) -> dict[str, Any]:
         """What the slot holds, for `roboglot onboard status`."""
@@ -248,14 +328,19 @@ class RunSlot:
             front.bind(running.agent, asyncio.get_running_loop())
         if running.stop_wanted is not None:
             _set_abort(running.agent, running.stop_wanted)
+        # a run's hooks act only while it is the slot's run: one that is not any more must not
+        # change what the slot's run set up, its courtesy above all
         if self._holding is not None:
-            self._holding(running.agent)
+            with self._lock:
+                if self.running is running:
+                    self._holding(running.agent)
         try:
             return await running.agent.run()
         finally:
             if self._released is not None:
-                with contextlib.suppress(Exception):
-                    self._released()
+                with contextlib.suppress(Exception), self._lock:
+                    if self.running is running:
+                        self._released()
             if front is not None:
                 front.unbind()
 
