@@ -677,6 +677,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   service user's group's and mode 0640, and otherwise stops and says what to run, since it may
   be another daemon's token: the MOSS bridge's and the Jetson daemon's look the same. It stops
   on any symlink, and creates a new token with its mode as it is written.
+- **The scripts that read GitHub send its token to GitHub's API alone.** The drift nightly's
+  `scripts/upstream_drift.py` sent `GITHUB_TOKEN` to any address that began as the API's does,
+  and `docs/assets/contributors.py` to any address with the API's host anywhere in it, so a host
+  named `api.github.com.example.org`, or a page with those words in its query, would have been
+  handed a token that can write issues or push to `main`. Both send it only over https to
+  `api.github.com` itself now, and never on to where a redirect leads. Neither script ever
+  fetched such an address: each builds every URL it asks from its own constants and GitHub's
+  answers.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,

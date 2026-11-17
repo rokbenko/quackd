@@ -280,8 +280,8 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    gh run watch -R rokbenko/quackd
    ```
 
-   Every job of `main`'s run has to pass: the six test jobs, `packaging`, `ui`, `onboard` and
-   `policy`. A red one stops the release here, with nothing tagged.
+   Every job of `main`'s run has to pass: the six test jobs, `packaging`, `ui`, `onboard`,
+   `policy` and `workflows`. A red one stops the release here, with nothing tagged.
 
    **A patch cut from the last tag** skips those four commands, because `main` carries work the
    patch leaves out and its merge would carry that work too. It pushes the release branch

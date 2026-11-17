@@ -35,6 +35,7 @@ on:
       - ".github/workflows/rosarm-contract.yml"
   workflow_dispatch:
 
+# Read only, and the checkout drops its token once the code is fetched: nothing here writes.
 permissions:
   contents: read
 
@@ -54,11 +55,24 @@ jobs:
         distro: [jazzy, humble]
 
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The uv the container runs is this one, the runner's, mounted read only: the script fetches
+      # uv's installer only for a person running it by hand, and refuses to in CI.
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # the release tests/rosarm_contract/run.sh pins, as in every workflow here
+          version: "0.12.21"
+          # uv runs in the container, with a cache of its own there, so the runner has none to save
+          enable-cache: false
 
       - name: Contract, in ros:${{ matrix.distro }}
         # The checkout goes in read only: the script installs into the container and nowhere
-        # else, and the same line runs it on a laptop with Docker.
+        # else, and its header has the line that runs it on a laptop with Docker. GITHUB_ACTIONS
+        # goes in with it, so the script knows it is in CI and will not fetch uv's installer.
         run: >-
           docker run --rm -v "$GITHUB_WORKSPACE":/repo:ro -w /repo
+          -v "$(command -v uv)":/usr/local/bin/uv:ro -e GITHUB_ACTIONS
           ros:${{ matrix.distro }} bash tests/rosarm_contract/run.sh
