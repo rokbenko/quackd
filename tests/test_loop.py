@@ -1660,6 +1660,57 @@ async def test_a_refused_verdict_shuts_the_gate_an_earlier_one_opened(
     assert "no feasibility verdict has been recorded" in str(refused[0]["reason"])
 
 
+@pytest.mark.parametrize(
+    "meant",
+    [
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "needs": {"payload_kg": "2 kg"}},
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "needs": {"weight_kg": 2}},
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "human": "no_go"},
+    ],
+    ids=["units", "a key outside the vocabulary", "a human field"],
+)
+async def test_an_assessment_the_vocabulary_refuses_withdraws_the_verdict_standing(
+    hello_glot: GlotFile, tmp_path: Path, meant: dict[str, Any]
+) -> None:
+    """A pilot that changed its mind in a shape the vocabulary refuses, an infeasible with units
+    in a need, a need outside the datasheet's words or a `human` field, was told its call was
+    invalid and went on moving on the feasible it had recorded before, though it meant the body
+    could not do the task. The refusal withdraws that verdict as the own-sheet refusal above
+    does, the pilot is told so, and the walk after it is refused until the pilot assesses
+    again."""
+    mock = MockTransport()
+    result = await run_glot(
+        RunConfig(
+            glot=hello_glot,
+            provider=FakeProvider(
+                script=[
+                    _verdict_call("feasible", "it walks"),
+                    ToolCall(name="quack", arguments={"text": "off we go"}),
+                    ToolCall(name="assess_task", arguments=dict(meant)),
+                    ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 0.1}),
+                    ToolCall(name="declare_failure", arguments={"reason": "it is too heavy"}),
+                ]
+            ),
+            transport=MicroduckAdapter(mock),
+            runs_dir=tmp_path,
+        )
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assessed = [e for e in events if e["kind"] == "assess"]
+    assert assessed[1]["ok"] is False and assessed[1]["verdict"] is None
+    assert assessed[1]["summary"].endswith(
+        "; the verdict recorded before this one is withdrawn, so nothing that moves the body "
+        "runs until you assess again"
+    ), assessed[1]["summary"]
+    refused = [
+        e
+        for e in events
+        if e["kind"] == "gate" and e.get("gate") == "verdict" and e.get("name") == "walk"
+    ]
+    assert refused, "the walk ran on the verdict the pilot had changed its mind about"
+    assert mock.intents_of("move") == []
+
+
 async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_verdict(
     hello_glot: GlotFile, tmp_path: Path
 ) -> None:
@@ -1690,7 +1741,7 @@ async def test_a_refused_assessment_is_recorded_as_itself_not_as_the_standing_ve
     assert assessed[1]["ok"] is False and "invalid assess_task" in assessed[1]["summary"]
     assert assessed[1]["verdict"] is None, "the row claimed the standing verdict was refused"
     assert assessed[1]["reason"] == "hm", "and it carried the standing verdict's reason"
-    # the standing verdict is untouched by an invalid re-assessment: the run went on
+    # an invalid re-assessment withdraws the standing verdict, and the run still goes on
     assert result.outcome == "success", result.reason
 
 
@@ -6235,6 +6286,100 @@ async def test_a_doubt_whose_prompt_raised_went_unanswered(
     assert _prompts(events) == []
 
 
+@pytest.mark.parametrize("why", ["heartbeat", "stop_reason", "kill switch"])
+async def test_a_doubt_the_abort_took_back_ends_the_run_on_why_the_abort_was_set(
+    why: str, hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """A question still waiting when the run's abort is set is taken back (`QuestionWithdrawn`),
+    and the pilot's doubt recorded it as a prompt that raised: the run ended on "the question went
+    unanswered: the prompt raised QuestionWithdrawn" in place of the failed heartbeat, the drive
+    session's stop or the kill switch that set the abort. It ends on that reason now, as the
+    judge's question and the fall-blind acknowledgement already did. The asker is a coroutine, as
+    a drive goal's is, and nobody answers it."""
+    asked = asyncio.Event()
+
+    async def decide(_question: str) -> bool:
+        asked.set()
+        await asyncio.Event().wait()
+        return True
+
+    loop = AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=FakeProvider(script=[_verdict_call("uncertain", "the duck is out of view")]),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+            decide=decide,
+        )
+    )
+    run = asyncio.ensure_future(loop.run())
+    await asyncio.wait({asyncio.ensure_future(asked.wait())}, timeout=30.0)
+    assert asked.is_set(), "the doubt was never put"
+    said = {"heartbeat": "the body stopped answering its heartbeat", "stop_reason": "a newer line"}
+    if why == "heartbeat":
+        loop.heartbeat.failure = TransportError(said[why])
+    elif why == "stop_reason":
+        loop.stop_reason = said[why]
+    loop.executor.abort.set()
+    await asyncio.wait({run}, timeout=30.0)
+    assert run.done(), "the run did not end on the abort"
+    result = run.result()
+    assert result.outcome == "aborted", result.reason
+    assert result.reason == said.get(why, KILL_SWITCH), result.reason
+    assert "QuestionWithdrawn" not in result.reason
+
+
+@pytest.mark.parametrize("why", ["heartbeat", "stop_reason", "kill switch"])
+async def test_a_confirm_the_abort_took_back_ends_the_run_on_why_the_abort_was_set(
+    why: str, hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """The confirm's own question, taken back by the run's abort while nobody had answered it,
+    ended the call denied ("nobody answered whether to run walk"), where a pilot's doubt taken
+    back the same way ends the run on why the abort was set. Both end alike now: the call at
+    the `abort` gate, `run aborted`, and the run on the failed heartbeat, the drive session's
+    stop or the kill switch."""
+    asked = asyncio.Event()
+
+    async def confirm(_name: str, _params: dict[str, Any]) -> bool:
+        asked.set()
+        await asyncio.Event().wait()  # nobody answers
+        return True
+
+    confirm.asks_a_person = True  # type: ignore[attr-defined]
+    glot = copy.deepcopy(hello_glot)
+    glot.frontmatter.verbs.confirm = ["walk"]
+    walk = ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 0.2})
+    loop = AgentLoop(
+        RunConfig(
+            glot=glot,
+            provider=FakeProvider(script=[walk]),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+            confirm=confirm,
+        )
+    )
+    run = asyncio.ensure_future(loop.run())
+    await asyncio.wait({asyncio.ensure_future(asked.wait())}, timeout=30.0)
+    assert asked.is_set(), "the walk's question was never put"
+    said = {"heartbeat": "the body stopped answering its heartbeat", "stop_reason": "a newer line"}
+    if why == "heartbeat":
+        loop.heartbeat.failure = TransportError(said[why])
+    elif why == "stop_reason":
+        loop.stop_reason = said[why]
+    loop.executor.abort.set()
+    await asyncio.wait({run}, timeout=30.0)
+    assert run.done(), "the run did not end on the abort"
+    result = run.result()
+    assert result.outcome == "aborted", result.reason
+    assert result.reason == said.get(why, KILL_SWITCH), result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    walks = [
+        (e["gate"], e["outcome"]) for e in events if e["kind"] == "gate" and e["name"] == "walk"
+    ]
+    assert walks == [("abort", "refused")], walks
+    assert not [e for e in events if e["kind"] == "prompt"]
+
+
 # ── the clocks, the money and the name a run was given ──────────────────────────────────
 #
 # A transcript counted tokens from the first release and never said what they cost, and the
@@ -7030,6 +7175,38 @@ async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(
     assert result.outcome == "success", result.reason
     assert result.llm_calls == len(GOLDEN_HELLO) and result.summary["llm_retries"] == 3
     assert instant_waits == [5.0, 15.0, 5.0], "each turn starts its own schedule"
+
+
+async def test_the_verb_the_last_allowed_llm_call_chose_runs(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """Every verb's step ran the whole budget check, `max_llm_calls` included, so once the loop
+    had charged the last allowed LLM call, the verb that very call chose was refused with
+    `max_llm_calls (3) reached`: the call was billed and nothing could come of it. The LLM-call
+    budget is read where a call is about to be charged and nowhere else, so the walk the third
+    call of three chose goes out, and the run ends on its budget when it would make a fourth."""
+    script = [
+        ToolCall(name="quack", arguments={"text": "hello!"}),
+        ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 1.0}),
+        ToolCall(name="declare_success", arguments={"reason": "walked"}),
+    ]
+    glot = copy.deepcopy(hello_glot)
+    glot.frontmatter.budgets.max_llm_calls = 3  # the verdict, the quack and the walk
+    transport = MockTransport()
+    result = await run_glot(
+        RunConfig(
+            glot=glot,
+            provider=FakeProvider(script=script),
+            transport=transport,
+            runs_dir=tmp_path,
+        )
+    )
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    refused = [e for e in events if e["kind"] == "gate" and e.get("gate") == "budget"]
+    assert not refused, refused
+    assert transport.intents_of("move"), "the walk the last allowed call chose never went out"
+    assert result.llm_calls == 3
+    assert result.outcome == "budget" and result.reason == "max_llm_calls (3) reached"
 
 
 @pytest.mark.parametrize(

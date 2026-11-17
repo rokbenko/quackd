@@ -32,8 +32,11 @@ from roboglot.verbs.aliases import canonical
 
 GLOT_SPEC_VERSION = 4
 
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-_ROBOT_SPEC_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?$")
+# `\Z`, not `$`, which matches before a final newline: `"kick\n"` passed as a verb name, a file
+# that allowed and confirmed it read as `confirm: kick`, and `kick` ran with no question. The
+# refusals still quote the pattern as `$`, the words a bad name has always been refused in.
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}\Z")
+_ROBOT_SPEC_RE = re.compile(r"^[a-z][a-z0-9_]*(:[a-z][a-z0-9_]*)?\Z")
 
 # How big a team may be. Each member is its own body on its own clock, so the bound is what a
 # person can read in one terminal and what N concurrent pilots cost in tokens (ADR-0034).

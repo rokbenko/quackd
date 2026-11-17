@@ -287,7 +287,7 @@ network.
   its fold, as a second Ctrl-C does. In a chat every Stop brakes, and the session goes on.
 - **Stop** stops every goal and chat the page has going, on every robot.
 - **A question nobody answers** within five minutes is taken back, and the run records it as
-  unanswered, never as a no. A Stop takes it back too.
+  unanswered, never as a no. A Stop takes it back too, and the run ends on the Stop.
 - **Closing the tab, refreshing, or locking the phone** leaves the run going. The Goal and Chat
   screens find it again.
 - **A chat no Chat screen has shown for fifteen minutes** is ended in order: the robot stopped,
