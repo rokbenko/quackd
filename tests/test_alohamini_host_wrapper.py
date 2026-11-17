@@ -11,9 +11,12 @@ tests drive its two pure functions with fakes, and prove it imports with Roboglo
 from __future__ import annotations
 
 import importlib.util
+import logging
 import subprocess
 import sys
 from types import ModuleType
+
+import pytest
 
 from tests.conftest import REPO
 
@@ -89,6 +92,106 @@ def test_a_robot_with_no_bus_at_all_reports_failure_rather_than_raising() -> Non
     assert module.enable_arm_torque(_Bare()) is False
 
 
+class _OrderedBus:
+    """A bus that writes down when its torque came on, in one list with the lift's zero."""
+
+    def __init__(self, name: str, calls: list[str], *, fails: bool = False) -> None:
+        self.name, self.calls, self.fails = name, calls, fails
+
+    def enable_torque(self) -> None:
+        if self.fails:  # one lost packet, and upstream retries none on this bus
+            self.calls.append(f"{self.name} raised")
+            raise ConnectionError(f"there is no status packet on the {self.name}")
+        self.calls.append(f"{self.name} torque")
+
+
+class _OrderedLift:
+    def __init__(self, calls: list[str], *, fails: bool = False) -> None:
+        self.calls, self.fails = calls, fails
+
+    def stop(self) -> None:
+        if self.fails:
+            self.calls.append("lift zero raised")
+            raise ConnectionError("there is no status packet on the left_bus")
+        self.calls.append("lift zero")
+
+
+class _OrderedRobot:
+    """`_FakeRobot`, with every call written down in the order it happened."""
+
+    is_calibrated = True
+
+    def __init__(
+        self,
+        *,
+        left: bool = True,
+        lift: bool = True,
+        right_fails: bool = False,
+        lift_fails: bool = False,
+    ) -> None:
+        self.calls: list[str] = []
+        self.left_bus = _OrderedBus("left_bus", self.calls) if left else None
+        self.right_bus = _OrderedBus("right_bus", self.calls, fails=right_fails)
+        self.lift = _OrderedLift(self.calls, fails=lift_fails) if lift else None
+
+    def connect(self) -> str:
+        return "connected"
+
+    def get_observation(self) -> dict[str, float]:
+        return {}
+
+
+def test_the_lift_is_zeroed_before_any_torque_and_the_log_says_only_what_was_done(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """`home()` leaves full-speed descent in the lift's Goal_Velocity, and the lift shares the
+    left bus. The wrapper energised both buses and only then wrote the lift's zero, so a raise
+    from the right bus skipped the zero altogether, and with no left bus it returned before
+    the zero while the log said "lift stopped". The zero must go out before any torque on
+    every path, nothing may be energised when the zero itself fails, and the log says only
+    what was done.
+
+    What this cannot show: what the lift's register holds on a real robot when torque comes
+    on, or that `enable_torque()` with no argument reaches the lift's motor. Both rest on the
+    notes in the adapter's `upstream_api.py`, not on a robot."""
+    module = load_wrapper()
+
+    robot = _OrderedRobot()
+    assert module.enable_arm_torque(robot) is True
+    assert robot.calls == ["lift zero", "left_bus torque", "right_bus torque"]
+
+    robot = _OrderedRobot(right_fails=True)
+    with pytest.raises(ConnectionError):
+        module.enable_arm_torque(robot)
+    assert robot.calls == ["lift zero", "left_bus torque", "right_bus raised"]
+
+    robot = _OrderedRobot(lift_fails=True)
+    with pytest.raises(ConnectionError):
+        module.enable_arm_torque(robot)
+    assert robot.calls == ["lift zero raised"], "a failed zero must energise nothing"
+
+    def connect_says(**shape: bool) -> tuple[list[str], list[str]]:
+        cls = type("_Robot", (_OrderedRobot,), {})
+        module.install(cls)
+        robot = cls(**shape)
+        caplog.clear()
+        with caplog.at_level(logging.INFO):
+            robot.connect()
+        return robot.calls, [r.getMessage() for r in caplog.records]
+
+    assert connect_says() == (
+        ["lift zero", "left_bus torque", "right_bus torque"],
+        ["Roboglot host: arm torque enabled, lift stopped"],
+    ), "the line a working robot logs is unchanged"
+    assert connect_says(left=False) == (
+        ["lift zero"],
+        ["Roboglot host: arm torque NOT enabled, lift stopped"],
+    )
+    calls, said = connect_says(lift=False)
+    assert calls == ["left_bus torque", "right_bus torque"]
+    assert len(said) == 1 and "lift stopped" not in said[0], said
+
+
 def test_every_observation_carries_the_three_fields_roboglot_looks_for() -> None:
     module = load_wrapper()
     robot = _FakeRobot()
@@ -140,6 +243,19 @@ def test_it_says_what_to_install_when_upstream_is_absent() -> None:
     result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
     assert result.returncode == 2
     assert "lerobot_alohamini" in result.stderr
+
+
+def test_it_starts_under_python_dash_oo_which_strips_its_docstring() -> None:
+    """`--help` was built from `__doc__.splitlines()`, and `python -OO` strips docstrings, so
+    `__doc__` was None and the wrapper died on an AttributeError before it had parsed a flag.
+    The description it shows is the docstring's first line still, spelled out once."""
+    result = subprocess.run(
+        [sys.executable, "-OO", str(WRAPPER), "--help"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    module = load_wrapper()
+    assert module.__doc__ is not None and module.__doc__.splitlines()[0] == module.DESCRIPTION
+    assert module.DESCRIPTION in " ".join(result.stdout.split())
 
 
 def test_the_wrapper_never_imports_roboglot() -> None:

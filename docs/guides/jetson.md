@@ -255,7 +255,8 @@ naming an LLM server's exact address ([guides/local-llms.md](local-llms.md) has 
 Binding the daemon wide instead (`--bind 0.0.0.0`, with the token kept) lets
 `--host jetson.local` reach it with no tunnel. That is for a network you trust: the daemon is
 plain HTTP, so the token and every frame cross that network in the clear, and anybody who can
-reach `POST /detect` can keep the board's GPU busy ([SECURITY.md](../../SECURITY.md)).
+reach `POST /detect` can keep the board's GPU busy ([SECURITY.md](../../SECURITY.md)). With no
+token it refuses to start there at all, unless `--allow-no-token` says that is on purpose.
 
 ## Which LLM fits which board
 

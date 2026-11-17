@@ -11,7 +11,12 @@ set -euo pipefail
 RUNTIME_DIR="${RUNTIME_DIR:-$HOME/Open_Duck_Mini_Runtime}"
 VENV="${VENV:-$HOME/.virtualenvs/open-duck-mini-runtime}"
 PORT_DEV="${PORT_DEV:-/dev/ttyACM0}"
+# The token's own directory, which this script makes and puts right on every run. A TOKEN_FILE
+# anywhere else is in a directory this script never changes: it checks that one is safe for a
+# secret and stops, saying what to run, when it is not (see secret_dir_or_die).
+TOKEN_DIR=/etc/roboglot
 TOKEN_FILE="${TOKEN_FILE:-/etc/roboglot/duck-bridge.token}"
+TOKEN_FILE_DIR="$(dirname -- "$TOKEN_FILE")"
 DUCK_CONFIG="${DUCK_CONFIG:-$HOME/duck_config.json}"
 # The walk policy, from the Apache-2.0 design repo. Roboglot does not ship it, and the unit
 # cannot start without it, so it is checked here rather than discovered at first boot.
@@ -25,6 +30,93 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 say() { printf '\n== %s\n' "$1"; }
 warn() { printf 'warning: %s\n' "$1"; }
 die() { printf '\nstopped: %s\n' "$1" >&2; exit 1; }
+
+# Before anything is done. The path is written into the unit by sed, so it is plain
+# characters only, and it names a file, not the directory itself or the one above it.
+case "$TOKEN_FILE" in
+  /*) ;;
+  *) die "TOKEN_FILE=$TOKEN_FILE is not an absolute path. Give the whole path from /." ;;
+esac
+case "$TOKEN_FILE" in
+  *[!A-Za-z0-9._/-]* | */. | */.. | */) die "TOKEN_FILE=$TOKEN_FILE is not a plain file name.
+  Use letters, digits, dot, dash, underscore and slash." ;;
+esac
+
+# What is already at TOKEN_FILE has to be a regular file, and no symlink, which this script never
+# follows. The directory it is in has been checked first (secret_dir_or_die, or the script's
+# own), so nobody but root can swap the file for something else after this looks.
+token_file_is_a_file_or_die() {
+  if sudo test -L "$TOKEN_FILE" || ! sudo test -f "$TOKEN_FILE"; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there and is not a regular file, or is a symlink,
+  which this script never follows. Name a path that does not exist yet, or leave TOKEN_FILE
+  unset for $TOKEN_DIR/duck-bridge.token."
+  fi
+}
+
+# A token at the script's own default path is one it wrote in an earlier run, so it may put its
+# group and mode right, as it always has: that is how an install from before the group fix is
+# repaired. It knows it by the path, which is its own, and checks the shape as well: root's, one
+# line of 64 hexadecimal characters, what openssl rand -hex 32 writes. The shape alone proves
+# nothing, since the MOSS bridge's and the Jetson daemon's READMEs write their tokens the same.
+token_file_is_ours_or_die() {
+  local owner group mode
+  token_file_is_a_file_or_die
+  read -r owner group mode < <(sudo stat -c '%U %G %a' "$TOKEN_FILE")
+  if [ "$owner" != root ] || [ "$(sudo grep -c '' "$TOKEN_FILE")" != 1 ] \
+      || ! sudo grep -qxE '[0-9a-f]{64}' "$TOKEN_FILE"; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there and is not a token this script wrote (a file
+  of root's holding one line of 64 hexadecimal characters), so it changes neither its group
+  nor its mode. If you mean to replace it with a new token, do it yourself: openssl rand -hex
+  32 | sudo install -m 0640 -o root -g $SVC_USER /dev/stdin $TOKEN_FILE, then run this again."
+  fi
+}
+
+# A file already at a path the person chose is not this script's to change, whatever it holds:
+# it may be another daemon's token. It is used as it is when it is already root's, the service
+# user's group's and mode 0640, which is what the bridge needs, and otherwise the script stops
+# and says what to run.
+token_file_is_set_right_or_die() {
+  local owner group mode
+  token_file_is_a_file_or_die
+  read -r owner group mode < <(sudo stat -c '%U %G %a' "$TOKEN_FILE")
+  if [ "$owner" != root ] || [ "$group" != "$SVC_USER" ] || [ "$mode" != 640 ]; then
+    die "TOKEN_FILE=$TOKEN_FILE is already there, as $owner:$group mode $mode, and this script
+  changes no file at a path it did not choose: it may be another daemon's token. If it is the
+  token you mean the bridge to use, run sudo chown root:$SVC_USER $TOKEN_FILE and sudo chmod
+  0640 $TOKEN_FILE yourself and this again; or name a path that does not exist yet, or leave
+  TOKEN_FILE unset."
+  fi
+}
+
+# What makes a directory that is not this script's own safe to hold the token. Only the
+# directory itself is checked, not the ones above it: it exists and is no symlink, it belongs to
+# root, neither its group nor anyone else may write in it (so nobody but root can replace the
+# token, or swap it for a symlink between this script's look at it and its change to it), and
+# the service user can search it (so the bridge can reach the token). The script never changes
+# such a directory: it stops, and says what to run.
+secret_dir_or_die() {  # $1 = the directory TOKEN_FILE is in
+  local dir="$1" owner mode
+  if ! sudo test -d "$dir" || sudo test -L "$dir"; then
+    die "$dir, where TOKEN_FILE is, is not a directory, or is a symlink. Make one with
+  install -d (sudo install -d -m 0750 -o root -g $SVC_USER $dir), or leave TOKEN_FILE unset
+  for $TOKEN_DIR/duck-bridge.token, in a directory this script makes and keeps right itself."
+  fi
+  read -r owner mode < <(sudo stat -c '%U %a' "$dir")
+  if [ "$owner" != root ]; then
+    die "$dir, where TOKEN_FILE is, belongs to $owner, who could replace the token. This
+  script does not change a directory it did not make: run sudo chown root $dir yourself, or
+  leave TOKEN_FILE unset."
+  fi
+  if (( (8#$mode & 8#022) != 0 )); then
+    die "$dir, where TOKEN_FILE is, can be written by its group or by anyone (mode $mode),
+  so they could replace the token. This script does not change a directory it did not make:
+  run sudo chmod go-w $dir yourself, or leave TOKEN_FILE unset."
+  fi
+  sudo -u "$SVC_USER" test -x "$dir" || die "$SVC_USER cannot search $dir, where TOKEN_FILE
+  is, so the bridge could not reach the token. This script does not change a directory it did
+  not make: give $SVC_USER search on it yourself, for instance with sudo chgrp $SVC_USER $dir
+  and sudo chmod g+x $dir, or leave TOKEN_FILE unset."
+}
 
 say "checking the robot's own runtime"
 [ -d "$RUNTIME_DIR" ] || die "no runtime at $RUNTIME_DIR. Install it first, from
@@ -129,20 +221,38 @@ say "generating a token"
 # `[ ! -f ]` ran unprivileged against a root-only directory, so it was fail-open: every
 # re-run of this script silently rotated a live token and locked out the laptop that had the
 # old one. `sudo test -f` actually looks.
-if ! sudo test -f "$TOKEN_FILE"; then
-  sudo install -d -m 0750 "$(dirname "$TOKEN_FILE")"
-  openssl rand -hex 32 | sudo tee "$TOKEN_FILE" >/dev/null
-  printf 'wrote a new token to %s\n' "$TOKEN_FILE"
-else
-  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
-fi
 # The service has to be able to read it. Installed 0600 root:root inside a 0700 root
 # directory, it could not: os.path.exists() swallowed the EACCES, the bridge started with no
 # token, and the handshake then accepted every client while four places in the docs promised
-# otherwise. Group-read for the service user, and verified rather than assumed.
-sudo chgrp "$SVC_USER" "$(dirname "$TOKEN_FILE")" "$TOKEN_FILE"
-sudo chmod 0750 "$(dirname "$TOKEN_FILE")"
-sudo chmod 0640 "$TOKEN_FILE"
+# otherwise. So this script's own directory is made, and put right on every run, root's and
+# group-owned by the service user, which can then search it and nobody else can. Any other
+# directory is not this script's to change, and is only checked.
+if [ "$TOKEN_FILE_DIR" = "$TOKEN_DIR" ]; then
+  sudo install -d -m 0750 "$TOKEN_DIR"
+  sudo chown root:"$SVC_USER" "$TOKEN_DIR"
+  sudo chmod 0750 "$TOKEN_DIR"
+else
+  secret_dir_or_die "$TOKEN_FILE_DIR"
+fi
+if [ "$TOKEN_FILE" = "$TOKEN_DIR/duck-bridge.token" ] \
+    && { sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; }; then
+  # its own default path: the token an earlier run wrote, put right for the service user.
+  # -h, so a symlink is never followed, though none can be there by now.
+  token_file_is_ours_or_die
+  sudo chgrp -h "$SVC_USER" "$TOKEN_FILE"
+  sudo chmod 0640 "$TOKEN_FILE"
+  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
+elif sudo test -e "$TOKEN_FILE" || sudo test -L "$TOKEN_FILE"; then
+  # a path of the person's choosing: used as it is, never changed
+  token_file_is_set_right_or_die
+  printf 'keeping the existing token at %s\n' "$TOKEN_FILE"
+else
+  # created with its owner, group and mode as the token is written, so it is never readable
+  # by anyone else, not even for a moment under the umask
+  openssl rand -hex 32 | sudo install -m 0640 -o root -g "$SVC_USER" /dev/stdin "$TOKEN_FILE"
+  printf 'wrote a new token to %s\n' "$TOKEN_FILE"
+fi
+# Group-read for the service user, verified rather than assumed.
 sudo -u "$SVC_USER" test -r "$TOKEN_FILE" || die "$SVC_USER still cannot read $TOKEN_FILE.
   The bridge refuses to start rather than run with authentication silently disabled, so fix
   the ownership before starting it."
@@ -161,12 +271,19 @@ substitute() {  # $1 = source unit, $2 = destination
       -e "s|/home/pi/.virtualenvs/open-duck-mini-runtime|$VENV|g" \
       -e "s|/home/pi/Open_Duck_Mini_Runtime|$RUNTIME_DIR|g" \
       -e "s|/home/pi/BEST_WALK_ONNX_2.onnx|$ONNX_PATH|g" \
+      -e "s|--bind 127.0.0.1 --deadman-ms 300|& --token-file $TOKEN_FILE|" \
       "$1" | sudo tee "$2" >/dev/null
   sudo chmod 0644 "$2"
 }
 
 substitute "$HERE/roboglot-duck-bridge.service" /etc/systemd/system/roboglot-duck-bridge.service
 substitute "$HERE/roboglot-duck-camd.service" /etc/systemd/system/roboglot-duck-camd.service
+# The token written above is the token the bridge reads only if the unit names it. Without
+# this a TOKEN_FILE set for this script left the bridge reading its default path, finding no
+# file, and admitting any client.
+sudo grep -q -- "--token-file $TOKEN_FILE" /etc/systemd/system/roboglot-duck-bridge.service \
+  || die "could not add --token-file $TOKEN_FILE to the bridge's unit. Add it to the
+  ExecStart by hand before starting anything, or the bridge will not read your token."
 
 # The snapshot URL is what gives this duck observe, go_to, search_scan and approach_and, so
 # it goes in only when a camera was actually proved to work above. A duck that cannot serve
