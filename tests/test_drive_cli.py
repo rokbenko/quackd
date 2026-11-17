@@ -638,3 +638,31 @@ async def test_decision_frames_are_read_from_the_command_line_alone(
     (session,) = kept
     assert session.settings.decision_frames is False
     assert "watch" not in session.goal_verbs
+
+
+async def test_what_the_close_says_is_in_the_drive_record_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The robot's close leaves its own line (`close_note`): a stop that did not land on a
+    base, torque left on an arm. A run writes it in its record, and drive's close gave it to
+    the logger alone, a bare line on stderr, so the session's record and the page never had it.
+    It is written in the record now, once, before the session's end, and the screen, which has
+    the logger's line, is not told it twice."""
+    from roboglot_microduck import MicroduckAdapter
+
+    note = "at the close, the stop is not known to have reached the body"
+    closed = MicroduckAdapter.close
+
+    async def close(self: Any) -> None:
+        await closed(self)
+        self.close_note = note
+
+    monkeypatch.setattr(MicroduckAdapter, "close", close)
+    said: list[str] = []
+    args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
+    run_dir = await run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
+    assert not any(note in line for line in said), said
+    events = Transcript.read(run_dir / "transcript.jsonl")
+    notes = [e for e in events if e["kind"] == "note" and e.get("text") == note]
+    assert len(notes) == 1, [e["kind"] for e in events]
+    assert events.index(notes[0]) < next(i for i, e in enumerate(events) if e["kind"] == "run_end")

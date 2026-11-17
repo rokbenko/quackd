@@ -244,8 +244,8 @@ How `move_joints` works underneath:
   queue cleared, the job goes on, and the goal ends CANCELED with -500300. With no goal running
   there is nothing to send, since every one of these controllers holds its last point. A stop
   while the goal still runs sends its cancel again, since a cancel the bridge lost is answered by
-  nobody. When the socket is gone or no answer came, the stop says it was not delivered, and to
-  use the hardware switch.
+  nobody. When the socket is gone or no answer came, the stop says it was not delivered, and that
+  the arm may still be going on to the end of its move.
 - **The heartbeat** fails, and the run ends with a stop, when the socket is down, when no new
   `/joint_states` has come for five of the stream's own periods, half a second at least, and when
   the driver stops the arm itself while Roboglot watches: a UR safety mode other than NORMAL or

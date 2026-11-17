@@ -2725,11 +2725,14 @@ class JsonRpcUnixTransport:
             await self.request(up.ROBOT_STOP.name)
             self.stop_error = None
         except Exception as e:  # nothing the socket does gets out of here
-            self.stop_error = str(e) or type(e).__name__
+            why = str(e) or type(e).__name__
+            # the body's own word on what stops it now (`BodyWords.no_stop`), which the core
+            # `stop` verb no longer guesses at for every body
+            self.stop_error = f"{why}. {self.body.words.no_stop}"
             log.warning(
                 "stop could not be delivered to %s (%s). %s",
                 self.address,
-                self.stop_error,
+                why,
                 self.body.words.no_stop,
             )
         finally:

@@ -108,6 +108,50 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   was, and an empty token counts as none. The camera server has no token at all, so on a wide
   address it starts only with the flag. A unit or a script that binds one of them wide with no
   token needs a token or the flag now.
+- **Nobody is asked about a call that would be refused.** The confirm question came before the
+  segment gate, the budget, the preconditions and the battery rule, so a person could be asked,
+  say yes, and see the call refused for a spent step, a spent `policy.total_s`, a segment already
+  running, a fallen body or a flat battery, and the record kept a `prompt` row and an allowed
+  `confirm` gate for a verb that never ran. Every gate that can refuse a call now runs before the
+  question, on a reading of the body's state taken for it, and such a call is refused with no
+  question put; a state read that fails there fails the call as it always has, and nobody is
+  asked. A call a person agrees to is checked again after the answer, on a new reading, for what
+  can change while the question is open: the steps and minutes, a segment started meanwhile, a
+  pause, a newer command, the abort, the verdict, a stop, the battery and the preconditions. A
+  refusal there keeps its own reason, and its gate record adds `after_confirm` with the confirm
+  gate's reason, so the record says the call was agreed to before it was refused, and a call that
+  ends after the yes on a state read that failed, or on a cancel, before it ran, carries it on its
+  `verb_end`. A call that puts a question reads the body's state twice now, once before it and
+  once after, and every other call once, as before. A confirmed call is still charged its step
+  only after the answer, so one somebody declines, or one refused before the question, costs
+  none. `roboglot drive`, which asks the person itself while it routes a line, asks the executor
+  first now, through the one function the executor's own calls use for these gates, and a call
+  one of them would refuse ends `refused` in the executor's words with nobody asked; what changes
+  while its question is open is checked in the call itself, and marked the same way. The README
+  and `docs/concepts/safety.md` list the new order.
+- **A call with invalid arguments counts as a failure of its verb.** A call the executor refused
+  for its arguments returned before it was recorded, so a task's `Same verb fails N times in a
+  row` never saw it, and a pilot that sent the same speed past the clamp again and again went on
+  until `max_llm_calls` or `max_minutes` ended the run. Such a call is a recorded failure now: the
+  rule counts it and ends the run on the Nth in a row. It still uses no step, and the pilot is
+  told what it was told before, word for word. A pilot's call counts, in a run, a drive goal and
+  over MCP. A line a person typed in `roboglot drive`, or piped to it, is recorded as the failure
+  it is and does not count, since a person who mistypes three times has not asked for the
+  session to end. A verb outside the allowlist and an unknown verb are refused as before, and
+  neither counts.
+- **The verb the last allowed LLM call chose runs.** Each verb's step ran the whole budget check,
+  `max_llm_calls` included, so once the loop had charged the last call the task allows, the verb
+  that call chose was refused with `max_llm_calls (N) reached`: the call was billed and nothing
+  came of it, and a stepper's turn after it was refused the same way though it charges no call.
+  A verb is held to `max_steps` and `max_minutes` now, and `max_llm_calls` is read where the loop
+  is about to make a call, so the last allowed call's verb runs and the run ends on the same
+  sentence when it would make one call more. Every run that ends on this budget runs one verb
+  more than it did. A `--controller vla` run whose `max_llm_calls` is its verdict and one turn per
+  instruction runs every segment, where its last one was confirmed and then refused. With the
+  stepper on, whose turns charge no LLM call, its turns go on after the last allowed call, each a
+  decision LLM request and a verb, until its streak hands the turn back (eight in a row, or half
+  of `max_steps`, whichever is less) or the steps or minutes run out, and the run then ends on
+  `max_llm_calls`, where the first of those verbs used to be refused.
 - **No robot is the default any more, and every adapter's first backend is its mock.** A command
   that names no robot, on a machine with several adapters installed, refuses and lists them, where
   with the Microduck among them it used to take `microduck:sim2d`, the 2D simulator, which is gone
@@ -434,6 +478,56 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   nearer than 0.4, distances no detector can report for a person; it asks for 2 m now, takes the
   distance a refusal names, and treats the frame's edge cutting the person as the end of a leg,
   and its hash in `tests/golden/glot_hashes.json` is locked again to match.
+- **A dry run sends nothing, whatever a verb says of itself.** `--dry-run` connects the real body
+  and let any verb flagged `read_only` run for real, and the flag is the verb's own word, so a
+  third party's verb that carried it and sent an intent moved the body in a run that promised to
+  send nothing, and the close then took the run for one that had moved nothing. On a dry run the
+  transport a verb is handed lets through its reads, `get_state`, `get_frame`, `get_frames`,
+  `introspect`, `now` and `sleep`, and plain data, numbers, strings, booleans, None, enums and
+  containers and dataclasses of nothing else, a mutable one as a copy, and nothing else: an
+  intent, a stop intent, a stop, any other method of the transport, the arm's own `go_to_rest`,
+  `let_go` and `take_hold` among them, or any other value, the adapter's own backend behind its
+  public `transport` among them, is refused before it reaches the body, recorded as a `dry_run`
+  gate `refused`, and fails the verb with `[dry-run] <verb> tried to send <what>, and a dry run
+  sends nothing to the body`. The verbs Roboglot ships with the flag, `observe`, `report_state`,
+  `map` and `introspect`, read only those and run on a dry run exactly as before, on every body. The stops Roboglot sends of
+  its own accord, after a verb it ended and as the run ends, go out as they did, and
+  `docs/concepts/safety.md` says why. An adapter's verb that needs another read on a dry run has
+  to say so, as `docs/adapters/writing-an-adapter.md` describes.
+- **An assessment refused for its shape withdraws the verdict before it.** A pilot that changed its
+  mind in words the vocabulary refuses, an infeasible with units in a need (`"payload_kg": "2
+  kg"`), a need outside the datasheet's words or a `human` field, was told its call was invalid
+  and went on moving the body on the feasible it had recorded before. On both surfaces, `run` and
+  the MCP server, such a refusal now withdraws the standing verdict, as a refused feasible already
+  did, so the next verb that moves the body is refused at the `verdict` gate until the pilot
+  assesses again, and the refusal ends `the verdict recorded before this one is withdrawn, so
+  nothing that moves the body runs until you assess again` where a verdict stood.
+- **A need written as NaN is refused, and never read as met.** Python's `json` parses `NaN`, and
+  every comparison with one is false, so a verdict's `needs.payload_kg: NaN` validated, read as met
+  on every body that publishes the figure, and a feasible with it passed the body's own datasheet.
+  Such a need is refused now with `needs.payload_kg must be a number (a minimum)`, as a word in its
+  place is, and the list of robots that could take a task never counts one as met. An infinite
+  minimum is accepted as before, since no body meets it and every sheet refuses a feasible that
+  names one.
+- **A name that ends in a newline is refused.** The patterns a task file, a manifest and the
+  robot registry check their names against ended in `$`, which matches before a final newline,
+  so `"kick\n"` was a valid verb name: a file that allowed and confirmed it read as
+  `confirm: kick`, and `kick` ran with no question. A task called `"hello\n"` passed too, and its
+  run folder took the name, which on Windows raised before anything connected, and so did a
+  registered robot or team called `"arm-01\n"`, which read as `arm-01` wherever it was printed. A
+  verb's name, the task's name, a robot's spec, a member's name, a manifest's id and a registered
+  robot's or team's name now end where their pattern does, and each is refused in the words a bad
+  name already got.
+- **A question the run's stop took back ends the run on the stop.** When the run's abort was set
+  while the question about an `uncertain` verdict still waited, a drive goal's question among
+  them, the question was taken back and recorded as a prompt that raised, and the run ended
+  `the pilot was unsure (...) and the question went unanswered: the prompt raised
+  QuestionWithdrawn`, with the failed heartbeat, the drive session's stop or the kill switch that
+  had set the abort nowhere in its reason. It ends `aborted` on that reason now, as the question
+  about what the arm did and the fall-blind acknowledgement already did. A confirm question taken
+  back the same way ended its call denied, `nobody answered whether to run ...`, and it ends as
+  the abort ends any call now, `run aborted` at the `abort` gate, with the run on that reason
+  too.
 - **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
   pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
   twist nor zero it once its deadman window had passed, and the body kept walking on its last
@@ -629,6 +723,108 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   centimetres either side of the half-metre bound: a body that walks exactly what it is told
   passed by a fraction of a millimetre. `tests/test_fake_provider.py` walks a true one now and
   counts four legs.
+- **A verb whose own stop did not reach the body no longer says it ended well.** Every core verb
+  that moves the body ends on a stop, and of those stops only the `stop` verb's read whether it
+  had landed, so a body whose link went in the last slice of a walk took every twist and not the
+  stop, and `move` said `walked`, `go_to` that it reached its target and `go_to_place` that it
+  arrived, while a body with no deadman drove on; `search_scan` turned on to its next view as if
+  its last turn had ended. Every stop the core verbs send goes through one helper now, which
+  reads the transport's word on it, and a verb whose stop did not land fails, keeping what it
+  would have said and adding, for instance, `But move's stop could not be delivered, so the body
+  may still be moving:` and the reason, or, where the transport says its stop went out and only
+  its arrival is not known, `went out but is not known to have reached the body`. A scan or a walk
+  ends at the first stop that did not land, and so do an AlohaMini's `lift` that runs out of time
+  and its arm verbs a stop from beside them ended. Such a failure is no longer passed over by
+  `abort_when`'s count of failures in a row as the brake working. With its stops landing, every
+  verb says what it said before. The executor says the same of the stop it owes a verb that timed
+  out or raised, or that an abort, a cancel, a pause or a newer command ended, in the same words,
+  and a stop that went out is recorded as sent: its row is `accepted`, with `stop_unconfirmed:
+  true` beside the reason, which `roboglot log` draws as a warning of its own, where
+  `accepted: false`, drawn `stop REFUSED`, is a stop refused or never sent.
+- **`stop` says what it knows of a stop that did not land, and advises nothing it cannot know is
+  safe.** It ended with `If this robot has a deadman it is what stops the legs now; otherwise use
+  the hardware switch.` for every body, and on a body that stands cutting the power is a fall, and
+  on an arm torque off drops it. It says `stop could not be delivered, so the body may still be
+  moving:` and the reason now, or `stop went out but is not known to have reached the body` where
+  that is all the transport knows, and a body that has something true to add says it in its own
+  reason: a Microduck and a Huebot name their deadman as their body files have it, and an Open Duck
+  its bridge's, where the bridge said it keeps one.
+- **A drive session's record has what its robot's close said.** The close's own line, torque
+  left on an arm, went to the log alone, a bare line on stderr, and the session's record and the
+  page never had it. It is written in the record as a `note` now, which `roboglot log` replays and
+  the page shows.
+- **A rosbridge base whose link has dropped or gone quiet is said to be, and its stops to have
+  gone nowhere.** roslibpy holds a publish while its socket is down and raises nothing, and the
+  stop swallowed whatever happened, so with the link gone `move` said it walked, `stop` said
+  `stopped (velocity zeroed)`, an abort said a stop was sent, and the base, which has no deadman,
+  kept its last Twist. A move over a dropped link is refused now (`is not connected, so no Twist
+  is sent`), a stop and an abort say that the zero Twist was not sent, and a run says so after a
+  close that could not send it. A link that dies without a close kept the socket reading up for
+  minutes, and the heartbeat read nothing else: it fails now when the link has given no sign of
+  life for two beats in a row, a sign being any message on `/odom` or the camera, within five of
+  the pace they keep now (the slowest of their last five gaps, no slower than half a hertz, and
+  never the gaps of messages a hiccup held and let through together), a second at least and ten
+  at most, or any answer from the bridge, a failed one included. A
+  stream gone quiet asks the bridge for its topic list in the background, and no beat waits for
+  the answer, so a dead link under a 10 Hz `/odom` is noticed within about two seconds, with
+  `rosapi` or without. A stream that stops while the bridge runs on keeps its run only while the
+  bridge answers each ask before the next beat, half a second; a slower answer leaves the next
+  beat silent, and the run ends as on a dead link, two seconds after a 10 Hz `/odom` went quiet.
+  Where no stream vouches, as on a base with no `/odom`, the heartbeat asks
+  the bridge, gives the request two seconds and asks again, and notices a dead link within six
+  and a half seconds. A stream is not judged before its pace is known, so a base whose `/odom` is
+  slow is not cut off between its first messages. A stop on a link with a stream listens after
+  its zero Twist for two of the stream's pace, a second at least and four at most, for a message
+  or an answer, and with nothing heard says its zero is not known to have reached the base. Where
+  `/odom` had a pace and has gone quiet, only `/odom` vouches for the base, since a base's
+  driver can die while the bridge runs on: a stop that hears the bridge and no `/odom` says what
+  it heard and when, that the zero reached the bridge only where its own request, sent after the
+  zero, was answered, and that the base is not known to have taken the zero. A bridge
+  that gave no answer at connect and a base with no `/odom` are still driven, watched by the
+  socket alone, as the page says, with a table of how long a dead link can go unnoticed on each
+  kind of base.
+- **A rosbridge base is driven only on a command topic the bridge lists as a Twist, and is told
+  which one.** The topic was never held against the topic list, so a base on another topic, or
+  one taking TwistStamped, got nothing while `move` said it walked. A topic the list does not
+  name, or names as another type, is refused now with what the bridge listed, as in `the bridge
+  lists /cmd_vel as geometry_msgs/msg/TwistStamped, and Roboglot publishes only
+  geometry_msgs/msg/Twist`, and where the list names more than one Twist topic the datasheet
+  says which is driven. The list is read again by `introspect` and before a move is refused, so a
+  base driver that comes up after the connect is driven once the bridge lists it. A bridge with no
+  `rosapi` drives as before.
+- **A rosbridge camera that stops is no longer steered by.** The newest image was handed out
+  however old it was, so `go_to` steered at a frozen picture for as long as its timeout. An image
+  older than four of the stream's own periods, two seconds at least, the Microduck's rule for the
+  same hazard, is not handed out, and the verb that wanted it says `the newest image on` the topic
+  and how old it is.
+- **An XLeRobot's or an AlohaMini's stop to a host that has gone silent no longer reads as
+  stopped.** Their command sockets take a send whether anything reads it or not, so a stop to a
+  host stuck in a cycle said `stopped (velocity zeroed)` while its wheels kept turning, and the
+  XLeRobot's heartbeat said its watchdog `has already stopped the base`, though the watchdog runs
+  in the loop that was stuck. A stop when no observation has come within the host's watchdog
+  window says now that it went out and is `not known to have reached it`, and both say what the
+  watchdog does only `if its loop still runs`. An AlohaMini's stop asks the host once before it
+  says so, since a host that nothing asked for a while is not a silent one. A stop that could
+  not be sent says so too, and the
+  close's own stop, which nothing read after the close, is said by the run after it, beginning
+  `at the close,`, as a rosbridge base's is, and `robot list --probe` says such a line as the stop
+  it is, not as torque left on.
+- **An AlohaMini refuses an arm goal, a gripper goal or a lift height outside its range.**
+  `move_joints` checked only that a goal named a joint, so 250, an infinity or a NaN went out as
+  the goal, and a gripper named without its arm's prefix was held to a body joint's range, so -50
+  went out too, while the mock clamped all of it without a word and the verb said it moved the
+  arm. Each is refused now, by the verb, the transport and the mock, as in `shoulder_lift=250.0
+  is outside -100.0..100.0`, and the transport holds a gripper goal and a lift height to their
+  ranges as well, as the mock does a lift height: a NaN height went to the host as full speed.
+  A gripper intent takes a goal only for the gripper of a side it names: a shoulder goal sent
+  through one went out, and the next stop did not hold it.
+- **An AlohaMini host that does not say the robot is calibrated is shown as not saying.** A
+  missing `roboglot_calibrated` read as calibrated, and the string `"false"` read as true, for the
+  arms' torque as well, so on upstream's own host the pilot was told `"calibrated": true` of a
+  robot nothing had vouched for. A host that sends no field shows `"calibrated": null`, unknown,
+  and what is allowed there is as it was, the lift on upstream's own host among it. A field that
+  is there vouches only as JSON `true`: `false`, `0` and `null` are not calibrated and refused,
+  as before, and so is any string, and the arms' torque is on only for `true`.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for

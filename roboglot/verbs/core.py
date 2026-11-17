@@ -33,6 +33,7 @@ from roboglot.perception.base import (
 )
 from roboglot.perception.yolo import GUESSED_FOV_DEG, HEIGHT_M, WIDEST_FRAME, nearest_box_m
 from roboglot.transport.base import (
+    WENT_OUT,
     Intent,
     camera_names_of,
     frame_period_of,
@@ -187,13 +188,102 @@ class ApproachAndParams(BaseModel):
 # ── helpers shared with adapter verbs ───────────────────────────────────────────────────
 
 
-async def send_or_fail(ctx: VerbContext, intent: Intent) -> VerbResult | None:
+class WentOut(str):
+    """Why a stop that went out is not known to have reached the body, in the transport's words
+    (`stop_error` beside `stop_unconfirmed`): the reason itself, marked so that whoever says it
+    says the stop went out (`stop_fate`)."""
+
+
+def stop_fate(unstopped: str) -> str:
+    """What became of an owed stop that did not land, said after its name: `failed: <why>`, or,
+    of one that went out (`WentOut`), the core's words (`WENT_OUT`) and why."""
+    if isinstance(unstopped, WentOut):
+        return f"{WENT_OUT}: {unstopped}"
+    return f"failed: {unstopped}"
+
+
+@dataclass(frozen=True)
+class _Unlanded:
+    """A stop that the transport does not say reached the body: why, in the transport's words
+    (`stop_error`), and whether it went out at all. A transport that sent it and cannot tell
+    whether it arrived says so (`stop_unconfirmed`), and is not said to have failed to send it."""
+
+    why: str
+    sent: bool
+
+    def said(self, stop: str) -> str:
+        """What became of `stop`, in no more words than the transport gave."""
+        if self.sent:
+            return f"{stop} {WENT_OUT}"
+        return f"{stop} could not be delivered"
+
+
+async def _stop(ctx: VerbContext) -> _Unlanded | None:
+    """Stop the body, and return what the transport says of a stop that did not reach it, or None
+    when nothing says so.
+
+    Every stop a verb here sends goes through this. A transport's stop does not raise, since it
+    runs on the way out of every failure: one that knows it did not land says why in
+    `stop_error`, and only the `stop` verb read it. So a link that went in the last slice of a
+    walk took every twist and not the stop, and `move` said it walked, `go_to` that it arrived,
+    and `search_scan` turned on as if its turn had ended, over a body still moving. A transport
+    that cannot tell says nothing, and then nothing here changes (`_unstopped`)."""
+    await ctx.transport.stop()
+    undelivered = getattr(ctx.transport, "stop_error", None)
+    if not undelivered:
+        return None
+    return _Unlanded(str(undelivered), getattr(ctx.transport, "stop_unconfirmed", False) is True)
+
+
+def _unstopped(verb: str, missed: _Unlanded | None, result: VerbResult) -> VerbResult:
+    """`result`, when the stop `verb` ended on reached the body (`missed` is None, `_stop`), or
+    else a failure that says what `result` said, then what became of the stop as the transport
+    put it (`_Unlanded.said`) and that the body may still be moving, and why, with the reason as
+    `stop_error` in its data. A `verb` of "" is a stop named by no verb. A result that has said
+    so already is not said twice, nor a reason it has given already, as a twist refused for the
+    same reason the stop did not go gives it. It is no longer marked `ended_by`: a brake that
+    did not reach the body is not the brake working, and `abort_when` counts it."""
+    if missed is None or "stop_error" in result.data:
+        return result
+    why = missed.why
+    said = result.summary[:-1] if result.summary.endswith(".") else result.summary
+    unstopped = missed.said(f"{verb}'s stop" if verb else "the stop")
+    if why in said:
+        told = f"{unstopped} either, for the same reason, so the body may still be moving"
+    else:
+        # what is known, then the body's own words, which say what to do about it where the
+        # body has something true to say (`stop`): the core advises nothing physical
+        told = f"{unstopped}, so the body may still be moving: {why}"
+    data = {key: value for key, value in result.data.items() if key != "ended_by"}
+    if missed.sent:
+        data["stop_unconfirmed"] = True
+    return VerbResult.fail(f"{said}. But {told}", **{**data, "stop_error": why})
+
+
+class _Unstopped(Exception):
+    """A stop sent partway through a verb, the end of one of `search_scan`'s turns or a walk's
+    stop to look, that did not reach the body (`_stop`), carried with what was said of it out of
+    the helper that sent it to the verb that ends on it (`_unstopped`), as `_Refused` carries a
+    twist's."""
+
+    def __init__(self, missed: _Unlanded) -> None:
+        super().__init__(missed.why)
+        self.missed = missed
+
+
+async def send_or_fail(
+    ctx: VerbContext, intent: Intent, verb: str | None = None
+) -> VerbResult | None:
     """Send an intent; return a failure result if the robot refused it, or if the verb has been
     told to end (`VerbContext.interrupted`), when nothing goes out. A stop that came while a verb
     read the body's state was followed by the goal that verb went on to send. What only speaks
-    goes out all the same, as it runs beside a stop (`Executor._overtaken`)."""
+    goes out all the same, as it runs beside a stop (`Executor._overtaken`).
+
+    `verb` is the verb that sends it, which a stop that did not land is said of; a caller that
+    names none has its intent lead the sentence, as it always did, and the stop is the verb's
+    unnamed (`_unstopped`), not the intent's: `joint's stop` named no verb a pilot called."""
     if intent.kind != "sound" and (why := ctx.interrupted()) is not None:
-        return await _ended_by(ctx, intent.kind, why, "nothing more was sent")
+        return await _ended_by(ctx, intent.kind, why, "nothing more was sent", stop_of=verb or "")
     ack = await ctx.transport.send_intent(intent)
     if not ack.accepted:
         return VerbResult.fail(f"{intent.kind} refused: {ack.reason or 'no reason given'}")
@@ -222,10 +312,14 @@ class _LookRefused(Exception):
 
 async def _unlooked(ctx: VerbContext, verb: str, refused: _LookRefused) -> VerbResult:
     """Stop and fail a verb whose centring look the body refused, before it moved anything."""
-    await ctx.transport.stop()
-    return VerbResult.fail(
-        f"{verb}: the look that centres the head was refused, so nothing moved: {refused}",
-        look_refused=str(refused),
+    unstopped = await _stop(ctx)
+    return _unstopped(
+        verb,
+        unstopped,
+        VerbResult.fail(
+            f"{verb}: the look that centres the head was refused, so nothing moved: {refused}",
+            look_refused=str(refused),
+        ),
     )
 
 
@@ -257,24 +351,43 @@ async def _stopped_by(
 ) -> VerbResult:
     """Stop the body after a twist it refused, and fail saying what was refused and why, the
     way `detector_failed` says a frame the detector could not read stopped it."""
-    await ctx.transport.stop()
-    return VerbResult.fail(
-        f"{verb}: a twist was refused, so {stopped}: {refused}", move_refused=str(refused), **data
+    unstopped = await _stop(ctx)
+    return _unstopped(
+        verb,
+        unstopped,
+        VerbResult.fail(
+            f"{verb}: a twist was refused, so {stopped}: {refused}",
+            move_refused=str(refused),
+            **data,
+        ),
     )
 
 
-async def _ended_by(ctx: VerbContext, verb: str, why: str, stopped: str, **data: Any) -> VerbResult:
+async def _ended_by(
+    ctx: VerbContext,
+    verb: str,
+    why: str,
+    stopped: str,
+    *,
+    stop_of: str | None = None,
+    **data: Any,
+) -> VerbResult:
     """Stop the body for a verb told to end from beside it, and fail saying why and how far it
-    got, as `watch` does.
+    got, as `watch` does. `stop_of` is the verb a stop that did not land is said of, when it is
+    not `verb` (`send_or_fail`, whose `verb` is its intent).
 
     The `stop` that ended it has stopped the body already, and this stops it again, after the
     last twist the verb sent rather than before it. A `stop` is marked `ended_by` (`STOP_ENDED`),
     so `abort_when`'s count of failures in a row passes over it: a person braking a walk three
     times would otherwise end the run on the same verb failing three times in a row."""
-    await ctx.transport.stop()
+    unstopped = await _stop(ctx)
     if why == STOPPED:
         data["ended_by"] = STOP_ENDED
-    return VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data)
+    return _unstopped(
+        verb if stop_of is None else stop_of,
+        unstopped,
+        VerbResult.fail(f"{verb}: {why}, so {stopped}", interrupted=why, **data),
+    )
 
 
 async def _waited_out(ctx: VerbContext, seconds: float) -> str | None:
@@ -398,7 +511,8 @@ def _clamped(ctx: VerbContext, vx: float, vy: float, wz: float) -> tuple[float, 
 
 async def _turn(ctx: VerbContext, radians: float) -> None:
     """Rotate in place by `radians`, feeding the deadman every tick. A twist the body refuses
-    ends the turn where it is, with `_Refused` for the verb to stop on."""
+    ends the turn where it is, with `_Refused` for the verb to stop on, and a stop at its end
+    that did not reach the body ends it with `_Unstopped`."""
     rate = min(TURN_RATE, speed_limits(ctx.manifest)[2])
     wz = rate if radians >= 0 else -rate
     duration = abs(radians) / rate
@@ -406,7 +520,8 @@ async def _turn(ctx: VerbContext, radians: float) -> None:
     for _ in range(ticks):
         await _twist(ctx, 0.0, 0.0, wz)
         await ctx.transport.sleep(duration / ticks)
-    await ctx.transport.stop()
+    if (missed := await _stop(ctx)) is not None:
+        raise _Unstopped(missed)
 
 
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
@@ -415,9 +530,13 @@ async def _turn(ctx: VerbContext, radians: float) -> None:
 async def _no_frame(ctx: VerbContext, verb: str) -> VerbResult:
     """A frame that did not arrive is not the same as a robot with no camera, and neither
     is a reason to keep walking. The `img is None` branch used to return without stopping."""
-    await ctx.transport.stop()
+    unstopped = await _stop(ctx)
     why = getattr(ctx.transport, "camera_error", None)
-    return VerbResult.fail(f"{verb}: {why}" if why else f"{verb} needs a camera and got no frame")
+    return _unstopped(
+        verb,
+        unstopped,
+        VerbResult.fail(f"{verb}: {why}" if why else f"{verb} needs a camera and got no frame"),
+    )
 
 
 async def detector_failed(ctx: VerbContext, verb: str, stopped: str) -> VerbResult | None:
@@ -435,9 +554,13 @@ async def detector_failed(ctx: VerbContext, verb: str, stopped: str) -> VerbResu
     why = getattr(ctx.detector, "error", None)
     if not isinstance(why, str) or not why:
         return None
-    await ctx.transport.stop()
+    unstopped = await _stop(ctx)
     name = getattr(ctx.detector, "name", "the detector")
-    return VerbResult.fail(f"{verb}: {name} failed, so {stopped}: {why}", detector_error=why)
+    return _unstopped(
+        verb,
+        unstopped,
+        VerbResult.fail(f"{verb}: {name} failed, so {stopped}: {why}", detector_error=why),
+    )
 
 
 async def _see_holding(
@@ -544,15 +667,20 @@ async def report_state(ctx: VerbContext, _: NoParams) -> VerbResult:
 
 
 async def stop(ctx: VerbContext, _: NoParams) -> VerbResult:
-    await ctx.transport.stop()
     # `stop` is the verb the pilot is told to reach for when anything looks wrong, and it is
     # asked for most often when the link is the thing that is wrong. A transport that knows it
     # could not deliver says so; reporting success anyway would be the one reassuring line in
     # the log that was not true. Transports that cannot tell report nothing and are unchanged.
-    if undelivered := getattr(ctx.transport, "stop_error", None):
+    # It says what is known and advises nothing: the hardware switch it used to send everyone
+    # to is a fall on a body that stands and a drop on an arm whose torque goes with it, so what
+    # to do about it is the body's own to say, in its `stop_error`, where it has something true
+    # and it says no more than the transport did: a stop sent that is not known to have arrived
+    # is not one that could not be delivered
+    if (missed := await _stop(ctx)) is not None:
+        # one that went out says so in its data too, as a verb that ends on a stop does
         return VerbResult.fail(
-            f"stop could not be delivered: {undelivered}. If this robot has a deadman it is "
-            "what stops the legs now; otherwise use the hardware switch."
+            f"{missed.said('stop')}, so the body may still be moving: {missed.why}",
+            **({"stop_unconfirmed": True} if missed.sent else {}),
         )
     # A body that left joints out of its hold says which (the arm, for a joint read past its
     # travel, where "stay here" would reach the servo as "go to the limit"). Without the clause
@@ -601,15 +729,19 @@ async def move(ctx: VerbContext, p: MoveParams) -> VerbResult:
             walked = f"it stopped after {k * step:.1f} of {p.duration_s:.1f} s"
             return await _ended_by(ctx, "move", why, walked, duration_s=round(k * step, 3))
         if (fail := await send_or_fail(ctx, Intent.move(vx, vy, wz))) is not None:
-            await ctx.transport.stop()
-            return fail
+            unstopped = await _stop(ctx)
+            return _unstopped("move", unstopped, fail)
         await ctx.transport.sleep(step)
-    await ctx.transport.stop()
+    unstopped = await _stop(ctx)
     clamped = (vx, vy, wz) != (p.vx, p.vy, p.wz)
-    return VerbResult.success(
-        f"walked vx={vx:.2f} vy={vy:.2f} wz={wz:.2f} for {p.duration_s:.1f}s"
-        + (" (clamped to this robot's limits)" if clamped else ""),
-        duration_s=p.duration_s,
+    return _unstopped(
+        "move",
+        unstopped,
+        VerbResult.success(
+            f"walked vx={vx:.2f} vy={vy:.2f} wz={wz:.2f} for {p.duration_s:.1f}s"
+            + (" (clamped to this robot's limits)" if clamped else ""),
+            duration_s=p.duration_s,
+        ),
     )
 
 
@@ -701,13 +833,17 @@ async def _gaze_sweep(
         if not ack.accepted:
             # the answer was thrown away, so a body that refused every look was reported as
             # having looked across the whole sweep and not found the target there
-            await ctx.transport.stop()
+            unstopped = await _stop(ctx)
             why = ack.reason or "no reason given"
-            return VerbResult.fail(
-                f"search_scan: a look was refused, so the sweep stopped after {i} of "
-                f"{len(yaws)} looks: {why}",
-                look_refused=why,
-                steps=i,
+            return _unstopped(
+                "search_scan",
+                unstopped,
+                VerbResult.fail(
+                    f"search_scan: a look was refused, so the sweep stopped after {i} of "
+                    f"{len(yaws)} looks: {why}",
+                    look_refused=why,
+                    steps=i,
+                ),
             )
         await ctx.transport.sleep(TICK_S)  # let the head settle; a mock's clock advances
         img, hits = await _see(ctx, p.target, f"search_scan gaze {yaw:+.0f}")
@@ -818,6 +954,14 @@ async def search_scan(ctx: VerbContext, p: SearchScanParams) -> VerbResult:
             # that never turned used to report the whole sweep, the target not in it
             stopped, taken = _scan_stopped(ctx, starts, steps, step)
             return await _stopped_by(ctx, "search_scan", stopped, refused, steps=taken)
+        except _Unstopped as unstopped:
+            # every twist of the turn was taken and its stop was not, so the turn counts, and
+            # the scan ends here rather than look from a body that may still be turning
+            starts.append(begun)
+            so, turned = _scan_stopped(ctx, starts, steps, step)
+            return _unstopped(
+                "search_scan", unstopped.missed, VerbResult.fail(f"search_scan: {so}", steps=turned)
+            )
         except _Interrupted as told:
             # the turn it was told in not counted either, since it was cut short
             so, turned = _scan_stopped(ctx, starts, steps, step)
@@ -1071,7 +1215,7 @@ async def _no_nearer(
     a ball cut by the frame's bottom 0.4 m off, or a picture cut by its top, fills none of it. A
     reading is the farthest it can be only if the target is the size the detector takes it for, so
     the result says that rather than claiming the bound outright."""
-    await ctx.transport.stop()
+    unstopped = await _stop(ctx)
     name = getattr(ctx.detector, "name", "the detector")
     another = stopper is not steered
     started = tick > 1
@@ -1094,9 +1238,13 @@ async def _no_nearer(
             f"{name} gives no distance for the {p.target} now; its last reading was ~{last_m:.2f} m"
         )
     else:
-        return VerbResult.fail(
-            f"go_to: {name} gives no distance for the {p.target}, so it cannot tell when to stop, "
-            "and did not approach it"
+        return _unstopped(
+            "go_to",
+            unstopped,
+            VerbResult.fail(
+                f"go_to: {name} gives no distance for the {p.target}, so it cannot tell when to "
+                "stop, and did not approach it"
+            ),
         )
     await ctx.transport.sleep(TICK_S)
     guess, guessed = _guessed(stopper)
@@ -1122,16 +1270,20 @@ async def _no_nearer(
             that = f"that {p.target}" if another else "it"
             until = "whole in the frame or out of view" if reading is not None else "out of view"
             summary += f". Nothing moved: look or turn until {that} is {until}, then ask again."
-    return VerbResult.success(
-        summary,
-        at_most_m=at_most,
-        bearing_deg=bearing,
-        ticks=tick,
-        cannot_range=why,
-        started=started,
-        tracked=tracked,
-        **extra,
-        **guessed,
+    return _unstopped(
+        "go_to",
+        unstopped,
+        VerbResult.success(
+            summary,
+            at_most_m=at_most,
+            bearing_deg=bearing,
+            ticks=tick,
+            cannot_range=why,
+            started=started,
+            tracked=tracked,
+            **extra,
+            **guessed,
+        ),
     )
 
 
@@ -1207,8 +1359,10 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
             hold = STEER_TURN_S if measures_first else TICK_S
             lost += hold / TICK_S
             if lost > LOST_TICKS:
-                await ctx.transport.stop()
-                return VerbResult.fail(f"lost the {p.target}; try search_scan")
+                unstopped = await _stop(ctx)
+                return _unstopped(
+                    "go_to", unstopped, VerbResult.fail(f"lost the {p.target}; try search_scan")
+                )
             # turn toward where it was last seen
             held = _clamped(ctx, 0.0, 0.0, LOST_WZ if last_bearing >= 0 else -LOST_WZ)
         else:
@@ -1235,18 +1389,22 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
                 return await _no_nearer(ctx, p, stopper, d, last_m, tick, tracked)
             if dist <= p.stop_distance:
                 held = None
-                await ctx.transport.stop()
+                unstopped = await _stop(ctx)
                 await ctx.transport.sleep(TICK_S)
                 guess, guessed = _guessed(d)
                 doubt = "" if tracked else f". {_UNTRACKED.format(target=p.target)}"
-                return VerbResult.success(
-                    f"reached the {p.target}: ~{dist:.2f} m away, bearing {bearing:+.0f}°{guess}"
-                    + doubt,
-                    distance_m=dist,
-                    bearing_deg=bearing,
-                    ticks=tick,
-                    **guessed,
-                    **({} if tracked else {"tracked": False}),
+                return _unstopped(
+                    "go_to",
+                    unstopped,
+                    VerbResult.success(
+                        f"reached the {p.target}: ~{dist:.2f} m away, bearing "
+                        f"{bearing:+.0f}°{guess}" + doubt,
+                        distance_m=dist,
+                        bearing_deg=bearing,
+                        ticks=tick,
+                        **guessed,
+                        **({} if tracked else {"tracked": False}),
+                    ),
                 )
             last_m = dist
             wz = max(-STEER_MAX_WZ, min(STEER_MAX_WZ, bearing * STEER_GAIN))
@@ -1266,9 +1424,11 @@ async def _go_to(ctx: VerbContext, p: GoToParams) -> VerbResult:
         else:
             await _twist(ctx, *held)
             await ctx.transport.sleep(TICK_S)
-    await ctx.transport.stop()
-    return VerbResult.fail(
-        f"go_to timed out after {p.timeout_s:g}s without reaching the {p.target}"
+    unstopped = await _stop(ctx)
+    return _unstopped(
+        "go_to",
+        unstopped,
+        VerbResult.fail(f"go_to timed out after {p.timeout_s:g}s without reaching the {p.target}"),
     )
 
 

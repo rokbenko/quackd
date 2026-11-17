@@ -8,7 +8,9 @@ something that would move nothing.
 
 from __future__ import annotations
 
+import math
 import sys
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -23,7 +25,7 @@ from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import ConfirmDenied, Executor, VerbNotAllowed, allow_all
 from roboglot.transport.base import Intent
 from roboglot.verbs.core import scan_mode
-from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
+from roboglot.verbs.registry import STOPPED, VerbContext, VerbNotFound, registry_from_manifest
 from roboglot_alohamini import (
     MAX_VX,
     MAX_VY,
@@ -35,6 +37,7 @@ from roboglot_alohamini import (
     implementations,
     parse_model,
 )
+from roboglot_alohamini import verbs as alohamini_verbs
 from roboglot_alohamini.mock import AlohaMiniMock
 from roboglot_alohamini.verbs import (
     GRIPPER_CLOSED,
@@ -288,6 +291,90 @@ async def test_the_mock_refuses_what_this_body_cannot_do() -> None:
     assert not (await adapter.send_intent(Intent.look(1.0, 0.0, 0.0))).accepted
     assert not (await adapter.send_intent(Intent.do("kick_left"))).accepted
     assert not (await adapter.send_intent(Intent.enable(False))).accepted
+
+
+@pytest.mark.parametrize(
+    ("positions", "named"),
+    [
+        ({"shoulder_lift": 250.0}, "shoulder_lift=250.0 is outside -100.0..100.0"),
+        ({"shoulder_lift": math.inf}, "shoulder_lift=inf is outside -100.0..100.0"),
+        ({"elbow_flex": math.nan}, "elbow_flex=nan is outside -100.0..100.0"),
+        ({"gripper": -50.0}, "gripper=-50.0 is outside 0.0..100.0"),
+    ],
+    ids=["past-the-range", "infinity", "nan", "gripper-below-zero"],
+)
+async def test_a_joint_goal_outside_its_normalised_range_is_refused_before_it_is_sent(
+    positions: dict[str, float], named: str
+) -> None:
+    """`move_joints` checked only that a goal named a joint, though the page says every goal is
+    validated: 250, an infinity or a NaN went out as the goal, and the mock clamped it without a
+    word, so the verb said "moved the left arm: shoulder_lift=250". The verb names a gripper
+    without the arm's prefix, which the range read as a body joint's, so -50 passed as well.
+    Refused now as the XLeRobot's same verb refuses, before anything is sent."""
+    mock = AlohaMiniMock()
+    adapter = AlohaMiniAdapter(mock)
+    ex = _executor(adapter, await adapter.connect())
+    before = dict(mock.joints)
+    result = await ex.run_verb("move_joints", {"arm": "left", "positions": positions})
+    assert not result.ok and "invalid params for move_joints" in result.summary, result.summary
+    assert named in result.summary
+    assert mock.joints == before
+
+
+async def test_the_mock_refuses_a_joint_goal_the_transport_refuses_rather_than_clamp_it() -> None:
+    """The mock held every goal to the range without a word, so no test could see a goal out of
+    it go through; it refuses one now, in the words the real transport uses."""
+    mock = AlohaMiniMock()
+    adapter = AlohaMiniAdapter(mock)
+    await adapter.connect()
+    ack = await adapter.send_intent(Intent.joint({"arm_left_shoulder_lift": 250.0}, 1.0))
+    assert not ack.accepted
+    assert "arm_left_shoulder_lift=250.0 is outside -100.0..100.0" in str(ack.reason)
+    assert mock.joints["arm_left_shoulder_lift"] == 0.0
+    height = await adapter.send_intent(Intent(kind="pose", params={"lift_height_mm": math.nan}))
+    assert not height.accepted and "outside" in str(height.reason)
+    assert mock.lift_target_mm is None, "a lift height nobody could reach was taken"
+
+
+class _StopsLost(AlohaMiniMock):
+    """The mock, its stops lost: each says why in `stop_error`, as the transport does of a host
+    that has gone quiet, and it notes when an arm was sent a goal."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_error: str | None = None
+        self.sent_a_goal = False
+
+    async def send_intent(self, intent: Intent) -> Any:
+        self.sent_a_goal = self.sent_a_goal or intent.kind == "joint"
+        return await super().send_intent(intent)
+
+    async def stop(self) -> None:
+        await super().stop()
+        self.stop_error = "the host has gone quiet"
+
+
+async def test_an_alohamini_verb_whose_own_stop_did_not_land_does_not_say_it_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`lift`'s timeout and the stop that holds an arm a stop from beside its verb reached read no
+    `stop_error`, so a lift that ran out of time said it stopped, and an arm was said to be held
+    where it stood with the base and the lift stopped, over stops that did not land. Both go
+    through the core's own reading now, and the verb is named, not its intent."""
+    mock = _StopsLost()
+    adapter = AlohaMiniAdapter(mock)
+    ex = _executor(adapter, await adapter.connect())
+    monkeypatch.setattr(alohamini_verbs, "LIFT_TIMEOUT_S", 2 * alohamini_verbs.LIFT_TICK_S)
+    lifted = await ex.run_verb("lift", {"height_mm": LIFT_MAX_MM})
+    assert not lifted.ok and "But lift's stop could not be delivered" in lifted.summary
+
+    ctx = VerbContext(transport=adapter, interrupted=lambda: STOPPED if mock.sent_a_goal else None)
+    goal = MoveJointsParams(arm="left", positions={"elbow_flex": 10.0})
+    ended = await alohamini_verbs.move_joints(ctx, goal)
+    assert not ended.ok and "is held where it stood" not in ended.summary, ended.summary
+    assert "the base and the lift are stopped" not in ended.summary
+    assert "the arm is not known to be held" in ended.summary
+    assert "move_joints's stop could not be delivered" in ended.summary
 
 
 async def test_homing_leaves_the_lift_travelling_and_a_stop_is_what_ends_it() -> None:

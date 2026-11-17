@@ -272,6 +272,59 @@ def test_invalid_v1_task_files_fail_fast(mutation, needle: str) -> None:
     assert needle.lower() in str(exc.value).lower()
 
 
+@pytest.mark.parametrize(
+    ("mutation", "needle"),
+    [
+        (
+            lambda s: s.replace(
+                "allow: [observe, gaze, go_to, kick, stop]",
+                'allow: [observe, gaze, go_to, kick, stop, "kick\\n"]\n  confirm: ["kick\\n"]',
+            ),
+            "'kick\\n' is not a valid verb name",
+        ),
+        (
+            lambda s: s.replace("requires: [observe, kick]", 'requires: [observe, "kick\\n"]'),
+            "'kick\\n' is not a valid verb name",
+        ),
+        (
+            lambda s: s.replace("duck-01: microduck:mock}", 'duck-01: "microduck:mock\\n"}'),
+            "'microduck:mock\\n' is not <adapter>[:<backend>]",
+        ),
+        (
+            lambda s: s.replace("duck-01: microduck:mock}", '"duck-02\\n": microduck:mock}'),
+            "'duck-02\\n' is not a valid member name (slug)",
+        ),
+        (
+            lambda s: s.replace(MEMBERS, '  members: [lerobot-01, "duck-01\\n"]\n'),
+            "'duck-01\\n' is not a valid member name (slug)",
+        ),
+    ],
+    ids=["confirm", "requires", "robot", "robots key", "team member"],
+)
+def test_a_name_that_ends_in_a_newline_is_refused_as_any_bad_name_is(mutation, needle: str) -> None:
+    """A pattern ending in `$` matches before a final newline, so `"kick\\n"` was a valid verb
+    name: a file that allowed and confirmed it read as `confirm: kick`, the executor compared the
+    names exactly, and `kick` ran with no question. Every name the file gives ends where its
+    pattern ends now, a verb's, a robot's spec and a member's, each refused in the words a bad
+    one already gets."""
+    with pytest.raises(GlotParseError) as exc:
+        parse_glot_text(mutation(V1), path="x.glot")
+    assert needle in str(exc.value), str(exc.value)
+
+
+def test_a_task_name_that_ends_in_a_newline_is_refused_as_a_bad_name_is() -> None:
+    """The same `$` let `name: "hello\\n"` through, and the run folder is named after the task:
+    on Windows its mkdir raised before anything connected, and elsewhere the folder's name ended
+    in a newline. Such a name is refused when the file is read, with the reason any bad name
+    gets."""
+    reasons = []
+    for name in ("Not A Slug", '"hello\\n"'):
+        with pytest.raises(GlotParseError) as exc:
+            parse_glot_text(VALID.replace("name: t", f"name: {name}"), path="x.glot")
+        reasons.append(str(exc.value))
+    assert all("name must match ^[a-z0-9][a-z0-9-]{0,63}$" in r for r in reasons), reasons
+
+
 # ── v2: the datasheet a task file corrects ──────────────────────────────────────────────
 
 V2 = """\

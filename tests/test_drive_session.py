@@ -11,6 +11,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from roboglot.adapters.factory import RobotSpec, make_adapter
 from roboglot.agent.decision.commands import CommandChooser, offers_for
 from roboglot.agent.providers.fake import FakeProvider
@@ -22,7 +24,7 @@ from roboglot.glotfile.schema import Budgets
 from roboglot.log import EventLog, LogEvent
 from roboglot.mcp_server import RobotSession
 from roboglot.safety import Budget, Executor, Heartbeat
-from roboglot.transport.base import RobotState
+from roboglot.transport.base import Intent, RobotState
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import GoToParams
 from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbResult, default_registry
@@ -552,6 +554,101 @@ async def test_a_question_put_once_is_never_recorded_as_two(tmp_path: Path) -> N
     await _settled(cmd)
     await drive.robot.close()
     assert asked == [str(e.data["question"]) for e in prompts], "a prompt row nobody was asked"
+
+
+async def _careful_step(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    return VerbResult.success("stepped")
+
+
+def _not_now(_state: RobotState) -> str:
+    return "the body is not in a state to do this"
+
+
+async def _careful_session(tmp_path: Path, *, refuses: bool) -> tuple[DriveSession, list[Any]]:
+    """A session whose `careful` sits behind a confirm, with a precondition that refuses on the
+    body as it is where `refuses` says, and the executor's gate rows collected."""
+    drive, _body, _records = await _drive(tmp_path)
+    registry = drive.robot.executor.registry
+    registry.register(
+        Verb(
+            "careful",
+            "steps",
+            _careful_step,
+            NoParams,
+            preconditions=[_not_now] if refuses else [],
+        ),
+        replace=True,
+    )
+    drive.robot.adopt(glot_from_goal("drive", ["careful", "stop"], confirm=["careful"]))
+    drive.exact = drive._exact()
+    drive.robot.executor.verdict = None
+    seen: list[Any] = []
+    event_log = drive.robot.executor.event_log
+    assert event_log is not None
+    event_log.add(lambda e: seen.append(e.data) if e.kind == "gate" else None)
+    return drive, seen
+
+
+@pytest.mark.parametrize("why", ["a precondition", "the budget"])
+async def test_in_drive_nobody_is_asked_about_a_call_a_gate_would_refuse(
+    tmp_path: Path, why: str
+) -> None:
+    """Drive asks the person itself while it routes a line, before the executor's gates, so a
+    person said yes to a call a precondition the body already failed, or a spent budget, then
+    refused. It asks the executor first now, through the one function the executor's own calls
+    use for the gates before a question (`Executor.refusal_before_the_question`), and a call one
+    of them refuses ends refused in the executor's own words with nobody asked."""
+    drive, _seen = await _careful_session(tmp_path, refuses=why == "a precondition")
+    budget = drive.robot.executor.budget
+    assert budget is not None
+    if why == "the budget":
+        budget.steps = budget.limits.max_steps
+    asked: list[str] = []
+
+    async def ask(question: str, **_: Any) -> bool:
+        asked.append(question)
+        return True
+
+    drive.ask = ask
+    cmd = drive.submit("careful")
+    await _settled(cmd)
+    ended = await cmd.ended
+    await drive.robot.close()
+    assert asked == [], f"asked {asked}, and then refused it: {ended.summary}"
+    expected = (
+        "cannot careful: the body is not in a state to do this"
+        if why == "a precondition"
+        else f"max_steps ({budget.limits.max_steps}) reached"
+    )
+    assert (ended.outcome, ended.summary) == ("refused", expected)
+    assert budget.steps == (budget.limits.max_steps if why == "the budget" else 0)
+
+
+async def test_in_drive_what_changed_while_the_person_was_asked_refuses_after_the_yes(
+    tmp_path: Path,
+) -> None:
+    """What can change while drive's question is open is checked again after the answer, as in
+    a run, and a refusal there says the person had agreed (`after_confirm`): here the last step
+    is spent by the time the person says yes."""
+    drive, seen = await _careful_session(tmp_path, refuses=False)
+    budget = drive.robot.executor.budget
+    assert budget is not None
+    asked: list[str] = []
+
+    async def ask(question: str, **_: Any) -> bool:
+        asked.append(question)
+        budget.steps = budget.limits.max_steps  # another call took the last step meanwhile
+        return True
+
+    drive.ask = ask
+    cmd = drive.submit("careful")
+    await _settled(cmd)
+    ended = await cmd.ended
+    await drive.robot.close()
+    assert len(asked) == 1 and ended.outcome != "ok", ended
+    refused = [g for g in seen if g.get("name") == "careful" and g.get("gate") == "budget"]
+    assert refused and refused[-1]["after_confirm"] == "a human said yes", seen
 
 
 async def test_a_task_file_that_allows_walk_by_its_alias_can_be_driven(tmp_path: Path) -> None:

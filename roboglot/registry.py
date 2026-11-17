@@ -62,6 +62,7 @@ from roboglot.adapters.factory import (
 from roboglot.dotenv_names import from_dotenv
 from roboglot.host import clean_token, parse_host
 from roboglot.memory import robot_slug
+from roboglot.transport.base import CLOSE_STOP_NOTE
 
 DEFAULT_DIR = "~/.roboglot"
 ENV_DIR = "ROBOGLOT_REGISTRY_DIR"
@@ -72,8 +73,10 @@ VERSION = 1
 MAX_MEMBERS = 8
 """What a stored team may hold, which is what a pilot team may run (`PILOTS_MAX_MEMBERS`)."""
 
-_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
-"""The same slug every member name and team name in Roboglot already is (`factory._NAME_RE`)."""
+_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}\Z")
+"""The same slug every member name and team name in Roboglot already is (`factory._NAME_RE`).
+`\\Z` and not `$`, which matches before a final newline: `"arm-01\\n"` passed, and read as
+`arm-01` wherever it was printed."""
 
 
 def registry_dir(override: str | Path | None = None) -> Path:
@@ -1242,7 +1245,11 @@ def _torque_phrase(note: str) -> str:
     up, let go, or not known, which is an arm that did not answer the close's own read and so
     may be limp at the switch rather than holding itself up, or one at its rest pose whose
     release at the close did not finish. A note this does not know reads as held up, which is
-    how the close's unfinished release used to read, the other way round from what it did."""
+    how the close's unfinished release used to read, the other way round from what it did.
+    A note about the close's own stop (`CLOSE_STOP_NOTE`), a base's or a cart's, is no torque
+    at all, and is said as the stop it is."""
+    if note.startswith(CLOSE_STOP_NOTE):
+        return "the stop at the close is not known to have landed"
     if "could not keep torque on" in note:
         return "torque could NOT be kept: the arm was released where it stood"
     if "cannot tell whether" in note:

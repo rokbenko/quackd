@@ -46,6 +46,20 @@ class HeartbeatError(TransportError):
     """A heartbeat failed. The caller must stop the robot and abort."""
 
 
+CLOSE_STOP_NOTE = "at the close, "
+"""How a transport's `close_note` begins where the close's own stop did not land, its reason
+after it as `stop_error` gave it: rosbridge's zero Twist, the XLeRobot's and the AlohaMini's
+stop. Nothing reads `stop_error` after a close; a run, an onboard goal, a team member and drive
+say `close_note`, and `robot list --probe` shortens one that begins so as a stop, not as the
+torque an arm's close note is about."""
+
+WENT_OUT = "went out but is not known to have reached the body"
+"""What is said of a stop a transport sent and cannot tell arrived: one whose `stop_error` says
+why beside `stop_unconfirmed`. The core says it of the stop a verb ends on, the executor of the
+stop it owes a verb it ended (`verbs.core.stop_fate`), and the record of the stop's row
+(`log.intent_log_line`), and none of them says such a stop failed or was refused."""
+
+
 DEFAULT_CAMERA_NAME = "camera"
 """What a single frame is called when the transport names no camera. Never shown to an
 LLM: a camera's name is only spoken when a body has more than one."""

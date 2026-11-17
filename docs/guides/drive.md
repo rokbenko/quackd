@@ -165,7 +165,11 @@ reading of what you typed, and one you said yes to as yours.
 A verb that needs a yes before it runs still asks for one. That is a verb of the `confirm`
 class, or one a `.glot` lists under `confirm`:
 
-- at the keyboard, you are asked, in the words the record quotes;
+- at the keyboard, you are asked, in the words the record quotes, once every check that would
+  refuse the call has passed: the executor's own, the budget, the body's state, its preconditions
+  and the battery rule among them. A call one of them refuses ends `refused` in the executor's
+  words, and nobody asks you about it. What can change while you answer is checked again in the
+  call itself, and a refusal there says in the record that you had said yes;
 - `--yes` answers yes, by its standing rule, but for a verb its backend has declared
   `no_standing_answer`, `move_joints` on `rosarm:ws`, which is refused: a person answers it at the
   keyboard;
@@ -261,8 +265,8 @@ question at a time, and a `y` or an `n` answers the one on the screen, the last 
 goal's question is named after its goal and waits behind any question showing, while a question
 about a line you have just typed, a gated call's, is shown at once, since it is the one you are
 about to answer. An empty Enter brakes, and a newer line that moves the body ends the goal:
-either takes the question back, and the goal's record says nobody answered it, never that you said
-no. A line that only reads, `report state` say, runs beside the goal and leaves its question
+either takes the question back, and the goal ends on the brake or the newer line, its record never
+saying that you said no. A line that only reads, `report state` say, runs beside the goal and leaves its question
 waiting. In the page the same questions come with their buttons. The goal's own record has each
 question and your answer, as `roboglot log` replays it:
 

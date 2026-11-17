@@ -189,7 +189,9 @@ async def test_yes_answers_a_goals_doubt_go_as_it_answers_a_run(tmp_path: Path) 
 
 async def test_a_brake_takes_a_goals_question_back_and_nobody_said_no(tmp_path: Path) -> None:
     """The goal waits for its answer while the session goes on reading lines, and a brake ends
-    the goal: the question is withdrawn, the gate says nobody answered, and nothing moves."""
+    the goal: the question is withdrawn, nobody is recorded as having said no, and nothing moves.
+    The call ends at the `abort` gate as the abort ends any call, where it used to end at its
+    confirm gate, denied with nobody's answer, and the goal on the brake."""
     person = _Person(then=None)
     drive, body = await _gated(tmp_path, person)
     goal = drive.submit("patrol the room")
@@ -202,9 +204,9 @@ async def test_a_brake_takes_a_goals_question_back_and_nobody_said_no(tmp_path: 
     assert _walked(body) == []
     events = _goal_events(tmp_path / "goals")
     assert [e for e in events if e["kind"] == "prompt"] == [], "nobody said no"
-    gate = next(e for e in events if e["kind"] == "gate" and e["gate"] == "confirm")
-    assert gate["answer"] is None
-    assert gate["reason"] == "the prompt raised QuestionWithdrawn: the run was stopped"
+    assert not [e for e in events if e["kind"] == "gate" and e["gate"] == "confirm"]
+    gate = next(e for e in events if e["kind"] == "gate" and e["gate"] == "abort")
+    assert (gate["outcome"], gate["reason"]) == ("refused", "run aborted")
 
 
 # ── a VLA pilot, a line at a time ──────────────────────────────────────────────────────

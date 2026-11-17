@@ -361,6 +361,12 @@
    "red"
   ]
  ],
+ "intent_stop_unconfirmed": [
+  [
+   "->      stop went out but is not known to have reached the body: nothing has come over the link since",
+   "yellow"
+  ]
+ ],
  "verb_end_ok": [
   [
    "<-      go_to ok: reached the ball (12.5 s, 121 intents)",
@@ -735,6 +741,7 @@
   "->      stop",
   "->      sound(tag='greet') REFUSED: the mock refuses sound",
   "->      do REFUSED: no reason given",
+  "->      stop went out but is not known to have reached the body: nothing has come over the link since",
   "<-      go_to ok: reached the ball (12.5 s, 121 intents)",
   "<-      kick FAIL: missed (1.0 s, 1 intent)",
   "<-      search_scan PREEMPTED: stopped for a new goal (0.0 s, 0 intents)",

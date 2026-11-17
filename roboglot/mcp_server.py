@@ -91,6 +91,7 @@ from roboglot.verdict import (
     BEFORE_VERDICT,
     MANIPULATOR_WORDS,
     MOBILITY_WORDS,
+    STANDING_VERDICT_WITHDRAWN,
     TERRAIN_ORDER,
     Verdict,
     missing_needs,
@@ -493,20 +494,26 @@ class RobotSession:
             "robot_assess_task", dict(arguments), lambda: self._assess(arguments, could)
         )
 
+    def _refused_assessment(self, why: str) -> dict[str, Any]:
+        """An assessment refused for its shape, which withdraws the verdict standing before it,
+        as the loop's does (`AgentLoop._refused_assessment`), and says so."""
+        if self.executor.verdict is not None:
+            self.executor.verdict = None
+            why = f"{why}; {STANDING_VERDICT_WITHDRAWN}"
+        return {"ok": False, "robot": self.name, "summary": why}
+
     async def _assess(self, arguments: dict[str, Any], could: dict[str, str]) -> dict[str, Any]:
         if "human" in arguments:
-            return {
-                "ok": False,
-                "robot": self.name,
-                "summary": "assess_task takes no `human` field: only a person sets it",
-            }
+            return self._refused_assessment(
+                "assess_task takes no `human` field: only a person sets it"
+            )
         try:
             verdict = Verdict.model_validate(arguments)
         except ValidationError as e:
             msgs = "; ".join(
                 f"{'.'.join(map(str, err['loc']))}: {err['msg']}" for err in e.errors()
             )
-            return {"ok": False, "robot": self.name, "summary": f"invalid verdict: {msgs}"}
+            return self._refused_assessment(f"invalid verdict: {msgs}")
         if verdict.verdict == "feasible":
             # the loop's check, on this surface too. `robot_assess_task` matched `needs`
             # against every OTHER robot in the team to fill in `could`, and recorded a

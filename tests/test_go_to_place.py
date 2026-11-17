@@ -267,6 +267,67 @@ async def test_its_own_clock_ends_it_stopped() -> None:
     assert body.sent[-1][1] == "stop"
 
 
+#: What `_StopsLost` says of a stop that did not reach the body.
+LOST = "the link to the base is gone"
+
+
+class _StopsLost(Recording):
+    """A body whose stops stop reaching it once `lost` says so: each says why in `stop_error` and
+    raises nothing, as a transport that knows its stop did not land does."""
+
+    def __init__(self, inner: Any, lost: Callable[[_StopsLost], bool]) -> None:
+        super().__init__(inner)
+        self.lost = lost
+        self.stop_error: str | None = None
+
+    async def stop(self) -> None:
+        await super().stop()
+        self.stop_error = LOST if self.lost(self) else None
+
+
+async def _stops_lost() -> tuple[_StopsLost, VerbContext]:
+    """`_base`'s walk, on a body every stop of which is lost."""
+    _, recording, ctx = await _base()
+    body = _StopsLost(recording.inner, lambda _b: True)
+    ctx.transport = body
+    return body, ctx
+
+
+async def test_a_stop_partway_through_the_walk_that_did_not_reach_the_body_ends_it_there() -> None:
+    """The walk stops to look along its way, and read nothing of whether those stops landed: a
+    base whose link had gone was stopped, looked from and walked on from, as if it stood still.
+    It ends at the first that did not land, says so, and sends nothing after it."""
+    body, ctx = await _stops_lost()
+    _handled(ctx).stop_every = 0.2
+    _mark(ctx, "far", 0.8, -0.5)
+    result = await _go(ctx, "far")
+    assert not result.ok and result.data["outcome"] == "unstopped", result.summary
+    assert result.summary.startswith("go_to_place: it walked ")
+    said = f"But go_to_place's stop could not be delivered, so the body may still be moving: {LOST}"
+    assert said in result.summary
+    assert result.data["stop_error"] == LOST
+    stops = [i for i, sent in enumerate(body.sent) if sent[1] == "stop"]
+    assert body.twists(), "it never walked to its first stop"
+    assert stops == [len(body.sent) - 1], "the walk went on after a stop that did not land"
+
+
+async def test_a_walk_that_ends_on_a_stop_that_did_not_reach_the_body_says_so() -> None:
+    """Every ending of a walk sends one stop, and each read it as landed: its own clock running
+    out said the walk ended stopped over a base that may still be turning."""
+    body, ctx = await _stops_lost()
+    assert ctx.places is not None
+    gait = Gait.of(ctx, ctx.places.source, {})
+    _mark(ctx, "behind", -1.0, 0.0)
+    walk_s, turn_s = 1.0 / gait.v_exp, math.pi / gait.w_exp
+    result = await _go(ctx, "behind", timeout_s=walk_s + turn_s / 2)
+    assert not result.ok and result.data["outcome"] == "timeout", result.summary
+    assert result.summary.startswith("go_to_place: its ")
+    said = f"go_to_place's stop could not be delivered, so the body may still be moving: {LOST}"
+    assert said in result.summary
+    assert result.data["stop_error"] == LOST
+    assert body.sent[-1][1] == "stop"
+
+
 # ── refused before anything moves ───────────────────────────────────────────────────────
 
 

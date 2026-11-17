@@ -696,6 +696,44 @@ async def test_an_llm_cannot_answer_for_the_human() -> None:
         assert not session.executor.cleared
 
 
+@pytest.mark.parametrize(
+    "meant",
+    [
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "needs": {"payload_kg": "2 kg"}},
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "needs": {"weight_kg": 2}},
+        {"verdict": "infeasible", "reason": "it weighs 2 kg", "human": "no_go"},
+    ],
+    ids=["units", "a key outside the vocabulary", "a human field"],
+)
+async def test_an_assessment_the_vocabulary_refuses_withdraws_the_sessions_verdict(
+    meant: dict[str, Any],
+) -> None:
+    """The loop's rule on this surface: a re-assessment refused for its shape left the earlier
+    feasible standing, so a pilot that meant infeasible went on moving the body. The refusal
+    withdraws it, says so, and the next walk is refused until the pilot assesses again. The
+    tool's own schema drops a `human` field before it reaches the session, so that one is handed
+    to the session as any caller of `assess` could hand it."""
+    async with connected() as (client, session, transport):
+        assert (await _cleared(client))["ok"]
+        if "human" in meant:
+            said = await session.assess(dict(meant), {})
+        else:
+            said = _data(await client.call_tool("robot_assess_task", dict(meant)))
+        assert said["ok"] is False
+        assert said["summary"].endswith(
+            "; the verdict recorded before this one is withdrawn, so nothing that moves the body "
+            "runs until you assess again"
+        ), said["summary"]
+        assert not session.executor.cleared, "the earlier feasible still clears verbs that move"
+        walk = _data(
+            await client.call_tool(
+                "robot_run_verb", {"verb": "walk", "params": {"vx": 0.1, "duration_s": 0.2}}
+            )
+        )
+        assert walk["ok"] is False and "record a verdict first" in walk["summary"], walk
+        assert transport.intents_of("move") == []
+
+
 async def test_a_feasible_verdict_is_held_to_the_sessions_own_datasheet() -> None:
     """The loop's check, on the other surface. `robot_assess_task` matched `needs` against
     every OTHER robot in the team to fill in `could`, and recorded a `feasible` against this
