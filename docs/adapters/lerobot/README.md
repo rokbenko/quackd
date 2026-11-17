@@ -2108,9 +2108,10 @@ The order below is the whole of the feature, and none of it is a step you can sk
    wait. The arm is limp at a pose it holds by its own shape, so nothing is being spent by
    waiting, and somebody who has gone to find a pencil should come back to a run that is still
    there. The Enter takes hold of the arm where it is, so one that comes too soon is passed by,
-   as at the end's question: an Enter or a line typed before the question, a bare Enter within
-   2 seconds of the last one or from a key held down, and the first of those says so. A line
-   typed after the question starts the run, whatever is typed on it.
+   as at the end's question: an Enter or a line typed before the question was put, however late
+   it is read, without a word, and one within half a second after it, a bare Enter within 2
+   seconds of the last one or from a key held down, the first of which says so. A line typed
+   after the question starts the run, whatever is typed on it.
 4. **Roboglot takes hold of whatever you left.** The present position is written as the goal
    *before* torque comes on, written again after, and then the arm is read back. A joint that
    moved more than the same **5 degrees** every other goal on this page is judged by is a

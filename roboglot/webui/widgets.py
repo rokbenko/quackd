@@ -254,13 +254,18 @@ def frame(view: dict[str, Any]) -> None:
 
 
 def status(view: dict[str, Any]) -> None:
+    """The run's status, drawn straight above its question: plain text, since while a confirm
+    waits it names the call in the pilot's own words (`the LLM chose ...`), and as a caption,
+    which is Markdown, what the pilot put in an argument could hide or dress up the question."""
+    from roboglot.ui import printable
+
     if view.get("end"):
         return
     said = view.get("status") or {}
     text = said.get("text")
     if text:
         step = said.get("step")
-        st.caption(f"{step} · {text}" if step else text)
+        st.text(printable(f"{step} · {text}" if step else str(text)))
     elif view.get("running"):
         st.caption("starting")
 
@@ -322,7 +327,12 @@ def lines(job: Any, *, goal: int | None = None) -> list[str]:
 
 
 def narration(job: Any, *, goal: int | None = None, tail: int = 300) -> None:
-    text = "\n".join(lines(job, goal=goal)[-tail:])
+    """The run's steps, beside its question: an LLM's, a robot's and a server's words among
+    them, written out as the terminal writes them (`ui.printable_lines`), so a bidi override
+    cannot reorder what is shown next to the Yes."""
+    from roboglot.ui import printable_lines
+
+    text = "\n".join(printable_lines(line) for line in lines(job, goal=goal)[-tail:])
     if text:
         st.code(text, language=None, wrap_lines=True)
 
@@ -342,10 +352,12 @@ def outcome(view: dict[str, Any]) -> None:
 
 
 def terminal(view: dict[str, Any]) -> None:
+    from roboglot.ui import printable_lines
+
     said = view.get("stderr") or []
     if said:
         with st.expander("What a terminal would show"):
-            st.code("\n".join(said), language=None)
+            st.code("\n".join(printable_lines(str(line)) for line in said), language=None)
 
 
 # ── the way here from a phone ──

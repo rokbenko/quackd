@@ -1345,8 +1345,14 @@ class ConsoleLog(LineLog):
     def _plain(self, text: str) -> str:
         """Spelled for the stream in hand. On a codepage that has no degree sign or arrow
         those characters are lost either way, so an ASCII stand-in is strictly better than
-        the question mark they would otherwise arrive as."""
-        return self._ui.degrade(text, self._glyphs)
+        the question mark they would otherwise arrive as.
+
+        One line of a step, which is as often an LLM's, a robot's or a server's words as
+        Roboglot's (a reply and its thinking, a verb's result, a refusal, a detection, an error),
+        so every character a terminal could act on is written out as its escape first
+        (`ui.printable`): Rich takes out only a few, and the `llm<` line sits just above the
+        questions a run puts. A line with no such character is drawn as it always was."""
+        return self._ui.degrade(self._ui.printable(text), self._glyphs)
 
     def _write_line(self, text: Any) -> None:
         # never markup: an LLM that thinks about `[/think]` must not raise a format error,

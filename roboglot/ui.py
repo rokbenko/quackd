@@ -525,11 +525,21 @@ def printable(text: str) -> str:
     return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
 
 
+def printable_lines(text: str) -> str:
+    """`printable` on each line of `text`, its line breaks kept: for what a terminal prints on
+    lines of its own, a cell of a panel, a verdict's reason, an error, where a line break is
+    the text's own and every other character a terminal could act on is written out."""
+    if text.isprintable():
+        return text
+    return "\n".join(printable(line) for line in text.split("\n"))
+
+
 def _renderable(value: Any) -> RenderableType:
     """A cell: anything Rich already knows how to draw, or a string that must not be read as
-    markup because a manifest wrote it."""
+    markup because a manifest wrote it, nor acted on by the terminal because a robot, a board or
+    a server may have (`printable_lines`)."""
     if isinstance(value, str):
-        return Text(value)
+        return Text(printable_lines(value))
     if hasattr(value, "__rich__") or hasattr(value, "__rich_console__"):
         return value  # type: ignore[no-any-return]
     return Text(str(value))
@@ -641,7 +651,8 @@ def verdict(
         body = Table.grid()
         body.add_column(overflow="fold")
         if reason:
-            body.add_row(Text(reason))
+            # the pilot's or a robot's own words as often as Roboglot's
+            body.add_row(Text(printable_lines(reason)))
         if counters:
             body.add_row(joined(counters, g))
         where = [("run dir", path_text(run_dir))] if run_dir else []
@@ -660,12 +671,13 @@ def fail_line(
     """`error:` and what went wrong, with one dim line saying where to look next.
 
     The message routinely names an extra (`roboglot[anthropic]`), which is why it is appended
-    to a `Text` rather than formatted into markup that would eat the brackets."""
+    to a `Text` rather than formatted into markup that would eat the brackets. It can carry a
+    server's whole error body, so it goes through `printable_lines` as well."""
 
     def build(g: Glyphs) -> RenderableType:
         out = Text()
         out.append(f"{g.fail} error: ", style=STYLES["fail"])
-        out.append(message)
+        out.append(printable_lines(message))
         if hint:
             out.append("\n")
             out.append(f"  {hint}", style=STYLES["muted"])

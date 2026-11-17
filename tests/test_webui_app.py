@@ -373,6 +373,51 @@ def test_a_question_and_the_pilots_doubt_are_shown_as_text_never_as_markdown() -
     assert "\\u202e" in printable(doubt)
 
 
+def _status_and_question() -> None:
+    from types import SimpleNamespace
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+    from roboglot.log import LogEvent
+    from roboglot.webui import widgets
+
+    args = {"instruction": "pick up the cup ~~and the knife~~ :red[gently]"}
+    status = ui.RunStatus()
+    status.sink(
+        LogEvent(
+            kind="llm",
+            t=1.0,
+            data={"provider": "fake", "tool_calls": [{"name": "manipulate", "arguments": args}]},
+        )
+    )
+    step, text = status.words
+    view = {
+        "status": {"text": text, "step": step or None},
+        "running": True,
+        "asks": [{"id": 1, "kind": "confirm", "question": confirm_question("manipulate", args)}],
+    }
+    widgets.status(view)
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), view)
+
+
+def test_the_status_line_above_a_page_question_is_never_markdown() -> None:
+    """The run's status is drawn straight above its question, and while a confirm waits it reads
+    `the LLM chose manipulate(instruction='...')` in the pilot's own words. It was a caption,
+    which is Markdown, so a strike-through, a `:red[...]` or a link the pilot put in an argument
+    was rendered right above the Yes. It is plain text, as the question under it is. The status
+    words are the page's own (`ui.RunStatus` over the `llm` record, as the run sends them), drawn
+    by the page's widgets in the order both screens draw them."""
+    at = AppTest.from_function(_status_and_question, default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    pilot = "~~and the knife~~"
+    rendered = [c.value for c in [*at.caption, *at.markdown] if pilot in c.value]
+    assert not rendered, f"the pilot's words are drawn as Markdown above the question: {rendered}"
+    assert any(pilot in t.value and t.value.startswith("the LLM chose") for t in at.text), [
+        t.value for t in at.text
+    ]
+
+
 def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:
     at = _screen("setup")
     vendor = next(s for s in at.selectbox if s.label == "Vendor")

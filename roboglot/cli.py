@@ -8794,7 +8794,11 @@ def onboard_goal(
 
 
 def _follow_goal(conn: Any, *, yes: bool) -> int:
-    """The goal's lines, as they come, with its questions answered here, until it ends."""
+    """The goal's lines, as they come, with its questions answered here, until it ends.
+
+    Everything printed from the service goes through `ui.printable`: a status names the call the
+    LLM chose in its own words, on the line before the question it is about, and a reason or a
+    path may carry a robot's or a server's."""
     stops = 0
     while True:
         try:
@@ -8810,11 +8814,11 @@ def _follow_goal(conn: Any, *, yes: bool) -> int:
         ev = line.get("ev")
         if ev == "end":
             outcome = str(line.get("outcome", ""))
-            said = f"{outcome}: {line.get('reason', '')}".strip(": ")
+            said = ui.printable(f"{outcome}: {line.get('reason', '')}".strip(": "))
             ui.console.print(_ok_line(said) if outcome == "success" else _warn_line(said))
             return int(line.get("exit_code", 0 if outcome == "success" else 1))
         if ev == "refused":
-            ui.err_console.print(_warn_line(str(line.get("reason"))))
+            ui.err_console.print(_warn_line(ui.printable(str(line.get("reason")))))
             return 1
         if ev == "ask":
             question = ui.printable(str(line.get("question")))
@@ -8826,11 +8830,13 @@ def _follow_goal(conn: Any, *, yes: bool) -> int:
             answer = True if yes else typer.confirm(question, default=False)
             conn.send({"op": "answer", "id": line.get("id"), "yes": answer})
         elif ev == "status" and line.get("text"):
-            ui.err_console.print(Text(str(line["text"]), style=ui.STYLES["muted"]))
+            said = ui.printable(str(line["text"]))
+            ui.err_console.print(Text(said, style=ui.STYLES["muted"]))
         elif ev in ("notice", "say") and line.get("text"):
             ui.console.print(Text(ui.printable(str(line["text"]))))
         elif ev == "run_dir":
-            ui.err_console.print(Text(f"record: {line.get('path')}", style=ui.STYLES["muted"]))
+            path = ui.printable(str(line.get("path")))
+            ui.err_console.print(Text(f"record: {path}", style=ui.STYLES["muted"]))
 
 
 @onboard_app.command("uninstall")

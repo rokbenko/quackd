@@ -2200,6 +2200,11 @@ class _StreamLines:
     next question, so no line is lost or read twice. The end of input, or a read that raised,
     is what every question after it gets, as `input()` raised it again each time.
 
+    Lines go to whoever waits for one in the order they began to wait, two questions open at
+    once included, and a read is asked of the thread for each of them. Once this reader exists
+    it owns stdin: `sys.stdin` reads through it (`_ThroughTheReader`), so an `input()` later in
+    the process gets the line a question taken back left pending, and not the one after it.
+
     A pending read on a pipe cannot be interrupted on Windows, so the thread is a daemon one,
     and the interpreter ends without waiting for it."""
 
@@ -2207,7 +2212,11 @@ class _StreamLines:
         self._stream = stream
         self._wanted = threading.Semaphore(0)
         self._read: queue.Queue[str | BaseException] = queue.Queue()
-        self._pending = False
+        self._lock = threading.Lock()
+        self._asked = 0
+        """Reads asked of the thread whose line nobody has taken yet, under the lock."""
+        self._waiting: deque[object] = deque()
+        """Whoever waits for a line, in the order they began to, under the lock."""
         self._ended: BaseException | None = None
         threading.Thread(target=self._read_lines, name="roboglot-stdin-lines", daemon=True).start()
 
@@ -2223,24 +2232,92 @@ class _StreamLines:
             if not line:
                 return
 
-    async def line(self) -> str:
-        if self._ended is not None:
-            raise self._ended
-        if not self._pending:
-            self._pending = True
-            self._wanted.release()
-        while True:
+    def _join(self, who: object) -> None:
+        with self._lock:
+            self._waiting.append(who)
+            if self._asked < len(self._waiting):
+                self._asked += 1
+                self._wanted.release()
+
+    def _take(self, who: object) -> tuple[bool, str | BaseException]:
+        """Whether `who` has its line, and the line (with its newline) or what it raises."""
+        with self._lock:
+            if self._ended is not None:
+                with contextlib.suppress(ValueError):
+                    self._waiting.remove(who)
+                return True, self._ended
+            if not self._waiting or self._waiting[0] is not who:
+                return False, ""
             try:
                 got = self._read.get_nowait()
             except queue.Empty:
-                await asyncio.sleep(ASK_POLL_S)
-                continue
-            self._pending = False
+                return False, ""
+            self._waiting.popleft()
+            self._asked -= 1
             if isinstance(got, BaseException):
                 self._ended = got
-                raise got
-            # as `input()` returns it: the line without its newline
-            return got[:-1] if got.endswith("\n") else got
+            return True, got
+
+    def _leave(self, who: object) -> None:
+        """`who` waits no more: taken back. A read asked for it stays asked, and its line is the
+        next one's who waits."""
+        with self._lock, contextlib.suppress(ValueError):
+            self._waiting.remove(who)
+
+    async def line(self) -> str:
+        """The next line, without its newline, for a question on the run's loop, which goes on
+        while it waits; `EOFError` at the end of input, as `input()` raises it."""
+        who = object()
+        self._join(who)
+        try:
+            while True:
+                done, got = self._take(who)
+                if done:
+                    break
+                await asyncio.sleep(ASK_POLL_S)
+        except BaseException:
+            self._leave(who)
+            raise
+        if isinstance(got, BaseException):
+            raise got
+        # as `input()` returns it: the line without its newline
+        return got[:-1] if got.endswith("\n") else got
+
+    def readline(self) -> str:
+        """The next line, as a stream's `readline` gives it, for whatever reads stdin outside a
+        question (`_ThroughTheReader`): its newline kept, and "" at the end of input."""
+        who = object()
+        self._join(who)
+        try:
+            while True:
+                done, got = self._take(who)
+                if done:
+                    break
+                time.sleep(ASK_POLL_S)
+        except BaseException:
+            self._leave(who)
+            raise
+        if isinstance(got, EOFError):
+            return ""
+        if isinstance(got, BaseException):
+            raise got
+        return got
+
+
+class _ThroughTheReader:
+    """`sys.stdin` once a question has read it through `_StreamLines`: every line read in this
+    process from then on comes through that one reader, in order, `input()`'s and a prompt's
+    included, and everything else is the stream's own."""
+
+    def __init__(self, stream: Any, lines: _StreamLines) -> None:
+        self._stream = stream
+        self.lines = lines
+
+    def readline(self, size: int = -1) -> str:
+        return self.lines.readline()
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._stream, name)
 
 
 _STREAM_LINES: _StreamLines | None = None
@@ -2251,8 +2328,13 @@ own beside the first's pending read."""
 
 def _lines_of(stream: Any) -> _StreamLines:
     global _STREAM_LINES
+    if isinstance(stream, _ThroughTheReader):
+        return stream.lines
     if _STREAM_LINES is None or _STREAM_LINES._stream is not stream:
         _STREAM_LINES = _StreamLines(stream)
+        if sys.stdin is stream:
+            # from here on every read of stdin goes through the one reader
+            sys.stdin = _ThroughTheReader(stream, _STREAM_LINES)  # type: ignore[assignment]
     return _STREAM_LINES
 
 
@@ -2359,7 +2441,7 @@ class KillSwitch:
         if alone:
             self._announce(self._alone)
 
-    def _line_since(self, since: float) -> str | None:
+    def _line_since(self, since: float, *, typed_is_a_yes: bool = False) -> str | None:
         """What was typed on the first line from `since` on that says anything: one with something
         on it, a no, as soon as it is read, or a bare one that comes after quiet (`ENTER_QUIET_S`)
         and stands alone (`ENTER_ALONE_S`), a yes, once it is sure to have. None where neither has
@@ -2382,7 +2464,10 @@ class KillSwitch:
             enters = list(self._enters)
             looked = now if self._looked is None else self._looked
         for n, enter in enumerate(enters):
-            came = enter.at if enter.text else enter.earliest
+            # a typed line by when it was read, where it is a no; by the earliest it can have
+            # come in where it is a yes (`typed_is_a_yes`), as a bare Enter always is, so a line
+            # already waiting when the question was put never counts, however late it is read
+            came = enter.at if enter.text and not typed_is_a_yes else enter.earliest
             if not enter.answers or came < since:
                 continue
             after = enters[n + 1].earliest if n + 1 < len(enters) else looked
@@ -2395,15 +2480,16 @@ class KillSwitch:
         """Whether a bare Enter read since the question was put at `asked_at` has been passed by
         for good: too soon after the question or too close behind another, which is also how one
         with another close behind it is found. One still waiting to be sure of is not. With
-        `lines`, a line with something typed on it read too soon after the question counts as
-        well, for a wait where such a line would have been a yes (`TOO_SOON_ONLY`)."""
+        `lines`, a line with something typed on it read since the question and too soon after it,
+        by the earliest it can have come in, counts as well, for a wait where such a line would
+        have been a yes (`TOO_SOON_ONLY`)."""
         with self._enters_lock:
             enters = list(self._enters)
         for enter in enters:
             if not enter.answers or enter.at < asked_at:
                 continue
             if enter.text:
-                if lines and enter.at < asked_at + TYPED_AHEAD_S:
+                if lines and enter.earliest < asked_at + TYPED_AHEAD_S:
                     return True
                 continue
             if enter.earliest < asked_at + TYPED_AHEAD_S or enter.quiet < ENTER_QUIET_S:
@@ -2678,7 +2764,12 @@ class KillSwitch:
         self._alone.clear()
         deadline = None if timeout_s is None else loop.time() + timeout_s
         while True:
-            if deliberate and (answer := self._line_since(asked_at + TYPED_AHEAD_S)) is not None:
+            answer = None
+            if deliberate and typed_is_a_no:
+                answer = self._line_since(asked_at + TYPED_AHEAD_S)
+            elif deliberate:
+                answer = self._line_since(asked_at + TYPED_AHEAD_S, typed_is_a_yes=True)
+            if answer is not None:
                 if self.presses > presses:
                     return False
                 if answer and typed_is_a_no:

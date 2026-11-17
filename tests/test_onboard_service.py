@@ -604,6 +604,37 @@ def test_a_goal_sent_with_yes_marks_every_question_it_can_put_as_answered_by_yes
         assert getattr(asked, kind).answers_as is None, kind
 
 
+def test_a_goal_answered_at_the_onboard_client_is_recorded_as_answered_there(
+    tmp_path: Path,
+) -> None:
+    """A goal's questions go to `roboglot onboard goal`, a terminal on the service's socket,
+    through the page's own answerers, and every prompt row a person answered there said
+    `channel: web`, the page `roboglot ui` serves, which nobody had open. The service names the
+    client's channel for its goals, and the page's own runs keep `web`."""
+    import io
+
+    from roboglot.front import CHANNEL, Channel, Front
+    from roboglot.log import asked_on
+
+    home = robot(tmp_path, HOUSEHOLD)
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type,return-value]
+    fronts: list[Any] = []
+
+    def held_for_the_test(_text: str, front: Any, max_steps: int | None = None) -> str:
+        fronts.append(front)
+        return "held for the test"
+
+    service.slot = SimpleNamespace(goal=held_for_the_test)  # type: ignore[assignment]
+    conn = SimpleNamespace(writer=io.StringIO(), close=lambda: None)
+    service._goal({"op": "goal", "text": "look at the door"}, conn)
+    (goal,) = fronts
+    for kind in ("confirm", "decide", "acknowledge", "judge"):
+        # the word a record carries, so spelled out here as a reader of the record sees it
+        assert asked_on(getattr(goal, kind)) == {"channel": "onboard"}, kind
+    page = Front(Channel(io.StringIO()), "run")
+    assert asked_on(page.confirm) == {"channel": CHANNEL} == {"channel": "web"}
+
+
 def test_a_goals_connection_ends_when_the_goal_does(tmp_path: Path) -> None:
     """Nothing closed a goal's connection once its run had ended, and its socket had no send
     timeout, so every goal left its socket, its reader and its writer behind, and a client that

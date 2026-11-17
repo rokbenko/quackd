@@ -82,6 +82,11 @@ PROTOCOL = 1
 CHANNEL = "web"
 """The channel a page's lines and answers are recorded under, beside the keyboard and a pipe."""
 
+ONBOARD_CHANNEL = "onboard"
+"""The channel an answer given at `roboglot onboard goal` is recorded under: a terminal on the
+onboard service's socket, which puts a goal's questions through the page's own answerers and is
+no page (`roboglot.onboard.service`)."""
+
 QUESTION_TIMEOUT_S = 300.0
 """How long a run waits on a question nobody answers before taking it back. A terminal waits for
 ever, and the person is in the room; a page may be a phone in a pocket, and a run that asks is
@@ -298,7 +303,11 @@ class Channel:
                 self._events.append({"ev": ev, **data})
                 self._cv.notify()
                 return
-        self._broke()
+        # Whoever sends may hold a lock the page's end takes: `Questions` sends a question, and
+        # takes one back, under its own, and `on_broken` is `Front.on_end`, which takes that
+        # lock first. Run on this thread, the end waited on its own sender for ever, the run's
+        # loop among them. So it runs on a thread of its own, and the sender goes on.
+        self._broke(elsewhere=True)
 
     def frame(self, image: Image.Image, caption: str | None) -> None:
         """Offer the newest frame. Copied here, because the loop may draw over its own, and
@@ -334,8 +343,10 @@ class Channel:
             with contextlib.suppress(Exception):
                 callback()
 
-    def _broke(self) -> None:
-        """The page is gone: said once, to whoever asked to hear it (`on_broken`)."""
+    def _broke(self, *, elsewhere: bool = False) -> None:
+        """The page is gone: said once, to whoever asked to hear it (`on_broken`), on this
+        thread, which holds no lock, or with `elsewhere` on a thread of its own, for a sender
+        that may hold one."""
         with self._cv:
             if self.broken.is_set():
                 return
@@ -345,9 +356,17 @@ class Channel:
             self._frame = None
             self._cv.notify()
         callback = self._on_broken
-        if callback is not None:
+        if callback is None:
+            return
+
+        def say_gone() -> None:
             with contextlib.suppress(Exception):
                 callback()
+
+        if elsewhere:
+            threading.Thread(target=say_gone, name="roboglot-front-gone", daemon=True).start()
+        else:
+            say_gone()
 
     def _pump(self) -> None:
         while True:
@@ -755,6 +774,10 @@ class Front:
         self.decide = Answerer(self, "decide", lambda why: (GO_AHEAD, why))
         self.acknowledge = Answerer(self, "acknowledge", lambda why: (WATCHING, why))
         self.judge = Answerer(self, "judge", lambda why: (DID_IT, why))
+        if command == "onboard goal":
+            # answered at `roboglot onboard goal`, which is no page, and the record says so
+            for asker in (self.confirm, self.decide, self.acknowledge, self.judge):
+                asker.channel = ONBOARD_CHANNEL
 
     @classmethod
     def open(cls, command: str) -> Front:

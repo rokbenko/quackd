@@ -138,8 +138,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   where you put it and starts the run, and it was the one such question that took any Enter: one
   typed before the question was printed, or the next repeat of an Enter held down from the
   question before, answered it before anybody had read it. One that comes too soon is passed by
-  now, as at the question at the end of the run: an Enter or a line typed before the question, a
-  bare Enter within 2 seconds of the last one or from a key held down, and the first of those
+  now, as at the question at the end of the run: an Enter or a line typed before the question was
+  put, however late it is read, without a word, and one within half a second after it, a bare
+  Enter within 2 seconds of the last one or from a key held down, the first of which
   says `that Enter answered nothing, because it came too soon after the question or too close to
   another: take your finger off it, wait 2 s and press it once`. A line typed after the question
   starts the run whatever is typed on it, as it always did.
@@ -487,6 +488,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   was told `a person read that and said go`. The record now names `--yes` and writes no `prompt`
   row, the pilot hears that the run was started to go ahead without asking anybody, and a verb
   only a person may clear, or one its backend has a person answer each time, is refused.
+- **An answer given at `roboglot onboard goal` is recorded as given there.** Its `prompt` row said
+  `channel: web`, the page `roboglot ui` serves, which nobody had open. It says
+  `channel: onboard` now; a run's questions answered in the page still say `web`.
 - **A question on a piped stdin no longer holds the run.** With stdin a pipe or a file, each
   question was read on the run's own thread, so while it waited the heartbeat did not beat,
   nothing else ran, and on Windows a Ctrl-C was not seen until a line or the end of input came.
@@ -621,11 +625,23 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   Rich takes out only a few control characters, so an escape sequence in it could erase
   Roboglot's own lines and print others in its voice before a yes that lets every verb move the
   body. The same held for a goal's doubt in `roboglot drive`, for the run's own terminal line
-  when the page asks, and for the text beside the watching and the judging questions. Every
+  when the page asks, for the text beside the watching and the judging questions, for a fold's
+  reason quoted inside the questions over an arm whose fold missed, and for every line
+  `roboglot onboard goal` prints from the service, its status and its outcome among them. Every
   character that could act on a terminal is now written out as its escape, as in `\x1b[2K`, and
-  the page shows a question and the pilot's doubt as plain text rather than Markdown, where a
-  strike-through or a hidden formula could hide part of it. Text with no such character reads as
-  it did.
+  the page shows a question, the pilot's doubt, the status line above them, the run's steps
+  beside them and a chat's earlier lines as plain text rather than Markdown, where a
+  strike-through or a hidden formula could hide part of them. Text with no such character reads
+  as it did.
+- **What an LLM, a robot or a server wrote can no longer act on the live terminal.** A run
+  printed an LLM's reply and its thinking, a verb's result, a note the pilot asked to keep, a
+  refusal, a detection, the reason the run ended on and a server's error body as they came, and
+  Rich takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
+  an OSC 52 sequence wrote their clipboard, and the `llm<` line is printed just above the
+  questions a run puts. Every such line now writes each character a terminal could act on as its
+  escape, as in `\x1b[2J`, and keeps its own line breaks. A line with no such character prints
+  as it did. `roboglot log` replaying a saved run still prints some of a record's text as it
+  was written.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

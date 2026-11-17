@@ -279,7 +279,8 @@ def test_a_page_that_stops_reading_with_its_pipe_open_is_a_page_that_went_away(
             channel.send("event", n=n, text=filler)
         time.sleep(0.6)
         channel.send("ask", id=1, kind="confirm", question="run kick()?")
-        assert channel.broken.is_set() and gone == ["gone"], "a stalled page was waited on"
+        assert channel.broken.is_set(), "a stalled page was waited on"
+        _until(lambda: gone == ["gone"])  # said on a thread of its own, never the sender's
         queued = len(channel._events)
         for n in range(100):
             channel.send("event", n=n, text=filler)
@@ -294,6 +295,52 @@ def test_a_page_that_stops_reading_with_its_pipe_open_is_a_page_that_went_away(
             out.close()
     assert not channel._writer.is_alive(), "the writer was left blocked"
     assert gone == ["gone"], "said more than once"
+
+
+@pytest.mark.parametrize("when", ["put", "timed out"])
+def test_a_question_put_or_taken_back_on_a_stalled_page_does_not_hang_its_thread(
+    when: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A send that finds the page stalled ran the page's end on the thread that sent, and that
+    end takes the questions' lock, which `Questions` holds while it sends a question or takes
+    one back: the thread waited on itself for ever. For a run's question that thread is the
+    loop's, so the run, its heartbeat and its stop all stopped there. Here the very send that
+    finds the stall is a question put, or one taken back when nobody answered it (the way a
+    page that stopped reading always ends): the thread that asked must come back, with the
+    question taken back, and the end must still reach the run."""
+    monkeypatch.setattr(front_mod, "END_FLUSH_S", 0.2)
+    stuck = threading.Event()
+
+    class StoppedReading:
+        def write(self, _text: str) -> int:
+            stuck.set()
+            threading.Event().wait()  # the page never reads this line
+            return 0
+
+        def flush(self) -> None:
+            pass
+
+    channel = Channel(StoppedReading())
+    front = Front(channel, "run")
+    channel.on_broken(front.on_end)  # as `Front.open` wires it
+    channel.send("hello")
+    assert stuck.wait(5.0)
+    outcome: list[str] = []
+
+    def ask() -> None:
+        try:
+            outcome.append(str(front.questions.ask("confirm", "run kick()?", timeout_s=0.4)))
+        except QuestionWithdrawn as e:
+            outcome.append(f"withdrawn: {e}")
+
+    if when == "put":
+        time.sleep(0.3)  # the write has waited past END_FLUSH_S before the question is put
+    asking = threading.Thread(target=ask, daemon=True)
+    asking.start()
+    asking.join(5.0)
+    assert not asking.is_alive(), "the thread that asked waits on its own lock for ever"
+    assert outcome and outcome[0].startswith("withdrawn"), outcome
+    _until(lambda: front.questions.gone, 5.0)
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="a pending read holds a pipe on Windows")

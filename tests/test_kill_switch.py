@@ -11,6 +11,7 @@ would hang the suite exactly as a `--by-hand` run correctly hangs waiting for a 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import io
 import os
@@ -326,6 +327,69 @@ async def test_a_question_on_a_pipe_leaves_the_loop_running_and_reads_each_line_
                 os.close(write)
 
 
+async def test_two_questions_open_at_once_on_a_pipe_each_get_a_line_in_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question that found a read already pending waited on that read's line, and once the
+    other question took it nothing asked for another: with `y` and `n` already in the pipe the
+    second question waited for ever. `input()` read them one after the other. Lines go to open
+    questions in the order the questions were put."""
+    from roboglot import safety
+
+    read, write = os.pipe()
+    with os.fdopen(read, encoding="utf-8") as pipe:
+        monkeypatch.setattr(sys, "stdin", pipe)
+        monkeypatch.setattr(safety, "_STREAM_LINES", None)
+        monkeypatch.setattr(sys, "stdout", io.StringIO())
+        ks = KillSwitch(asyncio.Event())
+        ks.install()
+        try:
+            assert ks.reads_a_stream()
+            os.write(write, b"y\nn\n")
+            first = asyncio.ensure_future(ks.ask_async("one? "))
+            second = asyncio.ensure_future(ks.ask_async("two? "))
+            assert await _within(first) == "y"
+            assert await _within(second) == "n", "the second question was never read a line"
+        finally:
+            ks.uninstall()
+            os.close(write)
+
+
+async def test_a_line_a_question_taken_back_was_waiting_for_is_the_next_readers_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A question on a pipe taken back leaves its read pending, and that read took the next line
+    the pipe delivered: an `input()` later in the same process, a prompt after the run, then
+    waited for the line after it, and for ever where there was none. Once a question has read
+    stdin, every read of it goes through the one reader, so the line comes to whoever reads next,
+    `input()` included."""
+    from roboglot import safety
+
+    read, write = os.pipe()
+    with os.fdopen(read, encoding="utf-8") as pipe:
+        monkeypatch.setattr(sys, "stdin", pipe)
+        monkeypatch.setattr(safety, "_STREAM_LINES", None)
+        monkeypatch.setattr(sys, "stdout", io.StringIO())
+        ks = KillSwitch(asyncio.Event())
+        ks.install()
+        try:
+            asking = asyncio.ensure_future(ks.ask_async("go? "))
+            await asyncio.sleep(0.2)
+            asking.cancel()  # taken back, its read still pending
+            with contextlib.suppress(asyncio.CancelledError):
+                await asking
+            ks.uninstall()
+            os.write(write, b"y\n")
+            done, _ = await asyncio.wait(
+                {asyncio.ensure_future(asyncio.to_thread(input))}, timeout=5
+            )
+            assert done, "the line went to the read the question left behind"
+            assert done.pop().result() == "y"
+        finally:
+            ks.uninstall()
+            os.close(write)  # ends any read still waiting
+
+
 def test_a_read_still_waiting_on_a_pipe_when_the_run_ends_does_not_hold_the_process() -> None:
     """A read pending on a pipe cannot be interrupted on Windows, so a question taken back leaves
     the pipe's reader waiting on a line that may never come. It is a daemon thread, and the
@@ -454,6 +518,41 @@ async def test_the_by_hand_start_passes_by_what_came_too_soon_and_takes_any_line
     loop.call_later(0.3, asked._heard_enter, "placed it")
     assert await asked.wait_for_enter(timeout_s=3.0, deliberate=True) is False
     assert asked.declined is True, "a deliberate question no longer takes a typed line for a no"
+
+
+async def test_a_line_typed_before_the_by_hand_question_and_read_late_does_not_start_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """At the by-hand start a typed line is a yes, and it was measured by when the key thread
+    read it, where a bare Enter is measured by the earliest it can have come in: a key thread
+    held up read `placed it`, typed before anybody had read the question, half a second late,
+    and the arm was taken hold of where it was. A line that was already waiting when the
+    question was put does not count however late it is read, as a bare Enter in its place does
+    not. The key thread's own two calls are made by hand on the suite's scripted clock: a look
+    that found nothing, then the line read well after the question."""
+    from roboglot.safety import TOO_SOON_ONLY
+
+    clock = _Clock()
+    monkeypatch.setattr("roboglot.safety.time", clock)
+
+    async def outcome(typed: str) -> bool | None:
+        ks = KillSwitch(asyncio.Event())
+        ks._loop = asyncio.get_running_loop()
+        ks._nothing_waiting(clock.now)  # the key thread looks, and nothing is there yet
+        clock.now += 0.01  # the line is typed now, and the key thread is held up
+        waiting = asyncio.ensure_future(ks.wait_for_enter(timeout_s=3.0, deliberate=TOO_SOON_ONLY))
+        await asyncio.sleep(0.05)  # the question is put
+        clock.now += 2 * TYPED_AHEAD_S  # the key thread gets going again, well after
+        ks._heard_enter(typed)  # and reads what was typed before the question
+        done, _ = await asyncio.wait({waiting}, timeout=0.5)
+        if not done:
+            waiting.cancel()
+            await asyncio.gather(waiting, return_exceptions=True)
+            return None
+        return waiting.result()
+
+    assert await outcome("") is None, "a bare Enter typed ahead and read late is passed by"
+    assert await outcome("placed it") is None, "a line typed ahead and read late started it"
 
 
 async def test_an_enter_typed_ahead_of_a_deliberate_question_is_passed_by(

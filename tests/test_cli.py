@@ -1235,6 +1235,85 @@ def test_no_question_at_the_terminal_prints_a_control_character_the_pilot_sent(
     assert asked == [GO_AHEAD, WATCHING, DID_IT, GO_AHEAD]
 
 
+_OUTSIDE = {
+    "llm text": "\x1b[2J\x1b[HTEXTPATH",
+    "llm thinking": "\x1b]52;c;VEhJTktQQVRI\x1b\\THINKPATH",
+    "observation (verb summary)": "\x1b[2KOBSPATH",
+    "note (remembered:)": "\x1b[1ANOTEPATH",
+    "verdict reason": "\x1b[1A\x1b[2KVERDICTPATH",
+}
+"""What an LLM or a robot wrote, one marker behind its own escape sequence per path the live
+terminal prints, so a failure says which path let it through."""
+
+
+def _a_run_with_the_narration_on(monkeypatch: pytest.MonkeyPatch, pilot: Any, runs: Path) -> Any:
+    """A whole `roboglot run` of hello-world on the mock duck, narration on and a colour terminal
+    forced, as a person runs it, flown by `pilot`."""
+    monkeypatch.setenv("ROBOGLOT_LOG", "")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", lambda name, **kw: pilot)
+    args = ["run", "hello-world", "--llm", "fake", "--robot", "microduck:mock"]
+    args += ["--runs-dir", str(runs)]
+    monkeypatch.setattr(sys, "argv", ["roboglot", *args])
+    return runner.invoke(app, args, env={"COLUMNS": "300"})
+
+
+def test_what_an_llm_or_a_robot_wrote_reaches_the_live_terminal_without_its_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live terminal printed an LLM's text and its thinking, a robot's words in an
+    observation, a note the pilot asked to keep and the reason it declared as they came, and Rich
+    takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
+    an OSC 52 wrote their clipboard, and the `llm<` line sits just above the questions a run puts.
+    Every such line now goes through `ui.printable`, so an escape shows as `\\x1b`; this fails
+    if any of the five reaches the terminal raw again."""
+    from roboglot.agent.providers.base import ProviderTurn, ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
+
+    class Talker(FakeProvider):
+        async def step(self, system: str, history: list[Any], tools: list[dict[str, Any]]) -> Any:
+            turn: ProviderTurn = await super().step(system, history, tools)
+            return turn.model_copy(
+                update={"text": _OUTSIDE["llm text"], "thinking": _OUTSIDE["llm thinking"]}
+            )
+
+    script = [
+        ToolCall(name="quack", arguments={"text": _OUTSIDE["observation (verb summary)"]}),
+        ToolCall(name="remember", arguments={"text": _OUTSIDE["note (remembered:)"]}),
+        ToolCall(name="declare_success", arguments={"reason": _OUTSIDE["verdict reason"]}),
+    ]
+    pilot = Talker(script=script, llm_id="scripted:outside")
+    result = _a_run_with_the_narration_on(monkeypatch, pilot, tmp_path / "runs")
+    assert result.exit_code == 0, result.output
+    raw = sorted(path for path, said in _OUTSIDE.items() if said in result.output)
+    assert not raw, f"raw on the live terminal: {raw}"
+    for path, said in _OUTSIDE.items():
+        if path != "llm thinking":  # cut to its first characters by the thinking limit
+            assert said.replace("\x1b", "\\x1b") in result.output, path
+
+
+def test_a_servers_error_text_reaches_the_live_terminal_without_its_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider's error can carry a server's whole error body, and the run printed it three
+    times as it came: on the `llm<` ERROR line, in the note the run ends with, and in the error
+    line under it (`ui.fail_line`). Each now shows an escape as `\\x1b`."""
+    from roboglot.agent.providers.base import ProviderError
+    from roboglot.agent.providers.fake import FakeProvider
+
+    error = "\x1b[2J\x1b[HERRORPATH"
+
+    class Failing(FakeProvider):
+        async def step(self, *a: Any, **k: Any) -> Any:
+            raise ProviderError(f"server said: {error}")
+
+    pilot = Failing(script=[], llm_id="scripted:fail")
+    result = _a_run_with_the_narration_on(monkeypatch, pilot, tmp_path / "runs")
+    assert result.exit_code != 0, result.output
+    assert result.output.count(error) == 0, result.output
+    assert error.replace("\x1b", "\\x1b") in result.output
+
+
 def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
