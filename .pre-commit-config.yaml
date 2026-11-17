@@ -17,7 +17,7 @@ repos:
         args: ["--maxkb=2048"]
         exclude: ^(docs/assets/lerobot\.gif|docs/examples/[^/]+/e[0-9]+/log/(part-[0-9]+/)?run\.gif)$
   # ruff is the one uv.lock holds, run in the project's own environment, so the hooks and CI's
-  # `uv run ruff` are always the same release. `uv sync --extra dev` first.
+  # `uv run ruff` are always the same release. `uv sync` first.
   - repo: local
     hooks:
       - id: ruff

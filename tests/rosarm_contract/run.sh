@@ -42,7 +42,7 @@ fi
 # no longer matches a pyproject.toml fails here, and is never rewritten.
 export UV_PROJECT_ENVIRONMENT=/opt/roboglot UV_LINK_MODE=copy PYTHONDONTWRITEBYTECODE=1
 unset PYTHONPATH
-uv sync --locked --python 3.12 --extra dev --extra rosarm
+uv sync --locked --python 3.12 --extra rosarm
 /opt/roboglot/bin/python -c "import roslibpy; print('roslibpy', roslibpy.__version__)"
 
 ROBOGLOT_ROSARM_CONTRACT=1 /opt/roboglot/bin/python -m pytest -p no:cacheprovider -p no:randomly \
