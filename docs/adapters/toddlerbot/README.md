@@ -186,14 +186,23 @@ has the details and the exact messages.
 
 **Each part has its own owner.** The body (a walk, a stand or a motion), the neck and each
 gripper are owned by the connection whose command each is executing, and by nobody while
-holding after a stop or never commanded. A connection's keepalive keeps alive only its own
-parts, and when it goes quiet or away the deadman brings those parts, and only those, to rest.
-So a second client's look or grip never takes over a first client's walk, and the walk ends with
-its client. A stop is honoured from anyone, stops every part and leaves every part owned by
-nobody: it arms nothing, so a `roboglot doctor` check, which sends a stop as it disconnects,
-moves nothing on a robot nobody is driving. Against a run in flight it stops the run's motion
-and the robot holds; the run is told at its next keepalive or command, and its heartbeat fails
-with the reason. Run doctor checks between runs.
+holding: after a stop, after a stand or a motion has played to its end, or when never
+commanded. A connection's keepalive keeps alive only its own parts, and when it goes quiet or
+away the deadman brings those parts, and only those, to rest. So a second client's look or grip
+never takes over a first client's walk, and the walk ends with its client. A command that takes
+a part another connection was driving tells that connection. A motion moves the head and the
+hands too, so it takes them with the body, and is refused, with the reason, while another
+connection drives one of them or one is still coming to rest. A stop is honoured from anyone,
+stops every part and leaves every part owned by nobody: it arms nothing, so a `roboglot doctor`
+check, which sends a stop as it disconnects, moves nothing on a robot nobody is driving. Against
+a run in flight it stops the run's motion and the robot holds; the run is told at its next
+keepalive or command, and its heartbeat fails with the reason. Run doctor checks between runs.
+
+**Motions that go to the floor.** `crawl` and `push_up` lie the robot down on purpose, past the
+fall threshold, so they play to their end and the robot lying after one is not read as fallen:
+`stand` brings it back up, and a walk or an upright motion waits for that. Which motions those
+are is a table in the daemon (`FLOOR_MOTIONS`), by what each is named for, because the keyframes
+carry no orientation of the trunk to read it from.
 
 **After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
 settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets

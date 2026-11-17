@@ -397,7 +397,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   pose. A signal during a shutdown begun by something else, the server failing for one, went
   straight through the settle and skipped `close()`, so the interpreter's exit turned torque off
   wherever the robot stood; two shutdowns could also race. Shutdown is entered once now, from
-  whatever began it, and reaches `close()` on every path.
+  whatever began it, takes no lock on the way in that a second signal could find held by its own
+  thread and wait on for ever, and reaches `close()` on every path.
 - **Each part of a ToddlerBot has its own owner, and only a silent owner's parts are brought to
   rest.** A keepalive from any connection fed one deadman, so an idle second client, a
   `serve-mcp` session or a `doctor` probe, kept a walk going after the client that started it had
@@ -406,8 +407,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   owned by the connection whose command each is executing, a connection's keepalive keeps alive
   only its own parts, and when it goes quiet or away the deadman brings those parts, and only
   those, to rest. A stop from any connection stops every part and leaves them all owned by nobody,
-  and a connection that lost a part to it, or to a shutdown, is told at its next keepalive or
-  command, where nothing said so, and its heartbeat fails with the reason.
+  and so does a stand or a motion that has played to its end, whose client's leaving stood the
+  robot up from a kneel minutes later. A connection that lost a part to a stop, to a shutdown or
+  to another connection's command is told at its next keepalive or command, where nothing said
+  so, and its heartbeat fails with the reason. A motion moves the head and the hands too, and
+  played a hundred times slower round a head another client held, or one the deadman had put to
+  rest, which stayed at rest for good; it takes them with the body now, is refused with the reason
+  while another connection drives one or one is still coming to rest, and a rest ends once the
+  part is there.
 - **A ToddlerBot loop that gives up takes no more orders and settles.** After ten failing ticks in
   a row the loop stopped without settling, and every move went on answering accepted with nothing
   to carry it out. It refuses every move with the reason now, its health says so, and it settles
@@ -419,7 +426,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   before it, and a new walk was accepted on a fallen robot, which `stand` and `perform` refuse;
   the deadman meanwhile drove a fallen robot towards the standing pose. Whatever is in flight on
   the body ends on the tick that reads the fall now, the robot holds where it lies, a walk is
-  refused while it is down, and on a fallen robot the deadman's rest is that hold.
+  refused while it is down, and on a fallen robot the deadman's rest is that hold. `crawl` and
+  `push_up` go to the floor on purpose, so they play to their end, the robot lying after one is
+  not read as fallen, and `stand` brings it back up; which motions those are is a table in the
+  daemon, by what each is named for, since the keyframes carry no orientation of the trunk.
 - **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
   the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
   now, the answer saying what it was held to.

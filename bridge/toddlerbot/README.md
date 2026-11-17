@@ -43,15 +43,22 @@ the grippers included, and its answer lists what it stopped.
 
 **Who owns what.** The robot is three kinds of part: the body (a walk, a stand or a motion), the
 neck, and each gripper. A part is owned by the connection whose command it is executing, and by
-nobody while it holds after a stop or has never been commanded. A connection's keepalive keeps
-alive only the parts it owns. When an owner goes quiet for half a second, or disconnects, the
-parts it owns, and only those, are brought to rest by the deadman: the body slews to the safe
-pose, waist first, and the neck and each gripper to their place in it, all at upstream's own
-0.3 rad/s. A command for one part never takes another over, so a second client's look or grip
-leaves a first client's walk to that client, and the walk ends when its client does.
+nobody while it holds: after a stop, after its stand or motion has played to its end, or when it
+has never been commanded. A connection's keepalive keeps alive only the parts it owns. When an
+owner goes quiet for half a second, or disconnects, the parts it owns, and only those, are
+brought to rest by the deadman: the body slews to the safe pose, waist first, and the neck and
+each gripper to their place in it, all at upstream's own 0.3 rad/s; a head or a gripper's rest
+ends once it is there. A command for one part never takes another over, so a second client's
+look or grip leaves a first client's walk to that client, and the walk ends when its client
+does. A command that takes a part another connection was driving tells that connection, as a
+stop does (below).
 
-A daemon nobody has commanded holds the robot where it stands, and so does one a stop left
-holding: nobody owns a part then, so the deadman moves nothing.
+A motion moves every joint, the head and the hands too, so it takes the neck and the grippers
+with the body. It is refused, with the reason, while another connection is driving one of them
+or the deadman is still bringing one to rest, rather than played round a head it cannot reach.
+
+A daemon nobody has commanded holds the robot where it stands, and so does one a stop or a
+finished motion left holding: nobody owns a part then, so the deadman moves nothing.
 
 **A stop.** It is honoured from any connection, and it stops every part: the robot holds where
 it was last measured, every part is owned by nobody, and the answer lists what it stopped. It
@@ -63,9 +70,15 @@ check between runs. A stop that lands before the first good reading holds wherev
 finds the robot.
 
 **A fall.** When a fall is read, whatever was in flight on the body ends, a walk, a stand, a
-motion or the deadman's own slew, and the robot holds where it lies. On a fallen robot rest is
-that hold, for every part: the deadman never drives a body on the floor towards standing.
+motion or the deadman's own slew, and the robot holds where it lies. On a robot lying down rest
+is that hold, for every part: the deadman never drives a body on the floor towards standing.
 Upstream detects no fall and prescribes nothing for one.
+
+**A motion that goes to the floor is not a fall.** `crawl` and `push_up` take the robot down on
+purpose, past the fall threshold, so they play to their end, and the robot lying after one is
+not read as fallen: `stand` brings it back up, and a walk or an upright motion is refused until
+it has. The daemon cannot tell this from the keyframes, which carry motor targets and no
+orientation of the trunk, so `FLOOR_MOTIONS` is a table of those two, by what each is named for.
 
 Once a shutdown begins, every command that moves the robot is refused with the reason, so a
 connected client cannot keep the settle from the safe pose, and `bot.health` says the daemon is

@@ -2492,3 +2492,226 @@ def test_a_token_file_that_is_not_utf8_has_none_of_its_bytes_in_the_refusal(
     with pytest.raises(D.TokenFileError) as caught:
         D.read_token(str(path))
     assert "0xe9" not in str(caught.value) and "UTF-8" in str(caught.value), str(caught.value)
+
+
+# ── 14. motions that go to the floor, parts taken, and motions that end ───────────────────
+
+
+def _lying_down(hip: str, up: float, down: float) -> Any:
+    """The fake body with an orientation that tips from upright to the trunk level as `hip`
+    goes from `up` to `down`: a stand-in for a crawl or a push-up, whose real tilt through
+    upstream's keyframes nobody has measured. Past FALL_TILT_DEG on the way, whatever the path."""
+
+    class _Tips(D.FakeSim):  # type: ignore[name-defined,misc]
+        def get_observation(self) -> Any:
+            obs = super().get_observation()
+            i = self.robot.motor_ordering.index(hip)
+            progress = (float(self.pos[i]) - up) / (down - up)
+            obs.rot = _Tilted(90.0 * min(1.0, max(0.0, progress)))
+            return obs
+
+    return _Tips
+
+
+@pytest.mark.parametrize("motion", ["crawl", "push_up"])
+def test_a_motion_that_lies_the_robot_down_plays_to_its_end_and_stand_brings_it_back(
+    motion: str,
+) -> None:
+    """The third round ended any motion on the tick that read a tilt past FALL_TILT_DEG, so
+    `crawl` and `push_up`, which take the robot to the floor on purpose, were cut halfway down,
+    and `stand` was then refused as if the robot had fallen. A floor motion is not a fall: it
+    plays to its end, the robot lying after it is not read as fallen, a walk waits for a stand,
+    and `stand` brings it back up."""
+    up, down, n = 0.01, 0.4, 9
+    robot = D.FakeRobot()
+    d = D.Daemon(robot, _lying_down("joint_0", up, down)(robot), fake=True)
+    d.walk_policy = _Walk()
+    frames = [np.full(robot.nu, up + (down - up) * k / (n - 1), np.float32) for k in range(n)]
+    d.motion_library = {motion: frames}
+    h = _handler(d, walk=True)
+    d.tick()
+    assert _send(h, "bot.perform", {"motion": motion})["accepted"]
+    for _ in range(300):
+        _send(h, "bot.keepalive")
+        d.tick()
+    left = float(np.max(np.abs(d.target - frames[-1])))
+    assert left <= D.MAX_STEP_RAD, (motion, left, d.tilt_deg, d.command.mode)
+    assert d.tilt_deg > D.FALL_TILT_DEG and not d.fallen, "lying down on purpose is no fall"
+    walk = _send(h, "bot.command", {"walk_x": MAX_VX / 2, "walk_y": 0.0, "walk_turn": 0.0})
+    assert walk["accepted"] is False and "stand" in walk["reason"], walk
+    assert _send(h, "bot.stand")["accepted"], "stand is the way back up"
+    for _ in range(600):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert float(np.max(np.abs(d.target))) < 0.05 and not d.fallen, d.target[:3]
+
+
+@pytest.mark.serial
+@pytest.mark.parametrize("part", ["body", "neck"])
+async def test_a_part_another_clients_command_takes_is_lost_with_a_word(part: str) -> None:
+    """Only a stop and the settle told a connection it had lost a part: a command from another
+    connection took it without a word, so a run whose walk another session replaced with a
+    stand, or whose head another session turned, went on with a passing heartbeat. Taking a
+    part tells its previous owner the same way a stop does."""
+    with _Serving(walk=True) as s:
+        d = s.daemon
+        d.walk_policy = _Walk()
+        a = ToddlerBotBridge(address=s.address)
+        b = ToddlerBotBridge(address=s.address)
+        await a.connect()
+        await b.connect()
+        try:
+            if part == "body":
+                assert (await a.send_intent(Intent.move(vx=MAX_VX / 2))).accepted
+                await _until(lambda: d.command.mode == D.Command.WALK)
+                took = await b.send_intent(Intent.do("stand"))
+            else:
+                assert (await a.send_intent(Intent.look(x=1.0, y=0.3, z=0.0))).accepted
+                took = await b.send_intent(Intent.look(x=1.0, y=-0.3, z=0.0))
+            assert took.accepted, took.reason
+            await asyncio.sleep(4 * KEEPALIVE_S)  # A's next keepalives
+            with pytest.raises(HeartbeatError, match="another connection"):
+                await a.heartbeat()
+        finally:
+            await b.close()
+            await a.close()
+
+
+@pytest.mark.serial
+@pytest.mark.parametrize(
+    "neck", ["held by another client", "brought to rest", "its own look", "taken during it"]
+)
+def test_a_perform_is_not_stalled_by_a_neck_it_does_not_drive(neck: str) -> None:
+    """A perform's keyframes drive every joint, and a frame counted as reached only when all of
+    them were, so a neck another client's look held, or one the deadman had put to rest (which
+    stayed at rest until commanded), stalled every frame for FRAME_DWELL_LIMIT ticks: a five
+    frame motion took hundreds, answered accepted. A motion moves the neck, so a neck another
+    connection holds refuses it with the reason; a rest ends once the part has arrived; and a
+    neck the same connection aimed is the motion's to move. "taken during it" is another client's
+    look landing mid-motion, which takes the neck (and tells the motion's client): the frames
+    are then judged on the joints the motion still drives."""
+    d = _away()
+    a, b = _handler(d), _handler(d)
+    d.tick()
+    aimer = a if neck == "its own look" else b
+    if neck != "taken during it":
+        assert _send(aimer, "bot.look", {"yaw_deg": 30.0, "pitch_deg": 0.0})["accepted"]
+    d.tick()
+    if neck == "brought to rest":
+        _tick_for(d, 2 * D.DEADMAN_S, a)  # B says nothing more
+        assert D.NECK in d.resting or d.neck_goal is None
+        for _ in range(int(2.0 / D.CONTROL_DT)):
+            if D.NECK not in d.resting:
+                break
+            _send(a, "bot.keepalive")
+            d.tick()
+        assert D.NECK not in d.resting, "the neck's rest ends once it has arrived"
+    frame = np.full(d.robot.nu, AWAY, np.float32)
+    frame[d.neck_yaw] = AWAY + 0.2
+    d.motion_library = {"cuddle": [frame.copy() for _ in range(5)]}
+    answer = _send(a, "bot.perform", {"motion": "cuddle"})
+    if neck == "held by another client":
+        assert answer["accepted"] is False and "neck" in answer["reason"], answer
+        return
+    assert answer["accepted"], answer
+    ticks = 0
+    while d.command.mode == D.Command.MOTION and ticks < 6 * D.FRAME_DWELL_LIMIT:
+        if neck == "taken during it" and ticks == 2:
+            assert _send(b, "bot.look", {"yaw_deg": -30.0, "pitch_deg": 0.0})["accepted"]
+        _send(a, "bot.keepalive")
+        _send(b, "bot.keepalive")
+        d.tick()
+        ticks += 1
+    assert ticks <= D.FRAME_DWELL_LIMIT, f"a five-frame perform took {ticks} ticks"
+    if neck == "taken during it":
+        assert "neck" in d.lost.get(a, ""), "and the motion's client is owed the notice"
+
+
+@pytest.mark.serial
+def test_a_finished_motion_is_not_moved_when_its_client_dies() -> None:
+    """A motion that had played to its end kept its owner, so when that client died, minutes
+    later, the deadman slewed the body from the motion's end pose (a kneel) to the standing
+    one. A part whose motion has ended and that is holding is owned by nobody, as after a
+    stop. On the fake body the kneel ends at 0.2 rad and home is all zeros."""
+    d = _away()
+    h = _handler(d)
+    d.tick()
+    d.motion_library = {"kneel": [np.full(d.robot.nu, v, np.float32) for v in (0.4, 0.3, 0.2)]}
+    assert _send(h, "bot.perform", {"motion": "kneel"})["accepted"]
+    for _ in range(100):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.command.mode == D.Command.HOLD
+    ended = d.target.copy()
+    d.left(h)  # the client dies, and its connection closes
+    _tick_for(d, 3 * D.DEADMAN_S)
+    assert float(np.max(np.abs(d.target - ended))) <= D.MAX_STEP_RAD, d.command.mode
+
+
+def test_a_loss_owed_to_a_connection_that_has_gone_is_not_kept() -> None:
+    """A stop, or the settle, landing between a connection closing and the next tick recorded a
+    `lost` notice for that connection, which nothing would ever pop: one entry and one dead
+    handler kept for the life of the daemon. A notice is only kept for a connection that is
+    there to be told."""
+    d = _away()
+    a, b = _handler(d, walk=True), _handler(d, walk=True)
+    d.walk_policy = _Walk()
+    d.tick()
+    assert _send(a, "bot.command", {"walk_x": MAX_VX / 2, "walk_y": 0.0, "walk_turn": 0.0})[
+        "accepted"
+    ]
+    d.left(a)
+    assert _send(b, "bot.stop")["accepted"]
+    for _ in range(10):
+        d.tick()
+    assert a not in d.lost
+
+
+@pytest.mark.serial
+def test_a_signal_anywhere_in_shutdowns_entry_neither_deadlocks_it_nor_runs_it_twice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second signal that landed inside `shutdown()`'s own entry lock, before the thread had
+    recorded itself, called `shutdown()` again and waited for ever on the lock its own thread
+    held, before the hard exit was armed. CPython runs a signal handler between any two lines,
+    so on_signal's two lines are run once at each line of `shutdown` in turn, by a trace
+    function, and every time the shutdown must end, and close once. The hard exit is stood in
+    for, since what is under test is the entry."""
+    monkeypatch.setattr(D, "hard_exit_after", lambda seconds, what: None)
+    code = D.Daemon.shutdown.__code__
+    lines = sorted({line for _, _, line in code.co_lines() if line})
+    for at in lines:
+        d = _daemon()
+        closes = {"n": 0}
+        real_close = d.sim.close
+
+        def counted(real_close: Any = real_close, closes: dict[str, int] = closes) -> None:
+            closes["n"] += 1
+            real_close()
+
+        d.sim.close = counted
+        fired = {"done": False}
+
+        def tracer(
+            frame: Any, event: str, arg: Any, d: Any = d, fired: Any = fired, at: int = at
+        ) -> Any:
+            if frame.f_code is not code:
+                return None
+            if event == "line" and frame.f_lineno == at and not fired["done"]:
+                fired["done"] = True
+                if not d.shutdown_here():  # on_signal's guard, then its call
+                    d.shutdown()
+            return tracer
+
+        def run(d: Any = d, tracer: Any = tracer) -> None:
+            sys.settrace(tracer)
+            try:
+                d.shutdown()
+            finally:
+                sys.settrace(None)
+
+        worker = threading.Thread(target=run, daemon=True)
+        worker.start()
+        worker.join(10)
+        assert not worker.is_alive(), f"a signal at line {at} of shutdown deadlocked it"
+        assert closes["n"] == 1, f"a signal at line {at} closed the bus {closes['n']} times"
