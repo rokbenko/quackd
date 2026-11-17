@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import subprocess
+import sys
+import textwrap
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +30,62 @@ async def test_a_pipe_runs_each_line_in_turn_as_a_pipe(tmp_path: Path) -> None:
     assert said[1].startswith("result   ok: walked")
     assert body.intents_of("move")
     await drive.robot.close()
+
+
+_PRESSED_WITH_NO_LINE_TO_COME = textwrap.dedent(
+    """
+    import asyncio, contextlib, sys
+    from roboglot.drive.terminal import drive_from_pipe
+
+    class Watched:
+        # stdin, which says on the session's loop when its read has begun
+        def __init__(self, loop, reading):
+            self.loop, self.reading = loop, reading
+
+        def readline(self):
+            self.loop.call_soon_threadsafe(self.reading.set)
+            return sys.__stdin__.readline()
+
+    async def main():
+        reading = asyncio.Event()
+        sys.stdin = Watched(asyncio.get_running_loop(), reading)
+        session = asyncio.ensure_future(drive_from_pipe(None))
+        await reading.wait()
+        session.cancel()  # what asyncio's own Ctrl-C handler does: one cancel of the main task
+        with contextlib.suppress(asyncio.CancelledError):
+            await session
+
+    asyncio.run(main())
+    print("closed", flush=True)
+    """
+)
+
+
+def test_a_piped_session_ends_its_process_after_a_press_with_no_line_to_come(
+    tmp_path: Path,
+) -> None:
+    """drive read each line in asyncio's default executor, which `asyncio.run` joins as it
+    closes, with no bound on Python 3.11, so after a Ctrl-C the session and the robot closed in
+    order and the process then stayed until a line or the end of input came: from a producer that
+    keeps its end open, never. The child here reads its stdin, which this test keeps open and never
+    writes, and is cancelled once that read has begun; it has to end by itself, cleanly."""
+    child = subprocess.Popen(
+        [sys.executable, "-X", "utf8", "-P", "-c", _PRESSED_WITH_NO_LINE_TO_COME],
+        cwd=tmp_path,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        code: int | None = child.wait(timeout=60)
+    except subprocess.TimeoutExpired:
+        code = None
+    finally:
+        assert child.stdin is not None
+        child.stdin.close()  # the end of input, which lets a child still reading end too
+        out, err = child.communicate(timeout=60)
+    said = out.decode("utf-8").strip(), err.decode("utf-8")
+    assert code == 0 and said[0] == "closed", f"the process stayed for a line: {code} {said}"
 
 
 async def test_the_keyboard_brakes_on_an_empty_enter_and_ends_on_quit(tmp_path: Path) -> None:

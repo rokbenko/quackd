@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+import math
+from typing import Any, Literal
 
 import pytest
+from pydantic import BaseModel
 
 import roboglot_microduck
 from roboglot.adapters.factory import RobotSpec, describe
@@ -168,6 +170,34 @@ def test_a_line_the_lane_cannot_read_is_left_for_the_others(line: str) -> None:
     """Nothing written out is evaluated: anything but a literal value, a name it calls, an operator
     or a starred argument, and the line is not a call this lane reads."""
     assert _lane().parse(line) is None
+
+
+class _OneValueEach(BaseModel):
+    """Six parameters of one value each: one call, said with six values in any order."""
+
+    a: Literal["a"]
+    b: Literal["b"]
+    c: Literal["c"]
+    d: Literal["d"]
+    e: Literal["e"]
+    f: Literal["f"]
+
+
+def test_a_verb_said_in_more_ways_than_the_lane_takes_is_left_for_the_others() -> None:
+    """Every ordering of a call's values was a key, so a parameter of one value, which adds no
+    call, multiplied the table by the number of values: ten of them were 3,628,800 keys for each
+    name the verb is said by, built on the event loop after the robot had connected. A verb past
+    `MAX_KEYS_PER_VERB` gets no key at all and is named for the session to say so; the shipped
+    verbs, the widest of which needs twelve, keep every key they had (the tests above)."""
+    from roboglot.drive.lanes import MAX_KEYS_PER_VERB
+
+    odd = Verb("odd", "six values to say", _does_nothing, _OneValueEach)
+    lane = ExactLane({"odd": odd}, {})
+    assert math.factorial(6) > MAX_KEYS_PER_VERB
+    assert lane.table == {} and lane.texts == {}, f"{len(lane.table)} keys"
+    assert lane.untaken == {"odd": math.factorial(6)}
+    assert lane.parse("odd a b c d e f") is None
+    assert lane.parse("odd(a=a, b=b, c=c, d=d, e=e, f=f)") is None
 
 
 def test_a_call_with_a_dict_in_it_shows_the_way_it_was_read() -> None:

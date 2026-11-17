@@ -73,6 +73,13 @@ Every line goes through the lanes in this order, and the first that takes it win
    - each alias of those (`walk`, `walk_to`, `get_frame`);
    - the presets below.
 
+   A verb whose calls, each said with its values in every order, would be more than 72 lines
+   is left out of this lane, written out too, and a line naming it goes on to the fast lane or
+   the pilot. 72 is the most a verb can need while every value it is said with is a choice,
+   since the decision stepper offers no verb more than twelve calls, so only parameters of a
+   single value take one past it. The widest verb Roboglot ships needs twelve. The session names
+   such a verb once, in a `note` line, as it opens.
+
    A call written out, as `move(vx=0.2, duration_s=2)` or the arm's
    `move_joints(positions={"shoulder_pan": 20}, duration_s=2)`, is read as literals and never
    evaluated: a name it calls, an operator or a starred argument is not a call this lane reads.
@@ -198,6 +205,31 @@ session, as `quit`, `exit` and the end of input do. A session ends in order: wha
 moving the body is ended rather than waited out, and then the robot is stopped, folded where it
 folds, and let go of.
 
+While the session connects, and once its prompt has closed, a Ctrl-C ends the session in the
+same order. On an arm with a rest pose, which the session folds as it opens and as it closes, it
+also brakes what it lands on:
+
+- a press during either fold stops that fold where the arm is. A stop holds the arm there,
+  nothing folds it again, and drive says:
+
+  ```
+  brake    the fold was stopped where it was, and nothing was released: torque is as the fold left it
+  ```
+
+  The arm's close then says, as at the end of a run, whether torque was left on, and names the
+  fold it read as `a fold to it was stopped partway`;
+- a press while the session is closing, before its fold has begun, keeps the fold from
+  starting:
+
+  ```
+  brake    the arm was not folded and nothing was released: it is holding where it stopped
+  ```
+
+Either way the transport is closed, the record still ends with its `run_end` and its
+`summary.json`, whose outcome is how the session ended, and the press then ends the process as
+a Ctrl-C does. A session reading a pipe or a file ends its process once it has closed, whether
+or not another line is on its way.
+
 The prompt needs a terminal for its input and for its output. With either piped or redirected,
 drive reads lines one at a time, each waited for, as from a pipe.
 
@@ -320,6 +352,7 @@ lines:
 - `started` for each call as it goes to the executor, whose gates may still refuse it, and
   `ended` for each line once what it came to is over;
 - `brake` for every brake;
+- `note` for the line a Ctrl-C outside the prompt was answered with;
 - `goal_start` and `goal_end` for each goal;
 - `prompt` for a question about watching a body that cannot see a fall;
 - the executor's own records of every verb, gate and intent.

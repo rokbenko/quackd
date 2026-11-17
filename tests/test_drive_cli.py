@@ -3,8 +3,10 @@ log`."""
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -12,10 +14,12 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
+from roboglot.adapters.base import RestResult
 from roboglot.agent.transcript import Transcript
 from roboglot.cli import app, run_counters
 from roboglot.drive.run import SESSION_BUDGETS, DriveArgs, run_drive, session_glot
 from roboglot.glotfile.schema import Budgets
+from roboglot.release import FOLD_STOPPED
 
 runner = CliRunner()
 
@@ -89,6 +93,28 @@ def test_drive_names_the_one_robot_it_drives_before_the_first_line(tmp_path: Pat
     )
     assert result.exit_code == 0, result.output
     assert "drive    microduck: type a command" in result.output
+
+
+async def test_a_verb_the_exact_lane_cannot_read_is_named_once_as_the_session_opens(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verb past `MAX_KEYS_PER_VERB` gets nothing in the exact lane, and a line naming it that
+    would have run at once goes to the fast lane or the pilot: the person is told which verb, once,
+    before the first line. The bound is lowered here to below the duck's `gaze`, whose five calls
+    are five lines, and above its `kick`, whose two are two."""
+    import roboglot.drive.lanes
+
+    monkeypatch.setattr(roboglot.drive.lanes, "MAX_KEYS_PER_VERB", 4)
+    said: list[str] = []
+    args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
+    await run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
+    notes = [line for line in said if "the exact lane cannot read it" in line]
+    assert notes == [
+        "note     gaze: the exact lane cannot read it, since its calls said with their values in "
+        "every order would be 5 lines, past the 4 it takes for one verb, so a line naming it goes "
+        "on to the fast lane or the pilot"
+    ], said
+    assert said.index(notes[0]) < next(i for i, s in enumerate(said) if s.startswith("drive "))
 
 
 def test_a_session_outlasts_one_tasks_budget(tmp_path: Path) -> None:
@@ -176,6 +202,11 @@ def _summary_of(runs: Path) -> dict[str, Any]:
     return summary
 
 
+def _the_run(runs: Path) -> Path:
+    (run,) = runs.glob("*-drive")
+    return run
+
+
 class _Broken:
     """A stdin whose read fails after its first line, as a broken pipe's does."""
 
@@ -198,6 +229,63 @@ async def test_a_session_whose_input_broke_is_not_recorded_as_a_success(tmp_path
     assert summary["outcome"] == "error" and "the pipe broke" in summary["reason"]
 
 
+@pytest.mark.parametrize("fails", ["summary", "run_end", "close", "finished"])
+async def test_each_step_of_a_sessions_end_is_taken_whatever_the_one_before_did(
+    fails: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A session's end writes `summary.json`, records `run_end`, closes its record and tells the
+    page, and did so with nothing between them: one that failed, a full disk or the run folder
+    gone, skipped every one after it, and its `OSError` took the place of the error the session
+    was ending on. Each step fails here in turn, under a session the page stopped before it
+    connected; every other step must still be taken, the failure said, and the page's refusal
+    must be what leaves."""
+    from roboglot.drive.run import DriveError
+    from roboglot.front import Channel, Front
+
+    full = OSError(28, "No space left on device")
+    closed: list[bool] = []
+    write, close, finished = Transcript.write, Transcript.close, Front.finished
+
+    def write_summary(self: Transcript, summary: dict[str, Any]) -> Path:
+        raise full
+
+    def written(self: Transcript, kind: str, **payload: Any) -> None:
+        if kind == "run_end" and fails == "run_end":
+            raise full
+        write(self, kind, **payload)
+
+    def closing(self: Transcript) -> None:
+        close(self)
+        closed.append(True)
+        if fails == "close":
+            raise full
+
+    def finishing(self: Front, *args: Any, **kwargs: Any) -> None:
+        if fails == "finished":
+            raise full
+        finished(self, *args, **kwargs)
+
+    if fails == "summary":
+        monkeypatch.setattr(Transcript, "write_summary", write_summary)
+    monkeypatch.setattr(Transcript, "write", written)
+    monkeypatch.setattr(Transcript, "close", closing)
+    monkeypatch.setattr(Front, "finished", finishing)
+    front = Front(Channel(io.StringIO()), "drive")
+    front.on_op({"op": "stop"})
+    args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
+    with pytest.raises(DriveError, match="the page's Stop came before the robot connected"):
+        await run_drive(args, say=lambda _line: None, front=front)
+    run = _the_run(tmp_path)
+    assert (run / "summary.json").exists() is (fails != "summary")
+    kinds = [e["kind"] for e in Transcript.read(run / "transcript.jsonl")]
+    assert (kinds[-1:] == ["run_end"]) is (fails != "run_end"), kinds
+    assert closed == [True], "the record was never closed"
+    assert (front.outcome is not None and front.outcome["outcome"] == "aborted") is (
+        fails != "finished"
+    ), front.outcome
+    assert "No space left on device" in caplog.text
+
+
 async def test_a_session_whose_robot_never_connected_is_not_a_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -213,6 +301,180 @@ async def test_a_session_whose_robot_never_connected_is_not_a_success(
         await run_drive(args, say=lambda _line: None, stream=None, keyboard=False)
     summary = _summary_of(tmp_path)
     assert summary["outcome"] == "error" and "did not answer" in summary["reason"]
+
+
+def _arm_with_a_rest_pose(tmp_path: Path) -> Path:
+    """A registry holding the arm's mock with a rest pose away from where the mock stands, so a
+    fold to it moves the arm at each end of a session."""
+    from roboglot.registry import Registry
+    from roboglot_lerobot.mock import REST
+
+    registry = tmp_path / "registry"
+    added = runner.invoke(
+        app, ["robot", "add", "arm-01", "lerobot:mock", "--registry-dir", str(registry)]
+    )
+    assert added.exit_code == 0, added.output
+    # a pan inside the mock's travel and well off where it stands, so the pose is one to move to
+    away = {"shoulder_pan": REST["shoulder_pan"] + 35.0}
+    Registry(registry).update_robot("arm-01", {"rest_pose": dict(REST) | away})
+    return registry
+
+
+class _Folds:
+    """The arm mock's `_drive_to_rest`, the step inside the real rest move that sends its goals,
+    counted, and held open on fold number `hold_on` until a press cancels it. Every other fold
+    says it arrived without moving the arm, so the arm is still away from its pose at the close,
+    as an arm a session has moved is. Everything around it is the real rest move's: the cancel it
+    re-raises and the result the close reads."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, hold_on: int) -> None:
+        from roboglot_lerobot.mock import LeRobotMock
+
+        self.calls = 0
+        self.arm: Any = None
+        self.folding = asyncio.Event()
+        never = asyncio.Event()
+        folds = self
+
+        async def drive_to_rest(
+            arm: Any, goal: dict[str, float], recorded: dict[str, float]
+        ) -> RestResult:
+            folds.arm = arm
+            folds.calls += 1
+            if folds.calls == hold_on:
+                folds.folding.set()
+                await never.wait()  # the fold under way when the press comes
+            return RestResult("arrived", "a stand-in fold")
+
+        monkeypatch.setattr(LeRobotMock, "_drive_to_rest", drive_to_rest)
+
+
+async def _pressed_during_fold(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fold: int,
+    held: asyncio.Event | None = None,
+) -> tuple[asyncio.Task[Path], _Folds, list[str], Path]:
+    """A session on the arm whose fold number `fold` a press lands on, or whatever else a
+    stand-in of the caller's holds open until it sets `held`, as asyncio's own Ctrl-C handler
+    delivers one: a cancel of the main task, and never a real signal. Returns once the session
+    has ended."""
+    registry = _arm_with_a_rest_pose(tmp_path)
+    folds = _Folds(monkeypatch, hold_on=fold)
+    said: list[str] = []
+    runs = tmp_path / "runs"
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    session = asyncio.ensure_future(
+        run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
+    )
+    await asyncio.wait_for((held or folds.folding).wait(), 30)
+    session.cancel()
+    await asyncio.wait({session}, timeout=30)
+    assert session.done(), "the session never ended"
+    return session, folds, said, _the_run(runs)
+
+
+async def test_a_press_during_the_opening_fold_holds_the_arm_and_nothing_folds_it_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A Ctrl-C while the session's connect folds the arm stopped that fold, and the session's
+    close then sent a stop and started the same fold again, with the press's one cancel spent, so
+    the arm the person had just stopped went on to its pose with nothing said, and that fold's
+    result took the place of the stopped one in the close's line. A second fold, a missing hold,
+    a missing line or a close that no longer names the stopped fold fails here."""
+    caplog.set_level(logging.WARNING)
+    session, folds, said, run = await _pressed_during_fold(tmp_path, monkeypatch, fold=1)
+    assert session.cancelled(), "the press is what the session ended on"
+    assert folds.calls == 1, "the fold the press stopped was started again"
+    sequence = folds.arm.sequence
+    assert sequence[sequence.index("rest") :] == ["rest", "stop", "close"], sequence
+    assert any(FOLD_STOPPED in line for line in said), said
+    assert "a fold to it was stopped partway" in str(folds.arm.close_note)
+    assert any(str(folds.arm.close_note) in r.getMessage() for r in caplog.records), caplog.text
+    events = Transcript.read(run / "transcript.jsonl")
+    assert any(e["kind"] == "note" and e["text"] == FOLD_STOPPED for e in events), events
+    assert events[-1]["kind"] == "run_end" and events[-1]["outcome"] == "aborted"
+    assert (run / "summary.json").exists()
+
+
+async def test_a_press_during_the_closing_fold_holds_the_arm_and_the_session_still_ends(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """After `quit`, a Ctrl-C during the session's closing fold is asyncio's one cancel of the
+    main task, and it passed every `suppress(Exception)` of the close: the transport was never
+    closed, so the arm was left energised partway through its fold with nothing said of its
+    torque, and the session wrote neither its `run_end` nor its `summary.json`. A press there
+    now holds the arm, says so, closes the transport with its note and ends the record; a close
+    the press skips, a missing hold or a missing record fails here."""
+    caplog.set_level(logging.WARNING)
+    session, folds, said, run = await _pressed_during_fold(tmp_path, monkeypatch, fold=2)
+    assert session.cancelled(), "the press goes on up once the session has ended in order"
+    assert folds.calls == 2
+    sequence = folds.arm.sequence
+    closing = len(sequence) - 1 - sequence[::-1].index("rest")
+    assert sequence[closing:] == ["rest", "stop", "close"], sequence
+    assert any(FOLD_STOPPED in line for line in said), said
+    assert "a fold to it was stopped partway" in str(folds.arm.close_note)
+    assert any(str(folds.arm.close_note) in r.getMessage() for r in caplog.records), caplog.text
+    events = Transcript.read(run / "transcript.jsonl")
+    assert any(e["kind"] == "note" and e["text"] == FOLD_STOPPED for e in events), events
+    # the session ended as asked, by `quit`, and the press came after that
+    assert events[-1]["kind"] == "run_end" and events[-1]["outcome"] == "success"
+    assert (run / "summary.json").exists()
+
+
+async def test_a_press_on_the_closes_stop_keeps_the_closing_fold_from_starting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Ctrl-C that lands on the close's stop, before its fold, went past the rest of the close
+    as one during the fold did, and a close that carried on through it would start the fold over
+    the press, moving the arm the person had just pressed to stop. The arm is held where it is, the
+    person is told it was not folded, and the session still closes and ends its record; a fold
+    after the press, a missing line or a missing close fails here."""
+    from roboglot.agent.loop import AgentLoop
+    from roboglot_lerobot.mock import LeRobotMock
+
+    stopping = asyncio.Event()
+    never = asyncio.Event()
+    stop = LeRobotMock.stop
+
+    async def held_stop(arm: Any) -> None:
+        if not stopping.is_set():  # the close's own stop, the first a session of `quit` sends
+            stopping.set()
+            await never.wait()
+        await stop(arm)
+
+    monkeypatch.setattr(LeRobotMock, "stop", held_stop)
+    session, folds, said, run = await _pressed_during_fold(
+        tmp_path, monkeypatch, fold=0, held=stopping
+    )
+    assert session.cancelled()
+    assert folds.calls == 1, "the closing fold started after the press"
+    assert folds.arm.sequence[-2:] == ["stop", "close"], folds.arm.sequence
+    assert any(AgentLoop.HELD_BACK in line for line in said), said
+    events = Transcript.read(run / "transcript.jsonl")
+    assert any(e["kind"] == "note" and e["text"] == AgentLoop.HELD_BACK for e in events)
+    assert events[-1]["kind"] == "run_end" and (run / "summary.json").exists()
+
+
+async def test_a_session_nobody_presses_in_folds_the_arm_at_each_end_as_it_always_has(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """drive closes the robot itself now, in `RobotSession.close`'s order, so a press can be
+    answered at each step: an arm nobody pressed for is still folded as the session opens,
+    stopped, folded again and let go of as it closes, with nothing said about a press."""
+    registry = _arm_with_a_rest_pose(tmp_path)
+    folds = _Folds(monkeypatch, hold_on=0)
+    said: list[str] = []
+    runs = tmp_path / "runs"
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    await run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
+    assert folds.calls == 2
+    assert folds.arm.sequence == ["rest", "stop", "rest", "close"]
+    assert not [line for line in said if line.startswith("brake")], said
+    summary = _summary_of(runs)
+    assert (summary["outcome"], summary["reason"]) == ("success", "the session ended")
 
 
 GATED_KICK = """---
