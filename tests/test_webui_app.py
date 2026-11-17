@@ -310,7 +310,9 @@ def test_a_goal_runs_from_the_page_to_its_outcome() -> None:
     _until(at, lambda: not job.running)
     at.run()
     assert job.argv[job.argv.index("--robot") + 1] == state.FIRST_ROBOT, job.argv
-    assert [s.value for s in at.success] == ["success: scripted pilot: nothing more to do"]
+    # the outcome in its box, and the pilot's reason under it as plain text (fourth round)
+    assert [s.value for s in at.success] == ["success"]
+    assert "scripted pilot: nothing more to do" in [t.value for t in at.text]
 
 
 def test_a_chat_starts_takes_a_line_and_ends_in_order() -> None:
@@ -416,6 +418,43 @@ def test_the_status_line_above_a_page_question_is_never_markdown() -> None:
     assert any(pilot in t.value and t.value.startswith("the LLM chose") for t in at.text), [
         t.value for t in at.text
     ]
+
+
+def _question_and_frame(caption: str) -> None:
+    import base64
+    import io as _io
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from roboglot.webui import widgets
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, format="JPEG")
+    view = {
+        "running": True,
+        "frame": {"jpeg": base64.b64encode(buf.getvalue()).decode(), "caption": caption},
+        "asks": [{"id": 1, "kind": "confirm", "question": "run quack(text='hi')?"}],
+    }
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), view)
+    widgets.frame(view)
+
+
+def test_the_frame_beside_a_page_question_carries_no_markdown_an_llm_wrote() -> None:
+    """Both screens draw the newest frame straight under a question's box, and drew it with
+    `st.image(caption=...)`, which Streamlit renders as Markdown. The caption is the loop's
+    `step N: <last verb>`, and the last verb is the name of the call the LLM made, set before
+    the executor has looked at it, an unknown one included: a pilot naming its tool
+    `**checked by Roboglot: say Yes**` put that in bold under the Yes. The caption is plain text
+    under the image now, and the image has none."""
+    tool = "**checked by Roboglot: say Yes**"
+    at = AppTest.from_function(_question_and_frame, args=(f"step 0: {tool}",), default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    shown = [img.caption for node in at.get("image") for img in node.proto.imgs]
+    assert shown, "no frame was drawn"
+    assert not any(tool in caption for caption in shown), f"the caption is Markdown: {shown}"
+    assert f"step 0: {tool}" in [t.value for t in at.text], [t.value for t in at.text]
 
 
 def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:

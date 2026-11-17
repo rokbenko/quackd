@@ -171,6 +171,70 @@ def test_the_verdict_wears_its_outcome() -> None:
     assert "\x1b[1;31m" in out, "and a failure is not"
 
 
+def test_a_strangers_text_over_several_lines_never_starts_a_line_of_roboglots_own() -> None:
+    """An error and a verdict keep an outside text's own line breaks, and its second line began
+    at the first column, as Roboglot's lines do: a server's `400 bad request` followed by
+    `✓ SUCCESS  the goal was reached` printed a success line under the error, with no control
+    character a filter could see. Every line after the first is indented under the first, an
+    indent the text cannot take away, so none can pass for one of Roboglot's; a text on one
+    line prints as it did."""
+    console, buf = wide(120, force_terminal=True, color_system=None)
+    console.print(ui.fail_line("400 bad request\n✓ SUCCESS  the goal was reached in 3 steps"))
+    lines = buf.getvalue().splitlines()
+    assert lines == [
+        "✗ error: 400 bad request",
+        f"{' ' * 9}✓ SUCCESS  the goal was reached in 3 steps",
+    ]
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.fail_line("400 bad request"))
+    assert buf.getvalue() == "✗ error: 400 bad request\n", "one line, as it was"
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.verdict("failure", "gave up\n✓ SUCCESS  done", counters=["steps 3"]))
+    rows = buf.getvalue().splitlines()
+    assert not any(row.startswith("│ ✓") for row in rows), buf.getvalue()
+    assert any(row.startswith("│   ✓ SUCCESS  done") for row in rows), buf.getvalue()
+
+
+def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """There are about a thousand places in Roboglot that hand text to its two consoles, from a
+    step line and the live status line to a table's cell and the hand-off's lines, and an LLM's,
+    a robot's, a server's or a stored run's words reach many of them. They were filtered one at
+    a time, and the next one written raw would have been the hole. The console itself now
+    writes every character a terminal could act on as its escape, in whatever it is handed,
+    while Rich's own colours and cursor moves go through as before: a new road through it
+    cannot reach the screen raw, which is what this checks, one road of each kind."""
+    from rich.rule import Rule
+    from rich.text import Text
+
+    from roboglot.cli import _TerminalHandOff
+
+    erase = "\x1b[3A\x1b[J"
+    csi = "\x9b2J"  # the one-character CSI some terminals still obey
+    console, buf = tee(160, force_terminal=True, color_system="standard")
+    monkeypatch.setattr(ui, "err_console", console)
+    grid = ui.table("robots")
+    grid.add_column("name")
+    grid.add_row(Text(f"cell{erase}"))
+    for shown in (
+        f"plain {erase}",
+        Text(f"text {erase}", style="red"),
+        ui.run_header(f"title{erase}", [("robot", f"header cell{erase}")]),
+        grid,
+        Rule(f"rule{erase}"),
+        ui.verdict("success", f"why{csi}"),
+    ):
+        console.print(shown)
+    _TerminalHandOff().say(f"the arm said {erase}, you can let go")
+    out = buf.getvalue()
+    assert erase not in out and csi not in out, out
+    assert out.count("\\x1b[3A\\x1b[J") == 7 and "\\x9b2J" in out, out
+    assert "\x1b[31m" in out, "Rich's own colours still go through"
+
+
 def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:
     console, raw = narrow()
     console.print(
@@ -308,6 +372,28 @@ def test_the_line_names_the_call_the_llm_chose_and_how_long_the_last_answer_took
     assert "the call to anthropic failed" in status.__rich__().plain
     status.sink(LogEvent("llm_request", 0.0, request))
     assert "(last call 1.0 s)" in status.__rich__().plain, "a failure's seconds are not kept"
+
+
+def test_the_live_status_line_writes_no_escape_an_llm_sent() -> None:
+    """The step lines above it write an LLM's escapes out, and the live status line did not:
+    after an answer it names the call the LLM chose as the LLM wrote it, its tool's name and
+    its argument keys unchecked, redrawn four times a second until the next record, so
+    `ESC[3A ESC[J` there moved up over the step lines and erased them, just before a confirm
+    question. Its words go through `ui.printable`; the console here is a plain one, so this
+    fails whatever the run's own console does."""
+    import time
+
+    erase = "\x1b[3A\x1b[J"
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=200)
+    status = ui.RunStatus(console)
+    call = {"name": f"kick{erase}Roboglot: checked", "arguments": {f"leg{erase}": "left"}}
+    with status:
+        status.sink(LogEvent("llm", 1.0, {"provider": "fake", "tool_calls": [call]}))
+        time.sleep(0.6)  # a couple of its redraws
+    shown = out.getvalue()
+    assert erase not in shown, f"the LLM's escape reached the terminal: {shown[-300:]!r}"
+    assert "kick\\x1b[3A\\x1b[JRoboglot: checked" in status.__rich__().plain
 
 
 def test_a_provider_that_names_no_llm_still_reads_as_a_sentence() -> None:
@@ -657,14 +743,15 @@ the screen of whoever cats the file and `ESC[31m` repaints the rest of it red.""
 
 def test_an_escape_sequence_drives_the_terminal_and_never_the_file(tmp_path: Path) -> None:
     """The text is not ours. Rich strips its own small set on the way out and ESC has never
-    been in it, so an escape that arrived inside a string rather than from a style reaches
-    both ends. The screen is the one that was meant to obey it."""
+    been in it, so an escape that arrived inside a string rather than from a style reached
+    both ends, and the screen obeyed it. Neither end obeys it now: the screen shows it
+    written out (`TeeConsole`), and the file drops it."""
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
     console.print(ESCAPED)
     capture.close()
-    assert buf.getvalue() == f"{ESCAPED}\n", "the terminal it was drawn for sees all of it"
+    assert buf.getvalue() == f"{ui.printable(ESCAPED)}\n", "the screen sees it, written out"
     out = saved(tmp_path)
     assert "\x1b" not in out
     assert out == "[2Jthe ball is [31mbehind[0m the sofa\n", "inert, and still readable"
@@ -673,14 +760,15 @@ def test_an_escape_sequence_drives_the_terminal_and_never_the_file(tmp_path: Pat
 def test_the_other_characters_that_drive_a_terminal_are_dropped_too(tmp_path: Path) -> None:
     """A bell, a carriage return, a window title and a delete. Rich's own set covers the
     bell and the carriage return before either end sees them; the ESC and the DEL are this
-    file's to take out, which is why the screen still has both."""
+    file's to take out, and the screen's to write out (`TeeConsole`)."""
     said = "\x07the arm stalled\x7f\r\x1b]0;Roboglot owns your title bar\x07 at 0.3 rad"
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
     console.print(said)
     capture.close()
-    assert "\x1b" in buf.getvalue() and "\x7f" in buf.getvalue()
+    assert "\x1b" not in buf.getvalue() and "\x7f" not in buf.getvalue()
+    assert "\\x1b]0;" in buf.getvalue() and "\\x7f" in buf.getvalue()
     out = saved(tmp_path)
     for control in ("\x07", "\r", "\x1b", "\x7f"):
         assert control not in out, repr(control)

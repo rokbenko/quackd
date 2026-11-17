@@ -242,15 +242,24 @@ def last_saved_frame(folder: Path) -> Path | None:
 
 def frame(view: dict[str, Any]) -> None:
     """The newest frame: as it streams in while the run goes, and once the run has ended, the
-    last one it saved, which the stream may have dropped to keep its pace."""
+    last one it saved, which the stream may have dropped to keep its pace.
+
+    Drawn straight under a question's box, and its caption names the last call the LLM made as
+    the LLM wrote it, so the caption is plain text under the image: an image's own caption is
+    Markdown, which could dress up or hide what is shown beside the Yes."""
+    from roboglot.ui import printable
+
     folder = run_folder(view) if view.get("end") else None
     saved = last_saved_frame(folder) if folder is not None else None
     if saved is not None:
-        st.image(str(saved), caption=saved.stem)
+        st.image(str(saved))
+        st.text(printable(saved.stem))
         return
     shot = view.get("frame")
     if shot and shot.get("jpeg"):
-        st.image(base64.b64decode(shot["jpeg"]), caption=shot.get("caption") or None)
+        st.image(base64.b64decode(shot["jpeg"]))
+        if shot.get("caption"):
+            st.text(printable(str(shot["caption"])))
 
 
 def status(view: dict[str, Any]) -> None:
@@ -338,17 +347,27 @@ def narration(job: Any, *, goal: int | None = None, tail: int = 300) -> None:
 
 
 def outcome(view: dict[str, Any]) -> None:
+    """How the run ended, in its box, and the reason under it: the reason is the pilot's, a
+    robot's or a server's words as often as Roboglot's, so it is plain text, never the box's
+    Markdown. So are the notices, which can quote what a robot or the page sent."""
+    from roboglot.ui import printable, printable_lines
+
     end = view.get("end")
     if end:
-        shown = f"{end.get('outcome')}: {end.get('reason') or ''}".rstrip(": ")
+        word = printable(str(end.get("outcome")))
+        reason = printable_lines(f"{end.get('reason') or ''}")
         if end.get("outcome") == "success":
-            st.success(shown)
+            st.success(word)
         elif end.get("outcome") in ("refused", "error"):
-            st.error(shown + (f"\n\n{end['hint']}" if end.get("hint") else ""))
+            st.error(word)
         else:
-            st.warning(shown)
+            st.warning(word)
+        if reason:
+            st.text(reason)
+        if end.get("hint"):
+            st.text(printable_lines(str(end["hint"])))
     for notice in view.get("notices") or ():
-        st.info(notice)
+        st.text(printable_lines(str(notice)))
 
 
 def terminal(view: dict[str, Any]) -> None:

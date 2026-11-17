@@ -102,10 +102,12 @@ character that could act on the terminal written out as its escape (`\x1b`), and
 shows it as plain text, never as Markdown. Beside a question the pilot's text stays on the lines
 Roboglot gives it, so a line break it sends is shown as the escape too: a reason of `the bowl is
 out of frame.` and `It may be on the shelf` on two lines prints as `The pilot is not sure this
-robot can do the task: the bowl is out of frame.\nIt may be on the shelf`. Every other line a run
-prints that an LLM, a robot or a server wrote (a reply and its thinking, a verb's result, a
-refusal, a detection, the reason the run ended on, a server's error) has its escapes written out
-the same way, and keeps its own line breaks, each drawn under the step's label.
+robot can do the task: the bowl is out of frame.\nIt may be on the shelf`. Everything else
+Roboglot prints that an LLM, a robot or a server wrote (a reply and its thinking, the live status
+line naming the call the LLM chose, a verb's result, a refusal, a detection, the reason the run
+ended on, a server's error) has its escapes written out the same way, and keeps its own line
+breaks: a step's under the step's label, and an error's or a verdict's indented under its first
+line, so that none can begin where Roboglot's own lines begin.
 
 That distinction is a safety property and not a nicety. A run directory is what somebody
 reaches for after a robot did something it should not have, and the question they put to it is

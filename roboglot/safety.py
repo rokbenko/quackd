@@ -2307,14 +2307,56 @@ class _StreamLines:
 class _ThroughTheReader:
     """`sys.stdin` once a question has read it through `_StreamLines`: every line read in this
     process from then on comes through that one reader, in order, `input()`'s and a prompt's
-    included, and everything else is the stream's own."""
+    included, and everything else is the stream's own.
+
+    It reads as a text stream does every way a program reads one, `readline`, iteration,
+    `read` and `readlines`, each through the reader, so the line a question taken back left
+    with it is the next one read, however it is read. What a read of a given size leaves of a
+    line is kept for the next read."""
 
     def __init__(self, stream: Any, lines: _StreamLines) -> None:
         self._stream = stream
         self.lines = lines
+        self._rest = ""
+        """What a sized read left of the last line taken, read before the next."""
 
     def readline(self, size: int = -1) -> str:
-        return self.lines.readline()
+        line = self._rest or self.lines.readline()
+        self._rest = ""
+        if 0 <= size < len(line):
+            line, self._rest = line[:size], line[size:]
+        return line
+
+    def read(self, size: int = -1) -> str:
+        got: list[str] = []
+        have = 0
+        while size < 0 or have < size:
+            line = self.readline(-1 if size < 0 else size - have)
+            if not line:
+                break
+            got.append(line)
+            have += len(line)
+        return "".join(got)
+
+    def readlines(self, hint: int = -1) -> list[str]:
+        lines: list[str] = []
+        have = 0
+        while hint <= 0 or have < hint:
+            line = self.readline()
+            if not line:
+                break
+            lines.append(line)
+            have += len(line)
+        return lines
+
+    def __iter__(self) -> _ThroughTheReader:
+        return self
+
+    def __next__(self) -> str:
+        line = self.readline()
+        if not line:
+            raise StopIteration
+        return line
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._stream, name)

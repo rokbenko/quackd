@@ -390,6 +390,56 @@ async def test_a_line_a_question_taken_back_was_waiting_for_is_the_next_readers_
             os.close(write)  # ends any read still waiting
 
 
+_EVERY_WAY: dict[str, Callable[[Any], object]] = {
+    "iterate": lambda stdin: list(stdin),
+    "read": lambda stdin: [stdin.read(3), stdin.read()],
+    "readline": lambda stdin: [stdin.readline(), stdin.readline(), stdin.readline()],
+    "readlines": lambda stdin: stdin.readlines(),
+}
+"""Each way a program reads a text stream, and what each gives for `y` and `z` on two lines."""
+_GIVES = {
+    "iterate": ["y\n", "z\n"],
+    "read": ["y\nz", "\n"],
+    "readline": ["y\n", "z\n", ""],
+    "readlines": ["y\n", "z\n"],
+}
+
+
+@pytest.mark.parametrize("way", sorted(_EVERY_WAY))
+async def test_every_way_of_reading_stdin_after_a_question_gets_each_line_once(
+    monkeypatch: pytest.MonkeyPatch, way: str
+) -> None:
+    """Once a question has read a pipe, stdin reads through the one reader, and only `readline`
+    did: iterating it raised `TypeError`, and `read()` and `readlines()` went straight to the
+    stream, past the line the reader had already taken for a question taken back. It behaves
+    as a text stream does now, every way of reading it getting each line once and in order."""
+    from roboglot import safety
+
+    read, write = os.pipe()
+    with os.fdopen(read, encoding="utf-8") as pipe:
+        monkeypatch.setattr(sys, "stdin", pipe)
+        monkeypatch.setattr(safety, "_STREAM_LINES", None)
+        monkeypatch.setattr(sys, "stdout", io.StringIO())
+        ks = KillSwitch(asyncio.Event())
+        ks.install()
+        try:
+            asking = asyncio.ensure_future(ks.ask_async("go? "))
+            await asyncio.sleep(0.2)
+            asking.cancel()  # taken back, its read still pending
+            with contextlib.suppress(asyncio.CancelledError):
+                await asking
+            ks.uninstall()
+            os.write(write, b"y\nz\n")
+            os.close(write)
+            write = -1
+            got = await _within(asyncio.to_thread(_EVERY_WAY[way], sys.stdin))
+            assert got == _GIVES[way], got
+        finally:
+            ks.uninstall()
+            if write != -1:
+                os.close(write)
+
+
 def test_a_read_still_waiting_on_a_pipe_when_the_run_ends_does_not_hold_the_process() -> None:
     """A read pending on a pipe cannot be interrupted on Windows, so a question taken back leaves
     the pipe's reader waiting on a line that may never come. It is a daemon thread, and the

@@ -8193,7 +8193,10 @@ class _Prompts:
     def text(self, question: str, default: str | None = None) -> str:
         if self._yes:
             return default or ""
-        return str(typer.prompt(question, default=default or "", show_default=bool(default)))
+        # a default can be a board's or an earlier robot.yaml's words: shown written out, in
+        # the brackets click draws, and handed back as it is when Enter takes it
+        shown = ui.printable(question) + (f" [{ui.printable(default)}]" if default else "")
+        return str(typer.prompt(shown, default=default or "", show_default=False))
 
     def secret(self, question: str, *, twice: bool = False) -> str:
         if self._yes or not sys.stdin.isatty():
@@ -8206,7 +8209,7 @@ class _Prompts:
     def yes(self, question: str, default: bool = False) -> bool:
         if self._yes:
             return True
-        return bool(typer.confirm(question, default=default))
+        return bool(typer.confirm(ui.printable(question), default=default))
 
 
 def _onboard_home(directory: str | None) -> Any:

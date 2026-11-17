@@ -1314,6 +1314,56 @@ def test_a_servers_error_text_reaches_the_live_terminal_without_its_escapes(
     assert error.replace("\x1b", "\\x1b") in result.output
 
 
+def test_no_string_a_pilot_sends_reaches_the_live_terminal_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The roads from what a pilot sends to the terminal were filtered one at a time, and each
+    review found one more written raw: the step lines, then the live status line under them.
+    Here every string a pilot can put in a turn carries an escape sequence and a one-character
+    CSI: its text and thinking, a tool's name that is no verb and its argument keys and values,
+    a verb's argument the robot echoes back, a note to keep, the reason it declares, and its
+    own LLM id. A whole `roboglot run`, the narration and the colour on as a person has them;
+    whatever road a string takes to the screen, it must arrive written out, so a road added
+    later that writes one raw fails here."""
+    from roboglot.agent.providers.base import ProviderTurn, ToolCall, Usage
+
+    erase, csi = "\x1b[3A\x1b[J", "\x9b2J"
+    marked = f"{erase}{csi}"
+
+    class Everywhere:
+        name = "fake"
+        supports_vision = False
+        llm_id = f"scripted{marked}"
+
+        def __init__(self) -> None:
+            self.turns = 0
+
+        async def step(self, system: str, history: list[Any], tools: list[dict[str, Any]]) -> Any:
+            self.turns += 1
+            calls = {
+                1: ToolCall(
+                    id="c1", name=f"kick{marked}", arguments={f"leg{marked}": f"l{marked}"}
+                ),
+                2: ToolCall(id="c2", name="quack", arguments={"text": f"hi{marked}"}),
+                3: ToolCall(id="c3", name="remember", arguments={"text": f"note{marked}"}),
+            }
+            done = ToolCall(id="c4", name="declare_success", arguments={"reason": f"ok{marked}"})
+            return ProviderTurn(
+                tool_calls=[calls.get(self.turns, done)],
+                text=f"said{marked}",
+                thinking=f"thought{marked}",
+                usage=Usage(input_tokens=1, output_tokens=1),
+                stop_reason="tool_use",
+            )
+
+    result = _a_run_with_the_narration_on(monkeypatch, Everywhere(), tmp_path / "runs")
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert erase not in out and csi not in out, out
+    for word in ("said", "thought", "kick", "hi", "note", "ok"):
+        assert f"{word}\\x1b[3A\\x1b[J\\x9b2J" in out, word
+
+
 def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -43,6 +43,7 @@ from rich.console import Console, NewLine, RenderableType
 from rich.control import Control
 from rich.measure import Measurement
 from rich.panel import Panel
+from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
@@ -214,6 +215,8 @@ class TeeConsole(Console):
     `Capture.forward`; and `Live.stop` asks for its trailing blank line through `line()`,
     which is overridden below because on the terminal that newline is erased again by a
     cursor control the capture never gets.
+
+    And the screen never obeys a character in the text it is handed (`_render_buffer`).
     """
 
     def print(self, *objects: Any, **kwargs: Any) -> None:
@@ -221,6 +224,22 @@ class TeeConsole(Console):
         capture = _capture
         if capture is not None:
             capture.forward(self, objects, kwargs)
+
+    def _render_buffer(self, buffer: Iterable[Segment]) -> str:
+        """The one place everything this console prints becomes text for the terminal.
+
+        About a thousand calls hand Roboglot's two consoles text, and an LLM's, a robot's, a
+        server's or a stored run's words reach many of them: a step line, the live status
+        line, a panel's cell, a rule's title, the hand-off's lines. Filtered one at a time, the
+        next one written raw would have been the hole. So here each character a terminal could
+        act on, in any segment of text, is written out as its escape (`printable`), its line
+        breaks kept, while a segment Rich made for its own cursor (`control`) goes as it is, and
+        so do the colours, which Rich adds from styles after this. Text with no such character
+        is drawn byte for byte as before."""
+        return super()._render_buffer(
+            segment if segment.control else Segment(_shown(segment.text), *segment[1:])
+            for segment in buffer
+        )
 
     def line(self, count: int = 1) -> None:
         """Rich's own blank line, kept off the capture.
@@ -525,13 +544,32 @@ def printable(text: str) -> str:
     return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
 
 
-def printable_lines(text: str) -> str:
+def printable_lines(text: str, *, indent: str = "") -> str:
     """`printable` on each line of `text`, its line breaks kept: for what a terminal prints on
     lines of its own, a cell of a panel, a verdict's reason, an error, where a line break is
-    the text's own and every other character a terminal could act on is written out."""
+    the text's own and every other character a terminal could act on is written out.
+
+    `indent` goes in front of every line after the first, for an outside text printed where a
+    line of its own would begin at Roboglot's own first column: the text cannot take an
+    indent away, so none of its lines can pass for one of Roboglot's. A text on one line is
+    returned as it is."""
     if text.isprintable():
         return text
-    return "\n".join(printable(line) for line in text.split("\n"))
+    return f"\n{indent}".join(printable(line) for line in text.split("\n"))
+
+
+CONTINUED = "  "
+"""What goes in front of each line after the first of an outside text set inside a panel, a
+verdict's reason: an indent the text cannot take away (`printable_lines`)."""
+
+
+def _shown(text: str) -> str:
+    """One segment of text as the screen is handed it (`TeeConsole._render_buffer`): every
+    character a terminal could act on written out, but for the line breaks Rich itself
+    splits lines on."""
+    if text.isprintable() or text == "\n":
+        return text
+    return "\n".join(printable(part) for part in text.split("\n"))
 
 
 def _renderable(value: Any) -> RenderableType:
@@ -651,8 +689,9 @@ def verdict(
         body = Table.grid()
         body.add_column(overflow="fold")
         if reason:
-            # the pilot's or a robot's own words as often as Roboglot's
-            body.add_row(Text(printable_lines(reason)))
+            # the pilot's or a robot's own words as often as Roboglot's, its lines after the
+            # first indented so none can pass for the counters' row or one of its own
+            body.add_row(Text(printable_lines(reason, indent=CONTINUED)))
         if counters:
             body.add_row(joined(counters, g))
         where = [("run dir", path_text(run_dir))] if run_dir else []
@@ -676,8 +715,11 @@ def fail_line(
 
     def build(g: Glyphs) -> RenderableType:
         out = Text()
-        out.append(f"{g.fail} error: ", style=STYLES["fail"])
-        out.append(printable_lines(message))
+        said = f"{g.fail} error: "
+        out.append(said, style=STYLES["fail"])
+        # a line after the first starts under the first, never at the first column, where a
+        # server's text could otherwise print a line that reads as one of Roboglot's own
+        out.append(printable_lines(message, indent=" " * len(said)))
         if hint:
             out.append("\n")
             out.append(f"  {hint}", style=STYLES["muted"])
@@ -844,10 +886,13 @@ class RunStatus:
             step, text, since = self._step, self._text, self._since
         g = glyphs_for(self.console)
         out = Text(no_wrap=True, overflow="ellipsis")
+        # after an answer the words name the call the LLM chose as it wrote it, redrawn four
+        # times a second under the step lines, so they are written out on whatever console
+        # this line is drawn on: an escape left in could erase the lines above it
         if step:
-            out.append(step, style=STYLES["key"])
+            out.append(printable(step), style=STYLES["key"])
             out.append(f" {g.dot} ", style=STYLES["muted"])
-        out.append(text, style=STYLES["muted"])
+        out.append(printable(text), style=STYLES["muted"])
         waited = self._clock() - since
         if waited >= _SLOW_S:
             out.append(f" {g.dot} {waited:.0f} s", style=STYLES["muted"])

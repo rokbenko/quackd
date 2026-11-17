@@ -644,19 +644,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   reason quoted inside the questions over an arm whose fold missed, and for every line
   `roboglot onboard goal` prints from the service, its status and its outcome among them. Every
   character that could act on a terminal is now written out as its escape, as in `\x1b[2K`, and
-  the page shows a question, the pilot's doubt, the status line above them, the run's steps
-  beside them and a chat's earlier lines as plain text rather than Markdown, where a
-  strike-through or a hidden formula could hide part of them. Text with no such character reads
-  as it did.
+  the page shows a question, the pilot's doubt, the status line above them, the run's steps and
+  the frame's caption beside them, a chat's earlier lines, the reason a run ended on, a saved
+  run's summary and frames, and what a robot or a server answered a check with, as plain text
+  rather than Markdown, where a strike-through or a hidden formula could hide part of them. Text
+  with no such character reads as it did.
 - **What an LLM, a robot or a server wrote can no longer act on the live terminal.** A run
   printed an LLM's reply and its thinking, a verb's result, a note the pilot asked to keep, a
   refusal, a detection, the reason the run ended on and a server's error body as they came, and
   Rich takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
   an OSC 52 sequence wrote their clipboard, and the `llm<` line is printed just above the
-  questions a run puts. Every such line now writes each character a terminal could act on as its
-  escape, as in `\x1b[2J`, and keeps its own line breaks. A line with no such character prints
-  as it did. `roboglot log` replaying a saved run still prints some of a record's text as it
-  was written.
+  questions a run puts, with the live status line under it naming the call the LLM chose. Every
+  line Roboglot's terminal output carries, these and the rest, now writes each character a
+  terminal could act on as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error
+  or a verdict's reason that runs over several lines has every line after the first indented,
+  so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a server's error. A
+  line with no such character prints as it did.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any
