@@ -25,7 +25,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roboglot.transport.base import Intent, RobotState
-from roboglot.verbs.core import _ended_by, _waited_out, send_or_fail
+from roboglot.verbs.core import _ended_by, _stop, _unstopped, _waited_out, send_or_fail
 from roboglot.verbs.registry import NoParams, Precondition, Verb, VerbContext, VerbResult
 
 ARMS: tuple[str, ...] = ("left", "right")
@@ -79,11 +79,31 @@ def joints_for(model: str) -> tuple[str, ...]:
 
 
 def is_gripper(joint: str) -> bool:
-    return joint.endswith("_gripper")
+    """Whether `joint` is a gripper, named in full (`arm_left_gripper`) or as `move_joints`
+    names it, without the arm's prefix (`gripper`): read by its suffix alone, the bare name was
+    a body joint, and a gripper goal of -50 passed a range check."""
+    return joint == "gripper" or joint.endswith("_gripper")
 
 
 def joint_range(joint: str) -> tuple[float, float]:
     return (0.0, JOINT_NORM) if is_gripper(joint) else (-JOINT_NORM, JOINT_NORM)
+
+
+def goal_refused(joint: str, goal: float) -> str | None:
+    """Why `goal` is no goal for `joint`, or None: one outside its normalised range
+    (`joint_range`), which a NaN is too, since it compares with nothing. The verb, the transport
+    and the mock refuse in these words, as the XLeRobot's `move_joints` does."""
+    lo, hi = joint_range(joint)
+    return None if lo <= goal <= hi else f"{joint}={goal} is outside {lo}..{hi}"
+
+
+def height_refused(height_mm: float) -> str | None:
+    """Why `height_mm` is no lift height, or None: one outside the travel `lift` takes,
+    `LIFT_MIN_MM` to `LIFT_MAX_MM`, which a NaN is too. The transport and the mock refuse a `pose`
+    in these words, since a NaN height reads to the host's lift law as full speed."""
+    if LIFT_MIN_MM <= height_mm <= LIFT_MAX_MM:
+        return None
+    return f"a lift height of {height_mm} mm is outside {LIFT_MIN_MM:g}..{LIFT_MAX_MM:g}"
 
 
 def model_from_keys(keys: Iterable[object] | None) -> str:
@@ -112,9 +132,12 @@ class MoveJointsParams(BaseModel):
 
     @field_validator("positions")
     @classmethod
-    def _nonempty(cls, value: dict[str, float]) -> dict[str, float]:
+    def _goals(cls, value: dict[str, float]) -> dict[str, float]:
         if not value:
             raise ValueError("give at least one joint")
+        for joint, goal in value.items():
+            if (why := goal_refused(joint, goal)) is not None:
+                raise ValueError(why)
         return value
 
 
@@ -169,8 +192,15 @@ def _host_fresh(state: RobotState) -> str | None:
 def _calibrated(state: RobotState) -> str | None:
     """An uncalibrated robot never had its lift put into velocity mode, because upstream's
     `lift.configure()` is commented out and only `home()` sets it, and `home()` runs only when
-    calibrated. A velocity write to a servo that is not in velocity mode means nothing."""
-    if state.extras.get("calibrated", True):
+    calibrated. A velocity write to a servo that is not in velocity mode means nothing.
+
+    Refused on a robot the host does not say is calibrated. Only Roboglot's own host wrapper
+    says either way, as a JSON boolean, and a field that is there and not `true` (`false`, `0`,
+    `null`, a string) vouches for nothing (`zmq_host._took`). A host that sends no field at all,
+    upstream's own among them, leaves calibration unknown (None in the state, where its silence
+    used to read as true), and the gate stays as open as it always was there, which the pages'
+    bring-up on the stock host relies on."""
+    if state.extras.get("calibrated") is not False:
         return None
     return (
         "this robot is not calibrated, so its lift was never put into velocity mode and its "
@@ -180,8 +210,9 @@ def _calibrated(state: RobotState) -> str | None:
 
 def _arm_torque(state: RobotState) -> str | None:
     """As shipped, the arms are limp: upstream disables torque and both re-enable calls are
-    commented out. Roboglot's own host wrapper turns it back on and says so in the state."""
-    if state.extras.get("arm_torque", False):
+    commented out. Roboglot's own host wrapper turns it back on and says so in the state, as a
+    JSON boolean, and nothing else is read as torque on."""
+    if state.extras.get("arm_torque") is True:
         return None
     return (
         "the arms have no torque, so a joint command would move nothing and a stop could not "
@@ -197,14 +228,17 @@ def alohamini_conditions() -> dict[str, Precondition]:
 # ── the verbs ───────────────────────────────────────────────────────────────────────────
 
 
-async def _after_a_stop(ctx: VerbContext) -> str:
-    """What became of an arm a stop from beside its verb reached, in the words of the last stop:
-    asked here as well as in `_ended_by`, since one that had no recent reading to hold it from
-    tries again (`zmq_host._hold_the_arms`)."""
-    await ctx.transport.stop()
+async def _after_a_stop(ctx: VerbContext) -> tuple[str, bool]:
+    """What became of an arm a stop from beside its verb reached, in the words of the last stop,
+    and whether that stop landed: asked here as well as in `_ended_by`, since one that had no
+    recent reading to hold it from tries again (`zmq_host._hold_the_arms`). It goes through the
+    core's own reading of a stop (`_stop`): one that did not land held nothing and stopped
+    nothing, and the arm was said to be held where it stood over it."""
+    if (missed := await _stop(ctx)) is not None:
+        return f"is not known to be held: {missed.said('the stop')}: {missed.why}", False
     if getattr(ctx.transport, "stop_left_going", ()):
-        return "goes on to the goal it was sent, with no recent reading to hold it from"
-    return "is held where it stood"
+        return "goes on to the goal it was sent, with no recent reading to hold it from", True
+    return "is held where it stood", True
 
 
 async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
@@ -213,10 +247,13 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     recent reading says where that is (`zmq_host`)."""
     goals = {f"arm_{p.arm}_{joint}": value for joint, value in p.positions.items()}
     intent = Intent.joint(goals, p.duration_s)
-    if (fail := await send_or_fail(ctx, intent)) is not None:
+    if (fail := await send_or_fail(ctx, intent, "move_joints")) is not None:
         return fail
     if (why := await _waited_out(ctx, p.duration_s)) is not None:
-        stopped = "the base and the lift are stopped and the arm " + (await _after_a_stop(ctx))
+        held, landed = await _after_a_stop(ctx)
+        stopped = (
+            "the base and the lift are stopped and the arm " if landed else "the arm "
+        ) + held
         return await _ended_by(
             ctx, "move_joints", why, stopped, arm=p.arm, goal=dict(p.positions), base_stopped=True
         )
@@ -241,7 +278,7 @@ async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
     goal = GRIPPER_OPEN if p.open else GRIPPER_CLOSED
     positions = {f"arm_{side}_gripper": goal for side in sides}
     intent = Intent(kind="gripper", params={"open": p.open, "side": p.side, "positions": positions})
-    if (fail := await send_or_fail(ctx, intent)) is not None:
+    if (fail := await send_or_fail(ctx, intent, "gripper")) is not None:
         return fail
     if (why := await _waited_out(ctx, GRIPPER_S)) is not None:
         stopped = "the base and the lift are stopped and the gripper goes on to where it was sent"
@@ -267,7 +304,7 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
     travel: nothing upstream says how fast the lift moves. It hears a stop from beside it before
     each send, since the next one carried the lift on with the pilot told the brake had worked."""
     intent = Intent(kind="pose", params={"lift_height_mm": p.height_mm})
-    if (fail := await send_or_fail(ctx, intent)) is not None:
+    if (fail := await send_or_fail(ctx, intent, "lift")) is not None:
         return fail
     t0 = ctx.transport.now()
     height = None
@@ -276,7 +313,7 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
         if (why := ctx.interrupted()) is not None:
             stopped = "the lift stopped where it was"
             return await _ended_by(ctx, "lift", why, stopped, goal_mm=p.height_mm)
-        if (fail := await send_or_fail(ctx, intent)) is not None:
+        if (fail := await send_or_fail(ctx, intent, "lift")) is not None:
             return fail
         state = await ctx.transport.get_state()
         height = state.extras.get("lift_height_mm")
@@ -286,11 +323,17 @@ async def lift(ctx: VerbContext, p: LiftParams) -> VerbResult:
                 height_mm=round(float(height), 1),
                 goal_mm=p.height_mm,
             )
-    await ctx.transport.stop()
+    # through the core's own reading of a stop: one that did not land is said, where the lift was
+    # said to have stopped over it
+    unstopped = await _stop(ctx)
     where = f"{float(height):.0f} mm" if height is not None else "an unknown height"
-    return VerbResult.fail(
-        f"the lift did not reach {p.height_mm:.0f} mm; it stopped at {where}",
-        goal_mm=p.height_mm,
+    return _unstopped(
+        "lift",
+        unstopped,
+        VerbResult.fail(
+            f"the lift did not reach {p.height_mm:.0f} mm; it stopped at {where}",
+            goal_mm=p.height_mm,
+        ),
     )
 
 
@@ -301,10 +344,11 @@ async def home_arms(ctx: VerbContext, _: NoParams) -> VerbResult:
         goals = {
             f"arm_{arm}_{joint}": 0.0 for joint in ("shoulder_pan", "shoulder_lift", "elbow_flex")
         }
-        if (fail := await send_or_fail(ctx, Intent.joint(goals, 2.0))) is not None:
+        if (fail := await send_or_fail(ctx, Intent.joint(goals, 2.0), "home_arms")) is not None:
             return fail
         if (why := await _waited_out(ctx, 2.0)) is not None:
-            stopped = f"the {arm} arm {await _after_a_stop(ctx)} and no arm was sent after it"
+            held, _landed = await _after_a_stop(ctx)
+            stopped = f"the {arm} arm {held} and no arm was sent after it"
             return await _ended_by(ctx, "home_arms", why, stopped, arms_sent=n)
     return VerbResult.success("both arms returned to rest")
 
@@ -370,6 +414,8 @@ __all__ = [
     "MoveJointsParams",
     "alohamini_conditions",
     "alohamini_verbs",
+    "goal_refused",
+    "height_refused",
     "is_gripper",
     "joint_range",
     "joints_for",
