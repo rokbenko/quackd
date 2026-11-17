@@ -531,11 +531,13 @@ class Executor:
     it once its pilot has the body and closes it before its teardown, and an MCP session once it
     has connected and until it closes. Outside those windows the body is moved by its rest move
     and its hand-over, which no gate sees, so a pause granted then could not be kept."""
-    _moving: dict[asyncio.Task[VerbResult], _Leash] = field(
+    _moving: set[asyncio.Task[VerbResult]] = field(default_factory=set, init=False, repr=False)
+    """The verbs moving the body now, which a granted pause or a newer command ends (`pause_for`,
+    `preempt`)."""
+    _leashes: dict[asyncio.Task[VerbResult], _Leash] = field(
         default_factory=dict, init=False, repr=False
     )
-    """The verbs moving the body now, which a granted pause or a newer command ends (`pause_for`,
-    `preempt`), each with the leash it sends through."""
+    """The leash each of those sends through, which a pause or a newer command ends with it."""
     _halted: dict[asyncio.Task[VerbResult], tuple[str, str]] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -892,10 +894,11 @@ class Executor:
         # `_execute`, which ends it as the abort ends one (`_end_verb`): its stop at once, a
         # second cancel and a bound, where it used to wait for the verb with no bound but its
         # own timeout.
-        for task, leash in list(self._moving.items()):
+        for task in list(self._moving):
             if not task.done():
                 self._halted[task] = (CANCELLED_BY_PAUSE, "")
-                leash.end(CANCELLED_BY_PAUSE)
+                if (leash := self._leashes.get(task)) is not None:
+                    leash.end(CANCELLED_BY_PAUSE)
                 task.cancel(CANCELLED_BY_PAUSE)
 
     def preempt(self, reason: str) -> int:
@@ -912,10 +915,11 @@ class Executor:
         ended = 0
         # cancelled here, for the reason `pause_for` gives: a task cancelled before its next step
         # never takes it, so nothing it would have sent goes out after this returns
-        for task, leash in list(self._moving.items()):
+        for task in list(self._moving):
             if not task.done():
                 self._halted[task] = (CANCELLED_BY_PREEMPT, reason)
-                leash.end(CANCELLED_BY_PREEMPT)
+                if (leash := self._leashes.get(task)) is not None:
+                    leash.end(CANCELLED_BY_PREEMPT)
                 task.cancel(CANCELLED_BY_PREEMPT)
                 ended += 1
         return ended
@@ -1444,8 +1448,9 @@ class Executor:
         if state is not None:
             self._read_abort_rules(name, canonical, state)
             # No precondition holds back the brake, whatever a manifest lists for it: every other
-            # gate lets `stop` through on purpose, and a fallen body or a flat battery is where
-            # it is wanted most. One listed for it answered `cannot stop` and sent nothing.
+            # gate lets `stop` through on purpose, and a body a precondition refuses, or a flat
+            # battery, is where it is wanted most. One listed for it answered `cannot stop` and
+            # sent nothing.
             for pre in verb.preconditions if canonical != "stop" else ():
                 refusal = pre(state)
                 if refusal:
@@ -1634,7 +1639,8 @@ class Executor:
             abort_task = asyncio.ensure_future(self.abort.wait())
             waiting.add(abort_task)
             if self._may_move(self.registry.canonical(verb.name), verb):
-                self._moving[verb_task] = leash
+                self._moving.add(verb_task)
+                self._leashes[verb_task] = leash
         done: set[asyncio.Future[Any]] = set()
         finished = False
         unstopped: str | None = None
@@ -1646,7 +1652,8 @@ class Executor:
         finally:
             # the losers are always cancelled: a waiter left behind would otherwise accumulate
             # one task per verb for the life of the run
-            self._moving.pop(verb_task, None)
+            self._moving.discard(verb_task)
+            self._leashes.pop(verb_task, None)
             leash.detach()
             halted = self._halted.pop(verb_task, None)
             # A cancel of this call that lands while the verb is being ended (a second Ctrl-C, an
