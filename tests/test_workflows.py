@@ -60,6 +60,22 @@ def _uv_version() -> str:
     return match.group(1)
 
 
+def _piped_into_a_shell(text: str) -> bool:
+    """Whether a pipe in `text` feeds `sh` or `bash`, with or without `env NAME=VALUE` words
+    before it. Read word by word: a pattern with a repeated group for the `env` words can take
+    exponential time on a long line of near misses."""
+    for line in text.splitlines():
+        for after in line.split("|")[1:]:
+            words = after.split()
+            if words and words[0] == "env":
+                words = words[1:]
+                while words and "=" in words[0]:
+                    words = words[1:]
+            if words and words[0].rstrip(";)&") in ("sh", "bash"):
+                return True
+    return False
+
+
 def test_the_workflows_and_their_jobs_are_the_ones_this_file_names() -> None:
     """A job added without a line here would be held to none of the rules below."""
     assert {path.name for path in WORKFLOWS.glob("*.yml")} == set(JOBS)
@@ -107,9 +123,11 @@ def test_ci_never_pipes_an_installer_into_a_shell() -> None:
     """The ROS container used to fetch uv's installer and run it. In CI it runs the runner's own
     uv, mounted read only, and the script refuses to fetch the installer when it is in CI; the
     installer stays for a person running the script by hand."""
+    assert _piped_into_a_shell("curl -LsSf https://example.org/install.sh | sh")
+    assert _piped_into_a_shell("curl x \\\n  | env UV_INSTALL_DIR=/usr/local/bin bash -s")
+    assert not _piped_into_a_shell("uv run pytest | tee log.txt")
     for path in WORKFLOWS.glob("*.yml"):
-        text = path.read_text(encoding="utf-8")
-        assert not re.search(r"\|\s*(?:env\s+\S+=\S+\s+)*(?:ba)?sh\b", text), path.name
+        assert not _piped_into_a_shell(path.read_text(encoding="utf-8")), path.name
     (job,) = _workflow("rosarm-contract.yml")["jobs"].values()
     runs = " ".join(step.get("run", "") for step in job["steps"])
     assert '-v "$(command -v uv)":/usr/local/bin/uv:ro' in runs and "-e GITHUB_ACTIONS" in runs
