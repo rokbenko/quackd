@@ -197,6 +197,40 @@ def test_a_strangers_text_over_several_lines_never_starts_a_line_of_roboglots_ow
     assert any(row.startswith("│   ✓ SUCCESS  done") for row in rows), buf.getvalue()
 
 
+@pytest.mark.parametrize("width", [40, 80, 120])
+def test_a_strangers_text_cannot_begin_a_line_where_roboglots_begin_by_its_length_either(
+    width: int,
+) -> None:
+    """Its own line breaks were indented, and the lines Rich wraps a long text into for the
+    terminal's width were not: a server padding its body to the width put `✓ SUCCESS` at the
+    first column under `✗ error:`, and a pilot's long reason began a line level with the
+    verdict's counters. The text here is built for each width so that the marker lands exactly
+    where the line wraps; every line it is wrapped into is indented as its breaks are. A short
+    text still prints as it did."""
+    marker = "✓ SUCCESS  the goal was reached in 3 steps"
+    console, buf = wide(width, force_terminal=True, color_system=None)
+    said = "400 bad request"
+    console.print(ui.fail_line(said + " " * (width - len("✗ error: ") - len(said)) + marker))
+    lines = buf.getvalue().splitlines()
+    assert lines[0].startswith("✗ error: 400 bad request"), lines
+    assert all(line.startswith(" " * len("✗ error: ")) for line in lines[1:]), lines
+    assert lines[1].lstrip().startswith("✓ SUCCESS"), "the marker landed at the wrap"
+
+    buf.seek(0)
+    buf.truncate()
+    inside = width - 4  # a panel's two borders and its padding
+    reason = "gave up" + " " * (inside - len("gave up")) + marker
+    console.print(ui.verdict("failure", reason, counters=["steps 3"]))
+    rows = buf.getvalue().splitlines()
+    assert not any(row.startswith("│ ✓") for row in rows), rows
+    assert any(row.startswith(f"│ {ui.CONTINUED}✓ SUCCESS") for row in rows), rows
+
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.verdict("failure", "gave up", counters=["steps 3"]))
+    assert buf.getvalue().splitlines()[1].startswith("│ gave up "), "a short reason as it was"
+
+
 def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -233,6 +267,110 @@ def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escap
     assert erase not in out and csi not in out, out
     assert out.count("\\x1b[3A\\x1b[J") == 7 and "\\x9b2J" in out, out
     assert "\x1b[31m" in out, "Rich's own colours still go through"
+
+
+_PIPED = r"""
+from rich.text import Text
+from roboglot import ui
+said = "walked 0.2 m \x1b[3A\x1b[JRoboglot: every limit met \x9b2J"
+ui.console.print(said, soft_wrap=True, highlight=False, markup=False)  # drive's `say`
+ui.err_console.print(Text(said, style=ui.STYLES["warn"]))  # the hand-off's `say`
+ui.console.print("a clean line, as it always was")
+"""
+
+
+@pytest.mark.parametrize("forced", [False, True], ids=["plain", "FORCE_COLOR"])
+def test_outside_text_printed_to_a_real_pipe_reaches_it_written_out(forced: bool) -> None:
+    """The console's filter sat where Rich turns segments into text (`_render_buffer`), and on
+    Windows Rich decides at import whether a console does VT and, where it does not, which is
+    every pipe, writes the segments through its legacy renderer instead, which never goes there:
+    drive's lines, the hand-off's, every table, raw on a pipe that a terminal such as Git Bash's
+    reads and obeys. The filter is applied to the segments before Rich chooses its road. A real
+    child Python with real pipes on stdout and stderr, Roboglot's own two consoles, with and
+    without colour forced; on Windows this takes the legacy road, elsewhere the other one, and
+    on both nothing it is handed reaches the pipe raw, while a clean line arrives as it was."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    for name in ("FORCE_COLOR", "NO_COLOR"):
+        env.pop(name, None)
+    if forced:
+        env["FORCE_COLOR"] = "1"
+    done = subprocess.run(
+        [sys.executable, "-X", "utf8", "-c", _PIPED], capture_output=True, env=env, timeout=120
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    out, err = done.stdout.decode("utf-8"), done.stderr.decode("utf-8")
+    for name, said in (("stdout", out), ("stderr", err)):
+        assert "\x1b[3A" not in said and "\x1b[J" not in said and "\x9b" not in said, (name, said)
+        assert "\\x1b[3A\\x1b[JRoboglot: every limit met \\x9b2J" in said, (name, said)
+    assert "a clean line, as it always was" in out, out
+
+
+@pytest.mark.parametrize(
+    ("said", "shown"),
+    [
+        ("esc \x1b[2J", "esc \\x1b[2J"),  # C0: an escape sequence
+        ("soh \x01 and del \x7f", "soh \\x01 and del \\x7f"),  # C0 and DEL
+        ("csi \x9b2J and nel \x85", "csi \\x9b2J and nel \\x85"),  # C1
+        ("line\nbreak", "line\\nbreak"),  # a line break, where the text is kept on one line
+        (
+            "embed \N{LEFT-TO-RIGHT EMBEDDING} \N{RIGHT-TO-LEFT EMBEDDING} "
+            "\N{POP DIRECTIONAL FORMATTING} pops",
+            "embed \\u202a \\u202b \\u202c pops",
+        ),
+        (
+            "override \N{LEFT-TO-RIGHT OVERRIDE} \N{RIGHT-TO-LEFT OVERRIDE}",
+            "override \\u202d \\u202e",
+        ),
+        (
+            "isolate \N{LEFT-TO-RIGHT ISOLATE} \N{RIGHT-TO-LEFT ISOLATE} "
+            "\N{FIRST STRONG ISOLATE} \N{POP DIRECTIONAL ISOLATE}",
+            "isolate \\u2066 \\u2067 \\u2068 \\u2069",
+        ),
+        ("separators \N{LINE SEPARATOR} \N{PARAGRAPH SEPARATOR}", "separators \\u2028 \\u2029"),
+    ],
+    ids=["esc", "c0-del", "c1", "newline", "embeddings", "overrides", "isolates", "separators"],
+)
+def test_what_can_act_on_a_terminal_or_reorder_a_line_is_written_out(said: str, shown: str) -> None:
+    """One table says what is written out (`ui.ACTS`), read by `printable` and by the console's
+    filter alike: a control character (C0 but the tab, DEL, C1), the explicit bidirectional
+    embeddings, overrides and isolates, which reorder the text around them, and the line and
+    paragraph separators, which can start a line. Each class, written out."""
+    assert ui.printable(said) == shown
+    console, buf = tee(200, force_terminal=True, color_system=None)
+    console.print(said.replace("\n", " "), markup=False)
+    assert buf.getvalue() == ui.printable(said.replace("\n", " ")) + "\n"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "می\N{ZERO WIDTH NON-JOINER}خواهم توپ را پیدا کنم",  # Persian, a non-joiner in a word
+        "रोबोट को क्\N{ZERO WIDTH JOINER}ष ओर भेजो",  # Hindi, a joiner shaping a conjunct
+        "the mechanic 👩\N{ZERO WIDTH JOINER}🔧 fixed the arm",  # an emoji joined by a ZWJ
+        "the flag 🏴\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f flies",  # tags
+        "a soft hy\N{SOFT HYPHEN}phen",
+        "marks \N{LEFT-TO-RIGHT MARK} \N{RIGHT-TO-LEFT MARK} \N{ARABIC LETTER MARK}",
+        "a\ttab",
+    ],
+    ids=["persian-zwnj", "hindi-zwj", "emoji-zwj", "flag-tags", "soft-hyphen", "marks", "tab"],
+)
+def test_what_cannot_act_on_a_terminal_is_drawn_as_it_always_was(said: str) -> None:
+    """The filter wrote out every character `str.isprintable` rejects, and that includes the
+    joiners Persian, Hindi and every emoji sequence need, the tags a flag is made of, the soft
+    hyphen and the direction marks: format characters that cannot move the cursor, change what
+    the terminal does or reorder what is shown. A goal, a reply or a robot's name in any of them
+    was shown with escapes in the middle of its words. Each is drawn as it was, a tab as the
+    spaces Rich expands it to."""
+    assert ui.printable(said) == said
+    console, buf = tee(200, force_terminal=True, color_system=None)
+    console.print(said, markup=False)
+    plain, _ = wide(200, force_terminal=True, color_system=None)
+    plain.print(said, markup=False)
+    assert buf.getvalue() == plain.file.getvalue(), repr(buf.getvalue())  # type: ignore[attr-defined]
 
 
 def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:

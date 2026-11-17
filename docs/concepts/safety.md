@@ -107,7 +107,11 @@ Roboglot prints that an LLM, a robot or a server wrote (a reply and its thinking
 line naming the call the LLM chose, a verb's result, a refusal, a detection, the reason the run
 ended on, a server's error) has its escapes written out the same way, and keeps its own line
 breaks: a step's under the step's label, and an error's or a verdict's indented under its first
-line, so that none can begin where Roboglot's own lines begin.
+line, the lines a long one is folded into for the terminal's width as well, so that none can
+begin where Roboglot's own lines begin. What is written out is the control characters but the
+tab, the line and paragraph separators and the bidirectional embeddings, overrides and isolates;
+the joiners Persian, Hindi and emoji need, a flag's tags, the soft hyphen and the direction
+marks are drawn as given.
 
 That distinction is a safety property and not a nicety. A run directory is what somebody
 reaches for after a robot did something it should not have, and the question they put to it is

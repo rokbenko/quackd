@@ -39,7 +39,8 @@ from pathlib import Path
 from typing import IO, Any
 
 from rich import box
-from rich.console import Console, NewLine, RenderableType
+from rich.cells import cell_len
+from rich.console import Console, Group, NewLine, RenderableType
 from rich.control import Control
 from rich.measure import Measurement
 from rich.panel import Panel
@@ -216,7 +217,7 @@ class TeeConsole(Console):
     which is overridden below because on the terminal that newline is erased again by a
     cursor control the capture never gets.
 
-    And the screen never obeys a character in the text it is handed (`_render_buffer`).
+    And the screen never obeys a character in the text it is handed (`_write_buffer`).
     """
 
     def print(self, *objects: Any, **kwargs: Any) -> None:
@@ -225,21 +226,33 @@ class TeeConsole(Console):
         if capture is not None:
             capture.forward(self, objects, kwargs)
 
-    def _render_buffer(self, buffer: Iterable[Segment]) -> str:
-        """The one place everything this console prints becomes text for the terminal.
+    def _write_buffer(self) -> None:
+        """Where everything this console prints leaves it, filtered before Rich chooses how.
 
         About a thousand calls hand Roboglot's two consoles text, and an LLM's, a robot's, a
         server's or a stored run's words reach many of them: a step line, the live status
         line, a panel's cell, a rule's title, the hand-off's lines. Filtered one at a time, the
-        next one written raw would have been the hole. So here each character a terminal could
-        act on, in any segment of text, is written out as its escape (`printable`), its line
-        breaks kept, while a segment Rich made for its own cursor (`control`) goes as it is, and
-        so do the colours, which Rich adds from styles after this. Text with no such character
-        is drawn byte for byte as before."""
-        return super()._render_buffer(
-            segment if segment.control else Segment(_shown(segment.text), *segment[1:])
-            for segment in buffer
-        )
+        next one written raw would have been the hole. So each segment of text in the buffer
+        has every character in `ACTS` written out as its escape, its line breaks kept, while a
+        segment Rich made for its own cursor (`control`) goes as it is, and so do the colours,
+        which Rich adds from styles after this. Text with none of them leaves byte for byte as
+        before.
+
+        Here and not in `_render_buffer`, which an earlier round used: on Windows a console
+        Rich found without VT when it was built, which is every pipe, is written by Rich's
+        legacy renderer, which takes the segments from the buffer and never calls
+        `_render_buffer`. This runs before either road is chosen, and changes nothing about
+        which. Read against Rich 15.0.0, the only Rich on this machine and the one the lock
+        holds; the project allows 13.7 and later, which could not be read here.
+        `tests/test_ui.py` fails if Rich stops calling this: through a buffer, and through a
+        real pipe on each platform's own road."""
+        with self._lock:
+            if self._buffer_index == 0:
+                self._buffer[:] = [
+                    segment if segment.control else Segment(_shown(segment.text), *segment[1:])
+                    for segment in self._buffer
+                ]
+        super()._write_buffer()
 
     def line(self, count: int = 1) -> None:
         """Rich's own blank line, kept off the capture.
@@ -532,42 +545,107 @@ def _deferred(build: Callable[[Glyphs], RenderableType], glyphs: Glyphs | None) 
     return build(glyphs) if glyphs is not None else Deferred(build)
 
 
-def printable(text: str) -> str:
-    """`text` with every character a terminal could act on written out as its escape.
+ACTS = re.compile(
+    "["
+    "\x00-\x08\x0a-\x1f\x7f"  # C0 but the tab, and DEL
+    "\x80-\x9f"  # C1
+    "\\u2028\\u2029"  # the line and paragraph separators
+    "\\u202a-\\u202e"  # the bidirectional embeddings and overrides
+    "\\u2066-\\u2069"  # the bidirectional isolates
+    "]"
+)
+"""The one table of what is written out as its escape wherever Roboglot shows text it did not
+write, read by `printable` and by the consoles' filter (`TeeConsole._write_buffer`) alike:
 
-    For text a stranger wrote, a robot passport's or a LAN record's. Rich strips only a few
-    control codes, so an escape sequence in a robot's name could move the cursor and redraw a
-    line of the panel around it, and a bidi override could reorder one. Printable text, accents
-    and emoji included, is left exactly as it is."""
-    if text.isprintable():
+- a control character: C0 but the tab, DEL, and C1, the escape and the one-character CSI among
+  them. The newline is one: `printable` keeps a stranger's text on the line Roboglot gives it,
+  and what keeps its line breaks (`printable_lines`, the filter) splits on them first. The tab
+  is drawn as the spaces Rich expands it to, as it always was: it can neither go back nor start
+  a line.
+- the line and paragraph separators, which a terminal may take for a line of their own.
+- the explicit bidirectional embeddings, overrides and isolates, which reorder the text around
+  them, so that what a line seems to say is not what it holds.
+
+Everything else is drawn as given. That includes the format characters that cannot move the
+cursor, change what the terminal does or reorder what is shown: the zero-width joiner and
+non-joiner Persian, Hindi and every emoji sequence need, the tags a flag is made of, the soft
+hyphen, and the left-to-right, right-to-left and Arabic letter marks."""
+
+
+def printable(text: str) -> str:
+    """`text` with every character in `ACTS` written out as its escape.
+
+    For text a stranger wrote, a robot passport's or a LAN record's, an LLM's. Rich strips only a
+    few control codes, so an escape sequence in a robot's name could move the cursor and redraw a
+    line of the panel around it, and a bidi override could reorder one. Everything else, accents,
+    scripts and emoji included, is left exactly as it is."""
+    if not ACTS.search(text):
         return text
-    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
+    return ACTS.sub(lambda found: found.group().encode("unicode_escape").decode(), text)
 
 
 def printable_lines(text: str, *, indent: str = "") -> str:
     """`printable` on each line of `text`, its line breaks kept: for what a terminal prints on
-    lines of its own, a cell of a panel, a verdict's reason, an error, where a line break is
-    the text's own and every other character a terminal could act on is written out.
+    lines of its own, where a line break is the text's own and every other character in `ACTS`
+    is written out.
 
-    `indent` goes in front of every line after the first, for an outside text printed where a
-    line of its own would begin at Roboglot's own first column: the text cannot take an
-    indent away, so none of its lines can pass for one of Roboglot's. A text on one line is
-    returned as it is."""
-    if text.isprintable():
+    `indent` goes in front of every line after the first. A text on one line is returned as it
+    is. Where a stranger's text is set where a line of Roboglot's own would begin, an error or a
+    verdict's reason, `Hanging` indents the lines its width folds it into as well."""
+    if not ACTS.search(text):
         return text
     return f"\n{indent}".join(printable(line) for line in text.split("\n"))
 
 
 CONTINUED = "  "
 """What goes in front of each line after the first of an outside text set inside a panel, a
-verdict's reason: an indent the text cannot take away (`printable_lines`)."""
+verdict's reason: an indent the text cannot take away (`Hanging`)."""
+
+
+class Hanging:
+    """`text` with every line after its first indented by `indent`, the lines its own breaks
+    make and the lines the width folds it into alike: an outside text printed where a line of
+    Roboglot's own begins, an error or a verdict's reason, cannot begin one of its lines there,
+    whether by a line break or by its length. The first line is wrapped as it always was, at the
+    full width, so a text on one short line is drawn byte for byte as before."""
+
+    def __init__(self, text: Text, indent: str) -> None:
+        self.text = text
+        self.indent = indent
+
+    def __rich_measure__(self, target: Console, options: Any) -> Measurement:
+        """As wide as the text, its indented lines measured with their indent."""
+        measured = Measurement.get(target, options, self.text)
+        first, *rest = self.text.plain.split("\n")
+        widest = max([cell_len(first)] + [cell_len(line) + len(self.indent) for line in rest])
+        least = min(measured.minimum + len(self.indent), widest)
+        return Measurement(least, widest).clamp(max_width=options.max_width)
+
+    def __rich_console__(self, target: Console, options: Any) -> Iterator[RenderableType]:
+        width = options.max_width
+        narrow = max(1, width - len(self.indent))
+        lines: list[Text] = []
+        for n, part in enumerate(self.text.split("\n", allow_blank=True)):
+            rest = part
+            if n == 0:
+                first = part.wrap(target, width, overflow="fold")
+                if len(first) <= 1:
+                    lines.extend(first or [Text()])
+                    continue
+                lines.append(first[0])
+                rest = part[len(first[0].plain) :]
+                rest = rest[len(rest.plain) - len(rest.plain.lstrip(" ")) :]
+            for line in rest.wrap(target, narrow, overflow="fold") or [Text()]:
+                lines.append(Text(self.indent) + line)
+        drawn = Text("\n").join(lines)
+        drawn.no_wrap = True
+        yield drawn
 
 
 def _shown(text: str) -> str:
-    """One segment of text as the screen is handed it (`TeeConsole._render_buffer`): every
-    character a terminal could act on written out, but for the line breaks Rich itself
-    splits lines on."""
-    if text.isprintable() or text == "\n":
+    """One segment of text as the screen is handed it (`TeeConsole._write_buffer`): every
+    character in `ACTS` written out, but for the line breaks Rich itself splits lines on."""
+    if not ACTS.search(text) or text == "\n":
         return text
     return "\n".join(printable(part) for part in text.split("\n"))
 
@@ -690,8 +768,9 @@ def verdict(
         body.add_column(overflow="fold")
         if reason:
             # the pilot's or a robot's own words as often as Roboglot's, its lines after the
-            # first indented so none can pass for the counters' row or one of its own
-            body.add_row(Text(printable_lines(reason, indent=CONTINUED)))
+            # first, by a break or by its length, indented so none can pass for the counters'
+            # row or one of its own
+            body.add_row(Hanging(Text(printable_lines(reason)), CONTINUED))
         if counters:
             body.add_row(joined(counters, g))
         where = [("run dir", path_text(run_dir))] if run_dir else []
@@ -717,13 +796,14 @@ def fail_line(
         out = Text()
         said = f"{g.fail} error: "
         out.append(said, style=STYLES["fail"])
-        # a line after the first starts under the first, never at the first column, where a
-        # server's text could otherwise print a line that reads as one of Roboglot's own
-        out.append(printable_lines(message, indent=" " * len(said)))
-        if hint:
-            out.append("\n")
-            out.append(f"  {hint}", style=STYLES["muted"])
-        return out
+        out.append(printable_lines(message))
+        # a line after the first, by a break or by its length, starts under the first, never at
+        # the first column, where a server's text could otherwise print a line that reads as
+        # one of Roboglot's own
+        shown = Hanging(out, " " * len(said))
+        if not hint:
+            return shown
+        return Group(shown, Text(f"  {hint}", style=STYLES["muted"]))
 
     return _deferred(build, glyphs)
 

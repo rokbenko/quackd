@@ -2756,6 +2756,9 @@ class _StreamLines:
         """Reads asked of the thread whose line nobody has taken yet, under the lock."""
         self._waiting: deque[object] = deque()
         """Whoever waits for a line, in the order they began to, under the lock."""
+        self._rest = ""
+        """What a read of a given size left of a line (`put_back`), the next reader's whoever
+        that is, a question included, before any line the thread reads, under the lock."""
         self._ended: BaseException | None = None
         threading.Thread(target=self._read_lines, name="roboglot-stdin-lines", daemon=True).start()
 
@@ -2774,13 +2777,22 @@ class _StreamLines:
     def _join(self, who: object) -> None:
         with self._lock:
             self._waiting.append(who)
-            if self._asked < len(self._waiting):
+            if self._asked + (1 if self._rest else 0) < len(self._waiting):
                 self._asked += 1
                 self._wanted.release()
+
+    def put_back(self, rest: str) -> None:
+        """What a read of a given size did not take of its line, for the next reader."""
+        with self._lock:
+            self._rest = rest + self._rest
 
     def _take(self, who: object) -> tuple[bool, str | BaseException]:
         """Whether `who` has its line, and the line (with its newline) or what it raises."""
         with self._lock:
+            if self._rest and self._waiting and self._waiting[0] is who:
+                rest, self._rest = self._rest, ""
+                self._waiting.popleft()
+                return True, rest
             if self._ended is not None:
                 with contextlib.suppress(ValueError):
                     self._waiting.remove(who)
@@ -2851,19 +2863,20 @@ class _ThroughTheReader:
     It reads as a text stream does every way a program reads one, `readline`, iteration,
     `read` and `readlines`, each through the reader, so the line a question taken back left
     with it is the next one read, however it is read. What a read of a given size leaves of a
-    line is kept for the next read."""
+    line goes back to the reader, the next reader's, a question included; a size of 0 reads
+    nothing."""
 
     def __init__(self, stream: Any, lines: _StreamLines) -> None:
         self._stream = stream
         self.lines = lines
-        self._rest = ""
-        """What a sized read left of the last line taken, read before the next."""
 
     def readline(self, size: int = -1) -> str:
-        line = self._rest or self.lines.readline()
-        self._rest = ""
-        if 0 <= size < len(line):
-            line, self._rest = line[:size], line[size:]
+        if size == 0:
+            return ""
+        line = self.lines.readline()
+        if 0 < size < len(line):
+            self.lines.put_back(line[size:])
+            line = line[:size]
         return line
 
     def read(self, size: int = -1) -> str:

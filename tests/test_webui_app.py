@@ -365,7 +365,10 @@ def test_a_question_and_the_pilots_doubt_are_shown_as_text_never_as_markdown() -
     around it written out as its escape, so a Markdown element holding them fails here."""
     from roboglot.ui import printable
 
-    doubt = "grip is fine ~~the payload is over~~ $\\phantom{over the limit}$ ‮done"
+    doubt = (
+        "grip is fine ~~the payload is over~~ $\\phantom{over the limit}$ "
+        "\N{RIGHT-TO-LEFT OVERRIDE}done"
+    )
     question = "run manipulate(instruction='*all* of it')?"
     at = AppTest.from_function(_one_question, args=(question, doubt), default_timeout=60)
     at.run()

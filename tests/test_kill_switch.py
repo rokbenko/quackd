@@ -440,6 +440,35 @@ async def test_every_way_of_reading_stdin_after_a_question_gets_each_line_once(
                 os.close(write)
 
 
+async def test_what_a_sized_read_leaves_of_a_line_is_the_next_readers_a_question_included(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`read(2)` took a whole line from the one reader and kept the rest of it for its own next
+    read, so a question asked next got the line after and the rest came later; on a stream, and
+    on main, where each question was an `input()`, the read after `read(2)` of `abc` is `c`. The
+    rest is the reader's now, the next reader's whoever it is. And `readline(0)` read a whole
+    line first, waiting for one, where a stream returns `""` at once."""
+    from roboglot import safety
+
+    read, write = os.pipe()
+    with os.fdopen(read, encoding="utf-8") as pipe:
+        monkeypatch.setattr(sys, "stdin", pipe)
+        monkeypatch.setattr(safety, "_STREAM_LINES", None)
+        monkeypatch.setattr(sys, "stdout", io.StringIO())
+        ks = KillSwitch(asyncio.Event())
+        ks.install()
+        try:
+            os.write(write, b"first\nabc\ndef\n")
+            assert await _within(ks.ask_async("one? ")) == "first"
+            assert await _within(asyncio.to_thread(sys.stdin.read, 2)) == "ab"
+            assert await _within(ks.ask_async("two? ")) == "c", "the rest of the line was skipped"
+            assert await _within(asyncio.to_thread(sys.stdin.readline, 0)) == ""
+            assert await _within(ks.ask_async("three? ")) == "def"
+        finally:
+            ks.uninstall()
+            os.close(write)
+
+
 def test_a_read_still_waiting_on_a_pipe_when_the_run_ends_does_not_hold_the_process() -> None:
     """A read pending on a pipe cannot be interrupted on Windows, so a question taken back leaves
     the pipe's reader waiting on a line that may never come. It is a daemon thread, and the

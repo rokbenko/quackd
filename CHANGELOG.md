@@ -749,11 +749,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   Rich takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
   an OSC 52 sequence wrote their clipboard, and the `llm<` line is printed just above the
   questions a run puts, with the live status line under it naming the call the LLM chose. Every
-  line Roboglot's terminal output carries, these and the rest, now writes each character a
-  terminal could act on as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error
-  or a verdict's reason that runs over several lines has every line after the first indented,
-  so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a server's error. A
-  line with no such character prints as it did.
+  line Roboglot's terminal output carries, these and the rest, on a terminal and on a pipe
+  alike, now writes each character a terminal could act on, or that reorders the text around
+  it, as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error or a verdict's
+  reason that runs over several lines, by its breaks or by its length, has every line after the
+  first indented, so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a
+  server's error. A line with no such character prints as it did, the joiners Persian, Hindi
+  and emoji need included.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any
