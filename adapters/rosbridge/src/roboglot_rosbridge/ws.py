@@ -980,8 +980,9 @@ class RosbridgeWs:
     def _heard_after(self, sent_at: float, mine: asyncio.Task[float | None] | None) -> str | None:
         """What came from the bridge after a zero Twist went out at `sent_at`, and what it shows,
         or None for nothing. Over one socket only the answer to a request sent after the zero
-        (`mine`, the stop's own) shows that the zero reached the bridge; an image travels the
-        other way, and an answer to a request sent before it shows only that the link is up."""
+        (`mine`, the stop's own) shows that the zero reached the bridge, and only it is said so:
+        an image travels the other way, and an answer to another request, a beat's, sent before
+        the zero or during the stop's listen, is said only to show that the link is up."""
         answered = None
         if mine is not None and mine.done() and not mine.cancelled() and mine.exception() is None:
             answered = mine.result()
@@ -1001,9 +1002,8 @@ class RosbridgeWs:
         answered_at = self._answered_at
         if answered_at is not None and answered_at >= sent_at:
             return (
-                f"answered a request sent before the zero Twist, {answered_at - sent_at:.1f} s "
-                "after it went out, which shows the link is up and not that the zero reached the "
-                "bridge"
+                f"answered a request other than the stop's own, {answered_at - sent_at:.1f} s "
+                "after the zero Twist went out, which shows the link is up"
             )
         return None
 
@@ -1158,11 +1158,14 @@ class RosbridgeWs:
         With a stream whose pace is known, the link is alive while something has come within
         its window, five of its pace now, a second at least, ten at most (`_window`), and a beat
         past it is silent, whether or not the bridge has rosapi: a quiet beat asks the bridge
-        for its topic list in the background, and an answer, whenever it comes, is life, so a
-        stream that stopped over a link that answers keeps its run, but no beat waits on it,
-        and a link that is gone is noticed as soon with rosapi as without. A stream is not
-        judged before its pace is known, so a base whose /odom comes once every two seconds is
-        not quiet between its first messages.
+        for its topic list in the background, and the answer is life when it comes, but no beat
+        waits on it, so a link that is gone is noticed as soon with rosapi as without. A stream
+        that stopped over a link that answers keeps its run only while the bridge answers each
+        ask before the next beat: an answer later than that leaves the next beat silent too, and
+        the run ends at that second silent beat (`SILENT_BEATS`), within the window and two beats
+        of the last sign of life, as on a link that is gone. A stream is not judged before its
+        pace is known, so a base whose /odom comes once every two seconds is not quiet between
+        its first messages.
 
         With none, on a bridge that answered at connect, a beat asks once the last sign of life
         is a floor old, and a beat is silent only once its ask has gone unanswered `ANSWER_WAIT_S`,
@@ -1186,7 +1189,7 @@ class RosbridgeWs:
                 return
             silent = self._quiet() or f"nothing has come over it for more than {window:.1f} s"
             if answered is not None and not self._asks:
-                self._ask_in_background()  # its answer, whenever it comes, is life
+                self._ask_in_background()  # its answer is life when it comes; this beat is silent
         elif answered is None or life is None:
             return  # nothing to go by but the socket, which reads up
         else:

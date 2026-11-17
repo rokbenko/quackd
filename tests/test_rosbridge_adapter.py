@@ -1167,6 +1167,10 @@ given, since no machine is so slow that an answer made at once misses it."""
 LOST_AFTER_S = 2.0
 """A request deadline short enough that a test can wait out the ones it never answers, and long
 enough that an answer made at once never misses it."""
+GIVEN_UP_WITHIN_TURNS = 50
+"""How many turns of the event loop a request whose deadline has come due is given to give up:
+a timer that has come due runs on the next turn, and the cancel it sends ends the request in a
+few more, with no thread and no real time in between."""
 QUICK_S = 0.3
 """A transport's own request deadline in these tests (`RosbridgeWs(timeout_s=...)`), short so
 that a round trip left unanswered is waited out in a fraction of a second."""
@@ -1239,6 +1243,15 @@ async def _until(ready: Callable[[], bool], what: str) -> None:
     while not ready():
         assert time.monotonic() < end, f"never came: {what}"
         await asyncio.sleep(0.01)
+
+
+async def _turns_until(ready: Callable[[], bool], what: str) -> None:
+    """Give the event loop turns until `ready()`, with no timer, for a test that holds the
+    loop's own clock, on which a timer would never come due (`GUARD_S` on the real clock)."""
+    end = time.monotonic() + GUARD_S
+    while not ready():
+        assert time.monotonic() < end, f"never came: {what}"
+        await asyncio.sleep(0)
 
 
 async def _noticed_within(
@@ -1344,6 +1357,46 @@ async def test_a_bridge_whose_round_trip_answers_late_or_says_no_is_alive(
         await _until(lambda: listing.held >= 2, "the second ask reaches the bridge")
         listing.release(1)  # the first answer comes, late, after a beat gave up on it
         await asyncio.wait({first}, timeout=GUARD_S)
+        for _ in range(int((ANSWER_WAIT_S + BEAT_S) / BEAT_S) + 1):  # past the second ask's time
+            clock.t += BEAT_S
+            await ws.heartbeat()
+    finally:
+        listing.release()
+
+
+async def test_an_answer_inside_its_request_deadline_counts_after_the_beat_gave_up_on_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An answer is a sign of life whenever it comes inside its request's own deadline, the
+    transport's `timeout_s`, however long after the beat that asked stopped waiting for it: the
+    request is given that whole deadline, not a beat's `ANSWER_WAIT_S`. That deadline runs on
+    the event loop's clock, which here is the test's: it is moved to a beat short of the
+    deadline before the answer is let go, so a request given less has given up by then, and no
+    stall of the machine can decide the test either way."""
+    ws, listing, _topics = _asked()  # the run's own request deadline
+    await ws.connect()
+    clock = _Clock()
+    monkeypatch.setattr(ws_module, "time", clock)
+    loop = asyncio.get_running_loop()
+    loop_now = [loop.time()]
+    monkeypatch.setattr(loop, "time", lambda: loop_now[0])
+    listing.hold()
+    try:
+        clock.t += STALE_FLOOR_S + BEAT_S
+        await ws.heartbeat()  # asks, and waits for nothing
+        (first,) = ws._asks
+        await _turns_until(lambda: listing.held >= 1, "the ask reaches the bridge")
+        clock.t += ANSWER_WAIT_S + BEAT_S
+        await ws.heartbeat()  # the beat has stopped waiting for it: one silent beat, a new ask
+        await _turns_until(lambda: listing.held >= 2, "the second ask reaches the bridge")
+        loop_now[0] += ws.timeout_s - BEAT_S  # the request's own clock, a beat short of its end
+        for _ in range(GIVEN_UP_WITHIN_TURNS):
+            if first.done():
+                break
+            await asyncio.sleep(0)  # whatever has come due runs: a shorter deadline gives up
+        assert not first.done(), "the request gave up before its own deadline"
+        listing.release(1)  # the answer comes, inside the deadline, long after the beat's wait
+        await _turns_until(first.done, "the answer comes")
         for _ in range(int((ANSWER_WAIT_S + BEAT_S) / BEAT_S) + 1):  # past the second ask's time
             clock.t += BEAT_S
             await ws.heartbeat()
@@ -1782,7 +1835,7 @@ async def test_with_odometry_quiet_the_stop_says_only_what_the_bridge_showed(
             await _until(earlier.done, "the earlier answer comes")
 
         heard_before = await _stopped_once_answered(monkeypatch, ex, ws, the_earlier_answer)
-        assert "answered a request sent before the zero Twist" in heard_before.summary
+        assert "answered a request other than the stop's own" in heard_before.summary
         assert "which shows the link is up" in heard_before.summary, heard_before.summary
         assert "so the zero reached the bridge" not in heard_before.summary
 

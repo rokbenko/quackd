@@ -676,7 +676,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   at most, or any answer from the bridge, a failed one included. A
   stream gone quiet asks the bridge for its topic list in the background, and no beat waits for
   the answer, so a dead link under a 10 Hz `/odom` is noticed within about two seconds, with
-  `rosapi` or without. Where no stream vouches, as on a base with no `/odom`, the heartbeat asks
+  `rosapi` or without. A stream that stops while the bridge runs on keeps its run only while the
+  bridge answers each ask before the next beat, half a second; a slower answer leaves the next
+  beat silent, and the run ends as on a dead link, two seconds after a 10 Hz `/odom` went quiet.
+  Where no stream vouches, as on a base with no `/odom`, the heartbeat asks
   the bridge, gives the request two seconds and asks again, and notices a dead link within six
   and a half seconds. A stream is not judged before its pace is known, so a base whose `/odom` is
   slow is not cut off between its first messages. A stop on a link with a stream listens after

@@ -140,10 +140,14 @@ pace, and set nothing: the gap that held them is the pace until the stream's own
 again. A stream is not judged before
 its pace is known, so a base whose `/odom` comes once every two seconds is not quiet between its
 first messages. A beat past that window is silent whether the bridge has `rosapi` or not. It
-asks the bridge for its topic list in the background, and the answer, whenever it comes, is a
-sign of life, so a stream that stopped over a link that still answers keeps its run, a base
-whose `/odom` went quiet while its bridge answers among them (see the stop, below); but no beat
-waits for it, so a link that is gone is noticed as soon with `rosapi` as without. Where no stream
+asks the bridge for its topic list in the background, and the answer is a sign of life when it
+comes, but no beat waits for it, so a link that is gone is noticed as soon with `rosapi` as
+without. A stream that stopped over a link that still answers, a base whose `/odom` went quiet
+while its bridge runs on among them (see the stop, below), keeps its run only while the bridge
+answers each ask before the next beat, within half a second. An answer later than that leaves the
+next beat silent too, and the run ends at that second silent beat, within the window and two
+beats of the last sign of life: 2 s at 10 Hz, 11 s at the slowest pace, as on a link that is
+gone. Where no stream
 vouches, as on a base that publishes no `/odom`, or publishes it on a topic the address does not
 name, the heartbeat asks for the topic list on a bridge that answered at connect, once the last
 sign of life is a second old, and counts a beat silent only once that request has gone two seconds
@@ -178,9 +182,10 @@ to have reached the body, so the body may still be moving: rosbridge at ws://rob
 answered a request sent after the zero Twist, 0.0 s after it went out, so the zero reached the
 bridge, but /odom has brought nothing for 3.0 s, longer than the 1.0 s its pace gives it, so the
 base is not known to have taken the zero Twist, and it has no deadman and keeps its last Twist if
-it did not`. A camera's image, which travels the other way, or the answer to a request sent
-before the zero, is said as what it is, `which shows the link is up and not that the zero
-reached the bridge`. A base that publishes `/odom` only while it moves says this of a stop sent
+it did not`. A camera's image, which travels the other way, is said as what it is, `which shows
+the link is up and not that the zero reached the bridge`, and so is an answer to a request other
+than the stop's own, a beat's sent before the zero or during the listen, `which shows the link
+is up`. A base that publishes `/odom` only while it moves says this of a stop sent
 after it has stood still past that window. A base that never had `/odom`, a camera's base among
 them, is vouched for by its link, as before.
 
@@ -202,7 +207,7 @@ and a stop listens two of its stream's pace, a second at least.
 | `/odom` at 10 Hz, with `rosapi` or without | a second, then 2B: 2 s | `went out but is not known to have reached the body`, after listening 1 s |
 | `/odom` at half a hertz, or slower | 5 × 2 s, then 2B: 11 s, the most for any stream | the same, after listening 4 s |
 | `/odom` at 10 Hz after a pause it came back from, of 3 s or 30 s | 2 s again once five fresh gaps have come, and 11 s at most before then | the same, after listening 1 s, and 4 s at most before then |
-| `/odom` at 10 Hz gone quiet, while the bridge answers or a camera still sends: the base's driver gone | never: the bridge is alive, and the heartbeat does not fail | `went out but is not known to have reached the body`, what the bridge sent and when, `but /odom has brought nothing`, after listening 1 s for `/odom` |
+| `/odom` at 10 Hz gone quiet, while the bridge answers or a camera still sends: the base's driver gone | never while a camera still sends or the bridge answers each ask within a beat, half a second; a bridge slower than that ends the run as a dead link does, a second, then 2B: 2 s after `/odom` went quiet | `went out but is not known to have reached the body`, what the bridge sent and when, `but /odom has brought nothing`, after listening 1 s for `/odom` |
 | no stream, a bridge that answered at connect | a second, B, then twice 2 s and B: 6.5 s | `stopped (velocity zeroed)`, while the socket reads up |
 | no stream, a bridge that did not answer at connect | never: only the socket's own state | `stopped (velocity zeroed)`, while the socket reads up |
 

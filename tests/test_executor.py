@@ -1172,18 +1172,20 @@ async def test_an_abort_whose_stop_did_not_land_does_not_say_a_stop_was_sent() -
 class _WentOutStop(MockTransport):
     """A body whose stop went out over a link that has given no sign of life since, and says so
     as the rosbridge, XLeRobot and AlohaMini transports do: why in `stop_error`, beside
-    `stop_unconfirmed`, without raising. Its stop takes `slow_s` first, for one answered after
-    the executor stopped waiting for it."""
+    `stop_unconfirmed`, without raising. One `held` waits for the test to let its stop answer
+    (`answer`), for a stop answered after the executor stopped waiting for it: when it ends is
+    the test's to say, not the machine's."""
 
-    def __init__(self, slow_s: float = 0.0) -> None:
+    def __init__(self, *, held: bool = False) -> None:
         super().__init__()
-        self.slow_s = slow_s
+        self.held = held
+        self.answer = asyncio.Event()
         self.stop_error: str | None = None
         self.stop_unconfirmed = False
 
     async def stop(self) -> None:
-        if self.slow_s:
-            await asyncio.sleep(self.slow_s)
+        if self.held:
+            await self.answer.wait()
         await super().stop()
         self.stop_error, self.stop_unconfirmed = NOT_HEARD, True
 
@@ -1259,11 +1261,11 @@ async def test_an_owed_stop_that_went_out_unconfirmed_is_said_so_on_every_exit(
 
 async def test_an_owed_stop_answered_after_it_was_waited_for_says_it_went_out() -> None:
     """One no longer waited for that then went out unconfirmed was said on the log to have not
-    landed (`_late_stop`), the words of a stop that never left."""
-    started = asyncio.Event()
+    landed (`_late_stop`), the words of a stop that never left. The stop is held until the
+    executor has said it stopped waiting for it, and only then let go: the order is the test's,
+    and no stall of the machine can make the stop answer inside the executor's wait."""
 
     async def waiting(ctx: VerbContext, _: NoParams) -> VerbResult:
-        started.set()
         await asyncio.sleep(30)
         return VerbResult.success("never")
 
@@ -1271,16 +1273,16 @@ async def test_an_owed_stop_answered_after_it_was_waited_for_says_it_went_out() 
     registry.register(Verb("waiting", "waits", waiting, timeout_s=0.05))
     registry.register(dataclasses.replace(CORE["stop"], timeout_s=0.05))
     said: list[str] = []
-    transport = _WentOutStop(slow_s=0.3)
+    transport = _WentOutStop(held=True)
     ex = Executor(registry, transport, contract=glot("waiting").frontmatter, log=said.append)
     result = await ex.run_verb("waiting")
-    assert "goes on by itself" in result.summary, result.summary
-    for _ in range(100):
-        if transport.stops:
-            break
-        await asyncio.sleep(0.05)
-    await asyncio.sleep(0)
-    late = [line for line in said if "no longer waited for" in line]
+    assert "goes on by itself" in result.summary, result.summary  # the wait for it has ended
+    assert transport.stops == 0, "the stop answered before the executor stopped waiting for it"
+    transport.answer.set()  # and only now does it answer
+    end = time.monotonic() + 60.0  # a guard against a hang, never what decides the test
+    while not (late := [line for line in said if "no longer waited for" in line]):
+        assert time.monotonic() < end, said
+        await asyncio.sleep(0.01)
     assert late == [f"an owed stop that was no longer waited for {WENT_OUT}: {NOT_HEARD}"], said
 
 
