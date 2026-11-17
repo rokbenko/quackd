@@ -527,6 +527,9 @@ class ToddlerBotBridge:
             "stale_ms": round(float(state.get("age_ms") or 0.0), 1),
             "stale_limit_ms": STALE_LIMIT_MS,
             "tilt_deg": state.get("tilt_deg"),
+            # the world's up in the body's frame, as the daemon reads it: the hardware
+            # checklist's reading of which way is face down. None from a daemon from before.
+            "up_in_body": state.get("up_in_body"),
         }
         return RobotState(
             t=float(state.get("t") or 0.0),

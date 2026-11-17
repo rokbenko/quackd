@@ -193,8 +193,9 @@ never takes over a first client's walk, and the walk ends with its client. A com
 a part another connection was driving tells that connection. A motion moves the head and the
 hands too, so it takes them with the body, except what its own client holds by a look or a grip,
 which stays held through it (a hand closed on something stays closed, and the answer lists it as
-kept); it is refused, with the reason, while another connection drives one of them or one is
-still coming to rest, which a stop ends at once. A stop is honoured from anyone,
+kept); a look or a grip its client makes during the motion stays that client's when the motion
+ends, as one made outside a motion does. It is refused, with the reason, while another
+connection drives one of them or one is still coming to rest, which a stop ends at once. A stop is honoured from anyone,
 stops every part and leaves every part owned by nobody: it arms nothing, so a `roboglot doctor`
 check, which sends a stop as it disconnects, moves nothing on a robot nobody is driving. Against
 a run in flight it stops the run's motion and the robot holds; the run is told at its next
@@ -204,11 +205,13 @@ keepalive or command, and its heartbeat fails with the reason. Run doctor checks
 and past the fall threshold, so they play to their end and the robot lying face down after one is
 not read as fallen. Its posture reads `unknown`, never `standing`, a walk or an upright motion
 waits, and `stand` brings it back up. A stand from the floor is done only once the trunk reads
-upright; one that cannot lift the robot ends with health saying so. A lean any other way, on its
-side or its back, during the motion, after it or standing back up, is a fall. Which motions those
-are is a table in the daemon (`FLOOR_MOTIONS`), by what each is named for, because the keyframes
-carry no orientation of the trunk to read it from, and which way is face down in the orientation
-it reads is an assumption no robot has checked yet.
+upright. One that cannot lift the robot by its deadline stops pushing: it holds the robot where
+it lies, as after a fall, health says it did not get up, and another `stand` may try again. A lean
+any other way, on its side or its back, during the motion, after it or standing back up, is a
+fall. Which motions those are is a table in the daemon (`FLOOR_MOTIONS`), by what each is named
+for, because the keyframes carry no orientation of the trunk to read it from. Which way is face
+down in the orientation it reads (`FACE_DOWN`, below) is an assumption no robot has checked yet,
+and step 13 of the hardware checklist is the reading that checks it.
 
 **After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
 settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets
@@ -296,6 +299,7 @@ this body a starved loop is a fall.
 | `DAEMON_PROTOCOL` | the wire is Roboglot's own at both ends | there is no upstream to verify it against, so citing one would be a false citation. What is cited instead is every assumption the daemon makes |
 | `SAFE_POSE` | upstream's default pose is safe to slew to | true from standing; from a crawling or prone start it is untested and must be tried on a stand |
 | `FALL_DETECTION` | a tilt past 50 degrees is a fall | there is no fall detection upstream at all; the threshold is a guess until somebody tips a real robot |
+| `FACE_DOWN` | face down, the world's up leans along -x in the body's frame | it follows from upstream's orientation being the body's in the world and the IMU's axes being the torso's, neither of which anything read shows. One reading on the stand settles it (step 13 of the checklist): tipped nose down, the x of `up_in_body` in `report_state` reads below zero. On a robot where the sign is the other way round, `crawl` and `push_up` are cut halfway and read as a fall, a fall onto its back during them goes unseen, and nothing outside the two floor motions is affected |
 | `GRIPPER_AXES` | which end of a gripper's travel is closed | upstream states it nowhere, so the daemon takes the MJCF range's low end as closed and finds the motors by name. The capability is reported only when a gripper motor is actually found, never because the flag was passed |
 | `NECK_AXES` | which neck motor is yaw | inferred from the motor names rather than stated anywhere |
 | `ZERO_LATCHING` | a calibrated zero survives `initialize` | reading did not settle whether the configured zero is re-latched at every startup; the daemon refuses to actuate without the file either way |
@@ -307,8 +311,8 @@ this body a starved loop is a fall.
 If you have built a ToddlerBot, **put it on its safety stand first**, and work through
 [adapters/toddlerbot/hardware-checklist.md](hardware-checklist.md) in order: it is
 written so that each step can only fail in a way you can recover from, and it keeps the
-feet off the ground until step 13. Then run Roboglot's daemon,
+feet off the ground until step 14. Then run Roboglot's daemon,
 point `toddlerbot-lookout` at it, and say what happened: that task's allowlist moves no leg, no
 arm and no waist. What most needs a real robot: whether the safe-pose slew is actually safe
-from a crawl, what tilt angle really means fallen, whether the neck axes are what the motor
-names imply, and whether a calibrated zero survives a restart.
+from a crawl, what tilt angle really means fallen, which way face down reads, whether the neck
+axes are what the motor names imply, and whether a calibrated zero survives a restart.

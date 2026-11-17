@@ -2958,3 +2958,99 @@ def test_a_notice_is_written_under_the_lock_a_connection_leaves_under() -> None:
         d._tell(a, "a notice")
     worker.join(2)
     assert gone.is_set() and a not in d.lost and a not in d.heard_at
+
+
+# ── 16. a stand that did not get up, a look made during a motion, and the sign's reading ──
+
+
+def test_a_stand_that_did_not_get_up_holds_where_the_robot_lies() -> None:
+    """Past its deadline a stand from the floor that never read upright ended holding the
+    standing pose, which a body still on the floor has not reached, so the daemon went on pushing
+    every joint towards standing against the floor with no end, after saying itself that the
+    robot did not get up. It holds where the robot lies now, as a fall does: the legs are
+    commanded to the pose measured when the deadline passed, until the next command, health says
+    it did not get up, and a later stand tries again. The deadline is stood in for by moving it to
+    now."""
+    d = _floor_daemon()
+    h = _handler(d)
+    d.tick()
+    assert _send(h, "bot.perform", {"motion": "crawl"})["accepted"]
+    for _ in range(200):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.lying and d.down_by == "crawl"
+    lying = np.asarray(d.safe.pose, np.float32).copy()
+    d.sim.stuck = True
+    assert _send(h, "bot.stand")["accepted"]
+    ticks = 0
+    while float(np.max(np.abs(d.command.goal - d.target))) >= D.ARRIVED_RAD and ticks < 2000:
+        _send(h, "bot.keepalive")
+        d.tick()
+        ticks += 1
+    assert d.command.mode == D.Command.STAND, "the standing pose arrived; the trunk did not rise"
+    d.rise_deadline = time.monotonic()
+    for _ in range(100):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.command.mode == D.Command.HOLD and d.rise_failed is not None
+    pushing = float(np.max(np.abs(d.command.goal - lying)))
+    commanded = float(np.max(np.abs(d.target - lying)))
+    assert pushing <= D.MAX_STEP_RAD and commanded <= D.MAX_STEP_RAD, (pushing, commanded)
+    health = _send(h, "bot.health")
+    assert health["ok"] is False and "did not get" in str(health["reason"]), health
+    assert _send(h, "bot.stand")["accepted"], "and a later stand tries again"
+    assert d.command.mode == D.Command.STAND and d.rise_failed is None
+    assert d.rise_deadline is not None and d.rise_deadline > time.monotonic()
+
+
+@pytest.mark.parametrize("made", ["a look", "a grip"])
+def test_a_look_or_grip_made_during_a_motion_keeps_its_owner_when_the_motion_ends(
+    made: str,
+) -> None:
+    """A look or a grip a client made before its motion stayed its own through it, but one made
+    during the motion lost its owner when the motion ended: `_finished` let go of every part the
+    motion took, though the look or grip was now holding it. So when that client died the head or
+    the hand held on for good and was never brought to rest. A part its client commanded keeps
+    that client as its owner, as any look or grip made outside a motion does."""
+    d = _away(robot_name="toddlerbot_2xc_gripper")
+    h = _handler(d, gripper=True)
+    d.tick()
+    d.motion_library = {"kneel": [np.full(d.robot.nu, v, np.float32) for v in (0.45, 0.4) * 5]}
+    assert _send(h, "bot.perform", {"motion": "kneel"})["accepted"]
+    for _ in range(2):
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.command.mode == D.Command.MOTION
+    if made == "a look":
+        assert _send(h, "bot.look", {"yaw_deg": 40.0, "pitch_deg": 0.0})["accepted"]
+        part = D.NECK
+    else:
+        assert _send(h, "bot.grip", {"side": "right", "close": True})["accepted"]
+        part = "right_gripper"
+    for _ in range(2000):
+        if d.command.mode == D.Command.HOLD:
+            break
+        _send(h, "bot.keepalive")
+        d.tick()
+    assert d.command.mode == D.Command.HOLD, "the motion played to its end"
+    assert d.owners.get(part) is h, f"{made} made during the motion lost its owner: {d.owners}"
+    d.left(h)
+    for _ in range(3):
+        d.tick()
+    assert part in d.resting, f"its client has gone and the {part} is not brought to rest"
+
+
+def test_the_state_reports_the_worlds_up_in_the_bodys_frame() -> None:
+    """`FACE_DOWN`'s sign is settled by one reading on the stand: the robot tipped nose down, and
+    the x of the world's up read in the body's frame below zero. The daemon's state reported only
+    the tilt, which is the same whichever way the robot leans, so nobody could make that reading
+    through Roboglot. It reports the vector itself, as `observe` reads it, and the lean a nose
+    down tip reads is the one `FACE_DOWN` takes for face down; None before any orientation."""
+    d = _floor_daemon()
+    d.tick()
+    assert _daemon().state()["up_in_body"] is None, "no orientation, no reading"
+    d.sim.fall = (30.0, "face down")
+    d.tick()
+    up = d.state()["up_in_body"]
+    assert up == pytest.approx([-0.5, 0.0, 0.866], abs=1e-3), up
+    assert D.leans_face_down(up[0], up[1]), "the reading the checklist names is FACE_DOWN's"

@@ -1,7 +1,7 @@
 # ToddlerBot: the order to try it in
 
 Nothing in Roboglot has run on a ToddlerBot. This is the order to find out in, written so that
-each step can only fail in a way you can recover from. **Feet off the ground until step 13.**
+each step can only fail in a way you can recover from. **Feet off the ground until step 14.**
 
 This robot is not a duck. It weighs about 3 kg, it cannot get up if it falls, and upstream's
 own shutdown path disables torque with no lowering and no ramp. Read
@@ -72,12 +72,20 @@ script that ignores it.
 12. **Send the daemon `SIGTERM`.** It should settle to the safe pose first and only then
     release, refusing every command that moves it while it settles. Upstream's own exit path
     does not do this, which is why the daemon exists.
+13. **Read which way face down is, before `crawl` or `push_up` is ever tried.** With the daemon
+    running, tip the robot nose down on its stand by hand, about 30 degrees, short of the 50
+    that reads as a fall, and run `report_state`. Its `up_in_body` is the world's up read in the
+    body's frame, x first. x must read below zero, about -0.5 at 30 degrees: that is the sign the
+    daemon's `FACE_DOWN` assumes. If x reads above zero, the sign is the other way round on
+    your robot: `crawl` and `push_up` would be cut halfway and read as a fall, and a fall onto
+    its back during them would go unseen. Nothing outside those two motions is affected. Do
+    not perform either, and say so in an issue with the reading.
 
 ## Off the stand
 
-13. Only now, and only with a hand ready to catch it. Feet on the ground, `stand`, then
+14. Only now, and only with a hand ready to catch it. Feet on the ground, `stand`, then
     `perform hold`.
-14. If you have a walk checkpoint staged, `move` at the smallest velocity that does anything,
+15. If you have a walk checkpoint staged, `move` at the smallest velocity that does anything,
     for well under a second, with the robot on a mat.
 
 ## What to report
@@ -93,11 +101,12 @@ Read that first line before you paste it. The values of `--api-key` and `--token
 there, and so is a password or a credential-named query parameter in `--base-url`, `--address`
 and `--camera-url`. Nothing else on the screen is ([SECURITY.md](../../../SECURITY.md)).
 
-The four things that most need a real robot:
+The five things that most need a real robot:
 
 - **Does the safe-pose slew work from a crawl or a prone start?** Untested and unknown. It is
   the largest remaining unknown in the whole adapter.
 - **What tilt angle actually means fallen?** Roboglot guesses 50 degrees.
+- **Which way does face down read?** Step 13, one reading on the stand.
 - **Are the neck axes what the motor names imply?** yaw and pitch are inferred, not stated.
 - **Does a calibrated zero survive a restart?** Reading upstream did not settle whether
   `initialize` re-latches it.

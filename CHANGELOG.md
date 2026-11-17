@@ -515,7 +515,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and the answer lists it as kept), is refused with the reason while another connection drives
   one or one is still coming to rest, and a rest ends once the part is there, or, when it stops
   closing on its goal, as soon as a keyframe that cannot be reached would be given up on, saying
-  so. Whatever ends a motion early lets go of every part it took.
+  so. Whatever ends a motion lets go of every part it took, except a head or a hand its client has
+  aimed or gripped since the motion began, which stays that client's, as a look or a grip made
+  outside a motion does, and is brought to rest when that client goes.
 - **A ToddlerBot loop that gives up takes no more orders and settles.** After ten failing ticks in
   a row the loop stopped without settling, and every move went on answering accepted with nothing
   to carry it out. It refuses every move with the reason now, its health says so, and it settles
@@ -530,11 +532,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   refused while it is down, and on a fallen robot the deadman's rest is that hold. `crawl` and
   `push_up` go to the floor on purpose, face down, so they play to their end, the robot lying
   face down after one is not read as fallen and its posture reads `unknown` rather than
-  `standing`, and `stand` brings it back up, done only once the trunk reads upright, and saying
-  in health that it did not get the robot up if it cannot. A lean any other way, on its side or
-  its back, during such a motion, after it or standing back up, is a fall. Which motions those are
-  is a table in the daemon, by what each is named for, since the keyframes carry no orientation of
-  the trunk, and which way is face down in the orientation it reads has not met a robot.
+  `standing`, and `stand` brings it back up, done only once the trunk reads upright. A stand that
+  cannot lift it stops pushing towards standing by its deadline and holds the robot where it
+  lies, as after a fall, health says it did not get up, and another stand may try again. A lean
+  any other way, on its side or its back, during such a motion, after it or standing back up, is
+  a fall. Which motions those are is a table in the daemon, by what each is named for, since the
+  keyframes carry no orientation of the trunk. Which way is face down in the orientation it reads
+  is an assumption, listed with the adapter's others: the daemon's state reports the world's up
+  in the body's frame as `up_in_body`, `report_state` shows it, and the hardware checklist reads
+  it with the robot tipped nose down on its stand before either motion is tried.
 - **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
   the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
   now, the answer saying what it was held to.

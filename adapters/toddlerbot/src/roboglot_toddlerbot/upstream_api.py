@@ -592,6 +592,20 @@ FALL_DETECTION = UpstreamRef(
     "orientation past a tilt threshold, and that threshold is a guess until somebody tips a "
     "real robot.",
 )
+FACE_DOWN = UpstreamRef(
+    "FACE_DOWN",
+    "UNVERIFIED",
+    src(_REAL, 155),
+    "which way the world's up leans in the body's frame when the robot is face down, which is "
+    "how the daemon tells `crawl` and `push_up` going down from a fall. It takes -x: upstream's "
+    "orientation is the body's in the world, as the one Obs the MuJoCo backend also fills has "
+    "it, and the IMU's axes are the torso's, x forward and z up. Nothing read shows how "
+    "RealWorld builds the rotation from the IMU or how the IMU is mounted, and either one the "
+    "other way round flips the sign. One reading settles it: the robot tipped nose down on its "
+    "stand, and the x of `up_in_body` in the daemon's state below zero. Wrong, it costs the two "
+    "floor motions and nothing else: each is cut halfway and read as a fall, and a fall onto "
+    "the back during one goes unseen.",
+)
 GRIPPER_AXES = UpstreamRef(
     "GRIPPER_AXES",
     "UNVERIFIED",

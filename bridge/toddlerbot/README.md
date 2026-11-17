@@ -61,11 +61,13 @@ connection is driving one of them or the deadman is still bringing one to rest, 
 played round a head it cannot reach. A head's or a gripper's rest that stops closing on its
 place in the safe pose (a place outside the joint's limits) ends after as many ticks as a
 keyframe that cannot be reached is given, and says so in the log; until then a stop ends it.
-Whatever ends a motion early (a fall, a stop, another command for the body) lets go of every
-part the motion took.
+Whatever ends a motion (its last keyframe, a fall, another command for the body) lets go of
+every part the motion took, except a head or a hand its client has aimed or gripped since the
+motion began: that stays the client's, as a look or a grip made outside a motion does, so the
+client's going brings it to rest. A stop lets go of every part, as always.
 
 A daemon nobody has commanded holds the robot where it stands, and so does one a stop or a
-finished motion left holding: nobody owns a part then, so the deadman moves nothing.
+finished motion left holding: nobody owns the body then, so the deadman moves nothing.
 
 **A stop.** It is honoured from any connection, and it stops every part: the robot holds where
 it was last measured, every part is owned by nobody, and the answer lists what it stopped. It
@@ -92,12 +94,19 @@ Down on purpose is one way only. A lean past the threshold any other way, more t
 `FLOOR_HEADING_DEG` (45 degrees, half the way to a robot on its side) from face down, is a fall
 during the motion, while lying after it, and during the stand back up, and it ends whatever is
 running as a fall always does. Which way is face down in the orientation the daemon reads
-(`FACE_DOWN`) follows from upstream's orientation being the body's in the world, and has not met
-a robot.
+(`FACE_DOWN`, the world's up along -x in the body's frame) follows from upstream's orientation
+being the body's in the world and the IMU's axes being the torso's, and has not met a robot. The
+state reports the reading that settles it as `up_in_body`, the world's up in the body's frame,
+and step 13 of the hardware checklist reads it with the robot tipped nose down on its stand: x
+must be below zero. On a robot where the sign is the other way round, `crawl` and `push_up` are
+cut halfway and read as a fall, a fall onto its back during them goes unseen, and nothing outside
+the two floor motions is affected.
 
 A stand from the floor counts as done only once the trunk reads upright. If it does not by the
-settle's own deadline for that distance, the stand ends holding, the posture still reads
-`unknown`, and health says the stand did not get the robot up, until it is up.
+settle's own deadline for that distance, it stops pushing towards standing: the stand ends
+holding the robot where it lies, as after a fall, with the legs commanded to the pose measured
+when the deadline passed until the next command. The posture still reads `unknown`, health says
+the stand did not get the robot up until it is up, and another stand may try again.
 
 Once a shutdown begins, every command that moves the robot is refused with the reason, so a
 connected client cannot keep the settle from the safe pose, and `bot.health` says the daemon is
@@ -225,7 +234,7 @@ protect, and nobody has measured it.
 ## Safety
 
 Read `docs/adapters/toddlerbot/hardware-checklist.md` before the first bring-up and follow its
-order. It keeps the feet off the ground until step 13, and the two steps that matter most are 11 and
+order. It keeps the feet off the ground until step 14, and the two steps that matter most are 11 and
 12, both taken on the stand: pull the network cable mid-move and confirm the deadman slews
 rather than drops, then send `SIGTERM` and confirm the same.
 

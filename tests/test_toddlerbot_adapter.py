@@ -332,6 +332,27 @@ async def test_a_stop_that_did_not_land_is_not_recorded_as_delivered(answer: str
     assert stop_error, "and the adapter says why, where the executor's own brake reads it"
 
 
+@pytest.mark.parametrize("daemon", ["this one", "one from before"])
+async def test_report_state_shows_the_worlds_up_in_the_bodys_frame(daemon: str) -> None:
+    """The hardware checklist settles `FACE_DOWN`'s sign with one reading: the robot tipped nose
+    down on its stand, and the x of the world's up in the body's frame below zero. The client
+    passed nothing like it on, so `report_state` could not show it. It shows what the daemon
+    reports, and a daemon from before, which reports none, shows None and fails nothing."""
+    state = dict(_FakeDaemon.STATE)
+    if daemon == "this one":
+        state["up_in_body"] = [-0.5, 0.0, 0.866]
+    async with _FakeDaemon({"bot.state": ("result", state)}) as fake:
+        adapter = ToddlerBotAdapter(ToddlerBotBridge(fake.address, request_timeout_s=KEEPALIVE_S))
+        manifest = await adapter.connect()
+        try:
+            result = await _executor(adapter, manifest).run_verb("report_state", {})
+        finally:
+            await adapter.close()
+    assert result.ok, result.summary
+    shown = result.data["state"]["extras"]["up_in_body"]
+    assert shown == state.get("up_in_body"), shown
+
+
 async def test_connect_narrows_to_what_the_transport_reported() -> None:
     grounded = ToddlerBotAdapter(ToddlerBotMock(walk=False, camera=False, neck=False))
     manifest = await grounded.connect()

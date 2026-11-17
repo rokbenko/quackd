@@ -491,6 +491,9 @@ class Daemon:
         #: The parts the motion now playing took, released when it ends.
         self.motion_parts: list[str] = []
         self.tilt_deg = 0.0
+        #: The world's up read in the body's frame, as `observe` last read it, or None before any
+        #: orientation: the reading that settles FACE_DOWN's sign, so `state` reports it.
+        self.up_in_body: tuple[float, float, float] | None = None
         #: When the last tick ended, however it ended, or None before the first. `bot.health`
         #: reads it without `lock`, because a tick blocked on the bus holds the lock and leaves
         #: everything else the loop writes frozen at its last good value.
@@ -624,6 +627,7 @@ class Daemon:
         if getattr(obs, "rot", None) is not None:
             try:
                 gravity = obs.rot.apply([0.0, 0.0, 1.0], inverse=True)
+                self.up_in_body = (float(gravity[0]), float(gravity[1]), float(gravity[2]))
                 self.tilt_deg = tilt_degrees(float(gravity[2]))
                 self.lying = self.tilt_deg > FALL_TILT_DEG
                 face_down = leans_face_down(float(gravity[0]), float(gravity[1]))
@@ -690,7 +694,14 @@ class Daemon:
                         "the stand did not get the robot up from the floor: its trunk still "
                         f"reads {self.tilt_deg:.0f} degrees from upright"
                     )
-                    log.warning("%s", self.rise_failed)
+                    log.warning("%s; holding where it lies", self.rise_failed)
+                    # Holding the standing pose would push every joint towards standing against
+                    # the floor for as long as nothing else is commanded. Rest on the floor is
+                    # where the robot lies, as after a fall: the legs are commanded to the pose
+                    # measured now, until the next command, which may be another stand.
+                    cmd.hold(current)
+                    self._finished([BODY])
+                    return current
                 cmd.hold(goal)
                 self._finished([BODY])
             return nxt
@@ -864,10 +875,14 @@ class Daemon:
     def _finished(self, parts: Any) -> None:
         """A stand or a motion has played to its end and the robot holds: the parts it drove are
         owned by nobody now, as after a stop, so its client's leaving moves nothing. A finished
-        kneel kept its owner, and that client's death minutes later stood the robot up."""
+        kneel kept its owner, and that client's death minutes later stood the robot up.
+
+        Except a head or a hand its client has aimed or gripped since the motion took it: that
+        look or grip is still holding it, so it stays that client's, as one made outside a motion
+        does, and its client's going brings it to rest. Let go of, it held for good."""
         owner = self.owners.get(BODY)
         for part in parts:
-            if part in self.owners and self.owners[part] is owner:
+            if part in self.owners and self.owners[part] is owner and not self._holds(part):
                 del self.owners[part]
         self.motion_parts = []
 
@@ -1293,6 +1308,11 @@ class Daemon:
                 "down": self.down_by,
                 "fallen": self.fallen,
                 "tilt_deg": round(self.tilt_deg, 1),
+                # The world's up in the body's frame (x, y, z), to the joints' own precision: a
+                # person tipping the robot nose down on its stand reads FACE_DOWN's sign in x.
+                "up_in_body": None
+                if self.up_in_body is None
+                else [round(v, 3) for v in self.up_in_body],
                 "joints": {
                     k: round(float(v), 3) for k, v in zip(self.order, self.target, strict=True)
                 },
