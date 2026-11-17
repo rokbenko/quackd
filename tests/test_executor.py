@@ -449,7 +449,9 @@ async def test_what_a_probe_sets_off_for_the_body_is_on_the_record_as_a_calls_is
     assert keepers, "precondition: no stop was left to go on by itself"
     for keeper in keepers:
         keeper.cancel()  # as the loop's close cancels it
-    await asyncio.wait(set(keepers), timeout=4 * ENDING_S)
+    # The wait ends as soon as the keepers do. Its bound is only there so that a keeper that
+    # never ends fails the test, and it is generous because a slow runner is not a failure.
+    await asyncio.wait(set(keepers), timeout=STUBBORN_S)
     notes = [str(e.data.get("text")) for e in seen if e.kind == "note"]
     assert any("still on its way as the run ended" in note for note in notes), notes
     assert not [e for e in seen if e.kind in ("gate", "verb_start", "verb_end")], "a call's rows"
