@@ -272,6 +272,9 @@ def _get_once(
         sock: socket.socket = _connect(host, port, ends, within_s)
         if scheme == "https":
             context = ssl.create_default_context()
+            # Python has refused anything older since 3.10, and this says so where it is used:
+            # a floor a reader, and a scanner, can see without knowing which Python runs it
+            context.minimum_version = ssl.TLSVersion.TLSv1_2
             context.sslsocket_class = _DeadlineSSLSocket
             # the handshake is bounded by what is left, as one wait with a deadline of its own
             _bound(sock, ends, within_s)
