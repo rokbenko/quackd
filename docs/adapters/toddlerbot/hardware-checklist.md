@@ -72,10 +72,15 @@ script that ignores it.
 12. **Send the daemon `SIGTERM`.** It should settle to the safe pose first and only then
     release, refusing every command that moves it while it settles. Upstream's own exit path
     does not do this, which is why the daemon exists.
-13. **Read which way face down is, before `crawl` or `push_up` is ever tried.** With the daemon
-    running, tip the robot nose down on its stand by hand, about 30 degrees, short of the 50
-    that reads as a fall, and run `report_state`. Its `up_in_body` is the world's up read in the
-    body's frame, x first. x must read below zero, about -0.5 at 30 degrees: that is the sign the
+13. **Read which way face down is, before `crawl` or `push_up` is ever tried.** Start the
+    daemon again, tip the robot nose down on its stand by hand, about 30 degrees, short of the
+    50 that reads as a fall, and hold it there. From the MCP client, run `robot_run_verb` with
+    `report_state`. Its one-line summary does not show the reading (step 5's fake daemon gives
+    `posture=standing policy=hold`), and `report_state` in `roboglot drive` prints only that
+    line. Open the JSON the tool returns instead, and find `up_in_body` under `data`, `state`,
+    `extras`: the world's up read in the body's frame, x first. Step 5's fake daemon has no
+    orientation, so there it reads `"up_in_body": null`. On the robot it is three numbers, about
+    `[-0.5, 0.0, 0.866]` at 30 degrees nose down. x must read below zero: that is the sign the
     daemon's `FACE_DOWN` assumes. If x reads above zero, the sign is the other way round on
     your robot: `crawl` and `push_up` would be cut halfway and read as a fall, and a fall onto
     its back during them would go unseen. Nothing outside those two motions is affected. Do

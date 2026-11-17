@@ -539,8 +539,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a fall. Which motions those are is a table in the daemon, by what each is named for, since the
   keyframes carry no orientation of the trunk. Which way is face down in the orientation it reads
   is an assumption, listed with the adapter's others: the daemon's state reports the world's up
-  in the body's frame as `up_in_body`, `report_state` shows it, and the hardware checklist reads
-  it with the robot tipped nose down on its stand before either motion is tried.
+  in the body's frame as `up_in_body`, `report_state` returns it in the JSON an MCP client is
+  given (its one-line summary does not show it), and the hardware checklist reads it there with
+  the robot tipped nose down on its stand before either motion is tried.
 - **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
   the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
   now, the answer saying what it was held to.
