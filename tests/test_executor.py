@@ -114,6 +114,263 @@ async def test_confirm_gate(registry: VerbRegistry, mock_transport: MockTranspor
     assert mock_transport.intents_of("do")[0].params == {"skill": "kick_left"}
 
 
+class _Person:
+    """A person at a terminal who says yes, and lets `meanwhile` happen while the question is
+    open, as a second MCP call, a peer's pause or the run's clock would."""
+
+    asks_a_person = True
+
+    def __init__(self, meanwhile: Any = None) -> None:
+        self.asked: list[str] = []
+        self.meanwhile = meanwhile
+
+    async def __call__(self, name: str, _params: dict[str, Any]) -> bool:
+        self.asked.append(name)
+        if self.meanwhile is not None:
+            await self.meanwhile()
+        return True
+
+
+class _Instruction(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    instruction: str
+
+
+async def _one_segment(_ctx: VerbContext, _p: _Instruction) -> VerbResult:
+    return VerbResult.success("the segment ran", seconds=1.0)
+
+
+def _segment_verb() -> Verb:
+    """A stand-in for an arm's `manipulate`, which is always confirmed."""
+    return Verb(
+        "manipulate",
+        "a segment of a learned policy",
+        _one_segment,
+        _Instruction,
+        safety_class="confirm",
+    )
+
+
+@pytest.mark.parametrize("spent", ["steps", "policy seconds", "a segment running"])
+async def test_nobody_is_asked_about_a_call_a_later_gate_would_refuse(
+    registry: VerbRegistry, mock_transport: MockTransport, spent: str
+) -> None:
+    """The confirm question came before the segment gate and the budget, so a person was asked,
+    said yes, and the call was then refused: the record kept a `prompt` row and an allowed
+    `confirm` gate for a verb that never ran. Everything that can refuse with what is known
+    before the question is checked first, so the refusal here is the only gate written, and
+    nobody is asked anything."""
+    seen: list[Any] = []
+    person = _Person()
+    budget = Budget(Budgets(max_steps=1), now=mock_transport.now)
+    registry.register(_segment_verb(), replace=True)
+    ex = Executor(
+        registry,
+        mock_transport,
+        contract=glot("kick", confirm="kick").frontmatter if spent == "steps" else None,
+        budget=budget,
+        confirm=person,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    segment = {"instruction": "pick up the red block"}
+    if spent == "steps":
+        budget.note_step()  # the last step is spent
+        with pytest.raises(BudgetExceeded):
+            await ex.run_verb("kick", {"leg": "right"})
+    elif spent == "policy seconds":
+        budget.policy_s = budget.policy_total_s
+        with pytest.raises(BudgetExceeded):
+            await ex.run_verb("manipulate", segment)
+    else:
+        ex.segment = "manipulate"  # a first segment runs, as a second MCP call finds it
+        with pytest.raises(VerbNotAllowed):
+            await ex.run_verb("manipulate", segment)
+    assert person.asked == [], f"asked about {person.asked}, and then refused it"
+    refused = ("segment", "refused") if spent == "a segment running" else ("budget", "exceeded")
+    assert gates(seen) == [refused], gates(seen)
+    assert not [e for e in seen if e.kind == "prompt"], "a prompt row for a call never put"
+    assert mock_transport.intents == []
+
+
+async def _spend_the_last_step(ex: Executor) -> None:
+    assert ex.budget is not None
+    while ex.budget.steps < ex.budget.limits.max_steps:
+        ex.budget.note_step()  # as other calls would, each its own task over MCP
+
+
+async def _run_out_of_minutes(ex: Executor) -> None:
+    assert ex.budget is not None
+    await ex.transport.sleep(ex.budget.limits.max_minutes * 60 + 1)
+
+
+async def _grant_a_pause(ex: Executor) -> None:
+    ex.pause_for(5.0)
+
+
+async def _a_newer_command(ex: Executor) -> None:
+    ex.preempt("a newer command came")
+
+
+async def _abort(ex: Executor) -> None:
+    ex.abort.set()
+
+
+async def _withdraw_the_verdict(ex: Executor) -> None:
+    ex.verdict = None
+
+
+async def _brake(ex: Executor) -> None:
+    await ex.run_verb("stop")
+
+
+@pytest.mark.parametrize(
+    ("meanwhile", "gate", "raised"),
+    [
+        (_spend_the_last_step, ("budget", "exceeded"), BudgetExceeded),
+        (_run_out_of_minutes, ("budget", "exceeded"), BudgetExceeded),
+        (_grant_a_pause, ("paused", "refused"), VerbNotAllowed),
+        (_a_newer_command, ("preempted", "refused"), Preempted),
+        (_abort, ("abort", "refused"), Aborted),
+        (_withdraw_the_verdict, ("verdict", "refused"), VerdictRequired),
+        (_brake, ("stopped", "refused"), None),
+    ],
+    ids=["steps", "minutes", "pause", "newer command", "abort", "verdict", "stop"],
+)
+async def test_a_refusal_after_a_yes_says_the_person_had_agreed(
+    registry: VerbRegistry,
+    mock_transport: MockTransport,
+    meanwhile: Any,
+    gate: tuple[str, str],
+    raised: type[BaseException] | None,
+) -> None:
+    """What can change while the question is open is read again after the answer: a step a
+    second call took, the run's minutes, a pause, a newer command, the abort, a verdict withdrawn
+    or a stop. A call refused there was agreed to first, and its gate says so beside its own
+    reason, which is the same sentence it always was, so a reader of the record does not take
+    the yes in the `confirm` row above it for a verb that ran."""
+    seen: list[Any] = []
+    budget = Budget(Budgets(max_steps=5, max_minutes=0.1), now=mock_transport.now)
+    budget.start()
+    ex = Executor(
+        registry,
+        mock_transport,
+        contract=glot("kick", confirm="kick").frontmatter,
+        budget=budget,
+        event_log=EventLog(observers=[seen.append]),
+        require_verdict=True,
+        verdict=Verdict(verdict="feasible", reason="a kick is what this body does"),
+    )
+    person = _Person(lambda: meanwhile(ex))
+    ex.confirm = person
+    if raised is None:
+        result = await ex.run_verb("kick", {"leg": "right"})
+        assert not result.ok and result.summary == f"kick did not start: {STOPPED}"
+    else:
+        with pytest.raises(raised):
+            await ex.run_verb("kick", {"leg": "right"})
+    assert person.asked == ["kick"]
+    kicks = [e.data for e in seen if e.kind == "gate" and e.data["name"] == "kick"]
+    assert [(g["gate"], g["outcome"]) for g in kicks] == [("confirm", "allowed"), gate]
+    assert kicks[-1]["after_confirm"] == "a human said yes", kicks[-1]
+    assert "after_confirm" not in kicks[0]
+    assert mock_transport.intents_of("do") == [], "the kick went out"
+
+
+def _not_fallen(state: RobotState) -> str | None:
+    return "the body has fallen" if state.fallen else None
+
+
+class _ReadFails(MockTransport):
+    """A body whose state read raises, as a link that dropped does."""
+
+    async def get_state(self) -> RobotState:
+        raise TransportError("the body did not answer")
+
+
+def _kick_held_to(registry: VerbRegistry, *preconditions: Any) -> None:
+    registry.register(
+        dataclasses.replace(registry.get("kick"), preconditions=list(preconditions)), replace=True
+    )
+
+
+STANDING = RobotState(policy="mock", posture="standing", battery_percent=88)
+FALLEN = RobotState(policy="mock", posture="fallen", fallen=True, battery_percent=88)
+
+
+@pytest.mark.parametrize("why", ["a precondition", "the battery", "the state read"])
+async def test_a_call_the_bodys_state_would_refuse_puts_no_question(
+    registry: VerbRegistry, why: str
+) -> None:
+    """The preconditions and the battery rule read the body's state, which was read only after
+    the confirm question, so a person was asked and said yes about a kick a fallen body or a
+    flat battery then refused, and the record kept a question for a verb that never ran. A call
+    that will put a question reads the state first, and what refuses on that reading refuses with
+    no question, no `prompt` row and no `confirm` gate. A read that fails fails the call as a
+    failed read always has, with the stop sent after it, and nobody is asked."""
+    seen: list[Any] = []
+    person = _Person()
+    transport = {
+        "a precondition": MockTransport(states=[FALLEN]),
+        "the battery": MockTransport(states=[STANDING.model_copy(update={"battery_percent": 10})]),
+        "the state read": _ReadFails(),
+    }[why]
+    _kick_held_to(registry, _not_fallen)
+    ex = Executor(
+        registry,
+        transport,
+        contract=glot("kick", confirm="kick", abort="Battery below 15%").frontmatter,
+        confirm=person,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    if why == "a precondition":
+        result = await ex.run_verb("kick", {"leg": "right"})
+        assert not result.ok and result.summary == "cannot kick: the body has fallen"
+    elif why == "the battery":
+        with pytest.raises(Aborted, match="battery 10% below 15%"):
+            await ex.run_verb("kick", {"leg": "right"})
+    else:
+        with pytest.raises(TransportError, match="the body did not answer"):
+            await ex.run_verb("kick", {"leg": "right"})
+        assert transport.stops == 1, "the stop a failed read is owed did not go out"
+    assert person.asked == [], f"asked about {person.asked}, and then refused it"
+    assert not [e for e in seen if e.kind == "prompt"], "a prompt row for a call never put"
+    expected = {
+        "a precondition": [("precondition", "refused")],
+        "the battery": [("abort_when", "fired")],
+        "the state read": [],
+    }[why]
+    assert gates(seen) == expected, gates(seen)
+    assert transport.intents_of("do") == []
+
+
+async def test_a_precondition_that_turns_false_while_the_question_is_open_refuses_after_it(
+    registry: VerbRegistry,
+) -> None:
+    """The state is read again after the answer, and what the question's wait changed refuses
+    there: the body stood when the question was put and had fallen by the yes. The refusal says
+    the person had agreed (`after_confirm`), and the kick is not sent. A call that puts a question
+    reads the state twice, once before it and once after."""
+    seen: list[Any] = []
+    person = _Person()
+    transport = MockTransport(states=[STANDING, FALLEN])
+    _kick_held_to(registry, _not_fallen)
+    ex = Executor(
+        registry,
+        transport,
+        contract=glot("kick", confirm="kick").frontmatter,
+        confirm=person,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    result = await ex.run_verb("kick", {"leg": "right"})
+    assert not result.ok and result.summary == "cannot kick: the body has fallen"
+    assert person.asked == ["kick"]
+    assert gates(seen) == [("confirm", "allowed"), ("precondition", "refused")]
+    refused = [e.data for e in seen if e.kind == "gate"][-1]
+    assert refused["after_confirm"] == "a human said yes", refused
+    assert transport.intents_of("do") == []
+    assert transport._state_i == 2, "a confirmed call reads the state before and after the question"
+
+
 async def test_budget_hard_stop(registry: VerbRegistry, mock_transport: MockTransport) -> None:
     budget = Budget(Budgets(max_steps=2), now=mock_transport.now)
     budget.start()
@@ -123,6 +380,27 @@ async def test_budget_hard_stop(registry: VerbRegistry, mock_transport: MockTran
     with pytest.raises(BudgetExceeded):
         await ex.run_verb("quack")
     assert budget.steps == 2
+
+
+async def test_the_llm_call_budget_is_read_only_where_a_call_is_charged(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A verb's step ran the whole budget check, `max_llm_calls` included, so the verb the last
+    allowed LLM call chose was refused with `max_llm_calls (2) reached`, billed and for nothing,
+    and so was a stepper's turn after it, which charges no call at all. Steps and minutes are
+    what a verb is held to; the calls are read where one is about to be charged."""
+    budget = Budget(Budgets(max_llm_calls=2), now=mock_transport.now)
+    budget.start()
+    ex = Executor(registry, mock_transport, contract=glot("quack").frontmatter, budget=budget)
+    budget.note_llm_call()
+    budget.note_llm_call()  # the last call allowed, which chose the quack below
+    assert (await ex.run_verb("quack", {"text": "hi"})).ok
+    budget.note_stepper_call()  # a turn the stepper answered
+    assert (await ex.run_verb("quack", {"text": "again"})).ok
+    with pytest.raises(BudgetExceeded, match=r"^max_llm_calls \(2\) reached$"):
+        budget.note_llm_call()
+    assert (budget.steps, budget.llm_calls, budget.stepper_calls) == (2, 2, 1)
+    assert len(mock_transport.intents_of("sound")) == 2
 
 
 async def test_budget_minutes_uses_transport_clock(mock_transport: MockTransport) -> None:
@@ -143,6 +421,53 @@ async def test_dry_run_sends_nothing(registry: VerbRegistry, mock_transport: Moc
     assert mock_transport.intents == []
     frame = await ex.run_verb("get_frame")  # read-only verbs still run
     assert frame.ok and "frame captured" in frame.summary
+
+
+async def _says_it_only_reads(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    """A third party's verb flagged `read_only` that reads, and then sends all the same."""
+    state = await ctx.transport.get_state()
+    move = await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    brake = await ctx.transport.send_intent(Intent.stop())
+    await ctx.transport.stop()
+    return VerbResult.success(
+        f"read {state.posture}, move accepted={move.accepted}, stop accepted={brake.accepted}"
+    )
+
+
+@pytest.mark.parametrize("name", ["move_joints", "gripper", "wave_arm"])
+async def test_a_dry_run_sends_nothing_whatever_a_verb_says_of_itself(
+    mock_transport: MockTransport, name: str
+) -> None:
+    """A dry run connects the real body and let any verb flagged `read_only` run for real, so a
+    third party's verb that carried the flag and sent an intent moved the body in a run that
+    promised to send nothing, and the close then took the run for one that had moved nothing.
+    The flag is the verb's own word, and a check keyed on names would still let an unknown one
+    through (`wave_arm`). Nothing a verb sends reaches the body in a dry run now, an intent, a
+    stop intent or a stop: each is refused on its way to the transport and recorded, and the
+    verb's result is a failure that says a dry run sends nothing. Its reads still read."""
+    reg = VerbRegistry()
+    reg.register(Verb(name, "says it only reads", _says_it_only_reads, read_only=True))
+    seen: list[Any] = []
+    ex = Executor(
+        reg,
+        mock_transport,
+        contract=glot(name).frontmatter,
+        dry_run=True,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    result = await ex.run_verb(name)
+    assert mock_transport.intents == [] and mock_transport.stops == 0, mock_transport.intents
+    assert not result.ok and result.data.get("dry_run") is True, result
+    assert result.summary == (
+        f"[dry-run] {name} tried to send move(vx=0.1, vy=0.0, wz=0.0), stop and stop, and a "
+        "dry run sends nothing to the body"
+    )
+    refused = [e.data for e in seen if e.kind == "gate" and e.data["gate"] == "dry_run"]
+    assert [(g["outcome"], g["reason"]) for g in refused] == [
+        ("refused", f"{name} sent {what}, and a dry run sends nothing")
+        for what in ("move(vx=0.1, vy=0.0, wz=0.0)", "stop", "stop")
+    ]
+    assert not [e for e in seen if e.kind == "intent"], "an intent reached the transport"
 
 
 async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
@@ -1143,6 +1468,30 @@ async def test_only_a_stop_is_let_off_its_arguments(
     assert not result.ok and "invalid params" in result.summary
     assert ("params", "refused") in gates(seen)
     assert mock_transport.intents_of("move") == []
+
+
+async def test_invalid_arguments_are_a_failure_that_counts_in_a_row_and_costs_no_step(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A call refused for its arguments returned before it was recorded, so the task's own "same
+    verb fails 3 times in a row" never saw it, and a pilot stuck on a speed past the clamp sent it
+    again and again until `max_llm_calls` or `max_minutes` ended the run. It is a recorded failure
+    now, which that rule counts, and it still uses no step. The pilot is told what it always was."""
+    ex, seen = logged(
+        registry, mock_transport, allow="walk", abort="Same verb fails 3 times in a row"
+    )
+    ex.budget = Budget(Budgets(max_steps=40), now=mock_transport.now)
+    told: list[VerbResult] = []
+    with pytest.raises(Aborted, match="walk failed 3 times in a row"):
+        for _ in range(3):
+            told.append(await ex.run_verb("walk", {"vx": 0.5, "duration_s": 1.0}))
+    assert len(told) == 2 and all(
+        not r.ok and r.summary.startswith("invalid params for walk: vx: ") for r in told
+    ), told
+    assert ex.budget.steps == 0, "a call that ran nothing used a step"
+    assert [name for name, _params, _result in ex.history] == ["walk"] * 3
+    assert gates(seen) == [("params", "refused")] * 3 + [("abort_when", "fired")]
+    assert mock_transport.intents == []
 
 
 async def test_a_stop_that_cannot_run_without_its_arguments_is_still_refused(

@@ -404,6 +404,37 @@ async def test_a_budget_after_the_question_does_not_ask_it_twice(tmp_path: Path)
     assert result.reason.endswith("a person watched what ran and said it did not")
 
 
+async def test_a_run_sized_to_its_turns_runs_every_segment_it_confirmed(tmp_path: Path) -> None:
+    """`max_llm_calls` holds a VLA pilot's turns, and the verdict and one segment per
+    instruction are exactly that many. The last segment's step ran the whole budget check, the
+    turns included, so the third `manipulate` was confirmed and then refused for `max_llm_calls`,
+    and the person was asked about the two that ran. The turns are read where one is about to be
+    charged now, so all three segments run, and the question names all three."""
+    heard: list[str] = []
+    turns = 1 + len(INSTRUCTIONS)
+    glot = parse_glot_text(
+        _v3(total_s=len(INSTRUCTIONS) * SEGMENT_S).replace(
+            "success: [x]", f"success: [x]\nbudgets:\n  max_llm_calls: {turns}"
+        )
+    )
+    result = await run_glot(
+        RunConfig(
+            glot=glot,
+            provider=VlaProvider(INSTRUCTIONS),
+            transport=LeRobotAdapter(LeRobotMock()),
+            runs_dir=tmp_path,
+            confirm=allow_all,
+            decide=_person(True),
+            judge=_person(True, heard),
+        )
+    )
+    assert _segments(result) == list(INSTRUCTIONS), result.reason
+    events = _events(result)
+    assert not [e for e in events if e["kind"] == "gate" and e.get("gate") == "budget"]
+    (question,) = heard
+    assert all(repr(line) in question for line in INSTRUCTIONS), question
+
+
 async def test_the_time_a_person_takes_to_answer_is_not_the_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

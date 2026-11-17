@@ -37,13 +37,13 @@ the log and the transcript print, so a refusal tells you which row you are on.
 | `allowlist` | the verb is in `verbs.allow`. `stop` is always allowed | the `.glot`'s `verbs.allow` |
 | `unknown` | Roboglot has never heard of this verb | the spelling, or the robot (`roboglot list-verbs`) |
 | `verdict` | the pilot has judged the task feasible against the datasheet. `stop`, `observe`, `report_state`, `say`, `quack`, `express`, `gaze`, `look`, `introspect`, `watch`, `map`, `mark_place` and `forget_place` run before it, and so does any verb its adapter declared `read_only`, because a pilot has to look at a thing before judging whether it can lift it. In `roboglot drive` a call a person or a pipe named clears it by itself, for that call alone, and the record says whose word it was | nothing: the LLM calls `assess_task` |
-| `params` | the arguments fit the verb's schema. `stop` as Roboglot ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so | the call. This is feedback to the LLM, not a crash |
-| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a team's standing answer, the MCP server or a pipe on stdin, before its question is put, and a verb a backend declares `no_standing_answer` is refused the same way under the first three, where a pipe still answers it: `move_joints` on `rosarm:ws` ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)) | answer y, or pass `--yes`. For a `dangerous` verb, or one its backend declares `no_standing_answer`, run it from a terminal without `--yes` and answer it yourself |
+| `params` | the arguments fit the verb's schema. `stop` as Roboglot ships it is never refused here: it takes none, and whatever came with it is ignored and the record says so. A call refused here is a failed call of its verb, which `abort_when`'s failures in a row count, and it uses no step | the call. This is feedback to the LLM, not a crash |
 | `segment` | one segment of a body's learned policy at a time: a `pick` or a `manipulate` sent while another one's segment runs is refused rather than queued. Over MCP every call is a task of its own, and without this two calls could each be checked against seconds not yet charged | wait for the segment to end, or send `stop` |
-| `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `glot: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step | the `.glot`'s `budgets` and `policy` section, or `--max-steps` |
+| `budget` | `max_steps` and `max_minutes`. These cap an MCP session too, which has no loop of its own; `max_llm_calls` is the loop's, read where the loop is about to make a call and never here, so the verb the last allowed call chose runs and the run ends when it would make one call more. A `pick` or a `manipulate` is also checked against the seconds of policy segments the task allows (`policy.total_s`, 120 s unless a `glot: 3` file says), each segment charged the seconds it ran however it ended, so the last may overrun by its own length and no more. `stop` is charged while a step is left and never refused for want of one, and a verb a robot met had run through the courtesy handler costs the pilot no step. A verb with a confirm is checked here before its question and charged after the answer, so one somebody declines costs no step | the `.glot`'s `budgets` and `policy` section, or `--max-steps` |
 | `abort_when` | the battery threshold, and consecutive failures once the result is in. A battery read below the threshold ends every call after it, and never `stop`, which still goes out | the `.glot`'s `abort_when`, or the robot |
 | `precondition` | what the manifest says this verb needs: not fallen, not sitting, torque on | the robot's state |
-| `dry_run` | `--dry-run` is on, so nothing is sent | drop `--dry-run` |
+| `confirm` | `verbs.confirm`, or a `safety_class` of `confirm` or `dangerous`. y/N in the terminal; over MCP it refuses unless `--yes`. A `dangerous` verb is refused wherever nobody is asked, under `--yes`, a team's standing answer, the MCP server or a pipe on stdin, before its question is put, and a verb a backend declares `no_standing_answer` is refused the same way under the first three, where a pipe still answers it: `move_joints` on `rosarm:ws` ([ADR-0078](../adr/0078-an-industrial-arm-is-moved-one-confirmed-goal-at-a-time.md)). The question is put only once every gate above has passed, so nobody is asked about a call one of them would refuse, the two that read the body's state included: a call that puts a question reads it before the question for them, and a read that fails there fails the call with nobody asked. What can change while it is open is read again after a yes: the segment and the budget here, and on a second reading of the body's state a pause, a newer command, the abort, the verdict, a `stop`, the battery and the preconditions. So a call that puts a question reads the body's state twice, and every other call once. A refusal after the yes keeps its own reason, and its record adds `after_confirm`, this gate's reason, so it says the call was agreed to before it was refused | answer y, or pass `--yes`. For a `dangerous` verb, or one its backend declares `no_standing_answer`, run it from a terminal without `--yes` and answer it yourself |
+| `dry_run` | `--dry-run` is on, so nothing is sent. A verb flagged `read_only` still runs and reads, and each send it tries is refused, recorded here, and fails the verb ([Dry run](#dry-run)) | drop `--dry-run` |
 | `cancelled` | the caller went away mid-verb: an MCP client dropped the request, or a second Ctrl-C | nothing: a `stop` went out |
 | `preempted` | a newer command in `roboglot drive`, or its brake, ended this verb while it moved the body, and a `stop` went out after it. A verb admitted before that and still reading the body's state is refused before it sends anything | nothing: the newer command runs |
 | `stopped` | a call that would move the body and that a `stop` overtook: a verb that had not sent anything yet, and a composite's call: one sent between two of the composite's calls, the composite's own included, or while the call waited on its gates or read the body's state. The call answers to the stops its composite answers to, so it never starts, nobody is asked to confirm it, and a kick or a scoop the brake was pulled on is not sent. A call that only looks or speaks still runs. It is not counted among `abort_when`'s failures in a row, and neither is an `approach_and` whose `then` it kept from starting | nothing: the brake did its job |
@@ -464,8 +464,28 @@ parameters it chose:
 A parameter the LLM left unset shows as `null` rather than being dropped, because on a dry
 run the omission is the thing you are checking. The verbs whose adapter declared them
 `read_only` still run: `observe` (alias `get_frame`), `report_state`, the rosbridge base's
-`introspect`, and whatever a body Roboglot never shipped flags for itself. Use it the first
-time you point a new `.glot` at hardware.
+`introspect`, and whatever a body Roboglot never shipped flags for itself. Such a verb reads
+for real, and nothing it sends reaches the body: an intent, a stop intent or a stop is refused
+on its way to the transport, each is recorded as a `dry_run` gate `refused` with the reason
+`<verb> sent <what>, and a dry run sends nothing`, and the verb fails with
+`[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`, whatever it
+says of itself. The flag is the verb's own word, and a verb that carried it and sent an intent
+used to move the body in a run that promised to send nothing. Use it the first time you point
+a new `.glot` at hardware.
+
+A `stop` the pilot calls on a dry run sends nothing either, and is answered `[dry-run] stop not
+sent`, as every verb that is not a read is. A dry run still ends as any run does, on the kill
+switch, a budget or its own end, and none of those waits on a verb's stop, since nothing a verb
+sent reached the body. The stops Roboglot sends of its own accord still go out as on every run:
+the executor's after a verb it ended because it timed out, raised, or was aborted or cancelled,
+and the run's last stop as it ends. Each asks the body to hold still and nothing more, and a
+dry run keeps them rather than trust that a verb it had to end sent nothing.
+
+What a dry run holds back is what goes through the transport, its `send_intent` and its `stop`.
+An adapter whose verb reaches its body some other way, an SDK handle or a socket of its own, or
+a method of its own on the transport, is outside it, and such a verb sends on a dry run as it
+does on any run. The adapters Roboglot ships send through the transport, and the rule for one
+you write is in [adapters/writing-an-adapter.md](../adapters/writing-an-adapter.md#the-manifest-decides-what-exists).
 
 It does not get you past the verdict, because that gate runs before this one. A task the
 pilot judges infeasible ends with nothing logged rather than with the list of verbs it would

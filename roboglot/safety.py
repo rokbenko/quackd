@@ -236,8 +236,19 @@ class Budget:
         if self.elapsed_s > self.limits.max_minutes * 60:
             raise BudgetExceeded(f"max_minutes ({self.limits.max_minutes:g}) exceeded")
 
+    def check_step(self) -> None:
+        """Whether a verb may take a step now: the steps and the clock, and never the LLM calls.
+        A verb's step ran the whole of `check`, so once the loop had charged the last allowed
+        call, the verb that call chose was refused for `max_llm_calls`, billed and for nothing,
+        and so was a stepper's turn after it, which charges no call. The calls are read where
+        one is about to be charged (`note_llm_call`), and the run ends when it would make one
+        more."""
+        if self.steps >= self.limits.max_steps:
+            raise BudgetExceeded(f"max_steps ({self.limits.max_steps}) reached")
+        self.check_time()
+
     def note_step(self) -> None:
-        self.check()
+        self.check_step()
         self.steps += 1
 
     def note_llm_call(self) -> None:
@@ -318,6 +329,10 @@ behind and the stop sent without it (`Executor._end_verb`). One deadman window, 
 steering loop is that has had no frame for that long, and nothing it sends meanwhile is passed on
 (`_Leash`), so a body with a deadman has stopped by then without the stop."""
 
+
+DRY_RUN_SENDS_NOTHING = "a dry run sends nothing"
+"""Why a send a verb made on a dry run went nowhere (`_Leash`), in the record and in the answer
+the verb is handed."""
 
 _STOPS_UNDER_WAY: set[asyncio.Future[Any]] = set()
 """Stops still going out after the call that owed them stopped waiting (`Executor._answer_of`),
@@ -406,7 +421,12 @@ class _Leash:
     after the composite's own timeout."""
 
     def __init__(
-        self, inner: Any, abort: asyncio.Event | None, above: _Leash | None = None
+        self,
+        inner: Any,
+        abort: asyncio.Event | None,
+        above: _Leash | None = None,
+        *,
+        dry: Callable[[str], None] | None = None,
     ) -> None:
         self._inner = inner
         self._abort = abort
@@ -415,12 +435,15 @@ class _Leash:
         self._below: list[_Leash] = []
         self._sealed = False
         self._sending = 0
+        self._dry = dry
         self.cut_off = False
         """A send of the verb's that passed this was cut off in flight once it had closed: a write
         a thread was doing for it goes on whatever the cancel, so it may land at any time."""
         self.why: str | None = None
         """Why the executor ended the verb, or one above it (`CANCELLED_BY_ABORT` and the rest),
         or None."""
+        self.not_sent: list[str] = []
+        """What the verb tried to send on a dry run, which this passed on to nothing (`dry`)."""
         if above is not None:
             above._below.append(self)
             if above.why is not None:
@@ -458,17 +481,34 @@ class _Leash:
     async def stop(self) -> None:
         if self._sealed:
             raise asyncio.CancelledError(self.why)
+        if self._dry is not None:
+            self._dry_refusal("stop")
+            return
         await self._inner.stop()
 
     def _refuse_if_ended(self) -> None:
         if self.why is not None:
             raise asyncio.CancelledError(self.why)
 
+    def _dry_refusal(self, what: str) -> Ack:
+        """A send refused on a dry run, recorded through `dry`, and answered as a body answers one
+        it did not take, so a verb that reads the answer sees that nothing was sent."""
+        self.not_sent.append(what)
+        if self._dry is not None:
+            self._dry(what)
+        return Ack(accepted=False, reason=DRY_RUN_SENDS_NOTHING)
+
     async def send_intent(self, intent: Intent) -> Ack:
         if intent.kind != "stop" or self._sealed:
             if self.why is None and self._abort is not None and self._abort.is_set():
                 await self._ended.wait()
             self._refuse_if_ended()
+        if self._dry is not None:
+            # A dry run promises to send nothing, and it connects the real body: a verb flagged
+            # `read_only` ran for real on one, and the flag is the verb's own word, so a third
+            # party's verb that carried it and sent an intent moved the body. Nothing a verb
+            # sends reaches the body on a dry run now, whatever the verb is called or flagged.
+            return self._dry_refusal(intent.describe())
         if intent.kind == "stop":
             return cast(Ack, await self._inner.send_intent(intent))
         self._sending += 1  # what could reach the wire, whatever it later returns
@@ -501,7 +541,9 @@ class _Leash:
 
 @dataclass
 class Executor:
-    """allowlist → confirm gate → budget → preconditions → (dry-run |) execute with timeout."""
+    """allowlist → verdict → arguments → segment and budget → abort rules and preconditions on
+    the body's state → confirm gate → all that can change while it asked, on a new reading →
+    (dry-run |) execute with timeout."""
 
     registry: VerbRegistry
     transport: RobotTransport
@@ -854,8 +896,9 @@ class Executor:
             verb.read_only and canonical not in MOVES_THE_BODY
         )
 
-    def _no_verdict(self, name: str) -> VerdictRequired:
-        """The `verdict` gate's refusal of a verb that moves the body, recorded."""
+    def _no_verdict(self, name: str, after: dict[str, str] | None = None) -> VerdictRequired:
+        """The `verdict` gate's refusal of a verb that moves the body, recorded, with what a
+        refusal after a confirm's yes adds (`after`)."""
         why = (
             self.verdict.blocking_reason()
             if self.verdict is not None
@@ -865,10 +908,14 @@ class Executor:
             f"{name} moves the body, and {why}: record a verdict first "
             "(feasible, infeasible or uncertain)"
         )
-        self._emit("gate", name=name, gate="verdict", outcome="refused", reason=reason)
+        self._emit(
+            "gate", name=name, gate="verdict", outcome="refused", reason=reason, **(after or {})
+        )
         return VerdictRequired(reason)
 
-    def _hold_still_for(self, name: str, canonical: str, verb: Verb) -> None:
+    def _hold_still_for(
+        self, name: str, canonical: str, verb: Verb, after: dict[str, str] | None = None
+    ) -> None:
         """The `paused` gate: refuse a verb that may move the body while a pause holds."""
         held = self.paused_until - time.monotonic()
         if held > 0 and self._may_move(canonical, verb):
@@ -876,7 +923,9 @@ class Executor:
                 f"{name} waits: a pause this robot granted a robot it met holds {held:.1f} s "
                 "more, and until it ends only stop and the verbs that move nothing run"
             )
-            self._emit("gate", name=name, gate="paused", outcome="refused", reason=reason)
+            self._emit(
+                "gate", name=name, gate="paused", outcome="refused", reason=reason, **(after or {})
+            )
             raise VerbNotAllowed(reason)
 
     def pause_for(self, seconds: float) -> None:
@@ -1211,14 +1260,29 @@ class Executor:
         except ValidationError as e:
             msgs = _invalid(e)
             self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
-            return VerbResult.fail(f"invalid params for {name}: {msgs}")
+            # A failure of the call's own, recorded, so `abort_when`'s count of failures in a row
+            # sees it: it returned unrecorded, and a pilot stuck on a speed past the clamp sent it
+            # again and again until `max_llm_calls` or `max_minutes` ended the run. It runs
+            # nothing, so it is charged no step, being refused before the budget.
+            return self._record(name, params, VerbResult.fail(f"invalid params for {name}: {msgs}"))
 
         # before a person is asked anything: a call a stop has overtaken is not going to start,
         # and a question about it would be answered for nothing
         if overtaken := self._overtaken(name, canonical, params, verb, stops):
             return overtaken
 
-        if self.needs_confirm(verb):
+        # And every other gate that can refuse the call with what is known now, for the same
+        # reason: the question came before the segment gate and the budget, so a person said
+        # yes to a call they then refused, and the record kept a question and an allowed confirm
+        # for a verb that never ran. Checked here and charged after the answer, so a call
+        # somebody declines still costs no step.
+        timed = canonical in POLICY_VERBS
+        asks = self.needs_confirm(verb)
+        self._segment_and_budget(
+            name, canonical, timed=timed, nested=nested, source=source, charge=not asks
+        )
+        after: dict[str, str] = {}
+        if asks:
             # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
             # team's standing answer, the MCP server and a pipe on stdin all answer without
             # asking anybody, so the verb is refused before its confirm is put, and only a
@@ -1246,6 +1310,23 @@ class Executor:
                 )
                 self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
                 raise VerbNotAllowed(reason)
+            # The checks that read the body's state, on a reading taken before the question: they
+            # ran only after it, so a person said yes to a call the body's own preconditions or a
+            # flat battery then refused. The state is read again after the answer
+            # (`_run_admitted`), so a call that puts a question reads it twice, and what the wait
+            # changed refuses there. A read that fails here fails the call, and nobody is asked.
+            refused = self._on_the_reading(
+                name,
+                canonical,
+                params,
+                verb,
+                await self._read_the_state(),
+                source=source,
+                preempts=preempts,
+                stops=stops,
+            )
+            if refused is not None:
+                return refused
             try:
                 answer = await answered(self.confirm, name, parsed.model_dump(), abort=self.abort)
             except asyncio.CancelledError:
@@ -1287,52 +1368,33 @@ class Executor:
             # answer arrived. Under `--yes`, a team's standing answer or a pipe on stdin the
             # gate really did open, and the record should say that and not name a witness.
             said = ("yes" if answer else "no") if asked else ("allowed" if answer else "denied")
+            agreed = f"a human said {said}" if asked else f"the confirm gate was {said}"
             self._emit(
                 "gate",
                 name=name,
                 gate="confirm",
                 outcome="allowed" if answer else "denied",
                 answer=answer,
-                reason=f"a human said {said}" if asked else f"the confirm gate was {said}",
+                reason=agreed,
             )
             if not answer:
                 raise ConfirmDenied(f"human declined {name}")
-
-        # A segment of the body's learned policy has a budget of its own seconds as well as
-        # its step, checked first so a segment refused for time charges no step. Nested or
-        # not: the seconds are the body's, whoever asked for them. `pick` hands the arm to the
-        # same policy as `manipulate` does, so its seconds are the same budget's.
-        timed = canonical in POLICY_VERBS
-        if timed and self.segment is not None:
-            # One segment at a time, from its check to its charge. Over MCP every call is a
-            # task of its own, and a second one let in while the first ran was checked against
-            # seconds nobody had charged yet, then cancelled the first on the arm and ran its
-            # own, so the arm could run past `total_s` by as many segments as calls came in.
-            # Refused rather than queued, so the pilot hears it now and decides.
-            reason = (
-                f"{self.segment} is still running a segment of the body's learned policy: wait "
-                f"for it to end, or send stop, before {name}"
+            # What can change while the question is open is read again after the answer: a
+            # second call over MCP may have taken the last step or started a segment, and the
+            # run's minutes may have run out, as a pause, a newer command, the abort, a verdict
+            # withdrawn or a stop may have come, which the gates after the state read look at
+            # for every call. A refusal from here on says the confirm had agreed to the call,
+            # beside its own reason, so nobody reads the yes above it as a verb that ran.
+            after = {"after_confirm": agreed}
+            self._segment_and_budget(
+                name,
+                canonical,
+                timed=timed,
+                nested=nested,
+                source=source,
+                charge=True,
+                after=after,
             )
-            self._emit("gate", name=name, gate="segment", outcome="refused", reason=reason)
-            raise VerbNotAllowed(reason)
-        if self.budget is not None and (timed or not nested):
-            try:
-                if timed:
-                    self.budget.check_policy()
-                # A peer's courtesy draws on a budget of its own (`roboglot.passport_courtesy`),
-                # never the pilot's: an identify every ten seconds used to spend six of a run's
-                # forty steps a minute. And `stop` is charged while there is a step left and
-                # never refused for want of one, as no other gate refuses it: a session whose
-                # steps were spent used to have its brake refused with them.
-                if not nested and source != "peer":
-                    try:
-                        self.budget.note_step()
-                    except BudgetExceeded:
-                        if canonical != "stop":
-                            raise
-            except BudgetExceeded as e:
-                self._emit("gate", name=name, gate="budget", outcome="exceeded", reason=str(e))
-                raise
         if not timed:
             return await self._run_admitted(
                 name,
@@ -1345,6 +1407,7 @@ class Executor:
                 preempts=preempts,
                 stops=stops,
                 nested=nested,
+                after=after,
             )
         # held from the check above, with nothing awaited since it, to the segment's charge
         self.segment = name
@@ -1361,9 +1424,67 @@ class Executor:
                 preempts=preempts,
                 stops=stops,
                 nested=nested,
+                after=after,
             )
         finally:
             self.segment = None
+
+    def _segment_and_budget(
+        self,
+        name: str,
+        canonical: str,
+        *,
+        timed: bool,
+        nested: bool,
+        source: Source,
+        charge: bool,
+        after: dict[str, str] | None = None,
+    ) -> None:
+        """The `segment` and `budget` gates: refuse what they refuse, and charge the call's step
+        where `charge` says to. A call nobody is asked about passes them once, charged. One that
+        is asked passes them twice: before the question, checked and not charged, so nobody is
+        asked about a call these would refuse, and after the yes, charged. `after` is what a
+        refusal's record adds once the confirm has agreed to the call."""
+        after = after or {}
+        # A segment of the body's learned policy has a budget of its own seconds as well as
+        # its step, checked first so a segment refused for time charges no step. Nested or
+        # not: the seconds are the body's, whoever asked for them. `pick` hands the arm to the
+        # same policy as `manipulate` does, so its seconds are the same budget's.
+        if timed and self.segment is not None:
+            # One segment at a time, from its check to its charge. Over MCP every call is a
+            # task of its own, and a second one let in while the first ran was checked against
+            # seconds nobody had charged yet, then cancelled the first on the arm and ran its
+            # own, so the arm could run past `total_s` by as many segments as calls came in.
+            # Refused rather than queued, so the pilot hears it now and decides.
+            reason = (
+                f"{self.segment} is still running a segment of the body's learned policy: wait "
+                f"for it to end, or send stop, before {name}"
+            )
+            self._emit("gate", name=name, gate="segment", outcome="refused", reason=reason, **after)
+            raise VerbNotAllowed(reason)
+        if self.budget is not None and (timed or not nested):
+            try:
+                if timed:
+                    self.budget.check_policy()
+                # A peer's courtesy draws on a budget of its own (`roboglot.passport_courtesy`),
+                # never the pilot's: an identify every ten seconds used to spend six of a run's
+                # forty steps a minute. And `stop` is charged while there is a step left and
+                # never refused for want of one, as no other gate refuses it: a session whose
+                # steps were spent used to have its brake refused with them.
+                if not nested and source != "peer":
+                    try:
+                        if charge:
+                            self.budget.note_step()
+                        else:
+                            self.budget.check_step()
+                    except BudgetExceeded:
+                        if canonical != "stop":
+                            raise
+            except BudgetExceeded as e:
+                self._emit(
+                    "gate", name=name, gate="budget", outcome="exceeded", reason=str(e), **after
+                )
+                raise
 
     async def _run_admitted(
         self,
@@ -1379,6 +1500,7 @@ class Executor:
         preempts: int | None = None,
         stops: int | None = None,
         nested: bool = False,
+        after: dict[str, str] | None = None,
     ) -> VerbResult:
         """A verb every gate has let through: its state, its abort conditions and its
         preconditions, then the verb itself, or the dry run's word for it; the brake reads its
@@ -1387,7 +1509,10 @@ class Executor:
         of newer commands from before the gates, which a verb that may move the body is refused
         on once it has changed (`preempt`), and `stops` its count of stops from then, which the
         verb ends on once that has changed (`_interruption`). A `nested` call's `stops` is its
-        composite's, and one that has changed by the time it is admitted is not started."""
+        composite's, and one that has changed by the time it is admitted is not started.
+        `after` is what the record of a refusal here adds once a confirm agreed to the call
+        (`_run_verb`)."""
+        after = after or {}
         # The brake goes out first and reads the body's state after, for the run's `abort_when`
         # rules alone: it waited on that read, abort or not, so a read that did not come back
         # held the brake for good, and every brake went out a read's round trip late. A dry run
@@ -1400,6 +1525,61 @@ class Executor:
             except Exception as e:
                 await self._stop_after_a_failed_read(e)
                 raise
+        refused = self._on_the_reading(
+            name,
+            canonical,
+            params,
+            verb,
+            state,
+            source=source,
+            preempts=preempts,
+            stops=stops,
+            after=after,
+        )
+        if refused is not None:
+            return refused
+        return await self._handed_over(
+            name,
+            canonical,
+            params,
+            verb,
+            parsed,
+            sent=sent,
+            source=source,
+            timed=timed,
+            stops=stops,
+        )
+
+    async def _read_the_state(self) -> RobotState:
+        """The body's state for a call's checks, with the stop owed after a read that raised sent
+        and said in its error, which goes up as the call's (`_stop_after_a_failed_read`)."""
+        try:
+            return await self.transport.get_state()
+        except Exception as e:
+            await self._stop_after_a_failed_read(e)
+            raise
+
+    def _on_the_reading(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        verb: Verb,
+        state: RobotState | None,
+        *,
+        source: Source,
+        preempts: int | None,
+        stops: int | None,
+        after: dict[str, str] | None = None,
+    ) -> VerbResult | None:
+        """The checks a call meets on a reading of the body's state, `state`, or None for the
+        brake, which reads after it has gone out: what can have changed since its gates while it
+        waited, its abort conditions and its preconditions. A refusal comes back as the call's
+        result or is raised, and None lets it start. A call that puts a question meets them on a
+        reading taken before it, so nobody is asked about a call they refuse, and again after the
+        answer on a new one, where `after` marks a refusal as following the confirm's yes; every
+        other call, once (`_run_admitted`)."""
+        after = after or {}
         # A cancel of this call that Python 3.11's `wait_for` lost as that read, or a person's
         # confirm before it, answered is still asked for (`Task.cancelling`), and the call does
         # not start its verb: one MCP cancel, or the second Ctrl-C, ran the walk to its end. The
@@ -1411,18 +1591,22 @@ class Executor:
         # granted while this verb waited on that state read, or on a person's confirm before
         # it, found nothing to end, and the gate it had already passed is not asked twice, so
         # the verb used to run in full after the stop a robot met was promised.
-        self._hold_still_for(name, canonical, verb)
+        self._hold_still_for(name, canonical, verb, after)
         # and a newer command that came meanwhile found nothing moving to end, so this verb, which
         # it replaces, would start after it had: refused here instead, before anything is sent
         if preempts is not None and self.preempts != preempts and self._may_move(canonical, verb):
             reason = f"{name} did not start: {self.preempted_by}"
-            self._emit("gate", name=name, gate="preempted", outcome="refused", reason=reason)
+            self._emit(
+                "gate", name=name, gate="preempted", outcome="refused", reason=reason, **after
+            )
             raise Preempted(reason)
         # and the abort, for the same reason: a kill switch, a failed heartbeat or a drive
         # session's brake set while this verb read the body's state found it in nothing it could
         # cancel, and the verb sent its first twist after the abort that was meant to end it
         if self.abort.is_set() and canonical != "stop":
-            self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
+            self._emit(
+                "gate", name=name, gate="abort", outcome="refused", reason="run aborted", **after
+            )
             raise Aborted("run aborted")
         # and a nested call whose composite, or a verb above that, the executor ended while it
         # read the body's state: the composite's cancel can be lost in that read, and the call
@@ -1440,13 +1624,13 @@ class Executor:
             and not self.cleared
             and not self._looks(canonical, verb)
         ):
-            raise self._no_verdict(name)
+            raise self._no_verdict(name, after)
         # and a call that a stop sent while it read the body's state has overtaken, for the reason
         # the gate before the confirm gives (`_overtaken`)
-        if overtaken := self._overtaken(name, canonical, params, verb, stops):
+        if overtaken := self._overtaken(name, canonical, params, verb, stops, after):
             return overtaken
         if state is not None:
-            self._read_abort_rules(name, canonical, state)
+            self._read_abort_rules(name, canonical, state, after)
             # No precondition holds back the brake, whatever a manifest lists for it: every other
             # gate lets `stop` through on purpose, and a body a precondition refuses, or a flat
             # battery, is where it is wanted most. One listed for it answered `cannot stop` and
@@ -1461,9 +1645,27 @@ class Executor:
                         outcome="refused",
                         reason=refusal,
                         state=state.summary(),
+                        **after,
                     )
                     return self._record(name, params, VerbResult.fail(f"cannot {name}: {refusal}"))
+        return None
 
+    async def _handed_over(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        verb: Verb,
+        parsed: Any,
+        *,
+        sent: Tally,
+        source: Source,
+        timed: bool,
+        stops: int | None,
+    ) -> VerbResult:
+        """A call past every check: the dry run's word for it, or the verb itself, and the
+        brake's reading after it has gone out (`_run_admitted`)."""
+        brake = canonical == "stop" and not self.dry_run
         if self.dry_run and not verb.read_only:
             self.log(f"[dry-run] would run {name}({parsed.model_dump()})")
             self._emit(
@@ -1531,12 +1733,7 @@ class Executor:
                 self.first_motion_llm_calls = calls_by_then
         if brake:
             # the read the brake did not wait for, which a run's `abort_when` rules still get
-            try:
-                state = await self.transport.get_state()
-            except Exception as e:
-                await self._stop_after_a_failed_read(e)
-                raise
-            self._read_abort_rules(name, canonical, state)
+            self._read_abort_rules(name, canonical, await self._read_the_state())
         self.log(f"← {name}: {'ok' if result.ok else 'FAIL'} {result.summary}")
         return self._record(name, params, result)
 
@@ -1561,7 +1758,9 @@ class Executor:
             why = " the same way" if unstopped in said else f": {unstopped}"
             e.args = (f"{said}; the stop sent after it failed{why}",)
 
-    def _read_abort_rules(self, name: str, canonical: str, state: RobotState) -> None:
+    def _read_abort_rules(
+        self, name: str, canonical: str, state: RobotState, after: dict[str, str] | None = None
+    ) -> None:
         """The run's `abort_when` rules read against an admission's `state`: one that fires is
         recorded and aborts the run, and refuses every verb but the brake."""
         try:
@@ -1574,6 +1773,7 @@ class Executor:
                 outcome="fired",
                 reason=str(e),
                 state=state.summary(),
+                **(after or {}),
             )
             # The brake is the one verb a rule that fired must still let through: the rule is
             # there to stop the body, and a `stop` it refused was a stop never sent, on a body
@@ -1612,7 +1812,12 @@ class Executor:
         # below the leash of every verb this call runs inside, so it is ended with them; never
         # the brake's, which has to go out whatever was ended above it
         above = _RUNNING_LEASH.get() if interruptible else None
-        leash = _Leash(ctx.transport, self.abort if interruptible else None, above)
+        leash = _Leash(
+            ctx.transport,
+            self.abort if interruptible else None,
+            above,
+            dry=self._dry_send(called) if self.dry_run else None,
+        )
         leashed: Any = leash  # a transport by delegation, as `LoggedTransport` is
         inside = _RUNNING_LEASH.set(leash)  # the verb's task, and what it calls, run under it
         try:
@@ -1724,10 +1929,35 @@ class Executor:
                 self._preempted_mid_verb(called, why, unstopped)
             return self._ended_by_pause(called, unstopped)
         if verb_task in done:
-            return verb_task.result()
+            result = verb_task.result()
+            if leash.not_sent:
+                # what the verb says of itself would be about sends that went nowhere
+                sent = leash.not_sent
+                listed = sent[0] if len(sent) == 1 else ", ".join(sent[:-1]) + " and " + sent[-1]
+                return VerbResult.fail(
+                    f"[dry-run] {called} tried to send {listed}, and {DRY_RUN_SENDS_NOTHING} to "
+                    "the body",
+                    dry_run=True,
+                    not_sent=list(sent),
+                )
+            return result
         if abort_task is not None and abort_task in done:
             self._aborted_mid_verb(called, unstopped)
         raise _TimedOut(unstopped)
+
+    def _dry_send(self, called: str) -> Callable[[str], None]:
+        """What records a send `called` made on a dry run, which went nowhere (`_Leash`)."""
+
+        def refused(what: str) -> None:
+            self._emit(
+                "gate",
+                name=called,
+                gate="dry_run",
+                outcome="refused",
+                reason=f"{called} sent {what}, and {DRY_RUN_SENDS_NOTHING}",
+            )
+
+        return refused
 
     async def _end_verb(
         self,
@@ -1920,7 +2150,13 @@ class Executor:
         return result
 
     def _overtaken(
-        self, name: str, canonical: str, params: dict[str, Any], verb: Verb, stops: int | None
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        verb: Verb,
+        stops: int | None,
+        after: dict[str, str] | None = None,
     ) -> VerbResult | None:
         """The result of a call that would move the body and that a stop has overtaken, or None.
         A stop that came while it waited on its gates or read the body's state, as a second MCP
@@ -1938,7 +2174,9 @@ class Executor:
         ):
             return None
         reason = f"{name} did not start: {STOPPED}"
-        self._emit("gate", name=name, gate="stopped", outcome="refused", reason=reason)
+        self._emit(
+            "gate", name=name, gate="stopped", outcome="refused", reason=reason, **(after or {})
+        )
         return self._record(
             name, params, VerbResult.fail(reason, ended_by=STOP_ENDED, interrupted=STOPPED)
         )

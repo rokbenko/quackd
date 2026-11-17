@@ -287,10 +287,17 @@ lives. The rules, enforced by the model itself
   `backend`, so the Microduck described over `mock` and over `jsonrpc` hashes the same.
 
 > [!WARNING]
-> `read_only` is taken on trust, twice. A verb carrying it runs before the pilot has judged
-> the task, and runs under `--dry-run` against real hardware, so the flag on a verb that
-> actually sends an intent defeats both gates at once. Nothing can check it for you: put it on
-> a sensor and on nothing else.
+> `read_only` is taken on trust by the verdict gate. A verb carrying it runs before the pilot
+> has judged the task, so the flag on a verb that actually sends an intent lets it move the body
+> before any verdict. Nothing can check it for you: put it on a sensor and on nothing else. Under
+> `--dry-run` such a verb runs against real hardware too, and what it sends through the transport
+> is refused there, whatever the flag says.
+
+**Everything a verb sends to the body goes through the transport it is handed**,
+`ctx.transport.send_intent` or `ctx.transport.stop`. That is where a dry run holds a verb back,
+whatever the verb is called or flagged. A verb that reaches its body any other way, an SDK
+handle or a socket of the adapter's own, or a method of its own on the transport, sends on a dry
+run as well, and nothing in Roboglot can hold it back.
 
 ## The adapter class
 

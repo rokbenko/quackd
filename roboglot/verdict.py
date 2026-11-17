@@ -17,6 +17,7 @@ has each of them.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal, get_args
 
@@ -170,7 +171,10 @@ def check_needs(value: Mapping[str, Any]) -> dict[str, float | str]:
     out: dict[str, float | str] = {}
     for key, want in value.items():
         if key in NEEDS_NUMBERS:
-            if isinstance(want, bool) or not isinstance(want, int | float):
+            # a NaN is not one either: Python's `json` parses `NaN`, and `NaN < 0` and every
+            # `have < NaN` are false, so one validated and read as met on every body. An infinity
+            # is left to the comparison, which no body meets, and a negative one is below 0
+            if isinstance(want, bool) or not isinstance(want, int | float) or math.isnan(want):
                 raise ValueError(f"needs.{key} must be a number (a minimum)")
             if want < 0:
                 raise ValueError(f"needs.{key} must be 0 or more")
@@ -216,8 +220,9 @@ def _as_number(value: Any) -> float | None:
 
     `missing_needs_in` is handed a raw dict off the wire before anything validates it, so every
     comparison goes through here: a value that is not a number is not a zero and not a height,
-    and it falls through to the refusal rather than raising out of the caller."""
-    if isinstance(value, bool) or not isinstance(value, int | float):
+    and it falls through to the refusal rather than raising out of the caller. A NaN is not a
+    number either: every comparison with one is false, so it read as met."""
+    if isinstance(value, bool) or not isinstance(value, int | float) or math.isnan(value):
         return None
     return float(value)
 
@@ -358,6 +363,16 @@ def missing_needs(
         manifest.mobility,
         own_sheet=own_sheet,
     )
+
+
+STANDING_VERDICT_WITHDRAWN = (
+    "the verdict recorded before this one is withdrawn, so nothing that moves the body runs "
+    "until you assess again"
+)
+"""What a pilot is told after its refused assessment, on both surfaces, where a verdict stood
+before it: the refusal withdraws that verdict, since an assessment the vocabulary refuses may
+be the pilot changing its mind (an infeasible written with units), and the gate shuts rather
+than leave the older word to carry the motion."""
 
 
 def own_sheet_objection(

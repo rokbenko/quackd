@@ -80,6 +80,16 @@ def test_extra_keys_and_bad_ids_are_rejected() -> None:
         _manifest(intents=["twist", "twist"])
 
 
+def test_a_name_that_ends_in_a_newline_is_refused_as_any_bad_one_is() -> None:
+    """The slug pattern ended in `$`, which matches before a final newline, so a manifest could
+    name a verb `"dance\\n"` or call itself `"arm-01\\n"`, each reading as the plain name wherever
+    it was printed. Both are refused now in the words a bad name already gets."""
+    with pytest.raises(ValidationError, match=r"'dance\\n' is not a valid verb name"):
+        VerbSpec(name="dance\n")
+    with pytest.raises(ValidationError, match=r"id must match \^\[a-z0-9\]\[a-z0-9_-\]\{0,63\}\$"):
+        _manifest(id="arm-01\n")
+
+
 @pytest.mark.parametrize(
     "limits",
     [

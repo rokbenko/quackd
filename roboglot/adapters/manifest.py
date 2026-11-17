@@ -50,7 +50,9 @@ INTENT_KIND_FOR: dict[str, str] = {
     "gripper": "gripper",
 }
 
-_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# `\Z`, not `$`, which matches before a final newline and let `"kick\n"` through as a verb name;
+# the refusal of an id still quotes the pattern as `$`, as it always has
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}\Z")
 
 
 class VerbSpec(BaseModel):
