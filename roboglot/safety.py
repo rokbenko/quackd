@@ -159,6 +159,12 @@ class Aborted(SafetyStop):
     """An `abort_when` condition or the kill switch fired."""
 
 
+class QuestionTakenBack(Aborted):
+    """A call whose confirm question the run's own abort took back before anybody answered it.
+    It ends as the abort ends any call, and whoever knows why the abort was set says so in the
+    run's reason (`AgentLoop`), as for a pilot's doubt taken back the same way."""
+
+
 class _TimedOut(TimeoutError):
     """A verb's own `timeout_s` ran out, and the executor has sent the stop owed after it, which
     failed for `unstopped`, or None when it did not (`Executor._execute`)."""
@@ -166,6 +172,11 @@ class _TimedOut(TimeoutError):
     def __init__(self, unstopped: str | None) -> None:
         super().__init__()
         self.unstopped = unstopped
+
+
+class _HeldOnADryRun(Exception):
+    """A method of its transport a verb called on a dry run that is not a read (`DRY_RUN_READS`),
+    refused there and recorded (`_Leash`)."""
 
 
 class VerbNotAllowed(PermissionError):
@@ -334,6 +345,18 @@ DRY_RUN_SENDS_NOTHING = "a dry run sends nothing"
 """Why a send a verb made on a dry run went nowhere (`_Leash`), in the record and in the answer
 the verb is handed."""
 
+DRY_RUN_READS = frozenset({"get_state", "get_frame", "get_frames", "introspect", "now", "sleep"})
+"""The methods of its transport a verb may call on a dry run, each one a read. Every other method
+is refused there, recorded, and fails the verb (`_Leash`), since a dry run connects the real body
+and a transport may carry the body's own motion methods, as the arm's `go_to_rest` and `let_go`.
+
+The list is what the read-only verbs Roboglot ships call on their transports, on every body
+(`observe`, `report_state`, `map`, the rosbridge base's `introspect`, and each adapter's own;
+`tests/test_executor.py` runs each on every adapter's mock), and the clock: `get_state` reads
+the body's state, `get_frame` and `get_frames` its cameras, `introspect` the bridge's topic list
+and the robot's own description, `now` the transport's clock, and `sleep` lets its time pass. A
+transport's plain values, a camera's error and the like, are read as they always were."""
+
 _STOPS_UNDER_WAY: set[asyncio.Future[Any]] = set()
 """Stops still going out after the call that owed them stopped waiting (`Executor._answer_of`),
 and the heartbeat's own (`Heartbeat._run`), held here so nothing collects one before it has
@@ -373,6 +396,11 @@ def _left_behind_ended(task: asyncio.Task[Any]) -> None:
     if not task.cancelled():
         task.exception()  # read, so asyncio does not report it as never retrieved
 
+
+_PROBING: contextvars.ContextVar[bool] = contextvars.ContextVar("roboglot_probing", default=False)
+"""Whether the gates running in this task are a probe (`Executor.refusal_before_the_question`):
+the gates a call meets before its question, run to learn whether one would refuse it, which
+write none of the call's rows and count nothing of it, since no call is made."""
 
 _RUNNING_LEASH: contextvars.ContextVar[_Leash | None] = contextvars.ContextVar(
     "roboglot_running_leash", default=None
@@ -452,7 +480,24 @@ class _Leash:
     def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):  # never delegate our own privates (copy, pickle, half-init)
             raise AttributeError(name)
-        return getattr(self._inner, name)
+        value = getattr(self._inner, name)
+        if self._dry is not None and callable(value) and name not in DRY_RUN_READS:
+            # On a dry run a method that is not a read is refused, as a send is: it passed on to
+            # the transport, so a verb flagged `read_only` that called the arm's own `go_to_rest`
+            # or `let_go` moved the body on a run that promised to send nothing
+            return self._dry_call(name)
+        return value
+
+    def _dry_call(self, name: str) -> Callable[..., Any]:
+        """What a verb gets on a dry run for a method of the transport that is not a read: a call
+        that is refused and recorded, and raises, since what the method would have answered
+        cannot be made up. The verb fails on it whatever it does next (`Executor._execute`)."""
+
+        def refused(*_args: Any, **_kwargs: Any) -> NoReturn:
+            self._dry_refusal(f"{name}()")
+            raise _HeldOnADryRun(f"{name}(): {DRY_RUN_SENDS_NOTHING}")
+
+        return refused
 
     def end(self, why: str) -> None:
         if self.why is None:
@@ -634,6 +679,13 @@ class Executor:
     # ── narration ───────────────────────────────────────────────────────────────────
 
     def _emit(self, kind: str, **data: Any) -> None:
+        # a probe makes no call, so it writes none of a call's rows (`_PROBING`)
+        if not _PROBING.get():
+            self._emit_anyway(kind, **data)
+
+    def _emit_anyway(self, kind: str, **data: Any) -> None:
+        """`_emit`, a probe's included: for what a probe sets off for the run itself, an abort
+        rule that fired, which the record must say whoever read the state."""
         if self.event_log is not None:
             self.event_log.emit(kind, **data)
 
@@ -1100,6 +1152,10 @@ class Executor:
         robot_started = self._robot_now()
         outcome, summary, ok = "error", "verb exited unexpectedly", False
         data_keys: list[str] = []
+        # `after_confirm` from a confirm's yes until the verb starts (`_run_verb`), so a call
+        # that ends in between, on a refusal, a read that failed or a cancel, says on its
+        # `verb_end` that it had been agreed to
+        marks: dict[str, str] = {}
         with counting() as counter:
             try:
                 # inside the try: a record sink that raises here must still leave a verb_end
@@ -1121,6 +1177,7 @@ class Executor:
                     nested=nested,
                     picked_by=picked_by,
                     outer_stops=outer_stops,
+                    marks=marks,
                 )
             except VerbNotAllowed as e:
                 outcome, summary = "refused", str(e)
@@ -1174,6 +1231,7 @@ class Executor:
                     nested=nested,
                     **clocks,
                     **detect_times(self.detector),
+                    **marks,
                 )
 
     async def _run_verb(
@@ -1187,6 +1245,7 @@ class Executor:
         nested: bool,
         picked_by: str | None = None,
         outer_stops: int | None = None,
+        marks: dict[str, str] | None = None,
     ) -> VerbResult:
         # before any gate, so a newer command that comes while this one is still being admitted
         # stops it starting after that command has (`_run_admitted`)
@@ -1200,16 +1259,119 @@ class Executor:
         # the count it started from, so it walked the whole walk the stop was meant to end. A
         # composite's nested call counts from where the composite did (`context`).
         stops = self.stops if outer_stops is None else outer_stops
+        # What a refusal adds once a confirm has agreed to the call (`after_confirm`), and the
+        # call's `verb_end` until it starts (`marks`, `run_verb`). A confirm that put its question
+        # before the call, as `roboglot drive` puts it while it routes the line, has agreed
+        # already, and every refusal of the call comes after that yes.
+        after = marks if marks is not None else {}
+        after.update(self._agreed_already(name))
+        checked = await self._before_the_question(
+            name,
+            canonical,
+            params,
+            source=source,
+            nested=nested,
+            picked_by=picked_by,
+            preempts=preempts,
+            stops=stops,
+            after=after,
+        )
+        if isinstance(checked, VerbResult):
+            return checked
+        verb, parsed, timed, asks = checked
+        return await self._asked_and_admitted(
+            name,
+            canonical,
+            params,
+            verb,
+            parsed,
+            timed=timed,
+            asks=asks,
+            sent=sent,
+            source=source,
+            nested=nested,
+            preempts=preempts,
+            stops=stops,
+            after=after,
+        )
+
+    def _agreed_already(self, name: str) -> dict[str, str]:
+        """`after_confirm` for a call whose confirm put its question before the call and was
+        answered yes (`Answered.agreed_already`, `roboglot drive`), or nothing."""
+        agreed = getattr(self.confirm, "agreed_already", None)
+        said = agreed(name) if callable(agreed) else None
+        return {"after_confirm": said} if isinstance(said, str) and said else {}
+
+    async def refusal_before_the_question(
+        self, name: str, params: dict[str, Any] | None = None, *, source: Source = "agent"
+    ) -> str | None:
+        """Why a call would be refused before its confirm question is put, in the words its
+        refusal says, or None: every gate the call meets before the question
+        (`_before_the_question`), on a reading of the body's state taken now. For a caller that
+        puts the question to a person itself, `roboglot drive`, so that everything that would
+        refuse the call is checked first and the person is asked after. It makes no call: it
+        writes none of a call's rows, counts and charges nothing, and asks nobody. What a gate
+        sets off for the body is set off as in a call, the stop after a read that failed and the
+        abort a rule fires, which the record says. The call itself meets every gate again when it
+        is made, after the answer."""
+        token = _PROBING.set(True)
+        try:
+            checked = await self._before_the_question(
+                name,
+                self.registry.canonical(name),
+                params or {},
+                source=source,
+                nested=False,
+                picked_by=None,
+                preempts=self.preempts,
+                stops=self.stops,
+                after={},
+            )
+        except (VerbNotAllowed, SafetyStop) as e:
+            return str(e)
+        except Exception as e:  # a read of the body's state that failed, its stop sent
+            return f"{type(e).__name__}: {e}"
+        finally:
+            _PROBING.reset(token)
+        return checked.summary if isinstance(checked, VerbResult) else None
+
+    async def _before_the_question(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        *,
+        source: Source,
+        nested: bool,
+        picked_by: str | None,
+        preempts: int,
+        stops: int,
+        after: dict[str, str],
+    ) -> tuple[Verb, Any, bool, bool] | VerbResult:
+        """Every gate a call meets before its confirm question, in order: the abort, the
+        allowlist, the verb itself, the peer, a pause, the verdict, the arguments, a stop that
+        overtook it, the segment and the budget, the confirm's refusals of a standing answer, and,
+        for a call that will put a question, the checks on a reading of the body's state. A
+        refusal is raised, or comes back as the call's result; otherwise this gives the verb, its
+        arguments as it reads them, whether it is a policy segment and whether a question will be
+        put. On a probe (`refusal_before_the_question`, `_PROBING`) the same gates run, charge no
+        step, and leave out the confirm's refusals of a standing answer, which turn on who answers
+        and not on the call: the prober puts the question to a person itself."""
+        probing = _PROBING.get()
         # `stop` is the one verb an aborted session must still be able to run. The abort is
         # set precisely when something has gone wrong — a failed heartbeat, a kill switch —
         # which is the moment the pilot reaches for the brake, and refusing it here closed
         # the panic button exactly when it was needed.
         if self.abort.is_set() and canonical != "stop":
-            self._emit("gate", name=name, gate="abort", outcome="refused", reason="run aborted")
+            self._emit(
+                "gate", name=name, gate="abort", outcome="refused", reason="run aborted", **after
+            )
             raise Aborted("run aborted")
         if not self.is_allowed(name):
             reason = f"verb {name!r} is not in this task's allowlist ({', '.join(self.allowed)})"
-            self._emit("gate", name=name, gate="allowlist", outcome="refused", reason=reason)
+            self._emit(
+                "gate", name=name, gate="allowlist", outcome="refused", reason=reason, **after
+            )
             raise VerbNotAllowed(reason)
         try:
             verb = self.registry.get(name)
@@ -1220,6 +1382,7 @@ class Executor:
                 gate="unknown",
                 outcome="refused",
                 reason=f"unknown verb {name!r}",
+                **after,
             )
             raise VerbNotAllowed(f"unknown verb {name!r}") from None
         if source == "peer" and canonical not in PEER_VERBS:
@@ -1227,11 +1390,11 @@ class Executor:
                 f"{name} is not a verb a courtesy runs: a robot met over Robot Passport can have "
                 "this one pause or identify itself, and nothing else"
             )
-            self._emit("gate", name=name, gate="peer", outcome="refused", reason=reason)
+            self._emit("gate", name=name, gate="peer", outcome="refused", reason=reason, **after)
             raise VerbNotAllowed(reason)
 
         looks = self._looks(canonical, verb)
-        self._hold_still_for(name, canonical, verb)
+        self._hold_still_for(name, canonical, verb, after)
         if self.require_verdict and not looks and not self.cleared and source in PERSONS:
             # the person's own command is the verdict for its own call, and the record says
             # whose word it was, the way an answer to a confirm says it (`who_answered`), and
@@ -1253,22 +1416,30 @@ class Executor:
                     reason=f"{whose}, which stands for the verdict for it alone",
                 )
         elif self.require_verdict and not looks and not self.cleared:
-            raise self._no_verdict(name)
+            raise self._no_verdict(name, after)
 
         try:
             parsed = self._parsed(name, canonical, verb, params)
         except ValidationError as e:
             msgs = _invalid(e)
-            self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs)
+            self._emit("gate", name=name, gate="params", outcome="refused", reason=msgs, **after)
             # A failure of the call's own, recorded, so `abort_when`'s count of failures in a row
             # sees it: it returned unrecorded, and a pilot stuck on a speed past the clamp sent it
             # again and again until `max_llm_calls` or `max_minutes` ended the run. It runs
-            # nothing, so it is charged no step, being refused before the budget.
-            return self._record(name, params, VerbResult.fail(f"invalid params for {name}: {msgs}"))
+            # nothing, so it is charged no step, being refused before the budget. A pilot's call
+            # counts, in a run, a drive goal or over MCP; a person's own line in `roboglot drive`
+            # does not (`PERSONS`), since a person who mistypes three times has not asked for the
+            # session to end, as the session's own rules already hold.
+            return self._record(
+                name,
+                params,
+                VerbResult.fail(f"invalid params for {name}: {msgs}"),
+                counts=source not in PERSONS,
+            )
 
         # before a person is asked anything: a call a stop has overtaken is not going to start,
         # and a question about it would be answered for nothing
-        if overtaken := self._overtaken(name, canonical, params, verb, stops):
+        if overtaken := self._overtaken(name, canonical, params, verb, stops, after):
             return overtaken
 
         # And every other gate that can refuse the call with what is known now, for the same
@@ -1279,10 +1450,15 @@ class Executor:
         timed = canonical in POLICY_VERBS
         asks = self.needs_confirm(verb)
         self._segment_and_budget(
-            name, canonical, timed=timed, nested=nested, source=source, charge=not asks
+            name,
+            canonical,
+            timed=timed,
+            nested=nested,
+            source=source,
+            charge=not asks and not probing,
+            after=after,
         )
-        after: dict[str, str] = {}
-        if asks:
+        if asks and not probing:
             # A `dangerous` verb is the one class a standing answer may not clear. `--yes`, a
             # team's standing answer, the MCP server and a pipe on stdin all answer without
             # asking anybody, so the verb is refused before its confirm is put, and only a
@@ -1310,6 +1486,7 @@ class Executor:
                 )
                 self._emit("gate", name=name, gate="confirm", outcome="refused", reason=reason)
                 raise VerbNotAllowed(reason)
+        if asks or probing:
             # The checks that read the body's state, on a reading taken before the question: they
             # ran only after it, so a person said yes to a call the body's own preconditions or a
             # flat battery then refused. The state is read again after the answer
@@ -1324,9 +1501,32 @@ class Executor:
                 source=source,
                 preempts=preempts,
                 stops=stops,
+                after=after,
             )
             if refused is not None:
                 return refused
+        return verb, parsed, timed, asks
+
+    async def _asked_and_admitted(
+        self,
+        name: str,
+        canonical: str,
+        params: dict[str, Any],
+        verb: Verb,
+        parsed: Any,
+        *,
+        timed: bool,
+        asks: bool,
+        sent: Tally,
+        source: Source,
+        nested: bool,
+        preempts: int,
+        stops: int,
+        after: dict[str, str],
+    ) -> VerbResult:
+        """A call every gate before its question has let through: the question where it puts
+        one, what can change while it is open, then the call (`_run_admitted`)."""
+        if asks:
             try:
                 answer = await answered(self.confirm, name, parsed.model_dump(), abort=self.abort)
             except asyncio.CancelledError:
@@ -1343,6 +1543,16 @@ class Executor:
                 )
                 raise
             except Exception as e:
+                if self.abort.is_set():
+                    # taken back by the run's own abort, a kill switch, a failed heartbeat or a
+                    # drive session's brake: the call ends as the abort ends any call, and the
+                    # run on why the abort was set, as a pilot's doubt the abort took back does
+                    # (`AgentLoop._assess`). It ended denied, nobody having answered, which put
+                    # the question in the place of the stop.
+                    self._emit(
+                        "gate", name=name, gate="abort", outcome="refused", reason="run aborted"
+                    )
+                    raise QuestionTakenBack("run aborted") from e
                 # typer's y/N prompt raises click's `Abort` (a RuntimeError) on Ctrl-C or
                 # EOF. An asker that raised has not said yes, and the run deserves to be told
                 # so in the gate's words rather than as `verb_end error "Abort: "`.
@@ -1385,7 +1595,7 @@ class Executor:
             # withdrawn or a stop may have come, which the gates after the state read look at
             # for every call. A refusal from here on says the confirm had agreed to the call,
             # beside its own reason, so nobody reads the yes above it as a verb that ran.
-            after = {"after_confirm": agreed}
+            after["after_confirm"] = agreed
             self._segment_and_budget(
                 name,
                 canonical,
@@ -1538,6 +1748,9 @@ class Executor:
         )
         if refused is not None:
             return refused
+        # past every check: the call starts here, and from here on what ends it says so itself
+        # (`marks`, `run_verb`)
+        after.clear()
         return await self._handed_over(
             name,
             canonical,
@@ -1766,7 +1979,8 @@ class Executor:
         try:
             self._check_abort_conditions(state)
         except Aborted as e:
-            self._emit(
+            # a probe's too: the rule has aborted the run, and the record says why
+            self._emit_anyway(
                 "gate",
                 name=name,
                 gate="abort_when",
@@ -1929,7 +2143,12 @@ class Executor:
                 self._preempted_mid_verb(called, why, unstopped)
             return self._ended_by_pause(called, unstopped)
         if verb_task in done:
-            result = verb_task.result()
+            if leash.not_sent and not verb_task.cancelled():
+                # read, and set aside: a verb that raised on a call refused on a dry run, or on
+                # what such a call answered, failed for the dry run and not for itself
+                verb_task.exception()
+            else:
+                result = verb_task.result()
             if leash.not_sent:
                 # what the verb says of itself would be about sends that went nowhere
                 sent = leash.not_sent
@@ -2122,12 +2341,19 @@ class Executor:
 
     # ── abort conditions the executor enforces itself ───────────────────────────────
 
-    def _record(self, name: str, params: dict[str, Any], result: VerbResult) -> VerbResult:
+    def _record(
+        self, name: str, params: dict[str, Any], result: VerbResult, *, counts: bool = True
+    ) -> VerbResult:
+        """`result` into the history, and its failure into `abort_when`'s count of failures in a
+        row, unless `counts` says it is not one of those (a person's typo in `roboglot drive`).
+        A probe makes no call and records none (`_PROBING`)."""
+        if _PROBING.get():
+            return result
         self.history.append((name, params, result))
         key = self.registry.canonical(name)  # `walk` and `move` failures count together
         if result.ok:
             self.consecutive_failures[key] = 0
-        elif result.data.get("ended_by") in (PAUSE_ENDED, STOP_ENDED):
+        elif result.data.get("ended_by") in (PAUSE_ENDED, STOP_ENDED) or not counts:
             # not the verb's failure, nor the pilot's: two pauses a robot met asked for used
             # to make two in a row of `move`, and `abort_when` ended the run on them, and a stop
             # from beside a verb that ends it is the brake working by the same rule

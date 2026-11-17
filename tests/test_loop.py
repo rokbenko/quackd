@@ -6329,6 +6329,57 @@ async def test_a_doubt_the_abort_took_back_ends_the_run_on_why_the_abort_was_set
     assert "QuestionWithdrawn" not in result.reason
 
 
+@pytest.mark.parametrize("why", ["heartbeat", "stop_reason", "kill switch"])
+async def test_a_confirm_the_abort_took_back_ends_the_run_on_why_the_abort_was_set(
+    why: str, hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """The confirm's own question, taken back by the run's abort while nobody had answered it,
+    ended the call denied ("nobody answered whether to run walk"), where a pilot's doubt taken
+    back the same way ends the run on why the abort was set. Both end alike now: the call at
+    the `abort` gate, `run aborted`, and the run on the failed heartbeat, the drive session's
+    stop or the kill switch."""
+    asked = asyncio.Event()
+
+    async def confirm(_name: str, _params: dict[str, Any]) -> bool:
+        asked.set()
+        await asyncio.Event().wait()  # nobody answers
+        return True
+
+    confirm.asks_a_person = True  # type: ignore[attr-defined]
+    glot = copy.deepcopy(hello_glot)
+    glot.frontmatter.verbs.confirm = ["walk"]
+    walk = ToolCall(name="walk", arguments={"vx": 0.1, "duration_s": 0.2})
+    loop = AgentLoop(
+        RunConfig(
+            glot=glot,
+            provider=FakeProvider(script=[walk]),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+            confirm=confirm,
+        )
+    )
+    run = asyncio.ensure_future(loop.run())
+    await asyncio.wait({asyncio.ensure_future(asked.wait())}, timeout=30.0)
+    assert asked.is_set(), "the walk's question was never put"
+    said = {"heartbeat": "the body stopped answering its heartbeat", "stop_reason": "a newer line"}
+    if why == "heartbeat":
+        loop.heartbeat.failure = TransportError(said[why])
+    elif why == "stop_reason":
+        loop.stop_reason = said[why]
+    loop.executor.abort.set()
+    await asyncio.wait({run}, timeout=30.0)
+    assert run.done(), "the run did not end on the abort"
+    result = run.result()
+    assert result.outcome == "aborted", result.reason
+    assert result.reason == said.get(why, KILL_SWITCH), result.reason
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    walks = [
+        (e["gate"], e["outcome"]) for e in events if e["kind"] == "gate" and e["name"] == "walk"
+    ]
+    assert walks == [("abort", "refused")], walks
+    assert not [e for e in events if e["kind"] == "prompt"]
+
+
 # ── the clocks, the money and the name a run was given ──────────────────────────────────
 #
 # A transcript counted tokens from the first release and never said what they cost, and the

@@ -112,6 +112,7 @@ from roboglot.safety import (
     ConfirmFn,
     Executor,
     Heartbeat,
+    QuestionTakenBack,
     SafetyStop,
     VerbNotAllowed,
     VerdictRequired,
@@ -3560,6 +3561,10 @@ class AgentLoop:
                     last_result = VerbResult.fail(str(e))
                 except ConfirmDenied as e:
                     last_result = VerbResult.fail(f"{e}; choose something else or declare_failure")
+                except QuestionTakenBack as e:
+                    # a confirm the run's own abort took back ends the run on why the abort was
+                    # set, as a doubt taken back the same way does (`_assess`)
+                    raise Aborted(self._abort_reason()) from e
                 self._emit(
                     "verb",
                     step=self.budget.steps,

@@ -119,18 +119,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   can change while the question is open: the steps and minutes, a segment started meanwhile, a
   pause, a newer command, the abort, the verdict, a stop, the battery and the preconditions. A
   refusal there keeps its own reason, and its gate record adds `after_confirm` with the confirm
-  gate's reason, so the record says the call was agreed to before it was refused. A call that
-  puts a question reads the body's state twice now, once before it and once after, and every
-  other call once, as before. A confirmed call is still charged its step only after the answer,
-  so one somebody declines, or one refused before the question, costs none. The README and
-  `docs/concepts/safety.md` list the new order.
+  gate's reason, so the record says the call was agreed to before it was refused, and a call that
+  ends after the yes on a state read that failed, or on a cancel, before it ran, carries it on its
+  `verb_end`. A call that puts a question reads the body's state twice now, once before it and
+  once after, and every other call once, as before. A confirmed call is still charged its step
+  only after the answer, so one somebody declines, or one refused before the question, costs
+  none. `roboglot drive`, which asks the person itself while it routes a line, asks the executor
+  first now, through the one function the executor's own calls use for these gates, and a call
+  one of them would refuse ends `refused` in the executor's words with nobody asked; what changes
+  while its question is open is checked in the call itself, and marked the same way. The README
+  and `docs/concepts/safety.md` list the new order.
 - **A call with invalid arguments counts as a failure of its verb.** A call the executor refused
   for its arguments returned before it was recorded, so a task's `Same verb fails N times in a
   row` never saw it, and a pilot that sent the same speed past the clamp again and again went on
   until `max_llm_calls` or `max_minutes` ended the run. Such a call is a recorded failure now: the
   rule counts it and ends the run on the Nth in a row. It still uses no step, and the pilot is
-  told what it was told before, word for word. A verb outside the allowlist and an unknown verb
-  are refused as before, and neither counts.
+  told what it was told before, word for word. A pilot's call counts, in a run, a drive goal and
+  over MCP. A line a person typed in `roboglot drive`, or piped to it, is recorded as the failure
+  it is and does not count, since a person who mistypes three times has not asked for the
+  session to end. A verb outside the allowlist and an unknown verb are refused as before, and
+  neither counts.
 - **The verb the last allowed LLM call chose runs.** Each verb's step ran the whole budget check,
   `max_llm_calls` included, so once the loop had charged the last call the task allows, the verb
   that call chose was refused with `max_llm_calls (N) reached`: the call was billed and nothing
@@ -139,7 +147,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   is about to make a call, so the last allowed call's verb runs and the run ends on the same
   sentence when it would make one call more. Every run that ends on this budget runs one verb
   more than it did. A `--controller vla` run whose `max_llm_calls` is its verdict and one turn per
-  instruction runs every segment, where its last one was confirmed and then refused.
+  instruction runs every segment, where its last one was confirmed and then refused. With the
+  stepper on, whose turns charge no LLM call, its turns go on after the last allowed call, each a
+  decision LLM request and a verb, until its streak hands the turn back (eight in a row, or half
+  of `max_steps`, whichever is less) or the steps or minutes run out, and the run then ends on
+  `max_llm_calls`, where the first of those verbs used to be refused.
 - **No robot is the default any more, and every adapter's first backend is its mock.** A command
   that names no robot, on a machine with several adapters installed, refuses and lists them, where
   with the Microduck among them it used to take `microduck:sim2d`, the 2D simulator, which is gone
@@ -469,13 +481,17 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **A dry run sends nothing, whatever a verb says of itself.** `--dry-run` connects the real body
   and let any verb flagged `read_only` run for real, and the flag is the verb's own word, so a
   third party's verb that carried it and sent an intent moved the body in a run that promised to
-  send nothing, and the close then took the run for one that had moved nothing. On a dry run a
-  verb's reads still read, and everything it sends, an intent, a stop intent or a stop, is
-  refused before the transport, recorded as a `dry_run` gate `refused`, and fails the verb with
-  `[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`. The verbs
-  Roboglot ships with the flag, `observe`, `report_state`, `map` and `introspect`, send nothing
-  and run on a dry run exactly as before. The stops Roboglot sends of its own accord, after a
-  verb it ended and as the run ends, go out as they did, and `docs/concepts/safety.md` says why.
+  send nothing, and the close then took the run for one that had moved nothing. On a dry run the
+  transport a verb is handed lets through its reads, `get_state`, `get_frame`, `get_frames`,
+  `introspect`, `now` and `sleep`, and nothing else: an intent, a stop intent, a stop, or any
+  other method of the transport, the arm's own `go_to_rest`, `let_go` and `take_hold` among
+  them, is refused before it reaches the body, recorded as a `dry_run` gate `refused`, and fails
+  the verb with `[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`.
+  The verbs Roboglot ships with the flag, `observe`, `report_state`, `map` and `introspect`, read
+  only those and run on a dry run exactly as before, on every body. The stops Roboglot sends of
+  its own accord, after a verb it ended and as the run ends, go out as they did, and
+  `docs/concepts/safety.md` says why. An adapter's verb that needs another read on a dry run has
+  to say so, as `docs/adapters/writing-an-adapter.md` describes.
 - **An assessment refused for its shape withdraws the verdict before it.** A pilot that changed its
   mind in words the vocabulary refuses, an infeasible with units in a need (`"payload_kg": "2
   kg"`), a need outside the datasheet's words or a `human` field, was told its call was invalid
@@ -500,13 +516,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   verb's name, the task's name, a robot's spec, a member's name, a manifest's id and a registered
   robot's or team's name now end where their pattern does, and each is refused in the words a bad
   name already got.
-- **A pilot's doubt that the run's stop took back ends the run on the stop.** When the run's abort
-  was set while the question about an `uncertain` verdict still waited, a drive goal's question
-  among them, the question was taken back and recorded as a prompt that raised, and the run ended
+- **A question the run's stop took back ends the run on the stop.** When the run's abort was set
+  while the question about an `uncertain` verdict still waited, a drive goal's question among
+  them, the question was taken back and recorded as a prompt that raised, and the run ended
   `the pilot was unsure (...) and the question went unanswered: the prompt raised
   QuestionWithdrawn`, with the failed heartbeat, the drive session's stop or the kill switch that
   had set the abort nowhere in its reason. It ends `aborted` on that reason now, as the question
-  about what the arm did and the fall-blind acknowledgement already did.
+  about what the arm did and the fall-blind acknowledgement already did. A confirm question taken
+  back the same way ended its call denied, `nobody answered whether to run ...`, and it ends as
+  the abort ends any call now, `run aborted` at the `abort` gate, with the run on that reason
+  too.
 - **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
   pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
   twist nor zero it once its deadman window had passed, and the body kept walking on its last

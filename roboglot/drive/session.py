@@ -134,6 +134,16 @@ class Answered:
             return None
         return answer.channel
 
+    def agreed_already(self, name: str) -> str | None:
+        """The confirm gate's reason for a yes a person gave `name` before the call began, as the
+        session asks while it routes the line, or None. Every refusal of the call comes after
+        that yes, and the executor's record says so (`after_confirm`), as for one asked in the
+        call. Reads the answer and changes nothing of it."""
+        answer = _ANSWER.get()
+        if answer is None or not answer.person or not answer.yes or answer.state != "pending":
+            return None
+        return "a human said yes" if name == answer.verb else None
+
 
 def _go(_why: str) -> bool:
     """`--yes` answers a goal's doubt as it answers a run's: go."""
@@ -687,6 +697,18 @@ class DriveSession:
             if self.yes:
                 answer = _Answer(matched.verb, yes=True, person=False)
             elif cmd.by == "person" and self.ask is not None and question is not None:
+                # Everything that would refuse the call is checked first, then the person is
+                # asked: the executor's own gates before a question, in its own words. A person
+                # used to say yes to a call a precondition or a spent budget then refused. What
+                # changes while the question is open is checked again in the call itself.
+                refusal = await executor.refusal_before_the_question(
+                    matched.verb, matched.arguments, source=cmd.by
+                )
+                if refusal is not None:
+                    routed.lane, routed.note = "refused", refusal
+                    self._route(cmd, routed)
+                    self._end(cmd, Ended("refused", refusal))
+                    return
                 said = await self._asked(question)
                 answer = _Answer(matched.verb, yes=said, person=True, channel=cmd.channel)
             else:

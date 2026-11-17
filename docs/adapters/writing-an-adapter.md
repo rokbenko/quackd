@@ -293,11 +293,22 @@ lives. The rules, enforced by the model itself
 > `--dry-run` such a verb runs against real hardware too, and what it sends through the transport
 > is refused there, whatever the flag says.
 
-**Everything a verb sends to the body goes through the transport it is handed**,
-`ctx.transport.send_intent` or `ctx.transport.stop`. That is where a dry run holds a verb back,
-whatever the verb is called or flagged. A verb that reaches its body any other way, an SDK
-handle or a socket of the adapter's own, or a method of its own on the transport, sends on a dry
-run as well, and nothing in Roboglot can hold it back.
+**Everything a verb does to the body goes through the transport it is handed**, `ctx.transport`.
+That is where a dry run holds a verb back, whatever the verb is called or flagged: on a dry run
+it lets through the transport's reads and its plain values, and refuses `send_intent`, `stop`
+and every other method, the body's own motion methods among them, so the verb fails with
+`[dry-run] <verb> tried to send <what>, and a dry run sends nothing to the body`. A verb that
+reaches its body any other way, an SDK handle, a socket, or the adapter held from before the
+call, sends on a dry run as well, and nothing in Roboglot can hold it back.
+
+The reads are `DRY_RUN_READS` in `roboglot/safety.py`: `get_state`, `get_frame`, `get_frames`,
+`introspect`, `now` and `sleep`, each of them a read of the body's state, its cameras, a bridge's
+own description or the transport's clock. They are what the read-only verbs Roboglot ships call,
+on every body. **A read-only verb that needs a read of its own** has two ways. Put what it reads
+where those already reach, in `RobotState.extras` for `get_state` or a frame for `get_frames`,
+and it runs on a dry run as it does on any other. Or add the method's name to `DRY_RUN_READS`
+in Roboglot itself, with a test that it sends nothing to the body, which is what `introspect`
+is there for. Until one of the two, a dry run refuses the call, and the verb fails there.
 
 ## The adapter class
 

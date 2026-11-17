@@ -31,6 +31,7 @@ from roboglot.safety import (
     Executor,
     Heartbeat,
     Preempted,
+    QuestionTakenBack,
     SafetyStop,
     VerbNotAllowed,
     VerdictRequired,
@@ -371,6 +372,49 @@ async def test_a_precondition_that_turns_false_while_the_question_is_open_refuse
     assert transport._state_i == 2, "a confirmed call reads the state before and after the question"
 
 
+class _SecondReadFails(MockTransport):
+    """A body whose link drops while the person answers: its second state read raises."""
+
+    def __init__(self) -> None:
+        super().__init__(states=[STANDING])
+        self.reads = 0
+
+    async def get_state(self) -> RobotState:
+        self.reads += 1
+        if self.reads == 2:
+            raise TransportError("the link dropped while the person answered")
+        return await super().get_state()
+
+
+async def test_a_call_that_ends_on_a_failed_read_after_its_yes_says_it_was_agreed_to(
+    registry: VerbRegistry,
+) -> None:
+    """After the yes, the second state read raised: the stop it owes went out and the call ended
+    on the read's error, and the record kept an allowed confirm for a verb that never ran, with
+    no row after it saying the person had agreed. The call's end says so now (`after_confirm` on
+    its `verb_end`), as every refusal after a yes does. A call that ran after its yes ends as it
+    always did."""
+    seen: list[Any] = []
+    person = _Person()
+    transport = _SecondReadFails()
+    ex = Executor(
+        registry,
+        transport,
+        contract=glot("kick", confirm="kick").frontmatter,
+        confirm=person,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    with pytest.raises(TransportError, match="the link dropped"):
+        await ex.run_verb("kick", {"leg": "right"})
+    assert person.asked == ["kick"] and transport.stops == 1
+    assert gates(seen) == [("confirm", "allowed")]
+    (ended,) = ends(seen)
+    assert ended["outcome"] == "error" and ended["after_confirm"] == "a human said yes", ended
+    assert transport.intents_of("do") == []
+    ran = await ex.run_verb("kick", {"leg": "right"})  # the third read answers
+    assert ran.ok and "after_confirm" not in ends(seen)[-1], ends(seen)[-1]
+
+
 async def test_budget_hard_stop(registry: VerbRegistry, mock_transport: MockTransport) -> None:
     budget = Budget(Budgets(max_steps=2), now=mock_transport.now)
     budget.start()
@@ -468,6 +512,110 @@ async def test_a_dry_run_sends_nothing_whatever_a_verb_says_of_itself(
         for what in ("move(vx=0.1, vy=0.0, wz=0.0)", "stop", "stop")
     ]
     assert not [e for e in seen if e.kind == "intent"], "an intent reached the transport"
+
+
+class _ArmWithMotions(MockTransport):
+    """A body whose own motion methods are public on its transport, as the arm's are, each
+    recording that it reached the body."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reached: list[str] = []
+
+    async def go_to_rest(self) -> str:
+        self.reached.append("go_to_rest")
+        return "arrived"
+
+    async def close_gripper(self) -> str:
+        self.reached.append("close_gripper")
+        return "closed"
+
+    async def let_go(self) -> None:
+        self.reached.append("let_go")
+
+    def take_hold(self) -> None:  # a plain method, as a transport may have one
+        self.reached.append("take_hold")
+
+
+@pytest.mark.parametrize("method", ["go_to_rest", "close_gripper", "let_go", "take_hold"])
+async def test_a_dry_run_lets_a_verb_call_nothing_on_its_transport_but_the_reads(
+    method: str,
+) -> None:
+    """The dry run held back `send_intent` and `stop`, and passed every other attribute of the
+    transport on, so a verb flagged `read_only` that called one of the body's own motion methods
+    through `ctx.transport`, the arm's `go_to_rest` or `let_go`, moved the body on a run that
+    promised to send nothing, and nothing recorded it. On a dry run the transport a verb is
+    handed lets through the named reads (`DRY_RUN_READS`) and nothing else: any other method is
+    refused and recorded, and the verb fails, whatever it said. Its reads still read."""
+
+    async def tidy(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        state = await ctx.transport.get_state()
+        await ctx.transport.sleep(0.01)
+        ctx.transport.now()
+        await safety_call(getattr(ctx.transport, method))
+        return VerbResult.success(f"tidied, {state.posture}")
+
+    reg = VerbRegistry()
+    reg.register(CORE["stop"])
+    reg.register(Verb("tidy", "reads, it says", tidy, read_only=True))
+    seen: list[Any] = []
+    transport = _ArmWithMotions()
+    ex = Executor(
+        reg,
+        transport,
+        contract=glot("tidy").frontmatter,
+        dry_run=True,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    result = await ex.run_verb("tidy")
+    assert transport.reached == [], f"{method} reached the body on a dry run"
+    assert not result.ok and result.data.get("dry_run") is True, result
+    assert result.summary == (
+        f"[dry-run] tidy tried to send {method}(), and a dry run sends nothing to the body"
+    )
+    assert gates(seen) == [("dry_run", "refused")]
+    refused = next(e.data for e in seen if e.kind == "gate")
+    assert refused["reason"] == f"tidy sent {method}(), and a dry run sends nothing"
+
+
+async def safety_call(method: Any) -> Any:
+    """Call `method` as a verb would, awaiting what an async one hands back."""
+    said = method()
+    return await said if asyncio.iscoroutine(said) else said
+
+
+@pytest.mark.parametrize("adapter", ADAPTER_NAMES)
+async def test_every_shipped_read_only_verb_does_on_a_dry_run_what_it_does_on_a_live_one(
+    adapter: str,
+) -> None:
+    """The reads a dry run lets through are what the read-only verbs Roboglot ships call on
+    their transport, on every body: `observe`, `report_state`, `map`, `introspect` and each
+    adapter's own. On a dry run before this, such a verb was handed the body's transport as a
+    live run hands it, and no verb reads the dry-run flag, so a live run is what it did then.
+    Each one, on each adapter's mock, still answers exactly that, and nothing is refused."""
+    answers: dict[str, list[tuple[bool, str, Any]]] = {}
+    refused: list[Any] = []
+    for dry in (False, True):
+        body = make_adapter(f"{adapter}:mock")
+        manifest = await body.connect()
+        try:
+            registry = registry_from_manifest(manifest, body)
+            seen: list[Any] = []
+            ex = Executor(registry, body, dry_run=dry, event_log=EventLog(observers=[seen.append]))
+            for verb in sorted(v.name for v in registry.verbs() if v.read_only):
+                result = await ex.run_verb(verb)
+                # the data's keys and not its values: two mocks of one body differ by an odometry
+                # frame's random name and the like, two live runs as much as these two
+                answers.setdefault(verb, []).append(
+                    (result.ok, result.summary, sorted(result.data))
+                )
+            refused += [e.data for e in seen if e.kind == "gate" and e.data["gate"] == "dry_run"]
+        finally:
+            await body.close()
+    assert answers, f"{adapter} ships no read-only verb"
+    for verb, (live, dry_run) in answers.items():
+        assert dry_run == live, f"{adapter}'s {verb} on a dry run: {dry_run[:2]} against {live[:2]}"
+    assert refused == [], refused
 
 
 async def test_a_read_and_a_dry_run_are_never_the_robots_first_motion(
@@ -1494,6 +1642,28 @@ async def test_invalid_arguments_are_a_failure_that_counts_in_a_row_and_costs_no
     assert mock_transport.intents == []
 
 
+async def test_a_persons_typo_in_drive_is_recorded_and_counts_toward_no_failures_in_a_row(
+    registry: VerbRegistry, mock_transport: MockTransport
+) -> None:
+    """A call refused for its arguments counts toward "the same verb fails N times in a row"
+    when a pilot made it, in a run, a drive goal or over MCP. A line a person typed in `roboglot
+    drive` (`source="person"`, or `"cli"` off a pipe) is recorded as the failure it is and counts
+    toward nothing: a person who mistypes three times has not asked for the session to end, so a
+    drive session under a task file with that rule no longer ends on three typos."""
+    ex, seen = logged(
+        registry, mock_transport, allow="walk", abort="Same verb fails 3 times in a row"
+    )
+    for source in ("person", "cli", "person", "person"):
+        typo = await ex.run_verb("walk", {"vx": 0.5, "duration_s": 1.0}, source=source)
+        assert not typo.ok and typo.summary.startswith("invalid params for walk: vx: ")
+    assert len(ex.history) == 4 and not ex.abort.is_set()
+    assert ex.consecutive_failures.get("move", 0) == 0
+    with pytest.raises(Aborted, match="walk failed 3 times in a row"):
+        for _ in range(3):  # the pilot's own count is untouched by the person's
+            await ex.run_verb("walk", {"vx": 0.5, "duration_s": 1.0})
+    assert gates(seen)[-1] == ("abort_when", "fired")
+
+
 async def test_a_stop_that_cannot_run_without_its_arguments_is_still_refused(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
@@ -1802,20 +1972,21 @@ async def test_a_confirm_answered_later_is_waited_for(
 async def test_a_confirm_still_waiting_when_the_run_is_stopped_was_answered_by_nobody(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
-    """A brake, a newer line or the page's Stop while the question waits takes it back: the
-    gate is denied with nobody's answer, no `prompt` row says somebody said no, and nothing
-    moves."""
+    """A brake, a newer line or the page's Stop while the question waits takes it back. Nobody
+    answered, so no `prompt` row says somebody did, and nothing moves. The call ends as the
+    abort ends any call, `run aborted` at the `abort` gate (`QuestionTakenBack`, an `Aborted`),
+    and the run on why the abort was set, as a pilot's doubt taken back the same way does. It
+    used to end denied, which put the question in the place of the stop."""
     put = asyncio.Event()
     ex, seen = logged(registry, mock_transport, allow="quack, kick", confirm="kick")
     ex.confirm = _later(True, put)
     running = asyncio.ensure_future(ex.run_verb("kick"))
     await asyncio.wait_for(put.wait(), timeout=2)
     ex.abort.set()
-    with pytest.raises(ConfirmDenied, match="nobody answered whether to run kick"):
+    with pytest.raises(QuestionTakenBack, match=r"^run aborted$"):
         await asyncio.wait_for(running, timeout=2)
-    gate = _confirm_gate(seen)
-    assert gate["answer"] is None
-    assert gate["reason"] == "the prompt raised QuestionWithdrawn: the run was stopped"
+    assert gates(seen) == [("abort", "refused")]
+    assert ends(seen)[0]["outcome"] == "aborted"
     assert not [e for e in seen if e.kind == "prompt"]
     assert not mock_transport.intents_of("do")
 
