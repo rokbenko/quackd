@@ -21,9 +21,11 @@ cameras, the motor currents and the over-current trip, and a transcribed copy wo
 Three things happen around it:
 
 1. **Arm torque is enabled after connect**, on both buses.
-2. **The lift is stopped once, immediately.** `home()` runs during connect, drives the lift down
-   at full speed, and the write that would zero that register afterwards is commented out
-   upstream. Until something writes a zero, the lift is still travelling.
+2. **The lift is stopped once, immediately, before any torque.** `home()` runs during connect,
+   drives the lift down at full speed, and the write that would zero that register afterwards
+   is commented out upstream. Until something writes a zero, the lift is still travelling, and
+   it shares the left arm bus, so its zero goes out before either arm bus is energised. If that
+   write fails, nothing is energised and the host stops with the error.
 3. **Every observation gains three fields** so Roboglot can tell this host from a stock one:
    `roboglot_arm_torque`, `roboglot_calibrated` and `roboglot_host_version`.
 

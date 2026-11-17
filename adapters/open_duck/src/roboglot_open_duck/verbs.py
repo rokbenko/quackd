@@ -133,6 +133,9 @@ def _policy_running(state: RobotState) -> str | None:
     and not a control the operator no longer has."""
     if stale := _stale(state):
         return stale
+    if state.extras.get("shutting_down") is True:
+        # the loop still runs, holding zeros, but nothing sent to it moves the duck now
+        return "the bridge is shutting down; nothing moves now"
     running = state.extras.get("policy_running")
     if running in (None, True):
         return None

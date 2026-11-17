@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import copy
+import dataclasses
 import itertools
 import json
 import math
@@ -46,17 +47,21 @@ from roboglot.release import (
     DROP_AFTER_TWO_FOLDS,
     ENTER_DROPS_S,
     FOLD_STOPPED,
+    FOLD_WENT_ON,
     FOLDING_IN,
     GRIPPER_STOPPED,
+    GRIPPER_WENT_ON,
     HANDS_AWAY_S,
+    LIMP_AT_THE_CLOSE,
     REFOLD_UNANSWERED,
     REFOLDED,
     RELEASE_INTERRUPTED,
     RELEASE_NOT_SENT,
 )
-from roboglot.safety import Aborted
-from roboglot.transport.base import CameraFrame, RobotState, TransportError
+from roboglot.safety import ENDING_S, Aborted, Executor
+from roboglot.transport.base import CameraFrame, HeartbeatError, RobotState, TransportError
 from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import CORE
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import MOCK_RANGES, REST, LeRobotMock
 from roboglot_lerobot.verbs import (
@@ -408,6 +413,57 @@ async def test_heartbeat_failure_aborts_the_run(hello_glot: GlotFile, tmp_path: 
     assert result.outcome == "aborted"
     assert "heartbeat" in result.reason
     assert transport.stops >= 1
+
+
+class _DeadLink(MockTransport):
+    """A link whose beat fails and whose stop never comes back, as a write into a full send
+    buffer or a serial write that never completes does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.never = asyncio.Event()
+
+    async def heartbeat(self) -> None:
+        raise HeartbeatError("no answer from the robot")
+
+    async def stop(self) -> None:
+        self.stops += 1
+        await self.never.wait()
+
+
+async def test_a_run_whose_link_eats_every_stop_still_reaches_its_end(
+    hello_glot: GlotFile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The run's own last stop, the first thing its teardown sends, was waited for with no end:
+    over a link that had died, the fold, the release, the close and `run_end` never came. It is
+    waited for as long as an owed stop is, the body's `stop` verb's `timeout_s` (here
+    `ENDING_S`), and said to be unconfirmed."""
+    monkeypatch.setitem(CORE, "stop", dataclasses.replace(CORE["stop"], timeout_s=ENDING_S))
+    transport = _DeadLink()
+    forever = FakeProvider(script=[ToolCall(name="walk", arguments={"duration_s": 2.0})])
+    running = asyncio.create_task(
+        run_glot(
+            RunConfig(
+                glot=hello_glot,
+                provider=forever,
+                transport=transport,
+                runs_dir=tmp_path,
+                heartbeat_period_s=0.001,
+            )
+        )
+    )
+    try:
+        await asyncio.wait({running}, timeout=20 * ENDING_S)
+        assert running.done(), f"the teardown waits on its stop ({transport.stops} out)"
+        result = running.result()
+        assert result.outcome == "aborted"
+        events = Transcript.read(result.run_dir / "transcript.jsonl")
+        notes = [str(e.get("text")) for e in events if e["kind"] == "note"]
+        assert any(n.startswith("the run's last stop: it was not answered") for n in notes), notes
+        assert [e for e in events if e["kind"] == "run_end"], "no run_end"
+    finally:
+        transport.never.set()
+        await asyncio.wait({running}, timeout=2.0)
 
 
 async def test_dry_run_touches_nothing(hello_glot: GlotFile, tmp_path: Path) -> None:
@@ -4432,6 +4488,157 @@ async def test_a_press_stops_the_gripper_closing_and_the_run_still_closes(tmp_pa
     assert _stages(events)[-1] == "kept", _stages(events)
 
 
+class _WillNotStop:
+    """A move a press stops that catches the two cancels a stopped move is given, as one whose
+    cancel was lost on its way twice does, and ends on the third, which the test sends at its
+    end (`end`). `STOPPED_FOLD_S` is shrunk beside it, as tests/test_release.py shrinks it."""
+
+    def __init__(self) -> None:
+        self.task: asyncio.Task[Any] | None = None
+
+    async def run(self) -> None:
+        self.task = asyncio.current_task()
+        caught = 0
+        while True:
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                caught += 1
+                if caught > 2:
+                    raise
+
+    async def end(self) -> None:
+        if self.task is not None and not self.task.done():
+            self.task.cancel()
+            await asyncio.wait({self.task}, timeout=2.0)
+
+
+def _notes(result: Any) -> list[str]:
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    return [str(e.get("text")) for e in events if e["kind"] == "note"]
+
+
+async def test_a_by_hand_runs_first_fold_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fold a press stopped that had not ended when told to twice was still said to have
+    stopped where it was, to the person who pressed, while it may have been moving on."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    move = _WillNotStop()
+
+    async def fold() -> Any:
+        mock.sequence.append("rest")
+        person.press()
+        await move.run()
+
+    mock.go_to_rest = fold  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    assert result.outcome == "aborted", result.reason
+    assert FOLD_WENT_ON in person.said and FOLD_STOPPED not in person.said, person.said
+    assert FOLD_WENT_ON in _notes(result) and FOLD_STOPPED not in _notes(result)
+    assert mock.sequence == ["rest", "stop", "close"], "nothing folds it afterwards, or lets it go"
+
+
+async def test_a_teardown_fold_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fold a run ends with, stopped by a press after the hand-back, the same way."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    real = mock.go_to_rest
+    move = _WillNotStop()
+    folds = 0
+
+    async def second_will_not_stop() -> Any:
+        nonlocal folds
+        folds += 1
+        if folds == 1:
+            return await real()
+        person.press()
+        await move.run()
+
+    mock.go_to_rest = second_will_not_stop  # type: ignore[method-assign]
+    person = Presser(mock, places=PLACED)
+    loop = AgentLoop(_by_hand(mock, person, tmp_path))
+    person.on_wait = lambda _p: loop.executor.abort.set()
+    try:
+        result = await asyncio.wait_for(loop.run(), timeout=30.0)
+    finally:
+        await move.end()
+    assert folds == 2, "it was started, and stopped"
+    assert FOLD_WENT_ON in _notes(result) and FOLD_STOPPED not in _notes(result)
+    assert FOLD_WENT_ON in person.said, person.said
+    assert mock.sequence[-2:] == ["stop", "close"], mock.sequence
+    assert "let_go" not in mock.sequence[-3:], "nothing is let go of after it"
+
+
+async def test_a_gripper_closing_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gripper closing after the fold, stopped by a press, told twice and still going."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED, answers=[True, True])
+    move = _WillNotStop()
+
+    async def closing() -> Any:
+        mock.sequence.append("gripper")
+        person.press()
+        await move.run()
+
+    mock.close_gripper = closing  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}"
+    assert said in person.said and GRIPPER_STOPPED not in person.said, person.said
+    assert said in _notes(result)
+    assert mock.sequence[-3:] == ["gripper", "stop", "close"], mock.sequence
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    kept = [e["reason"] for e in events if e["kind"] == "hand_off" and e["stage"] == "kept"]
+    assert kept == ["the gripper closing did not stop when pressed"], kept
+
+
+async def test_a_gripper_opening_that_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gripper opening at the hand-back, stopped by a press, told twice and still going: the
+    arm is held where it is and not folded, as after a gripper that stopped, and the person is
+    told the jaws may still be moving."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    mock = LeRobotMock(rest_pose=REST)
+    person = Presser(mock, places=PLACED)
+    move = _WillNotStop()
+    send = mock.send_intent
+
+    async def sending(intent: Any) -> Any:
+        ack = await send(intent)
+        if intent.kind == "gripper":
+            person.press()
+            await move.run()
+        return ack
+
+    mock.send_intent = sending  # type: ignore[method-assign]
+    try:
+        result = await asyncio.wait_for(run_glot(_by_hand(mock, person, tmp_path)), 30.0)
+    finally:
+        await move.end()
+    assert GRIPPER_WENT_ON in person.said, person.said
+    assert AgentLoop.HELD_BACK in person.said, "the arm is held and not folded"
+    assert GRIPPER_WENT_ON in _notes(result)
+    assert mock.sequence.count("rest") == 1, "the opening fold, and no other"
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    kept = [e["reason"] for e in events if e["kind"] == "hand_off" and e["stage"] == "kept"]
+    assert kept == ["the gripper opening did not stop when pressed"], kept
+    assert mock.torque is True, "and it is not let go of, away from its pose"
+
+
 async def test_a_press_as_the_fold_arrives_keeps_the_gripper_from_starting(tmp_path: Path) -> None:
     """The one watch runs from the question to the end of the gripper, so a press made as the fold
     came home is one the gripper hears before it moves, rather than a press nobody is left
@@ -7370,3 +7577,99 @@ async def test_the_page_stop_ends_a_fold_nobody_asked_for_and_the_page_leaving_d
     else:
         assert FOLD_STOPPED not in notes, notes
         assert mock.sequence[-2:] == ["rest", "close"], mock.sequence
+
+
+#: Every bounded wait of a teardown at the core `stop`'s allowance, and room to spare.
+TEARDOWN_ENDS_WITHIN_S = 6 * CORE["stop"].timeout_s
+
+
+def _eats_one_stop(
+    mock: LeRobotMock, which: Callable[[], bool]
+) -> tuple[asyncio.Event, list[bool]]:
+    """The arm's link, which eats the first stop asked for once `which()` says so: answered only
+    once the test is over."""
+    real_stop = mock.stop
+    answer_it = asyncio.Event()
+    eaten: list[bool] = []
+
+    async def stop(*args: Any, **kwargs: Any) -> Any:
+        if not eaten and which():
+            eaten.append(True)
+            await answer_it.wait()
+        return await real_stop(*args, **kwargs)
+
+    mock.stop = stop  # type: ignore[method-assign]
+    return answer_it, eaten
+
+
+async def test_a_second_press_during_the_wait_for_stops_still_out_cannot_skip_the_close(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The wait the teardown gives a stop still out (`see_out_stops`) sat under
+    `suppress(Exception)` alone, and a second press there, which is when somebody at an arm over
+    a slow link presses again, went straight past the close and `run_end`."""
+    mock = LeRobotMock(rest_pose=REST)
+    _takes_a_moment(mock)
+    person = PressesAtTheCount(mock, places=PLACED)
+    in_last_stop: list[bool] = []
+    real_last_stop = Executor.last_stop
+
+    async def last_stop(self: Executor) -> Any:
+        in_last_stop.append(True)
+        return await real_last_stop(self)
+
+    monkeypatch.setattr(Executor, "last_stop", last_stop)
+    answer_it, eaten = _eats_one_stop(mock, lambda: bool(in_last_stop))
+    running: asyncio.Task[Any] | None = None
+    seen: list[bool] = []
+    real_see_out = Executor.see_out_stops
+
+    async def see_out(self: Executor) -> None:
+        if self._stops_out and not seen:
+            seen.append(True)
+            assert running is not None
+            running.cancel()  # the second press, as the wait begins
+        await real_see_out(self)
+
+    monkeypatch.setattr(Executor, "see_out_stops", see_out)
+    running = asyncio.create_task(run_glot(_by_hand(mock, person, tmp_path)))
+    try:
+        done, _ = await asyncio.wait({running}, timeout=TEARDOWN_ENDS_WITHIN_S)
+    finally:
+        answer_it.set()
+        if not running.done():
+            running.cancel()
+            await asyncio.wait({running}, timeout=5)
+    assert eaten, "the run's last stop was never sent"
+    assert done, "the run did not end"
+    assert seen, "no stop was still out when the teardown reached its wait"
+    assert not running.cancelled(), f"the press skipped the close: {mock.sequence[-3:]}"
+    result = running.result()
+    assert mock.sequence[-1] == "close", mock.sequence[-3:]
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    assert [e for e in events if e["kind"] == "run_end"], "the record has no end"
+
+
+async def test_a_by_hand_run_whose_link_eats_the_stop_after_a_press_still_ends(
+    tmp_path: Path,
+) -> None:
+    """The stops the teardown sends after a press were waited for through every later press and
+    with no bound, so over a link that ate one the run never ended and no press got it out. Each
+    is waited for as an owed stop is now, and one not answered is said to the person at the arm
+    and in the record."""
+    mock = LeRobotMock(rest_pose=REST)
+    _takes_a_moment(mock)
+    person = PressesAtTheCount(mock, places=PLACED)
+    answer_it, eaten = _eats_one_stop(mock, lambda: bool(person.presses))
+    running = asyncio.create_task(run_glot(_by_hand(mock, person, tmp_path)))
+    try:
+        done, _ = await asyncio.wait({running}, timeout=TEARDOWN_ENDS_WITHIN_S)
+    finally:
+        answer_it.set()
+        await asyncio.wait({running}, timeout=10)
+    assert eaten, "no stop was sent after the press"
+    assert done, f"the run had not ended: {mock.sequence[-3:]}"
+    said = [s for s in person.said if s.startswith("the stop after the press:")]
+    assert said and "cannot tell whether the arm is holding" in said[0], person.said
+    events = Transcript.read(running.result().run_dir / "transcript.jsonl")
+    assert said[0] in [e.get("text") for e in events if e["kind"] == "note"]

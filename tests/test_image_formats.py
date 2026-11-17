@@ -13,7 +13,6 @@ from __future__ import annotations
 import ast
 import base64
 import io
-import urllib.request
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -38,25 +37,12 @@ def _picture(fmt: str) -> bytes:
     return out.getvalue()
 
 
-class _Answer:
-    """What `urllib.request.urlopen` hands a `with`, for the cameras read over HTTP."""
-
-    def __init__(self, raw: bytes) -> None:
-        self.raw = raw
-        self.headers: dict[str, str] = {}
-
-    def __enter__(self) -> _Answer:
-        return self
-
-    def __exit__(self, *exc: object) -> None:
-        return None
-
-    def read(self) -> bytes:
-        return self.raw
-
-
 def _answers_with(raw: bytes, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: _Answer(raw))
+    """The Open Duck client's camera, read over HTTP by `fetch_frame`: these bytes, and no age
+    stamped on them, as a camera answering with no `X-Frame-Age` header does."""
+    import roboglot_open_duck.bridge as open_duck_bridge
+
+    monkeypatch.setattr(open_duck_bridge, "fetch_frame", lambda *a, **k: (raw, None))
 
 
 async def _nothing_to_pump(*_: Any) -> bool:

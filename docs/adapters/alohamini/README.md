@@ -101,8 +101,8 @@ nor `write_calibration` touches it. So on a stock host a joint command moves not
 could not hold an arm even if it wanted to.
 
 Roboglot ships [`bridge/alohamini/roboglot_alohamini_host.py`](../../../bridge/alohamini/roboglot_alohamini_host.py),
-a small wrapper that runs upstream's own host loop with torque enabled, the lift stopped, and
-three `roboglot_` fields added to every observation. Run it **instead of** upstream's host:
+a small wrapper that runs upstream's own host loop with the lift stopped and then torque enabled,
+and three `roboglot_` fields added to every observation. Run it **instead of** upstream's host:
 
 ```bash
 # on the robot, in upstream's environment

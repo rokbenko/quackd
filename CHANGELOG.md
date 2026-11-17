@@ -99,6 +99,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **`roboglot policy check --bench` says what a declared latency is for on the arm.** Its advice
   says `so the arm asks for each chunk in time`, where it said the simulator holds each chunk back
   as long.
+- **The Open Duck bridge, its camera server and the Jetson daemon refuse a wide address with no
+  token.** Bound anywhere but loopback with no token, each warned and then served anyone on that
+  network: the bridge a duck to walk, the camera server a live view of wherever the robot is,
+  and the Jetson daemon its camera and its GPU. Each refuses to start there now, before it binds
+  a socket, and says the ways out: give it a token, or bind 127.0.0.1 and use an ssh tunnel, or
+  pass `--allow-no-token` to start it open on purpose, when it warns as it did. Loopback is as it
+  was, and an empty token counts as none. The camera server has no token at all, so on a wide
+  address it starts only with the flag. A unit or a script that binds one of them wide with no
+  token needs a token or the flag now.
 - **No robot is the default any more, and every adapter's first backend is its mock.** A command
   that names no robot, on a machine with several adapters installed, refuses and lists them, where
   with the Microduck among them it used to take `microduck:sim2d`, the 2D simulator, which is gone
@@ -280,6 +289,95 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   or more from where it was is a quack and a success, a nearer one is another approach and kick,
   and a ball the camera did not place both before and after ends the run as a failure that says
   it cannot tell.
+- **An abort or a verb's own timeout ends the verb at once, even when its cancel is lost.** The
+  executor cancelled a running verb once and then waited for it with no end. On Python 3.11 a
+  cancel that lands as `asyncio.wait_for` returns is lost, and several transports wait for every
+  answer through it; a third party's verb may catch its own. Such a verb went on sending twists
+  after Ctrl-C, `q`, a failed heartbeat or its own `timeout_s`, and the stop went out only once it
+  ended by itself. No intent a verb sends after it has been ended reaches the robot now, other
+  than a stop, and not even a stop once a stop for it is known to have landed, so one that ends
+  late cannot brake the next verb or the run's fold. No call it makes to another verb runs but
+  `stop`, nor does one it made before and that was still reading the body's state. The stop goes
+  out as soon as the verb has been cancelled, without waiting for it to end. Where a twist the
+  verb had started was still on its way as the stop went, the stop is sent again after it, so a
+  stop is the last thing sent: as soon as that send came back, whatever it returned, or one
+  deadman window after the first stop where it was cut off in flight, as a write a thread was
+  doing goes on whatever the cancel. A verb that has not ended 0.3 s after its cancel, one
+  deadman window, is cancelled again, and one that has not ended 0.3 s after that is left behind
+  with a note that says so, and the run's end does not wait for it. A pause granted to a robot
+  met, and a newer command, end a verb the same way, where they used to wait on it with no bound
+  but its own timeout.
+- **A cancel that comes while a verb is being ended is no longer lost, and nor is the stop owed
+  after it.** Once an abort or a verb's timeout had ended the wait, a second Ctrl-C or an MCP
+  client giving up on the call while the executor waited for the verb to end was taken for the
+  verb's own cancel and dropped: the call ended as `Aborted` or as an ordinary timeout, and a
+  composite whose nested call was ending on its own timeout went on to its next step after the
+  composite's timeout. The call is cancelled now, once the stop is sent. A cancel that landed
+  while that stop waited its turn on the bus cancelled the stop as well, so the verb had been
+  ended with no stop at all; the stop now goes out when its turn comes, and the log says so if it
+  then fails. And on Python 3.11 a cancel of a call that landed as the body's state was read for
+  it, where `asyncio.wait_for` loses it, ran the verb in full; the call is cancelled there now.
+- **A failed heartbeat aborts the run at once.** The heartbeat set the abort only once its own
+  stop had come back, and that stop goes out over the link that has just failed: while it hung,
+  the running verb went on sending twists and a new verb was let through. The abort is set as the
+  stop is sent now, and the heartbeat waits no longer than one beat for that stop, which goes out
+  by itself when it can. Nor does the call the abort ended wait for good on its own stop over the
+  dead link, with the run's teardown behind it: a stop owed after a verb the executor ended is
+  waited for as long as the body gives its own `stop` verb, 5 s for the core one, and one not
+  answered by then goes on by itself and is said to be unconfirmed. So is the stop a run's
+  teardown sends first, which over a dead link held the fold or release after it, the close and
+  the run's end for good: the teardown says it was not answered, and goes on. So are the stops
+  a `--by-hand` run's teardown sends after a press, over a link that ate one the run never ended
+  and no press got it out: the person at the arm is told the stop was not answered and that
+  Roboglot cannot tell whether the arm is holding where it stopped. A stop still on its way is
+  given the same allowance again before the run ends, and once more as the process
+  closes, and one still not answered then is said plainly: Roboglot cannot tell whether it
+  reached the robot.
+- **The record of a call cancelled from outside says whether its stop landed.** Its `cancelled`
+  gate said `a stop was sent` before the stop went, and never read whether it had landed, so the
+  record could say so beside a stop row with `accepted` false. The gate is written after the stop
+  now, and says when the stop failed and why, or that it was still on its way when a cancel that
+  comes again on every turn, as the MCP server's does, ended the call. A record that cannot be
+  written there, a full disk, no longer turns the cancelled call into a failed result that blames
+  the verb: the call stays cancelled, and the log says the record could not be written. The
+  gates of a verb the abort, a newer command or a pause ended are written after the stop the same
+  way, and say when it failed: written first, a full disk held the stop back and turned the
+  abort, the newer command or the pause into a failure of the verb's, which `abort_when` counts.
+- **`stop` goes out without waiting for a state read.** Every verb read the body's state before
+  it ran, the brake as well, with no limit on the wait, so every brake went out a read's round
+  trip late, and over a read that did not come back it never went out, abort or no abort. The
+  brake is sent first now, and the state is read after it for the task's `abort_when` rules,
+  which still abort the run on a battery below the line. A dry run reads first, as before.
+- **No precondition holds back `stop`.** A manifest may list preconditions for any verb, and the
+  executor applied them to the brake as well, so a `stop: [not_fallen]` line made `stop` on a
+  fallen body answer `cannot stop` and send nothing. Every other gate lets `stop` through on
+  purpose, and so does this one now. No manifest Roboglot ships lists one.
+- **A verdict recorded while a verb reads the body's state is heeded.** After that read the
+  executor looked again at a pause, a newer command, the abort and a stop, which can each change
+  meanwhile, but not at the verdict. Over MCP, where calls run side by side, an `infeasible`
+  assessed while a walk read the state let the walk start anyway. The walk is refused now.
+- **A fold a person stops is not said to have stopped while it may still move.** After a fold
+  that missed its rest pose, Enter at the question folds the arm again, and a press stops that
+  fold. The press cancelled it once and gave it `STOPPED_FOLD_S`, 2 s: a fold whose cancel was
+  lost was left running, the person was told `the fold was stopped where it was`, and the stop
+  sent after it was followed by the fold's next goals. A fold that has not ended is cancelled a
+  second time now. One that still has not ended 2 s after that is not called stopped: the person
+  is told that Roboglot cannot tell whether the arm is still moving, to keep their hands out of
+  its path until it is still, and then to hold it and cut its power. A release stopped at the
+  next question that will not end either gets the reading that the arm may be limp in part, never
+  that nothing was sent. The same goes for every other fold and gripper a press stops, and what
+  follows is what followed one that stopped: the fold a `--by-hand` run starts with and the one a
+  run ends with, `roboglot robot release`'s first fold, `roboglot doctor`'s fold, and the gripper
+  opening or closing, where the person is told its jaws may still be moving. A fold, a gripper or
+  a release cancelled from outside, by a later Ctrl-C rather than a press, is told twice as well,
+  and is never said to have stopped, or a release not to have gone out, while it goes on, however
+  many presses or cancels come while it is waited for.
+- **A record that cannot be written no longer silences the release.** With the record failing, a
+  full disk, Enter at the question that drops the arm sent the release, and the line for the
+  person holding the arm, whether torque came off and what still holds, was never said; with the
+  disk full already, Enter at the first question folded nothing and said nothing. The second fold
+  and the release go on now, the person is told what they did, and the log says the record could
+  not be written.
 - **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
@@ -374,6 +472,66 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
   mapd names no map yet, and the place read as waiting for the robot's map to be known until the
   next session found it orphaned. It says `its map was wiped` from the moment of the wipe.
+- **Stopping the Open Duck bridge no longer lets a client walk the duck again, and ends its walk
+  loop with a KeyboardInterrupt, not a hard exit.** On SIGTERM or Ctrl-C the bridge zeroed the
+  command with an ordinary stop, which
+  refuses a stale command only for the 300 ms deadman inside a settle of 0.5 s, so a client still
+  in the middle of a `move` walked the duck again after 0.3 s, or at once after reading
+  `duck.state`, and the settle cut the loop off mid-stride. A shutdown now refuses every command
+  until the process ends, and an antenna gesture with `the bridge is shutting down; nothing moves
+  now`. A refused command is answered with a `duck.refused` notification that says so, where it
+  was dropped in silence and read as taken. `duck.state` says the duck is still, the stop latched
+  and `shutting_down`, and `duck.health` is unhealthy with that sentence, so Roboglot's `move` and
+  `gaze` on this duck fail saying the bridge is shutting down rather than report a walk. The
+  settle then ended in a hard exit with status 1, because the interrupt meant to end the loop
+  ran the bridge's own signal handler, so upstream's cleanup never ran and every `systemctl stop`
+  left the unit failed. It ends with a KeyboardInterrupt now, and only a second signal exits at
+  once. What upstream's walk loop does with that interrupt has not been read.
+- **The Open Duck bridge refuses a command with a number that is not finite.** Its clamp turned
+  NaN into the upper bound, and its server reads the `NaN` and `Infinity` literals, so
+  `{"vx": NaN}` walked the duck forward at full speed, Infinity went to the bound it pointed at,
+  and a NaN head target sent the head to the end of its travel. Such a command is refused whole
+  now, as a lost packet would be, and the clamp refuses a number that is not finite on its own.
+  Roboglot's own client never sends one.
+- **The Open Duck bridge refuses a speed limit that is not a finite number above 0.**
+  `--max-vx nan` (or `--max-vy`, `--max-vyaw`) passed the check against upstream's own clamp,
+  because NaN compares false, and every command then reached the walk loop as NaN. NaN,
+  Infinity, 0 and a negative limit, which was taken for its size, now refuse to start.
+- **The AlohaMini host zeroes the lift before it turns any torque on.** The lift shares the left
+  arm bus, and the wrapper energised both arm buses before it wrote the lift's zero, so the
+  lift met torque with homing's full-speed descent still in its register, a failure on the
+  right bus skipped the zero altogether, and a robot with no left bus was never zeroed while the
+  log said `lift stopped`. The zero goes out first on every path now, nothing is energised if
+  that write fails, and the log says `no lift to stop` for a robot without one.
+- **The Open Duck client takes a camera URL only over HTTP or HTTPS, and one from the bridge
+  only to the bridge's own host.** With no `--camera-url` it fetched whatever the bridge's hello
+  named, and `urllib` opens `file:` URLs too, so a bridge could have the laptop read one of its
+  pictures and pass it to the LLM as the camera's frame. Any other URL from the bridge is refused
+  at connect, with the reason in the camera's error, and the duck then has no camera verbs unless
+  `--camera-url` names one. A `--camera-url` that is not http or https, or names a port outside
+  1 to 65535, is refused before anything connects, by a sentence that says what a camera URL is.
+  Every refusal shows the URL with its password hidden, as Roboglot's records do.
+- **An Open Duck frame is fetched under one deadline and a byte cap, and a redirect is followed
+  only to where it started.** `CAMERA_TIMEOUT_S` bounded each read of the socket, not the fetch,
+  so a camera that sent a byte now and then held `get_frame` with no end, and its thread read on
+  after the caller gave up; the body was read whole, however long; and a redirect was followed
+  anywhere, another machine included. The whole fetch now ends within its 1 s, its thread with
+  it, a frame over 8 MB (the limit the Microduck's camera reads under) is refused, and a redirect
+  is followed only to the same scheme, host and port. No proxy setting is read for it any more.
+- **An Open Duck heartbeat or stop ends at its timeout on a link that will not drain.** A request
+  waited for the link's send buffer to drain before its timeout began, so on a link whose peer
+  had gone silently the heartbeat and the stop waited until TCP gave up, which is minutes. The
+  write, the drain and the answer share the one timeout now.
+- **The Jetson daemon's `/healthz` says when a detection is stuck.** The model runs one call at
+  a time with no deadline, and health read only the last call that had finished, so a call that
+  never returned left `/healthz` saying ok while every `/detect` behind it was refused as busy.
+  Once a call has run longer than a `/detect` waits for one, `/healthz` is not ok and its reason
+  says so, and the detector's part of it carries `hung_s`. It is not ok either once a `/detect`
+  has been refused as busy and every slot is still held, as two slow uploads can hold them with
+  nothing in the model.
+- **The AlohaMini host wrapper and the Jetson daemon start under `python -OO`.** Each built its
+  `--help` from its module docstring, which `-OO` strips, and died before it had parsed a flag.
+  The description is spelled out now, and reads as it did.
 - **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
   went straight on to the next leg before the walker looked at the shape, so a square was judged
   from the end of a fifth leg, a whole side from where it began, and passed or failed by a few
@@ -480,6 +638,34 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and the three GPT-5.6 LLMs, Gemini 3.8 Flash, Qwen3.7 Flash, Kimi K3 and the GLM-4.6V rows are
   `legacy` now, by where their vendors' pages place them, and Z.ai's GLM 5.3 on Mistral is `open`,
   generally available since 2026-09-28.
+
+### Security
+
+- **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
+  directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
+  and never told the unit, so the bridge read its default path, found no file and admitted any
+  client, while the script said the service user could read its token. It also set the group
+  and mode of whatever directory held that file, so `TOKEN_FILE=/etc/duck.token` would have
+  locked every other service out of `/etc`. The unit carries `--token-file` with the path now,
+  and the script checks that it does. `/etc/roboglot`, the script's own directory, is made and
+  put right on every run as before, root's and the service user's group's, mode 0750. A
+  `TOKEN_FILE` in any other directory leaves that directory as it is: the script stops, and
+  says what to run, unless the directory is no symlink, belongs to root, can be written by
+  neither its group nor anyone else, and can be searched by the service user. The script also
+  changed the group and mode of whatever was already at `TOKEN_FILE`, so `/etc/hostname` would
+  have become the token. It now changes an existing token only at its own default path, where
+  it is the one an earlier run wrote (and only if it is root's, one line of 64 hexadecimal
+  characters). At any other path it uses what is there only if that is already root's, the
+  service user's group's and mode 0640, and otherwise stops and says what to run, since it may
+  be another daemon's token: the MOSS bridge's and the Jetson daemon's look the same. It stops
+  on any symlink, and creates a new token with its mode as it is written.
+- **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
+  to start.** A named file that was missing was no token, silently, and an empty one was no token
+  with a warning, so either started a bridge that admitted any client. Both refuse to start now,
+  as on the Jetson daemon, and say how to run with no token on purpose: `--token-file ""` for a
+  named file, deleting it for the default one. With no `--token-file`, a missing file at the
+  default path is still no token. A token file that is not UTF-8 text refuses with the reason,
+  where it ended in a traceback.
 
 ### Documentation
 
