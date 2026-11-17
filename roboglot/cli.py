@@ -6617,10 +6617,12 @@ class _DoctorHands:
         from roboglot.adapters.base import RestResult, go_to_rest_if_any
         from roboglot.release import (
             FOLD_STOPPED,
+            FOLD_WENT_ON,
             FOLDING_IN,
             HANDS_AWAY_S,
             FoldStopped,
             fold_unless_stopped,
+            fold_went_on,
             one_watch,
         )
 
@@ -6649,11 +6651,13 @@ class _DoctorHands:
                 try:
                     parked = await fold_unless_stopped(lambda: go_to_rest_if_any(adapter), stopped)
                     return parked if parked is not None else RestResult.none()
-                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+                except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
                     with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
                         # held where the stopped fold left it, a step cap on at most
                         await adapter.stop()
-                    return RestResult("refused", FOLD_STOPPED)
+                    # one told twice that had not ended may still be moving, and is said so
+                    went_on = fold_went_on(stopped_it)
+                    return RestResult("refused", FOLD_WENT_ON if went_on else FOLD_STOPPED)
 
     async def before_close(self, adapter: Any) -> None:
         """Over an arm whose close keeps its torque, ask whether to drop it instead. Not after a
@@ -6740,15 +6744,19 @@ def robot_release(
         ENTER_DROPS_S,
         FOLD_INTERRUPTED,
         FOLD_STOPPED,
+        FOLD_WENT_ON,
         FOLDING_IN,
         GRIPPER_STOPPED,
+        GRIPPER_WENT_ON,
         HANDS_AWAY_S,
         LIMP_AFTER_A_MISS,
+        LIMP_AT_THE_CLOSE,
         TORQUE_READS_OFF,
         FoldStopped,
         Settled,
         ask,
         fold_unless_stopped,
+        fold_went_on,
         one_watch,
         release_where_it_stands,
         settle_missed_fold,
@@ -6860,10 +6868,14 @@ def robot_release(
             ui.console.print(Text(CLOSING_THE_GRIPPER, style=muted))
         try:
             shut = await fold_unless_stopped(shut_gripper, stopped)
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
             with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
                 # as after a stopped fold, and the gripper's last goal is a step cap on at most
                 await adapter.stop()
+            if fold_went_on(stopped_it):
+                # told twice and not ended: its jaws may still be moving, and nothing says so
+                said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}"
+                return Settled("kept", "the gripper did not stop when pressed", said=said)
             return Settled("kept", "the gripper was stopped", said=GRIPPER_STOPPED)
         if shut.short:
             ui.console.print(_warn_line(shut.reason))
@@ -6926,12 +6938,16 @@ def robot_release(
             )
             try:
                 first = await fold_unless_stopped(fold, stopped)
-            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
                 with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
                     # holds the arm where the cancelled fold left it, a step cap on at most, and a
                     # second press landing here is caught too, so the close still comes
                     await adapter.stop()
-                return Settled("kept", FOLD_INTERRUPTED, said=FOLD_STOPPED)
+                # one told twice that had not ended may still be moving, and is said so
+                went_on = fold_went_on(stopped_it)
+                return Settled(
+                    "kept", FOLD_INTERRUPTED, said=FOLD_WENT_ON if went_on else FOLD_STOPPED
+                )
             if first is not None and first.note:
                 # what the body has to say about the pose it parked in, once, as a run says it
                 ui.console.print(Text(first.note, style=muted))

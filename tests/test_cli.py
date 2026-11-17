@@ -2008,6 +2008,111 @@ def test_release_of_a_body_with_no_gripper_to_close_says_nothing_of_one(
     assert "gripper" not in flat.replace("gripper 100.0", ""), flat
 
 
+async def _will_not_stop(moves: asyncio.Event) -> None:
+    """A move a press stops that catches the two cancels a stopped move is given, as one whose
+    cancel was lost on its way twice does, and ends on the third: the command's event loop sends
+    it as it shuts down."""
+    moves.set()
+    caught = 0
+    while True:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            caught += 1
+            if caught > 2:
+                raise
+
+
+@pytest.mark.parametrize("what", ["fold", "gripper"])
+def test_a_release_whose_move_will_not_stop_is_not_said_to_have_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, what: str
+) -> None:
+    """`roboglot robot release`'s fold, or the gripper closing after it, stopped by a press and
+    still going after it was told twice, was said to have stopped where it was. It says that
+    Roboglot cannot tell now, and nothing is released after it, as after one that stopped."""
+    from roboglot.release import FOLD_WENT_ON, GRIPPER_WENT_ON
+    from roboglot_lerobot.mock import LeRobotMock
+
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+    monkeypatch.setattr("roboglot.release.HANDS_AWAY_S", 0.0)
+    name = f"arm-w{what[0]}"
+    reg = _registered_arm(tmp_path, name)
+    released = _let_gos(monkeypatch)
+    moving: dict[str, asyncio.Event] = {}
+
+    def moves() -> asyncio.Event:
+        # made inside the command's own event loop, by whichever side asks for it first
+        return moving.setdefault("move", asyncio.Event())
+
+    async def move(self: LeRobotMock) -> Any:
+        await _will_not_stop(moves())
+
+    def stopped(self: Any) -> Any:
+        async def press_once_it_moves() -> None:
+            await moves().wait()
+
+        return press_once_it_moves()
+
+    monkeypatch.setattr(LeRobotMock, "go_to_rest" if what == "fold" else "close_gripper", move)
+    monkeypatch.setattr("roboglot.cli._TerminalHandOff.stopped", stopped)
+    result = _release(reg, name, "--yes")
+    flat = " ".join(result.output.split())
+    assert released == [], "a move that may still be going was followed by a release"
+    went_on = FOLD_WENT_ON if what == "fold" else GRIPPER_WENT_ON
+    assert " ".join(went_on.split()) in flat, flat
+    assert "was stopped where it was" not in flat, flat
+
+
+async def test_doctors_fold_that_will_not_stop_is_not_said_to_have_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`doctor`'s fold, stopped by a press and still going after it was told twice, answered
+    that it had stopped where it was, which doctor then reports."""
+    from roboglot.cli import _DoctorHands
+    from roboglot.release import FOLD_WENT_ON
+
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", 0.05)
+
+    async def no_count() -> None:
+        return None
+
+    monkeypatch.setattr("roboglot.cli._hands_away", no_count)
+    moves = asyncio.Event()
+    stops: list[str] = []
+    folding: list[asyncio.Task[Any]] = []
+
+    class Person:
+        def stay_to_the_close(self) -> None:
+            return None
+
+        async def stopped(self) -> None:
+            await moves.wait()
+
+    class Arm:
+        rest_pose = {"shoulder_pan": 0.0}
+
+        async def go_to_rest(self) -> Any:
+            task = asyncio.current_task()
+            if task is not None:
+                folding.append(task)
+            await _will_not_stop(moves)
+
+        async def stop(self) -> None:
+            stops.append("stop")
+
+    hands = _DoctorHands("arm-x", prompting=True, unposed=False)
+    hands.person = Person()  # type: ignore[assignment]
+    try:
+        parked = await asyncio.wait_for(hands.park(Arm()), 5.0)
+    finally:
+        for task in folding:  # the third cancel, which it ends on
+            task.cancel()
+        if folding:
+            await asyncio.wait(folding, timeout=2.0)
+    assert parked.reason == FOLD_WENT_ON, parked
+    assert stops == ["stop"], "held where the press found it, as after a fold that stopped"
+
+
 def test_release_of_an_arm_that_turns_out_to_report_no_gripper_still_lets_go(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

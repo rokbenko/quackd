@@ -540,6 +540,49 @@ async def test_nothing_moves_until_the_pilot_has_judged_the_task() -> None:
         assert session.executor.verdict is not None
 
 
+class _HeldRead(MockTransport):
+    """A body whose first state read waits until the test lets it answer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reading = asyncio.Event()
+        self.answer = asyncio.Event()
+        self._held = False
+
+    async def get_state(self) -> Any:
+        if not self._held:
+            self._held = True
+            self.reading.set()
+            await self.answer.wait()
+        return await super().get_state()
+
+
+async def test_an_infeasible_assessed_while_a_walk_reads_the_bodys_state_refuses_the_walk() -> None:
+    """MCP calls are not taken one at a time, so an assessment can land while a walk the gate
+    had let through still reads the body's state, and the walk then started after the pilot had
+    said this body cannot do the task."""
+    body = _HeldRead()
+    async with connected(body) as (client, session, _transport):
+        assert (await _cleared(client))["ok"]
+        walk = asyncio.create_task(
+            client.call_tool(
+                "robot_run_verb", {"verb": "walk", "params": {"vx": 0.1, "duration_s": 0.2}}
+            )
+        )
+        await asyncio.wait_for(body.reading.wait(), 10)
+        said = _data(
+            await client.call_tool(
+                "robot_assess_task",
+                {"verdict": "infeasible", "reason": "the floor is a staircase"},
+            )
+        )
+        assert said["verdict"] == "infeasible" and not session.executor.cleared
+        body.answer.set()
+        walked = _data(await asyncio.wait_for(walk, 10))
+    assert walked["ok"] is False and "the floor is a staircase" in walked["summary"], walked
+    assert body.intents_of("move") == [], f"the walk moved after the infeasible: {walked}"
+
+
 async def test_a_new_task_file_is_a_new_question_about_the_body() -> None:
     from roboglot.adapters.factory import make_adapter
 

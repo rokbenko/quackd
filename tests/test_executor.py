@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
+import sys
 import threading
 import time
 from typing import Any
@@ -12,12 +14,16 @@ import pytest
 from PIL import Image
 from pydantic import BaseModel, ConfigDict
 
+from roboglot import safety
 from roboglot.adapters.factory import ADAPTER_NAMES, make_adapter
+from roboglot.adapters.manifest import RobotManifest
 from roboglot.glotfile.parser import parse_glot_text
 from roboglot.glotfile.schema import Budgets, GlotFile
 from roboglot.log import EventLog
 from roboglot.perception.base import Detection
 from roboglot.safety import (
+    ENDING_S,
+    PAUSE_ENDED,
     Aborted,
     Budget,
     BudgetExceeded,
@@ -27,17 +33,21 @@ from roboglot.safety import (
     Preempted,
     SafetyStop,
     VerbNotAllowed,
+    VerdictRequired,
     allow_all,
     deny_all,
 )
 from roboglot.transport.base import (
     DEFAULT_CAMERA_NAME,
+    Ack,
     CameraFrame,
+    HeartbeatError,
     Intent,
     RobotState,
     TransportError,
 )
 from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import CORE, MOVE_RESEND_S
 from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -48,6 +58,7 @@ from roboglot.verbs.registry import (
     VerbResult,
     registry_from_manifest,
 )
+from roboglot.verdict import Verdict
 
 
 def glot(allow: str, confirm: str = "", abort: str = "") -> GlotFile:
@@ -299,6 +310,41 @@ async def test_preconditions_block_unsafe_verbs(registry: VerbRegistry) -> None:
     result = await ex.run_verb("walk")
     assert not result.ok and "fallen" in result.summary
     assert fallen.intents_of("move") == []
+
+
+async def test_a_manifest_precondition_on_stop_does_not_hold_the_brake_back() -> None:
+    """A manifest may list preconditions for `stop` like any verb's, and the executor applied
+    them to the brake: on a fallen body `stop` answered `cannot stop` and sent nothing. No
+    manifest Roboglot ships lists one, which the first assertion keeps true."""
+    adapter = make_adapter("microduck:mock")
+    shipped = await adapter.connect()
+    try:
+        assert "stop" not in shipped.preconditions, "a shipped manifest gates the brake"
+        data = shipped.model_dump()
+        data["preconditions"] = {**data["preconditions"], "stop": ["not_fallen"]}
+        registry = registry_from_manifest(RobotManifest.model_validate(data), adapter)
+    finally:
+        await adapter.close()
+    fallen = MockTransport(states=[RobotState(fallen=True, posture="fallen")])
+    ex = Executor(registry, fallen, contract=glot("stop").frontmatter)
+    result = await ex.run_verb("stop")
+    assert fallen.stops == 1, f"the brake was refused and nothing was sent: {result.summary!r}"
+    assert result.ok
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+async def test_a_stop_registered_with_a_precondition_is_never_refused_for_it(
+    dry_run: bool,
+) -> None:
+    """The same with the precondition on the verb itself, and on a dry run, which reads the
+    state first and answers for the brake without sending it."""
+    reg = VerbRegistry()
+    reg.register(dataclasses.replace(CORE["stop"], preconditions=[lambda _s: "low battery"]))
+    transport = MockTransport()
+    ex = Executor(reg, transport, contract=glot("stop").frontmatter, dry_run=dry_run)
+    result = await ex.run_verb("stop")
+    assert result.ok, f"the brake was refused: {result.summary!r}"
+    assert transport.stops == (0 if dry_run else 1)
 
 
 async def test_repeat_failure_abort(registry: VerbRegistry) -> None:
@@ -600,6 +646,107 @@ async def test_heartbeat_failure_stops_and_aborts() -> None:
     assert hb.failure is not None
 
 
+#: The beat of the heartbeats below, and how long after a failed one its abort may take: the
+#: abort is one `Event.set` away, so a few beats is ample.
+FAST_BEAT_S = 0.01
+ABORT_WITHIN_S = 10 * FAST_BEAT_S
+
+
+class _StalledLink(MockTransport):
+    """The beat fails on its own reply timeout, and the stop over the same link does not come
+    back until the test lets it (`link_back`)."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stop_began = asyncio.Event()
+        self.link_back = asyncio.Event()
+        self.intents_at_stop: int | None = None
+
+    async def heartbeat(self) -> None:
+        self.heartbeats += 1
+        raise HeartbeatError("no reply within the beat's timeout")
+
+    async def stop(self) -> None:
+        if not self.stop_began.is_set():
+            self.intents_at_stop = len(self.intents)
+            self.stop_began.set()
+            await self.link_back.wait()
+        await super().stop()
+
+
+async def test_a_failed_beat_aborts_the_run_though_its_stop_has_not_come_back() -> None:
+    """The heartbeat set the abort in a `finally` after its own stop, which a stop that raised
+    reached and one that hung on the stalled link did not: the run was not aborted for as long
+    as the stop took. And the heartbeat waited on that stop with no end."""
+    transport = _StalledLink()
+    abort = asyncio.Event()
+    hb = Heartbeat(transport, abort, period_s=FAST_BEAT_S)
+    hb.start()
+    try:
+        await asyncio.wait_for(transport.stop_began.wait(), timeout=2.0)
+        await asyncio.sleep(ABORT_WITHIN_S)
+        assert abort.is_set(), "the abort waits on the heartbeat's own stop"
+        assert hb._task is not None and hb._task.done(), "the heartbeat waits on its stop"
+    finally:
+        transport.link_back.set()
+        await asyncio.wait_for(hb.stop(), timeout=2.0)
+
+
+async def test_no_twist_goes_out_after_the_heartbeat_s_stop_began() -> None:
+    """While the heartbeat's stop was out and the abort not yet set, a walk beside it went on
+    sending twists, and on a body whose twists are notifications they reached it after the
+    stop."""
+    transport = _StalledLink()
+
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(500):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(FAST_BEAT_S)
+        return VerbResult.success("finished on its own")
+
+    reg = VerbRegistry()
+    reg.register(Verb("long_walk", "walks", long_walk, timeout_s=30))
+    ex = Executor(reg, transport, contract=glot("long_walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    await asyncio.sleep(3 * FAST_BEAT_S)
+    hb = Heartbeat(transport, ex.abort, period_s=FAST_BEAT_S)
+    hb.start()
+    try:
+        await asyncio.wait_for(transport.stop_began.wait(), timeout=2.0)
+        await asyncio.sleep(ABORT_WITHIN_S)
+        assert transport.intents_at_stop is not None
+        after = transport.intents[transport.intents_at_stop :]
+        moves_after = sum(1 for i in after if i.kind == "move")
+        assert moves_after == 0, f"{moves_after} twists went out after the heartbeat's stop began"
+    finally:
+        transport.link_back.set()
+        await asyncio.wait_for(hb.stop(), timeout=2.0)
+        await _ended(running)
+
+
+async def test_a_verb_asked_for_while_the_heartbeat_s_stop_is_out_is_refused() -> None:
+    """A new verb passed the abort's gate while the heartbeat's stop was out, and sent."""
+    transport = _StalledLink()
+
+    async def kick(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        return VerbResult.success("kicked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("kick_now", "k", kick))
+    ex = Executor(reg, transport, contract=glot("kick_now").frontmatter)
+    hb = Heartbeat(transport, ex.abort, period_s=FAST_BEAT_S)
+    hb.start()
+    try:
+        await asyncio.wait_for(transport.stop_began.wait(), timeout=2.0)
+        with pytest.raises(Aborted):
+            await asyncio.wait_for(ex.run_verb("kick_now"), timeout=2.0)
+        assert transport.intents_of("move") == []
+    finally:
+        transport.link_back.set()
+        await asyncio.wait_for(hb.stop(), timeout=2.0)
+
+
 def _block_the_loop(seconds: float) -> None:
     """Nothing on the event loop runs meanwhile, so what lands in that time queues up in order."""
     time.sleep(seconds)
@@ -683,6 +830,212 @@ async def test_an_abort_cancels_the_running_verb_and_stops(
     assert len(mock_transport.intents_of("move")) == settled
 
 
+#: A walk of ten resends, so a verb whose cancel was lost has a second of twists left to send.
+LONG_WALK_S = 10 * MOVE_RESEND_S
+#: What an abort or a timeout may take to end such a walk and stop it: a few resends.
+ENDS_WITHIN_S = 3 * MOVE_RESEND_S
+
+
+class _RealTime(MockTransport):
+    """A body whose clock is the wall's, as every real transport's is."""
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        await asyncio.sleep(seconds)
+
+
+class _SwallowsOneCancel(_RealTime):
+    """The first twist's answer is still on its way when the verb is cancelled, and the call that
+    waits for it returns the answer instead of raising the cancel: Python 3.11's `wait_for` with
+    its call done, or a third party's send that catches it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.in_flight = asyncio.Event()
+        self.swallowed = 0
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        self.intents.append(intent)
+        if intent.kind == "move" and not self.in_flight.is_set():
+            self.in_flight.set()
+            try:
+                await asyncio.sleep(5.0)
+            except asyncio.CancelledError:
+                self.swallowed += 1
+                return Ack()
+        return Ack()
+
+
+async def _ended(running: asyncio.Task[Any]) -> None:
+    """End a run the test is done with, with a second cancel and a bounded wait, so a verb that
+    did not end is a failure and never a run left going."""
+    if not running.done():
+        running.cancel()
+    await asyncio.wait({running}, timeout=2.0)
+    if running.done() and not running.cancelled():
+        running.exception()
+
+
+async def test_an_abort_ends_a_walk_whose_cancel_a_send_swallowed(
+    registry: VerbRegistry,
+) -> None:
+    """The executor cancelled a verb once and then waited for it with no end. A cancel the
+    transport's wait lost left the walk sending its twists after the kill switch, every resend
+    to the end of the walk, and the stop went out only then."""
+    transport = _SwallowsOneCancel()
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": LONG_WALK_S}))
+    try:
+        await asyncio.wait_for(transport.in_flight.wait(), timeout=2.0)
+        at_abort = len(transport.intents_of("move"))
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=ENDS_WITHIN_S)
+        moves_after = len(transport.intents_of("move")) - at_abort
+        assert transport.swallowed == 1, "the stand-in did not get the cancel it swallows"
+        assert running.done(), f"the abort did not end the walk: {moves_after} twists after it"
+        assert moves_after == 0, f"{moves_after} twists went out after the abort"
+        assert isinstance(running.exception(), Aborted)
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        await _ended(running)
+
+
+async def test_a_timeout_ends_a_verb_whose_cancel_a_send_swallowed() -> None:
+    """The verb's own `timeout_s` was the same single cancel, and it bounded nothing once the
+    cancel was lost: a verb that never looks at anything sent on to its own end."""
+    transport = _SwallowsOneCancel()
+
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(round(LONG_WALK_S / MOVE_RESEND_S)):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("finished on its own")
+
+    reg = VerbRegistry()
+    reg.register(Verb("long_walk", "walks", long_walk, timeout_s=MOVE_RESEND_S / 2))
+    ex = Executor(reg, transport, contract=glot("long_walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    try:
+        await asyncio.wait({running}, timeout=MOVE_RESEND_S / 2 + ENDS_WITHIN_S)
+        assert transport.swallowed == 1, "the stand-in did not get the cancel it swallows"
+        moves = len(transport.intents_of("move"))
+        assert running.done(), f"the timeout bounded nothing: {moves} twists so far"
+        assert moves == 1, f"{moves - 1} twists went out after the timeout"
+        result = running.result()
+        assert not result.ok and "timed out" in result.summary
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        await _ended(running)
+
+
+async def test_an_abort_ends_a_walk_over_a_transport_that_waits_through_wait_for(
+    registry: VerbRegistry,
+) -> None:
+    """No stand-in swallows anything here: `asyncio.wait_for` does, on Python 3.11, when the
+    abort's cancel lands in the turn the twist's answer does, as it can over the zmq hosts and
+    the bridges that wait for every answer through it. On 3.12 no cancel is lost, so only a 3.11
+    job can fail this."""
+    loop = asyncio.get_running_loop()
+    fetched, go = threading.Event(), threading.Event()
+    ex_box: list[Executor] = []
+
+    def answer() -> None:
+        if not fetched.is_set():
+            fetched.set()
+            go.wait(10.0)
+            # the abort lands in the turn this call's own answer does, ahead of it
+            loop.call_soon_threadsafe(ex_box[0].abort.set)
+
+    class ThroughWaitFor(_RealTime):
+        async def send_intent(self, intent: Intent) -> Ack:
+            self.intents.append(intent)
+            await asyncio.wait_for(asyncio.to_thread(answer), timeout=5.0)
+            return Ack()
+
+    transport = ThroughWaitFor()
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
+    ex_box.append(ex)
+    running = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": LONG_WALK_S}))
+    try:
+        assert await asyncio.to_thread(fetched.wait, 5.0), "a twist is out"
+        at_abort = len(transport.intents_of("move"))
+        go.set()
+        _block_the_loop(0.3)  # the abort and the twist's answer queue up in that order
+        await asyncio.wait({running}, timeout=ENDS_WITHIN_S)
+        moves_after = len(transport.intents_of("move")) - at_abort
+        assert running.done(), (
+            f"python {sys.version_info[:2]}: the abort did not end the walk; "
+            f"{moves_after} twists went out after it"
+        )
+        assert moves_after == 0, f"{moves_after} twists went out after the abort"
+        assert isinstance(running.exception(), Aborted)
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        go.set()
+        await _ended(running)
+
+
+async def test_the_same_walk_with_no_cancel_lost_ends_within_the_same_bound(
+    registry: VerbRegistry,
+) -> None:
+    """The control for the three above: over a transport that loses nothing, the walk ends
+    within `ENDS_WITHIN_S`, so that bound is not what fails them."""
+    transport = _RealTime()
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": LONG_WALK_S}))
+    try:
+        await asyncio.sleep(MOVE_RESEND_S * 1.5)
+        at_abort = len(transport.intents_of("move"))
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=ENDS_WITHIN_S)
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert len(transport.intents_of("move")) == at_abort
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        await _ended(running)
+
+
+async def test_a_verb_that_will_not_end_is_left_behind_and_the_stop_goes_out_without_it(
+    mock_transport: MockTransport,
+) -> None:
+    """A verb that catches every cancel never ended, and the abort's stop waited on it for good.
+    It is cancelled twice now, left behind `ENDING_S` after the second, said to be, and the stop
+    goes out without it; nothing it tries to send meanwhile reaches the robot."""
+    quit_now = asyncio.Event()
+    tries: list[None] = []
+
+    async def stubborn(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        while not quit_now.is_set():
+            try:
+                await asyncio.sleep(MOVE_RESEND_S / 10)
+                tries.append(None)
+                await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            except asyncio.CancelledError:
+                continue
+        return VerbResult.success("ended by the test")
+
+    reg = VerbRegistry()
+    reg.register(Verb("stubborn", "will not end", stubborn, timeout_s=30))
+    ex, seen = logged(reg, mock_transport, allow="stubborn")
+    running = asyncio.create_task(ex.run_verb("stubborn"))
+    try:
+        await asyncio.sleep(MOVE_RESEND_S)
+        at_abort, tries_at_abort = len(mock_transport.intents_of("move")), len(tries)
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=2 * ENDING_S + ENDS_WITHIN_S)
+        assert running.done(), "the executor waited on a verb that will not end"
+        assert isinstance(running.exception(), Aborted)
+        assert len(tries) > tries_at_abort, "the stand-in stopped trying to send"
+        reached = len(mock_transport.intents_of("move")) - at_abort
+        assert reached == 0, f"{reached} twists reached the robot after the abort"
+        assert mock_transport.intents[-1].kind == "stop"
+        notes = [e.data["text"] for e in seen if e.kind == "note"]
+        assert any("had not ended" in n and "left behind" in n for n in notes), notes
+    finally:
+        quit_now.set()
+        await _ended(running)
+
+
 async def test_stop_still_runs_on_an_aborted_executor(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
@@ -698,6 +1051,55 @@ async def test_stop_still_runs_on_an_aborted_executor(
 
     with pytest.raises(Aborted):
         await ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2})
+
+
+class _WedgedRead(MockTransport):
+    """A body whose state read does not come back until the test lets it, and whose stop does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.read_back = asyncio.Event()
+
+    async def get_state(self) -> RobotState:
+        await self.read_back.wait()
+        return await super().get_state()
+
+
+#: A brake has to go out within a few ticks of the 10 Hz resend it is meant to beat.
+BRAKE_WITHIN_S = 5 * MOVE_RESEND_S
+
+
+@pytest.mark.parametrize("aborted", [False, True])
+async def test_the_brake_goes_out_though_the_state_read_before_it_hangs(
+    registry: VerbRegistry, aborted: bool
+) -> None:
+    """Every verb read the body's state before it ran, `stop` too, with no end to the wait and
+    outside the abort's race: a read that did not come back held the brake for good, and an
+    abort set meanwhile did not get it past."""
+    transport = _WedgedRead()
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
+    braking = asyncio.create_task(ex.run_verb("stop"))
+    try:
+        if aborted:
+            await asyncio.sleep(MOVE_RESEND_S)
+            ex.abort.set()
+        await asyncio.sleep(BRAKE_WITHIN_S)
+        assert transport.stops == 1, "the brake waits on the state read before it"
+    finally:
+        transport.read_back.set()
+        await asyncio.wait({braking}, timeout=2.0)
+    assert braking.result().ok
+
+
+async def test_the_brake_goes_out_once_a_slow_read_returns_as_well(
+    registry: VerbRegistry,
+) -> None:
+    """The control for the test above: with the read let through, the brake is what it was."""
+    transport = _WedgedRead()
+    transport.read_back.set()
+    ex = Executor(registry, transport, contract=glot("walk").frontmatter)
+    result = await asyncio.wait_for(ex.run_verb("stop"), timeout=2.0)
+    assert result.ok and transport.stops == 1
 
 
 async def test_a_stop_that_never_left_is_not_reported_as_a_stop(
@@ -1431,6 +1833,264 @@ async def test_cancelling_the_call_cancels_the_verb_and_sends_a_stop(
     assert len(mock_transport.intents_of("move")) == settled, "the verb must really be gone"
 
 
+def _walking(registry: VerbRegistry) -> VerbRegistry:
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(500):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(0.01)
+        return VerbResult.success("finished on its own")
+
+    registry.register(Verb("long_walk", "walks a long way", long_walk, timeout_s=30))
+    return registry
+
+
+async def _cancelled_while_walking(ex: Executor) -> asyncio.Task[Any]:
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    await asyncio.sleep(0.05)
+    running.cancel()
+    await asyncio.wait({running}, timeout=2.0)
+    return running
+
+
+async def test_a_cancelled_call_says_whether_its_stop_landed_and_only_after_sending_it() -> None:
+    """The gate of a call cancelled from outside said "a stop was sent" before the stop went,
+    and then never read whether it had landed: the record said a stop was sent beside a stop
+    row that says it was not."""
+    seen: list[Any] = []
+    ex = Executor(
+        _walking(VerbRegistry()),
+        _UnheardStop(),
+        contract=glot("long_walk").frontmatter,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    running = await _cancelled_while_walking(ex)
+    assert running.cancelled()
+    order = [
+        "gate"
+        if e.kind == "gate" and e.data["gate"] == "cancelled"
+        else "stop"
+        if e.kind == "intent" and e.data["intent"] == "stop"
+        else None
+        for e in seen
+    ]
+    order = [o for o in order if o]
+    assert order == ["stop", "gate"], f"the gate is not written after the stop: {order}"
+    gate = next(e.data for e in seen if e.kind == "gate" and e.data["gate"] == "cancelled")
+    assert gate["reason"] == f"the call was cancelled; the verb was cancelled, and {UNHEARD}"
+
+
+async def test_a_record_that_cannot_be_written_for_a_cancelled_call_keeps_it_cancelled() -> None:
+    """A record sink that raised on the cancelled gate (a full disk) replaced the cancel with its
+    own error, and the run went on from a failed result that blamed the verb for it."""
+
+    def record(event: Any) -> None:
+        if event.kind == "gate" and event.data.get("gate") == "cancelled":
+            raise OSError(28, "No space left on device")
+
+    transport = MockTransport()
+    said: list[str] = []
+    ex = Executor(
+        _walking(VerbRegistry()),
+        transport,
+        contract=glot("long_walk").frontmatter,
+        event_log=EventLog(record=record),
+        log=said.append,
+    )
+    running = await _cancelled_while_walking(ex)
+    assert running.done()
+    assert running.cancelled(), f"the cancelled call ended in {_how_it_ended(running)}"
+    assert transport.intents[-1].kind == "stop"
+    assert any("No space left on device" in s for s in said), said
+
+
+#: A verb's own timeout well inside every bound the tests below wait on.
+CLEANUP_TIMEOUT_S = 0.05
+
+
+def _cleaning_verb(cleaning: asyncio.Event, release: asyncio.Event) -> Any:
+    """A verb whose cancel takes a round trip of its own, a stop of its own or a record, and
+    which is in that round trip when its caller is cancelled."""
+
+    async def careful(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cleaning.set()
+            await release.wait()
+            raise
+        return VerbResult.success("never")
+
+    return careful
+
+
+def _how_it_ended(running: asyncio.Task[Any]) -> str:
+    if running.cancelled():
+        return "cancelled"
+    if running.exception() is not None:
+        return repr(running.exception())
+    return repr(running.result().summary)
+
+
+@pytest.mark.parametrize("ended_by", ["abort", "timeout"])
+async def test_a_cancel_of_the_caller_while_the_verb_is_being_ended_is_not_eaten(
+    ended_by: str,
+) -> None:
+    """Once the abort or the verb's own timeout had ended the wait, the executor awaited the verb
+    it cancelled inside a suppress that also took a cancel aimed at its caller. An MCP client that
+    gave up on the call, or a second Ctrl-C, in that window was lost: the caller got `Aborted` or
+    an ordinary timed out result and carried on."""
+    cleaning, release = asyncio.Event(), asyncio.Event()
+    timeout_s = CLEANUP_TIMEOUT_S if ended_by == "timeout" else 30
+    reg = VerbRegistry()
+    reg.register(Verb("careful", "c", _cleaning_verb(cleaning, release), timeout_s=timeout_s))
+    transport = MockTransport()
+    ex = Executor(reg, transport, contract=glot("careful").frontmatter)
+    running = asyncio.create_task(ex.run_verb("careful"))
+    try:
+        if ended_by == "abort":
+            await asyncio.sleep(0.01)
+            ex.abort.set()
+        await asyncio.wait_for(cleaning.wait(), timeout=2.0)
+        running.cancel()
+        release.set()
+        await asyncio.wait({running}, timeout=2.0)
+        assert running.done()
+        assert running.cancelled(), f"the caller's cancel was eaten: {_how_it_ended(running)}"
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        await _ended(running)
+
+
+async def test_a_cancel_of_the_caller_in_the_turn_a_plain_verb_ends_is_not_eaten() -> None:
+    """A verb with no clean-up of its own opens the same window for one turn of the loop, between
+    its cancel and its end."""
+    box: list[asyncio.Task[Any]] = []
+
+    async def plain(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            box[0].cancel()  # the caller's cancel arrives in this turn, nothing awaited
+            raise
+        return VerbResult.success("never")
+
+    reg = VerbRegistry()
+    reg.register(Verb("plain", "p", plain, timeout_s=CLEANUP_TIMEOUT_S))
+    ex = Executor(reg, MockTransport(), contract=glot("plain").frontmatter)
+    running = asyncio.create_task(ex.run_verb("plain"))
+    box.append(running)
+    try:
+        await asyncio.wait({running}, timeout=2.0)
+        assert running.done()
+        assert running.cancelled(), f"the caller's cancel was eaten: {_how_it_ended(running)}"
+    finally:
+        await _ended(running)
+
+
+async def test_a_composite_takes_no_step_after_its_own_timeout_ended_its_nested_call() -> None:
+    """The same window inside the project: a composite's nested call was in its own timeout's
+    clean-up when the composite's timeout cancelled it. The nested call ate that cancel, and the
+    composite went on to its next step and sent a twist after its own timeout."""
+    cleaning, release = asyncio.Event(), asyncio.Event()
+    transport = MockTransport()
+
+    async def outer(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        assert ctx.run_verb is not None
+        await ctx.run_verb("careful", {})
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))  # the composite's next step
+        return VerbResult.success("went on")
+
+    reg = VerbRegistry()
+    reg.register(
+        Verb("careful", "c", _cleaning_verb(cleaning, release), timeout_s=CLEANUP_TIMEOUT_S)
+    )
+    reg.register(Verb("outer", "o", outer, timeout_s=2 * CLEANUP_TIMEOUT_S))
+    ex = Executor(reg, transport, contract=glot("outer, careful").frontmatter)
+    running = asyncio.create_task(ex.run_verb("outer"))
+    try:
+        await asyncio.wait_for(cleaning.wait(), timeout=2.0)
+        await asyncio.sleep(2 * CLEANUP_TIMEOUT_S)  # the composite's own timeout passes
+        release.set()
+        await asyncio.wait({running}, timeout=2.0)
+        sent = [i.kind for i in transport.intents]
+        assert "move" not in sent, f"the composite went on after its own timeout: {sent}"
+        result = running.result()
+        assert not result.ok and "timed out" in result.summary
+    finally:
+        await _ended(running)
+
+
+class _QueuedStop(MockTransport):
+    """A stop that waits for the bus before it writes, as one queued on the arm's lock behind
+    the cancelled verb's own call does; the write is what `intents` records."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.asked = asyncio.Event()
+        self.bus_free = asyncio.Event()
+
+    async def stop(self) -> None:
+        self.asked.set()
+        await self.bus_free.wait()
+        await super().stop()
+
+
+@pytest.mark.parametrize("ended_by", ["abort", "timeout"])
+async def test_the_stop_owed_after_an_ended_verb_survives_a_cancel_of_the_caller(
+    ended_by: str,
+) -> None:
+    """The stop the executor owes a verb it ended caught `Exception` only, so a cancel of the
+    caller while that stop waited its turn cancelled the stop too: the verb had been ended and
+    no stop went out at all, which an MCP session has no teardown stop to make up for."""
+    transport = _QueuedStop()
+
+    async def slow(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    reg = VerbRegistry()
+    timeout_s = CLEANUP_TIMEOUT_S if ended_by == "timeout" else 30
+    reg.register(Verb("slow", "s", slow, timeout_s=timeout_s))
+    said: list[str] = []
+    ex = Executor(reg, transport, contract=glot("slow").frontmatter, log=said.append)
+    running = asyncio.create_task(ex.run_verb("slow"))
+    try:
+        if ended_by == "abort":
+            await asyncio.sleep(0.01)
+            ex.abort.set()
+        await asyncio.wait_for(transport.asked.wait(), timeout=2.0)
+        running.cancel()  # an MCP client gives up on the call while the stop waits its turn
+        await asyncio.wait({running}, timeout=2.0)
+        assert running.cancelled(), f"the caller's cancel was lost: {_how_it_ended(running)}"
+        transport.bus_free.set()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        sent = [i.kind for i in transport.intents]
+        assert sent == ["stop"], f"the stop owed after the {ended_by} never went out: {sent}"
+        assert not [s for s in said if "stop owed" in s], said
+    finally:
+        transport.bus_free.set()
+        await _ended(running)
+
+
+async def test_a_cancel_of_the_caller_while_the_verb_still_runs_is_kept() -> None:
+    """The control for the three above: a cancel before the abort or the timeout was always a
+    cancel."""
+
+    async def slow(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await asyncio.sleep(30)
+        return VerbResult.success("never")
+
+    reg = VerbRegistry()
+    reg.register(Verb("slow", "s", slow, timeout_s=30))
+    ex = Executor(reg, MockTransport(), contract=glot("slow").frontmatter)
+    running = asyncio.create_task(ex.run_verb("slow"))
+    await asyncio.sleep(0.01)
+    running.cancel()
+    await asyncio.wait({running}, timeout=2.0)
+    assert running.cancelled()
+
+
 async def test_the_mid_verb_abort_gate_names_the_verb_as_it_was_called(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
@@ -1762,6 +2422,24 @@ async def test_an_abort_set_while_a_walk_reads_the_bodys_state_refuses_the_walk(
     assert body.intents_of("move") == []
 
 
+async def test_a_verdict_withdrawn_while_a_walk_reads_the_bodys_state_refuses_the_walk(
+    registry: VerbRegistry,
+) -> None:
+    """After the state read the executor looked again at a pause, a newer command, the abort and
+    the stops, which can each change during that read, but not at the verdict: one recorded as
+    infeasible meanwhile, as a second MCP call can, let the walk through."""
+    body = _SlowState()
+    ex = Executor(registry, body, require_verdict=True)
+    ex.verdict = Verdict(verdict="feasible", reason="it walks")
+    walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 0.2}))
+    await asyncio.wait_for(body.reading.wait(), 5)
+    ex.verdict = Verdict(verdict="infeasible", reason="the floor is a staircase")
+    body.answer.set()
+    with pytest.raises(VerdictRequired, match="the floor is a staircase"):
+        await asyncio.wait_for(walking, 10)
+    assert body.intents_of("move") == []
+
+
 async def test_a_battery_the_rule_reads_as_too_low_still_lets_the_stop_through(
     registry: VerbRegistry,
 ) -> None:
@@ -2017,3 +2695,1022 @@ async def test_an_approach_whose_kick_a_stop_kept_from_starting_is_no_failure_in
     assert not body.intents_of("do"), "kicked after the brake"
     assert not ex.abort.is_set()
     assert ex.consecutive_failures.get("approach_and", 0) == 0
+
+
+# ── what an ended verb leaves behind: nested calls, its stop, the record, the process ────────
+
+
+async def _kicks_once(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    """One intent and done, as `kick` sends its skill."""
+    await ctx.transport.send_intent(Intent.do("kick"))
+    return VerbResult.success("kicked")
+
+
+async def _approach_then_kick(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    """A composite whose step is a nested call, as `approach_and`'s `then` is."""
+    assert ctx.run_verb is not None
+    return await ctx.run_verb("kicks_once", {})
+
+
+#: How long the composite below may run, and how long its nested call's read takes.
+COMPOSITE_S = ENDING_S
+NESTED_READ_S = 10 * ENDING_S
+
+
+def _kick_after_approach(composite_s: float = COMPOSITE_S) -> VerbRegistry:
+    reg = VerbRegistry()
+    reg.register(Verb("kicks_once", "kicks", _kicks_once, timeout_s=NESTED_READ_S))
+    reg.register(
+        Verb("approach_then_kick", "approaches", _approach_then_kick, timeout_s=composite_s)
+    )
+    return reg
+
+
+#: The task a composite and its nested kick run under.
+KICK_AFTER_APPROACH = "approach_then_kick, kicks_once"
+
+
+class _NestedReadLosesOneCancel(MockTransport):
+    """The composite's own admission read answers at once; the nested call's is still out when
+    the composite is ended, and answers instead of raising that cancel, as Python 3.11's
+    `wait_for` does when the answer lands with it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.reads = 0
+        self.lost = 0
+
+    async def get_state(self) -> RobotState:
+        self.reads += 1
+        if self.reads == 2:
+            try:
+                await asyncio.sleep(NESTED_READ_S)
+            except asyncio.CancelledError:
+                self.lost += 1
+        return await super().get_state()
+
+
+async def test_no_kick_goes_out_after_the_composite_that_asked_for_it_timed_out() -> None:
+    """A nested call still reading the body's state when its composite's own timeout ended the
+    composite, and whose read lost that cancel, started on a leash of its own that nothing had
+    ended: the record said the composite had timed out and stopped, and the kick went out."""
+    transport = _NestedReadLosesOneCancel()
+    ex = Executor(_kick_after_approach(), transport, contract=glot(KICK_AFTER_APPROACH).frontmatter)
+    running = asyncio.create_task(ex.run_verb("approach_then_kick"))
+    try:
+        await asyncio.wait({running}, timeout=COMPOSITE_S + 4 * ENDING_S)
+        assert transport.lost == 1, "the stand-in did not get the cancel it swallows"
+        assert running.done()
+        result = running.result()
+        assert "timed out" in result.summary, result.summary
+        kinds = [i.kind for i in transport.intents]
+        assert transport.intents_of("do") == [], f"the kick went out after the end: {kinds}"
+    finally:
+        await _ended(running)
+
+
+async def test_a_nested_call_still_reading_when_the_abort_comes_is_refused_as_well() -> None:
+    """The control for the test above: the abort is read again after that read, as it was."""
+    transport = _NestedReadLosesOneCancel()
+    ex = Executor(
+        _kick_after_approach(NESTED_READ_S),
+        transport,
+        contract=glot(KICK_AFTER_APPROACH).frontmatter,
+    )
+    running = asyncio.create_task(ex.run_verb("approach_then_kick"))
+    try:
+        await asyncio.sleep(ENDING_S / 3)
+        assert transport.reads == 2, "the nested call is not reading yet"
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=4 * ENDING_S)
+        assert transport.lost == 1 and running.done()
+        assert transport.intents_of("do") == []
+    finally:
+        await _ended(running)
+
+
+async def test_no_kick_goes_out_after_its_composite_timed_out_over_wait_for(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No stand-in loses anything here: the nested call's read goes through
+    `wait_for(run_in_executor(...))`, the shape of the LeRobot camera call, and Python 3.11 loses
+    the composite's cancel in it. On 3.12 nothing is lost, so only a 3.11 job can fail this."""
+    asked, go = threading.Event(), threading.Event()
+    reads: list[int] = []
+
+    def read() -> None:
+        asked.set()
+        go.wait(10.0)
+
+    class ThroughWaitFor(MockTransport):
+        async def get_state(self) -> RobotState:
+            reads.append(1)
+            if len(reads) == 2:
+                loop = asyncio.get_running_loop()
+                await asyncio.wait_for(loop.run_in_executor(None, read), timeout=5.0)
+            return await super().get_state()
+
+    real_end = safety._Leash.end
+    held: list[bool] = []
+
+    def end(self: Any, why: str) -> None:
+        real_end(self, why)
+        if not held:  # the composite's: the read's answer lands, and is queued, before its cancel
+            held.append(True)
+            go.set()
+            _block_the_loop(ENDING_S)
+
+    monkeypatch.setattr(safety._Leash, "end", end)
+    transport = ThroughWaitFor()
+    ex = Executor(_kick_after_approach(), transport, contract=glot(KICK_AFTER_APPROACH).frontmatter)
+    running = asyncio.create_task(ex.run_verb("approach_then_kick"))
+    try:
+        assert await asyncio.to_thread(asked.wait, 5.0), "the nested call's read is out"
+        await asyncio.wait({running}, timeout=COMPOSITE_S + 4 * ENDING_S)
+        assert held, "the composite was never ended"
+        assert running.done()
+        kinds = [i.kind for i in transport.intents]
+        assert transport.intents_of("do") == [], (
+            f"python {sys.version_info[:2]}: the kick went out after the composite timed out: "
+            f"{kinds}"
+        )
+    finally:
+        go.set()
+        await _ended(running)
+
+
+#: A watch that sends nothing, polled this often, for this long; and the bound an ended verb
+#: has to be ended and stopped within: its two waits of `ENDING_S` and one more.
+POLL_S = ENDING_S / 10
+WATCH_S = 20 * ENDING_S
+HALT_BOUND_S = 3 * ENDING_S
+
+
+class _SleepLosesOneCancel(MockTransport):
+    """A wall-clock body whose `sleep` swallows the first cancel it is handed, as a verb that
+    polls a state or a segment the transport runs loses one over 3.11's `wait_for`."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lost = 0
+        self.out = asyncio.Event()
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        ack = await super().send_intent(intent)
+        if intent.kind == "move":
+            self.out.set()
+        return ack
+
+    async def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        try:
+            await asyncio.sleep(seconds)
+        except asyncio.CancelledError:
+            if self.lost:
+                raise
+            self.lost += 1
+
+
+async def _watcher(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    """One twist, then a watch that sends nothing, polling the transport."""
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    started = time.monotonic()
+    while time.monotonic() - started < WATCH_S:
+        await ctx.transport.sleep(POLL_S)
+    return VerbResult.success("watched to the end")
+
+
+@pytest.mark.parametrize("how", ["preempt", "pause", "abort"])
+async def test_a_newer_command_or_a_pause_ends_a_verb_that_lost_its_cancel_within_the_bound(
+    how: str,
+) -> None:
+    """A pause granted to a robot met, or a newer command, sent one cancel and then waited on the
+    verb with no bound but its own timeout, so one that lost the cancel and sent nothing held
+    the stop owed after it, and drive's take-over behind it, for that long. They end it as the
+    abort does now (the abort's case is the control)."""
+    transport = _SleepLosesOneCancel()
+    reg = VerbRegistry()
+    reg.register(Verb("watcher", "watches", _watcher, timeout_s=2 * WATCH_S))
+    ex = Executor(reg, transport, contract=glot("watcher").frontmatter)
+    running = asyncio.create_task(ex.run_verb("watcher"))
+    try:
+        await asyncio.wait_for(transport.out.wait(), 2.0)
+        await asyncio.sleep(POLL_S / 2)  # in its watch now
+        if how == "preempt":
+            assert ex.preempt("a newer command") == 1
+        elif how == "pause":
+            ex.pause_for(WATCH_S)
+        else:
+            ex.abort.set()
+        await asyncio.wait({running}, timeout=HALT_BOUND_S)
+        assert transport.lost == 1, "the stand-in did not get the cancel it swallows"
+        assert running.done(), f"the verb {how} ended still runs; stop sent: {transport.stops}"
+        if how == "preempt":
+            assert isinstance(running.exception(), Preempted)
+        elif how == "pause":
+            assert running.result().data.get("ended_by") == PAUSE_ENDED
+        else:
+            assert isinstance(running.exception(), Aborted)
+        assert transport.intents[-1].kind == "stop"
+    finally:
+        await _ended(running)
+
+
+async def test_a_newer_command_ends_a_verb_whose_cancel_wait_for_lost_within_the_bound() -> None:
+    """No stand-in loses anything here: the twist's answer goes through `wait_for(to_thread)`,
+    and the newer command lands in the turn Python 3.11 loses it in. Only a 3.11 job can fail."""
+    loop = asyncio.get_running_loop()
+    fetched, go = threading.Event(), threading.Event()
+    box: list[Executor] = []
+
+    def answer() -> None:
+        if not fetched.is_set():
+            fetched.set()
+            go.wait(10.0)
+
+            # two turns after the answer is queued, as the abort's cancel lands
+            def second() -> None:
+                loop.call_soon(box[0].preempt, "a newer command")
+
+            loop.call_soon_threadsafe(loop.call_soon, second)
+
+    class ThroughWaitFor(MockTransport):
+        async def send_intent(self, intent: Intent) -> Ack:
+            self.intents.append(intent)
+            await asyncio.wait_for(asyncio.to_thread(answer), timeout=5.0)
+            return Ack()
+
+        async def sleep(self, seconds: float) -> None:
+            self.sleeps.append(seconds)
+            await asyncio.sleep(seconds)
+
+    transport = ThroughWaitFor()
+    reg = VerbRegistry()
+    reg.register(Verb("watcher", "watches", _watcher, timeout_s=2 * WATCH_S))
+    ex = Executor(reg, transport, contract=glot("watcher").frontmatter)
+    box.append(ex)
+    running = asyncio.create_task(ex.run_verb("watcher"))
+    try:
+        assert await asyncio.to_thread(fetched.wait, 5.0), "the twist is out"
+        go.set()
+        _block_the_loop(ENDING_S)  # the newer command and the twist's answer queue up in order
+        await asyncio.wait({running}, timeout=HALT_BOUND_S)
+        assert running.done(), f"python {sys.version_info[:2]}: the verb still runs"
+        assert isinstance(running.exception(), Preempted)
+    finally:
+        go.set()
+        await _ended(running)
+
+
+#: What "the stop goes out without waiting for the verb" is held to: a third of `ENDING_S`.
+AT_ONCE_S = ENDING_S / 3
+FETCH_S = 20 * ENDING_S
+
+
+class _ClockedStop(MockTransport):
+    def __init__(self) -> None:
+        super().__init__()
+        self.stopped_at: float | None = None
+        self.fetching = asyncio.Event()
+
+    async def stop(self) -> None:
+        if self.stopped_at is None:
+            self.stopped_at = time.monotonic()
+        await super().stop()
+
+
+class _FetchLosesOneCancel(_ClockedStop):
+    """A frame fetch that catches the first cancel and fetches again, as Python 3.11's
+    `wait_for` does over a fetch whose frame lands with the cancel."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lost = 0
+
+    async def get_frame(self) -> Image.Image | None:
+        self.fetching.set()
+        try:
+            await asyncio.sleep(FETCH_S)
+        except asyncio.CancelledError:
+            self.lost += 1
+            await asyncio.sleep(FETCH_S)  # the next fetch; the second cancel ends this one
+        return None
+
+
+async def _twist_then_look(ctx: VerbContext, _p: NoParams) -> VerbResult:
+    """A twist, then a look before the next one, as `go_to` steers."""
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    await ctx.transport.get_frame()
+    await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+    return VerbResult.success("looked")
+
+
+async def test_the_stop_after_an_abort_goes_out_without_waiting_for_the_verb() -> None:
+    """The stop waited up to twice `ENDING_S` for the verb, which protected nothing once the
+    leash held its sends, while a body with no deadman of its own (a rosbridge base, a ToddlerBot
+    whose keepalive feeds its own) drove on its last twist."""
+    transport = _FetchLosesOneCancel()
+    reg = VerbRegistry()
+    reg.register(Verb("looker", "looks", _twist_then_look, timeout_s=2 * FETCH_S))
+    ex = Executor(reg, transport, contract=glot("looker").frontmatter)
+    running = asyncio.create_task(ex.run_verb("looker"))
+    try:
+        await asyncio.wait_for(transport.fetching.wait(), 2.0)
+        aborted_at = time.monotonic()
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=4 * ENDING_S)
+        assert transport.lost == 1, "the stand-in did not get the cancel it swallows"
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert len(transport.intents_of("move")) == 1, "the leash let a twist through"
+        assert transport.stopped_at is not None
+        late = transport.stopped_at - aborted_at
+        assert late <= AT_ONCE_S, f"the stop went out {late:.2f} s after the abort"
+    finally:
+        await _ended(running)
+
+
+async def test_the_stop_after_an_abort_goes_out_at_once_over_wait_for() -> None:
+    """No stand-in loses anything here: the fetch goes through `wait_for(to_thread)` and the
+    abort lands in the turn its frame does. Only a 3.11 job can fail this."""
+    loop = asyncio.get_running_loop()
+    fetched, go = threading.Event(), threading.Event()
+    box: list[Executor] = []
+    frames: list[int] = []
+
+    def fetch() -> None:
+        fetched.set()
+        go.wait(10.0)
+        loop.call_soon_threadsafe(box[0].abort.set)  # ahead of the frame's own answer
+
+    class ThroughWaitFor(_ClockedStop):
+        async def get_frame(self) -> Image.Image | None:
+            frames.append(1)
+            if len(frames) == 1:
+                await asyncio.wait_for(asyncio.to_thread(fetch), timeout=5.0)
+            await asyncio.sleep(FETCH_S)  # what the verb does next sends nothing
+            return None
+
+    async def looks(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        await ctx.transport.get_frame()
+        return VerbResult.success("looked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("looker", "looks", looks, timeout_s=2 * FETCH_S))
+    transport = ThroughWaitFor()
+    ex = Executor(reg, transport, contract=glot("looker").frontmatter)
+    box.append(ex)
+    running = asyncio.create_task(ex.run_verb("looker"))
+    try:
+        assert await asyncio.to_thread(fetched.wait, 5.0), "the fetch is out"
+        go.set()
+        _block_the_loop(ENDING_S)  # the abort and the frame queue up in that order
+        free_at = time.monotonic()
+        await asyncio.wait({running}, timeout=4 * ENDING_S)
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert transport.stopped_at is not None
+        late = transport.stopped_at - free_at
+        assert late <= AT_ONCE_S, (
+            f"python {sys.version_info[:2]}: the stop went out {late:.2f} s after the loop was free"
+        )
+    finally:
+        go.set()
+        await _ended(running)
+
+
+class _DeadLinkStop(MockTransport):
+    """A link whose beat fails and whose stop never comes back, as a write into a full send
+    buffer or a serial write that never completes does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.never = asyncio.Event()
+
+    async def heartbeat(self) -> None:
+        raise HeartbeatError("no answer from the robot")
+
+    async def stop(self) -> None:
+        self.stops += 1
+        await self.never.wait()
+
+
+async def test_a_call_a_failed_heartbeat_ended_returns_though_the_link_eats_its_stop() -> None:
+    """The heartbeat's wait on its own stop was bounded and the call it aborted was not: that
+    call waited on its owed stop over the same dead link with no end, so the run never reached
+    its teardown. The owed stop is waited for as long as the body gives its own `stop` verb
+    (here `ENDING_S`), and the call says the stop was not confirmed."""
+
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("long_walk", "walks", long_walk, timeout_s=60))
+    reg.register(dataclasses.replace(CORE["stop"], timeout_s=ENDING_S))
+    transport = _DeadLinkStop()
+    ex = Executor(reg, transport, contract=glot("long_walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    await asyncio.sleep(MOVE_RESEND_S / 2)
+    assert transport.intents_of("move"), "the walk is not under way"
+    hb = Heartbeat(transport, ex.abort, period_s=MOVE_RESEND_S)
+    hb.start()
+    bound = MOVE_RESEND_S + ENDING_S + 2 * ENDING_S + 3 * MOVE_RESEND_S
+    try:
+        await asyncio.wait({running}, timeout=bound)
+        assert ex.abort.is_set(), "the heartbeat did not abort"
+        assert running.done(), f"{bound:.1f} s on the call still waits on its stop"
+        aborted = running.exception()
+        assert isinstance(aborted, Aborted)
+        assert "not answered within" in str(aborted), aborted
+    finally:
+        transport.never.set()
+        await hb.stop()
+        await asyncio.wait({running}, timeout=1.0)
+
+
+#: How long the verb that will not end below runs before it ends by itself.
+STUBBORN_S = 30 * ENDING_S
+
+LEFT_BEHIND_PROGRAM = """
+import asyncio, sys, time
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.safety import Aborted, Executor
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.registry import NoParams, Verb, VerbRegistry, VerbResult
+
+STUBBORN_S = float(sys.argv[1])
+GLOT = '''---
+glot: 0
+name: t
+description: d
+verbs:
+  allow: [stubborn]
+  confirm: []
+success: [x]
+abort_when: []
+---
+# Task
+x
+'''
+
+async def stubborn(ctx, _p):
+    until = time.monotonic() + STUBBORN_S
+    while time.monotonic() < until:
+        try:
+            await asyncio.sleep(0.02)
+        except asyncio.CancelledError:
+            pass
+    return VerbResult.success("ended by itself")
+
+async def main():
+    reg = VerbRegistry()
+    reg.register(Verb("stubborn", "will not end", stubborn, timeout_s=10 * STUBBORN_S))
+    ex = Executor(reg, MockTransport(), contract=parse_glot_text(GLOT).frontmatter)
+    running = asyncio.ensure_future(ex.run_verb("stubborn"))
+    await asyncio.sleep(0.05)
+    ex.abort.set()
+    try:
+        await running
+    except Aborted:
+        pass
+    print("RETURNED", time.monotonic(), flush=True)
+
+asyncio.run(main())
+print("EXITED", time.monotonic(), flush=True)
+"""
+
+
+def test_a_verb_left_behind_does_not_hold_the_process_at_the_loops_close() -> None:
+    """`asyncio.run`, which every command runs under, cancels every task left at its close and
+    then waits for all of them with no bound, so a verb the executor had left behind held the
+    process after the run until it ended by itself, or for good. Run in a child Python under
+    `asyncio.run`, as the CLI does."""
+    import subprocess
+
+    # UTF-8 on the child's pipes: the executor's log has an arrow in it, and a pipe on Windows
+    # is the ANSI codepage unless the child is told otherwise
+    done = subprocess.run(
+        [sys.executable, "-X", "utf8", "-c", LEFT_BEHIND_PROGRAM, str(STUBBORN_S)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=STUBBORN_S + 60,
+    )
+    lines = dict(line.split(" ", 1) for line in done.stdout.split("\n") if " " in line)
+    assert "RETURNED" in lines, f"the call never returned: {done.stdout!r} {done.stderr[-400:]!r}"
+    assert "EXITED" in lines, done.stderr[-400:]
+    held = float(lines["EXITED"]) - float(lines["RETURNED"])
+    assert held < 2 * ENDING_S, f"the loop's close held the process {held:.1f} s"
+
+
+async def test_a_verb_left_behind_cannot_land_a_late_stop_in_the_next_move(
+    registry: VerbRegistry,
+) -> None:
+    """The leash let every stop through, so a verb the executor had left behind, once it ended
+    at last, landed its own `ctx.transport.stop()` in whatever ran then: the next verb, or the
+    run's fold. Once the executor's own stop for it has gone, its leash lets nothing through."""
+    go_late = asyncio.Event()
+    late: list[str] = []
+
+    async def stubborn(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        while not go_late.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await go_late.wait()
+        try:
+            await ctx.transport.stop()
+            late.append("reached the transport")
+        except asyncio.CancelledError:
+            late.append("refused")
+        return VerbResult.success("ended at last")
+
+    registry.register(Verb("stubborn", "will not end", stubborn, timeout_s=MOVE_RESEND_S / 2))
+    walk = {"vx": 0.1, "duration_s": 0.5}
+    alone = MockTransport()
+    reference = await Executor(registry, alone, contract=glot("walk").frontmatter).run_verb(
+        "walk", walk
+    )
+    transport = MockTransport()
+    ex = Executor(registry, transport, contract=glot("stubborn, walk").frontmatter)
+    timed_out = await ex.run_verb("stubborn")
+    assert "timed out" in timed_out.summary, timed_out.summary
+    before = len(transport.intents)
+    send = transport.send_intent
+
+    async def sending(intent: Intent) -> Ack:
+        ack = await send(intent)
+        if intent.kind == "move" and not go_late.is_set():
+            go_late.set()  # the verb left behind ends now, in the middle of the next move
+            for _ in range(5):
+                await asyncio.sleep(0)
+        return ack
+
+    transport.send_intent = sending  # type: ignore[method-assign]
+    walked = await ex.run_verb("walk", walk)
+    assert late == ["refused"], late
+    during = [i.kind for i in transport.intents[before:]]
+    assert during == [i.kind for i in alone.intents], f"a late stop landed in the walk: {during}"
+    assert walked.summary == reference.summary
+
+
+def test_this_python_can_still_let_a_verb_left_behind_go_at_the_loops_close() -> None:
+    """A verb the executor leaves behind is taken out of asyncio's own list of tasks so that
+    `asyncio.run`'s close does not wait on it (`safety._leave_behind`), through
+    `asyncio.tasks._unregister_task`, which is private. A Python without it has to turn CI red
+    here rather than leave a run hanging at its close."""
+    assert callable(getattr(asyncio.tasks, "_unregister_task", None)), (
+        f"Python {sys.version_info[:3]} has no asyncio.tasks._unregister_task: a verb the "
+        "executor leaves behind would hold the process open at asyncio.run's close"
+    )
+
+
+async def test_a_verb_left_behind_where_asyncio_cannot_let_it_go_is_said_to(
+    monkeypatch: pytest.MonkeyPatch, mock_transport: MockTransport
+) -> None:
+    """Where asyncio has no way to let a verb go, the record and the log say the process may
+    not exit until it ends, where they said only that it was left behind."""
+    monkeypatch.delattr(asyncio.tasks, "_unregister_task")
+    quit_now = asyncio.Event()
+
+    async def stubborn(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        while not quit_now.is_set():
+            with contextlib.suppress(asyncio.CancelledError):
+                await quit_now.wait()
+        return VerbResult.success("ended by the test")
+
+    reg = VerbRegistry()
+    reg.register(Verb("stubborn", "will not end", stubborn, timeout_s=MOVE_RESEND_S / 2))
+    said: list[str] = []
+    ex, seen = logged(reg, mock_transport, allow="stubborn")
+    ex.log = said.append
+    try:
+        result = await ex.run_verb("stubborn")
+        assert "timed out" in result.summary
+        notes = [e.data["text"] for e in seen if e.kind == "note"]
+        held = [n for n in notes if "may not exit" in n]
+        assert held and held[0] in said, (notes, said)
+    finally:
+        quit_now.set()
+
+
+@pytest.mark.parametrize("how", ["abort", "preempt", "pause"])
+async def test_a_call_the_executor_ended_stays_so_when_its_gate_cannot_be_written(
+    how: str,
+) -> None:
+    """The abort's, the newer command's and the pause's gates were written before their stop,
+    unguarded: a record that could not be written (a full disk) held the stop back, and the call
+    came back as an ordinary failure of the verb's, which `abort_when` counts."""
+    gate = {"abort": "abort", "preempt": "preempted", "pause": "paused"}[how]
+
+    def record(event: Any) -> None:
+        if event.kind == "gate" and event.data.get("gate") == gate:
+            raise OSError(28, "No space left on device")
+
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("long_walk", "walks", long_walk, timeout_s=60))
+    transport = MockTransport()
+    ex = Executor(
+        reg, transport, contract=glot("long_walk").frontmatter, event_log=EventLog(record=record)
+    )
+    running = asyncio.create_task(ex.run_verb("long_walk"))
+    await asyncio.sleep(MOVE_RESEND_S / 2)
+    assert transport.intents_of("move"), "the walk is not under way"
+    if how == "abort":
+        ex.abort.set()
+    elif how == "preempt":
+        ex.preempt("a newer command")
+    else:
+        ex.pause_for(60)
+    await asyncio.wait({running}, timeout=2.0)
+    assert running.done()
+    assert transport.intents[-1].kind == "stop", "no stop went out"
+    outcome: Any = running.exception() or running.result()
+    if how == "abort":
+        assert isinstance(outcome, Aborted), f"the abort answered {outcome!r}"
+    elif how == "preempt":
+        assert isinstance(outcome, Preempted), f"the newer command answered {outcome!r}"
+    else:
+        assert outcome.data.get("ended_by") == PAUSE_ENDED, f"the pause answered {outcome!r}"
+
+
+async def test_a_call_its_client_cancelled_through_a_cancel_scope_says_so_in_the_record() -> None:
+    """The MCP server cancels a call through anyio's cancel scope, which cancels it again on
+    every turn of the loop. The stop was sent before the `cancelled` gate, the wait on the stop
+    was cut short at the next turn, and the gate was never written."""
+    import anyio
+
+    async def long_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("long_walk", "walks", long_walk, timeout_s=60))
+    seen: list[Any] = []
+    transport = MockTransport()
+    ex = Executor(
+        reg,
+        transport,
+        contract=glot("long_walk").frontmatter,
+        event_log=EventLog(observers=[seen.append]),
+    )
+    scope = anyio.CancelScope()
+    outcome: list[Any] = []
+
+    async def tool_call() -> None:
+        with scope:
+            outcome.append(await ex.run_verb("long_walk"))
+
+    running = asyncio.create_task(tool_call())
+    await asyncio.sleep(MOVE_RESEND_S / 2)
+    assert transport.intents_of("move"), "the walk is not under way"
+    scope.cancel()
+    await asyncio.wait({running}, timeout=2.0)
+    await asyncio.sleep(MOVE_RESEND_S)  # a stop still on its way lands meanwhile
+    assert running.done() and not outcome, "the call was not cancelled"
+    assert transport.intents[-1].kind == "stop", "no stop went out after the cancelled call"
+    assert ("cancelled", "fired") in gates(seen), [e.kind for e in seen]
+
+
+#: How long after a twist the link below refuses a stop, and how long the verb reads where it
+#: is before its own stop on its way out: past the first, inside `ENDING_S`.
+BUSY_S = ENDING_S / 3
+CLEANUP_S = ENDING_S / 2
+
+
+class _BusyAfterATwist(MockTransport):
+    """A link still busy with the call the cancel cut, which refuses a stop for `BUSY_S` after a
+    twist, raising or saying so in `stop_error`."""
+
+    def __init__(self, how: str) -> None:
+        super().__init__()
+        self.how = how
+        self.busy_until = 0.0
+        self.landed = 0
+        self.stop_error: str | None = None
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        if intent.kind == "move":
+            self.busy_until = time.monotonic() + BUSY_S
+        return await super().send_intent(intent)
+
+    async def stop(self) -> None:
+        if time.monotonic() < self.busy_until:
+            if self.how == "raises":
+                raise TransportError("the bus is still busy with the call the cancel cut")
+            self.stop_error = "the bus is still busy with the call the cancel cut"
+            return
+        self.stop_error = None
+        self.landed += 1
+        await super().stop()
+
+
+@pytest.mark.parametrize("how", ["raises", "stop_error"])
+async def test_a_stop_that_would_land_after_a_failed_one_is_not_refused(how: str) -> None:
+    """The leash refused everything once the executor's stop was answered, whatever the answer:
+    over a link still busy that stop failed, and the verb's own stop a moment later, the one the
+    link would have taken, was refused, so no stop landed at all. The leash refuses a late stop
+    only once one has landed."""
+
+    async def careful_walk(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        try:
+            for _ in range(100):
+                await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+                await asyncio.sleep(MOVE_RESEND_S)
+        except asyncio.CancelledError:
+            await asyncio.sleep(CLEANUP_S)  # reads where it is before it stops
+            await ctx.transport.stop()
+            raise
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("careful_walk", "walks", careful_walk, timeout_s=60))
+    transport = _BusyAfterATwist(how)
+    ex = Executor(reg, transport, contract=glot("careful_walk").frontmatter)
+    running = asyncio.create_task(ex.run_verb("careful_walk"))
+    try:
+        await asyncio.sleep(MOVE_RESEND_S / 4)  # inside BUSY_S of the first twist
+        assert transport.intents_of("move"), "the walk is not under way"
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=4 * ENDING_S)
+        await asyncio.sleep(CLEANUP_S)
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert transport.landed >= 1, f"no stop landed: {running.exception()}"
+    finally:
+        await _ended(running)
+
+
+#: The allowance a body below gives its own `stop`, and how late its stop is answered: after the
+#: call's allowance and the run's own allowance after it, and before the close's allowance ends.
+STOP_ALLOWANCE_S = CORE["stop"].timeout_s / 10
+SLOW_STOP_S = 2.5 * STOP_ALLOWANCE_S
+
+GOES_ON_PROGRAM = """
+import asyncio, dataclasses, sys
+from roboglot.glotfile.parser import parse_glot_text
+from roboglot.safety import Aborted, Executor
+from roboglot.transport.base import Intent
+from roboglot.transport.mock import MockTransport
+from roboglot.verbs.core import CORE, MOVE_RESEND_S
+from roboglot.verbs.registry import Verb, VerbRegistry, VerbResult
+
+ALLOWANCE_S, SLOW_S = float(sys.argv[1]), float(sys.argv[2])
+GLOT = '''---
+glot: 0
+name: t
+description: d
+verbs:
+  allow: [walk_long]
+  confirm: []
+success: [x]
+abort_when: []
+---
+# Task
+x
+'''
+
+class SlowStop(MockTransport):
+    async def stop(self):
+        await asyncio.sleep(SLOW_S)
+        print("STOP LANDED", flush=True)
+        await super().stop()
+
+async def walk_long(ctx, _p):
+    for _ in range(100):
+        await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+        await asyncio.sleep(MOVE_RESEND_S)
+    return VerbResult.success("walked")
+
+async def main():
+    reg = VerbRegistry()
+    reg.register(dataclasses.replace(CORE["stop"], timeout_s=ALLOWANCE_S))
+    reg.register(Verb("walk_long", "walks", walk_long, timeout_s=60))
+    transport = SlowStop()
+    ex = Executor(reg, transport, contract=parse_glot_text(GLOT).frontmatter, log=print)
+    running = asyncio.ensure_future(ex.run_verb("walk_long"))
+    await asyncio.sleep(MOVE_RESEND_S / 2)
+    ex.abort.set()
+    try:
+        await running
+    except Aborted as e:
+        print("ABORTED", e, flush=True)
+    await asyncio.sleep(ALLOWANCE_S)  # the run's teardown goes on for a while
+
+asyncio.run(main())
+print("EXITED", flush=True)
+"""
+
+
+def test_a_stop_said_to_go_on_by_itself_goes_out_before_the_process_ends() -> None:
+    """An owed stop not answered in its allowance is said to go on by itself, and `asyncio.run`'s
+    close then cancelled it before it went out, a slow stop that would have landed, with only the
+    log saying so. The close gives it its allowance once more. Run in a child Python under
+    `asyncio.run`, as the CLI runs."""
+    import subprocess
+
+    # UTF-8 on the child's pipes, as above: its log is `print`, and the arrow in the executor's
+    # lines raised UnicodeEncodeError on Windows before the program reached its last line
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-X",
+            "utf8",
+            "-c",
+            GOES_ON_PROGRAM,
+            str(STOP_ALLOWANCE_S),
+            str(SLOW_STOP_S),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    out = done.stdout
+    assert "EXITED" in out, done.stderr[-600:]
+    assert "goes on by itself" in out, f"the stop was answered in its allowance: {out!r}"
+    assert "STOP LANDED" in out, f"the loop's close cancelled the stop: {out.strip()!r}"
+
+
+#: How long the twist below takes to be written in its thread.
+WRITE_S = ENDING_S / 2
+
+
+class _ThreadWrites(MockTransport):
+    """A transport that writes each command in a thread of its own, with nothing ordering the
+    writes: a twist's write goes on in its thread whatever cancels the call that started it."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.wire: list[str] = []
+        self.writing = threading.Event()
+        self._wire_lock = threading.Lock()
+
+    def _write(self, what: str, delay: float) -> None:
+        if delay:
+            self.writing.set()
+            time.sleep(delay)
+        with self._wire_lock:
+            self.wire.append(what)
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        self.intents.append(intent)
+        await asyncio.to_thread(self._write, intent.kind, WRITE_S if intent.kind == "move" else 0)
+        return Ack()
+
+    async def stop(self) -> None:
+        self.stops += 1
+        self.intents.append(Intent.stop())
+        await asyncio.to_thread(self._write, "stop", 0)
+
+
+async def test_the_last_command_the_body_receives_after_an_abort_is_a_stop() -> None:
+    """A twist already being written in a thread when the abort came landed after the one stop
+    the executor sent, and the body's last command was the twist. The leash sees the send cut
+    off in flight, and the stop is sent again one deadman window after the first."""
+
+    async def walk_long(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("walk_long", "walks", walk_long, timeout_s=60))
+    transport = _ThreadWrites()
+    ex = Executor(reg, transport, contract=glot("walk_long").frontmatter)
+    running = asyncio.create_task(ex.run_verb("walk_long"))
+    try:
+        assert await asyncio.to_thread(transport.writing.wait, 5.0), "a twist is being written"
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=4 * ENDING_S)
+        await asyncio.sleep(2 * WRITE_S)  # every write still in a thread has landed by now
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert transport.wire[-1] == "stop", f"the body's last command: {transport.wire[-3:]}"
+    finally:
+        await _ended(running)
+
+
+async def test_a_call_cancelled_as_its_admission_read_answers_does_not_run() -> None:
+    """Python 3.11's `wait_for` loses a cancel that lands as the admission read answers, and
+    nothing after the read asked whether the call had been cancelled: one MCP cancel, or the
+    second Ctrl-C, was lost and the walk ran to its end. On 3.12 nothing is lost, so only a 3.11
+    job can fail this."""
+    asked, go = threading.Event(), threading.Event()
+
+    def read() -> None:
+        asked.set()
+        go.wait(10.0)
+
+    class ThroughWaitFor(MockTransport):
+        async def get_state(self) -> RobotState:
+            loop = asyncio.get_running_loop()
+            await asyncio.wait_for(loop.run_in_executor(None, read), timeout=5.0)
+            return await super().get_state()
+
+    async def stroll(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(5):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        await ctx.transport.stop()
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("stroll", "walks", stroll, timeout_s=60))
+    transport = ThroughWaitFor()
+    ex = Executor(reg, transport, contract=glot("stroll").frontmatter)
+    running = asyncio.create_task(ex.run_verb("stroll"))
+    try:
+        assert await asyncio.to_thread(asked.wait, 5.0), "the admission read is out"
+        go.set()
+        _block_the_loop(ENDING_S)  # the read's answer is queued before the cancel
+        running.cancel()
+        await asyncio.wait({running}, timeout=10 * MOVE_RESEND_S)
+        moves = len(transport.intents_of("move"))
+        assert running.done()
+        assert running.cancelled() and moves == 0, (
+            f"python {sys.version_info[:2]}: the walk ran though its call was cancelled: "
+            f"{moves} twists"
+        )
+    finally:
+        go.set()
+        await _ended(running)
+
+
+#: How long the twist below takes to be written, and the stop's answer its round trip after its
+#: own write: the twist lands after the stop's write and before its answer.
+LATE_WRITE_S = ENDING_S / 6
+STOP_ANSWER_S = ENDING_S / 2
+
+
+class _LateWrite(MockTransport):
+    """A send the cancel does not reach (Python 3.11's `wait_for`, or a third party's send that
+    finishes its write), which comes back once written: after the stop's write, and before the
+    stop's answer."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.wire: list[str] = []
+        self.writing = threading.Event()
+        self.caught = 0
+        self._lock = threading.Lock()
+
+    def _write(self, what: str, delay: float) -> None:
+        if delay:
+            self.writing.set()
+            time.sleep(delay)
+        with self._lock:
+            self.wire.append(what)
+
+    async def send_intent(self, intent: Intent) -> Ack:
+        self.intents.append(intent)
+        delay = LATE_WRITE_S if intent.kind == "move" else 0
+        write = asyncio.ensure_future(asyncio.to_thread(self._write, intent.kind, delay))
+        try:
+            await asyncio.shield(write)
+        except asyncio.CancelledError:
+            self.caught += 1
+            await write  # the cancel did not reach it: it comes back once written
+        return Ack()
+
+    async def stop(self) -> None:
+        self.stops += 1
+        self.intents.append(Intent.stop())
+        await asyncio.to_thread(self._write, "stop", 0)
+        await asyncio.sleep(STOP_ANSWER_S)  # the answer's round trip
+
+
+async def test_a_twist_written_after_the_stop_is_followed_by_another_stop() -> None:
+    """A send counted only when it was cut off or came back after the stop was answered. One the
+    cancel did not reach came back once its twist was written, after the stop's write and before
+    its answer, was not counted, and the body's last command was that twist. Any send in flight
+    as the stop went counts now, whatever it returned."""
+
+    async def walk_long(ctx: VerbContext, _p: NoParams) -> VerbResult:
+        for _ in range(100):
+            await ctx.transport.send_intent(Intent.move(0.1, 0.0, 0.0))
+            await asyncio.sleep(MOVE_RESEND_S)
+        return VerbResult.success("walked")
+
+    reg = VerbRegistry()
+    reg.register(Verb("walk_long", "walks", walk_long, timeout_s=60))
+    transport = _LateWrite()
+    ex = Executor(reg, transport, contract=glot("walk_long").frontmatter)
+    running = asyncio.create_task(ex.run_verb("walk_long"))
+    try:
+        assert await asyncio.to_thread(transport.writing.wait, 5.0), "a twist is being written"
+        ex.abort.set()
+        await asyncio.wait({running}, timeout=8 * ENDING_S)
+        await asyncio.sleep(2 * LATE_WRITE_S)
+        assert running.done() and isinstance(running.exception(), Aborted)
+        assert transport.caught == 1, "the cancel reached the send, so this proves nothing"
+        assert transport.wire[-1] == "stop", f"the body's last command: {transport.wire[-3:]}"
+    finally:
+        await _ended(running)
