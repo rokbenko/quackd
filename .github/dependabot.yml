@@ -10,8 +10,52 @@ updates:
     versioning-strategy: "lockfile-only"
     schedule:
       interval: "weekly"
+    # A release waits a week before it is proposed, so one that is yanked or followed by a fix in
+    # its first days never reaches a pull request. A week is the least zizmor's dependabot-cooldown
+    # audit accepts, which the workflows job in ci.yml runs; GitHub's own default is three days.
+    cooldown:
+      default-days: 7
+    # One group for every package meant one package the updater could not move held back all the
+    # others, every week. Four groups by kind, so a stuck one holds back only its own kind. A
+    # package goes in the first group it matches, so the last takes whatever the others do not.
     groups:
-      python-deps:
+      # what checks the code and runs the tests, which no wheel of Roboglot installs
+      tooling:
+        patterns:
+          - "ruff"
+          - "mypy"
+          - "pytest"
+          - "pytest-*"
+          - "coverage"
+          - "types-*"
+      # the LLM vendors' SDKs behind the vendor extras and the decision LLM
+      vendor-libraries:
+        patterns:
+          - "anthropic"
+          - "openai"
+          - "google-genai"
+          - "typesafe-sdk"
+          - "laya"
+      # lerobot and what its pins hold back (the ignores below say which), and the radio, serial
+      # and wire libraries that talk to a robot
+      robot-libraries:
+        patterns:
+          - "lerobot"
+          - "rustypot"
+          - "numpy"
+          - "opencv-python-headless"
+          - "ultralytics"
+          - "dm-tree"
+          - "torch"
+          - "torchvision"
+          - "bleak"
+          - "dbus-fast"
+          - "zeroconf"
+          - "paho-mqtt"
+          - "pyserial"
+          - "pyzmq"
+          - "roslibpy"
+      everything-else:
         patterns: ["*"]
     # Dependabot asks uv for one version of a package in every split of the lock at once, the
     # newest PyPI has, and for every entry below but hatchling uv finds none, because something
@@ -60,7 +104,21 @@ updates:
       # once that one was ignored on 2026-09-29, so every version is ignored and a person moves
       # hatchling with uv lock --upgrade-package hatchling.
       - dependency-name: "hatchling"
+  # Every action is pinned by its commit with the release as a comment, and Dependabot moves both.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+  # The hooks .pre-commit-config.yaml fetches by tag. ruff's hook is local, run from uv.lock, so
+  # it moves with the tooling group above.
+  - package-ecosystem: "pre-commit"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      tooling:
+        patterns: ["*"]
