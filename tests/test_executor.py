@@ -3189,10 +3189,13 @@ def test_a_verb_left_behind_does_not_hold_the_process_at_the_loops_close() -> No
     `asyncio.run`, as the CLI does."""
     import subprocess
 
+    # UTF-8 on the child's pipes: the executor's log has an arrow in it, and a pipe on Windows
+    # is the ANSI codepage unless the child is told otherwise
     done = subprocess.run(
-        [sys.executable, "-c", LEFT_BEHIND_PROGRAM, str(STUBBORN_S)],
+        [sys.executable, "-X", "utf8", "-c", LEFT_BEHIND_PROGRAM, str(STUBBORN_S)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=STUBBORN_S + 60,
     )
     lines = dict(line.split(" ", 1) for line in done.stdout.split("\n") if " " in line)
@@ -3513,10 +3516,21 @@ def test_a_stop_said_to_go_on_by_itself_goes_out_before_the_process_ends() -> No
     `asyncio.run`, as the CLI runs."""
     import subprocess
 
+    # UTF-8 on the child's pipes, as above: its log is `print`, and the arrow in the executor's
+    # lines raised UnicodeEncodeError on Windows before the program reached its last line
     done = subprocess.run(
-        [sys.executable, "-c", GOES_ON_PROGRAM, str(STOP_ALLOWANCE_S), str(SLOW_STOP_S)],
+        [
+            sys.executable,
+            "-X",
+            "utf8",
+            "-c",
+            GOES_ON_PROGRAM,
+            str(STOP_ALLOWANCE_S),
+            str(SLOW_STOP_S),
+        ],
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=60,
     )
     out = done.stdout
