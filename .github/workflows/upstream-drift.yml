@@ -28,9 +28,14 @@ on:
     - cron: "23 5 * * *"
   workflow_dispatch:
 
+# Read only, as in every workflow here: the job asks for the one write it makes below.
 permissions:
   contents: read
-  issues: write
+
+# The sync and the run install from uv.lock as it is: a lock that no longer matches a
+# pyproject.toml fails the job, where uv would otherwise write a new one on the runner.
+env:
+  UV_LOCKED: "1"
 
 concurrency:
   group: upstream-drift
@@ -41,13 +46,20 @@ jobs:
     name: every pinned ref against its baseline
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read # the checkout
+      issues: write # the one issue per upstream that needs somebody
     # Deliberately NOT continue-on-error: the run is the signal, and a green tick on a night
     # something moved is the opposite of the point.
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          # the release tests/rosarm_contract/run.sh pins, as in every workflow here
+          version: "0.12.21"
           enable-cache: true
 
       - name: Sync Roboglot and its ten adapters, no SDKs
@@ -58,7 +70,11 @@ jobs:
       - name: Compare every ref with its baseline
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          # Issues are filed only where the project's owner runs this, in the repository the run
+          # names, so a rename of the repository changes nothing here and a fork's schedule files
+          # none. Passed as a variable, so no expression is expanded into the shell.
+          ISSUES_REPO: ${{ github.repository_owner == 'rokbenko' && github.repository || '' }}
         run: |
           uv run --no-sync python scripts/upstream_drift.py \
             --report "$GITHUB_STEP_SUMMARY" \
-            ${{ github.repository == 'rokbenko/quackd' && '--issues rokbenko/quackd' || '' }}
+            ${ISSUES_REPO:+--issues "$ISSUES_REPO"}
