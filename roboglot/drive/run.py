@@ -703,6 +703,13 @@ async def run_drive(
             pressed=pressed,
             cancels=cancels,
         )
+        if note := getattr(adapter, "close_note", None):
+            # the close's own line, which `_close_robot` gives the logger alone, a bare line on
+            # stderr: in the record too, which `roboglot log` replays and the page shows
+            try:
+                event_log.emit("note", text=str(note))
+            except Exception as e:
+                logger.warning("%s (not recorded: %s: %s)", note, type(e).__name__, e)
         spent = sessions[0].usage if sessions else None
         summary = {
             "glot": "drive",

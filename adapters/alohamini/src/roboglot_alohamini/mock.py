@@ -34,6 +34,8 @@ from roboglot_alohamini.verbs import (
     GRIPPER_OPEN,
     LIFT_MAX_MM,
     LIFT_MIN_MM,
+    goal_refused,
+    height_refused,
     joint_range,
     joints_for,
 )
@@ -234,12 +236,19 @@ class AlohaMiniMock:
                 target = p.get("lift_height_mm")
                 if target is None:
                     return Ack(accepted=False, reason="pose needs a lift_height_mm")
+                if (unreachable := height_refused(float(target))) is not None:
+                    return Ack(accepted=False, reason=unreachable)  # as the transport refuses it
                 self.lift_target_mm = float(target)
                 self._last_cmd_t = self._t
             case "joint":
                 if not self.arm_torque:
                     return Ack(accepted=False, reason="the arms have no torque")
-                self._goto({str(k): float(v) for k, v in dict(p.get("positions", {})).items()})
+                goals = {str(k): float(v) for k, v in dict(p.get("positions", {})).items()}
+                # refused as the transport refuses it (`goal_refused`): held to the range without
+                # a word, a goal past it read in every test as the move the verb said it made
+                if refused := [why for k, v in goals.items() if (why := goal_refused(k, v))]:
+                    return Ack(accepted=False, reason="; ".join(refused))
+                self._goto(goals)
                 self.vx = self.vy = self.wz = 0.0  # upstream writes the wheels on every action
                 self._last_cmd_t = self._t
             case "gripper":
