@@ -64,6 +64,30 @@ def _nothing(*_args: Any, **_kwargs: Any) -> None:
     return None
 
 
+def _unbreakable(event: Hook, note: Hook) -> tuple[Hook, Hook]:
+    """The caller's record hooks, for the functions here that never raise. A record that cannot
+    be written, a full disk, raised out of them after the release had gone out, and the line for
+    the person holding the arm was never said; or before the second fold, which was then never
+    made. A hook that fails is said through the other where that one works, and what the person
+    is told comes back as it would have."""
+
+    def safe_event(**data: Any) -> None:
+        try:
+            event(**data)
+        except Exception as e:
+            with contextlib.suppress(Exception):  # the note is the last place left to say it
+                note(f"the release record could not be written: {type(e).__name__}: {e}")
+
+    def safe_note(text: str) -> None:
+        try:
+            note(text)
+        except Exception as e:
+            with contextlib.suppress(Exception):  # the record is the last place left to say it
+                event(stage="note", reason=f"{text} (not said: {type(e).__name__}: {e})")
+
+    return safe_event, safe_note
+
+
 class FoldStopped(Exception):
     """A fold the person stopped with a fresh Ctrl-C or `q`, while it was moving."""
 
@@ -172,15 +196,28 @@ CLOSING_THE_GRIPPER = "closing the gripper: keep your hands out of its jaws"
 has said it since a person was asked to clear the arm's way, and their hand may have been at the
 jaws, which may be what the first fold met."""
 
-GRIPPER_STOPPED = (
-    "the gripper was stopped where it was. The close still lets go of the arm where it reads at "
-    "its rest pose, so expect it to go limp there"
+LIMP_AT_THE_CLOSE = (
+    "The close still lets go of the arm where it reads at its rest pose, so expect it to go limp "
+    "there"
 )
+"""What the close does after a gripper a press stopped as it closed, over an arm a fold has put
+down, said as the second sentence of `GRIPPER_STOPPED` and of `GRIPPER_WENT_ON` there."""
+
+GRIPPER_STOPPED = f"the gripper was stopped where it was. {LIMP_AT_THE_CLOSE}"
 """Said when a Ctrl-C or `q` stopped the gripper closing, the last thing `roboglot robot release`
 and a `--by-hand` run that opened it move. The arm reached its rest pose before the gripper
 started, so the close that comes straight after this lets go of it there, and that is said
 because a person who pressed is the one who should not be surprised by it. It keeps the torque
 of an arm its own read finds moved off the pose, and its own line says so then."""
+
+GRIPPER_WENT_ON = (
+    "the gripper was told to stop, twice, and did not end, so Roboglot cannot tell whether its "
+    "jaws are still moving: keep your hands away from them until they are still"
+)
+"""Said in place of `GRIPPER_STOPPED`, followed by `LIMP_AT_THE_CLOSE` where it was closing, when
+the gripper a press stopped had not ended when told to twice (`FoldWentOn`), so nothing says its
+jaws are still. Nothing more is moved or released after it, as after a gripper that stopped, and
+what the close does is the close's, from its own read."""
 
 REFOLDED = (
     "the arm reached its rest pose this time, so it is let go of there when the run disconnects "
@@ -318,11 +355,44 @@ STOPPED_FOLD_S = 2.0
 """How long a fold told to stop is waited for. A cancelled fold raises at its next await, a bus
 call's or a tick's, so in practice it is gone at once; the bound is for one that would not go, and
 it keeps a teardown a press can no longer quit from being held up for ever by something this
-module did not write (`KillSwitch.stay_to_the_close`)."""
+module did not write (`KillSwitch.stay_to_the_close`). A fold a person stopped is told twice and
+waited for this long each time (`fold_unless_stopped`)."""
+
+FOLD_WENT_ON = (
+    "the fold was told to stop, twice, and did not end, so Roboglot cannot tell whether the arm "
+    "is still moving: keep your hands out of its path until it is still, then hold it and cut "
+    "its power"
+)
+"""Said in place of `FOLD_STOPPED` when a fold a person stopped had still not ended after it was
+told twice (`FoldWentOn`). A cancel can be lost on its way, in Python 3.11's `asyncio.wait_for`
+that the AlohaMini's and the ROS arm's transports wait through, or in a third party's fold, and
+such a fold goes on sending goals: the person was told it had stopped where it was while it
+moved on under the hand that pressed."""
 
 
-async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
-    """Cancel `tasks` and wait until every one has finished, whatever each ends with.
+class FoldWentOn(FoldStopped):
+    """A fold the person stopped that had not ended when told to twice over `STOPPED_FOLD_S`,
+    and may still be moving the arm. A `FoldStopped`, so whatever a caller does after a stopped
+    fold still happens; what it says of it is `FOLD_WENT_ON`, never that the fold stopped."""
+
+
+WENT_ON = "fold_went_on"
+"""The attribute set on a cancel or an interrupt of `fold_unless_stopped` that leaves the fold
+still going after it was told twice, which goes on up as the cancel or the interrupt it is
+(`fold_went_on`)."""
+
+
+def fold_went_on(stopped_it: BaseException) -> bool:
+    """Whether what ended `fold_unless_stopped` left the fold, the gripper or the release still
+    going after it was told twice: `FoldWentOn` after a press, or a cancel or an interrupt of the
+    call marked so (`WENT_ON`). Over one, every caller says it cannot tell (`FOLD_WENT_ON`,
+    `GRIPPER_WENT_ON`), never that it stopped, and never that a release was not sent."""
+    return isinstance(stopped_it, FoldWentOn) or bool(getattr(stopped_it, WENT_ON, False))
+
+
+async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> bool:
+    """Cancel `tasks`, wait until every one has finished, whatever each ends with, and say
+    whether every one has.
 
     `asyncio.wait` rather than awaiting each: it raises nothing a task raised. A cancellation of
     the task doing the waiting, a later Ctrl-C, does not end the wait at once: the tasks have
@@ -341,6 +411,31 @@ async def cancel_and_wait(*tasks: asyncio.Future[Any]) -> None:
     for task in tasks:
         if task.done() and not task.cancelled():
             task.exception()
+    return all(task.done() for task in tasks)
+
+
+async def _told_twice(
+    folding: asyncio.Future[Any], *beside: asyncio.Future[Any]
+) -> tuple[bool, BaseException | None]:
+    """Tell a fold to stop, and again if it has not ended `STOPPED_FOLD_S` later, and say
+    whether it still goes on, and the cancel or the interrupt of this call that came meanwhile,
+    or None. `beside`, the watch for a press, is told with the first.
+
+    A second press, or a cancel, while the fold was waited for raised out of the first wait and
+    took the place of everything after it: the fold was told once, nothing marked it, and the
+    person was told it had stopped, or that a release had not gone out, while it went on. It is
+    kept here and handed back, and both tellings still happen, each waited for as
+    `cancel_and_wait` waits, so no number of presses can cut them short."""
+    later: BaseException | None = None
+    for tasks in ((folding, *beside), (folding,)):
+        try:
+            if await cancel_and_wait(*tasks) or folding.done():
+                break
+        except (asyncio.CancelledError, KeyboardInterrupt) as e:
+            later = e
+            if folding.done():
+                break
+    return not folding.done(), later
 
 
 @contextlib.asynccontextmanager
@@ -379,8 +474,8 @@ async def fold_unless_stopped(
     raced against `stopped`, and the press cancels it at its next await. A goal already sent is
     one step cap from where the arm was, so that is as far as it goes on.
 
-    The fold task does not outlive this call, unless it will not go (`cancel_and_wait`). If the
-    task awaiting it is cancelled, which is what
+    The fold task does not outlive this call, unless it will not go when told twice, and then
+    `FoldWentOn` says so (`cancel_and_wait`). If the task awaiting it is cancelled, which is what
     a later Ctrl-C does where the switch has handed the signal back, the fold is cancelled and
     waited for before the cancellation goes on up: a fold left running would go on sending goals
     while the close decides whether to let go. A `stopped` that fails is no stop, and the fold
@@ -396,16 +491,34 @@ async def fold_unless_stopped(
     folding = asyncio.ensure_future(fold())
     try:
         await asyncio.wait({folding, watching}, return_when=asyncio.FIRST_COMPLETED)
-    except BaseException:
-        # this call was cancelled or interrupted while both ran: neither may outlive it
-        await cancel_and_wait(folding, watching)
-        raise
+    except BaseException as stopped_it:
+        # This call was cancelled or interrupted while both ran: neither may outlive it. The fold
+        # is told twice, as after a press, and the cancel or the interrupt is marked when it is
+        # still going (`fold_went_on`): told once, a fold that lost the cancel was said to have
+        # stopped, or a release not to have gone out, and then went on.
+        went_on, later = await _told_twice(folding, watching)
+        leaving = later or stopped_it
+        if went_on:
+            setattr(leaving, WENT_ON, True)
+        if leaving is stopped_it:
+            raise
+        raise leaving from stopped_it
     if folding.done():
         # the fold ended first, or both at once: it is what happened, whatever was pressed
         await cancel_and_wait(watching)
         return folding.result()
     if not watching.cancelled() and watching.exception() is None:
-        await cancel_and_wait(folding)
+        # Told twice, since a cancel lost on its way is not lost twice, and said for what it is if
+        # it still goes on: a fold abandoned after the first wait was reported stopped, and the
+        # stop sent after it was followed by its next goals.
+        went_on, later = await _told_twice(folding)
+        if later is not None:
+            # a second press, or a cancel, while the fold was waited for goes on up, marked
+            if went_on:
+                setattr(later, WENT_ON, True)
+            raise later
+        if went_on:
+            raise FoldWentOn
         raise FoldStopped
     # a `stopped` that failed is no stop, so the fold goes on alone. Awaited directly, so a
     # cancellation of this call is passed on to the fold and waited out with it
@@ -428,12 +541,14 @@ async def release_where_it_stands(
     way once a press has been told to stay, and the person who changed their mind about dropping
     an arm read that it had stopped as the arm went limp. A body that does not say gets the limp
     reading, which is the one that never drops an arm. Never raises."""
+    event, note = _unbreakable(event, note)
     try:
         released = await fold_unless_stopped(
             functools.partial(let_go_if_any, transport, anywhere=True), stopped
         )
-    except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
-        if getattr(transport, "in_hand", None) is False:
+    except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as e:
+        # one that would not end when stopped may still go out, so it gets the limp reading
+        if not fold_went_on(e) and getattr(transport, "in_hand", None) is False:
             event(stage="kept", reason=NOT_SENT)
             note(RELEASE_NOT_SENT)
             return Settled("kept", NOT_SENT, said=RELEASE_NOT_SENT)
@@ -511,6 +626,7 @@ async def settle_missed_fold(
 
     Neither question is put over joints whose own torque read found them off after a fold
     (`RestResult.limp`): `LIMP_AFTER_A_MISS` says so instead, and `kept`."""
+    event, note = _unbreakable(event, note)
     if missed.limp:
         return _limp(missed, event=event, note=note)
     # somebody is at the arm from here on, so a Ctrl-C is a press and quits nothing, or the third
@@ -525,13 +641,15 @@ async def settle_missed_fold(
         return Settled("kept", answer, asked="clear")
     event(stage="refold", reason=TO_FOLD_AGAIN)
     interrupted = False
+    stopped_line = FOLD_STOPPED
     again: RestResult | None
     try:
         again = await fold_unless_stopped(fold, getattr(person, "stopped", None))
-    except FoldStopped:
+    except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
         interrupted, again = True, None
-    except (asyncio.CancelledError, KeyboardInterrupt):
-        interrupted, again = True, None
+        if fold_went_on(stopped_it):
+            # never "stopped" over a fold that may still be moving: the line says it cannot tell
+            stopped_line = FOLD_WENT_ON
     except Exception as e:
         # a fold that failed in a way nothing here can read: settled as one over an arm that
         # stopped answering, with nothing more asked, since a drop offered over an arm nobody
@@ -539,7 +657,7 @@ async def settle_missed_fold(
         again = RestResult("refused", f"{type(e).__name__}: {e}", answered=False)
     if interrupted:
         event(stage="kept", reason=FOLD_INTERRUPTED)
-        note(FOLD_STOPPED)
+        note(stopped_line)
         with contextlib.suppress(Exception, asyncio.CancelledError, KeyboardInterrupt):
             # The fold was cancelled at an await, and a goal it sent may still be on its way:
             # the stop holds the arm where it is now. A bus still busy with the call the cancel
@@ -547,7 +665,7 @@ async def settle_missed_fold(
             # second press landing here, as a person pressing twice does, is caught as well:
             # the close that comes after this has to happen, and it keeps the torque on
             await stop()
-        return Settled("kept", FOLD_INTERRUPTED, asked="clear", said=FOLD_STOPPED)
+        return Settled("kept", FOLD_INTERRUPTED, asked="clear", said=stopped_line)
     if again is None or not again.recorded:
         # nothing to fold to after all, which a caller that checked cannot reach: the arm is
         # left as the first fold left it, holding, and nothing more is asked

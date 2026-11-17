@@ -282,8 +282,9 @@ Also in scope:
   [docs/guides/jetson.md](docs/guides/jetson.md)), an HTTP server on port 9874 on a board that
   Roboglot reaches with `--host` from the laptop. It serves a live view from a camera on the board,
   runs YOLO on any JPEG it is sent, and hands out the board's own files, the output of
-  `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default and warns when it is
-  bound wider with no token. A token, once one is configured, is required on every path, read
+  `nvpmodel -q` and one line of `tegrastats`. It binds loopback by default, and bound wider with
+  no token it refuses to start unless `--allow-no-token` says that is on purpose, when it warns
+  instead. A token, once one is configured, is required on every path, read
   from the `X-Roboglot-Token` header and never from the query string, and compared with
   `hmac.compare_digest`. A `--token-file` that is named and missing, unreadable or empty refuses
   to start rather than run with authentication off. A request without the token is refused on
@@ -397,15 +398,19 @@ Also in scope:
   scales to zero.
 - **The bridge daemon** (`bridge/open_duck/roboglot_duck_bridge.py`), a TCP listener on port
   9871 that walks a 42 cm biped. It binds loopback by default and compares a token with
-  `hmac.compare_digest`, but a token is only required if one is configured, and binding it
-  wide only warns. Anything that lets an unauthenticated peer move the robot, defeat the
-  300 ms deadman, exceed the clamps, or reach past the seven floats the protocol exposes is
-  a security issue. Going limp is currently unreachable by construction, and it should stay
-  that way: there is no method in the protocol that touches torque.
+  `hmac.compare_digest`. A token is required only if one is configured, but bound wider with no
+  token the bridge refuses to start unless `--allow-no-token` says that is on purpose, and a
+  `--token-file` that is named and missing, or any token file that is unreadable or empty,
+  refuses to start too. It is plain TCP, so the token and every command cross the network in
+  the clear unless a tunnel carries them. Anything that lets an unauthenticated peer move the
+  robot, defeat the 300 ms deadman, exceed the clamps, or reach past the seven floats the
+  protocol exposes is a security issue. Going limp is currently unreachable by construction,
+  and it should stay that way: there is no method in the protocol that touches torque.
 - **The camera daemon** (`bridge/open_duck/roboglot_duck_camd.py`), an HTTP server on port
   9872 that serves a live view of wherever the robot is, with **no authentication at all**.
-  It binds loopback by default and warns when told otherwise. Reach it through an ssh
-  tunnel. If you bind it wide, everyone on that network can watch your home.
+  It binds loopback by default and refuses any other address unless `--allow-no-token` says
+  that is on purpose, when it warns instead. Reach it through an ssh tunnel. If you bind it
+  wide, everyone on that network can watch your home.
 - **The ToddlerBot daemon** (`bridge/toddlerbot/roboglot_toddlerbot_bridge.py`), a TCP
   listener on port 9873 that drives a 3 kg humanoid which cannot get up if it falls. It
   binds loopback by default, compares its token with `hmac.compare_digest`, and requires one

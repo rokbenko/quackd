@@ -130,11 +130,18 @@ Safety, in the order it matters:
 - Head control is **off unless you ask**, then clamped to 80 percent of the runtime's range
   and rate limited to 1 rad/s of elapsed time, inside the control loop. Roboglot never presses
   upstream's head-control mode button.
-- The bridge **binds loopback by default** and wants a token. Prefer
-  `ssh -L 9871:127.0.0.1:9871 your-pi`. This port walks a robot. If the token file exists but
-  the service user cannot read it, the bridge **refuses to start** rather than running with
+- The bridge **binds loopback by default**, and bound wider with no token it **refuses to
+  start** unless `--allow-no-token` says that is on purpose. Prefer
+  `ssh -L 9871:127.0.0.1:9871 your-pi`. This port walks a robot, and it has no TLS, so its
+  token and every command cross the network in the clear unless a tunnel carries them. If a
+  token file named with `--token-file` is missing, or the service user cannot read the token
+  file, or it is empty, the bridge **refuses to start** rather than running with
   authentication silently disabled, and it reports `auth: token` or `auth: none` at connect
   so the difference is visible from the laptop.
+- A shutdown (SIGTERM or Ctrl-C) zeroes the command and **refuses every command** until the
+  loop has settled and ended, and says so: `move` and `gaze` fail with `the bridge is shutting
+  down; nothing moves now`, and so does the heartbeat. A command with a number that is not
+  finite is refused whole.
 - The only e-stop is the power switch.
 
 Every flag, the token, the ports, `--fake`, and how to get these files onto a Pi at all:
@@ -151,7 +158,13 @@ the kernel take it before it takes the walk loop. It captures on a timer rather 
 request, so a slow client cannot stall the capture, and serves the newest frame at
 `/snapshot.jpg` with a `/healthz` beside it. Roboglot fetches it directly, the way
 `--camera-url` already works for `microduck:jsonrpc`, and takes a JPEG or a PNG from whatever
-that URL names.
+that URL names. A camera URL is http or https: a `--camera-url` with any other scheme is
+refused before anything connects, by a sentence that names the two. A URL the bridge names is
+followed only over HTTP or HTTPS to the host Roboglot connected to (loopback counts when it
+reached the bridge on loopback, as the tunnel does). Any other is refused at connect, with the
+reason in the camera's error, and the duck then has no camera unless you name one with
+`--camera-url`. Each frame is fetched whole within one second or not at all, at most 8 MB of it,
+with no proxy, and a redirect is followed only to the same scheme, host and port.
 
 It reads a camera and answers GET. There is no control path in that file at all, so the
 camera port cannot move the robot even if you expose it.
@@ -225,6 +238,7 @@ less than its name suggests, and they are worth knowing before you write a task.
 | `SOUND_FILE_NAMES` | Roboglot sends a mood from its own vocabulary and never spells a `.wav` name; the bridge logs it and presses the random-sound button |
 | `ANTENNA_GESTURES` | perk, droop and wiggle are Roboglot's words, turned into servo positions by the bridge |
 | `LOOP_HEADROOM` | the bridge reports its loop rate and Roboglot's heartbeat fails below 35 Hz, so a starved Pi aborts a run instead of walking badly |
+| the walk loop on a KeyboardInterrupt | nobody here has read what upstream's walk loop does with the KeyboardInterrupt that ends the bridge's shutdown settle: whether it de-energises the servos, or catches it and loops on. The bridge sends it after the settle so the loop's own handling can run. The hard exit stays behind it: a second SIGTERM or Ctrl-C exits at once, and systemd kills the unit at its `TimeoutStopSec` |
 
 ## How to help
 

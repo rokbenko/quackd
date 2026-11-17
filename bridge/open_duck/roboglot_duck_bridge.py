@@ -32,6 +32,7 @@ import _thread
 import argparse
 import contextlib
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -120,11 +121,23 @@ SETTLE_S = 0.5
 #: A loop that has not ticked for this long is wedged, not slow. Above one 20 ms period plus
 #: GC jitter, below Roboglot's own 0.5 s heartbeat, so the bridge notices first.
 TICK_STALE_S = 0.25
+#: The error code of a request that would move the duck once a shutdown has begun. The codes
+#: this protocol already answers with are 2 (authentication), 3 (protocol) and 4 (a part this
+#: duck was not built with), so this is the next one free.
+ERR_SHUTTING_DOWN = 5
+#: What a refused move, `duck.health` and `duck.state`'s readers are told once a shutdown has
+#: begun, in one wording so the client can say the same.
+SHUTTING_DOWN = "the bridge is shutting down; nothing moves now"
 
 log = logging.getLogger("roboglot-duck-bridge")
 
 
 def clamp(value: float, bounds: tuple[float, float]) -> float:
+    """`value`, held inside `bounds`. A number that is not finite raises instead of being
+    clamped: `min(hi, nan)` keeps `hi`, so NaN came out as the bound, which on a velocity is
+    full speed."""
+    if not math.isfinite(value):
+        raise ValueError(f"{value!r} is not a finite number")
     return max(bounds[0], min(bounds[1], value))
 
 
@@ -216,6 +229,9 @@ class BridgeCore:
         #: client that is up to date.
         self.stop_latch_s = self.deadman_s
         self.stopped_until = 0.0
+        #: Set when a shutdown begins and never cleared, because the process is on its way
+        #: out. Read only through `may_move`.
+        self.shutting_down = False
         self.sounds: list[str] = []
         self.gestures: list[str] = []
         self._seq = 0
@@ -272,6 +288,14 @@ class BridgeCore:
         self._last_tick = now
         self.ticks += 1
         snap = self.snapshot
+        may_move = self.may_move()
+        if not may_move:
+            # A command can be part way through `_apply` on the server thread when the shutdown
+            # begins, and store its walk after the zero. The loop has the last word, so from
+            # here on it reads zero velocities, a head that stays where it is and antennas at
+            # rest, whatever the snapshot holds.
+            self.head_target = self.head_now
+            self._gesture = None
         # The head is a rate-limited servo of its own, stepped here rather than in `_apply`:
         # the slew has to be per unit of time, and this is the only place that knows how much
         # time has passed. See `_step_head`.
@@ -293,7 +317,7 @@ class BridgeCore:
         elif self._was_stale and not stale:
             log.info("deadman: commands are arriving again (tick %d)", self.ticks)
         self._was_stale = stale
-        if not stale and self.fallen is not True:
+        if may_move and not stale and self.fallen is not True:
             return Snapshot(
                 seq=snap.seq,
                 at=snap.at,
@@ -386,6 +410,19 @@ class BridgeCore:
             return self._err(msg_id, 2, "say duck.hello first"), authed
 
         if method == "duck.command":
+            if not self.may_move():
+                # A notification has no answer, so a command refused in silence read as taken:
+                # the client's `move` went on reporting a walk the duck never made. This one is
+                # answered with a notification of its own that says why.
+                return {
+                    "jsonrpc": JSONRPC,
+                    "method": "duck.refused",
+                    "params": {
+                        "method": "duck.command",
+                        "code": ERR_SHUTTING_DOWN,
+                        "message": SHUTTING_DOWN,
+                    },
+                }, authed
             self._apply(params)
             return None, authed
         if method == "duck.stop":
@@ -427,6 +464,8 @@ class BridgeCore:
             gesture = str(params.get("gesture", "wiggle"))
             if gesture not in ("perk", "droop", "wiggle"):
                 return self._err(msg_id, -32602, f"unknown antenna gesture {gesture!r}"), authed
+            if not self.may_move():
+                return self._err(msg_id, ERR_SHUTTING_DOWN, SHUTTING_DOWN), authed
             self.gestures.append(gesture)
             self._gesture = (gesture, self.now())
             return self._ok(
@@ -449,30 +488,42 @@ class BridgeCore:
         #
         # A client that sends no epoch at all is held to the blunt window instead: it cannot
         # prove it has heard, so it is not given the benefit of the doubt.
+        #
+        # A shutdown is not that kind of stop: it refuses every command, whatever its epoch and
+        # however long it takes. See `may_move`.
+        if not self.may_move():
+            return
         if self.now() < self.stopped_until:
             epoch = params.get("epoch")
             if epoch is None or int(epoch) < self.stop_epoch:
                 return
+        # Every number this command would use is read before any of it is applied. The server's
+        # `json.loads` takes `NaN` and `Infinity`, and a number that is not finite has no
+        # meaning as a speed or an angle, so the whole command is refused, as a lost packet
+        # would be: the duck goes on with the last command it took until the deadman ends it.
+        velocity = [float(params.get(axis, 0.0)) for axis in ("vx", "vy", "vyaw")]
+        asked = (params.get("head") or {}) if self.limits.head_enabled else {}
+        head = {name: float(asked[name]) for name in HEAD_ORDER if name in asked}
+        if not all(math.isfinite(value) for value in (*velocity, *head.values())):
+            log.warning("refused a duck.command with a number that is not finite: %.200r", params)
+            return
         snap = self.snapshot
         # Only the target moves here. The position is stepped toward it by the control loop
         # at a bounded rate (`_step_head`), which is the only place that knows how much time
         # has passed — a step applied per received message is not a rate limit.
         if self.limits.head_enabled:
-            asked = params.get("head") or {}
             target = list(self.head_target)
             for i, name in enumerate(HEAD_ORDER):
-                if name in asked:
-                    target[i] = clamp(
-                        float(asked[name]), head_bounds(name, self.limits.head_safety)
-                    )
+                if name in head:
+                    target[i] = clamp(head[name], head_bounds(name, self.limits.head_safety))
             self.head_target = (target[0], target[1], target[2], target[3])
         self._seq += 1
         self.snapshot = Snapshot(
             seq=self._seq,
             at=self.now(),
-            vx=clamp(float(params.get("vx", 0.0)), self.limits.vx),
-            vy=clamp(float(params.get("vy", 0.0)), self.limits.vy),
-            vyaw=clamp(float(params.get("vyaw", 0.0)), self.limits.vyaw),
+            vx=clamp(velocity[0], self.limits.vx),
+            vy=clamp(velocity[1], self.limits.vy),
+            vyaw=clamp(velocity[2], self.limits.vyaw),
             head=self.head_now,
             triggers=snap.triggers,
         )
@@ -487,6 +538,23 @@ class BridgeCore:
         # any more.
         self.head_target = self.head_now
         self.snapshot = Snapshot(seq=self._seq, at=self.now(), head=self.head_now)
+
+    def may_move(self) -> bool:
+        """Whether anything a client sends may move the duck now. This is the one place that
+        decides it, read by `duck.command`, by `duck.antennas` and by the loop itself.
+
+        Never again, once a shutdown has begun. The shutdown used to zero with an ordinary
+        stop, whose latch lasts only the deadman while the settle lasts longer, and which a
+        client that has read `duck.state` is past at once. A client still in the middle of a
+        `move` therefore walked the duck again, and the settle ended the loop mid-stride with
+        torque on: the fall the settle exists to prevent."""
+        return not self.shutting_down
+
+    def begin_shutdown(self) -> None:
+        """Zero the command and refuse every later one until the process ends. The flag goes
+        up before the zero, so a command that arrives in between is refused, not obeyed."""
+        self.shutting_down = True
+        self._zero()
 
     def hello(self) -> dict[str, Any]:
         return {
@@ -515,13 +583,17 @@ class BridgeCore:
 
     def state(self) -> dict[str, Any]:
         snap = self.snapshot
+        # Once a shutdown has begun the loop reads zeros whatever the snapshot holds (see
+        # `may_move`), and a command part way through `_apply` can still store a walk after the
+        # zero, so the state reports what the loop does: still, and stopped for good.
+        may_move = self.may_move()
         return {
             "t": self.now(),
             "seq": snap.seq,
             "policy_running": not self.paused,
             "fallen": self.fallen,
             "fall_detection": self.fallen is not None,
-            "moving": bool(snap.vx or snap.vy or snap.vyaw),
+            "moving": may_move and bool(snap.vx or snap.vy or snap.vyaw),
             "loop_hz": round(self.loop_hz, 1),
             "ticks": self.ticks,
             "command_age_ms": int((self.now() - snap.at) * 1000),
@@ -530,7 +602,8 @@ class BridgeCore:
             "head_target": list(self.head_target),
             "head_yaw_deg": math.degrees(self.head_now[HEAD_ORDER.index("head_yaw")]),
             "deadman_tripped": self.deadman_tripped,
-            "stop_latched": self.now() < self.stopped_until,
+            "stop_latched": not may_move or self.now() < self.stopped_until,
+            "shutting_down": not may_move,
             # so a client that missed a stop's reply can resynchronise from any state read
             # rather than having its commands dropped until the window expires
             "stop_epoch": self.stop_epoch,
@@ -565,6 +638,9 @@ class BridgeCore:
             )
         if self.fallen is True:
             healthy, reason = False, "the duck is down and this robot has no get-up policy"
+        if not self.may_move():
+            # last, so it is what a client's heartbeat reads: nothing it sends moves the duck now
+            healthy, reason = False, SHUTTING_DOWN
         return {
             "healthy": healthy,
             "reason": reason,
@@ -870,7 +946,29 @@ def runtime_commit(script: str) -> str | None:
     return commit or None
 
 
-def read_token(path: str | None) -> str | None:
+#: Where the token is read from when --token-file names no file. A file here that does not exist
+#: is no token, because this path is named whether or not anyone wrote the file.
+DEFAULT_TOKEN_FILE = "/etc/roboglot/duck-bridge.token"
+
+
+def is_loopback(bind: str) -> bool:
+    """Whether `bind` reaches this machine alone: the name localhost in any case, or an address
+    the address module calls loopback, read as the socket layer reads it, so `127.1` is
+    127.0.0.1. Anywhere else with no token is refused unless --allow-no-token says it is on
+    purpose: the owner's decision of 2026-11-16 for every bridge."""
+    if bind.lower() == "localhost":
+        return True
+    try:
+        address = ipaddress.ip_address(bind)
+    except ValueError:  # not in the address module's spelling: try the socket layer's for IPv4
+        try:
+            address = ipaddress.ip_address(socket.inet_aton(bind))
+        except OSError:  # no address at all, such as a name other than localhost
+            return False
+    return address.is_loopback
+
+
+def read_token(path: str | None, *, named: bool = False) -> str | None:
     """The bridge's token, or None if it genuinely has none.
 
     `os.path.exists()` was the wrong probe. The installer wrote the token 0600 root:root
@@ -879,26 +977,62 @@ def read_token(path: str | None) -> str | None:
     authentication silently off — indistinguishable, from the client's side, from a bridge
     that checked the token it was sent. Four places in the docs promise that token.
 
-    So: no file is no token, and the daemon says so. An unreadable file is a configuration
-    error and refuses to start. An empty one is not a token either — an empty string would
-    otherwise authenticate every client that sent nothing."""
+    So an unreadable file is a configuration error and refuses to start, and so is an empty
+    one: an empty token is no token, and starting on one would be the same silent failure by
+    another route. A missing file refuses too when it was `named` with --token-file, which is
+    asking for a token, as the Jetson daemon has always done. The default path names a file
+    whether or not anyone wrote it, so there a missing file is no token."""
     if not path:
         return None
     try:
         with open(path, encoding="utf-8") as fh:
             token = fh.read().strip()
-    except FileNotFoundError:
-        return None
+    except FileNotFoundError as e:
+        if not named:
+            return None
+        raise SystemExit(
+            f"the token file {path} does not exist. Write a token into it, or give "
+            '--token-file "" to run with no token on purpose. Refusing to start with '
+            "authentication silently disabled."
+        ) from e
     except OSError as e:
         raise SystemExit(
             f"cannot read the token file {path}: {e}. The service user has to be able to "
             "read it — check the owner and mode, or point --token-file somewhere it can. "
             "Refusing to start with authentication silently disabled."
         ) from e
+    except UnicodeDecodeError as e:
+        raise SystemExit(
+            f"the token file {path} is not UTF-8 text ({e}). Write the token into it as text, "
+            "as openssl rand -hex 32 does. Refusing to start with authentication silently "
+            "disabled."
+        ) from e
     if not token:
-        log.warning("%s is empty, so this bridge has no token at all", path)
-        return None
+        # A named file that is missing refuses too, so deleting it is a way out only for the
+        # default path; for a named one it is the empty name.
+        way_out = (
+            'give --token-file "" to run with no token on purpose'
+            if named
+            else "delete it to run with no token on purpose"
+        )
+        raise SystemExit(
+            f"the token file {path} is empty. Write a token into it, or {way_out}. Refusing to "
+            "start with authentication silently disabled."
+        )
     return token
+
+
+def wide_bind_refusal(bind: str, token: str | None, *, allow_no_token: bool) -> str | None:
+    """Why this bridge will not start: an address beyond loopback with no token, not asked
+    for on purpose. It used to warn and serve, and this port walks a robot."""
+    if is_loopback(bind) or token or allow_no_token:
+        return None
+    return (
+        f"refusing to bind {bind!r} with no token: it is not a loopback address, so anything "
+        f"that can reach it could walk your duck. Write a token to {DEFAULT_TOKEN_FILE} or name "
+        "one with --token-file, or bind 127.0.0.1 and use ssh -L. To start it open on purpose, "
+        "pass --allow-no-token."
+    )
 
 
 def capabilities_from(config: dict[str, Any]) -> dict[str, bool]:
@@ -940,9 +1074,11 @@ def install_settle(
 
     The handler itself does two cheap things and returns. A helper thread then waits out the
     settle window — during which the still-running loop consumes ~25 ticks of zero velocity
-    and comes to a stand — before raising KeyboardInterrupt in the main thread, so upstream's
-    own cleanup and ours both run inside the unit's TimeoutStopSec. A second signal gives up
-    waiting and exits now.
+    and comes to a stand — before raising KeyboardInterrupt in the main thread, so that
+    upstream's own handling of it and our cleanup run inside the unit's TimeoutStopSec. What
+    upstream's walk loop does with that KeyboardInterrupt has not been read (UNVERIFIED, on the
+    adapter's page). The hard exit stays behind it: a second signal gives up waiting and exits
+    now, and systemd kills the unit at its TimeoutStopSec.
 
     Torque stays on throughout: `stop_is_limp` is False by design, and de-energising a
     standing duck drops it.
@@ -950,17 +1086,28 @@ def install_settle(
     `interrupt` is injectable only so a test can watch the settle happen without a
     KeyboardInterrupt landing in the test runner."""
     asked = threading.Event()
+    #: Set by the settle thread just before it ends the loop. `_thread.interrupt_main` does not
+    #: raise KeyboardInterrupt itself: it runs whatever is installed for SIGINT, which is the
+    #: handler below, and that handler read the settle's own ending as a second signal and
+    #: took the hard exit. So upstream's cleanup and `main()`'s never ran, and every clean stop
+    #: left the unit failed.
+    ending = threading.Event()
 
     def handler(signum: int, _frame: Any) -> None:
+        if ending.is_set():
+            # the settle's own interrupt, taken once: any signal after it is a second one
+            ending.clear()
+            raise KeyboardInterrupt
         if asked.is_set():  # the human is not convinced; stop asking nicely
             os._exit(1)
         asked.set()
-        core._zero()
+        core.begin_shutdown()
         log.info("signal %d: zeroed the command, settling for %.1fs", signum, seconds)
 
     def settle() -> None:
         asked.wait()
         time.sleep(seconds)
+        ending.set()
         interrupt()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
@@ -1071,6 +1218,15 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         ("--max-vy", args.max_vy, VY[1]),
         ("--max-vyaw", args.max_vyaw, VYAW[1]),
     ):
+        # `abs(nan) > bound` is False, so NaN passed the check below and became the limit, and
+        # a clamp to a bound that is not a number is not a number: every command then reached
+        # the walk loop as NaN. A negative one used to be taken for its size, nought is no
+        # ceiling for an axis Roboglot drives, and Infinity is past every clamp.
+        if not (math.isfinite(asked) and asked > 0):
+            raise SystemExit(
+                f"{name}={asked} is not a finite number above 0. It is the fastest Roboglot may "
+                "ask this robot for on that axis."
+            )
         if abs(asked) > bound + 1e-9:
             raise SystemExit(
                 f"{name}={asked} is above the runtime's own clamp of {bound}. Roboglot never "
@@ -1088,7 +1244,8 @@ def build_core(args: argparse.Namespace) -> BridgeCore:
         head_enabled=bool(args.enable_head),
         head_safety=args.head_safety,
     )
-    token = read_token(args.token_file)
+    named = args.token_file is not None
+    token = read_token(args.token_file if named else DEFAULT_TOKEN_FILE, named=named)
     core = BridgeCore(
         limits=limits,
         capabilities=caps,
@@ -1180,7 +1337,19 @@ def parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--port", type=int, default=DEFAULT_PORT)
     p.add_argument("--duck-config", default="~/duck_config.json")
-    p.add_argument("--token-file", default="/etc/roboglot/duck-bridge.token")
+    p.add_argument(
+        "--token-file",
+        default=None,
+        help=f"the token a client must send (default {DEFAULT_TOKEN_FILE}, where no file is no "
+        "token). A file named here that is missing, or any that is empty, refuses to start; "
+        'give "" to run with no token on purpose',
+    )
+    p.add_argument(
+        "--allow-no-token",
+        action="store_true",
+        help="start on an address beyond loopback with no token, on purpose. Without it the "
+        "bridge refuses to, because this port walks a robot",
+    )
     p.add_argument("--camera-url", default=None, help="an HTTP snapshot the camera process serves")
     p.add_argument("--deadman-ms", type=int, default=int(DEADMAN_S * 1000))
     p.add_argument("--max-vx", type=float, default=VX[1])
@@ -1226,6 +1395,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     # Before the socket, before the servos: a serve that cannot possibly work must fail while
     # the duck is still inert and nothing can connect to it.
+    refusal = wide_bind_refusal(args.bind, core.token, allow_no_token=args.allow_no_token)
+    if refusal is not None:
+        log.error("%s", refusal)
+        return 2
     if not args.fake:
         if not args.script:
             log.error("serve needs --script pointing at upstream's v2_rl_walk_mujoco.py")
@@ -1250,12 +1423,12 @@ def main(argv: list[str] | None = None) -> int:
                 args.duck_config,
             )
             return 2
-    if args.bind not in ("127.0.0.1", "localhost") and core.token is None:
+    if not is_loopback(args.bind) and core.token is None:  # --allow-no-token, or it refused
         log.warning(
             "binding %s with no token: anything on this network can walk your duck. Write a "
             "token to %s, or bind 127.0.0.1 and use ssh -L.",
             args.bind,
-            args.token_file,
+            args.token_file or DEFAULT_TOKEN_FILE,
         )
     server = Server(core, args.bind, args.port)
     server.start()

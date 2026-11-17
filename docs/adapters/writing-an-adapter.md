@@ -315,6 +315,15 @@ Intents are the whole vocabulary between verbs and backends: `move` (a twist), `
 `joint`, `gripper`, `enable`, `pose`, `stop`. A backend answers each with an `Ack`; a
 refusal is data (`accepted=False, reason=...`), never an exception.
 
+A verb moves the body only through `ctx.transport.send_intent`. Once the executor has ended a
+verb (the abort, its own `timeout_s`, a caller that cancelled it, a pause granted to a robot
+met, or a newer command), an intent it sends after that, other than `stop`, raises the cancel
+again and never reaches the backend, and so does a call to another verb other than `stop`; once
+a stop for it is known to have landed, a stop of its own is refused as well. A verb that
+drives the body through some other method of its transport is not held back that way: the
+executor sends its stop at once, cancels it a second time if it has not ended 0.3 s after the
+first, and leaves it behind 0.3 s later.
+
 ## Backends: mock first, then whichever route the robot leaves you
 
 Write `mock` before anything else. It runs offline, records intents, serves a synthetic frame

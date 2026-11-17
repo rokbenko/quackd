@@ -9,12 +9,19 @@ refuses a starved control loop. It proves nothing about a real duck.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import math
+import socket
+import threading
+import time
+from collections.abc import Callable
 from typing import Any
 
 import pytest
+from PIL import Image
 
+import roboglot_open_duck.bridge as client
 from roboglot.glotfile.parser import parse_glot_text
 from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import Executor, allow_all
@@ -65,6 +72,8 @@ class FakeBridge:
         self.token = token
         #: Bytes of padding on every `duck.state` answer, for lines longer than a reader takes.
         self.state_padding = 0
+        #: The camera URL the hello names.
+        self.camera_url = "http://127.0.0.1:9872/snapshot.jpg"
         self.notifications: list[dict[str, Any]] = []
         self.requests: list[dict[str, Any]] = []
         self.server: asyncio.AbstractServer | None = None
@@ -125,7 +134,7 @@ class FakeBridge:
                     "bridge_version": "0.1.0",
                     "runtime": {"commit": "3203734", "dirty": False},
                     "capabilities": self.capabilities,
-                    "camera": {"url": "http://127.0.0.1:9872/snapshot.jpg"},
+                    "camera": {"url": self.camera_url},
                     "safety": self.safety,
                 }
             elif method == "duck.health":
@@ -187,6 +196,314 @@ async def test_handshake_reports_what_this_duck_was_built_with(bridge: FakeBridg
     assert hello["method"] == "duck.hello"
     assert hello["params"] == {"protocol": PROTOCOL, "protocol_version": PROTOCOL_VERSION}
     await t.close()
+
+
+async def test_a_camera_url_from_the_hello_is_followed_only_over_http_to_the_bridges_own_host(
+    tmp_path: Any,
+) -> None:
+    """With no `--camera-url` the client fetched whatever URL the bridge's hello named, and
+    `urllib` opens `file:` URLs too, so a bridge could make the laptop read a local picture and
+    hand it on as the camera's frame, which goes to the LLM vendor with the observation. A URL
+    from the hello is now taken only over HTTP or HTTPS to the host the client connected to;
+    anything else is refused at connect with the reason, and the duck has no camera verbs
+    rather than verbs that fail. A URL the person named is theirs, and is taken as named."""
+    picture = tmp_path / "not-a-camera.jpg"
+    picture.write_bytes(b"\xff\xd8\xff")
+    fake = FakeBridge()
+    await fake.start()
+    try:
+        for named in (
+            picture.as_uri(),
+            "ftp://127.0.0.1/snapshot.jpg",
+            "http://192.0.2.7:9872/snapshot.jpg",
+            "http://127.0.0.1.example:9872/snapshot.jpg",
+        ):
+            fake.camera_url = named
+            t = OpenDuckBridge(fake.address)
+            await t.connect()
+            assert t.camera_url is None, named
+            assert t.features["camera"] is False, named
+            assert named in str(t.camera_error) and "--camera-url" in str(t.camera_error)
+            assert await t.get_frame() is None
+            await t.close()
+
+        for named in ("http://127.0.0.1:9872/snapshot.jpg", "https://localhost:9872/still.jpg"):
+            fake.camera_url = named
+            t = OpenDuckBridge(fake.address)
+            await t.connect()
+            assert (t.camera_url, t.features["camera"], t.camera_error) == (named, True, None)
+            await t.close()
+
+        fake.camera_url = picture.as_uri()
+        mine = "http://192.0.2.7:9872/snapshot.jpg"
+        t = OpenDuckBridge(fake.address, camera_url=mine)
+        await t.connect()
+        assert (t.camera_url, t.features["camera"], t.camera_error) == (mine, True, None)
+        await t.close()
+    finally:
+        await fake.stop()
+
+
+async def test_a_request_ends_at_its_timeout_even_when_the_link_will_not_drain(
+    bridge: FakeBridge,
+) -> None:
+    """`request()` awaited `drain()` before its timeout started, so on a link whose send
+    buffer had filled (a peer that went silently, with the keepalive still writing) the
+    heartbeat and the stop waited with no deadline until TCP gave up, which is minutes. The
+    write, the drain and the wait for the answer now share the one timeout."""
+    t = OpenDuckBridge(bridge.address, request_timeout_s=0.2)
+    await t.connect()
+
+    async def never_drains() -> None:
+        await asyncio.Event().wait()
+
+    assert t._writer is not None
+    t._writer.drain = never_drains  # type: ignore[method-assign]
+    try:
+        async with asyncio.timeout(t.request_timeout_s * 20):
+            with pytest.raises(HeartbeatError, match="no answer within"):
+                await t.heartbeat()
+            await t.stop()
+        assert "no answer within" in str(t.stop_error)
+    finally:
+        await t.close()
+
+
+class RawCamera(threading.Thread):
+    """An HTTP camera on 127.0.0.1 that answers each request with whatever `answer` writes,
+    raw, so a test can make it send too much, too slowly, or somewhere else. It notes the path
+    of every request and the bytes it sent, and notices when the client hangs up on it."""
+
+    def __init__(self, answer: Callable[[socket.socket, RawCamera, str], None]) -> None:
+        super().__init__(name="roboglot-test-camera", daemon=True)
+        self.answer = answer
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(8)
+        self.sock.settimeout(0.05)
+        self.port = self.sock.getsockname()[1]
+        self.stopping = threading.Event()
+        self.hung_up = threading.Event()
+        self.paths: list[str] = []
+        self.sent = 0
+
+    def url(self, path: str = "/snapshot.jpg") -> str:
+        return f"http://127.0.0.1:{self.port}{path}"
+
+    def send(self, conn: socket.socket, data: bytes) -> None:
+        conn.sendall(data)
+        self.sent += len(data)
+
+    def run(self) -> None:
+        while not self.stopping.is_set():
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                continue
+            with conn:
+                conn.settimeout(5)
+                head = b""
+                try:
+                    while b"\r\n\r\n" not in head:
+                        chunk = conn.recv(4096)
+                        if not chunk:
+                            break
+                        head += chunk
+                    words = head.split(b" ", 2)
+                    path = words[1].decode() if len(words) > 2 else ""
+                    self.paths.append(path)
+                    self.answer(conn, self, path)
+                except OSError:
+                    self.hung_up.set()
+        self.sock.close()
+
+    def finish(self) -> None:
+        self.stopping.set()
+        self.join(timeout=10)
+
+
+def _jpeg() -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (24, 16), (200, 120, 40)).save(out, "JPEG")
+    return out.getvalue()
+
+
+def _picture(conn: socket.socket, camera: RawCamera, _: str) -> None:
+    body = _jpeg()
+    head = f"HTTP/1.0 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: {len(body)}\r\n\r\n"
+    camera.send(conn, head.encode() + body)
+
+
+async def test_a_frame_is_read_under_the_frame_limit_and_the_fetch_ends_there() -> None:
+    """A frame was read with `resp.read()`, whole and with no cap, so a camera, or a bridge that
+    named one, could make the laptop hold whatever it sent. It is read in chunks now and given
+    up past `CAMERA_MAX_BYTES`, the Microduck transport's limit for one picture, which is the
+    frame limit Roboglot already reads HTTP cameras under; the client hangs up there."""
+    from roboglot_microduck.transports.jsonrpc_unix import SNAPSHOT_MAX_BYTES
+
+    endless_bytes = 3 * SNAPSHOT_MAX_BYTES
+
+    def endless(conn: socket.socket, camera: RawCamera, _: str) -> None:
+        camera.send(conn, b"HTTP/1.0 200 OK\r\nContent-Type: image/jpeg\r\n\r\n")
+        block = b"\0" * 65536
+        while camera.sent < endless_bytes:
+            camera.send(conn, block)
+
+    camera = RawCamera(endless)
+    camera.start()
+    try:
+        t = OpenDuckBridge(camera_url=camera.url())
+        assert await t.get_frame() is None
+        assert "more than" in str(t.camera_error), t.camera_error
+        assert camera.hung_up.wait(5) and camera.sent < endless_bytes, camera.sent
+    finally:
+        camera.finish()
+    assert client.CAMERA_MAX_BYTES == SNAPSHOT_MAX_BYTES
+
+
+@pytest.mark.parametrize("source", ["hello", "--camera-url"])
+async def test_a_trickling_camera_is_cut_at_one_deadline_and_nothing_reads_on(source: str) -> None:
+    """`CAMERA_TIMEOUT_S` bounded each socket read, not the fetch, and `get_frame` awaited the
+    worker thread with no deadline either. A camera that sends one byte every half of it never
+    tripped it: `get_frame` did not return, and a caller that gave up left the thread reading.
+    The fetch now ends at one deadline, whichever source named the camera, and hangs up."""
+
+    def trickle(conn: socket.socket, camera: RawCamera, _: str) -> None:
+        head = "HTTP/1.0 200 OK\r\nContent-Type: image/jpeg\r\nContent-Length: 10000000\r\n\r\n"
+        camera.send(conn, head.encode())
+        while not camera.stopping.wait(client.CAMERA_TIMEOUT_S / 2):
+            camera.send(conn, b"\xff")
+
+    camera = RawCamera(trickle)
+    camera.start()
+    fake = FakeBridge()
+    await fake.start()
+    try:
+        if source == "hello":
+            fake.camera_url = camera.url()
+            t = OpenDuckBridge(fake.address)
+        else:
+            t = OpenDuckBridge(fake.address, camera_url=camera.url())
+        await t.connect()
+        started = time.monotonic()
+        frame = await asyncio.wait_for(t.get_frame(), 5 * client.CAMERA_TIMEOUT_S)
+        took = time.monotonic() - started
+        assert frame is None and took < 3 * client.CAMERA_TIMEOUT_S, (took, t.camera_error)
+        assert camera.hung_up.wait(3 * client.CAMERA_TIMEOUT_S), "the fetch read on after it"
+        await t.close()
+    finally:
+        camera.finish()
+        await fake.stop()
+
+
+async def test_a_redirect_is_followed_only_to_the_same_scheme_host_and_port() -> None:
+    """`urllib` followed a redirect anywhere it pointed, so a camera, or a bridge whose hello
+    named it, could send the fetch to another machine or another service and hand on what came
+    back as the camera's frame. A redirect is followed now only to the same scheme, host and
+    port, any other is refused with where it pointed, and nothing is asked there."""
+    elsewhere = RawCamera(_picture)
+    elsewhere.start()
+    moves = {
+        "/same": "/snapshot.jpg",
+        "/port": elsewhere.url(),
+        "/scheme": "file:///C:/Users/me/picture.jpg",
+        "/ftp": f"ftp://127.0.0.1:{elsewhere.port}/snapshot.jpg",
+    }
+
+    def redirecting(conn: socket.socket, camera: RawCamera, path: str) -> None:
+        if path in moves:
+            head = f"HTTP/1.0 302 Found\r\nLocation: {moves[path]}\r\nContent-Length: 0\r\n\r\n"
+            camera.send(conn, head.encode())
+        else:
+            _picture(conn, camera, path)
+
+    camera = RawCamera(redirecting)
+    camera.start()
+    try:
+        t = OpenDuckBridge(camera_url=camera.url("/same"))
+        assert await t.get_frame() is not None, t.camera_error
+        for path in ("/port", "/scheme", "/ftp"):
+            t = OpenDuckBridge(camera_url=camera.url(path))
+            assert await t.get_frame() is None, path
+            assert "redirect" in str(t.camera_error) and moves[path] in str(t.camera_error)
+        assert elsewhere.paths == [], "a redirect to another port was followed"
+    finally:
+        camera.finish()
+        elsewhere.finish()
+
+
+@pytest.mark.parametrize("named", ["localhost", "a name whose first address refuses"])
+async def test_a_camera_name_with_several_addresses_gives_each_its_share_of_the_deadline(
+    named: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The connect tried each address a name resolves to with the whole of what was left, so an
+    address that refused slowly spent the deadline the next one needed. On Windows `localhost` is
+    `::1` first, and a refused connect there takes about two seconds, so a camera listening on
+    127.0.0.1 alone, as camd does by default, never gave a frame, where the old fetch got one.
+    Each address now gets its share of what is left, in the order given. The second case puts a
+    closed loopback port first, under a name that never reaches a resolver."""
+    camera = RawCamera(_picture)
+    camera.start()
+    host = "localhost"
+    if named != "localhost":
+        host = "camera.invalid"
+        spare = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        spare.bind(("127.0.0.1", 0))
+        closed_port = spare.getsockname()[1]
+        spare.close()
+        resolve = socket.getaddrinfo
+
+        def addresses(name: str, *args: Any, **kwargs: Any) -> Any:
+            if name != host:
+                return resolve(name, *args, **kwargs)
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, socket.IPPROTO_TCP, "", (address, port))
+                for address, port in (("127.0.0.1", closed_port), ("127.0.0.1", camera.port))
+            ]
+
+        monkeypatch.setattr(socket, "getaddrinfo", addresses)
+    try:
+        t = OpenDuckBridge(camera_url=f"http://{host}:{camera.port}/snapshot.jpg")
+        assert await t.get_frame() is not None, t.camera_error
+    finally:
+        camera.finish()
+
+
+def test_a_header_byte_just_before_the_deadline_does_not_buy_a_second_deadline() -> None:
+    """The socket's timeout was set once, to what was left, before `getresponse()`, which then
+    read every header line under it. On Windows a shutdown does not wake a read already waiting,
+    so one byte of a header arriving just before the deadline bought the next read a whole
+    further timeout, and the fetch ended near twice its deadline. Every read now waits no longer
+    than what is left of the one clock, headers included."""
+    slack_s = client.CAMERA_TIMEOUT_S / 4  # scheduling, not a second read's worth of waiting
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    done = threading.Event()
+
+    def camera() -> None:
+        conn, _ = server.accept()
+        try:
+            conn.recv(4096)
+            conn.sendall(b"HTTP/1.1 200 OK\r\n")
+            time.sleep(client.CAMERA_TIMEOUT_S * 0.9)
+            conn.sendall(b"X")
+            done.wait(client.CAMERA_TIMEOUT_S * 5)
+        finally:
+            conn.close()
+
+    threading.Thread(target=camera, daemon=True).start()
+    started = time.monotonic()
+    with pytest.raises(client.FrameTooSlow):
+        client.fetch_frame(
+            f"http://127.0.0.1:{server.getsockname()[1]}/snapshot.jpg",
+            deadline_s=client.CAMERA_TIMEOUT_S,
+            max_bytes=client.CAMERA_MAX_BYTES,
+        )
+    took = time.monotonic() - started
+    done.set()
+    server.close()
+    assert took <= client.CAMERA_TIMEOUT_S + slack_s, f"the fetch took {took:.2f} s"
 
 
 async def test_a_protocol_mismatch_refuses_rather_than_guessing() -> None:

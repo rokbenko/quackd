@@ -270,6 +270,43 @@ def test_the_factory_makes_every_backend() -> None:
         make("sim2d")
 
 
+def test_a_camera_url_that_is_not_http_or_https_is_refused_when_the_adapter_is_built() -> None:
+    """The client fetched a `--camera-url` with `urllib`, which opens `file:` and `ftp:` as
+    readily as HTTP, so a picture on the laptop's own disk could be handed on as the camera's
+    frame. A camera URL is an HTTP snapshot, so anything else is refused at once, on every
+    backend, by a sentence that names the schemes it takes."""
+    from roboglot.adapters.base import AdapterError
+    from roboglot_open_duck import make
+
+    for backend in ("mock", "bridge"):
+        for url in ("file:///C:/Users/me/picture.jpg", "ftp://127.0.0.1/snapshot.jpg", "duck.jpg"):
+            with pytest.raises(AdapterError, match="http or https") as refused:
+                make(backend, camera_url=url)
+            assert url in str(refused.value)
+    for url in ("http://127.0.0.1:9872/snapshot.jpg", "HTTPS://duck.local/still.jpg"):
+        assert make("bridge", camera_url=url).backend == "bridge"
+
+
+def test_a_port_out_of_range_is_refused_and_no_refusal_prints_a_password() -> None:
+    """`http://127.0.0.1:99999/x` passed the check when the adapter was built, and every fetch
+    then failed with "Port out of range". And a refused URL was quoted whole, `user:password@`
+    included, into the refusal, the log and `camera_error`, though the fetch never sends the
+    userinfo. A port is refused unless it is 1 to 65535, and a refusal shows the URL with its
+    password hidden, as Roboglot's other records do."""
+    from roboglot.adapters.base import AdapterError
+    from roboglot_open_duck import make
+    from roboglot_open_duck.bridge import hello_camera_refusal
+
+    for url in ("http://127.0.0.1:99999/snapshot.jpg", "http://127.0.0.1:0/snapshot.jpg"):
+        with pytest.raises(AdapterError, match="port"):
+            make("bridge", camera_url=url)
+    with pytest.raises(AdapterError) as refused:
+        make("bridge", camera_url="ftp://duck:s3cret@cam.local/x.jpg")
+    assert "s3cret" not in str(refused.value) and "duck:***@cam.local" in str(refused.value)
+    said = hello_camera_refusal("http://duck:s3cret@cam.local/x.jpg", "127.0.0.1", "127.0.0.1")
+    assert said is not None and "s3cret" not in said and "duck:***@cam.local" in said
+
+
 def test_the_bring_up_task_does_not_require_the_dangerous_flag() -> None:
     """`open-duck-lookout` is what you point at a real duck first. Head control is off by
     default and is the one thing that can damage this robot, so the task must not need it."""

@@ -91,12 +91,16 @@ from roboglot.perception.base import Detection, Detector, detect_off_loop, detec
 from roboglot.release import (
     CLOSING_THE_GRIPPER,
     FOLD_STOPPED,
+    FOLD_WENT_ON,
     FOLDING_IN,
     GRIPPER_STOPPED,
+    GRIPPER_WENT_ON,
     HANDS_AWAY_S,
+    LIMP_AT_THE_CLOSE,
     FoldStopped,
     cancel_and_wait,
     fold_unless_stopped,
+    fold_went_on,
     one_watch,
     settle_missed_fold,
 )
@@ -1250,18 +1254,21 @@ class AgentLoop:
                 return await fold_unless_stopped(
                     functools.partial(self._rest, pause=False), stopped
                 )
-        except FoldStopped:
+        except FoldStopped as stopped_it:
             self._no_fold = True
-            self._fold_was_stopped()
+            self._fold_was_stopped(went_on=fold_went_on(stopped_it))
             return None
 
-    def _fold_was_stopped(self) -> None:
-        """Said to whoever pressed as well as to the log, which `--no-log` leaves them without."""
-        self._note(FOLD_STOPPED)
+    def _fold_was_stopped(self, *, went_on: bool = False) -> None:
+        """Said to whoever pressed as well as to the log, which `--no-log` leaves them without.
+        A fold that had not ended when told to twice (`went_on`) is never said to have stopped:
+        it may still be moving, and the line says Roboglot cannot tell (`FOLD_WENT_ON`)."""
+        said = FOLD_WENT_ON if went_on else FOLD_STOPPED
+        self._note(said)
         hand = self.cfg.hand_off
         if hand is not None:
             with contextlib.suppress(Exception):
-                hand.say(FOLD_STOPPED)
+                hand.say(said)
 
     async def _rest(self, *, pause: bool = True) -> RestResult | None:
         """The rest move, narrated. None for a dry run, and for a body with no rest pose.
@@ -1335,6 +1342,7 @@ class AgentLoop:
                     await self._close_what_the_hand_back_opened(parked, None)
                     return parked
                 watch = self._pressed_during_the_fold
+            went_on = False
             try:
                 parked = await fold_unless_stopped(
                     functools.partial(self._rest, pause=False), watch
@@ -1343,14 +1351,15 @@ class AgentLoop:
                 # arrived is one the gripper hears
                 await self._close_what_the_hand_back_opened(parked, watch)
                 return parked
-            except FoldStopped:
-                pass
-            except (asyncio.CancelledError, KeyboardInterrupt):
-                if self._fold_watch is None:
+            except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
+                if not isinstance(stopped_it, FoldStopped) and self._fold_watch is None:
                     raise
+                # a press, or a later Ctrl-C where somebody is watching, and the fold may have
+                # gone on after it was told twice (`fold_went_on`)
+                went_on = fold_went_on(stopped_it)
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await self._unbroken(self.executor.logged_transport().stop())
-            self._fold_was_stopped()
+                await self._stop_after_a_press()
+            self._fold_was_stopped(went_on=went_on)
             return None
         finally:
             if self._press_watch is not None:
@@ -1793,7 +1802,15 @@ class AgentLoop:
             return
         try:
             why = await fold_unless_stopped(self._open_the_gripper, self._fold_watch)
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
+            if fold_went_on(stopped_it):
+                # told twice and not ended: its jaws may still be moving, by the hand at them
+                with contextlib.suppress(Exception):
+                    hand.say(GRIPPER_WENT_ON)
+                with contextlib.suppress(Exception):
+                    self._note(GRIPPER_WENT_ON)
+                await self._hold_the_arm(hand, "the gripper opening did not stop when pressed")
+                return
             await self._hold_the_arm(hand, "a press stopped the gripper opening")
             return
         if why is None:
@@ -1805,7 +1822,7 @@ class AgentLoop:
         # in it. And the arm stays where it is, since they have just been told to reach in.
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self._unbroken(self.executor.logged_transport().stop())
+            await self._stop_after_a_press()
         said = (
             f"the gripper did not open: {why}; take what is in it by hand. The arm is holding "
             "where it stopped and does not fold"
@@ -1889,14 +1906,23 @@ class AgentLoop:
             shut = await fold_unless_stopped(
                 functools.partial(close_gripper_if_any, transport), stopped
             )
-        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt):
+        except (FoldStopped, asyncio.CancelledError, KeyboardInterrupt) as stopped_it:
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                await self._unbroken(self.executor.logged_transport().stop())
+                await self._stop_after_a_press()
+            # never "stopped" over jaws told twice that had not ended, which may still be moving
+            went_on = fold_went_on(stopped_it)
+            said = f"{GRIPPER_WENT_ON}. {LIMP_AT_THE_CLOSE}" if went_on else GRIPPER_STOPPED
             if hand is not None:
                 with contextlib.suppress(Exception):
-                    hand.say(GRIPPER_STOPPED)
-            self._emit("hand_off", stage="kept", reason="a press stopped the gripper closing")
-            self._note(GRIPPER_STOPPED)
+                    hand.say(said)
+            self._emit(
+                "hand_off",
+                stage="kept",
+                reason="the gripper closing did not stop when pressed"
+                if went_on
+                else "a press stopped the gripper closing",
+            )
+            self._note(said)
             return
         if shut.short:
             # to them first: a record that cannot be written is no reason not to tell them
@@ -1936,11 +1962,30 @@ class AgentLoop:
         """A press during the hand-back: the arm stays where it is, and nothing folds it."""
         self._no_fold = True
         with contextlib.suppress(*self._what_a_press_cannot_end()):
-            await self._unbroken(self.executor.logged_transport().stop())
+            await self._stop_after_a_press()
         with contextlib.suppress(Exception):
             hand.say(self.HELD_BACK)
         self._emit("hand_off", stage="kept", reason=why)
         self._note(self.HELD_BACK)
+
+    async def _stop_after_a_press(self) -> None:
+        """The stop a press during the teardown is answered with, waited for through any later
+        press as every step there is (`_unbroken`), and no longer than an owed stop is
+        (`Executor.last_stop`): over a link that ate it the run waited for good, and no press got
+        it out. One not answered in time goes on by itself, and the person at the arm and the
+        record are told that Roboglot cannot tell whether the arm is holding where it stopped."""
+        unanswered = await self._unbroken(self.executor.last_stop())
+        if unanswered is None:
+            return
+        said = (
+            f"the stop after the press: {unanswered}, so Roboglot cannot tell whether the arm is "
+            "holding where it stopped"
+        )
+        hand = self.cfg.hand_off
+        if hand is not None:
+            with contextlib.suppress(Exception):
+                hand.say(said)
+        self._note(said)
 
     async def _offer_release(self, parked: RestResult | None) -> None:
         """Ask the person at the terminal about an arm whose last rest move missed.
@@ -3575,8 +3620,10 @@ class AgentLoop:
                     self._watch_for_a_press(cfg.hand_off)
             await self.heartbeat.stop()
             with contextlib.suppress(Exception):
-                # the run's last intent, narrated like every other one
-                await self.executor.logged_transport().stop()
+                # the run's last intent, narrated like every other one, and waited for no longer
+                # than an owed stop is: over a link that had died it held what follows for good
+                if (unanswered := await self.executor.last_stop()) is not None:
+                    self._note(f"the run's last stop: {unanswered}")
             with contextlib.suppress(Exception):
                 # a take-hold that stop made over an arm in a person's hands, and was refused,
                 # said to them and put on the record, which the stop itself does neither of
@@ -3601,6 +3648,11 @@ class AgentLoop:
                 # and where it could not be put down, the person at the terminal may take
                 # torque off while they hold it, before the close keeps it on
                 await self._offer_release(folded)
+            with contextlib.suppress(*self._what_a_press_cannot_end()):
+                # a stop the run said goes on by itself is given its bound to land while the
+                # record is still open, and said plainly if it did not (`see_out_stops`); through
+                # a press, as the read and the close after it are, which it went straight past
+                await self._unbroken(self.executor.see_out_stops())
             final_state: dict[str, Any] = {}
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()

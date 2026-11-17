@@ -662,6 +662,95 @@ def test_a_detector_that_fails_is_named_by_healthz_until_it_answers_again(
         assert health["detect"]["errors"] == 1, "history is kept, the verdict is current"
 
 
+def test_healthz_is_not_ok_while_one_detection_has_run_longer_than_a_detect_may_wait(
+    hostd: ModuleType,
+    fake_gpu: Callable[[bool], SimpleNamespace],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`/detect` runs the model under one lock with no deadline, and `/healthz` reported only
+    the last call that had finished. A prediction that never returns, as a CUDA or driver hang
+    would not, holds that lock: every `/detect` behind it is refused as busy once it has waited
+    `DETECT_WAIT_S` for a slot, while `/healthz` still said ok. Health now says what is true
+    now, from the moment one call has run longer than that, and ok again once it returns. The
+    engine and the daemon are the real ones and the model is the suite's stand-in, held inside
+    `predict`; the limit is shortened here so the test need not wait it out."""
+    limit = getattr(hostd, "DETECT_HUNG_S", None)
+    monkeypatch.setattr(hostd, "DETECT_HUNG_S", 0.2, raising=False)
+    gpu = fake_gpu(False)
+    daemon = hostd.Hostd(engine=hostd.YoloEngine(), board_root=str(tmp_path))
+    (model,) = gpu.made
+    entered, release = threading.Event(), threading.Event()
+    answered = model.predict
+
+    def stuck(image: Any, **options: Any) -> list[Any]:
+        entered.set()
+        release.wait(timeout=60)
+        return answered(image, **options)
+
+    model.predict = stuck
+    assert daemon.engine is not None
+    worker = threading.Thread(target=daemon.engine.detect, args=(jpeg_of(),), daemon=True)
+    try:
+        worker.start()
+        assert entered.wait(timeout=30), "setup: the stand-in model was never reached"
+        assert daemon.health()["ok"] is True, "a call under way is not stuck yet"
+        time.sleep(hostd.DETECT_HUNG_S * 2)
+        health = daemon.health()
+        assert health["ok"] is False and health["detect"]["ok"] is False, health
+        assert "detector" in health["reason"] and "busy" in health["reason"], health
+    finally:
+        release.set()
+        worker.join(timeout=30)
+    health = daemon.health()
+    assert health["ok"] is True and "hung_s" not in health["detect"], health
+    daemon.stop()
+    assert limit is not None and limit >= hostd.DETECT_WAIT_S, "a call a /detect may wait on"
+
+
+def test_healthz_is_not_ok_while_every_detect_is_refused_as_busy(
+    hostd: ModuleType,
+    fake_gpu: Callable[[bool], SimpleNamespace],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A request takes one of `DETECT_SLOTS` before its body is read, so two slow uploads can
+    hold both, and every `/detect` behind them was refused 503 busy while `/healthz`, which
+    watched only a call in the model, said ok. Health now says so, from a busy refusal on, for
+    as long as every slot stays held. The wait for a slot is shortened here, as the uploads'
+    own read deadline equals it in the shipped constants."""
+    monkeypatch.setattr(hostd, "DETECT_WAIT_S", hostd.REQUEST_TIMEOUT_S / 5)
+    fake_gpu(False)
+    daemon = hostd.Hostd(engine=hostd.YoloEngine(), board_root=str(tmp_path))
+    holders: list[socket.socket] = []
+    with serving(hostd, daemon) as port:
+        try:
+            _, before = reply(port, "GET", "/healthz")
+            assert before["ok"] is True, before
+            for _ in range(hostd.DETECT_SLOTS):
+                upload = socket.create_connection(("127.0.0.1", port), timeout=10)
+                upload.sendall(
+                    b"POST /detect HTTP/1.1\r\nHost: x\r\nContent-Type: image/jpeg\r\n"
+                    b"Content-Length: 4096\r\n\r\n"
+                )
+                holders.append(upload)
+            deadline = time.monotonic() + 10
+            while daemon.detect_slots._value > 0 and time.monotonic() < deadline:
+                time.sleep(0.01)
+            status, busy = reply(port, "POST", "/detect", body=jpeg_of())
+            assert status == 503 and "busy" in busy["reason"], f"setup: {status} {busy}"
+            _, health = reply(port, "GET", "/healthz")
+            assert health["ok"] is False and "busy" in health["reason"], health
+        finally:
+            for upload in holders:
+                upload.close()
+        deadline = time.monotonic() + 10
+        while daemon.detect_slots._value < hostd.DETECT_SLOTS and time.monotonic() < deadline:
+            time.sleep(0.01)
+        _, health = reply(port, "GET", "/healthz")
+        assert health["ok"] is True, f"ok again once the slots are free: {health}"
+
+
 # ── /snapshot.jpg, the Open Duck camera daemon's semantics ──────────────────────────────
 
 
@@ -1721,6 +1810,18 @@ def _dotted(tree: ast.AST) -> set[str]:
     return out
 
 
+def test_it_starts_under_python_dash_oo_which_strips_its_docstring(hostd: ModuleType) -> None:
+    """`--help` was built from `(__doc__ or "").splitlines()[0]`, and `python -OO` strips
+    docstrings, so the list was empty and the daemon died on an IndexError before it had parsed
+    a flag. The description it shows is the docstring's first line still, spelled out once."""
+    result = subprocess.run(
+        [sys.executable, "-OO", str(HOSTD), "--help"], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+    assert hostd.__doc__ is not None and hostd.__doc__.splitlines()[0] == hostd.DESCRIPTION
+    assert hostd.DESCRIPTION in " ".join(result.stdout.split())
+
+
 def test_the_daemon_is_python_3_10_because_jetpack_6s_system_python_is() -> None:
     tree = ast.parse(SOURCE, feature_version=(3, 10))
     assert not [n for n in ast.walk(tree) if type(n).__name__ == "TryStar"], "no except*"
@@ -1805,6 +1906,53 @@ def test_binding_wide_without_a_token_warns_about_the_view_and_the_gpu(hostd: Mo
     for loopback in ("127.0.0.1", "localhost", "::1"):
         assert hostd.wide_bind_warning(loopback, None) is None
     assert hostd.wide_bind_warning("0.0.0.0", TOKEN) is None
+
+
+def test_a_wide_bind_with_no_token_refuses_to_start_unless_it_is_asked_to_run_open(
+    hostd: ModuleType,
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The owner's decision of 2026-11-16 for every bridge, which ADR-0046 had recorded as a
+    warning. On an address beyond loopback with no token the daemon warned and then served a
+    live view and its GPU to anyone on that network. It now refuses to start there, before the
+    detector loads, and names both ways out: a token, or the flag that starts it open on
+    purpose, with which it warns as before. An empty --token is no token. 192.0.2.1 is an
+    address no machine has, so nothing here listens on a wide address either way."""
+    for no_token in ([], ["--token", "  "]):
+        caplog.clear()
+        with caplog.at_level(logging.ERROR, logger="roboglot-jetson-hostd"):
+            wide = ["--bind", "192.0.2.1", "--port", "0", "--no-detect", *no_token]
+            code = hostd.main([*wide, "--board-root", str(tmp_path)])
+        assert code == 2, no_token
+        assert "--allow-no-token" in caplog.text and "--token-file" in caplog.text
+    assert capsys.readouterr().out == "", "it refused before it opened or served anything"
+
+    refusal = hostd.wide_bind_refusal
+    assert refusal("192.0.2.1", None, allow_no_token=False) is not None
+    assert refusal("192.0.2.1", None, allow_no_token=True) is None, "open, on purpose"
+    assert refusal("192.0.2.1", TOKEN, allow_no_token=False) is None
+    for loopback in hostd.LOOPBACK:
+        assert refusal(loopback, None, allow_no_token=False) is None, "loopback is as it was"
+    assert hostd.parser().parse_args([]).allow_no_token is False
+
+
+def test_every_loopback_spelling_starts_as_it_did_and_the_refusal_says_only_what_is_true(
+    hostd: ModuleType,
+) -> None:
+    """The refusal compared the address with ("127.0.0.1", "localhost", "::1"), so 127.0.0.2,
+    `127.1` and `LOCALHOST`, all of them loopback, refused to start, where the daemon had served
+    there with a warning only off loopback. Loopback is what the address module calls loopback,
+    and the name localhost in any case; every other address is refused, and the refusal says of
+    it only that it is not loopback."""
+    for loopback in ("127.0.0.2", "127.1", "LOCALHOST", "::1"):
+        assert hostd.wide_bind_refusal(loopback, None, allow_no_token=False) is None, loopback
+        assert hostd.wide_bind_warning(loopback, None) is None, loopback
+    for wide in ("0.0.0.0", "::", "", "jetson.local"):
+        said = hostd.wide_bind_refusal(wide, None, allow_no_token=False)
+        assert said is not None and "not a loopback address" in said, wide
+        assert "that network" not in said, said
 
 
 def test_it_serves_on_ipv6_loopback_too(hostd: ModuleType, tmp_path: Path) -> None:

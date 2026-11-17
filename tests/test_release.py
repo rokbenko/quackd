@@ -25,7 +25,9 @@ from roboglot.release import (
     ENTER,
     ENTER_DROPS_S,
     FOLD_INTERRUPTED,
+    FOLD_STOPPED,
     FOLD_UNANSWERED,
+    FOLD_WENT_ON,
     LIMP_AFTER_A_MISS,
     NO_KEYS,
     NOBODY,
@@ -38,6 +40,7 @@ from roboglot.release import (
     ask,
     cancel_and_wait,
     fold_unless_stopped,
+    fold_went_on,
     one_watch,
     release_where_it_stands,
     settle_missed_fold,
@@ -435,6 +438,365 @@ async def test_a_fold_that_will_not_go_does_not_hold_up_what_comes_after(
     finally:
         let_go.set()
         await task
+
+
+#: `STOPPED_FOLD_S` shrunk for the tests below, as the test above shrinks it, and a fold's tick.
+SHORT_STOPPED_FOLD_S = 0.05
+FOLD_TICK_S = SHORT_STOPPED_FOLD_S / 5
+
+
+class _PressingPerson(Person):
+    """Enter at the first question, then a press once the second fold has begun."""
+
+    def __init__(self, folding: asyncio.Event) -> None:
+        super().__init__(True)
+        self.folding = folding
+
+    async def stopped(self) -> None:
+        await self.folding.wait()
+        await asyncio.sleep(2 * FOLD_TICK_S)
+
+
+def _fold_that_swallows(
+    timeline: list[str], folding: asyncio.Event, ended: asyncio.Event, *, cancels: int
+) -> Any:
+    """A second fold that sends a goal every tick and catches its first `cancels` cancels, as one
+    whose cancel was lost on its way does, running on until `ended` is set or one gets through."""
+
+    async def fold() -> RestResult:
+        caught = 0
+        try:
+            folding.set()
+            while not ended.is_set():
+                timeline.append("goal")
+                try:
+                    await asyncio.sleep(FOLD_TICK_S)
+                except asyncio.CancelledError:
+                    caught += 1
+                    if caught > cancels:
+                        raise
+            return RestResult("arrived", "moved to the rest pose")
+        finally:
+            ended.set()
+
+    return fold
+
+
+async def test_a_fold_that_lost_its_cancel_is_told_again_before_it_is_said_to_have_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fold the person stopped was cancelled once and left after `STOPPED_FOLD_S` whether it had
+    ended or not: the person was told it had stopped where it was, the stop went out, and the
+    fold, which had lost its cancel, sent its next goals after that stop."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    timeline: list[str] = []
+    folding, ended = asyncio.Event(), asyncio.Event()
+
+    async def stop() -> None:
+        timeline.append("stop")
+
+    fold = _fold_that_swallows(timeline, folding, ended, cancels=1)
+    settled = await asyncio.wait_for(
+        settle_missed_fold(Arm(), _PressingPerson(folding), MISSED, fold=fold, stop=stop), 2.0
+    )
+    alive_when_said = not ended.is_set()
+    ended.set()
+    assert settled.said == FOLD_STOPPED
+    assert not alive_when_said, "told the fold stopped while it was still running"
+    assert timeline[-1] == "stop", f"goals went out after the stop: {timeline}"
+
+
+async def test_a_fold_that_will_not_stop_is_never_said_to_have_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same fold catching every cancel: after the second wait it is left, and the person is
+    told plainly that Roboglot cannot tell whether the arm still moves, not that it stopped."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    timeline: list[str] = []
+    folding, ended = asyncio.Event(), asyncio.Event()
+    noted: list[str] = []
+
+    async def stop() -> None:
+        timeline.append("stop")
+
+    fold = _fold_that_swallows(timeline, folding, ended, cancels=10**6)
+    try:
+        settled = await asyncio.wait_for(
+            settle_missed_fold(
+                Arm(), _PressingPerson(folding), MISSED, fold=fold, stop=stop, note=noted.append
+            ),
+            2.0,
+        )
+        assert not ended.is_set(), "the stand-in fold ended, so this proves nothing"
+        assert settled.how == "kept" and settled.reason == FOLD_INTERRUPTED
+        assert settled.said == FOLD_WENT_ON and noted == [FOLD_WENT_ON]
+        assert "stop" in timeline, "the stop is still sent"
+    finally:
+        ended.set()
+
+
+async def test_a_release_that_will_not_stop_is_never_said_to_have_sent_nothing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A release that had not gone out yet when it was stopped, and would not end, was read as
+    one that sent nothing, though it could still go out after: it gets the limp reading."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    let_go = asyncio.Event()
+
+    class Stubborn(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            while not let_go.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await let_go.wait()
+            return await super().let_go(**kw)
+
+    async def stopped() -> None:
+        await asyncio.sleep(FOLD_TICK_S)
+
+    try:
+        settled = await asyncio.wait_for(release_where_it_stands(Stubborn(), stopped=stopped), 2.0)
+        assert settled.how == "interrupted" and settled.said == RELEASE_INTERRUPTED
+    finally:
+        let_go.set()
+
+
+class _Watching(Person):
+    """Enter at every question, and a watch for a press that never fires: nobody presses."""
+
+    async def stopped(self) -> None:
+        await asyncio.Event().wait()
+
+
+async def test_a_fold_cancelled_from_outside_that_goes_on_is_never_said_to_have_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second fold cancelled from outside, a later Ctrl-C handed back to asyncio, rather than
+    stopped by a press, was told to stop once: a fold that lost that cancel was said to have
+    stopped where it was, and its next goals followed the stop sent after it."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    timeline: list[str] = []
+    folding, ended = asyncio.Event(), asyncio.Event()
+
+    async def fold() -> RestResult:
+        try:
+            folding.set()
+            while not ended.is_set():
+                timeline.append("goal")
+                try:
+                    await asyncio.sleep(FOLD_TICK_S)
+                except asyncio.CancelledError:
+                    timeline.append("cancel caught")
+            return RestResult("arrived", "moved to the rest pose")
+        finally:
+            ended.set()
+
+    async def stop() -> None:
+        timeline.append("stop")
+
+    settling = asyncio.create_task(
+        settle_missed_fold(Arm(), _Watching(True), MISSED, fold=fold, stop=stop)
+    )
+    try:
+        await asyncio.wait_for(folding.wait(), 2.0)
+        await asyncio.sleep(2 * FOLD_TICK_S)
+        settling.cancel()
+        settled = await asyncio.wait_for(settling, 2.0)
+        assert not ended.is_set(), "the stand-in fold ended, so this proves nothing"
+        assert timeline.count("cancel caught") == 2, "it was told twice"
+        assert settled.said == FOLD_WENT_ON, settled.said
+    finally:
+        ended.set()
+
+
+async def test_a_release_cancelled_from_outside_that_goes_on_is_never_said_unsent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The release cancelled from outside the same way, read before it wrote, as the arm's is:
+    `in_hand` was still False, the person was told nothing had been sent, and then it went out
+    and the arm dropped."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    started, go_on = asyncio.Event(), asyncio.Event()
+
+    class Stubborn(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            started.set()
+            while not go_on.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await go_on.wait()
+            return await super().let_go(**kw)
+
+    arm = Stubborn()
+    releasing = asyncio.create_task(release_where_it_stands(arm, stopped=_Watching(True).stopped))
+    try:
+        await asyncio.wait_for(started.wait(), 2.0)
+        releasing.cancel()
+        settled = await asyncio.wait_for(releasing, 2.0)
+        assert settled.said == RELEASE_INTERRUPTED, settled.said
+    finally:
+        go_on.set()
+
+
+@pytest.mark.parametrize("swallows", [1, 2])
+async def test_a_cancel_of_a_fold_says_whether_the_fold_went_on(
+    monkeypatch: pytest.MonkeyPatch, swallows: int
+) -> None:
+    """What every caller of `fold_unless_stopped` reads a cancel by (`fold_went_on`), in
+    roboglot/agent/loop.py and roboglot/cli.py as here: a fold that lost the first cancel and
+    ended on the second is not marked, and one that lost both is."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    folding, ended = asyncio.Event(), asyncio.Event()
+
+    async def fold() -> RestResult:
+        caught = 0
+        folding.set()
+        while not ended.is_set():
+            try:
+                await asyncio.sleep(FOLD_TICK_S)
+            except asyncio.CancelledError:
+                caught += 1
+                if caught > swallows:
+                    raise
+        return RestResult("arrived", "moved to the rest pose")
+
+    async def nobody() -> None:
+        await asyncio.Event().wait()
+
+    running = asyncio.create_task(fold_unless_stopped(fold, nobody))
+    try:
+        await asyncio.wait_for(folding.wait(), 2.0)
+        running.cancel()
+        await asyncio.wait({running}, timeout=2.0)
+        assert running.done()
+        with pytest.raises(asyncio.CancelledError) as cancelled:
+            running.result()
+        assert fold_went_on(cancelled.value) is (swallows == 2)
+    finally:
+        ended.set()
+
+
+async def _pressed_twice(task: asyncio.Task[Any]) -> None:
+    """A press that lands in the fold, and a second one while the fold told to stop is waited
+    for, as a person pressing twice does."""
+    task.cancel()
+    await asyncio.sleep(SHORT_STOPPED_FOLD_S / 2)
+    task.cancel()
+
+
+async def test_a_fold_pressed_twice_that_goes_on_is_never_said_to_have_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The second press, landing while the fold told to stop was waited for, raised out of that
+    wait and took the place of everything after it: the fold was told once, nothing marked it,
+    and the person was told it had stopped while it went on."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    timeline: list[str] = []
+    folding, ended = asyncio.Event(), asyncio.Event()
+
+    async def fold() -> RestResult:
+        try:
+            folding.set()
+            while not ended.is_set():
+                timeline.append("goal")
+                try:
+                    await asyncio.sleep(FOLD_TICK_S)
+                except asyncio.CancelledError:
+                    timeline.append("cancel caught")
+            return RestResult("arrived", "moved to the rest pose")
+        finally:
+            ended.set()
+
+    async def stop() -> None:
+        timeline.append("stop")
+
+    settling = asyncio.create_task(
+        settle_missed_fold(Arm(), _Watching(True), MISSED, fold=fold, stop=stop)
+    )
+    try:
+        await asyncio.wait_for(folding.wait(), 2.0)
+        await asyncio.sleep(2 * FOLD_TICK_S)
+        await _pressed_twice(settling)
+        settled = await asyncio.wait_for(settling, 2.0)
+        assert not ended.is_set(), "the stand-in fold ended, so this proves nothing"
+        assert timeline.count("cancel caught") == 2, "it was not told twice"
+        assert settled.said == FOLD_WENT_ON, settled.said
+    finally:
+        ended.set()
+
+
+async def test_a_release_pressed_twice_that_goes_on_is_never_said_unsent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same second press over a release that read before it wrote: the person was told
+    nothing had been sent, and then it went out and the arm dropped."""
+    monkeypatch.setattr("roboglot.release.STOPPED_FOLD_S", SHORT_STOPPED_FOLD_S)
+    started, go_on = asyncio.Event(), asyncio.Event()
+
+    class Stubborn(Arm):
+        async def let_go(self, **kw: Any) -> HandResult:
+            started.set()
+            while not go_on.is_set():
+                with contextlib.suppress(asyncio.CancelledError):
+                    await go_on.wait()
+            return await super().let_go(**kw)
+
+    arm = Stubborn()
+    releasing = asyncio.create_task(release_where_it_stands(arm, stopped=_Watching(True).stopped))
+    try:
+        await asyncio.wait_for(started.wait(), 2.0)
+        await _pressed_twice(releasing)
+        settled = await asyncio.wait_for(releasing, 2.0)
+        assert settled.said == RELEASE_INTERRUPTED, settled.said
+    finally:
+        go_on.set()
+
+
+def _full_disk_on(stage: str) -> Any:
+    """The run's record of the release, raising as a full disk does on one stage of it."""
+
+    def event(**data: Any) -> None:
+        if data.get("stage") == stage:
+            raise OSError(28, "No space left on device")
+
+    return event
+
+
+async def test_a_record_that_fails_after_the_release_went_out_still_says_what_it_did() -> None:
+    """`settle_missed_fold` never raises, but a record write that failed after the release had
+    gone out raised out of it, and the caller, which swallows that, never said the line for the
+    person holding the arm: whether torque came off, and what still holds."""
+    person, arm, noted = Person(True), Arm(), []
+    fold, _made = _folds(MISSED, MISSED)
+    settled = await asyncio.wait_for(
+        settle_missed_fold(
+            arm,
+            person,
+            MISSED,
+            fold=fold,
+            stop=_nothing,
+            event=_full_disk_on("released"),
+            note=noted.append,
+        ),
+        2.0,
+    )
+    assert arm.calls == [{"anywhere": True}], "the release did not go out"
+    assert settled.how == "released" and settled.said and "in your hands" in settled.said
+    assert any("No space left on device" in n for n in noted), noted
+
+
+async def test_a_record_that_fails_before_the_second_fold_still_makes_it() -> None:
+    """With the disk already full the first write to raise is the one before the second fold
+    (the question's own is caught), and Enter at the first question then folded nothing and said
+    nothing."""
+    person, arm = Person(True), Arm()
+    fold, made = _folds(MISSED, MISSED)
+    settled = await asyncio.wait_for(
+        settle_missed_fold(
+            arm, person, MISSED, fold=fold, stop=_nothing, event=_full_disk_on("refold")
+        ),
+        2.0,
+    )
+    assert made == ["fold"], "the second fold was never made"
+    assert settled.how == "released" and settled.said
 
 
 async def test_two_questions_over_an_arm_keep_every_press_short_of_quitting() -> None:
