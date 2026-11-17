@@ -390,27 +390,40 @@ def _flatten(line: LogLine) -> Line:
     return (_label(line.label) + (_indent(line.body) if line.multiline else line.body), line.style)
 
 
-def fmt_value(value: Any) -> str:
+def fmt_value(value: Any, *, whole: bool = False) -> str:
+    """`value` as a step line shows it: a long string or repr cut, a float to three figures.
+
+    `whole` is for a question a person answers before the value runs (`confirm_question`):
+    nothing is cut, since the pilot chooses the key order and could put what it wants unread
+    last, and a float that three figures would round is written as `repr`, the form that
+    reads back as the number that runs. A value the short form already showed whole is
+    written exactly as it was, so `duration_s=5` stays `duration_s=5`."""
     if value is None:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, float):
-        return f"{value:.3g}"
+        short = f"{value:.3g}"
+        return short if not whole or float(short) == value else repr(value)
     if isinstance(value, str):
-        return repr(value) if len(value) <= 60 else repr(value[:57] + "...")
+        return repr(value) if whole or len(value) <= 60 else repr(value[:57] + "...")
     text = repr(value)
-    return text if len(text) <= 120 else text[:117] + "..."
+    return text if whole or len(text) <= 120 else text[:117] + "..."
 
 
-def fmt_params(params: Mapping[str, Any] | None, *, drop_none: bool = False) -> str:
+def fmt_params(
+    params: Mapping[str, Any] | None, *, drop_none: bool = False, whole: bool = False
+) -> str:
     """`drop_none` is for intent bursts, where a twist's `vy=null` on every one of two
     hundred lines is noise. Everywhere else a parameter the LLM left unset is part of what
-    it chose, and `--dry-run` promises to show every one of them."""
+    it chose, and `--dry-run` promises to show every one of them. `whole` is `fmt_value`'s,
+    for a question a person answers."""
     if not params:
         return ""
     return ", ".join(
-        f"{k}={fmt_value(v)}" for k, v in params.items() if not (drop_none and v is None)
+        f"{k}={fmt_value(v, whole=whole)}"
+        for k, v in params.items()
+        if not (drop_none and v is None)
     )
 
 

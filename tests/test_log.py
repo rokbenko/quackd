@@ -24,6 +24,7 @@ from roboglot.log import (
     counting,
     fan_out,
     fmt_duration,
+    fmt_params,
     fmt_value,
     log_enabled_default,
     parse_thinking_limit,
@@ -328,6 +329,28 @@ def test_fmt_value_truncates_long_strings_and_long_reprs() -> None:
     big = {f"k{i}": list(range(10)) for i in range(20)}
     assert fmt_value(big) == repr(big)[:117] + "..."
     assert len(fmt_value(big)) == 120
+
+
+def test_a_question_shows_whole_what_a_step_line_shortens() -> None:
+    """The confirm question used the step line's form, which cuts a long string or dict and
+    prints a float to three figures, so a person approved arguments they were not shown and
+    read `120` where 119.6 ran. The question's form shows every value whole, and a number as
+    one that reads back as the value that runs. Where the short form was already the whole
+    value it is kept byte for byte, so a question that hid nothing reads as it always did:
+    if either half moves, this fails."""
+    complete = [5.0, 0.5, 0.0, -90.0, 1e20, 3, None, True, "left", "x" * 60, {"a": 1.5}, [1, 2]]
+    for value in complete:
+        assert fmt_value(value, whole=True) == fmt_value(value), value
+    assert fmt_params({"duration_s": 5.0, "leg": "left"}, whole=True) == "duration_s=5, leg='left'"
+
+    for value in (11.25, 119.6, 1004.0, 0.123456):
+        shown = fmt_value(value, whole=True)
+        assert float(shown) == value and shown != fmt_value(value), shown
+    assert fmt_value("x" * 500, whole=True) == repr("x" * 500)
+    big = {f"k{i}": list(range(10)) for i in range(20)}
+    assert fmt_value(big, whole=True) == repr(big)
+    # repr writes a control character out as its escape, inside a dict as well
+    assert fmt_value({"say": "ok\x1b[2K"}, whole=True) == "{'say': 'ok\\x1b[2K'}"
 
 
 def test_a_whole_run_is_timed_in_the_units_a_person_would_say_it_in() -> None:

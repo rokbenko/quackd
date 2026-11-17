@@ -45,10 +45,16 @@ DID_IT = "Did the arm do it?"
 
 def confirm_question(name: str, params: Mapping[str, Any]) -> str:
     """The confirm gate's question, `run kick(leg=left)?`, in the words the gate's record quotes,
-    however the question is put."""
-    from roboglot.log import fmt_params
+    however the question is put.
 
-    return f"run {name}({fmt_params(params)})?"
+    Every argument is shown whole, never in the step line's shortened form, because a person
+    says yes to exactly what runs. The values are written with `repr`, which writes a control
+    character out as its escape, and the whole question goes through `printable` as well, so
+    nothing the pilot sent can act on the terminal it is shown on."""
+    from roboglot.log import fmt_params
+    from roboglot.ui import printable
+
+    return printable(f"run {name}({fmt_params(params, whole=True)})?")
 
 
 async def answered(

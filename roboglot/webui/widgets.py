@@ -267,12 +267,19 @@ def status(view: dict[str, Any]) -> None:
 
 def questions(job: Any, view: dict[str, Any]) -> None:
     """The run's questions, each with its own two buttons: an answer names the question it
-    answers, so a second tap answers nothing."""
+    answers, so a second tap answers nothing.
+
+    The detail is the pilot's doubt in its own words, and a confirm question quotes the pilot's
+    arguments, so both are drawn as plain text: as Markdown a strike-through or a hidden formula
+    could hide part of them or dress them up above the Yes. `printable` writes out a bidi
+    override and every other character that could act on the text around it."""
+    from roboglot.ui import printable
+
     for asked in view.get("asks") or ():
         with st.container(border=True, key=f"roboglot-ask-{job.id}-{asked['id']}"):
             if asked.get("detail"):
-                st.warning(asked["detail"])
-            st.markdown(f"**{asked['question']}**")
+                st.text(printable(str(asked["detail"])))
+            st.text(printable(str(asked["question"])))
             yes, no = st.columns(2)
             if yes.button(
                 "Yes", key=f"yes-{job.id}-{asked['id']}", type="primary", width="stretch"

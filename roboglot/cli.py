@@ -50,7 +50,7 @@ if TYPE_CHECKING:  # every heavy module is imported inside the command that need
     from roboglot.adapters.base import RestResult
     from roboglot.adapters.factory import RobotSpec
     from roboglot.front import Front
-    from roboglot.safety import KillSwitch
+    from roboglot.safety import Deliberate, KillSwitch
 
 app = typer.Typer(
     name="roboglot",
@@ -1458,7 +1458,7 @@ class _TerminalHandOff:
         *,
         timeout_s: float | None = None,
         until_abort: bool = True,
-        deliberate: bool = False,
+        deliberate: Deliberate = False,
     ) -> bool:
         if self.switch is None:  # `bind` runs before the loop does, so this is a bug if hit
             raise RuntimeError("the hand-off has no kill switch to read Enter from")
@@ -1594,7 +1594,7 @@ the loop they will be asked from exists, and the switch is built from that loop'
 event. `_ask` is the only reader."""
 
 
-def _ask(question: str) -> bool:
+def _ask(question: str) -> bool | Awaitable[bool]:
     """A yes or no question, read off the terminal without racing the run for the keystroke.
 
     `typer.confirm` calls `input()`, and the kill switch's key thread is reading the same
@@ -1606,7 +1606,11 @@ def _ask(question: str) -> bool:
     Both branches tell the saved terminal what was typed, because neither of them printed it:
     the question goes out raw and the answer is echoed straight to the terminal, so a tee on
     Roboglot's own output sees the asking and not the answering. A run with `--yes` never
-    reaches here, which is why a recorded question always means a person was really asked."""
+    reaches here, which is why a recorded question always means a person was really asked.
+
+    With stdin a pipe or a file the answer comes later, from a coroutine (`_asked_on_a_stream`),
+    so the run's loop goes on while the question waits: its heartbeat beats, and its abort
+    takes the question back (`roboglot.answers.answered`)."""
     if _FRONT is not None:
         # every question a run driven from the page puts goes to the page, and a prompt here
         # would read the page's own lines off stdin (`roboglot.front`)
@@ -1616,12 +1620,26 @@ def _ask(question: str) -> bool:
         agreed = typer.confirm(question, default=False)
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
+    # read through `ask` as before by anything that cannot say it reads a stream
+    reads_a_stream = getattr(switch, "reads_a_stream", None)
+    if reads_a_stream is not None and reads_a_stream():
+        return _asked_on_a_stream(switch, question)
     answer = switch.ask(f"{question} [y/N]: ")
     ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 
 
-def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
+async def _asked_on_a_stream(switch: KillSwitch, question: str) -> bool:
+    """`_ask`'s question on a stdin that is no terminal, read as `input()` read it, a line for
+    the question (`KillSwitch.ask_async`), with the status line kept out of its way for as long
+    as it waits, and the answer told to the saved terminal as the other branches tell it."""
+    with ui.pause_status():
+        answer = await switch.ask_async(f"{question} [y/N]: ")
+    ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
+    return answer.strip().lower() in ("y", "yes")
+
+
+def _confirm_prompt(name: str, params: dict[str, Any]) -> bool | Awaitable[bool]:
     # under a running status line the question is invisible: a live region redirects stdout
     # and a prompt writes without a newline, so it stays buffered until it is too late.
     # `confirm_question` and not the raw dict, because the executor writes the same sentence into
@@ -1632,25 +1650,31 @@ def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
         return _ask(confirm_question(name, params))
 
 
-def _decide_prompt(why: str) -> bool:
-    """Asked when the pilot says it is not sure this body can do the task at all."""
+def _decide_prompt(why: str) -> bool | Awaitable[bool]:
+    """Asked when the pilot says it is not sure this body can do the task at all.
+
+    `why` carries the pilot's own reason and estimates, so it is printed through
+    `ui.printable`: Rich strips only a few control characters, and an escape sequence left in
+    would let the pilot erase the lines above the question and write its own in their place."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
         return _ask(GO_AHEAD)
 
 
-def _acknowledge_prompt(why: str) -> bool:
-    """Asked once, before anything moves, when the human is the only safety left."""
+def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
+    """Asked once, before anything moves, when the human is the only safety left. Printed
+    through `ui.printable` as `_decide_prompt` is, whoever wrote `why`."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
         return _ask(WATCHING)
 
 
-def _judge_prompt(why: str) -> bool:
+def _judge_prompt(why: str) -> bool | Awaitable[bool]:
     """Asked once, after the last segment of a `--controller vla` run: its pilot cannot tell
-    whether the task was done, so the person who watched the arm says."""
+    whether the task was done, so the person who watched the arm says. `why` quotes the task
+    file's instructions and its words for done, printed through `ui.printable`."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
         return _ask(DID_IT)
 
 
@@ -1658,6 +1682,19 @@ def _someone_to_ask() -> bool:
     """A person to put a run's questions to: at the page the run is driven from, or at a
     terminal."""
     return _FRONT is not None or _can_prompt()
+
+
+def _q_stops() -> bool:
+    """Whether `q` stops a run here: the kill switch reads keys only off a console in the
+    foreground, which is a person at a terminal (`_can_prompt`). Off NUL on Windows a key thread
+    starts and finds the input already ended, so no `q` is read there either."""
+    return _can_prompt()
+
+
+def _stop_keys() -> str:
+    """What stops a run here, in the hint under its panel: `Ctrl-C or q` at a terminal, as it
+    always read, and `Ctrl-C` alone with stdin a pipe or a file, where no key is read."""
+    return "Ctrl-C or q" if _q_stops() else "Ctrl-C"
 
 
 def _front_refusal(
@@ -2682,9 +2719,9 @@ def _run_impl(
             ),
             hint="Stop in the page stops the robot."
             if front is not None
-            else "Ctrl-C or q stops the robot. Pressing again still ends the run properly."
+            else f"{_stop_keys()} stops the robot. Pressing again still ends the run properly."
             if by_hand
-            else "Ctrl-C or q stops the robot. Ctrl-C twice quits at once.",
+            else f"{_stop_keys()} stops the robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -2942,7 +2979,7 @@ def _run_pilots_impl(
                     *resolve_play(glot.frontmatter.play, play), file_play=glot.frontmatter.play
                 ),
             ),
-            hint="Ctrl-C or q stops every robot. Ctrl-C twice quits at once.",
+            hint=f"{_stop_keys()} stops every robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -8780,7 +8817,12 @@ def _follow_goal(conn: Any, *, yes: bool) -> int:
             ui.err_console.print(_warn_line(str(line.get("reason"))))
             return 1
         if ev == "ask":
-            question = str(line.get("question"))
+            question = ui.printable(str(line.get("question")))
+            if not yes and line.get("detail"):
+                # the pilot's doubt or the warning above the question, which the record says
+                # the person read: in the pilot's words, so through `ui.printable`
+                detail = ui.printable(str(line["detail"]))
+                ui.err_console.print(Text(detail, style=ui.STYLES["warn"]))
             answer = True if yes else typer.confirm(question, default=False)
             conn.send({"op": "answer", "id": line.get("id"), "yes": answer})
         elif ev == "status" and line.get("text"):

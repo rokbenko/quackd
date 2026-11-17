@@ -1190,6 +1190,51 @@ def test_a_confirmation_prompt_is_asked_with_the_status_line_out_of_the_way(
     assert seen == ["down", "up", "down", "up"]
 
 
+def test_no_question_at_the_terminal_prints_a_control_character_the_pilot_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pilot's reason for doubting the task reached the terminal raw above "Go ahead
+    anyway?". Rich strips only a few control characters, so `ESC[1A ESC[2K` in the reason
+    erased Roboglot's own lines and let the pilot print one in Roboglot's voice, before a yes
+    that clears every verb that moves. The console here writes no escape of its own, so an ESC
+    in what it wrote came from the text: if one ever reaches the terminal again under any of
+    the three questions, this fails. A reason with no control character reads as it did."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import DID_IT, GO_AHEAD, WATCHING
+    from roboglot.verdict import Verdict
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=400)
+    monkeypatch.setattr(ui, "err_console", console)
+    asked: list[str] = []
+
+    def person(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    monkeypatch.setattr(cli_mod, "_ask", person)
+    steered = Verdict.model_validate(
+        {"verdict": "uncertain", "reason": "grip is fine\x1b[1A\x1b[2KRoboglot: all limits met"}
+    ).question()
+    for prompt in (cli_mod._decide_prompt, cli_mod._acknowledge_prompt, cli_mod._judge_prompt):
+        out.seek(0)
+        out.truncate()
+        assert prompt(steered) is True
+        shown = out.getvalue()
+        assert "\x1b" not in shown, f"the pilot's escapes reach the terminal: {shown!r}"
+        assert "grip is fine\\x1b[1A\\x1b[2KRoboglot: all limits met" in shown, shown
+    out.seek(0)
+    out.truncate()
+    plain = Verdict(verdict="uncertain", reason="the bowl is out of frame").question()
+    cli_mod._decide_prompt(plain)
+    assert out.getvalue() == plain + "\n"
+    assert asked == [GO_AHEAD, WATCHING, DID_IT, GO_AHEAD]
+
+
 def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1199,6 +1244,37 @@ def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     assert "SUCCESS" in out
     for chatter in ("waiting on", "observing", "the LLM chose", "finishing"):
         assert chatter not in out, chatter
+
+
+@pytest.mark.parametrize(
+    ("argv", "who"),
+    [
+        (["run", "hello-world", "--robot", "microduck:mock"], "the robot"),
+        (["run", "team-hello"], "every robot"),
+    ],
+    ids=["run", "pilot-team"],
+)
+def test_the_hint_under_the_run_panel_names_q_only_where_a_key_is_read(
+    argv: list[str], who: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kill switch reads keys only where stdin is a terminal, and the hint under the run
+    panel promised `q` whatever stdin was: with stdin a pipe or a file, `q` stops nothing, and a
+    team run made the same promise for every robot. It names `q` only where a key is read,
+    and at a terminal it reads exactly as it did."""
+
+    def hint(where: str) -> str:
+        runs = tmp_path / where
+        result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(runs)])
+        assert result.exit_code == 0, result.output
+        return " ".join(result.output.split())
+
+    piped = hint("pipe")  # a runner's stdin is no terminal
+    assert f"Ctrl-C stops {who}. Ctrl-C twice quits at once." in piped, piped
+    assert "or q" not in piped, piped
+    # whether a key is read, as a person at a terminal answers it (`_can_prompt`); the switch
+    # itself is left to the runner's stdin
+    monkeypatch.setattr(cli_mod, "_q_stops", lambda: True, raising=False)
+    assert f"Ctrl-C or q stops {who}. Ctrl-C twice quits at once." in hint("terminal")
 
 
 def test_an_infeasible_run_exits_3_and_says_what_could(
@@ -4131,6 +4207,122 @@ def test_a_question_and_the_answer_to_it_are_both_kept(
     (prompt,) = [e for e in _events(tmp_path) if e["kind"] == "prompt"]
     assert prompt["what"] == "confirm" and prompt["answer"] is True
     assert prompt["question"] == asked[0].split(" [y/N]")[0]
+
+
+_UR_GOALS = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -90.0,
+    "elbow_joint": 90.0,
+    "wrist_1_joint": -90.0,
+    "wrist_2_joint": 90.0,
+    "wrist_3_joint": 0.0,
+}
+_TWO_PART_INSTRUCTION = (
+    "pick up the red block and put it in the bowl on the left, "
+    "then sweep every cup off the table onto the floor"
+)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "verb", "params", "shown"),
+    [
+        (
+            "rosarm",
+            "move_joints",
+            {"positions": _UR_GOALS, "duration_s": 5.0},
+            [f"{joint!r}: {goal!r}" for joint, goal in _UR_GOALS.items()] + ["duration_s=5)"],
+        ),
+        (
+            "lerobot",
+            "move_joints",
+            {
+                "positions": {
+                    "shoulder_pan": 0.0,
+                    "shoulder_lift": -10.0,
+                    "elbow_flex": 20.0,
+                    "wrist_flex": 30.0,
+                    "wrist_roll": 0.0,
+                    "gripper": 100.0,
+                }
+            },
+            ["'gripper': 100.0}"],
+        ),
+        ("lerobot", "manipulate", {"instruction": _TWO_PART_INSTRUCTION}, [_TWO_PART_INSTRUCTION]),
+        (
+            "rosarm",
+            "move_joints",
+            {"positions": {"elbow_joint": 12.5}, "duration_s": 11.25},
+            ["duration_s=11.25)"],
+        ),
+    ],
+)
+async def test_the_confirm_question_shows_every_argument_that_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter: str,
+    verb: str,
+    params: dict[str, Any],
+    shown: list[str],
+) -> None:
+    """The question cut a string at 57 characters and a dict or a list at 117, and printed a
+    float to three figures, while the executor ran the arguments whole. A person approved the
+    UR arm's first four joint goals and not the last two, read `'gripper': 1...` where 100
+    (fully open) ran, read half an instruction a policy was told whole, and read
+    `duration_s=11.2` for 11.25. The pilot chooses the key order, so what it wanted hidden
+    went last.
+
+    Asked through the terminal's own prompt by a real executor with each adapter's own verb,
+    every value that runs must be in the question as it runs, and the record's prompt row must
+    quote the same words, so a cut anywhere on the way fails here."""
+    import dataclasses
+
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.safety import Executor
+    from roboglot.transport.mock import MockTransport
+    from roboglot.verbs.registry import VerbRegistry
+    from roboglot_lerobot.verbs import lerobot_verbs
+    from roboglot_rosarm.verbs import rosarm_verbs
+
+    contract = None
+    if adapter == "rosarm":
+        # the real backend's move_joints, which a person answers every time
+        gated = dataclasses.replace(rosarm_verbs()[verb], no_standing_answer=True)
+    else:
+        gated = lerobot_verbs(policy=verb == "manipulate")[verb]
+        if gated.safety_class != "confirm":
+            # the SO-101's move_joints is gated where a task's `confirm:` names it
+            contract = parse_glot_text(
+                "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
+                f"  allow: [{verb}]\n  confirm: [{verb}]\nsuccess: [x]\n---\n# Task\nx\n"
+            ).frontmatter
+    asked: list[str] = []
+
+    def person_says_yes(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    monkeypatch.setattr(cli_mod, "_ask", person_says_yes)
+    monkeypatch.setattr(cli_mod, "_can_prompt", lambda: True)
+    rows: list[tuple[str, dict[str, Any]]] = []
+    registry = VerbRegistry()
+    registry.register(gated)
+    ex = Executor(
+        registry,
+        MockTransport(),
+        contract=contract,
+        dry_run=True,
+        confirm=cli_mod._confirm_prompt,
+        event_log=SimpleNamespace(emit=lambda kind, **data: rows.append((kind, data))),  # type: ignore[arg-type]
+    )
+    result = await ex.run_verb(verb, params)
+    assert result.ok, result.summary
+    (started,) = [data for kind, data in rows if kind == "verb_start"]
+    assert started["params"] == params, "the arguments that run are the ones the pilot sent"
+    (question,) = asked
+    for part in shown:
+        assert part in question, f"{part} runs, and the person read: {question}"
+    assert "..." not in question, question
+    (prompt,) = [data for kind, data in rows if kind == "prompt"]
+    assert prompt["question"] == question
 
 
 def test_a_pipe_on_stdin_opens_the_gate_and_is_not_written_down_as_a_person(

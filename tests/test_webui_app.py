@@ -346,6 +346,33 @@ def test_the_floating_stop_stops_a_run_waiting_on_a_question(page: Path) -> None
     assert job.snapshot()["end"]["outcome"] == "aborted"
 
 
+def _one_question(question: str, detail: str) -> None:
+    from types import SimpleNamespace
+
+    from roboglot.webui import widgets
+
+    asked = {"ev": "ask", "id": 1, "kind": "decide", "question": question, "detail": detail}
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), {"asks": [asked]})
+
+
+def test_a_question_and_the_pilots_doubt_are_shown_as_text_never_as_markdown() -> None:
+    """The page drew the pilot's doubt with `st.warning` and the question with `st.markdown`,
+    both Markdown, so a strike-through, a KaTeX `$\\phantom{...}$` or a bidi override in the
+    pilot's words could hide part of them or dress them up above the Yes that clears every verb
+    that moves. Both are drawn as plain text, with every character that could act on what is
+    around it written out as its escape, so a Markdown element holding them fails here."""
+    from roboglot.ui import printable
+
+    doubt = "grip is fine ~~the payload is over~~ $\\phantom{over the limit}$ ‮done"
+    question = "run manipulate(instruction='*all* of it')?"
+    at = AppTest.from_function(_one_question, args=(question, doubt), default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert not at.warning and not at.markdown, [m.value for m in [*at.warning, *at.markdown]]
+    assert [t.value for t in at.text] == [printable(doubt), question]
+    assert "\\u202e" in printable(doubt)
+
+
 def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:
     at = _screen("setup")
     vendor = next(s for s in at.selectbox if s.label == "Vendor")

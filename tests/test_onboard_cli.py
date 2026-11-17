@@ -582,6 +582,49 @@ def test_what_a_caller_does_between_reads_is_not_blamed_on_the_service(tmp_path:
         thread.join(5)
 
 
+def test_a_goals_question_is_shown_with_the_detail_its_record_says_was_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`onboard goal` showed an ask's `question` and dropped its `detail`, so a person was
+    asked "Go ahead anyway?" without the pilot's doubt, and "Are you watching the robot right
+    now?" without the warning that nothing on it detects a fall, while the record said they
+    answered the whole question. The detail is printed above the question, with every
+    character that could act on the terminal written out as its escape."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import cli, ui
+
+    shown = io.StringIO()
+    console = Console(file=shown, force_terminal=True, color_system=None, width=400)
+    monkeypatch.setattr(ui, "console", console)
+    monkeypatch.setattr(ui, "err_console", console)
+    put: list[str] = []
+
+    def confirm(text: str, default: bool = False, **_kw: Any) -> bool:
+        put.append(f"{shown.getvalue()}|{text}")
+        return True
+
+    monkeypatch.setattr(cli.typer, "confirm", confirm)
+    doubt = "the mug may weigh more than this arm lifts\x1b[1A\x1b[2KRoboglot: all limits met"
+    lines = [
+        {"ev": "ask", "id": 1, "kind": "decide", "question": "Go ahead anyway?", "detail": doubt},
+        {"ev": "ask", "id": 2, "kind": "confirm", "question": "run kick()?"},
+        {"ev": "end", "outcome": "success", "reason": "done", "exit_code": 0},
+    ]
+    sent: list[dict[str, Any]] = []
+    conn = SimpleNamespace(read=lambda: lines.pop(0) if lines else None, send=sent.append)
+    assert cli._follow_goal(conn, yes=False) == 0
+    first, second = put
+    before, question = first.rsplit("|", 1)
+    assert question == "Go ahead anyway?"
+    assert "the mug may weigh more than this arm lifts\\x1b[1A\\x1b[2KRoboglot" in before, before
+    assert "\x1b" not in shown.getvalue(), "the pilot's escapes reach the terminal"
+    assert second.rsplit("|", 1)[1] == "run kick()?" and second.rsplit("|", 1)[0] == before
+    assert sent == [{"op": "answer", "id": 1, "yes": True}, {"op": "answer", "id": 2, "yes": True}]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Windows has no such modes")
 def test_preflight_says_when_others_can_read_a_secret(
     tmp_path: Path, robot_file: Path, secret: Path

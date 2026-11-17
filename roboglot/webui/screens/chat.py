@@ -38,8 +38,13 @@ def screen() -> None:
         st.caption("The chat runs with the robot and pilot chosen on Setup.")
         return
     _watch(job)
+    from roboglot.front import CHAT_LINE_MAX
+
+    # held to what the run takes in as one line (`roboglot.front.OP_LINE_MAX`), so a paste too
+    # long is refused here rather than dropped by the run
     said = st.chat_input(
-        "A goal, or a command such as forward or stop. A newer line ends the one moving."
+        "A goal, or a command such as forward or stop. A newer line ends the one moving.",
+        max_chars=CHAT_LINE_MAX,
     )
     if said and said.strip():
         job.line(said.strip())

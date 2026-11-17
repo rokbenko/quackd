@@ -573,3 +573,72 @@ def test_a_meeting_keeps_no_notes_and_a_goal_does(tmp_path: Path) -> None:
     assert meeting.cfg.memory is None
     goal = service._make_loop(glot_from_goal("report your state", ["report_state"]), "goal", None)
     assert goal.cfg.memory is not None
+
+
+def test_a_goal_sent_with_yes_marks_every_question_it_can_put_as_answered_by_yes(
+    tmp_path: Path,
+) -> None:
+    """`roboglot onboard goal --yes` answers every question the goal puts in the client itself.
+    The service marked two of the four, and the record read a person for every one while the
+    connection was open. Every question of a goal sent with `yes` is marked, none is taken for
+    a person's, and a goal sent without it is put to the person at the client as before."""
+    import io
+
+    from roboglot.log import who_answered
+
+    home = robot(tmp_path, HOUSEHOLD)
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type,return-value]
+    fronts: list[Any] = []
+
+    def held_for_the_test(_text: str, front: Any, max_steps: int | None = None) -> str:
+        fronts.append(front)
+        return "held for the test"
+
+    service.slot = SimpleNamespace(goal=held_for_the_test)  # type: ignore[assignment]
+    for yes in (True, False):
+        conn = SimpleNamespace(writer=io.StringIO(), close=lambda: None)
+        assert service._goal({"op": "goal", "text": "look at the door", "yes": yes}, conn) is None
+    marked, asked = fronts
+    for kind in ("confirm", "decide", "acknowledge", "judge"):
+        assert who_answered(getattr(marked, kind)) == "--yes", kind
+        assert getattr(asked, kind).answers_as is None, kind
+
+
+def test_a_goals_connection_ends_when_the_goal_does(tmp_path: Path) -> None:
+    """Nothing closed a goal's connection once its run had ended, and its socket had no send
+    timeout, so every goal left its socket, its reader and its writer behind, and a client that
+    stopped reading held a writer blocked for good. The connection is hung up as the goal ends:
+    the client reads the run's last line and then the end of the stream, and the reader that
+    took its answers ends with it."""
+    import socket
+
+    from roboglot.onboard.control import Connection
+
+    home = robot(tmp_path, HOUSEHOLD)
+    service = Service(home, facts=sim_facts(), radio_side=lambda: None, log=lambda _line: None)  # type: ignore[arg-type,return-value]
+    fronts: list[Any] = []
+
+    def accepted(_text: str, front: Any, max_steps: int | None = None) -> None:
+        fronts.append(front)
+
+    service.slot = SimpleNamespace(goal=accepted)  # type: ignore[assignment]
+    ours, theirs = socket.socketpair()
+    theirs.settimeout(10)
+    before = {t for t in threading.enumerate() if t.name == "roboglot-front-in"}
+    try:
+        assert service._goal({"op": "goal", "text": "look at the door"}, Connection(ours)) is None
+        (front,) = fronts
+        front.end(0)  # what the slot does once the goal's run has ended
+        said = b""
+        while chunk := theirs.recv(65_536):
+            said += chunk
+        assert json.loads(said.splitlines()[-1])["ev"] == "end", said
+        readers = [t for t in threading.enumerate() if t.name == "roboglot-front-in"]
+        for reader in readers:
+            if reader not in before:
+                reader.join(10)
+                assert not reader.is_alive(), "the goal's reader was left behind"
+    finally:
+        theirs.close()
+        with contextlib.suppress(OSError):
+            ours.close()
