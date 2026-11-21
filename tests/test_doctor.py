@@ -1287,6 +1287,74 @@ def test_an_llms_reply_of_any_shape_is_a_row_and_never_an_exception(
     assert got_state == state and detail in got_detail
 
 
+class _Trickle:
+    """A reply the test hands over one read at a time: `chunk(n)` is what a read of up to `n`
+    bytes gives, and every read moves the probe's clock on by `step_s`, as a server that sends
+    each piece after a pause would."""
+
+    def __init__(self, chunk: Callable[[int], bytes], clock: list[float], step_s: float) -> None:
+        self.chunk, self.clock, self.step_s = chunk, clock, step_s
+        self.reads = 0
+        self.sent = 0
+
+    def __enter__(self) -> _Trickle:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def read1(self, n: int) -> bytes:
+        self.reads += 1
+        self.clock[0] += self.step_s
+        piece = self.chunk(n)
+        self.sent += len(piece)
+        return piece
+
+    def read(self, n: int | None = None) -> bytes:
+        if n is None or n < 0:
+            # a read of the whole reply is the read that never comes back from this server
+            raise _ReadItAll("the probe read the whole reply, with no bound on its size or time")
+        return self.read1(n)
+
+
+class _ReadItAll(BaseException):
+    """Past the probes' own `except Exception`, so a read with no bound fails the test by name
+    rather than as the row a server that is down gets."""
+
+
+@pytest.mark.parametrize("which", ["llms", "placement"])
+@pytest.mark.parametrize("server", ["a byte at a time", "a body that never ends"])
+def test_a_reply_that_trickles_or_never_ends_is_read_no_further_than_its_bounds(
+    monkeypatch: pytest.MonkeyPatch, which: str, server: str
+) -> None:
+    """Both probes read the whole reply with `r.read()`, and the socket's 1.5 s timeout bounds
+    each wait for a byte, not the reply: a server sending a byte a second kept doctor going for
+    as long as it sent, and one whose body never ended kept it going for ever and filled memory
+    while it did. This catches it with a reply the test hands over a read at a time, on a clock
+    the test moves: the probe has to stop at its deadline, or at its size bound, and say which."""
+    clock = [0.0]
+    monkeypatch.setattr(doctor, "_clock", lambda: clock[0])
+    if server == "a byte at a time":
+        reply = _Trickle(lambda _n: b" ", clock, step_s=1.0)
+    else:
+        reply = _Trickle(lambda n: b" " * n, clock, step_s=0.0)
+    monkeypatch.setattr(doctor, "_open", lambda *_a, **_k: reply)
+    if which == "llms":
+        said = _REAL_PROBE_LLMS("http://127.0.0.1:1/v1")
+        slow = ("http", "did not finish its /models reply in 1.5 s")
+        long = ("http", "answered /models with more than 1 MiB")
+    else:
+        said = _REAL_PROBE_PLACEMENT("http://127.0.0.1:1")
+        slow = ([], "GET /api/ps did not finish its reply in 1.5 s")
+        long = ([], "GET /api/ps answered with more than 1 MiB")
+    if server == "a byte at a time":
+        assert said == slow
+        assert reply.reads <= 2 + int(doctor.PROBE_TIMEOUT_S), reply.reads
+    else:
+        assert said == long
+        assert reply.sent <= doctor.REPLY_LIMIT_BYTES + 1, reply.sent
+
+
 def test_a_list_reply_on_a_real_socket_leaves_the_report_standing(
     canned: Callable[..., str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1518,6 +1586,97 @@ def test_an_arm_that_cannot_reach_its_rest_pose_fails_the_verdict_and_says_torqu
     assert "FAILURE" in said and "rest pose: not reached" in said, said
 
 
+@pytest.mark.parametrize("fails", ["health", "fold"])
+def test_an_error_after_the_connect_still_says_what_the_close_did_with_the_torque(
+    monkeypatch: pytest.MonkeyPatch, fails: str
+) -> None:
+    """A read that fails after the connect (a loose cable, a servo that stops answering in
+    `health()` or in the fold) ends the probe through its exception path. The body is closed
+    there all the same, and its close writes the note that says what became of the torque and
+    how to put the arm down, but the error report was built from the exception alone: one fail
+    line, the note never read, and nothing said of the question whether to drop the arm that
+    only the path that succeeds reaches. The person at the arm was told neither that it was
+    still holding itself up nor how to let it down. This catches it by failing the probe after
+    the connect at each of two points and reading the report for the close's own words, and
+    for a line saying no such question was asked."""
+    from roboglot.transport.base import TransportError
+
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    adapter = LeRobotAdapter(arm)
+
+    async def fail(*_a: Any) -> Any:
+        raise TransportError("servo 3 did not answer a read")
+
+    if fails == "health":
+        monkeypatch.setattr(adapter, "health", fail)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    asked: list[Any] = []
+
+    async def before_close(body: Any) -> None:
+        asked.append(body)
+
+    report = doctor.collect(
+        "lerobot:mock",
+        address="mock://arm",
+        rest_pose=dict(AWAY_FROM_REST),
+        park=fail if fails == "fold" else None,
+        before_close=before_close,
+    )
+    assert report.robot is not None and report.robot.probe is not None
+    probe = report.robot.probe
+    assert probe.error is not None and "servo 3 did not answer a read" in probe.error
+    note = arm.close_note
+    assert note and arm.torque is True, "control: the close kept torque on and said so"
+    assert asked == [], "the question belongs to the path that succeeds, which was not reached"
+    assert probe.advisories[0] == note, probe.advisories
+    assert probe.advisories[1:] == [doctor.NO_DROP_QUESTION], probe.advisories
+    assert " ".join(note.split()) in " ".join(_rendered(report).split())
+    assert report.ok is False
+
+
+def test_run_doctor_warns_counts_down_and_arms_the_kill_switch_as_the_command_does(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`run_doctor` called `collect` with none of the hooks `roboglot doctor` passes, so a
+    library caller handing it an arm and an address connected the arm with no warning to support
+    it, folded it with no countdown for the hands to come away, and had no kill switch to stop
+    the fold. This catches it by running it on an arm with a rest pose and looking for the
+    command's own warning, the countdown before the fold and the switch going in and out."""
+    from roboglot import cli
+    from roboglot.safety import KillSwitch
+
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(arm)
+    )
+    events: list[str] = []
+    real_install, real_uninstall = KillSwitch.install, KillSwitch.uninstall
+
+    def install(self: KillSwitch) -> None:
+        events.append("switch in")
+        real_install(self)
+
+    def uninstall(self: KillSwitch, **kwargs: Any) -> None:
+        events.append("switch out")
+        real_uninstall(self, **kwargs)
+
+    async def hands_away() -> None:
+        events.append("countdown")
+
+    monkeypatch.setattr(KillSwitch, "install", install)
+    monkeypatch.setattr(KillSwitch, "uninstall", uninstall)
+    monkeypatch.setattr(cli, "_hands_away", hands_away)
+    buf = io.StringIO()
+    ok = doctor.run_doctor(Console(file=buf, width=300), "lerobot:mock", address="mock://arm")
+    said = " ".join(buf.getvalue().split())
+    warning = cli._doctor_warning(folds=True, keeps=False, asks=False)
+    assert " ".join(warning.split()) in said, said[:600]
+    assert events[:2] == ["switch in", "countdown"], events
+    assert "switch out" in events, events
+    assert "rest" in arm.sequence, "the fold the countdown was for"
+    assert ok is True
+
+
 class _ConnectedOnRetry(LeRobotMock):
     """An arm whose connect had to be made again, reported the way the real backend reports
     it: `connect_notes`, filled by the connect that just happened."""
@@ -1669,6 +1828,64 @@ def test_a_camera_address_given_as_a_list_is_printed_as_written(
     assert _row(report, "  url").value == "opencv://0"
     report = _probed(monkeypatch, _UnnamedEye(), camera_url=["opencv://0", "opencv://1"])
     assert _row(report, "  url").value == "opencv://0, opencv://1"
+
+
+PASSWORD = "hunter2"
+"""A password in a robot's address and in a camera URL, which doctor must never print."""
+
+
+class _EyeWithPassword(_OneEye):
+    """One camera whose health names its address with the password in it, as the backends hand
+    back the URL they were given."""
+
+    def camera_health(self) -> dict[str, Any]:
+        return super().camera_health() | {"url": f"rtsp://admin:{PASSWORD}@192.168.1.20/stream1"}
+
+
+def test_doctor_shows_and_serialises_no_password_from_an_address_or_a_camera_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """doctor redacts ROBOGLOT_BASE_URL because its screen is pasted into issues, and printed
+    `--address` and every camera URL exactly as given or registered: in the progress line, the
+    probe table's title, the camera's url row, the error a failed read gives (a transport's
+    error can quote its address) and `--json`. This catches it by probing an arm at an address
+    with a password and a token in it, once through and once failing a read, and looking for
+    the password everywhere doctor writes, and for each place to show the redacted address."""
+    from roboglot.transport.base import TransportError
+
+    address = f"ws://roboglot:{PASSWORD}@robot.local:9090/?token={PASSWORD}"
+    camera = f"rtsp://admin:{PASSWORD}@192.168.1.20/stream1"
+    progress: list[str] = []
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter",
+        lambda *_a, **_k: LeRobotAdapter(_EyeWithPassword()),
+    )
+    ok = doctor.collect(
+        "lerobot:mock", address=address, camera_url=[camera], progress=progress.append
+    )
+    adapter = LeRobotAdapter(LeRobotMock())
+
+    async def health() -> Any:
+        raise TransportError(f"no answer from {address}")
+
+    monkeypatch.setattr(adapter, "health", health)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    failed = doctor.collect("lerobot:mock", address=address, camera_url=camera)
+    places = {
+        "progress line": "\n".join(progress),
+        "screen (success)": _rendered(ok),
+        "--json (success)": json.dumps(ok.to_dict()),
+        "screen (error)": _rendered(failed),
+        "--json (error)": json.dumps(failed.to_dict()),
+    }
+    leaked = {where: text.count(PASSWORD) for where, text in places.items() if PASSWORD in text}
+    assert not leaked, f"the password reached {leaked}"
+    shown = "ws://roboglot:***@robot.local:9090/?token=***"
+    assert any(f"at {shown}" in p for p in progress), progress
+    assert _probe_of(ok).address == shown
+    assert _row(ok, "  url").value == "rtsp://admin:***@192.168.1.20/stream1"
+    assert failed.robot is not None and failed.robot.probe is not None
+    assert failed.robot.probe.error == f"lerobot:mock at {shown}: no answer from {shown}"
 
 
 def test_the_assumptions_table_folds_a_long_what_rather_than_cutting_it() -> None:

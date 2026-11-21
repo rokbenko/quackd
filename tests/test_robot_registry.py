@@ -7,6 +7,7 @@ else.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,7 @@ from pydantic import ValidationError
 from roboglot.adapters.base import AdapterError
 from roboglot.host import resolve_host
 from roboglot.registry import (
+    PROBE_TIMEOUT_S,
     Registry,
     RegistryError,
     RobotEntry,
@@ -67,6 +69,112 @@ def test_a_write_leaves_no_temporary_file_behind(tmp_path: Path) -> None:
     reg.add_robot(_entry())
     assert reg.robots_path.exists()
     assert not list(reg.robots_path.parent.glob("*.tmp"))
+
+
+def test_two_writers_at_once_each_rename_a_whole_file_of_their_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every writer of `robots.json` wrote through one temporary name, so a second writer
+    truncated the first's file before the first renamed it: a half-written `robots.json` could be
+    published, and the first writer's rename then raised FileNotFoundError, a traceback after its
+    change had been written. This catches it by running a second robot's whole write while the
+    first waits for its rename: neither raises, the file reads, and the later rename wins, as
+    ADR-0034 accepts."""
+    import os
+
+    reg = Registry(tmp_path)
+    real_replace = os.replace
+    second: list[str] = []
+
+    def second_writer_first(src: Any, dst: Any) -> None:
+        if not second:
+            second.append("ran")
+            reg.add_robot(_entry("duck-b"))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", second_writer_first)
+    reg.add_robot(_entry("duck-a"))
+    assert second == ["ran"]
+    assert set(reg.robots()) == {"duck-a"}, "the later rename is the file"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_a_writer_that_cannot_rename_removes_its_own_file_and_not_the_other_writers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On Windows a rename onto a file another program holds open fails, and the error branch
+    deleted the temporary file by its one shared name, which was by then the other writer's: that
+    writer's rename failed in turn, with a traceback. This catches it with two writers ordered by
+    events in one process: the second has written its file and waits to rename it while the
+    first's rename is refused. The first ends with the registry's own error, and the second's
+    file is renamed whole."""
+    import os
+    import threading
+
+    reg = Registry(tmp_path)
+    real_replace = os.replace
+    written, may_rename = threading.Event(), threading.Event()
+    failed: list[BaseException] = []
+
+    def other_writer() -> None:
+        try:
+            reg.add_robot(_entry("duck-b"))
+        except BaseException as e:
+            failed.append(e)
+
+    other = threading.Thread(target=other_writer, daemon=True)
+
+    def ordered(src: Any, dst: Any) -> None:
+        if threading.current_thread() is other:
+            written.set()
+            assert may_rename.wait(20), "the first writer never finished"
+            real_replace(src, dst)
+            return
+        other.start()
+        assert written.wait(20), "the second writer never reached its rename"
+        raise PermissionError(13, "The process cannot access the file", str(dst))
+
+    monkeypatch.setattr(os, "replace", ordered)
+    with pytest.raises(RegistryError, match="another program has it open"):
+        reg.add_robot(_entry("duck-a"))
+    may_rename.set()
+    other.join(20)
+    assert not other.is_alive() and failed == [], failed
+    assert set(reg.robots()) == {"duck-b"}
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_a_file_planted_at_the_old_temporary_name_receives_nothing(tmp_path: Path) -> None:
+    """The temporary name was fixed, `robots.json.tmp`, and opened with no exclusive create, so
+    a file or a link planted there in a registry directory somebody else can write received the
+    tokens. This catches it by planting that file and writing a robot with a token: the planted
+    file still holds what it held, and the token is in `robots.json` alone."""
+    planted = tmp_path / "robots.json.tmp"
+    planted.write_text("planted", encoding="utf-8")
+    Registry(tmp_path).add_robot(_entry(token="s3cret-token"))
+    assert planted.read_text(encoding="utf-8") == "planted"
+    assert "s3cret-token" in (tmp_path / "robots.json").read_text(encoding="utf-8")
+    if sys.platform != "win32":  # where a file takes its profile's permissions instead
+        assert (tmp_path / "robots.json").stat().st_mode & 0o777 == 0o600
+
+
+def test_a_private_file_the_filesystem_will_not_make_owner_only_is_said_on_stderr(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The owner-only mode was set inside a `suppress(OSError)`, so on a filesystem that refuses
+    it (vfat with its default mask, some network mounts) the tokens were written readable by
+    every user with nothing said. This catches it with the check that the mode took answering
+    that it did not: the file is written, and stderr names it and why."""
+    import roboglot.registry as registry
+
+    monkeypatch.setattr(registry, "_not_owner_only", lambda fd: "the filesystem kept mode 0o755")
+    path = tmp_path / "robots.json"
+    registry.write_json(path, {"version": 1, "robots": {}}, private=True)
+    assert json.loads(path.read_text(encoding="utf-8")) == {"version": 1, "robots": {}}
+    said = capsys.readouterr().err
+    assert str(path) in said and "the filesystem kept mode 0o755" in said, said
+    registry.write_json(tmp_path / "teams.json", {"version": 1, "teams": {}}, private=False)
+    assert capsys.readouterr().err == "", "a file that holds no token is not asked about"
 
 
 def test_the_directory_is_the_flag_then_the_env_then_the_home(
@@ -382,6 +490,46 @@ def test_registering_the_same_name_twice_is_refused(tmp_path: Path) -> None:
     reg.add_robot(_entry())
     with pytest.raises(RegistryError, match="already registered"):
         reg.add_robot(_entry(spec="microduck:jsonrpc"))
+
+
+def test_a_name_that_would_share_another_robots_files_is_refused_and_says_whose(
+    tmp_path: Path,
+) -> None:
+    """A robot's memory and places files are named by `robot_slug`, which folds each run of
+    hyphens into one and strips them from the ends, and the name pattern allows both. So
+    `arm-01`, `arm--01` and `arm-01-` registered as three robots that shared one memory file and
+    one places file, a note one of them kept appearing in another's prompt, and
+    `microduck-mock-` passed the reserved check, which compared the name exactly, and shared
+    the memory of every bare `--robot microduck:mock` run. This catches it by registering each
+    of those beside the first, which must be refused naming the robot or the run whose files it
+    would open, while a name that shares nothing still registers and one already in the file
+    still loads."""
+    from roboglot.memory import RobotMemory
+    from roboglot.space.places import PlaceStore
+
+    reg = Registry(tmp_path / "registry")
+    reg.add_robot(_entry("arm-01"))
+    for name in ("arm--01", "arm-01-"):
+        with pytest.raises(RegistryError, match=rf"^'{name}' would share .* with 'arm-01'"):
+            reg.add_robot(_entry(name))
+    for name in ("microduck-mock-", "microduck--mock"):
+        shares = rf"^'{name}' would share .* every unregistered --robot microduck:mock run"
+        with pytest.raises(RegistryError, match=shares):
+            check_name(name)
+    with pytest.raises(RegistryError, match=r"^'microduck-mock' is the memory file name of an"):
+        check_name("microduck-mock")
+    assert set(reg.robots()) == {"arm-01"}
+    reg.add_robot(_entry("arm-02-"))
+    memory = tmp_path / "memory"
+    names = set(reg.robots())
+    assert names == {"arm-01", "arm-02-"}
+    assert len({RobotMemory(n, memory).path for n in names}) == len(names)
+    assert len({PlaceStore(n, memory).path for n in names}) == len(names)
+    # a pair written before this check reads as it always did
+    stored = json.loads(reg.robots_path.read_text(encoding="utf-8"))
+    stored["robots"]["arm--01"] = stored["robots"]["arm-01"]
+    reg.robots_path.write_text(json.dumps(stored), encoding="utf-8")
+    assert set(reg.robots()) == {"arm-01", "arm--01", "arm-02-"}
 
 
 def test_an_unknown_robot_is_one_line(tmp_path: Path) -> None:
@@ -966,6 +1114,36 @@ async def test_a_probe_times_out_rather_than_hanging(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *a, **k: Slow())
     result = await probe_entry(_entry(), timeout_s=0.05)
     assert result.reachable is False and "timed out" in result.detail
+
+
+@pytest.mark.parametrize("connect", ["raises", "times out"])
+async def test_a_probe_whose_connect_failed_answers_whatever_the_close_after_it_does(
+    monkeypatch: pytest.MonkeyPatch, connect: str
+) -> None:
+    """Connect, health and the close of a probe that answered are each bounded by the probe's
+    deadline, and the close after a connect that failed was not: a close waiting on a peer that
+    never answers held `robot list --probe` and the page's probe for ever, though an unreachable
+    robot is meant to be an answer. This catches it with a close that waits on an event nobody
+    sets, after a connect that raised and after one that timed out, and asks for the answer
+    within a deadline far past the two the probe needs; the answer has to say the close timed
+    out, since a body whose close never finished may still hold its peer."""
+    import asyncio
+
+    class DeadPeer:
+        async def connect(self) -> None:
+            if connect == "raises":
+                raise ConnectionRefusedError("the robot refused the connection")
+            await asyncio.Event().wait()
+
+        async def close(self) -> None:
+            await asyncio.Event().wait()
+
+    timeout_s = 0.05
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *a, **k: DeadPeer())
+    result = await asyncio.wait_for(probe_entry(_entry(), timeout_s=timeout_s), PROBE_TIMEOUT_S * 4)
+    assert result.reachable is False
+    first = "the robot refused the connection" if connect == "raises" else "timed out after 0.05 s"
+    assert result.detail == f"{first}, and its close timed out after 0.05 s", result.detail
 
 
 def test_probe_all_answers_for_every_robot_at_once() -> None:

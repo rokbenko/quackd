@@ -27,6 +27,8 @@ import contextlib
 import json
 import os
 import re
+import secrets
+import sys
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -109,33 +111,87 @@ def write_json(path: Path, payload: Mapping[str, Any], *, private: bool) -> None
     the rename left the tokens world-readable for the length of every write, in a file nothing
     cleans up if the write fails. A no-op on Windows, where the file takes the permissions of
     the profile it sits in, which is why SECURITY.md calls this a file in a home directory rather
-    than a secret store."""
+    than a secret store.
+
+    Each write has a temporary file of its own, created exclusively and never through a link,
+    owner-only from its creation when `private`. One name shared by every writer let a second
+    writer truncate the first's file before it was renamed, and a file or a link planted at that
+    name receive the tokens. A filesystem that will not keep the owner-only mode (vfat with its
+    default mask, some network mounts) is said on stderr, and the file is written all the same:
+    refusing would leave the robot unregistered and the person no better off."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    if private:
-        with contextlib.suppress(OSError):
-            tmp.touch(mode=0o600)
-            tmp.chmod(0o600)  # a tmp left by a failed write keeps its old mode
-    tmp.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o600 if private else 0o666)
     try:
-        tmp.replace(path)
+        # text mode as `Path.write_text` wrote it, so a file reads byte for byte as it did, its
+        # line ends the platform's
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            if private and (why := _not_owner_only(f.fileno())) is not None:
+                _say_on_stderr(
+                    f"warning: {path} is readable by more than its owner, and it can hold a "
+                    f"token: {why}"
+                )
+            f.write(json.dumps(payload, indent=2, ensure_ascii=False) + "\n")
+        os.replace(tmp, path)
     except PermissionError as e:  # Windows: another program is holding the file open
+        # this write's own file, never another writer's
         tmp.unlink(missing_ok=True)
         raise RegistryError(f"could not replace {path}: another program has it open") from e
+    except BaseException:
+        # a write that failed leaves no file of its own behind, and the error is the caller's
+        tmp.unlink(missing_ok=True)
+        raise
 
 
-def _reserved_slugs() -> set[str]:
-    """Every memory file name an ad-hoc `adapter:backend` run would open.
+def _not_owner_only(fd: int) -> str | None:
+    """Why the file open on `fd` is not readable by its owner alone, or None when it is. None on
+    Windows, where a file has no such mode (`write_json`)."""
+    if sys.platform == "win32":
+        return None
+    try:
+        os.fchmod(fd, 0o600)
+    except OSError as e:
+        return f"the filesystem refused mode 0o600 ({e.strerror or e})"
+    mode = os.fstat(fd).st_mode & 0o777
+    return None if mode & 0o077 == 0 else f"the filesystem kept mode {mode:#o}"
+
+
+def _say_on_stderr(line: str) -> None:
+    """One line on stderr, where there is one: a page or a service may have none."""
+    if sys.stderr is not None:
+        sys.stderr.write(line + "\n")
+        sys.stderr.flush()
+
+
+def _reserved_runs() -> dict[str, str]:
+    """Every memory file name an ad-hoc `adapter:backend` run would open, and that run's spec.
 
     A robot registered as `microduck-mock` would key its memory to the same file a bare
     `--robot microduck:mock` run does, which is exactly the confusion registering it was
     meant to end. So the name is refused (ADR-0034 amends ADR-0025)."""
     # every catalogue row, the described one too: `described-unitree-b2` would open the file
     # a bare `--robot described:unitree-b2` run does
-    return {robot_slug(f"{row.name}:{b}") for row in BY_NAME.values() for b in row.backends}
+    return {
+        robot_slug(f"{row.name}:{b}"): f"{row.name}:{b}"
+        for row in BY_NAME.values()
+        for b in row.backends
+    }
+
+
+def _reserved_slugs() -> set[str]:
+    """`_reserved_runs`'s file names alone."""
+    return set(_reserved_runs())
+
+
+def _shares_files(name: str, other: str) -> str:
+    """The refusal for a new name whose memory and places files (`robot_slug`) are already
+    another's: the name pattern allows doubled and trailing hyphens, and the slug folds them, so
+    `arm--01` beside `arm-01` would read and write the same notes and the same places."""
+    return (
+        f"{name!r} would share its memory and places files ({robot_slug(name)}) with {other}: "
+        "pick another name"
+    )
 
 
 _REACHES_A_ROBOT = (
@@ -249,6 +305,9 @@ def check_name(name: str, *, kind: str = "robot") -> str:
             raise RegistryError(
                 f"{name!r} is the memory file name of an unregistered robot: pick another name"
             )
+        # compared by the file name and not the name: `microduck-mock-` opens the same files
+        if (run := _reserved_runs().get(robot_slug(name))) is not None:
+            raise RegistryError(_shares_files(name, f"every unregistered --robot {run} run"))
     return name
 
 
@@ -905,6 +964,11 @@ class Registry:
                 f"{entry.name!r} is already registered ({entries[entry.name].key}): "
                 f"roboglot robot edit {entry.name}, or remove it first"
             )
+        # a new name only: a pair already in the file was written before this check, and reads
+        # and runs as it did
+        slug = robot_slug(entry.name)
+        if (other := next((n for n in entries if robot_slug(n) == slug), None)) is not None:
+            raise RegistryError(_shares_files(entry.name, f"{other!r}, which is registered"))
         entries[entry.name] = entry
         self._save_robots(entries)
         return entry
@@ -1227,7 +1291,14 @@ async def probe_entry(
     # only closed had no way to put that on the line the reader sees
     if adapter is not None and not closed:
         with contextlib.suppress(Exception):
-            await adapter.close()
+            # bounded as the close of a probe that answered is: a close that waits on a dead
+            # peer held `robot list --probe` and the page's probe for ever, and one that did not
+            # finish may still hold that peer, so the answer says so
+            try:
+                await asyncio.wait_for(adapter.close(), timeout=timeout_s)
+            except TimeoutError:
+                detail = f"{result.detail}, and its close timed out after {timeout_s:g} s"
+                result = replace(result, detail=detail)
     if (note := getattr(adapter, "close_note", None)) and "torque" not in result.detail:
         # the note's own words, shortened, rather than a fixed sentence. There is more than
         # one of them: one says the arm is being held up and will not fall, and one says

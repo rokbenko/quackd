@@ -891,6 +891,40 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and what is allowed there is as it was, the lift on upstream's own host among it. A field that
   is there vouches only as JSON `true`: `false`, `0` and `null` are not calibrated and refused,
   as before, and so is any string, and the arms' torque is on only for `true`.
+- **`roboglot doctor --robot` says what the close did with the torque when a read fails after
+  the connect.** A health check, a camera frame or the fold that raised ended the probe with one
+  fail line built from the error alone, though the arm was closed and its close had written what
+  became of the torque: held where it stood away from its rest pose, or let go, and how to put it
+  down. The error now carries that note in the close's own words, and says that doctor asked
+  nothing about dropping the arm into your hands, since that question comes only after a probe
+  that succeeds. A probe that succeeds reads as before.
+- **A probe whose connect failed answers even when the close after it never ends.** `roboglot
+  robot list --probe` and the page's check bounded a robot's connect, its health and the close
+  of a probe that answered by the probe's deadline, and closed a robot whose connect had timed
+  out or failed with no deadline at all, so a close waiting on a peer that never answered held
+  the command for ever. That close is bounded the same way now, and a close that runs out says
+  so on the robot's line: `timed out after 5 s, and its close timed out after 5 s`.
+- **`roboglot doctor` no longer waits for ever on an LLM server that keeps its reply going.** The
+  probes of `/v1/models` and of Ollama's `/api/ps` read the whole reply, and the 1.5 s timeout
+  bounded each wait for a byte, not the reply, so a server that sent a byte at a time held doctor
+  for as long as it sent, and one whose body never ended held it for ever while its reply filled
+  memory. Each probe now reads at most 1 MiB, and its reply's body for at most 1.5 s, and says
+  `did not finish its /models reply in 1.5 s` or `answered /models with more than 1 MiB`. The
+  probes together are given up on after 6 s, and one still asking then reads `did not finish
+  answering in 6 s`. A server that answers as servers do reads as before.
+- **`roboglot doctor` waits less on local LLM servers that are not running.** It asked
+  `localhost` one address after the other, `::1` and then `127.0.0.1`, with the whole 1.5 s
+  timeout each, and a closed loopback port on Windows takes all of it to say so. And it asked only
+  after importing the core packages and each provider SDK in turn to read their versions. Every
+  address is asked at once now, the probes start before the packages are checked, and the
+  provider SDKs and the extras that are Python alone have their versions read from what the
+  installer recorded, without an import. What doctor prints is as before.
+- **`roboglot.doctor.run_doctor` warns, counts down and arms the kill switch as `roboglot doctor`
+  does.** Called with an arm and an address, it connected the arm with no warning to support it,
+  folded it with no countdown for the hands to come away and no kill switch to stop the fold, and
+  never asked whether to drop an arm whose close keeps its torque, since it passed none of the
+  hooks the command passes. It goes through the same ones now, and prints the warning on the
+  console it renders to.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for
@@ -962,6 +996,37 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   `api.github.com` itself now, and never on to where a redirect leads. Neither script ever
   fetched such an address: each builds every URL it asks from its own constants and GitHub's
   answers.
+- **`roboglot doctor --robot` prints no password or token from the robot's address or a camera
+  URL.** The progress line, the probe table's title, each camera's url row, the error a failed
+  read gives and `--json` carried `--address` and every `--camera-url`, typed or registered,
+  exactly as given, though doctor already replaced the credentials in `ROBOGLOT_BASE_URL`
+  because its output is what people paste into issues. Every URL the probe shows or writes now
+  keeps its scheme, host, port, path and username and has its password and any query parameter
+  named like a credential replaced with `***`, as the run's record has them. An address with no
+  credentials in it reads as before.
+- **A robot name that would share another robot's memory and places is refused.** Those files
+  are named with each run of hyphens folded into one and the hyphens at the ends taken off, and a
+  name may hold both, so `arm-01`, `arm--01` and `arm-01-` registered as three robots that read
+  and wrote one memory file and one places file: a note one kept was in another's prompt, and a
+  place one saved was where another went. `microduck-mock-` passed the check that refuses
+  `microduck-mock`, which compared the name exactly, and shared the memory of every bare `--robot
+  microduck:mock` run. `roboglot robot add` refuses such a name now and says whose files they
+  are, as in `'arm--01' would share its memory and places files (arm-01) with 'arm-01', which is
+  registered: pick another name`. Robots already in a `robots.json` read and run as they did.
+- **The registry's files are written through a temporary file of their own, and a token file the
+  filesystem will not make owner-only is said.** Every writer of `robots.json`, the endpoint
+  record and the page's saved settings wrote through one fixed temporary name, opened with no
+  exclusive create, so a file or a link planted there in a registry directory somebody else can
+  write received the tokens, and a second command writing at the same moment truncated the
+  first's file before it was renamed: a half-written `robots.json` could be published, and the
+  first command ended in a traceback after its change was written, or on Windows deleted the
+  other command's file before it was renamed. The owner-only mode was set inside a check that swallowed its failure, so on a
+  filesystem that refuses it (vfat with its default mask, some network mounts) the tokens were
+  written readable by every user with nothing said. Each write now has a temporary file of its
+  own, created exclusively, never through a link, and owner-only from its creation when it holds
+  a token; a command whose rename is refused removes only its own file and ends with one line;
+  and a file the filesystem leaves readable by others is written, with a warning on stderr
+  naming it. A write that meets no other writer gives the same file as before.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,
