@@ -166,19 +166,38 @@ def test_every_extra_pins_the_adapter_it_installs_to_this_release() -> None:
     one, and the only thing that rejects that is the adapter's own back-pin, which arrives as a
     resolver error rather than as the right version. Both windows are written by
     `scripts/set_version.py` in one pass, so they have to agree: each starts at this release and
-    ends before the next minor. `dev` is exempt: it is resolved from the workspace by
-    `[tool.uv.sources]` and is never published to anybody."""
+    ends before the next minor. No extra is exempt: what a contributor installs is the `dev`
+    dependency group, which is not an extra, and the test below holds it."""
     extras = _toml(REPO / "pyproject.toml")["project"]["optional-dependencies"]
     breaches = []
     for key, requirements in extras.items():
-        if key == "dev":
-            continue
         for requirement in requirements:
             if not requirement.startswith("roboglot-"):
                 continue
             if (breach := _window_breach(requirement, roboglot.__version__)) is not None:
                 breaches.append(f"{key}: {breach}")
     assert not breaches, breaches
+
+
+def test_the_dev_group_installs_every_adapter_from_the_workspace_and_is_never_published() -> None:
+    """A contributor's environment was the `dev` extra, published with the wheel, so
+    `roboglot[dev]` was offered to every user with ten adapters and no window on any of them. It
+    is the `dev` dependency group now, which no wheel carries and a bare `uv sync` installs, and
+    it names each adapter bare: no window, so the workspace answers it at the checkout's own
+    version, and no `[sdk]`, so no robot SDK comes with it. An extra named `dev` again would be
+    published again, and a group uv no longer installs by default would leave a bare `uv sync`
+    without the suite's tools."""
+    root = _toml(REPO / "pyproject.toml")
+    assert "dev" not in root["project"]["optional-dependencies"]
+    dev = root["dependency-groups"]["dev"]
+    adapters = {f"roboglot-{name.replace('_', '-')}" for name in NAMES}
+    assert {_dist(d) for d in dev} >= adapters, adapters - {_dist(d) for d in dev}
+    for requirement in dev:
+        if _dist(requirement) in adapters:
+            assert requirement == _dist(requirement), f"the dev group pins {requirement}"
+            assert root["tool"]["uv"]["sources"][requirement] == {"workspace": True}
+    defaults = root["tool"]["uv"].get("default-groups", ["dev"])  # uv's own default is ["dev"]
+    assert defaults == "all" or "dev" in defaults, "a bare uv sync no longer installs dev"
 
 
 def _windows(root: Path) -> list[str]:
@@ -294,7 +313,7 @@ def test_ci_serves_the_policies_on_the_lerobot_their_refs_read() -> None:
 
 
 def test_every_published_adapter_is_installed_for_the_suite() -> None:
-    """The dev extra carries all ten without their SDKs, so the suite drives every body
+    """The dev group carries all ten without their SDKs, so the suite drives every body
     against a mock. One missing would not fail loudly; its tests would quietly skip."""
     installed = {ep.name for ep in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP)}
     published = {row.name for row in ADAPTERS}  # the described row is in the core, no package
