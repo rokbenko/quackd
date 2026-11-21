@@ -81,8 +81,8 @@ def test_a_piped_session_ends_its_process_after_a_press_with_no_line_to_come(
     except subprocess.TimeoutExpired:
         code = None
     finally:
-        assert child.stdin is not None
-        child.stdin.close()  # the end of input, which lets a child still reading end too
+        # communicate closes stdin, the end of input, which lets a child still reading end too.
+        # Closing it here first made communicate's own flush of stdin raise on Linux and macOS.
         out, err = child.communicate(timeout=60)
     said = out.decode("utf-8").strip(), err.decode("utf-8")
     assert code == 0 and said[0] == "closed", f"the process stayed for a line: {code} {said}"
