@@ -26,6 +26,7 @@ import json
 import math
 import os
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -1736,6 +1737,101 @@ def test_two_config_loads_at_once_each_get_a_directory_of_their_own(
     assert len({path.parent for path in made}) == 2, f"the two loads shared a directory: {made}"
     assert not any(path.exists() for path in made), made
     assert list(shared.iterdir()) == [] and tempfile.tempdir == str(shared)
+
+
+class _NoPath:
+    """An argument no audit hook should touch: every way of reading it as a path, a string or
+    a key raises."""
+
+    def _refuse(self, *args: Any) -> Any:
+        raise RuntimeError("the hook read an argument it was never to read")
+
+    __str__ = __repr__ = __fspath__ = __hash__ = __eq__ = __bool__ = __len__ = _refuse
+
+
+ODD_EVENTS = [
+    pytest.param(P.MADE_FILE, (), id="a file with no path"),
+    pytest.param(P.MADE_DIR, (), id="a directory with no path"),
+    pytest.param(P.MADE_FILE, (None,), id="a file with None"),
+    pytest.param(P.MADE_DIR, (_NoPath(), "and more"), id="a directory with no path to read"),
+    pytest.param(P.MADE_FILE, (_NoPath(),), id="a file with no path to read"),
+]
+"""Events of the two names the hook keeps paths from, with arguments `tempfile` never raises them
+with, as any code may raise an event of any name with anything (`sys.audit`)."""
+
+
+@pytest.mark.parametrize(("event", "args"), ODD_EVENTS)
+def test_the_audit_hook_never_raises_whatever_an_event_carries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, event: str, args: tuple[Any, ...]
+) -> None:
+    """The hook is the process's for good and runs on every audited event, and a hook that
+    raises aborts what raised the event: inside a load it read the first argument of every event
+    of its name as a path, so one raised with none, which any code may raise, failed the load in
+    the hook's words. It passes over what is no path, and the load and its clean-up go on."""
+    made: list[str] = []
+
+    def from_pretrained(cls: Any, where: str) -> dict[str, str]:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+            made.append(f.name)
+        sys.audit(event, *args)
+        return {"read": where}
+
+    shared = _config_stand_in(monkeypatch, tmp_path, from_pretrained)
+    assert P.load_config("the checkpoint") == {"read": "the checkpoint"}
+    assert made and not Path(made[0]).exists() and list(shared.iterdir()) == [], made
+
+
+@pytest.mark.parametrize("removable", [True, False], ids=["goes", "will not go"])
+def test_a_directory_a_config_load_makes_through_tempfile_goes_with_its_files(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    removable: bool,
+) -> None:
+    """Only the files a load made through `tempfile` were kept for removal, so a directory it
+    made the same way, a file in it, was left for good, and with it the load's own directory,
+    and the log said that one held files the load did not make, which it had made. A directory
+    the load makes goes with everything in it, one made inside it too, a file it made as `bytes`
+    goes like any other, and nothing is said. One that will not go is said once, by its path."""
+    made: list[str] = []
+
+    def from_pretrained(cls: Any, where: str) -> dict[str, str]:
+        scratch = tempfile.mkdtemp()
+        Path(scratch, "config.json").write_text(json.dumps({"read": where}), encoding="utf-8")
+        inner = tempfile.mkdtemp(dir=scratch)
+        Path(inner, "more.json").write_text("{}", encoding="utf-8")
+        fd, raw = tempfile.mkstemp(suffix=b".json")
+        os.close(fd)
+        made.extend([scratch, os.fsdecode(raw)])
+        return {"read": where}
+
+    shared = _config_stand_in(monkeypatch, tmp_path, from_pretrained)
+    if not removable:
+        monkeypatch.setattr(shutil, "rmtree", lambda path, ignore_errors=False: None)
+    with caplog.at_level("WARNING", logger="roboglot.policy"):
+        assert P.load_config("the checkpoint") == {"read": "the checkpoint"}
+    said = [r.getMessage() for r in caplog.records if r.name == "roboglot.policy"]
+    assert made and not Path(made[1]).exists(), made
+    if removable:
+        assert said == [] and list(shared.iterdir()) == [], (said, list(shared.rglob("*")))
+        return
+    assert len(said) == 1 and made[0] in said[0], said
+    assert "did not make" not in said[0], said
+
+
+def test_the_audit_hook_is_added_once_however_many_configs_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An audit hook cannot be taken away, and each runs on every audited event for the process's
+    life, so one added for each load would be one more on every event for each checkpoint the
+    server loaded. The first load adds it, and no other load does."""
+    added: list[Any] = []
+    monkeypatch.setattr(P, "_HOOKED", [])
+    monkeypatch.setattr(sys, "addaudithook", added.append)
+    _config_stand_in(monkeypatch, tmp_path, lambda cls, where: {"read": where})
+    for where in ("first", "second", "third"):
+        assert P.load_config(where) == {"read": where}
+    assert added == [P._note_made], added
 
 
 class _TrainConfigOfAnotherCommit(FakeHub):

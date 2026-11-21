@@ -1873,11 +1873,14 @@ QUARTER_HZ = 4.0
 spanning more than `PICK_STALL_TICKS` ticks to the second. This test's own number."""
 
 
-async def test_a_pick_at_its_travel_s_edge_with_a_goal_past_it_ends_on_the_clip_guard() -> None:
-    """A joint at the edge of its travel whose policy goal lies past the edge is sent the edge,
-    where it already is (`_send` clips it), and presses on nothing. The clip guard is what ends
-    such a pick, saying the policy drove the arm somewhere it cannot go. The press was judged on
-    the goal before the clip, so the stall's second ran out one tick before the guard's and the
+@pytest.mark.parametrize(("end", "past"), [(1, 1.0), (0, -1.0)], ids=["upper", "lower"])
+async def test_a_pick_at_its_travel_s_edge_with_a_goal_past_it_ends_on_the_clip_guard(
+    end: int, past: float
+) -> None:
+    """A joint at either edge of its travel whose policy goal lies past that edge is sent the
+    edge, where it already is (`_send` clips it), and presses on nothing. The clip guard is what
+    ends such a pick, saying the policy drove the arm somewhere it cannot go. The press was judged
+    on the goal before the clip, so the stall's second ran out one tick before the guard's and the
     pick was said to have stalled; it is judged on the goal as it is sent."""
     assert STALL_S == CLIP_SUSTAIN_S, "the test sets the two seconds against each other"
     arm = _segment_arm()
@@ -1888,16 +1891,16 @@ async def test_a_pick_at_its_travel_s_edge_with_a_goal_past_it_ends_on_the_clip_
     ) -> list[dict[str, float]]:
         if observation.tick < PICK_STALL_TICKS:  # held where it reads, then past the edge
             return [{joint: float(observation.reading[f"{joint}.pos"])}]
-        return [{joint: edge["hi"] + 2 * TOL_DEG}]
+        return [{joint: edge["at"] + past * 2 * TOL_DEG}]
 
     runner = ScriptedRunner(past_the_edge, rate_hz=QUARTER_HZ)
     _, transport, adapter, ex = await _backend(runner, arm=arm)
-    edge["hi"] = transport.joint_range_deg[joint][1]
-    arm.positions[joint] = edge["hi"]
+    edge["at"] = transport.joint_range_deg[joint][end]
+    arm.positions[joint] = edge["at"]
     picked = await ex.run_verb("pick", {"target": "cup", "max_s": 10 * STALL_S})
     assert not picked.ok and picked.data["ended"] == "guard", picked.summary
     assert "stayed past the travel" in picked.summary, picked.summary
-    assert arm.positions[joint] == edge["hi"], "the joint never moved off its edge"
+    assert arm.positions[joint] == edge["at"], "the joint never moved off its edge"
     await adapter.close()
 
 

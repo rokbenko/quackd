@@ -68,6 +68,7 @@ import logging
 import math
 import os
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -1555,9 +1556,14 @@ _TEMPDIR_LOCK = threading.Lock()
 """Held while a config load has `tempfile`'s directory to itself (`load_config`), so two loads
 in one process never give each other's directory back in the wrong order."""
 
+MADE_FILE = "tempfile.mkstemp"
+MADE_DIR = "tempfile.mkdtemp"
+"""The audit events `tempfile` raises with the path of each file and each directory it makes,
+`NamedTemporaryFile`'s and `TemporaryDirectory`'s included (`_note_made`)."""
+
 _LOADING = threading.local()
-"""`files`: the temporary files this thread has made through `tempfile` while it loads a config
-(`_note_made`), or None where it is not loading one."""
+"""`made`: the temporary files and directories this thread has made through `tempfile` while it
+loads a config, by the event that said so (`_note_made`), or None where it is not loading one."""
 
 _HOOK_LOCK = threading.Lock()
 _HOOKED: list[bool] = []
@@ -1569,11 +1575,22 @@ log = logging.getLogger("roboglot.policy")
 
 
 def _note_made(event: str, args: tuple[Any, ...]) -> None:
-    """Keep the path of every file `tempfile` makes in a thread loading a config. `tempfile`
-    raises `tempfile.mkstemp` with the path for each, `NamedTemporaryFile`'s included, whatever
-    module called it and however it imported `tempfile`; another thread's files are not kept."""
-    if event == "tempfile.mkstemp" and (made := getattr(_LOADING, "files", None)) is not None:
-        made.append(str(args[0]))
+    """Keep the path of every file and directory `tempfile` makes in a thread loading a config.
+    `tempfile` raises `MADE_FILE` or `MADE_DIR` with the path for each, whatever module called it
+    and however it imported `tempfile`; another thread's are not kept.
+
+    The hook is the process's for good, called on every audited event, and one that raises
+    aborts what raised the event, so it calls no code of anybody else's and cannot raise: an
+    event of either name with no path, or with something that is not one, as any code may raise
+    one, is passed over, and a path is kept as `tempfile` gave it, `str` or `bytes`, unread."""
+    if event not in (MADE_FILE, MADE_DIR):
+        return
+    made = getattr(_LOADING, "made", None)
+    if made is None or not args:
+        return
+    path = args[0]
+    if type(path) is str or type(path) is bytes:
+        made[event].append(path)
 
 
 def _watch_temp_files() -> None:
@@ -1583,25 +1600,40 @@ def _watch_temp_files() -> None:
             _HOOKED.append(True)
 
 
-def _clean_up(own: str, made: list[str]) -> None:
-    """Remove the files a config load made, then the directory it was given, and never raise:
-    a load that went through is never refused over its clean-up, and one that failed raises its
-    own error. What cannot be removed, a file still open on Windows as a scanner can hold a fresh
-    one, is said once in the log with its path. A file another thread made through `tempfile`
-    while the load ran lands in the same directory, and is left there with it."""
+def _shown(path: str | bytes) -> str:
+    """A path as the log says it: a `bytes` one decoded, whatever does not decode escaped."""
+    return path if isinstance(path, str) else path.decode(errors="backslashreplace")
+
+
+def _clean_up(own: str, made: dict[str, list[str | bytes]]) -> None:
+    """Remove the files a config load made, then the directories it made with whatever is in
+    them, the last made first, then the directory it was given, and never raise: a load that
+    went through is never refused over its clean-up, and one that failed raises its own error.
+    What cannot be removed, a file still open on Windows as a scanner can hold a fresh one, is
+    said once in the log with its path. A file another thread made through `tempfile` while the
+    load ran lands in the same directory, and is left there with it."""
     left = []
-    for path in dict.fromkeys(made):
-        if not os.path.exists(path):
+    for path in dict.fromkeys(made[MADE_FILE]):
+        if not os.path.lexists(path):
             continue  # gone already, as LeRobot may yet delete its own one day
         try:
             os.remove(path)
         except OSError as e:
-            left.append(f"{path} ({type(e).__name__}: {e})")
+            left.append(f"{_shown(path)} ({type(e).__name__}: {e})")
+    for path in reversed(dict.fromkeys(made[MADE_DIR])):
+        if not os.path.lexists(path):
+            continue  # gone already, as a `TemporaryDirectory` goes on its own
+        shutil.rmtree(path, ignore_errors=True)
+        if os.path.lexists(path):
+            left.append(f"{_shown(path)}, a directory the load made, not all of which would go")
     try:
         os.rmdir(own)
     except OSError as e:
         if not left:
-            left.append(f"{own}, which holds files the load did not make ({type(e).__name__}: {e})")
+            left.append(
+                f"{own}, which holds what the load's own thread did not make through tempfile "
+                f"({type(e).__name__}: {e})"
+            )
     if left:
         log.warning("a LeRobot config load left what could not be removed: %s", "; ".join(left))
 
@@ -1616,10 +1648,11 @@ def load_config(where: str) -> Any:
     writes is `tempfile`'s directory: it names none, and `from_pretrained` takes none, so the
     only way to give it a directory of its own is `tempfile.tempdir`, which is the whole
     process's. The load is given one made for it alone that way while it runs, under
-    `_TEMPDIR_LOCK`. Only the files this thread made through `tempfile` meanwhile are removed
-    (`_note_made`), and then the directory, if nothing else is in it (`_clean_up`): a file
-    another thread made during the load, which lands there too, is left alone, and nothing in the
-    shared directory is read or removed, so a file another process keeps there is never touched."""
+    `_TEMPDIR_LOCK`. Only the files and directories this thread made through `tempfile`
+    meanwhile are removed (`_note_made`), and then the directory, if nothing else is in it
+    (`_clean_up`): a file another thread made during the load, which lands there too, is left
+    alone, and nothing in the shared directory is read or removed, so a file another process
+    keeps there is never touched."""
     from lerobot.configs.policies import PreTrainedConfig
 
     _watch_temp_files()
@@ -1627,12 +1660,12 @@ def load_config(where: str) -> Any:
         own = tempfile.mkdtemp(prefix=CONFIG_TEMP_PREFIX)
         shared = tempfile.tempdir
         tempfile.tempdir = own
-        made: list[str] = []
-        _LOADING.files = made
+        made: dict[str, list[str | bytes]] = {MADE_FILE: [], MADE_DIR: []}
+        _LOADING.made = made
         try:
             return PreTrainedConfig.from_pretrained(where)
         finally:
-            _LOADING.files = None
+            _LOADING.made = None
             tempfile.tempdir = shared
             _clean_up(own, made)
 

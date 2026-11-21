@@ -106,12 +106,14 @@ from roboglot_lerobot.verbs import (
     MANIPULATE_S,
     MOVE_HEADROOM_S,
     MOVE_JOINTS_TIMEOUT_S,
+    MOVE_LIMIT_S,
     MOVE_MAX_S,
     MOVE_MIN_S,
     MOVE_SETTLE_S,
     NO_INSTRUCTION,
     PICK_POLL_S,
     PICK_SETTLE_S,
+    PROGRESS_SHARE,
     PROGRESS_TICKS,
     RAMP_DECIMALS,
     RAMP_RESOLUTION,
@@ -130,6 +132,7 @@ from roboglot_lerobot.verbs import (
     UNREAD_IN_HAND,
     MoveJointsParams,
     PickParams,
+    _progress_floor,
     at_rest,
     gripper_budget_s,
     lerobot_verbs,
@@ -1728,12 +1731,15 @@ the move's timer takes every send to cover. A number of this test's own, and not
 
 class _Slow(FakeArm):
     """A servo slower than the step cap the move's timer is made of: each send moves a joint no
-    further than `SLOW_PACE` of a step from where it was, and it gets there in the end."""
+    further than `pace` of a step from where it was, `SLOW_PACE` unless a test says otherwise,
+    and it gets there in the end."""
+
+    pace = SLOW_PACE
 
     def send_action(self, action: dict[str, float]) -> dict[str, float]:
         before = dict(self.positions)
         sent = super().send_action(action)
-        reach = self.step * SLOW_PACE
+        reach = self.step * self.pace
         for key in action:
             joint = key.removesuffix(".pos")
             gone = self.positions[joint] - before[joint]
@@ -1845,6 +1851,47 @@ async def test_past_its_time_a_move_goes_on_only_while_it_gains_on_its_goal(arm_
         return
     assert not moved.ok and moved.summary.endswith("when the time ran out"), moved.summary
     assert clock.t <= budget + 2 * TICK_S, f"pushed back for {clock.t - budget:.1f} s past its time"
+
+
+def test_at_the_default_cap_the_progress_floor_is_the_tolerance_it_always_was() -> None:
+    """The floor a move past its time must gain over its window scales with the step cap, and at
+    the arm's default cap it is each joint's tolerance, as it was before it scaled: what every
+    other test of the rule runs under is unchanged. A lowered cap brings it down, and neither a
+    raised cap nor a manifest that publishes none lifts it past the tolerance."""
+    assert PROGRESS_SHARE * MAX_STEP_DEG * PROGRESS_TICKS == TOL_DEG == GRIPPER_TOL
+    assert _progress_floor(TOL_DEG, MAX_STEP_DEG) == TOL_DEG
+    assert _progress_floor(TOL_DEG, MAX_STEP_DEG / 2) < TOL_DEG
+    assert _progress_floor(TOL_DEG, 2 * MAX_STEP_DEG) == TOL_DEG == _progress_floor(TOL_DEG, None)
+
+
+SLOW_STEP_DEG = 1.0
+"""The run sheet's own slow step, `ROBOGLOT_LEROBOT_MAX_STEP_DEG = "1"`, the cap the slow
+examples run under."""
+SLOW_STEP_PACE = 0.6
+"""How much of each step the servo under the slow step covers per send: just over half, as half
+the cap a tick is the stall rule's own bound at this cap (`_stall_threshold`), and a tick that
+moves no more than that counts as still. A number of this test's own, and nothing measured."""
+
+
+async def test_under_the_slow_step_a_servo_slower_than_the_cap_is_waited_for() -> None:
+    """With the cap at 1 degree a send, the most a joint can gain over the progress rule's window
+    was the tolerance itself, so a servo slower than the cap was failed for time as it went, as
+    though the rule were not there. The floor scales with the cap, and the move arrives."""
+    arm = _Slow(step=SLOW_STEP_DEG)
+    arm.pace = SLOW_STEP_PACE
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.5), 1)
+    goal = round(_share_of(travel, 0.5), 1)
+    _adapter, ex, clock = await _paced(arm, step=SLOW_STEP_DEG)
+    distance = abs(goal - arm.positions[joint])
+    budget = move_budget_s(distance, MOVE_MIN_S, SLOW_STEP_DEG)
+    slow_s = (distance - TOL_DEG) / (SLOW_STEP_DEG * SLOW_STEP_PACE / TICK_S)
+    window_s = PROGRESS_TICKS * TICK_S
+    assert budget + window_s < slow_s < MOVE_LIMIT_S, "the stand-in must need past its window"
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    assert moved.ok, f"{moved.summary} at {clock.t:.1f} s, its budget {budget:.1f} s"
+    assert budget + window_s < clock.t < MOVE_LIMIT_S, (budget, clock.t)
+    assert abs(arm.positions[joint] - goal) <= TOL_DEG, arm.positions
 
 
 async def test_a_servo_that_trips_on_a_slow_move_past_its_time_ends_it_on_the_guard() -> None:

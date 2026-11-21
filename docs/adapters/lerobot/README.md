@@ -804,11 +804,17 @@ gives the move the time asked for, or the time the cap needs if that is longer, 
 seconds to settle. The cap is a ceiling and not a speed the servo keeps, so a move still moving
 when that time is up goes on, up to 18 seconds: the executor's own timeout for `move_joints` is
 20, and the verb ends first so that the reason names the joint that fell short. Still moving
-means still getting nearer its goal: every joint that has not arrived has closed on its goal by
-at least its 5 degree tolerance over the last 5 ticks, half a second. Judged over those ticks
-and not one, a slow servo that moves on one tick and not the next is waited for, and a joint a
-hand pushes back, or one bouncing on something that gives, is not on its way, so the move ends
-as soon as its time is up. The gripper's verbs go on the same way, inside their own timeout.
+means still getting nearer its goal: every joint that has not arrived has closed on its goal
+over the last 5 ticks, half a second, by at least its 5 degree tolerance, or by a fifth of what
+the step cap lets it cover in those ticks where that is less, 1 degree at the run sheet's slow
+step of 1 degree a send. Judged over those ticks and not one, a slow servo that moves on one
+tick and not the next is waited for, and a joint a hand pushes back, or one bouncing on
+something that gives, is not on its way, so the move ends as soon as its time is up. A known
+limit: the gain is read at the window's two ends, so a servo that sticks for some ticks and
+then slips, a slip worth less than that floor, ends at its time while on its way, though on
+average it gains more. Another: a joint that swings past its goal once, past its time, ends the
+move as it comes back, as one swinging about its goal does. The gripper's verbs go on the same
+way, inside their own timeout.
 
 Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
@@ -3002,7 +3008,7 @@ And once it is running:
 |---|---|---|
 | `move_joints: shoulder_pan=170.0 is outside this arm's calibrated range -100.0..100.0` | the goal is outside the travel in your calibration file | aim inside it, or recalibrate if the file does not match the arm's real travel. Nothing was sent. On `wrist_roll` this refusal will never fire, because upstream records a full turn for that joint rather than a sweep |
 | `cannot move_joints: elbow_flex reads 61°C: let the arm cool before moving it ...` | the heat gate, below the servo's own 70 °C cut-off | let it cool. A joint that trips its own protection goes slack without announcing it |
-| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint fell short when its time was up, the time asked for, or the time the step cap needs if that is longer, plus 2.5 s: it was no longer getting nearer its goal then, or it went on getting nearer until 5 ticks gained less than its tolerance, or until the verb's limit of 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
+| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint fell short when its time was up, the time asked for, or the time the step cap needs if that is longer, plus 2.5 s: it was no longer getting nearer its goal then, or it went on getting nearer until 5 ticks gained less than its tolerance (less under a lowered step cap, a fifth of what the cap allows in them), or until the verb's limit of 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
 | `move_joints: elbow_flex is at 40 with a goal of -90, and the move was ended there because torque reads off on elbow_flex, so a goal would reach a limp servo, and a servo that trips its own overload protection reads this way` | a tick of the move read torque off on a joint, or a body joint at or above the heat gate, in the words a policy segment ends on, and the move was ended there with the arm held. `move_joints` judges the whole arm, as its preconditions do. `gripper` and `place` end the same way on the gripper's own torque, and never on heat | a tripped servo or the supply, as for the torque refusal below. A hot joint: let it cool |
 | `... But move_joints's stop could not be delivered, so the body may still be moving: the hold did not reach the arm: ... A servo may still be pushing toward the last goal it was sent` | the hold the move ended with was lost on the bus, so a servo still has its last goal, a step past where it reads. Any of the arm's verbs that ends on a stop says so, under its own name | send `stop`, and look at the arm before the next step |
 | `the camera gave no frame: TimeoutError: ... too old` | the webcam stalled or was unplugged | only `observe` is affected, and a `pick` in flight. The arm carries on, and `report_state` starts saying `CAMERA DOWN:` with the reason, so a run that cannot call `observe` still records it |

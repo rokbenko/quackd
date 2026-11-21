@@ -71,9 +71,20 @@ PROGRESS_TICKS = STALL_TICKS
 (`_closing`): the stall rule's own count of ticks for a joint that has stopped. Over a window and
 not one tick, so a slow servo that sticks and slips, moving on one tick and not the next, is
 judged on what it gained over the window, never on the one tick it happened not to move. The
-least gain that counts is each joint's own arrival tolerance (`TOL_DEG`, `GRIPPER_TOL`): a
-joint pushed back by a hand, bouncing on something that gives, or swinging about its goal gains
-less than that on it, or loses."""
+least gain that counts is each joint's own arrival tolerance (`TOL_DEG`, `GRIPPER_TOL`), or
+`PROGRESS_SHARE` of what the step cap lets it cover over the window, where that is less: a joint
+pushed back by a hand, bouncing on something that gives, or swinging about its goal gains less
+than that on it, or loses."""
+PROGRESS_SHARE = 0.2
+"""The share of what the step cap lets a joint cover over `PROGRESS_TICKS` sends that it must
+gain on its goal, past its time, to be on its way, where that is less than its tolerance
+(`_closing`). A fifth: at the arm's default cap, 5 degrees a send (`real.MAX_STEP_DEG`), a fifth
+of its 25 degrees over the window is the 5 degree tolerance itself, so at the default the floor
+is the tolerance as it was, and a test holds the three together. Under a lowered cap the floor
+comes down with it, as the stall's own bound does (`_stall_threshold`): at the run sheet's slow
+step of 1 degree the most a joint could gain over the window was the tolerance itself, so no
+servo slower than the cap was ever waited for, and now one the stall rule sees moving on every
+tick, more than half the cap a tick there, gains more than its floor over the window."""
 GRIPPER_S = 6.0
 """The least time to give the gripper. The step cap applies to its 0..100 range too, so a full
 open takes 100 divided by the step, times the tick, and a lowered cap needs longer than this
@@ -520,19 +531,32 @@ def _unsafe(ctx: VerbContext, *, gripper_only: bool) -> str | None:
     return str(said) if said else None
 
 
-def _closing(gaps: deque[dict[str, float]], tolerance: Callable[[str], float]) -> bool:
+def _closing(
+    gaps: deque[dict[str, float]], tolerance: Callable[[str], float], step_deg: float | None
+) -> bool:
     """Whether a move past its time is still on its way: `gaps` holds each joint's distance from
     its goal on the last `PROGRESS_TICKS` ticks and the one before them, oldest first, and every
     joint not yet within its tolerance of its goal has closed on it over that window by at least
-    that tolerance. False until the window is full, and for a joint that read on the last tick
-    and not on the first, which is no gain anybody saw."""
+    its floor (`_progress_floor`). False until the window is full, and for a joint that read on
+    the last tick and not on the first, which is no gain anybody saw."""
     if len(gaps) <= PROGRESS_TICKS:
         return False
     then, now = gaps[0], gaps[-1]
     behind = [joint for joint, gap in now.items() if gap > tolerance(joint)]
     return bool(behind) and all(
-        joint in then and then[joint] - now[joint] >= tolerance(joint) for joint in behind
+        joint in then and then[joint] - now[joint] >= _progress_floor(tolerance(joint), step_deg)
+        for joint in behind
     )
+
+
+def _progress_floor(tolerance: float, step_deg: float | None) -> float:
+    """The least a joint must gain on its goal over `PROGRESS_TICKS` ticks, past its time, to be on
+    its way: its tolerance, or `PROGRESS_SHARE` of what the step cap lets it cover in those ticks
+    where that is less, and the tolerance where no cap is known, as on a manifest that publishes
+    none (`_stall_threshold` reads the same)."""
+    if not step_deg or step_deg <= 0:
+        return tolerance
+    return min(tolerance, PROGRESS_SHARE * step_deg * PROGRESS_TICKS)
 
 
 async def _drive(
@@ -568,8 +592,9 @@ async def _drive(
     The time is `budget_s`, what the ramp and the step cap say the move needs and a settle, and
     a move still on its way when it runs out goes on, up to `limit_s`, the verb's overall limit
     inside the executor's timeout. On its way means still getting nearer its goal: every joint
-    that has not arrived has closed on its goal by at least its own tolerance over the last
-    `PROGRESS_TICKS` ticks (`_closing`). The cap is a ceiling on speed and never a promise of it,
+    that has not arrived has closed on its goal over the last `PROGRESS_TICKS` ticks by at least
+    its tolerance, or a share of what the step cap allows in them where that is less
+    (`_closing`, `_progress_floor`). The cap is a ceiling on speed and never a promise of it,
     and a servo slower than it, still on its way, was failed for running out of time as it went.
     A joint pushed back by a hand, bouncing on something that gives or swinging about its goal is
     moving and not on its way, and past the budget the move ends on it as the budget always
@@ -596,6 +621,7 @@ async def _drive(
     deliberately leaves the gripper's goal alone, so stopping mid-move never drops what is held."""
     started = ctx.transport.now()
     stall = _stall_threshold(ctx)
+    step = ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
     ramping = bool(start) and ramp_s > 0
     joints: dict[str, float] = {}
     previous: dict[str, float] = {}
@@ -628,7 +654,7 @@ async def _drive(
             return joints, state, "arrived", None, None
         still = still + 1 if moved and max(moved) <= stall else 0
         gaps.append(error)
-        closing = _closing(gaps, tolerance)
+        closing = _closing(gaps, tolerance, step)
         if still >= STALL_TICKS:
             missed = await _stop(ctx)
             why = f"{shortfall(goal, joints)}, and it has stopped moving"

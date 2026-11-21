@@ -248,12 +248,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   ceiling on speed and not a speed the servo keeps, and one under load is slower than it. A move
   still moving then goes on now, up to the verb's overall limit inside the executor's timeout, 18 s
   for `move_joints`, where still moving means still getting nearer its goal: every joint that has
-  not arrived has closed on its goal by at least its tolerance, 5 degrees, over the last 5 ticks.
-  Judged over those ticks rather than one, a slow servo that moves on one tick and not the next
-  is waited for. A joint a hand pushes back, one bouncing on something that gives, or one that
-  has stopped is not on its way, and the move ends as it did: within its time on the stall rule,
-  and past it as the budget ended it, saying the time ran out. What changes for you: a slow arm
-  arrives where it used to fail.
+  not arrived has closed on its goal over the last 5 ticks by at least its tolerance, 5 degrees,
+  or by a fifth of what the step cap lets it cover in them where that is less, 1 degree under the
+  run sheet's slow step of 1 degree a send. Judged over those ticks rather than one, a slow servo
+  that moves on one tick and not the next is waited for. A joint a hand pushes back, one bouncing
+  on something that gives, or one that has stopped is not on its way, and the move ends as it
+  did: within its time on the stall rule, and past it as the budget ended it, saying the time ran
+  out. What changes for you: a slow arm arrives where it used to fail.
 - **`find-and-kick` tells the pilot to check a kick with a fresh frame or a person's word.** Its
   strategy said the kick's result tells you whether the ball moved and by how much, which only a
   simulator's ever did. It says now that the result says the kick was sent, not whether the ball
@@ -497,10 +498,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **Loading a policy leaves no temporary file behind.** LeRobot writes each policy config it loads
   out again to a temporary JSON file it never deletes, so every checkpoint `roboglot policy serve`
   loaded left one in the machine's temporary directory. The load gets a temporary directory of its
-  own now, and only the files the load itself made there are removed, then the directory: a file
-  another thread or process makes meanwhile is left alone. What cannot be removed, a file held
-  open on Windows, is said once in the log with its path, and never refuses a load: the server
-  serves a config that loaded, and a config that did not is refused in its own words.
+  own now, and only the files and directories the load itself made through `tempfile` are
+  removed, then its directory: a file another thread or process makes meanwhile is left alone.
+  What cannot be removed, a file held open on Windows, is said once in the log with its path, and
+  never refuses a load: the server serves a config that loaded, and a config that did not is
+  refused in its own words.
 - **An arm's camera whose open outlasts its bound is let go of once it opens, and not opened
   again.** A webcam whose connect outlasted its bound, or was cancelled while the camera opened,
   was left to open in its worker, the close then disconnected the same camera from a second
