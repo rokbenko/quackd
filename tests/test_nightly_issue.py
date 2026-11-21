@@ -7,17 +7,18 @@ network or GitHub. The workflow job that runs the script is read back as YAML.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 import subprocess
-import sys
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import Any
 
 import pytest
 import yaml
+
+from tests.support import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "nightly_issue.py"
@@ -35,13 +36,7 @@ GREEN = {
 }
 
 
-def _script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("nightly_issue", SCRIPT)
-    assert spec and spec.loader, f"{SCRIPT} could not be loaded as a module"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["nightly_issue"] = module
-    spec.loader.exec_module(module)
-    return module
+_script = partial(load_script, SCRIPT, "nightly_issue")
 
 
 class FakeGh:

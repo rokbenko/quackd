@@ -12,7 +12,7 @@ import asyncio
 import json
 import math
 import time
-from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import pytest
@@ -29,17 +29,12 @@ from roboglot_alohamini.zmq_host import (
     split_address,
 )
 from tests.fake_alohamini_host import FakeAlohaMiniHost
+from tests.support import until_async
 
 pytest.importorskip("zmq", reason="the alohamini zmq backend needs roboglot[alohamini]")
 
 
-async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
-    deadline = asyncio.get_running_loop().time() + limit_s
-    while asyncio.get_running_loop().time() < deadline:
-        if predicate():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError("the fake host never reached the expected state")
+_until = partial(until_async, within_s=3.0, what="the fake host never reached the expected state")
 
 
 async def _lands(link: AlohaMiniZmq, host: FakeAlohaMiniHost, intent: Intent) -> None:

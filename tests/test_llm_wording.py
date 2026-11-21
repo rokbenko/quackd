@@ -33,7 +33,7 @@ REPO = Path(__file__).resolve().parent.parent
 NOT_THE_WORD = re.compile(r"\b(?:AI\s+)?models?\b", re.IGNORECASE)
 """The same pattern `scripts/example_log.py` holds a log to."""
 
-READ = re.compile(r".*\.(md|py|duck|toml|yml|html|js|css)|\.env\.example")
+READ = re.compile(r".*\.(md|py|toml|yml)|\.env\.example")
 """Which files say something. A lock file, a recording and a generated schema do not."""
 
 WHOLE_FILES: dict[str, str] = {
@@ -68,7 +68,7 @@ WHOLE_FILES: dict[str, str] = {
     r"tests/test_(lerobot_adapter|alohamini_.*|open_duck_.*|datasheets|adapters)\.py": "a servo",
     r"tests/fake_alohamini_host\.py": "a robot's model",
     r"tests/test_(openai_headers.*|openrouter_wire|providers|local_provider)\.py": "a vendor's",
-    r"tests/test_(decisions_api.*|web|doctor|decision_llms|catalogue)\.py": "a vendor's",
+    r"tests/test_(decisions_api.*|doctor|decision_llms|catalogue)\.py": "a vendor's",
     r"tests/test_(cli|command|docs|live_decision|pypi_readme)\.py": "a vendor's, or pinned words",
     r"tests/fake_(openai_.*|openrouter|decisions_api|systemone|laya)\.py": "stands in for one",
 }

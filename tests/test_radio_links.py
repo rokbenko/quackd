@@ -12,6 +12,7 @@ import json
 import threading
 import time
 from dataclasses import replace
+from functools import partial
 
 import pytest
 
@@ -50,6 +51,7 @@ from roboglot.radio.links import (
     talk_inbox,
 )
 from roboglot.radio.loop import LoopThread
+from tests.support import until_async
 
 A = "0001020304050607"  # dials, being the lower
 B = "08090a0b0c0d0e0f"
@@ -137,12 +139,7 @@ async def raw_peripheral(
     return raw, heard, task
 
 
-async def until(condition: object, within_s: float = 2.0) -> None:
-    deadline = time.monotonic() + within_s
-    while not (condition() if callable(condition) else condition):
-        if time.monotonic() > deadline:
-            raise AssertionError("the condition never came true")
-        await asyncio.sleep(0.005)
+until = partial(until_async, within_s=2.0, every_s=0.005, what="the condition never came true")
 
 
 async def test_a_request_that_says_it_is_too_large_is_answered_413_at_once() -> None:
@@ -263,7 +260,7 @@ async def test_a_quiet_link_is_closed_after_the_idle_time() -> None:
     policy = replace(FAST, idle_s=0.3)
     central, peripheral, _, _ = await linked(policy=policy)
     assert (await central.request(b"hello", Media.JOSE, timeout=1))[0] == 200
-    await until(lambda: peripheral.closed is not None and central.closed is not None, 2.0)
+    await until(lambda: peripheral.closed is not None and central.closed is not None, within_s=2.0)
     assert "idle" in (central.closed or "")
 
 

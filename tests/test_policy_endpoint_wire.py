@@ -28,11 +28,11 @@ from roboglot.cli import app
 from roboglot_lerobot.policy import client as C
 from roboglot_lerobot.policy import endpoint as E
 from roboglot_lerobot.policy import protocol as wire
-from roboglot_lerobot.policy import server as S
 from roboglot_lerobot.policy.client import PolicyServerError, RemoteRunner, is_endpoint_host
 from roboglot_lerobot.verbs import JOINTS
 from tests.fake_hugging_face import ACCOUNT_TOKEN, FakeAPI, FakeProxy, Recorded, point
-from tests.test_policy_contract import TOKEN, Serving, _serving
+from tests.support import one_line
+from tests.test_policy_contract import TOKEN, Serving, serving
 
 HF_TOKEN = "hf_" + "Sx" * 17
 """Shaped like a Hugging Face token, and nobody's."""
@@ -43,13 +43,8 @@ GOOD = "https://f3b5c6ee5c9dcc0e0a01.endpoints.huggingface.cloud"
 
 @pytest.fixture
 def served() -> Iterator[Serving]:
-    serving = _serving(S.ServeOptions(policy="scripted:sweep"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
+    with serving("scripted:sweep") as s:
+        yield s
 
 
 def _as_endpoint(monkeypatch: pytest.MonkeyPatch, proxy: FakeProxy) -> None:
@@ -277,10 +272,6 @@ def _cli(*args: str, given: str | None = None) -> Result:
     return CliRunner().invoke(app, list(args), input=given, env={"COLUMNS": "200"})
 
 
-def _flat(text: str) -> str:
-    return " ".join(text.split())
-
-
 def _posts(hf: FakeAPI) -> list[Recorded]:
     return [r for r in hf.requests if r.method == "POST" and r.path.startswith("/v2/endpoint/")]
 
@@ -299,7 +290,7 @@ def test_up_creates_an_endpoint_waits_until_it_serves_and_says_how_a_run_reaches
     output, the listing or PyPI."""
     result = _cli(*UP, "--yes")
     assert result.exit_code == 0, result.output
-    said = _flat(result.output)
+    said = one_line(result.output)
     for needle in (
         "created arm on rok's account, nvidia-l4 x1 in aws us-east-1, $0.80 an hour while it runs",
         "state pending at 0 s",
@@ -342,7 +333,7 @@ def test_the_record_is_kept_before_the_endpoint_is_created_and_dropped_if_it_is_
     monkeypatch.setattr(E.HFEndpoints, "create", create)
     hf.refuse_create = 402
     refused = _cli(*UP, "--yes")
-    said = _flat(refused.output)
+    said = one_line(refused.output)
     assert refused.exit_code == 1 and "without a way to pay (HTTP 402" in said, refused.output
     assert _store().get("arm") is None
     hf.refuse_create = None
@@ -377,7 +368,7 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
     monkeypatch.setattr(FakeAPI, "_create", lost)
     monkeypatch.setattr(FakeAPI, "_endpoint", unreadable)
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     kept = _store().get("arm")
     if made == "made":
         assert result.exit_code == 0 and "gpu yes" in said, said
@@ -392,7 +383,7 @@ def test_a_create_whose_answer_is_lost_keeps_the_record_while_the_endpoint_may_e
         assert "Hugging Face has no arm yet, which it may still be making" in said
         assert kept is not None and ("rok", "arm") not in hf.endpoints
         forgot = _cli("policy", "endpoint", "delete", "arm", "--yes")
-        assert forgot.exit_code == 0 and "Hugging Face had no arm on rok" in _flat(forgot.output)
+        assert forgot.exit_code == 0 and "Hugging Face had no arm on rok" in one_line(forgot.output)
         assert _store().get("arm") is None
     else:
         assert result.exit_code == 1, said
@@ -415,7 +406,7 @@ def test_a_refused_create_that_quotes_the_body_back_shows_no_token(
 
     monkeypatch.setattr(FakeAPI, "_create", quotes)
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "would not create arm (HTTP 422)" in said, said
     assert f"secrets.{wire.TOKEN_ENV} <token> is not allowed" in said
     (created,) = _posts(hf)
@@ -428,7 +419,7 @@ def test_up_with_a_token_where_the_hub_tokens_variable_belongs_does_not_say_it(
 ) -> None:
     hub = "hf_" + "HubReadToken" * 3  # a name as far as the rule goes, and set nowhere
     result = _cli(*UP, "--yes", "--hub-token-from", hub)
-    assert result.exit_code == 1 and "is not set" in _flat(result.output), result.output
+    assert result.exit_code == 1 and "is not set" in one_line(result.output), result.output
     assert hub not in result.output and not _posts(hf)
 
 
@@ -458,7 +449,7 @@ def test_a_read_that_is_no_endpoint_is_one_that_cannot_be_read(
     if when == "after a lost create":
         monkeypatch.setattr(FakeAPI, "_create", lost)
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1, said
     if when == "while up waits":
         assert "with something that is not an endpoint" in said
@@ -471,19 +462,19 @@ def test_a_read_that_is_no_endpoint_is_one_that_cannot_be_read(
 
 def test_up_with_no_wait_creates_it_and_returns_saying_so(hf: FakeAPI) -> None:
     result = _cli(*UP, "--yes", "--no-wait")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 0 and "created arm on rok's account" in said, result.output
     assert "Not waiting: roboglot policy endpoint up arm waits until it serves" in said
     assert "state " not in said
     record = _store().get("arm")
     assert record is not None and record.url is None and len(_posts(hf)) == 1
     waited = _cli("policy", "endpoint", "up", "arm")
-    assert waited.exit_code == 0 and "gpu yes" in _flat(waited.output), waited.output
+    assert waited.exit_code == 0 and "gpu yes" in one_line(waited.output), waited.output
 
 
 def test_up_with_no_terminal_and_no_yes_creates_nothing(hf: FakeAPI) -> None:
     result = _cli(*UP)
-    assert result.exit_code == 1 and "no terminal to ask" in _flat(result.output), result.output
+    assert result.exit_code == 1 and "no terminal to ask" in one_line(result.output), result.output
     assert not _posts(hf) and _store().get("arm") is None
 
 
@@ -494,7 +485,7 @@ def test_up_asks_at_a_terminal_and_a_no_creates_nothing(
 
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     refused = _cli(*UP, given="n\n")
-    said = _flat(refused.output)
+    said = one_line(refused.output)
     assert refused.exit_code == 1 and "This starts a Hugging Face Inference Endpoint" in said
     assert "It bills $0.80 an hour while it runs (Hugging Face's price, read just now)" in said
     assert not _posts(hf) and _store().get("arm") is None
@@ -526,7 +517,7 @@ def test_up_refuses_before_anything_is_created(
     for key, value in setup.items():
         setattr(hf, key, value)
     result = _cli("policy", "endpoint", "up", "arm", *args, "--yes")
-    assert result.exit_code == 1 and needle in _flat(result.output), result.output
+    assert result.exit_code == 1 and needle in one_line(result.output), result.output
     assert not _posts(hf) and _store().get("arm") is None
     assert ACCOUNT_TOKEN not in result.output
 
@@ -538,7 +529,7 @@ def test_up_given_a_quota_listing_not_the_shape_documented_says_so_and_creates_n
         FakeAPI, "_quotas", lambda self: {"vendors": [{"name": "aws", "quotas": 5}]}
     )
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and isinstance(result.exception, SystemExit), result.exception
     assert "Hugging Face's quota listing for rok is not the shape it documents" in said, said
     assert not _posts(hf) and _store().get("arm") is None
@@ -548,17 +539,17 @@ def test_up_with_no_token_or_a_name_hugging_face_would_refuse_asks_nothing(
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     named = _cli("policy", "endpoint", "up", "Arm_1", "--policy", ACT, "--yes")
-    assert named.exit_code == 1 and "is not an endpoint's name" in _flat(named.output)
+    assert named.exit_code == 1 and "is not an endpoint's name" in one_line(named.output)
     monkeypatch.setenv("HF_TOKEN", "")
     tokenless = _cli(*UP, "--yes")
-    assert tokenless.exit_code == 1 and "no Hugging Face token" in _flat(tokenless.output)
+    assert tokenless.exit_code == 1 and "no Hugging Face token" in one_line(tokenless.output)
     assert not hf.requests
 
 
 def test_an_endpoint_whose_server_has_no_gpu_is_paused_and_its_log_quoted(hf: FakeAPI) -> None:
     hf.gpu = False
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "serves with no GPU" in said, result.output
     assert "so it was paused, and bills nothing now" in said
     assert "stand-in container: serving scripted:sweep in place of" in said
@@ -571,7 +562,7 @@ def test_an_endpoint_that_fails_is_paused_and_its_log_quoted_with_no_token_in_it
     hf.fail = True
     hf.log = [f"the image would not start, holding {ACCOUNT_TOKEN} in its environment"]
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "hf:arm reached failed" in said, result.output
     assert "the image would not start, holding <token> in its environment" in said
     assert ACCOUNT_TOKEN not in result.output
@@ -616,7 +607,7 @@ def test_up_pauses_an_endpoint_whatever_stops_its_wait(
 
         monkeypatch.setattr(FakeProxy, "_reply", refusing)
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "so it was paused, and bills nothing now" in said, said
     assert hf.endpoints[("rok", "arm")].state == "paused"
     assert [r for r in hf.requests if r.path.endswith("/arm/pause")]
@@ -639,7 +630,7 @@ def test_a_404_from_the_proxy_before_it_has_a_route_is_waited_out_and_not_fatal(
 
     monkeypatch.setattr(FakeProxy, "_reply", unrouted)
     result = _cli(*UP, "--yes")
-    assert result.exit_code == 0 and "gpu yes" in _flat(result.output), result.output
+    assert result.exit_code == 0 and "gpu yes" in one_line(result.output), result.output
     assert asked["n"] >= 2 and hf.endpoints[("rok", "arm")].state == "running"
     assert not [r for r in hf.requests if r.path.endswith("/pause")]
 
@@ -647,7 +638,7 @@ def test_a_404_from_the_proxy_before_it_has_a_route_is_waited_out_and_not_fatal(
 def test_an_endpoint_that_does_not_serve_in_time_is_paused(hf: FakeAPI) -> None:
     hf.stuck = True
     result = _cli(*UP, "--yes", "--wait-minutes", "0.001")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "did not serve within 0.001 minutes" in said, result.output
     assert hf.endpoints[("rok", "arm")].state == "paused"
 
@@ -655,13 +646,15 @@ def test_an_endpoint_that_does_not_serve_in_time_is_paused(hf: FakeAPI) -> None:
 def test_a_paused_endpoint_is_resumed_by_up_after_asking_again(hf: FakeAPI) -> None:
     assert _cli(*UP, "--yes").exit_code == 0
     paused = _cli("policy", "endpoint", "pause", "arm")
-    assert paused.exit_code == 0 and "paused arm, which bills nothing now" in _flat(paused.output)
+    assert paused.exit_code == 0 and "paused arm, which bills nothing now" in one_line(
+        paused.output
+    )
     assert hf.endpoints[("rok", "arm")].state == "paused"
     unasked = _cli("policy", "endpoint", "up", "arm")
-    assert unasked.exit_code == 1 and "no terminal to ask" in _flat(unasked.output)
+    assert unasked.exit_code == 1 and "no terminal to ask" in one_line(unasked.output)
     assert hf.endpoints[("rok", "arm")].state == "paused"
     resumed = _cli("policy", "endpoint", "up", "arm", "--yes")
-    said = _flat(resumed.output)
+    said = one_line(resumed.output)
     assert resumed.exit_code == 0 and "resumed arm, $0.80 an hour while it runs" in said, said
     assert "gpu yes" in said and hf.endpoints[("rok", "arm")].state == "running"
 
@@ -684,20 +677,20 @@ def test_an_endpoint_at_zero_is_woken_by_up_only_after_asking(
     to_zero()
     before = len(ep.proxy.requests)
     unasked = _cli("policy", "endpoint", "up", "arm")
-    assert unasked.exit_code == 1 and "no terminal to ask" in _flat(unasked.output)
+    assert unasked.exit_code == 1 and "no terminal to ask" in one_line(unasked.output)
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     refused = _cli("policy", "endpoint", "up", "arm", given="n\n")
-    said = _flat(refused.output)
+    said = one_line(refused.output)
     assert refused.exit_code == 1 and "This wakes a Hugging Face Inference Endpoint" in said
     assert "It bills $0.80 an hour while it runs" in said and "Wake it?" in said
     assert ep.state == "scaledToZero" and len(ep.proxy.requests) == before
     woken = _cli("policy", "endpoint", "up", "arm", "--yes")
-    said = _flat(woken.output)
+    said = one_line(woken.output)
     assert woken.exit_code == 0 and "waking arm, $0.80 an hour while it runs" in said, said
     assert "gpu yes" in said and ep.state == "running"
     to_zero()
     unwaited = _cli("policy", "endpoint", "up", "arm", "--yes", "--no-wait")
-    assert unwaited.exit_code == 0 and "waking arm" in _flat(unwaited.output)
+    assert unwaited.exit_code == 0 and "waking arm" in one_line(unwaited.output)
     assert ep.state != "scaledToZero"
 
 
@@ -711,7 +704,7 @@ def test_up_wakes_one_at_zero_at_its_address_when_the_record_had_none_yet(hf: Fa
     ep = hf.endpoints[("rok", "arm")]
     ep.state, ep.ahead = "scaledToZero", []
     woken = _cli("policy", "endpoint", "up", "arm", "--yes", "--no-wait")
-    assert woken.exit_code == 0 and "waking arm" in _flat(woken.output), woken.output
+    assert woken.exit_code == 0 and "waking arm" in one_line(woken.output), woken.output
     kept = _store().get("arm")
     assert kept is not None and kept.url == ep.proxy.url and ep.state != "scaledToZero"
 
@@ -730,7 +723,7 @@ def test_an_endpoint_whose_address_moves_while_up_waits_is_sent_nothing_and_paus
     ep = hf.endpoints[("rok", "arm")]
     ep.url = "https://0a1b2c3d4e5f.endpoints.huggingface.cloud"
     result = _cli("policy", "endpoint", "up", "arm", "--yes", "--wait-minutes", "0.05")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1, said
     assert "Hugging Face gives hf:arm another address than the one this machine recorded" in said
     assert "so it was paused, and bills nothing now" in said and ep.state == "paused"
@@ -761,7 +754,7 @@ def test_up_on_a_failed_endpoint_quotes_its_log_and_message_with_no_token(
 
     monkeypatch.setattr(FakeAPI, "_status", status)
     result = _cli("policy", "endpoint", "up", "arm")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "hf:arm is failed: exited 1 with <token>" in said, said
     assert "Traceback: argv held <token>" in said and "env HF_TOKEN=<token>" in said
     assert record.token not in result.output and hub not in result.output
@@ -786,7 +779,7 @@ def test_a_resume_whose_answer_is_lost_pauses_the_endpoint_again(
 
     monkeypatch.setattr(FakeAPI, "_endpoint", lost)
     result = _cli("policy", "endpoint", "up", "arm", "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "would not resume arm (HTTP 504)" in said, said
     assert "and it may have resumed all the same, so it was paused, and bills nothing now" in said
     assert hf.endpoints[("rok", "arm")].state == "paused"
@@ -805,7 +798,7 @@ def test_up_again_with_anything_other_than_what_it_was_started_with_is_refused(
         (["--idle-minutes", "60"], "--idle-minutes"),
     ):
         result = _cli("policy", "endpoint", "up", "arm", *args, "--yes")
-        said = _flat(result.output)
+        said = one_line(result.output)
         assert result.exit_code == 1 and f"{flag} would change that" in said, said
     again = _cli(*UP, "--yes")
     assert again.exit_code == 0 and len(_posts(hf)) == 1, again.output
@@ -827,7 +820,7 @@ def test_list_says_what_this_machine_started_and_what_hugging_face_says_of_it(
         },
     )
     listed = _cli("policy", "endpoint", "list")
-    said = _flat(listed.output)
+    said = one_line(listed.output)
     assert listed.exit_code == 0 and "arm" in said and "running" in said, listed.output
     assert "elsewhere" in said and "not started from this machine" in said
     rows = [
@@ -895,7 +888,7 @@ def test_a_record_outlived_by_its_endpoint_never_resumes_pauses_or_deletes_anoth
     other = _made_elsewhere(hf, monkeypatch, tagged=tagged)
     before = len(hf.requests)
     result = _cli(*command)
-    said = _flat(result.output)
+    said = one_line(result.output)
     needle = (
         "carries Roboglot's tag but not the one this machine's up gave hf:arm"
         if tagged
@@ -925,7 +918,7 @@ def test_delete_leaves_alone_an_endpoint_a_record_with_no_token_cannot_be_held_t
     store.path.write_text(json.dumps(saved), encoding="utf-8")
     before = len(hf.requests)
     refused = _cli("policy", "endpoint", "delete", "arm", "--yes")
-    said = _flat(refused.output)
+    said = one_line(refused.output)
     assert refused.exit_code == 1 and "holds no token Roboglot can read" in said, said
     assert "delete it on huggingface.co if it is yours" in said
     assert "roboglot policy endpoint delete arm --forget forgets the record" in said
@@ -947,10 +940,10 @@ def test_delete_forget_forgets_the_record_and_leaves_hugging_face_as_it_is(
     before = len(hf.requests)
     unasked = _cli("policy", "endpoint", "delete", "arm", "--forget")
     assert unasked.exit_code == 1, unasked.output
-    assert "forgetting hf:arm cannot be undone" in _flat(unasked.output)
+    assert "forgetting hf:arm cannot be undone" in one_line(unasked.output)
     assert _store().get("arm") is not None
     forgot = _cli("policy", "endpoint", "delete", "arm", "--forget", "--yes")
-    said = _flat(forgot.output)
+    said = one_line(forgot.output)
     assert forgot.exit_code == 0 and "forgot arm in" in said, said
     assert "deleted" not in said and "Hugging Face had no" not in said
     assert _store().get("arm") is None and hf.endpoints.get(("rok", "arm")) is other
@@ -970,7 +963,7 @@ def test_an_endpoint_the_wait_finds_is_not_the_recorded_one_is_not_paused(
 
     monkeypatch.setattr(E, "wait_until_serving", swapped)
     result = _cli(*UP, "--yes")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1 and "not at the address this machine recorded" in said, said
     assert "paused" not in said and not [r for r in hf.requests if r.path.endswith("/pause")]
     assert hf.endpoints[("rok", "arm")].state != "paused"
@@ -979,13 +972,13 @@ def test_an_endpoint_the_wait_finds_is_not_the_recorded_one_is_not_paused(
 def test_delete_asks_or_needs_yes_and_forgets_the_record(hf: FakeAPI) -> None:
     assert _cli(*UP, "--yes").exit_code == 0
     unasked = _cli("policy", "endpoint", "delete", "arm")
-    assert unasked.exit_code == 1 and "cannot be undone" in _flat(unasked.output)
+    assert unasked.exit_code == 1 and "cannot be undone" in one_line(unasked.output)
     assert ("rok", "arm") in hf.endpoints
     deleted = _cli("policy", "endpoint", "delete", "arm", "--yes")
-    assert deleted.exit_code == 0 and "deleted arm from rok's account" in _flat(deleted.output)
+    assert deleted.exit_code == 0 and "deleted arm from rok's account" in one_line(deleted.output)
     assert ("rok", "arm") not in hf.endpoints and _store().get("arm") is None
     gone = _cli("policy", "endpoint", "pause", "arm")
-    assert gone.exit_code == 1 and "no endpoint called arm is recorded" in _flat(gone.output)
+    assert gone.exit_code == 1 and "no endpoint called arm is recorded" in one_line(gone.output)
 
 
 # ── a run's client, by --policy-url hf:NAME ─────────────────────────────────────────────
@@ -1031,7 +1024,7 @@ def test_a_planted_record_sends_the_account_token_nowhere(
 
         monkeypatch.setattr(FakeAPI, "_endpoint", foreign)
     result = _cli("policy", "check", "--policy-url", "hf:arm")
-    said = _flat(result.output)
+    said = one_line(result.output)
     needle = {
         404: "Hugging Face has no endpoint called arm on attacker's account, so nothing was sent",
         403: "Hugging Face refused the token when asked to say how arm is (HTTP 403",
@@ -1067,7 +1060,7 @@ def test_a_registry_a_dotenv_names_is_not_one_hf_name_reads(
     monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
     before = len(hf.requests)
     result = _cli("policy", "check", "--policy-url", "hf:arm")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1, said
     assert "ROBOGLOT_REGISTRY_DIR comes from a .env file here" in said
     assert "export it in the shell, or pass --registry-dir" in said
@@ -1095,7 +1088,7 @@ def test_hf_name_reads_a_registry_the_shell_or_the_flag_names(
         monkeypatch.delenv("ROBOGLOT_TEST_SOMETHING_ELSE", raising=False)
         _cloned_project(tmp_path, monkeypatch, "ROBOGLOT_TEST_SOMETHING_ELSE=1\n")
     result = _cli(*check)
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 0 and "policy scripted:sweep" in said, said
 
 
@@ -1115,7 +1108,7 @@ def test_check_benches_an_endpoint_by_its_name_through_the_proxy(
     ep = hf.endpoints[("rok", "arm")]
     ep.proxy.requests.clear()
     result = _cli("policy", "check", "--policy-url", "hf:arm", "--bench", "--seconds", "1")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 0, result.output
     assert f"hf:arm at {record.url}" in said and "policy scripted:sweep" in said
     assert "achieved" in said and "round trip" in said
@@ -1134,7 +1127,7 @@ def test_a_paused_endpoint_is_not_serving_and_says_how_to_wake_it(hf: FakeAPI) -
     assert _cli(*UP, "--yes").exit_code == 0
     assert _cli("policy", "endpoint", "pause", "arm").exit_code == 0
     result = _cli("policy", "check", "--policy-url", "hf:arm")
-    said = _flat(result.output)
+    said = one_line(result.output)
     assert result.exit_code == 1, result.output
     assert "hf:arm is not serving (HTTP 503 from Hugging Face, not from Roboglot's server)" in said
     assert "roboglot policy endpoint up arm wakes it and waits until it answers" in said
@@ -1144,12 +1137,14 @@ def test_check_of_an_endpoint_with_no_record_or_no_account_token_refuses_before_
     hf: FakeAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     unknown = _cli("policy", "check", "--policy-url", "hf:arm")
-    assert unknown.exit_code == 1 and "no endpoint called arm is recorded" in _flat(unknown.output)
+    assert unknown.exit_code == 1 and "no endpoint called arm is recorded" in one_line(
+        unknown.output
+    )
     assert _cli(*UP, "--yes").exit_code == 0
     monkeypatch.setenv("HF_TOKEN", "")
     before = len(hf.endpoints[("rok", "arm")].proxy.requests)
     tokenless = _cli("policy", "check", "--policy-url", "hf:arm")
-    said = _flat(tokenless.output)
+    said = one_line(tokenless.output)
     assert tokenless.exit_code == 1 and "no Hugging Face token to reach hf:arm" in said
     assert len(hf.endpoints[("rok", "arm")].proxy.requests) == before
 

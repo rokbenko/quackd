@@ -27,13 +27,10 @@ from roboglot import cli
 from roboglot.cli import app
 from roboglot.passport import document, strict
 from tests.passport_helpers import OWNER, VECTORS, A, doc
+from tests.support import one_line
 
 runner = CliRunner()
 BOARD = {"kind": "sim", "model": "a computer standing in for a robot's own"}
-
-
-def _flat(output: str) -> str:
-    return " ".join(output.split())
 
 
 def _signed(**members: Any) -> str:
@@ -56,7 +53,7 @@ def signed(tmp_path: Path) -> Path:
 def test_check_shows_who_signed_a_passport_what_it_runs_on_and_until_when(signed: Path) -> None:
     checked = runner.invoke(app, ["passport", "check", str(signed)])
     assert checked.exit_code == 0, checked.output
-    flat = _flat(checked.output)
+    flat = one_line(checked.output)
     assert "checked g1-edu-01" in flat
     assert "claim signed by its owner's key" in flat
     # the owner by the key that signed, beside the label anybody could have written
@@ -77,7 +74,7 @@ def test_check_shows_who_signed_a_passport_what_it_runs_on_and_until_when(signed
 def test_check_refuses_with_the_rule_and_exits_1(vector: str, why: str) -> None:
     refused = runner.invoke(app, ["passport", "check", str(VECTORS / vector)])
     assert refused.exit_code == 1
-    flat = _flat(refused.output)
+    flat = one_line(refused.output)
     assert "refused under 4.4" in flat and why in flat
 
 
@@ -101,7 +98,7 @@ def test_check_refuses_a_passport_outside_the_dates_its_owner_signed_for(
     )
     refused = runner.invoke(app, ["passport", "check", str(path)])
     assert refused.exit_code == 1
-    assert "refused under 4.5" in _flat(refused.output)
+    assert "refused under 4.5" in one_line(refused.output)
 
 
 def test_check_json_is_the_readers_view_and_judges_no_tier(tmp_path: Path) -> None:
@@ -140,7 +137,7 @@ def test_check_refuses_an_index_of_passports(version: str, why: str) -> None:
     }
     refused = runner.invoke(app, ["passport", "check", "-"], input=json.dumps(index))
     assert refused.exit_code == 1
-    assert why in _flat(refused.output)
+    assert why in one_line(refused.output)
 
 
 def test_check_says_when_there_is_no_such_file() -> None:
@@ -202,7 +199,7 @@ def test_a_bare_host_means_its_well_known_url_and_the_signed_passport_beside_it(
 ) -> None:
     checked = runner.invoke(app, ["passport", "check", server])
     assert checked.exit_code == 0, checked.output
-    flat = _flat(checked.output)
+    flat = one_line(checked.output)
     assert "checked g1-edu-01" in flat and "claim signed by its owner's key" in flat
 
 
@@ -223,7 +220,7 @@ def test_a_robots_address_means_its_well_known_url_on_the_port_robots_listen_on(
 def test_a_host_with_no_signed_passport_is_read_as_a_claim(server: str) -> None:
     checked = runner.invoke(app, ["passport", "check", f"{server}/unsigned/robot-passport.json"])
     assert checked.exit_code == 0, checked.output
-    assert "claim unsigned: a claim" in _flat(checked.output)
+    assert "claim unsigned: a claim" in one_line(checked.output)
 
 
 def test_what_the_signed_url_serves_must_be_signed(server: str) -> None:

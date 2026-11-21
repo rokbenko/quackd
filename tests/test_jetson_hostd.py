@@ -17,7 +17,6 @@ import argparse
 import ast
 import contextlib
 import http.client
-import importlib.util
 import io
 import json
 import logging
@@ -49,6 +48,7 @@ from tests.jetson_fixtures import (
     tegra_tree,
     write,
 )
+from tests.support import load_script, until
 
 REPO = Path(__file__).resolve().parents[1]
 HOSTD = REPO / "bridge" / "jetson" / "roboglot_jetson_hostd.py"
@@ -65,18 +65,9 @@ FILES = (
 NODES = ("/dev/nvgpu/igpu0", "/dev/nvhost-ctrl-gpu", "/dev/nvidia0")
 
 
-def _load(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.fixture(scope="module")
 def hostd() -> ModuleType:
-    return _load(HOSTD, "roboglot_jetson_hostd")
+    return load_script(HOSTD, "roboglot_jetson_hostd")
 
 
 @pytest.fixture(autouse=True)
@@ -163,15 +154,6 @@ def jpeg_of(size: tuple[int, int] = (320, 240), fmt: str = "JPEG") -> bytes:
     buf = io.BytesIO()
     Image.new("RGB", size, (236, 229, 212)).save(buf, format=fmt)
     return buf.getvalue()
-
-
-def wait_for_frame(store: Any, timeout: float = 5.0) -> None:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if store.get()[0] is not None:
-            return
-        time.sleep(0.02)
-    raise AssertionError("no frame was captured in time")
 
 
 def no_commands(monkeypatch: pytest.MonkeyPatch, hostd: ModuleType) -> list[tuple[Any, ...]]:
@@ -352,7 +334,7 @@ def test_the_daemon_loads_and_fakes_a_camera_with_only_the_standard_library(
     for name in ("cv2", "numpy", "PIL", "PIL.Image", "PIL.ImageDraw", "torch", "ultralytics"):
         monkeypatch.setitem(sys.modules, name, None)
     try:
-        bare = _load(HOSTD, "roboglot_jetson_hostd_bare")
+        bare = load_script(HOSTD, "roboglot_jetson_hostd_bare")
         camera = bare.FakeCamera()
         jpeg, size = camera.jpeg()
         assert jpeg[:2] == b"\xff\xd8" and size == camera.size == (2, 2)
@@ -849,7 +831,12 @@ def test_the_fake_cameras_frame_is_one_roboglots_colour_detector_can_see(
     daemon = hostd.Hostd(camera=hostd.FakeCamera(), fps=20.0, board_root=str(tmp_path))
     daemon.start()
     with serving(hostd, daemon) as port:
-        wait_for_frame(daemon.store)
+        until(
+            lambda: daemon.store.get()[0] is not None,
+            5.0,
+            every_s=0.02,
+            what="no frame was captured",
+        )
         status, headers, body = call(port, "GET", "/snapshot.jpg")
         assert status == 200 and headers["content-type"] == "image/jpeg"
         frame = Image.open(io.BytesIO(body)).convert("RGB")

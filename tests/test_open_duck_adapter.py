@@ -8,6 +8,7 @@ be absent from the manifest, from the registry, from `.glot` validation and from
 from __future__ import annotations
 
 import math
+from functools import partial
 from pathlib import Path
 
 import pytest
@@ -19,8 +20,7 @@ from roboglot.agent.prompts import build_system_prompt
 from roboglot.cli import app
 from roboglot.glotfile.parser import load_glot, parse_glot_text
 from roboglot.glotfile.validate import validate_glot
-from roboglot.perception.color_blob import ColorBlobDetector
-from roboglot.safety import Executor, allow_all
+from roboglot.safety import allow_all
 from roboglot.transport.base import Intent
 from roboglot.verbs.core import scan_mode
 from roboglot.verbs.registry import VerbNotFound, registry_from_manifest
@@ -33,6 +33,7 @@ from roboglot_open_duck import (
 )
 from roboglot_open_duck.mock import OpenDuckMock
 from roboglot_open_duck.verbs import GAZE_YAW_DEG, MAX_VX, MAX_VY, MAX_WZ, mood_for
+from tests.support import executor_for
 
 runner = CliRunner()
 
@@ -73,14 +74,7 @@ GLOT = parse_glot_text(
 )
 
 
-def _executor(adapter: OpenDuckAdapter, manifest: object) -> Executor:
-    return Executor(
-        registry_from_manifest(manifest, adapter),  # type: ignore[arg-type]
-        adapter,
-        contract=GLOT.frontmatter,
-        detector=ColorBlobDetector(),
-        confirm=allow_all,
-    )
+_executor = partial(executor_for, seeing=True, contract=GLOT.frontmatter, confirm=allow_all)
 
 
 # ── the manifest ────────────────────────────────────────────────────────────────────────

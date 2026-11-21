@@ -337,6 +337,7 @@ files = [
     "scripts/bodies_docs.py",
     "scripts/example_log.py",
     "scripts/upstream_drift.py",
+    "scripts/changelog_lock.py",
 ]
 ignore_missing_imports = true
 warn_unused_ignores = false
@@ -348,8 +349,21 @@ disallow_untyped_defs = false
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-q"
-filterwarnings = ["ignore::DeprecationWarning"]
+# An unknown marker or key is an error, so a typo cannot pass for a mark that does nothing.
+# `timeout` below is read by pytest-timeout, so every environment that runs pytest needs it: the
+# `dev` group has it, and ci.yml's jobs sync that; fresh-install.yml names its packages.
+addopts = "-q --strict-markers --strict-config"
+# Another package's deprecation, raised inside its own code, is its maintainers' to mend and stays
+# quiet. One raised at a line of this project's, in the core, an adapter or a bridge (each loaded
+# as `roboglot*`) or in a test, is an error: a library or the standard library attributes its
+# deprecation to the caller, so the line that has to change is ours. The module is a regex matched
+# at the start of the module's name, and the last entry that matches wins. Scripts loaded under a
+# bare name (`upstream_drift`, `example_log`) are not covered.
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "error::DeprecationWarning:roboglot.*",
+    "error::DeprecationWarning:tests.*",
+]
 markers = [
     # Each holds a margin on a wall clock, so on a machine that workers have filled it fails for
     # the machine's reasons. CI runs these after the rest, on their own (ci.yml).
@@ -370,3 +384,8 @@ TYPESAFE_API_KEY for jev or OPENAI_API_KEY for openai, and ROBOGLOT_LIVE_DECISIO
 # stderr and carries on, so the job timeout in ci.yml ends a hang with the blocked frame in
 # the log rather than nothing.
 faulthandler_timeout = 300
+# The same five minutes, as a failure: pytest-timeout ends the test that ran longer (on Linux and
+# macOS by a signal, so the run goes on; on Windows by a thread that dumps the stacks and ends the
+# process). A test that waits longer on purpose says so with `@pytest.mark.timeout(N)` (0 turns it
+# off), a module with `pytestmark = pytest.mark.timeout(N)`, a run by hand with `--timeout=0`.
+timeout = 300

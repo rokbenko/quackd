@@ -19,7 +19,6 @@ servers flake on this project's Windows machine.
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import platform
 import socket
@@ -49,6 +48,7 @@ from tests.jetson_fixtures import (
     ZRAM_SWAPS,
     tegra_tree,
 )
+from tests.support import load_script
 
 REPO = Path(__file__).resolve().parents[1]
 HOSTD = REPO / "bridge" / "jetson" / "roboglot_jetson_hostd.py"
@@ -66,20 +66,10 @@ FPS = 10.0
 SIZE = (640, 480)
 
 
-def _load(path: Path, name: str) -> ModuleType:
-    """The daemon as the board runs it: a file, never imported through Roboglot."""
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.fixture(scope="module")
 def hostd() -> ModuleType:
     # its own name, so nothing this file patches can leak into the daemon's own tests
-    return _load(HOSTD, "roboglot_jetson_hostd_contract")
+    return load_script(HOSTD, "roboglot_jetson_hostd_contract")
 
 
 # ── a fake GPU, and fake board commands ─────────────────────────────────────────────────
