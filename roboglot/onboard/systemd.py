@@ -40,6 +40,15 @@ _QUOTING = frozenset(" \t\"'\\")
 #: What glob(7) reads as a pattern rather than a name, in `EnvironmentFile=`, which takes a
 #: pattern: the backslash among them, which keeps the character after it as itself.
 _GLOB = frozenset("*?[\\")
+#: What systemd runs no program from, however `ExecStart=` quotes its path: its `string_is_safe`
+#: refuses the two quotes and the backslash there, beside the control characters every value is
+#: refused for.
+_NOT_IN_A_PROGRAM = frozenset("\"'\\")
+#: The noncharacters, for which systemd's `utf8_is_valid` refuses a unit's line, and with it the
+#: whole unit (`unichar_is_valid`): U+FDD0 to U+FDEF, and the last two code points of every
+#: plane, whose low sixteen bits this mask leaves FFFE.
+_NONCHARACTERS = range(0xFDD0, 0xFDF0)
+_PLANE_END_MASK = 0xFFFE
 
 
 class UnitError(ValueError):
@@ -86,6 +95,11 @@ def unit_text(
     # Windows, where no unit is ever installed and only the suite writes one, it is what parts
     # the folders of a path, and stays as it is
     native = "\\" if isinstance(directory, PureWindowsPath) else ""
+    if not (_NOT_IN_A_PROGRAM - set(native)).isdisjoint(roboglot):
+        raise UnitError(
+            f"roboglot's own path {roboglot!r} holds a quote or a backslash, and systemd runs no "
+            "program whose path holds one: install roboglot where its path has neither"
+        )
     groups = f"SupplementaryGroups={BLUETOOTH_GROUP}\n" if bluetooth_group else ""
     return f"""# Written by `roboglot onboard`; running it again rewrites this file.
 [Unit]
@@ -128,8 +142,8 @@ WantedBy=multi-user.target
 def _refuse_unwritable(what: str, value: str) -> None:
     """Refuse a value no writing carries through systemd's reading of a unit: a control
     character, which a newline above all turns into the end of a line and the start of a
-    directive of its own, or a name whose bytes are not UTF-8 (the surrogates Python decodes
-    them to), which systemd does not read as a unit's text."""
+    directive of its own, a name whose bytes are not UTF-8 (the surrogates Python decodes them
+    to), or a noncharacter, for both of which systemd refuses the whole unit as not UTF-8."""
     for char in value:
         kind = unicodedata.category(char)
         if kind == "Cc":
@@ -138,6 +152,11 @@ def _refuse_unwritable(what: str, value: str) -> None:
             )
         if kind == "Cs":
             raise UnitError(f"{what} {value!r} is not UTF-8, which a systemd unit has to be")
+        point = ord(char)
+        if point in _NONCHARACTERS or point & _PLANE_END_MASK == _PLANE_END_MASK:
+            raise UnitError(
+                f"{what} {value!r} holds a noncharacter, which a systemd unit cannot hold"
+            )
 
 
 def _percent(value: str) -> str:
@@ -149,7 +168,9 @@ def _percent(value: str) -> str:
 def _user(user: str) -> str:
     """`user` for `User=`, which takes one name and no quotes: the rest of the line, once systemd
     has dropped the spaces at either end and joined a line that ends in a backslash to the next.
-    A name it would read as another is refused, and so is an empty one, which runs as root."""
+    A name it would read as another is refused, and so is an empty one, which runs as root, and
+    one its own rule refuses (`valid_user_group_name`, relaxed), for which a systemd before 234
+    ran the unit as root."""
     if not user:
         raise UnitError("the user's name is empty, and a unit with an empty User= runs as root")
     if user.strip(" ") != user:
@@ -161,6 +182,16 @@ def _user(user: str) -> str:
         raise UnitError(
             f"the user {user!r} ends in a backslash, which joins the line after User= to it"
         )
+    if ":" in user or "/" in user:
+        raise UnitError(
+            f"the user {user!r} holds a ':' or a '/', which systemd refuses in a user's name"
+        )
+    if user.isascii() and user.isdigit():
+        raise UnitError(
+            f"the user {user!r} is digits alone, which systemd reads as a uid, or refuses"
+        )
+    if user in (".", "..") or (user.startswith("-") and all(c in "0123456789" for c in user[1:])):
+        raise UnitError(f"the user {user!r} is a name systemd refuses for a user")
     return _percent(user)
 
 

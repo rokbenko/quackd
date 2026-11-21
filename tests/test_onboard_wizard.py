@@ -7,6 +7,7 @@ script would; a terminal's prompt is the wizard's business and is left out.
 
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import stat
@@ -14,6 +15,7 @@ import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -23,6 +25,7 @@ from roboglot.onboard.keys import WrongPassphrase
 from roboglot.onboard.service import check_own_passport
 from roboglot.onboard.store import OnboardDir
 from roboglot.passport import document
+from tests import systemd_reading
 
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
 PASSPHRASE = "correct horse battery staple"
@@ -267,145 +270,206 @@ def test_the_unit_runs_roboglot_as_the_robots_user_and_writes_only_its_directory
     assert commands[-1][-1] == systemd.UNIT_NAME
 
 
-#: The C escapes systemd's unquoting reads in `Environment=` and `ExecStart=`, beside a backslash
-#: before a backslash or a quote, which is that character (systemd.syntax(5), "Quoting").
-C_ESCAPES = {"a": "\a", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t", "v": "\v", "s": " "}
+def exec_line(value: str) -> systemd_reading.Service:
+    return systemd_reading.read_unit(f"[Service]\nExecStart={value}\n")
 
 
-def systemd_words(value: str, *, c_escapes: bool) -> list[str]:
-    """`value` split into words as systemd splits a list or a command line: at whitespace, a
-    double or a single quote keeping all up to its match in one word, and a backslash, in quotes
-    or out, making the next character itself, or with `c_escapes` the C escape it begins. Any
-    other escape fails the test, since systemd refuses it or reads it as something else."""
-    words: list[str] = []
-    word: list[str] = []
-    started, quote = False, ""
-    chars = iter(value)
-    for char in chars:
-        if char == "\\":
-            char = next(chars, "")
-            assert char, f"{value!r} ends in a backslash"
-            if c_escapes and char not in "\\\"'":
-                assert char in C_ESCAPES, (
-                    f"{value!r}: systemd refuses \\{char} or reads it otherwise"
-                )
-                char = C_ESCAPES[char]
-            word.append(char)
-            started = True
-        elif quote:
-            if char == quote:
-                quote = ""
-            else:
-                word.append(char)
-        elif char in " \t":
-            if started:
-                words.append("".join(word))
-                word, started = [], False
-        elif char in "\"'":
-            quote, started = char, True
-        else:
-            word.append(char)
-            started = True
-    assert not quote, f"{value!r} opens a quote it never closes"
-    if started:
-        words.append("".join(word))
-    return words
+@pytest.mark.parametrize(
+    ("value", "argv"),
+    [
+        ("/RValue r1", ["/RValue", "r1"]),
+        ('"/PATH WITH SPACES/daemon" -1 -2', ["/PATH WITH SPACES/daemon", "-1", "-2"]),
+        ('"/PATH\\sWITH\\sSPACES/daemon" -1 -2', ["/PATH WITH SPACES/daemon", "-1", "-2"]),
+        ("/path\\s", ["/path "]),
+        ("/bin/grep '\\w+\\K'", ["/bin/grep", "\\w+\\K"]),
+    ],
+)
+def test_the_suites_reading_of_a_command_line_is_the_one_systemds_own_tests_assert(
+    value: str, argv: list[str]
+) -> None:
+    """`tests/systemd_reading` stands in for systemd, which no machine of the suite runs, so it
+    is held to what systemd's own test-load-fragment.c asserts: spaces in a quoted path, `\\s`,
+    and an escape systemd does not know, kept as it is on its second, relaxed try. A stand-in
+    that read these otherwise could pass a unit systemd refuses."""
+    assert exec_line(value).exec_argv == argv
 
 
-def systemd_reads(unit: str) -> dict[str, list[str]]:
-    """What systemd takes from each directive of `unit` the wizard fills in, by its own rules: a
-    line ending in a backslash goes on to the next, and a value loses the spaces at either end
-    (systemd.syntax(5)); `User=` and `WorkingDirectory=` take the rest of the line whole, the
-    directory losing a slash at its end as systemd tidies a path; `EnvironmentFile=` takes a glob
-    pattern, whose backslashes glob(7) takes away; `Environment=` and `ExecStart=` split into
-    words with C escapes, `ReadWritePaths=` without; and in every one a `%%` is a `%`, and any
-    other `%` a specifier systemd would expand, which fails the test (systemd.unit(5))."""
+@pytest.mark.parametrize("escape", list("abfnrtv\\'\"x"))
+def test_the_suites_reading_refuses_the_program_paths_systemds_own_tests_refuse(
+    escape: str,
+) -> None:
+    """test-load-fragment.c's "invalid character" cases: `/path\\X` for each of these is refused,
+    by `string_is_safe` (a control character, a quote, a backslash) or by the escape itself."""
+    with pytest.raises(systemd_reading.Refused):
+        exec_line("/path\\" + escape)
 
-    def specified(word: str) -> str:
-        assert "%" not in word.replace("%%", ""), f"{word!r} has a % systemd would expand"
-        return word.replace("%%", "%")
 
-    said: dict[str, list[str]] = {}
-    for line in unit.splitlines():
-        if not line or line.startswith(("#", "[")):
-            continue
-        assert (len(line) - len(line.rstrip("\\"))) % 2 == 0, f"{line!r} goes on to the next line"
-        key, _, value = line.partition("=")
-        value = value.strip(" \t")
-        if key == "User":
-            words = [specified(value)]
-        elif key == "WorkingDirectory":
-            words = [specified(value).rstrip("/")]
-        elif key == "EnvironmentFile":
-            words = [re.sub(r"\\(.)", r"\1", specified(value.removeprefix("-")))]
-        elif key in ("Environment", "ExecStart", "ReadWritePaths"):
-            split = systemd_words(value, c_escapes=key != "ReadWritePaths")
-            words = [specified(word) for word in split]
-        else:
-            continue
-        said.setdefault(key, []).extend(words)
-    return said
+@pytest.mark.parametrize(
+    ("name", "valid"),
+    [
+        ("", False),
+        ("-1", False),
+        ("foo\nbar", False),
+        ("0123456789012345678901234567890123456789", False),
+        ("aaa:bbb", False),
+        (".", False),
+        ("..", False),
+        ("65535", False),
+        ("root", True),
+        ("kkk-", True),
+        ("eff.", True),
+        ("-kkk", True),
+        ("r\xf6\xf6t", True),
+        ("5some", True),
+        ("piff.paff@ad.domain.example", True),
+        ("0", True),
+        ("1000", True),
+    ],
+)
+def test_the_suites_reading_judges_user_names_as_systemds_own_tests_do(
+    name: str, valid: bool
+) -> None:
+    """test-user-util.c, the relaxed rule `User=` is read by and its numeric cases."""
+    assert systemd_reading.valid_user_name_relaxed(name) is valid
 
 
 #: Robot directories as a Linux robot may name them, each holding what systemd's reading of a
-#: unit changes: a space, which splits a list; a %, which begins a specifier; the quotes and the
-#: backslash its quoting takes away; glob's pattern characters, which EnvironmentFile= reads;
-#: and a space or a backslash at the end, which a line loses, or carries on to the next.
+#: unit changes: a space, which splits a list or ends a line; a %, which begins a specifier; the
+#: quotes and the backslashes its quoting takes away, at the end of a line too; glob's pattern
+#: characters, which EnvironmentFile= reads; what a command line or a shell would read
+#: otherwise; and characters past ASCII, a line separator among them.
 ODD_DIRECTORIES = (
     "/home/rok/robot one",
     "/srv/robot%h",
+    "/srv/robot%",
+    "/srv/%%",
     '/srv/it\'s "the" robot',
     "/srv/back\\new robot",
-    "/srv/back\\new",
+    "/srv/a\\",
+    "/srv/a\\\\",
+    "/srv/a\\\\\\",
+    "/srv/a\\b\\",
     "/srv/robot[1]*?",
     "/srv/robot ",
-    "/srv/robot\\",
+    "/srv/ robot",
+    "/srv/$HOME/${HOME}/$$",
+    "/srv/a;b/ ; /;",
+    "/srv/#x/;y",
+    "/srv/a=b",
+    "/srv/-robot",
+    "/srv/+robot",
+    "/srv/~",
+    "/srv/@!:robot",
+    "/srv/r\xf6bot\xa0x",
+    "/srv/line\U00002028sep\U00002029par",
+    "/srv/bom\U0000feffx",
+    "/srv/\U0001f916 robot",
+    "/srv/e\U00000301",
+    "//srv//robot",
+)
+#: User names systemd's `User=` takes as they are: specifiers, a backslash inside, spaces
+#: inside, letters past ASCII, a dollar, and a dash or a dot at either end.
+ODD_USERS = ("rok%h", "DOMAIN\\rok", "r o k", "r\xf6k", "rok$", "-rok", ".rok", "rok.")
+#: Program paths systemd runs a program from: a space and a specifier, dollars, a command line's
+#: separator and comment sign, and characters past ASCII.
+ODD_PROGRAMS = (
+    "/opt/ro boglot %i/bin/roboglot",
+    "/opt/$HOME/${HOME}/bin/roboglot",
+    "/opt/a;b/#c/bin/roboglot",
+    "/opt/\U0001f916/line\U00002028sep/bin/roboglot",
 )
 
 
 @pytest.mark.parametrize("where", ODD_DIRECTORIES)
-def test_systemd_reads_each_directory_program_and_user_in_the_unit_back_as_it_was_given(
-    where: str,
-) -> None:
+def test_systemd_reads_back_every_odd_directory_user_and_program_it_can_run(where: str) -> None:
     """The robot directory, roboglot's own path and the user went into the unit as they were,
     and systemd splits `Environment=`, `ReadWritePaths=` and `ExecStart=` at a space, takes
     quotes and backslashes away, expands a `%` everywhere, reads `EnvironmentFile=` as a pattern
     and drops a space that ends a line: a directory with a space had the service run on another
-    directory while the wizard said it was installed. Each value is read back here by systemd's
-    own rules (`systemd_reads`), for a Linux robot's path on any system."""
-    program = '/opt/ro boglot %i/"it\'s"\\bin/roboglot'
-    user = "rok%h"
-    text = systemd.unit_text(user=user, directory=PurePosixPath(where), roboglot=program)
-    assert systemd_reads(text) == {
-        "User": [user],
-        "WorkingDirectory": [where],
-        "Environment": [
-            "PYTHONUNBUFFERED=1",
-            f"ROBOGLOT_ONBOARD_DIR={where}",
-            f"ROBOGLOT_MEMORY_DIR={where}/memory",
-        ],
-        "EnvironmentFile": [f"{where}/robot.env"],
-        "ExecStart": [program, "onboard", "serve"],
-        "ReadWritePaths": [where],
-    }
+    directory while the wizard said it was installed. For each odd directory, with each odd user
+    and each program systemd can run, the unit loads by systemd's own reading
+    (`tests/systemd_reading`), nothing in it is ignored, and each directive is what the wizard
+    meant: the user, the working directory as systemd tidies a path, both variables, the key's
+    file as a name and not a pattern, the program with no prefix and its three words, and the
+    one writable path. A `$` in the program reaches its argv[0] only, which this leaves out."""
+    simple = systemd_reading.path_simplify(where)
+    for user, program in itertools.product(ODD_USERS, ODD_PROGRAMS):
+        text = systemd.unit_text(user=user, directory=PurePosixPath(where), roboglot=program)
+        service = systemd_reading.read_unit(text)
+        assert service.user == user
+        assert service.working_directory == simple
+        assert service.environment == {
+            "PYTHONUNBUFFERED": "1",
+            "ROBOGLOT_ONBOARD_DIR": str(PurePosixPath(where)),
+            "ROBOGLOT_MEMORY_DIR": f"{PurePosixPath(where)}/memory",
+        }
+        robot_env = systemd_reading.path_simplify(f"{where}/robot.env")
+        assert service.environment_files == [(True, robot_env)]
+        assert (service.exec_path, service.exec_argv) == (
+            systemd_reading.path_simplify(program),
+            [program, "onboard", "serve"],
+        )
+        assert (service.exec_flags, service.exec_more) == ("", False)
+        assert service.read_write_paths == [simple]
+        assert service.ignored == []
 
 
-@pytest.mark.parametrize("held", ["\n", "\r", "\t", "\x00", "\x1b", "\x7f", "\x85", "\udcff"])
+#: roboglot's own paths systemd runs no program from, however the unit quotes them: its
+#: `string_is_safe` refuses a quote or a backslash in the path it reads off `ExecStart=`. The
+#: last is the one an earlier test here said systemd read back.
+PROGRAMS_SYSTEMD_WILL_NOT_RUN = (
+    "/home/robot/Rok's robot/.venv/bin/roboglot",
+    '/opt/the "robot"/bin/roboglot',
+    "/opt/back\\slash/bin/roboglot",
+    '/opt/ro boglot %i/"it\'s"\\bin/roboglot',
+)
+
+
+@pytest.mark.parametrize("program", PROGRAMS_SYSTEMD_WILL_NOT_RUN)
+def test_a_roboglot_path_systemd_runs_no_program_from_is_refused_naming_it(program: str) -> None:
+    """The unit quoted a path to roboglot holding a quote or a backslash, and systemd refuses
+    such a program however it is quoted: the unit was installed and enabled with every sudo line
+    and never started. It is refused now, naming roboglot's own path; systemd's reading of the
+    path as it used to be written shows why."""
+    with pytest.raises(ValueError, match=r"^roboglot's own path "):
+        systemd.unit_text(user="robot", directory=PurePosixPath("/srv/robot"), roboglot=program)
+    quoted = '"' + program.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    with pytest.raises(systemd_reading.Refused, match="special characters"):
+        exec_line(f"{quoted.replace('%', '%%')} onboard serve")
+
+
+@pytest.mark.parametrize(
+    ("held", "why"),
+    [
+        ("\n", "a control character"),
+        ("\r", "a control character"),
+        ("\t", "a control character"),
+        ("\x00", "a control character"),
+        ("\x1b", "a control character"),
+        ("\x7f", "a control character"),
+        ("\x85", "a control character"),
+        ("\udcff", "is not UTF-8"),
+        (chr(0xFFFE), "a noncharacter"),
+        (chr(0xFDD0), "a noncharacter"),
+        (chr(0x1FFFF), "a noncharacter"),
+    ],
+)
 @pytest.mark.parametrize("what", ["the robot directory", "the user", "roboglot's own path"])
 def test_a_directory_user_or_program_no_unit_can_hold_is_refused_naming_which(
-    what: str, held: str
+    what: str, held: str, why: str
 ) -> None:
     """A newline in any of the three began a directive of its own, `ExecStartPre=+` run as root
     among them, in a unit installed with sudo whose text the wizard never shows. No quoting
     carries a control character through systemd's reading, nor a name's bytes that are not
-    UTF-8, so the unit is refused, naming which value holds it."""
+    UTF-8, nor a noncharacter, for which systemd refuses the whole unit as not UTF-8 clean, so
+    the unit is refused, naming which value holds it and why."""
     given = {
         "the robot directory": "/srv/robot",
         "the user": "rok",
         "roboglot's own path": "/usr/bin/roboglot",
     }
     given[what] += held + "ExecStartPre=+/bin/true"
-    with pytest.raises(ValueError, match=f"^{re.escape(what)} "):
+    with pytest.raises(ValueError, match=f"^{re.escape(what)} .*{re.escape(why)}"):
         systemd.unit_text(
             user=given["the user"],
             directory=PurePosixPath(given["the robot directory"]),
@@ -413,11 +477,16 @@ def test_a_directory_user_or_program_no_unit_can_hold_is_refused_naming_which(
         )
 
 
-@pytest.mark.parametrize("user", ["", " rok", "rok ", "rok\\"])
+@pytest.mark.parametrize(
+    "user",
+    ["", " rok", "rok ", "rok\\", "a:b", "a/b", ".", "..", "-1", "-", "007", "65535", "0", "1001"],
+)
 def test_a_user_name_that_user_would_read_as_another_or_as_root_is_refused(user: str) -> None:
     """`User=` takes one name and no quotes: systemd drops a space at either end, which makes it
     another account, reads a backslash at the end of the line as the line going on, and an
-    empty `User=` runs the service as root. Each is refused rather than written."""
+    empty `User=` runs the service as root. It reads a name of digits as a uid, and refuses the
+    unit for a name its own rule refuses (a ':' or a '/', '.', '..', a minus and digits), which a
+    systemd older than 234 ran as root instead. Each is refused rather than written."""
     with pytest.raises(ValueError, match=r"^the user"):
         systemd.unit_text(user=user, directory=PurePosixPath("/srv/robot"), roboglot="/usr/bin/x")
 
@@ -439,18 +508,31 @@ def test_a_robot_directory_with_parent_parts_is_refused_and_told_to_give_it_with
     assert "\nWorkingDirectory=/srv/r..2\n" in kept
 
 
-def runs_as(monkeypatch: pytest.MonkeyPatch, name: str | None, *, uid: int = 1000) -> None:
+def runs_as(
+    monkeypatch: pytest.MonkeyPatch,
+    name: str | None,
+    *,
+    uid: int = 1000,
+    named: dict[str, int] | None = None,
+) -> None:
     """The wizard runs with effective uid `uid`, which a stand-in for the system's account
-    database names `name`, or knows no account for when `name` is None. Windows has no `pwd` and
-    no `os.geteuid`, and on Linux the suite never asks the real database who runs it."""
+    database names `name`, or knows no account for when `name` is None; by name, the database
+    finds the uid `named` gives each name, by default `name`'s own. Windows has no `pwd` and no
+    `os.geteuid`, and on Linux the suite never asks the real database who runs it."""
+    by_name = named if named is not None else ({} if name is None else {name: uid})
 
     def getpwuid(asked: int) -> SimpleNamespace:
         if name is None or asked != uid:
             raise KeyError(f"getpwuid(): uid not found: {asked}")
         return SimpleNamespace(pw_name=name, pw_uid=asked)
 
+    def getpwnam(asked: str) -> SimpleNamespace:
+        if asked not in by_name:
+            raise KeyError(f"getpwnam(): name not found: {asked!r}")
+        return SimpleNamespace(pw_name=asked, pw_uid=by_name[asked])
+
     monkeypatch.setattr(os, "geteuid", lambda: uid, raising=False)
-    monkeypatch.setitem(sys.modules, "pwd", SimpleNamespace(getpwuid=getpwuid))
+    monkeypatch.setitem(sys.modules, "pwd", SimpleNamespace(getpwuid=getpwuid, getpwnam=getpwnam))
 
 
 @pytest.mark.parametrize(
@@ -507,14 +589,21 @@ def test_a_roboglot_found_by_a_relative_path_goes_into_the_unit_from_where_the_w
     staged = tmp_path / "staged"
     staged.mkdir()
     monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    given: list[str] = []
+
+    def unit_text(**kwargs: Any) -> str:
+        # what the wizard gives the unit, which on Windows is a path of its own kind
+        given.append(kwargs["roboglot"])
+        return "[Service]\n"
+
+    monkeypatch.setattr(systemd, "unit_text", unit_text)
     assert wizard.install_service(
         SimpleNamespace(root=PurePosixPath("/home/robot/.roboglot/onboard")),
         say=lambda _line: None,
         ask=NoQuestions(),
         run=lambda _command: 0,
     )
-    unit = (staged / systemd.UNIT_NAME).read_text(encoding="utf-8")
-    word = systemd_reads(unit)["ExecStart"][0]
+    (word,) = given
     assert os.path.isabs(word) and os.path.samefile(word, program), word
 
 
@@ -540,6 +629,7 @@ def test_the_unit_runs_as_the_account_whose_uid_runs_the_wizard_whatever_user_sa
             monkeypatch.delenv(variable, raising=False)
         else:
             monkeypatch.setenv(variable, value)
+    monkeypatch.setattr(wizard.shutil, "which", lambda _name: "/usr/bin/roboglot")
     monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(tmp_path))
     ran: list[list[str]] = []
     assert wizard.install_service(
@@ -549,8 +639,54 @@ def test_the_unit_runs_as_the_account_whose_uid_runs_the_wizard_whatever_user_sa
         run=lambda command: ran.append(command) or 0,
     )
     unit = (tmp_path / systemd.UNIT_NAME).read_text(encoding="utf-8")
-    assert systemd_reads(unit)["User"] == ["robotuser"]
+    assert systemd_reading.read_unit(unit).user == "robotuser"
     assert ran == systemd.install_commands(tmp_path / systemd.UNIT_NAME)
+
+
+@pytest.mark.parametrize(
+    ("name", "named", "said"),
+    [
+        ("root", {"root": 0}, "systemd would run the service as uid 0"),
+        ("nobody", {"nobody": 65534}, "systemd would run the service as uid 65534"),
+        ("bob", {"bob": 1001}, "systemd would run the service as uid 1001"),
+        ("bob", {}, "no account named 'bob'"),
+        ("0", {"root": 0, "0": 1000}, "digits alone"),
+        ("1001", {"1001": 1000, "bob": 1001}, "digits alone"),
+    ],
+    ids=[
+        "root",
+        "nobody",
+        "a name that is another uid's",
+        "a name the database cannot find",
+        "uid 1000 named 0",
+        "uid 1000 named 1001",
+    ],
+)
+def test_the_unit_never_runs_as_another_uid_than_the_one_that_ran_the_wizard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, named: dict[str, int], said: str
+) -> None:
+    """`User=` names the account, and systemd finds its uid by that name: `root` and `nobody`
+    without asking the account database, a name of digits as the uid it reads, and any other in
+    the database. So a database naming uid 1000 `root`, `0` or `1001`, or a name it finds as
+    another uid, had the networked service run as root or as another account. Each is refused
+    by name now, and nothing is staged."""
+    runs_as(monkeypatch, name, named=named)
+    monkeypatch.setattr(wizard.shutil, "which", lambda _name: "/usr/bin/roboglot")
+    staged: list[str] = []
+
+    def mkdtemp(*_args: object, **_kwargs: object) -> str:
+        staged.append("a folder for the unit")
+        return str(tmp_path)
+
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", mkdtemp)
+    with pytest.raises(wizard.WizardError, match=re.escape(said)):
+        wizard.install_service(
+            SimpleNamespace(root=PurePosixPath("/home/robot/.roboglot/onboard")),
+            say=lambda _line: None,
+            ask=NoQuestions(),
+            run=lambda _command: 0,
+        )
+    assert staged == []
 
 
 @pytest.mark.parametrize(
@@ -574,6 +710,7 @@ def test_a_uid_with_no_account_a_unit_can_name_installs_nothing_and_says_why(
     else:
         runs_as(monkeypatch, None if account is None else str(account))
     monkeypatch.setenv("USER", "robotuser")
+    monkeypatch.setattr(wizard.shutil, "which", lambda _name: "/usr/bin/roboglot")
     staged: list[str] = []
 
     def mkdtemp(*_args: object, **_kwargs: object) -> str:

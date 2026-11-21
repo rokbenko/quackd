@@ -346,12 +346,14 @@ for the last is `timedatectl`.
 The wizard prints every sudo line before it runs one: the unit installed, systemd reloaded, the
 service enabled and started. The unit runs `roboglot onboard serve` as your user, never as root, with
 the robot's folder as the only place it may write. Your user is the account the system's account
-database names for the uid running the wizard, whatever `USER` says; with no account for it the
+database names for the uid running the wizard, whatever `USER` says; with no account for it, or
+with a name systemd would find as another uid (`root`, digits alone, another account's), the
 wizard installs nothing and says why. The folder, the path to `roboglot` and the user go into the
 unit in systemd's own quoting, so a folder with a space or a `%` in its name is the one the service
 runs in, and a `roboglot` found through a relative entry in `PATH` goes in absolute. A folder with
-`..` parts, or one holding a control character, a newline say, is refused, naming which, before any
-sudo line runs, the address privacy's included:
+`..` parts, a path to `roboglot` with a quote or a backslash, which systemd runs no program from,
+a user name systemd refuses, and any of them holding a control character, a newline say, is
+refused, naming which, before any sudo line runs, the address privacy's included:
 
 | In the unit | Why |
 |---|---|
@@ -519,7 +521,8 @@ met by one (1)
 ```
 
 `roboglot onboard forget WHICH` removes a pin the same way, and an open session with that robot is a
-stranger's from its next word. A robot whose name, or owner label, reads like a pinned one's under
+stranger's from its next word. A pin not on one line as `pin` writes it is left, and `forget` says
+so and exits 1. A robot whose name, or owner label, reads like a pinned one's under
 another key is warned about, in the service's log, in `met` and before `pin` asks, and only a key
 decides a tier
 ([trust.md](trust.md#a-name-that-looks-like-another)).

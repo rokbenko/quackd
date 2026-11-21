@@ -1461,20 +1461,25 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the pattern's characters escaped, so the service runs where the wizard says. A `roboglot` found
   through a relative entry in `PATH` went into the unit relative, which systemd refuses or looks
   up in folders of its own, and goes in absolute now, from the folder the wizard runs in. A
-  folder, a user or a path holding a control character, or bytes that are not UTF-8, is refused,
-  naming which one, and so is a user name `User=` would read as another account or, empty, as
-  root, and a folder with `..` parts, which systemd refuses in a unit, with the words to give it
-  without them. Each is refused before any sudo line runs, the address privacy's included, where
-  the privacy's lines used to run first. A unit with none of these is written as it was, byte
-  for byte.
+  folder, a user or a path holding a control character, a noncharacter or bytes that are not
+  UTF-8 is refused, naming which one. So is a path to `roboglot` holding a quote or a backslash,
+  which systemd runs no program from however it is quoted; a user name `User=` would read as
+  another account or, empty, as root, or that systemd refuses for a user (one holding a `:` or a
+  `/`, `.`, `..`, or a minus sign and digits); and a folder with `..` parts, which systemd
+  refuses in a unit, with the words to give it without them. Each is refused before any sudo
+  line runs, the address privacy's included, where the privacy's lines used to run first. A
+  unit with none of these is written as it was, byte for byte.
 - **The onboard service runs as the account that ran the wizard, and never as root for want of
   a name.** The unit's `User=` came from `USER` or `LOGNAME`, just after the wizard had refused
   to run as root, and fell back to `root`: with neither variable set, in a container or under
   `env -i`, the wizard enabled the networked service as root, and a stale `USER` named another
   account. It is the account whose effective uid runs the wizard now, as the system's account
-  database names it, whatever the variables say. With no account for that uid the wizard says
-  why before any sudo line runs, and installs nothing. A person whose `USER` names them gets the
-  unit they got before.
+  database names it, whatever the variables say, and never one systemd would find as another
+  uid: it takes `root` and `nobody` without the database, reads a name of digits alone as a uid,
+  and finds any other name in the database, so a name that leads to another uid than the
+  wizard's, root's among them, is refused. With no account for that uid, or one of those names,
+  the wizard says why before any sudo line runs, and installs nothing. A person whose `USER`
+  names them gets the unit they got before.
 - **The onboard control token is written for its owner alone, whatever lies beside its file.**
   The service wrote `control.json`, with the token that steers it, through the one temporary
   name `control.json.tmp`, opened without an exclusive create and following a link: a file
@@ -1492,6 +1497,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   own now, made new and never through a link, and is renamed into place in one step; whatever
   lies at the old name is left as it is. It takes the mode a new file takes in its folder, as
   before, since other robots and people are meant to read it.
+- **`roboglot onboard forget` takes out the pin it names, and says so when it cannot.** A pin's
+  line in `robot.yaml` was found by the last `id:` on it, and a robot's name is its own text: a
+  robot named `id: ` and another key's did was pinned under its own key, could not be forgotten,
+  and forgetting that other key took its pin out instead. `forget` also said `forgot` whatever
+  came back, so a pin written over several lines stayed trusted under that word. A pin's `id`
+  is read as YAML reads its line now, and `forget` says it could not, and exits 1, when the pin
+  is not on one line as `roboglot onboard pin` writes it.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

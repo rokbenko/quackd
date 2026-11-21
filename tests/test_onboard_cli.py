@@ -1091,6 +1091,7 @@ def test_the_wizard_refuses_root(
     [
         ("no account for the uid", "no account on this system has uid 1000"),
         ("roboglot's own path", "roboglot's own path"),
+        ("a quote in roboglot's own path", "roboglot's own path"),
         ("a folder with .. parts", "without '..' parts"),
     ],
 )
@@ -1129,9 +1130,14 @@ def test_what_the_unit_would_refuse_is_refused_before_any_sudo_line_runs(
     if refused == "a folder with .. parts":
         (tmp_path / "x").mkdir()
         home = tmp_path / "x" / ".." / "robot"
-    if refused == "roboglot's own path":
+    unrunnable = {
+        "roboglot's own path": "/usr/bin/roboglot\nExecStartPre=+/bin/true",
+        # systemd runs no program from a path with a quote in it, however it is quoted
+        "a quote in roboglot's own path": "/home/robot/Rok's robot/.venv/bin/roboglot",
+    }
+    if refused in unrunnable:
         which = shutil.which
-        bad = "/usr/bin/roboglot\nExecStartPre=+/bin/true"
+        bad = unrunnable[refused]
         monkeypatch.setattr(
             wizard.shutil, "which", lambda name, *a, **k: bad if name == "roboglot" else which(name)
         )
@@ -1265,6 +1271,30 @@ def test_pin_trusts_a_robot_met_and_forget_takes_it_back(
     assert config.load(home / "robot.yaml").trust.pins == []
     nobody = runner.invoke(app, ["onboard", "pin", "beef", "--yes", "--dir", str(home)])
     assert nobody.exit_code == 1 and "met no robot" in flat(nobody.output)
+
+
+def test_forget_never_says_forgot_for_a_pin_it_left_trusted(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """`forget` found the pin in robot.yaml, asked for its line to be taken out, and said
+    `forgot` whatever came back: a pin written over lines of its own, as a person may write it,
+    stayed trusted under that word. It says it could not, and exits 1, and the pin stays."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    yaml = home / "robot.yaml"
+    other = "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd"
+    block = (
+        f'  pins:\n    - kind: robot\n      id: "{other}"\n      name: two\n'
+        '      pinned: "2026-11-21"\n'
+    )
+    text = yaml.read_text(encoding="utf-8")
+    assert text.count("  pins: []\n") == 1
+    yaml.write_text(text.replace("  pins: []\n", block), encoding="utf-8")
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [other]
+    forgot = runner.invoke(app, ["onboard", "forget", other, "--dir", str(home)])
+    assert forgot.exit_code == 1, forgot.output
+    assert "forgot robot" not in flat(forgot.output) and "by hand" in flat(forgot.output)
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [other]
 
 
 def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(

@@ -261,7 +261,6 @@ Also in scope:
   16 KB for a hello and 4 KB for anything else, and both robots verify each other's owner-signed
   passport before a word passes.
   The owner key, the one to guard most, lives in the robot's directory sealed with a
-  word passes. The owner key, the one to guard most, lives in the robot's directory sealed with a
   passphrase by scrypt and AES-256-GCM, and is opened only while the owner signs. The passphrase is
   typed hidden, or read from `--passphrase-file`, which is refused on Linux and macOS when anybody
   but its owner can read it, and no environment variable carries one. The robot's own key is a plain

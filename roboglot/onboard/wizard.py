@@ -227,6 +227,46 @@ def unit_user() -> str:
     account database names it. Never `USER` or `LOGNAME`, which a shell, `sudo` or `env` can
     leave naming another account or none at all, and never root for want of a name: with no
     account to name, the service has nobody to run as and is not installed."""
+    uid, accounts = _account_database()
+    try:
+        return str(accounts.getpwuid(uid).pw_name)
+    except KeyError:
+        raise WizardError(
+            f"the service has no user to run as: no account on this system has uid {uid}, which "
+            "runs roboglot onboard; run roboglot onboard serve in a terminal instead"
+        ) from None
+
+
+#: The names systemd takes a uid for without asking the account database (`get_user_creds`,
+#: in its src/basic/user-util.c): root's, and nobody's, the uid it keeps for that name.
+FOUND_WITHOUT_THE_DATABASE = {"root": 0, "nobody": 65534}
+
+
+def refuse_another_uid(user: str) -> None:
+    """Refuse a `User=` that systemd would find as another uid than the one running the wizard:
+    it takes `root` and `nobody` without the account database and finds every other name in it,
+    so a name the database gives this uid that leads systemd to another uid would have the
+    service run as that account, root among them."""
+    uid, accounts = _account_database()
+    found = FOUND_WITHOUT_THE_DATABASE.get(user)
+    if found is None:
+        try:
+            found = int(accounts.getpwnam(user).pw_uid)
+        except KeyError:
+            raise WizardError(
+                f"the service has no user to run as: the account database names uid {uid} "
+                f"{user!r}, and has no account named {user!r} for systemd to find"
+            ) from None
+    if found != uid:
+        raise WizardError(
+            f"the service has no user to run as: the account database names uid {uid} "
+            f"{user!r}, and systemd would run the service as uid {found} by that name"
+        )
+
+
+def _account_database() -> tuple[int, Any]:
+    """The effective uid running the wizard and the system's account database, or a
+    `WizardError` saying there is none to name the service's user from."""
     euid = getattr(os, "geteuid", None)  # POSIX only, as `pwd` is
     try:
         accounts = importlib.import_module("pwd")
@@ -237,14 +277,7 @@ def unit_user() -> str:
             "the service has no user to run as: this system has no account database to name "
             "the one running roboglot onboard; run roboglot onboard serve in a terminal instead"
         )
-    uid = euid()
-    try:
-        return str(accounts.getpwuid(uid).pw_name)
-    except KeyError:
-        raise WizardError(
-            f"the service has no user to run as: no account on this system has uid {uid}, which "
-            "runs roboglot onboard; run roboglot onboard serve in a terminal instead"
-        ) from None
+    return int(euid()), accounts
 
 
 def write_key_file(path: Path, variable: str, value: str) -> None:
@@ -258,8 +291,9 @@ def write_key_file(path: Path, variable: str, value: str) -> None:
 
 def check_service(home: Any) -> None:
     """Refuse all that the service's unit would refuse, before any sudo line runs, the address
-    privacy's included: root, a uid with no account, and a folder, user or path to roboglot no
-    unit can hold. `install_service` checks the same again as it writes the unit."""
+    privacy's included: root, a uid with no account, a name systemd would find as another uid,
+    and a folder, user or path to roboglot no unit can hold. `install_service` checks the same
+    again as it writes the unit."""
     _unit_text(home, bluetooth_group=True)
 
 
@@ -275,11 +309,13 @@ def _unit_text(home: Any, *, bluetooth_group: bool) -> str:
     roboglot = found if os.path.isabs(found) else os.path.abspath(found)
     user = unit_user()
     try:
-        return systemd.unit_text(
+        text = systemd.unit_text(
             user=user, directory=home.root, roboglot=roboglot, bluetooth_group=bluetooth_group
         )
     except systemd.UnitError as e:  # before a file is staged or a command runs
         raise WizardError(str(e)) from None
+    refuse_another_uid(user)
+    return text
 
 
 def install_service(

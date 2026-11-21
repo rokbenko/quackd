@@ -8853,7 +8853,13 @@ def onboard_forget(
     if len(matches) != 1:
         _fail(f"{wanted!r} names {len(matches)} pins: give its did or more of its short id")
         return
-    config.remove_pin(home.robot_yaml, matches[0].id)
+    if not config.remove_pin(home.robot_yaml, matches[0].id):
+        _fail(
+            f"could not forget {matches[0].kind} {ui.printable(matches[0].name)}: its pin in "
+            f"{home.robot_yaml} is not one line as roboglot onboard pin writes it, so it is left "
+            "as it is; take it out there by hand"
+        )
+        return
     ui.console.print(_ok_line(f"forgot {matches[0].kind} {ui.printable(matches[0].name)}"))
     _tell_service(home, {"op": "reload"})
 

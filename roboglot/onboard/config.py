@@ -335,7 +335,7 @@ def add_pin(path: Path, pin: Pin) -> None:
 def remove_pin(path: Path, did: str) -> bool:
     """Take the pin naming `did` out of `trust.pins`; False when there was none."""
     lines = path.read_text(encoding="utf-8").splitlines()
-    kept = [line for line in lines if not ((m := _PIN_LINE.match(line)) and m.group("id") == did)]
+    kept = [line for line in lines if _pin_id(line) != did]
     if len(kept) == len(lines):
         return False
     pins_at = _pins_line(kept)
@@ -348,6 +348,22 @@ def remove_pin(path: Path, did: str) -> bool:
             kept[pins_at] = head.group(1) + " []" + tail
     _write_checked(path, kept)
     return True
+
+
+def _pin_id(line: str) -> str | None:
+    """The did in the `id` of the pin `line` holds, read as YAML reads the line, or None for a
+    line that holds no pin. A name is the other robot's own text and may read like an `id:` of
+    its own, which the last `id:` on the line found before."""
+    if not _PIN_LINE.match(line):
+        return None
+    try:
+        read = yaml.safe_load(line)
+    except yaml.YAMLError:
+        return None
+    if isinstance(read, list) and len(read) == 1 and isinstance(read[0], dict):
+        did = read[0].get("id")
+        return did if isinstance(did, str) else None
+    return None
 
 
 def _pins_line(lines: list[str]) -> int | None:

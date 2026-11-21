@@ -19,7 +19,7 @@ from roboglot.onboard import config, facts
 from roboglot.onboard.body import VERBS, described_manifest
 from roboglot.onboard.meeting import NAME, meeting_glot
 from roboglot.passport import document, strict
-from tests.passport_helpers import OWNER, A
+from tests.passport_helpers import INTRUDER, OWNER, A, B
 
 DEMO = Path(__file__).resolve().parents[1] / "roboglot" / "onboard" / "demo"
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
@@ -200,6 +200,25 @@ def test_a_pin_is_added_and_removed_as_a_line_and_every_comment_stays(tmp_path: 
     assert config.load(path).trust.pins == []
     assert not config.remove_pin(path, OWNER.did)
     assert path.read_text(encoding="utf-8") == template()
+
+
+def test_a_pinned_robot_whose_name_reads_like_another_pins_id_can_still_be_forgotten(
+    tmp_path: Path,
+) -> None:
+    """A pin's line was found by the last `id:` on it, and a name is the other robot's own text,
+    up to 64 characters: a robot named `id: ` and another key's did was pinned under its own key,
+    and its line then read as the other key's, so `forget` could not take it out and it stayed
+    trusted, while forgetting the other key took it out instead. A line's `id` is read as YAML
+    reads the line now, and only the pin it names goes."""
+    path = tmp_path / "robot.yaml"
+    path.write_text(template(), encoding="utf-8")
+    name = f"id: {B.did}"
+    assert len(name) <= 64, len(name)
+    config.add_pin(path, config.Pin(kind="robot", id=INTRUDER.did, name=name, pinned="2026-11-21"))
+    config.add_pin(path, config.Pin(kind="robot", id=A.did, name="g1-edu-02", pinned="2026-11-21"))
+    assert not config.remove_pin(path, B.did), "a key nobody pinned took a pin out"
+    assert config.remove_pin(path, INTRUDER.did)
+    assert [pin.id for pin in config.load(path).trust.pins] == [A.did]
 
 
 def test_a_file_laid_out_another_way_gets_the_line_to_paste(tmp_path: Path) -> None:
