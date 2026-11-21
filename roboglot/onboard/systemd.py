@@ -21,6 +21,9 @@ UNIT_NAME = "roboglot-onboard.service"
 UNIT_PATH = Path("/etc/systemd/system") / UNIT_NAME
 #: The group BlueZ's D-Bus policy lets talk to it, on the images a Jetson ships with.
 BLUETOOTH_GROUP = "bluetooth"
+#: How long systemd waits, once it has asked the service to stop, before it kills it: the
+#: unit's `TimeoutStopSec`, which the service's own close keeps inside (`service.CLOSE_S`).
+STOP_TIMEOUT_S = 20
 
 
 def group_exists(name: str) -> bool:
@@ -61,7 +64,7 @@ EnvironmentFile=-{where}/robot.env
 ExecStart={roboglot} onboard serve
 Restart=on-failure
 RestartSec=5
-TimeoutStopSec=20
+TimeoutStopSec={STOP_TIMEOUT_S}
 # yields to the robot: lower priority than its control loop, a ceiling, first for the OOM killer
 Nice=10
 MemoryMax=1G

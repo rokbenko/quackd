@@ -18,13 +18,17 @@ passport server's threads and the meeter's workers reach it through `call`.
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import contextlib
+import dataclasses
+import threading
 import time
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
 from roboglot.lan.lookup import LanDirectory, LanRecord
+from roboglot.onboard.brain import CallPool
 from roboglot.passport.beacon import WELL_KNOWN_JSON, ble_service_data, txt_record
 from roboglot.passport.talk import MAX_SESSIONS, Session
 from roboglot.passport_talk import Talker
@@ -32,6 +36,7 @@ from roboglot.radio import NoRadio, Pipe, Radio, RadioStatus, RadioUnavailable, 
 from roboglot.radio.links import (
     LinkChange,
     LinkInbox,
+    LinkPolicy,
     LinkTable,
     LinkTransport,
     talk_inbox,
@@ -49,6 +54,11 @@ HEARD_WITHIN_S = 8.0
 #: How long the radio may take to start, and any one call onto its loop.
 START_S = 20.0
 CALL_S = 5.0
+#: What the journal says of a radio whose start the service's close cut short: the start is
+#: cancelled where it waits, and the radio's stop then takes down what it had brought up.
+CUT_SHORT = "radio {kind}: its start was cut short, as the service stops"
+#: How many hellos the meeter says at once: its own default (`Meeter.executor`), kept.
+MEET_WORKERS = 4
 
 
 class Lan(Protocol):
@@ -91,10 +101,11 @@ class DnsSdLan:
         return True
 
     def withdraw(self) -> None:
-        if self._announced is not None:
+        # taken in one step: the service's close and the radio's may both withdraw it at once
+        announced, self._announced = self._announced, None
+        if announced is not None:
             with contextlib.suppress(Exception):
-                self._announced.close()
-            self._announced = None
+                announced.close()
 
     def lookup(self, beacon_id: str) -> LanRecord | None:
         return self.browser.lookup(beacon_id) if self.browser is not None else None
@@ -142,6 +153,15 @@ class RadioSide:
         #: every proximity event, for a narration
         self.on_proximity: Callable[[ProximityEvent], None] | None = None
         self.loop = LoopThread("roboglot-radio")
+        # the calls the radio, its meetings and its links run on threads of their own (BlueZ's
+        # question to the board, a hello's post, a link's inbox) go to pools that count those
+        # under way, so the service's close can say which would hold the process at its exit
+        self._calls = (
+            CallPool("roboglot-radio-call", "the radio's loop"),
+            CallPool("meet", "the radio's meetings", max_workers=MEET_WORKERS),
+            CallPool("passport-link", "the radio's links", max_workers=LinkPolicy().inflight),
+        )
+        self.loop.loop.set_default_executor(self._calls[0])
         self.rotor = BeaconRotor(
             period_s=rotate_s,
             busy=self._busy,
@@ -153,7 +173,9 @@ class RadioSide:
         self.planner = Planner(
             lambda: self.rotor.current, meet_policy or MeetPolicy(), advertising=advertising
         )
-        self.links = LinkTable(on_change=self._link_changed, on_gone=self._link_gone)
+        self.links = LinkTable(
+            on_change=self._link_changed, on_gone=self._link_gone, executor=self._calls[2]
+        )
         self.transports = Transports(http=http_post, link=LinkTransport(self.links, self.loop))
         self.talker: Talker | None = None
         self.meeter: Meeter | None = None
@@ -164,6 +186,16 @@ class RadioSide:
         #: adverts heard so far, and the rate status shows of them
         self._sightings = 0
         self._rate = Rate()
+        #: the radio's status as a start that did not answer in time left it, and the words
+        #: that say so, which status shows until the radio's own status moves
+        self._unanswered: tuple[RadioStatus, str] | None = None
+        #: the radio's start while it runs, and whether `close` came: a close cuts a start under
+        #: way short, and a start after a close never begins
+        self._state = threading.Lock()
+        self._starting: concurrent.futures.Future[RadioStatus] | None = None
+        self._closed = False
+        #: the LAN record withdrawn for good, as the service closes (`withdraw`)
+        self._gone = False
 
     # ── what the Talker takes ───────────────────────────────────────────────────────────
 
@@ -227,22 +259,44 @@ class RadioSide:
             lan=self.lan,
             clock=self.clock,
             on_event=self._meet_event,
+            executor=self._calls[1],
         )
         self._txt = txt_record(short_id=short_id, digest=digest, beacon=self.rotor.current)
         self._port = http_port
-        if self.lan is not None:
-            self._on_lan = self.lan.publish(self._txt, host=self.record_host, port=http_port)
-        self.loop.start()
-        try:
-            status = self.loop.call(
+        self._on_lan = self._publish(self._txt, http_port)
+        with self._state:
+            if self._closed or self._gone:  # closed before its start began: it never starts
+                self.log(CUT_SHORT.format(kind=self.radio.kind))
+                return self.radio.status()
+            self.loop.start()
+            starting = self._starting = self.loop.submit(
                 self.radio.start(
                     advert=self._advert(), on_sighting=self._sighting, on_link=self._linked
-                ),
-                START_S,
+                )
             )
+        try:
+            status = starting.result(START_S)
         except RadioUnavailable as e:
             self.radio = NoRadio.instead_of(e, kind=self.radio.kind)
             status = self.radio.status()
+        except TimeoutError as e:
+            # a radio that does not answer in time is a radio that is down, never the end of
+            # the service: it is kept, and its own retries go on from where its start was cut,
+            # as for a radio that came up down; until it moves, its status says what happened
+            ours = not starting.done()
+            if ours:  # cancelled where it waits, as `LoopThread.call` does past its bound
+                starting.cancel()
+            why = f"the radio did not answer within {START_S:g} s" if ours else str(e) or repr(e)
+            self._unanswered = (self.radio.status(), why)
+            status = self._as_said(self.radio.status())
+        except concurrent.futures.CancelledError:
+            # the service closed while the radio started: the start was cut short where it
+            # waited, and the radio's stop follows in `close`
+            self.log(CUT_SHORT.format(kind=self.radio.kind))
+            return self.radio.status()
+        finally:
+            with self._state:
+                self._starting = None
         if not status.ready:
             self.log(f"radio {status.kind}: {status.state}, {status.detail}")
         return status
@@ -268,8 +322,46 @@ class RadioSide:
             self.tracker.suspend(now)
         return self.tracker.tick(now)
 
+    def pools(self) -> tuple[CallPool, ...]:
+        """The pools the radio's own calls run on, its loop's, its meetings' and its links'."""
+        return self._calls
+
+    def withdraw(self) -> None:
+        """This robot's LAN record withdrawn, alone and at once, and for good: it is what other
+        robots find this one by, and needs nothing of the radio, so the service's close does it
+        first, and no start or rotation after it publishes the record again."""
+        with self._state:
+            self._gone = True
+        if self.lan is not None:
+            self.lan.withdraw()
+
+    def _publish(self, txt: Mapping[str, str], port: int) -> bool:
+        """The LAN record out, unless it has been withdrawn for good or the side has closed, and
+        withdrawn again when that came while it went out: a publish is a blocking call, a second
+        or so of zeroconf's probes, and a robot that has gone must not stay findable."""
+        if self.lan is None:
+            return False
+        with self._state:
+            if self._gone or self._closed:
+                return False
+        published = self.lan.publish(txt, host=self.record_host, port=port)
+        with self._state:
+            late = self._gone or self._closed
+        if late:
+            self.lan.withdraw()
+            return False
+        return published
+
     def close(self) -> None:
-        """The meeter's workers, every link, the radio, the LAN record, the loop."""
+        """A start still under way cut short, then the meeter's workers, every link, the radio,
+        the LAN record if it is still there, the loop."""
+        with self._state:
+            self._closed = True
+            starting = self._starting
+        if starting is not None:
+            # first, so the radio's stop below never runs beside its own start: BlueZ's would
+            # wait for the bring-up to let go, and be cut at its bound
+            starting.cancel()
         if self.meeter is not None:
             self.meeter.shutdown()
         if self.loop.running:
@@ -372,7 +464,7 @@ class RadioSide:
             self.talker.endpoint.runtime["beacon"] = fresh
         if self.lan is not None and self._txt is not None:
             self._txt = {**self._txt, "bt": fresh}
-            self._on_lan = self.lan.publish(self._txt, host=self.record_host, port=self._port)
+            self._on_lan = self._publish(self._txt, self._port)
         self.log(f"radio: the beacon id is now {fresh}")
 
     async def _advertise(self, fresh: str) -> None:
@@ -398,15 +490,26 @@ class RadioSide:
                 snapshot = self.loop.call(self._snapshot(), CALL_S)
         if snapshot is None:
             snapshot = radio_snapshot(
-                status=self.radio.status(), now=self.clock(), rotor=self.rotor
+                status=self._as_said(self.radio.status()), now=self.clock(), rotor=self.rotor
             )
         snapshot["on_lan"] = self._on_lan
         return snapshot
 
+    def _as_said(self, status: RadioStatus) -> RadioStatus:
+        """`status`, naming the start that did not answer in time for as long as nothing of the
+        radio has moved since: once it has, a retry under way or done, the radio's own words."""
+        unanswered = self._unanswered
+        if unanswered is None:
+            return status
+        if status != unanswered[0]:
+            self._unanswered = None
+            return status
+        return dataclasses.replace(status, detail=unanswered[1])
+
     async def _snapshot(self) -> dict[str, Any]:
         now = self.clock()
         return radio_snapshot(
-            status=self.radio.status(),
+            status=self._as_said(self.radio.status()),
             now=now,
             rotor=self.rotor,
             tracker=self.tracker,

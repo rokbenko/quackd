@@ -197,6 +197,66 @@ async def test_load_glotfile_refuses_team_task_files() -> None:
         assert session.glot is None  # nothing was adopted
 
 
+async def test_a_task_file_that_is_not_valid_yaml_is_refused_without_its_lines(
+    tmp_path: Any,
+) -> None:
+    """`robot_load_glotfile` handed back the parser's own error, and PyYAML's quotes the line it
+    stopped on, so a client steered by text it had read could read the lines of a YAML file the
+    server's user can, one error at a time. The refusal names the error's kind and its line in
+    the frontmatter, and quotes nothing of the file."""
+    leak = tmp_path / "leak.glot"
+    leak.write_text(
+        "---\nname: leak\ntoken: the-secret-line: here\n---\nDo the task.\n", encoding="utf-8"
+    )
+    async with connected() as (client, session, _transport):
+        res = _data(await client.call_tool("robot_load_glotfile", {"path": str(leak)}))
+    assert res["ok"] is False and session.glot is None
+    assert "the-secret-line" not in res["error"] and "token" not in res["error"], res["error"]
+    assert res["error"].endswith(
+        "frontmatter is not valid YAML: ScannerError at line 2 of the frontmatter, column 23"
+    ), res["error"]
+
+
+async def test_a_frontmatter_the_task_format_refuses_is_refused_without_its_keys_or_values(
+    tmp_path: Any,
+) -> None:
+    """A frontmatter that is YAML but not a task was refused in the schema's own words, which name
+    every key it does not know and quote the values its checks refuse, so a Markdown page's front
+    matter gave up its keys and a verb's or a robot's name its value. Each fault is said by its
+    path, in the task format's own words, and its kind, and a key of the file's is a `?`."""
+    page = tmp_path / "page.glot"
+    page.write_text(
+        "---\nglot: 1\nname: x\nsecret_key_name: x\nverbs:\n  allow: [the-secret value]\n"
+        "---\nDo it.\n",
+        encoding="utf-8",
+    )
+    async with connected() as (client, session, _transport):
+        res = _data(await client.call_tool("robot_load_glotfile", {"path": str(page)}))
+    assert res["ok"] is False and session.glot is None
+    assert "secret" not in res["error"], res["error"]
+    faults = res["error"].split("frontmatter is not a task file's: ")[1].split("; ")
+    assert "verbs.allow: value_error" in faults and "?: extra_forbidden" in faults, faults
+    assert "description: missing" in faults, faults
+
+
+async def test_a_file_larger_than_any_task_is_refused_before_it_is_read(tmp_path: Any) -> None:
+    """Nothing bounded what the tool read, so a client could have the server read and parse a
+    file of any size. A file over `GLOT_MAX_BYTES` is refused before it is opened, and every task
+    bundled with Roboglot is far under it."""
+    from roboglot.glotfile.parser import list_bundled_tasks
+    from roboglot.mcp_server import GLOT_MAX_BYTES
+
+    big = tmp_path / "big.glot"
+    big.write_bytes(b"#" * (GLOT_MAX_BYTES + 1))  # comment lines all of it, were it read
+    async with connected() as (client, session, _transport):
+        res = _data(await client.call_tool("robot_load_glotfile", {"path": str(big)}))
+    assert res["ok"] is False and session.glot is None
+    assert f"larger than the {GLOT_MAX_BYTES} bytes" in res["error"], res["error"]
+    assert "frontmatter" not in res["error"], "it was read and parsed"
+    bundled = list_bundled_tasks()
+    assert bundled and max(t.stat().st_size for t in bundled) * 10 < GLOT_MAX_BYTES
+
+
 async def test_dry_run_sends_nothing() -> None:
     async with connected(dry_run=True) as (client, _session, transport):
         assert (await _cleared(client))["verdict"] == "feasible"
@@ -538,6 +598,136 @@ async def test_nothing_moves_until_the_pilot_has_judged_the_task() -> None:
             )
         )["ok"]
         assert session.executor.verdict is not None
+
+
+class FallBlindDuck(OpenDuckMock):
+    """An Open Duck on a bridge that cannot see a fall, as the real bridge says of itself when
+    its runtime reports no fall signal (`fall_detection` False), with no `stand_up` to recover.
+    `unread` set, its runtime does not answer a state read, as one still starting does not."""
+
+    reads = 0
+    unread = False
+
+    async def get_state(self) -> Any:
+        self.reads += 1
+        if self.unread:
+            raise TransportError("the duck's runtime did not answer: it is still starting")
+        state = await super().get_state()
+        state.extras = {**state.extras, "fall_detection": False}
+        return state
+
+
+FALL_BLIND = "nothing on this robot detects a fall, and it has no way to get up"
+NOBODY_ASKED = "Nobody is asked here whether they are watching it, so somebody must be"
+
+
+def _warned(caplog: Any) -> list[str]:
+    return [m for m in caplog.messages if FALL_BLIND in m]
+
+
+async def test_a_body_that_cannot_see_its_fall_is_said_to_need_watching_before_it_moves(
+    caplog: Any,
+) -> None:
+    """`roboglot run` and `roboglot drive` ask whether somebody is watching a body that cannot see
+    its own fall and cannot get up, before it walks. `serve-mcp` asked nobody and told nobody: an
+    MCP client walked the Open Duck on its bridge after one verdict. Nothing is asked here and
+    nothing refused, but whether the body sees a fall is known only once it has connected, after
+    the instructions are written, and it is read at the first assessment that asks, so a start-up
+    reads the body no more than it did: the client reads it in the reply to the assessment every
+    move waits for, and the person who started the server on stderr at that moment. (Until round
+    three it was read and said at start-up, which this test asserted.)"""
+    from roboglot_open_duck import OpenDuckAdapter
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    duck = FallBlindDuck()
+    async with connected(OpenDuckAdapter(duck)) as (client, _session, _adapter):
+        assert _warned(caplog) == [] and duck.reads == 0, "read or said at start-up"
+        before = (duck.x, duck.y)
+        cleared = await _cleared(client)
+        assert duck.reads == 1, "one read, at the assessment"
+        assert len(_warned(caplog)) == 1, caplog.messages
+        assert _warned(caplog)[0].startswith("open_duck: "), _warned(caplog)
+        assert NOBODY_ASKED in _warned(caplog)[0]
+        assert FALL_BLIND in cleared["warning"] and NOBODY_ASKED in cleared["warning"], cleared
+        assert "tell the person you are chatting with" in cleared["warning"]
+        assert cleared["note"] == "verbs that move the body now run."
+        moved = _data(
+            await client.call_tool(
+                "robot_run_verb", {"verb": "move", "params": {"vx": 0.2, "duration_s": 1.0}}
+            )
+        )
+        assert moved["ok"], "nothing is refused: the client moves the body as before"
+        assert (duck.x, duck.y) != before
+    assert len(_warned(caplog)) == 1, "said once to the person, at the first assessment"
+
+
+async def test_a_fall_blind_body_whose_state_cannot_be_read_is_warned_of_all_the_same(
+    caplog: Any,
+) -> None:
+    """A state read that failed was taken as a body that sees its fall: a duck whose runtime did
+    not answer through start-up and the assessment was assessed with no warning in the reply,
+    and walked at the client's next call (P25). A read that failed is not "sees its fall": the
+    warning is given, saying the read failed, and the read is tried again next time."""
+    from roboglot_open_duck import OpenDuckAdapter
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    duck = FallBlindDuck()
+    duck.unread = True
+    async with connected(OpenDuckAdapter(duck)) as (client, session, _adapter):
+        cleared = await _cleared(client)
+    assert FALL_BLIND in cleared["warning"], cleared
+    assert "could not be read (TransportError: the duck's runtime" in cleared["warning"], cleared
+    assert len(_warned(caplog)) == 1 and session.fall_sense is None, caplog.messages
+
+
+async def test_a_body_that_sees_its_fall_is_assessed_as_it_always_was(caplog: Any) -> None:
+    """The warning is words for a fall-blind body alone: a duck whose bridge reports falls, and
+    every other body, reads exactly as before, in the reply and on stderr."""
+    from roboglot_open_duck import OpenDuckAdapter
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    async with connected(OpenDuckAdapter(OpenDuckMock())) as (client, _session, _adapter):
+        cleared = await _cleared(client)
+    assert set(cleared) == {
+        "ok",
+        "robot",
+        "verdict",
+        "summary",
+        "pending",
+        "could",
+        "could_datasheets",
+        "note",
+        "log",
+    }, cleared
+    assert not _warned(caplog) and not [m for m in caplog.messages if "watching" in m]
+
+
+@pytest.mark.parametrize("spec", ["rosbridge:mock", "alohamini:mock", "lerobot:mock"])
+async def test_a_body_that_cannot_fall_by_its_manifest_is_never_read_for_its_fall(
+    spec: str, caplog: Any
+) -> None:
+    """Only a legged body can fall (its manifest's `mobility`): a wheeled base or an arm on a bench
+    needs no read to know nothing will see it fall, and the assessment read it once more than
+    main did, which the refuter's comparison caught on the ROS base. Such a body is read as
+    often as before: not at all by the assessment, and never warned of."""
+    from roboglot.adapters.factory import make_adapter
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    body = make_adapter(spec)
+    reads: list[int] = []
+    read = body.get_state
+
+    async def counted() -> Any:
+        reads.append(1)
+        return await read()
+
+    body.get_state = counted  # the body's own reads, counted where the session makes them
+    async with connected(body) as (client, session, _adapter):
+        assert session.manifest is not None and session.manifest.mobility != "legged"
+        before = len(reads)
+        cleared = await _cleared(client)
+        assert len(reads) == before, f"{spec} was read for its fall at the assessment"
+    assert "warning" not in cleared and not _warned(caplog), cleared
 
 
 class _HeldRead(MockTransport):
@@ -974,6 +1164,109 @@ async def test_robot_observe_returns_every_camera_as_its_own_named_image() -> No
         assert images[0].data != images[1].data, "both cameras returned the same picture"
         assert [f.name for f in session.last_frames] == ["top", "side"]
         assert session.frames == 2
+
+
+HANG_GUARD_S = 60.0
+"""How long a test waits for the event it asserts before it calls the server hung. Nothing is
+timed by it: it only turns a call that never comes back into a failure."""
+
+
+class _RedThenBlue(MockTransport):
+    """A camera whose first picture is red and every later one blue."""
+
+    async def get_frames(self) -> list[CameraFrame]:
+        self.calls = getattr(self, "calls", 0) + 1
+        colour = (200, 40, 40) if self.calls == 1 else (40, 80, 200)
+        return [CameraFrame("cam", Image.new("RGB", (32, 32), colour), primary=True)]
+
+
+class _SlowBoard:
+    """A board's detector (`blocking = True`, so it runs in a worker thread, as `HostDetector`
+    does), whose first detect waits until the test lets it go."""
+
+    name = "slow-board"
+    blocking = True
+
+    def __init__(self) -> None:
+        import threading
+
+        self.first_in = threading.Event()
+        self.release = threading.Event()
+        self.calls = 0
+
+    def detect(self, image: Image.Image) -> list[Any]:
+        self.calls += 1
+        if self.calls == 1:
+            self.first_in.set()
+            self.release.wait(HANG_GUARD_S)
+        return []
+
+
+async def test_two_observes_at_once_each_return_their_own_picture() -> None:
+    """`robot_observe` read its pictures from one slot per robot, which a call emptied as it
+    started and every observe overwrote, so a second call made while the first waited on its
+    detector handed the first its own picture, under the first's summary and detections, or left
+    it words with no picture at all. Each call returns the frames it captured. Two tool calls in
+    flight at once through a real client, against a detector that takes its time, as a board
+    does."""
+    import base64
+
+    from roboglot.agent.transcript import png_bytes
+
+    board = _SlowBoard()
+    red = png_bytes(Image.new("RGB", (32, 32), (200, 40, 40)))
+    blue = png_bytes(Image.new("RGB", (32, 32), (40, 80, 200)))
+    try:
+        async with connected(_RedThenBlue(), detector=board) as (client, session, _transport):
+            first = asyncio.ensure_future(client.call_tool("robot_observe", {}))
+            await asyncio.to_thread(board.first_in.wait, HANG_GUARD_S)
+            second = await asyncio.wait_for(client.call_tool("robot_observe", {}), HANG_GUARD_S)
+            board.release.set()
+            first_result = await asyncio.wait_for(first, HANG_GUARD_S)
+            last = [f.image.getpixel((0, 0)) for f in session.last_frames]
+    finally:
+        board.release.set()
+
+    def pictures(result: Any) -> list[str]:
+        shown = [base64.b64decode(c.data) for c in result.content if c.type == "image"]
+        return ["red" if p == red else "blue" if p == blue else "other" for p in shown]
+
+    assert pictures(first_result) == ["red"], f"the first call returned {pictures(first_result)}"
+    assert pictures(second) == ["blue"], f"the second call returned {pictures(second)}"
+    assert last == [(40, 80, 200)], "the session's own record is still the last observe's"
+
+
+@pytest.mark.parametrize("body", [MockTransport, TwoCameraMock])
+async def test_robot_observe_encodes_its_pictures_off_the_event_loop(
+    body: type[MockTransport], monkeypatch: Any
+) -> None:
+    """`robot_observe` encoded every camera's picture as PNG on the event loop that every robot's
+    heartbeat and every verb still sending share, so a body walking beside the call missed its
+    resends for as long as the encodes took. A run's own frames go through a worker for this
+    reason (`Transcript.save_frames_off_loop`), and these now do too: no encode runs on a thread
+    with a loop running, and the pictures are the same bytes."""
+    import base64
+
+    import roboglot.mcp_server as served
+    from roboglot.agent.transcript import png_bytes
+
+    on_the_loop: list[bool] = []
+
+    def encode(image: Image.Image) -> bytes:
+        try:
+            asyncio.get_running_loop()
+            on_the_loop.append(True)
+        except RuntimeError:
+            on_the_loop.append(False)
+        return png_bytes(image)
+
+    monkeypatch.setattr(served, "png_bytes", encode)
+    async with connected(body()) as (client, session, _transport):
+        frame = await client.call_tool("robot_observe", {})
+        sent = [base64.b64decode(c.data) for c in frame.content if c.type == "image"]
+        kept = [png_bytes(f.image) for f in session.last_frames]
+    assert on_the_loop and not any(on_the_loop), f"encoded on the event loop: {on_the_loop}"
+    assert sent == kept, "the pictures are the bytes they always were"
 
 
 class PrimaryDiedMock(MockTransport):

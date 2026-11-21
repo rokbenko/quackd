@@ -204,8 +204,12 @@ Also in scope:
   command as it was typed, and each answer to a question in the row of the call it answered.
 - **The memory file** (`~/.roboglot/memory/<adapter>-<backend>.jsonl`). It holds
   sentences an LLM wrote about a place it has been, it persists between runs, and it is
-  read back into the next system prompt. It never leaves the machine and the executor never
-  reads it, so a note cannot widen an allowlist, lift a budget or open a confirm gate. What
+  read back into the next system prompt. The file stays on this machine and what it says does
+  not: every run sends its newest notes and episodes to the pilot's LLM in that prompt, which
+  is a vendor's service unless the LLM runs here, and over MCP `robot_recall` hands them, the
+  robot's places and the file's path to the MCP client. Write nothing into a note that you
+  would not send there. The executor never reads the file, so a note cannot widen an
+  allowlist, lift a budget or open a confirm gate. What
   would be a security issue: memory reaching the executor, a note from one robot appearing
   in another robot's prompt, or the file escaping the directory `--memory-dir` names.
   `--no-memory` writes nothing at all, and `roboglot memory clear` deletes the file.

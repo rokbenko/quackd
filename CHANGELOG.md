@@ -255,6 +255,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   kinds.** These are the rows and the `--json` that `roboglot policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
   now follow them, so a script that reads `--kind all --json` gets rows of a third `kind`, `policy`.
+- **`serve-mcp` says when nobody is watching for a body's fall.** `roboglot run` and `roboglot
+  drive` ask whether somebody is watching a body that cannot see its own fall and cannot get up
+  before it walks, the Open Duck Mini on a bridge whose runtime reports no fall signal among
+  them, and `serve-mcp` asked nobody and told nobody. It still asks nothing and refuses nothing,
+  and says it: at the first assessment of a task that can make such a body walk, stderr has the
+  warning those two put, ending `Nobody is asked here whether they are watching it, so somebody
+  must be.`, and a `feasible` or `uncertain` answer from `robot_assess_task` carries the same
+  words in a `warning` field for the client. A body whose state cannot be read then is warned of
+  all the same. A team server says it for each such member, and every other body reads as before.
 - **Four vendors' defaults moved to a newer LLM, and Jev's pin moved with them.** A bare
   `--llm openai` is `gpt-6.1-sol` (it was `gpt-6-sol`, which OpenAI no longer lists among its
   flagships), `--llm gemini` is `gemini-4-hydrogen` (it was `gemini-3.8-flash`, which Google now
@@ -746,6 +755,43 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   twist for as long as the frame took; the heartbeat waited with it. The pass runs in a worker
   thread now, as the board's detector does, one at a time, so `go_to` holds its twist for one
   deadman window and then zeroes it while the frame is still being looked at.
+- **An MCP session that ends stops every robot before it folds any.** `serve-mcp` closed its robots
+  one after another, and each close waited out a pause the robot had granted a robot it met and
+  folded its arm before the next robot was sent its stop. A stdio client ends the server a fixed
+  grace after it closes the server's stdin, two seconds for the MCP Python SDK's own client, so a
+  robot late in the team could be left driving on its last command. Every robot is sent its stop
+  first now, all at once, each waited for as long as that robot's `stop` verb is given, and only
+  then is each one put down and closed. A stop that never answered held the close for good, and
+  now goes on by itself after that time, said on stderr, and a stop the transport says did not
+  land is said in its words. A Ctrl-C during the close means stop, and no longer skips a
+  transport's close or what it says. One that lands in a fold stops it where it is, holds the arm
+  there and says so; a fold that does not end when told is told twice, and said to have gone on
+  if it still does, and one that goes on to its end after the press is said to have done so,
+  never to have stopped. From that press on no fold starts on any robot, and each arm is said to be
+  held where it stands, where the arm in a pause's wait, and the next arm, used to go down after
+  it. The close's stops run to their end through a later Ctrl-C, each for as long as a stop is
+  given, and every transport's close for as long as the body says its close can take, or 30 s
+  where it says nothing, as `roboglot drive` waits; a close still going after that is said to be
+  given up as the server ends, with what to do. Such a press used to leave a transport open, with
+  nothing said of its torque, and every robot after it untouched. A Ctrl-C during an arm's fold
+  to its rest pose at start-up
+  stops that fold too, and that arm and every robot that had connected are held and closed,
+  where the arm was left connected and energised with nothing said.
+- **A client that dies mid-call no longer leaves its robots unstopped.** When the client died with
+  a call in flight, the task group the MCP SDK runs a stdio server in cancelled the server's close
+  again at every turn of the loop, so it was cut at the first robot's stop: no robot after that one
+  was stopped, folded or closed, and nothing was said of an arm's torque. The close is shielded
+  from that cancel now, so every robot is stopped, put down and closed, and a Ctrl-C at a terminal
+  still reaches it.
+- **Two `robot_observe` calls at once each return their own picture.** The pictures came from one
+  slot per robot, which each call emptied as it started and every observe overwrote, so a call
+  made while another waited on a slow detector, a board's for one, handed the first its own
+  picture under the first's summary and detections, or left the first words with no picture.
+  Each call returns what its own `observe` captured.
+- **`robot_observe` encodes its pictures in a worker thread.** Each camera's PNG was encoded on the
+  event loop that every robot's heartbeat and every verb still sending share, so a body walking
+  beside the call missed its resends for as long as the encodes took. They are encoded in a worker
+  thread now, as a run's own frames are, and the pictures are the same bytes.
 - **`go_to` says when the distance it arrived by was a guess.** Through a lens nobody measured,
   `observe` says a distance is `(uncalibrated: distance is a rough guess)`, and `go_to`'s
   `reached the ball: ~0.25 m away` left that out, though on a guessed lens it is the difference
@@ -761,6 +807,112 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   while it reads any other real number set there, a numpy number or a Decimal as much as a
   float. A body whose transport gives an endless `head_fade_s` is no longer waited on before
   `go_to` looks.
+- **No goal and no meeting starts on a robot whose onboard service is closing.** `roboglot onboard
+  serve`, told to stop, stopped the run in hand and then went on with its byes, its radio and its
+  passport server, and a goal given meanwhile with `roboglot onboard goal`, a goal op a control
+  thread had read just before the listener closed, or a meeting a robot coming near started took
+  the empty slot and ran on: the process then exited under it, and the body kept its last intent
+  until its own deadman, with no stop, no close and no end in the run's record. From the moment
+  the service begins to close, a goal is refused with `the service is stopping`, which the goal's
+  terminal prints and the journal keeps as `a goal: <text>, refused: the service is stopping`,
+  and a robot coming near is told `no meeting: the service is stopping`.
+- **A goal never runs beside a meeting that has not stopped.** `roboglot onboard goal` stopped the
+  meeting in hand, waited up to 15 s for it while it held the run slot, and started the goal
+  whether the meeting had ended or not. Two runs then held one body: the meeting's teardown sent
+  its own stop in the middle of the goal, and its end took away the courtesy the goal had just
+  offered the robots met, so every pause one asked for was refused while the goal moved the body.
+  Meanwhile `roboglot onboard status` and `roboglot onboard stop` waited too, and could give up
+  with `the service stopped answering`. The goal still waits up to 15 s, holding nothing status,
+  a stop or the service's tick need, so all three answer meanwhile; a meeting still running
+  then refuses the goal with `the meeting in hand is still stopping: give the goal again once
+  roboglot onboard status says idle`. While a goal waits, a robot coming near is told `no
+  meeting: a goal is taking the slot`, a second goal is refused with `a goal is taking the slot
+  from a meeting: roboglot onboard stop ends it`, and `roboglot onboard stop` ends the waiting
+  goal before it starts. What a run does as it ends changes nothing of a run that came after
+  it.
+- **Talk starts once when a passport is signed while it is off.** `roboglot onboard sign` tells
+  the running service to read its files again, and the service also looks at them every two
+  seconds; with talk off, both could start it at once, and the robot then ran two passport
+  servers and two radios, one of each never closed, or, with a fixed `lan.port`, the second
+  could not bind and the service ended. Talk now starts once, whichever asks first, and a start
+  that fails on one of those looks, a port another program holds say, is said in the journal as
+  `talk could not start:` and the reason, and tried again on the next look, where before it
+  could end the service. `roboglot onboard sign` then says `the running service does not serve
+  it:` and that reason, where it would have said the service serves it, and the wizard says
+  the same. A radio's start, which can take 20 s, holds nothing else up any more: the service's
+  next look, the way from a stop to its close, and the answer to `roboglot onboard sign`,
+  `pin` or `forget` go on while it starts, and a radio's start that never comes back no longer
+  keeps talk on once the passport runs out. A passport signed again while talk is being set up
+  is the one served, and the robot's hellos carry it; one signed while talk is being turned off
+  waits for that to end and turns talk on with it, and `sign` is told it is served.
+- **A radio slow to start no longer ends the onboard service.** A Bluetooth radio that took
+  longer than its 20 s to start, BlueZ waiting on its controller at boot say, raised out of
+  `roboglot onboard serve` once the passport server was up: the service ended, and after five
+  such starts systemd stopped restarting it, leaving the robot with no service. When talk turned
+  on later instead, the journal said `talk could not start` though it had, and the radio was
+  never tried again. A radio that does not answer in time is a radio that is down now: the
+  service stays up with talk on, `roboglot onboard status` and the journal say `the radio did
+  not answer within 20 s`, and the radio is tried again as a radio that came up down is, with
+  everything a first start sets up, its watch for what BlueZ says included. A service told to
+  stop while its radio starts cuts the start short before it stops the radio, and the journal
+  says `radio bluez: its start was cut short, as the service stops`.
+- **A slow client no longer holds the onboard service's control port.** The service gives a
+  client 5 s in all to say hello with the token and send what it wants, however slowly its
+  bytes come, but the cut-off at the end of those 5 s could not end a read under way, so a
+  local process with no token that sent one byte every few seconds kept its place for as long
+  as it liked, and eight of them turned away `roboglot onboard status`, `stop` and `goal`. The
+  cut-off ends the connection now, and what a client sent just as it came is either handled and
+  answered or not handled at all.
+- **The onboard service stops inside the time systemd gives it, and says what it left.** Told
+  to stop, the service gave the run in hand 10 s and went on without a word, so a run whose
+  stop took longer, a pause granted to a robot met waited out before the body's close, lost
+  its close and the end of its record when the process exited; then it said bye to each robot
+  met one after another, each with its own bound, and closed the radio, the passport server and
+  the control listener, each with its own, so with two robots gone out of range it outlasted
+  the unit's `TimeoutStopSec=20` and systemd killed it partway. The run in hand is told to
+  stop the moment the stop comes now, whatever the service was doing, and the close keeps
+  inside 18 s, counted from the stop as systemd counts its timeout, the unit's stop timeout
+  less a margin for the process's exit: the run has all of it but 5 s for the byes when robots
+  are met, then whatever the byes left, and all of it when none is met; beside the run's stop
+  the LAN record other robots find this one by is withdrawn at once, and no rotation or late
+  start publishes it again; then the byes go out all at once, beside the passport server's and
+  the listener's close, and the radio last. Whatever had not finished is said as `the service
+  stops before it finished` and what it was, as in `saying bye to 2 robots met and closing the
+  radio`. A call a run handed to a thread of its own, or one on the radio's own threads or on a
+  thread pool of zeroconf's or an SDK's, still going at the end of the close held the process at
+  its exit until systemd's kill, or in a terminal until a person ended it, with nothing said.
+  Such a call is given two fifths of a second more now, and one still running then is said in
+  one line, in the journal and on stderr, as in `a call the goal handed to a thread of its own
+  is still running at the end of the budget: the service ends its process now with exit code
+  70`; the run's record is flushed before the line, every other file the process has open for
+  writing on disk after it, each wait bounded, a second line names any file that did not
+  flush, and the process ends with exit code 70 whatever the flushes met. Every line on the way
+  from the stop to the end waits a tenth of a second at most, and none is waited for once one
+  has not been written, so a journal that stopped draining holds neither the close nor the
+  end. A run whose own thread is still going when the time is spent, which holds nothing at
+  exit, is said as it is, as in `the goal has not ended though it was told to stop: the body
+  took the stop it was sent; not done: the run's end record; not known: the body's close; the
+  service ends with exit code 70, and the run's thread, which holds nothing, ends with it`, and
+  the process ends by the ordinary road, with exit code 70, or 0 when the run had ended, its
+  record's end written, and was only still writing its summary or memory, or telling its
+  terminal how. The line speaks only of the stops sent since the service's stop came, the last
+  one winning, in the run's record's own words. Where the run had not ended, the robot is as it
+  left it: an arm keeps its torque on and holds where it stood.
+- **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
+  run in hand` as soon as the service had passed the stop on, so a run whose stop had not
+  landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at
+  most, for the run to end before it answers; the command prints `stopped the run in hand` when
+  it ended, and `told the run in hand to stop, and it has not ended yet: roboglot onboard status
+  shows when it has` when it had not. A stop that finds a goal waiting for a meeting to end
+  ends that goal before it starts.
+- **A second Ctrl-C at `roboglot onboard goal` lets the terminal go.** The first Ctrl-C stops
+  the run; the second asks to quit at once, and the service, there for every terminal and every
+  robot met, must not quit for one, so it did nothing: the terminal went on waiting on a run
+  whose stop had not landed, and the journal said `stop: quitting at once`. Now the terminal
+  is told `the run is still ending on the robot, and the service runs on: roboglot onboard
+  status shows when it has ended` and let go at once, and the journal says `a goal: <text>, its
+  terminal asked to quit at once and is let go; the run is still ending, and the service stays
+  up` before that line.
 - **A head sweep the body refused no longer reads as one that found nothing.** `search_scan` on a
   body that only looks threw each look's answer away, so a body that refused every look was
   reported as having swept its range without the target, as in `ball not found in a gaze sweep of
@@ -1345,6 +1497,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   service user's group's and mode 0640, and otherwise stops and says what to run, since it may
   be another daemon's token: the MOSS bridge's and the Jetson daemon's look the same. It stops
   on any symlink, and creates a new token with its mode as it is written.
+- **`robot_load_glotfile` reads no file larger than a task file, and refuses one that is not a
+  task without quoting it.** A file larger than 65536 bytes is refused before it is read. A
+  frontmatter that is not valid YAML is refused with the error's kind and its line,
+  `frontmatter is not valid YAML: ScannerError at line 2 of the frontmatter, column 23`, in place
+  of the YAML parser's own words, and one the task format does not fit by each fault's path in
+  the format's own words and its kind, `verbs.allow: value_error`, with no key or value of the
+  file's. A bundled task's name and a task file load as before, and `roboglot run` is unchanged.
 - **The scripts that read GitHub send its token to GitHub's API alone.** The drift nightly's
   `scripts/upstream_drift.py` sent `GITHUB_TOKEN` to any address that began as the API's does,
   and `docs/assets/contributors.py` to any address with the API's host anywhere in it, so a host
