@@ -45,7 +45,7 @@ types: an arm registered before 0.33.0 says what it said, to its pilot and to a 
 
 
 @pytest.mark.parametrize(
-    ("backend", "camera", "policy"), itertools.product(BACKENDS, *[(False, True)] * 2)
+    ("backend", "camera", "policy"), list(itertools.product(BACKENDS, *[(False, True)] * 2))
 )
 def test_an_so101_is_described_exactly_as_before_there_were_types(
     backend: str, camera: bool, policy: bool

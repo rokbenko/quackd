@@ -10,6 +10,7 @@ import asyncio
 import json
 import random
 import time
+from functools import partial
 from pathlib import Path as FilePath
 
 import pytest
@@ -41,6 +42,7 @@ from roboglot.radio.sim import (
     read_scene,
     write_scene,
 )
+from tests.support import until_async
 
 
 def test_a_path_walks_in_straight_lines_and_stands_still_at_either_end() -> None:
@@ -117,12 +119,7 @@ def test_only_a_fresh_well_formed_passport_advert_is_read_off_the_air(tmp_path: 
     assert tiny is not None and tiny.mtu == 23
 
 
-async def until(condition: object, within_s: float = 5.0) -> None:
-    deadline = time.monotonic() + within_s
-    while not (condition() if callable(condition) else condition):
-        if time.monotonic() > deadline:
-            raise AssertionError("the condition never came true")
-        await asyncio.sleep(0.02)
+until = partial(until_async, within_s=5.0, every_s=0.02, what="the condition never came true")
 
 
 class Robot:
