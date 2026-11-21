@@ -417,6 +417,16 @@ def _meeting_go(_why: str) -> bool:
 _meeting_go.answers_as = "the meeting task, which moves nothing"  # type: ignore[attr-defined]
 
 
+def _hang_up(conn: Any) -> None:
+    """End a goal's connection: shut down first, which wakes a read or a write the goal's
+    threads are blocked in on every system, where a close alone does not on Linux, then close."""
+    import socket
+
+    with contextlib.suppress(OSError):
+        conn.sock.shutdown(socket.SHUT_RDWR)
+    conn.close()
+
+
 class Service:
     """One robot's onboard service. `start` brings every part up, `run` ticks until a stop,
     `close` takes it all down in the reverse order."""
@@ -1318,10 +1328,16 @@ class Service:
         channel = Channel(conn.writer)
         front = Front(channel, "onboard goal", quit_now=lambda: self._let_go(text, channel, conn))
         channel.on_broken(front.on_end)
+        # hung up once the goal's last line is out, or given up on: nothing else ends the
+        # connection, and its reader, a writer stuck on a client that stopped reading and the
+        # socket would each outlast the goal
+        channel.on_closed(lambda: _hang_up(conn))
         if op.get("yes") is True:
-            # the run's record says --yes answered, never a person, for a doubt as for a verb
-            front.confirm.answers_as = "--yes"  # type: ignore[attr-defined]
-            front.decide.answers_as = "--yes"  # type: ignore[attr-defined]
+            # the client answers every question itself (`_follow_goal`), so the run's record
+            # says --yes answered, never a person, and the executor's rules for a dangerous
+            # verb and a verb with no standing answer see that nobody is asked
+            for asker in (front.confirm, front.decide, front.acknowledge, front.judge):
+                asker.answers_as = "--yes"
         steps = op.get("max_steps")
         why = self.slot.goal(
             text, front, max_steps=steps if isinstance(steps, int) and steps > 0 else None

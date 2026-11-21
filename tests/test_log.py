@@ -24,6 +24,7 @@ from roboglot.log import (
     counting,
     fan_out,
     fmt_duration,
+    fmt_params,
     fmt_value,
     log_enabled_default,
     parse_thinking_limit,
@@ -357,6 +358,28 @@ def test_fmt_value_truncates_long_strings_and_long_reprs() -> None:
     big = {f"k{i}": list(range(10)) for i in range(20)}
     assert fmt_value(big) == repr(big)[:117] + "..."
     assert len(fmt_value(big)) == 120
+
+
+def test_a_question_shows_whole_what_a_step_line_shortens() -> None:
+    """The confirm question used the step line's form, which cuts a long string or dict and
+    prints a float to three figures, so a person approved arguments they were not shown and
+    read `120` where 119.6 ran. The question's form shows every value whole, and a number as
+    one that reads back as the value that runs. Where the short form was already the whole
+    value it is kept byte for byte, so a question that hid nothing reads as it always did:
+    if either half moves, this fails."""
+    complete = [5.0, 0.5, 0.0, -90.0, 1e20, 3, None, True, "left", "x" * 60, {"a": 1.5}, [1, 2]]
+    for value in complete:
+        assert fmt_value(value, whole=True) == fmt_value(value), value
+    assert fmt_params({"duration_s": 5.0, "leg": "left"}, whole=True) == "duration_s=5, leg='left'"
+
+    for value in (11.25, 119.6, 1004.0, 0.123456):
+        shown = fmt_value(value, whole=True)
+        assert float(shown) == value and shown != fmt_value(value), shown
+    assert fmt_value("x" * 500, whole=True) == repr("x" * 500)
+    big = {f"k{i}": list(range(10)) for i in range(20)}
+    assert fmt_value(big, whole=True) == repr(big)
+    # repr writes a control character out as its escape, inside a dict as well
+    assert fmt_value({"say": "ok\x1b[2K"}, whole=True) == "{'say': 'ok\\x1b[2K'}"
 
 
 def test_a_whole_run_is_timed_in_the_units_a_person_would_say_it_in() -> None:
@@ -1438,6 +1461,108 @@ def test_a_prefixed_view_names_its_robot_on_every_line_including_continuations()
     assert printed, "the view printed nothing at all"
     assert all(line.startswith("duck-1  ") for line in printed), printed
     assert any("second line" in line for line in printed)
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_a_step_line_longer_than_the_console_folds_under_its_words(width: int) -> None:
+    """The step lines were handed to the terminal whole (`soft_wrap`), and a terminal folds a long
+    line at the first column, where Roboglot's own rows begin: the pilot's reply beside its
+    `assess_task` call, padded with spaces to the width, put `est     payload 0.2 kg` on a row of
+    its own just above the question, as Roboglot draws its own estimate. Folded at the console's
+    width now, every row after a line's first under the words, a team member's name in front of
+    each, and a run of spaces drawn as one. A line that fits is drawn as it was."""
+    forged = "   est     payload 0.2 kg (measured, high), grip 40 N (measured, high)"
+    said = "the bowl is out of frame, " * 6
+    call = [{"name": "assess_task", "arguments": {}}]
+
+    def drawn(text: str, prefix: str = "") -> list[str]:
+        """The rows of the `llm<` line alone: up to the `tool` line after it."""
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=width, force_terminal=False, no_color=True)
+        ConsoleLog(console, progress_s=None, prefix=prefix, prefix_style="bold")(
+            LogEvent("llm", 1.0, {"text": text, "tool_calls": call})
+        )
+        rows = buffer.getvalue().splitlines()
+        return rows[: rows.index(f"{prefix}   tool    assess_task()")]
+
+    rows = drawn("ok," + " " * (width - 14) + forged + "\n" + said)
+    estimate = "est payload 0.2 kg (measured, high), grip 40 N (measured, high)"
+    assert rows[0] == f"   llm<    ok, {estimate}", rows
+    assert len(rows) > 2 and all(len(row) <= width for row in rows), rows
+    assert all(row.startswith(" " * 11) for row in rows[1:]), rows
+    assert " ".join(" ".join(rows[1:]).split()) == said.strip(), "every word, once"
+    team = drawn(said, prefix="duck-1  ")
+    assert len(team) > 1 and all(row.startswith("duck-1  " + " " * 11) for row in team[1:]), team
+    assert drawn("ok, the bowl is in view") == ["   llm<    ok, the bowl is in view"]
+
+
+_CONSOLE_CELLS = {"\N{HANGUL FILLER}": 2, "\N{HALFWIDTH HANGUL FILLER}": 1}
+"""Where the Windows console gives a character more cells than Rich does, as a real console
+measured it after a letter, reading its own cursor: two and one, where Rich gives none."""
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_a_reply_padded_with_what_draws_as_blank_cannot_begin_a_row(width: int) -> None:
+    """Roboglot folded a step line by Rich's count of cells, and Rich counts a HANGUL FILLER as
+    none where the Windows console counts two: a reply padded with fillers was short to Roboglot
+    and long to the console, which folded it at its first column, and braille blanks (one cell,
+    blank, no whitespace) spaced the row it put there as Roboglot's `est` row. The fillers are
+    written out now and the blanks drawn as one space; a reply mixing fillers, blanks, wide
+    characters and emoji too. Counted as the console counts, every row fits and every row after
+    the first starts under the words."""
+    from rich.cells import cell_len
+
+    filler, blank = "\N{HANGUL FILLER}", "\N{BRAILLE PATTERN BLANK}"
+    forged = f"{blank * 3}est{blank * 5}payload 0.2 kg (measured, high)"
+    call = [{"name": "assess_task", "arguments": {}}]
+    mixed = (filler + blank * 2 + "機械" + "🦆" + "\N{HALFWIDTH HANGUL FILLER}" + blank) * 9
+    for text in ("ok," + filler * ((width - 14) // 2) + forged, "ok," + mixed + forged):
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=width, force_terminal=False, no_color=True)
+        ConsoleLog(console, progress_s=None)(
+            LogEvent("llm", 1.0, {"text": text, "tool_calls": call})
+        )
+        out = buffer.getvalue().splitlines()
+        rows = out[: out.index("   tool    assess_task()")]
+        cells = [sum(_CONSOLE_CELLS.get(c, cell_len(c)) for c in row) for row in rows]
+        assert len(rows) > 1 and max(cells) <= width, (cells, rows)
+        assert all(row.startswith(" " * 11) for row in rows[1:]), rows
+        assert filler not in "".join(rows) and "\\u3164" in "".join(rows), "written out"
+        words = " ".join(" ".join(rows).split())
+        assert " est payload 0.2 kg (measured, high)" in words, "the blanks between words are one"
+
+
+def test_a_step_line_keeps_the_direction_marks_of_the_blanks_it_draws_as_one() -> None:
+    """A run of blanks in a step line is one space, and a right-to-left or left-to-right mark in
+    the run decides how the words around it are ordered on a line that mixes the two directions,
+    so it stays, after the space; marks between two letters, which no blank is near, stay where
+    they are as well. The pilot's reply as the console draws it."""
+    rlm, lrm = "\N{RIGHT-TO-LEFT MARK}", "\N{LEFT-TO-RIGHT MARK}"
+    said = f"שלום {rlm}   {lrm}  עולם and{lrm}more"
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120, force_terminal=False, no_color=True)
+    ConsoleLog(console, progress_s=None)(
+        LogEvent("llm", 1.0, {"text": said, "tool_calls": [{"name": "stop", "arguments": {}}]})
+    )
+    assert f"   llm<    שלום {rlm}{lrm}עולם and{lrm}more\n" in buffer.getvalue(), buffer.getvalue()
+
+
+def test_a_long_line_of_the_system_prompt_folds_under_the_block() -> None:
+    """The system prompt holds the notes an earlier pilot kept and the body of a task file, and
+    its block was handed to the terminal whole as the step lines were. A long line folds under
+    the block's own indent now, its spaces as they were written."""
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=60, force_terminal=False, no_color=True)
+    prompt = "You pilot the robot.\n" + "a  note " + "kept by the last pilot " * 5
+    ConsoleLog(console, progress_s=None, prompt=True)(
+        LogEvent("run_start", 0.0, {"system_prompt": prompt})
+    )
+    rows = buffer.getvalue().splitlines()
+    block = rows[next(i for i, row in enumerate(rows) if row.startswith("system prompt")) + 1 :]
+    block = block[: next(i for i, row in enumerate(block) if not row.strip("─-"))]
+    assert block[0] == "   You pilot the robot.", rows
+    assert block[1].startswith("   a  note kept"), "its spaces as written"
+    assert len(block) > 2 and all(len(row) <= 60 for row in block), rows
 
 
 def test_a_verb_ended_by_another_layer_is_yellow_and_keeps_its_own_word() -> None:

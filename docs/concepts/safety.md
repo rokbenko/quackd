@@ -86,10 +86,47 @@ server has no terminal to ask on, so it refuses a gated verb unless it was start
 and clears it standing if it was, but for a verb its backend has declared `no_standing_answer`,
 which it refuses either way. Neither does a run with no terminal under it.
 `yes | roboglot run` and `roboglot run < answers.txt` open the gate exactly as they always have,
-because `input()` reads a pipe as happily as a person and opening it is what the pipe asked
-for. What is withheld is the testimony: there is no `prompt` event, and the gate's own reason
-reads `the confirm gate was allowed` where a run somebody stood through reads
-`a human said yes`.
+because a pipe is read as happily as a person, a line for each question in order, and opening
+it is what the pipe asked for. A question on a quiet pipe waits as one at a terminal waits, with
+no deadline, while the run goes on beside it: its heartbeat beats, and a Ctrl-C or a failing
+heartbeat takes the question back. What is withheld is the testimony: there is no `prompt`
+event, and the gate's own reason reads `the confirm gate was allowed` where a run somebody stood
+through reads `a human said yes`.
+
+**The question shows what runs.** The confirm question names the verb and every argument it
+will run with, whole: a long instruction or a whole set of joint goals is never cut, and a
+number is written so that it reads back as the value that runs (`duration_s=5`, and
+`duration_s=11.25` rather than three figures). The `prompt` event quotes the same words. Text
+the pilot wrote, its arguments and its reason for doubting a task, is shown with every
+character that could act on the terminal written out as its escape (`\x1b`), and the page
+shows it as plain text, never as Markdown. Beside a question the pilot's text stays on the lines
+Roboglot gives it, so a line break it sends is shown as the escape too: a reason of `the bowl is
+out of frame.` and `It may be on the shelf` on two lines prints as `The pilot is not sure this
+robot can do the task: the bowl is out of frame.\nIt may be on the shelf`. Everything else
+Roboglot prints that an LLM, a robot or a server wrote (a reply and its thinking, the live status
+line naming the call the LLM chose, a verb's result, a refusal, a detection, the reason the run
+ended on, a server's error) has its escapes written out the same way, and keeps its own line
+breaks: a step's under the step's label, and an error's or a verdict's indented under its first
+line. A line too long for the console is folded by Roboglot at the console's width, as it is
+shown, its escapes counted, by a count of cells no terminal exceeds (a vowel sign of Hindi, which
+Rich counts as none and the Windows console as one, counts one), and never left to the terminal,
+whose fold begins at the first column: the rows after a line's first start under its words, a
+step's under the label column and the reason above a question two columns in, so that none can
+begin where Roboglot's own lines begin. The confirm question folds the same way, and each of its
+rows after the first begins with Roboglot's mark, `¦` (`|` on a stream that has only ASCII), so
+no row of its arguments can read as a question of its own. That holds at the width the question
+was drawn at: a terminal whose window is made narrower afterwards folds the rows it already shows
+again, the rest of each at the first column, and no program that prints lines can stop it, so
+read a question at the width it was asked at. A run of what draws as a blank inside a line the
+pilot, a robot or a server wrote (spaces, a braille blank and the like, and what draws nothing
+among them) is drawn as one space, so padding cannot set words of theirs along a row either; the
+confirm question keeps its spaces, since it shows what runs. What is written out is the control
+characters but the tab, the line and paragraph separators, the bidirectional embeddings,
+overrides and isolates, a lone surrogate, half of a character that no stream can encode, and the
+four Hangul fillers, which draw nothing and which the console counts as wider than Rich does; the
+joiners Persian, Hindi and emoji need, a flag's tags, the soft hyphen, the direction marks and
+Korean itself are drawn as given. `terminal.txt` leaves out every character the screen writes
+out, and keeps the line breaks.
 
 That distinction is a safety property and not a nicety. A run directory is what somebody
 reaches for after a robot did something it should not have, and the question they put to it is
@@ -151,7 +188,9 @@ stale costs that picture and never the run.
 ## Kill switch
 
 Ctrl-C and `q` (when stdin is a terminal) set the same abort flag, and at a console `q` does it
-as it is pressed, with no Enter behind it. The loop's `finally`
+as it is pressed, with no Enter behind it. With stdin a pipe or a file no key is read, so Ctrl-C
+is the one way in, and the line under the run panel says so: `Ctrl-C stops the robot. Ctrl-C
+twice quits at once.` The loop's `finally`
 always sends `stop`, puts a body that has a recorded rest pose back into it, and closes the
 transport. Works on Windows (signal handler, not `loop.add_signal_handler`). A LeRobot arm that
 reached its rest pose is let go of there by that close, and the kill switch itself never takes
@@ -304,6 +343,9 @@ roboglot --no-color run hello-world --llm openrouter --base-url http://127.0.0.1
    llm>    step 0: 1 messages (1 with image) to openrouter openai/gpt-6-sol (try 2)
    think   turn 1: calling assess_task
 ```
+
+With stdin a pipe or a file the kill switch reads no key, and the note ends `and Ctrl-C ends the
+run instead`.
 
 The counters under the verdict say how many times a turn was asked again and how long the waits
 took, apart from the LLM's own seconds, and the call that failed is in the LLM's seconds
@@ -798,7 +840,7 @@ and a read that got the bus just before a write says nothing about what that wri
   LeRobot's flag off for that one case, leaves the arm holding itself up, and prints one line:
 
   ```
-  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+  the arm is not at its rest pose (...), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
   ```
 
   The brackets name the joint furthest from where it was asked to be, what it reads, and why
@@ -806,8 +848,10 @@ and a read that got the bus just before a write says nothing about what that wri
   edge of its travel, or folded past it, has reached the pose. `NAME` is the name the arm was
   registered under wherever Roboglot knows it, and stays `NAME` where it does not, which is a
   bare spec such as `doctor --robot lerobot:real`. The arm is energised, the run is over, and
-  nothing is going to put it down on its own, but "it will not fall" is true of the arm as it
-  stands and of nothing that connects to it. `roboglot robot release` begins with a connect that
+  nothing is going to put it down on its own. Nothing reads its servos either, and holding a
+  pose is what heats them: one that reaches its own cut-off goes slack without announcing it,
+  so the line says the arm is holding its pose, which is true of it as it stands and of nothing
+  that connects to it. `roboglot robot release` begins with a connect that
   takes torque off every motor for a moment, so support the arm while it connects, and then it
   folds the arm to its rest pose from wherever it now is and lets go of it there. Clear the way
   first, because a fold that runs into whatever stopped the last one stops again. The power

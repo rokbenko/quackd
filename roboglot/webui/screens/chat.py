@@ -12,6 +12,7 @@ from typing import Any
 
 import streamlit as st
 
+from roboglot.ui import printable, printable_lines
 from roboglot.webui import catalog, jobs, widgets
 from roboglot.webui.options import argv_for
 from roboglot.webui.state import setup
@@ -38,8 +39,13 @@ def screen() -> None:
         st.caption("The chat runs with the robot and pilot chosen on Setup.")
         return
     _watch(job)
+    from roboglot.front import CHAT_LINE_MAX
+
+    # held to what the run takes in as one line (`roboglot.front.OP_LINE_MAX`), so a paste too
+    # long is refused here rather than dropped by the run
     said = st.chat_input(
-        "A goal, or a command such as forward or stop. A newer line ends the one moving."
+        "A goal, or a command such as forward or stop. A newer line ends the one moving.",
+        max_chars=CHAT_LINE_MAX,
     )
     if said and said.strip():
         job.line(said.strip())
@@ -92,15 +98,18 @@ def _conversation(job: Any) -> None:
             if routed is None:
                 st.caption("working it out")
                 continue
+            # what the router read the line as, a decision LLM's reading among them, and what a
+            # pilot or a robot said it came to: plain text, as everything beside a question
+            # waiting on this screen is, never Markdown (`widgets.questions`)
             label = routed.get("label") or routed.get("note") or ""
-            st.caption(f"{routed.get('lane')} · {label}".rstrip(" ·"))
+            st.text(printable(f"{routed.get('lane')} · {label}".rstrip(" ·")))
             goal = _goal_number(routed)
             if goal is not None:
                 with st.expander(f"goal {goal}, step by step", expanded=ended is None):
                     widgets.narration(job, goal=goal, tail=120)
             if ended is not None:
                 outcome = f"{ended.get('outcome')}: {ended.get('summary') or ''}".rstrip(": ")
-                (st.success if ended.get("outcome") in ("ok", "success") else st.info)(outcome)
+                st.text(printable_lines(outcome))
 
 
 def _goal_number(routed: dict[str, Any]) -> int | None:

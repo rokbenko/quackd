@@ -117,7 +117,9 @@ Also in scope:
   needs and lose the half that has to be rotated: the scheme, the host, the port, the path and
   the username stay, a password in the URL becomes `***`, and so does any query parameter named
   like a credential (`api_key`, `token`, `sig` and the rest of `SECRET_QUERY_KEYS`).
-  `--extra-body`, and `ROBOGLOT_EXTRA_BODY` behind it, is a JSON object a vendor asked for and
+  `roboglot doctor`, whose output people paste into issues, replaces them the same way in every
+  URL its robot probe shows or writes to `--json`: the robot's address, registered or typed, every
+  camera URL, and an error or a note that quotes one. `--extra-body`, and `ROBOGLOT_EXTRA_BODY` behind it, is a JSON object a vendor asked for and
   Roboglot never reads, which makes it exactly where an `authorization` header ends up; it reaches
   the transcript's `run_start` as `extra_body`, and it is walked to the bottom on the way in
   with every credential-named key replaced. All of that is redaction **by name**, of flag names

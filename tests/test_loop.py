@@ -3364,6 +3364,26 @@ async def test_the_run_starts_from_the_pose_a_person_put_the_arm_in(tmp_path: Pa
     assert mock.torque is False and mock.close_note is None, "the arm is down and let go of"
 
 
+async def test_the_enter_that_starts_a_by_hand_run_is_asked_for_deliberately(
+    tmp_path: Path,
+) -> None:
+    """`PLACE_IT`'s Enter energises the arm where it is and starts the run, and it was the one
+    such question asked as an ordinary wait: an Enter typed ahead, or the first repeat of one
+    held from the question before, answered it before anybody had read it, with the arm limp
+    or mid-lift in somebody's hands. It is asked with the too-soon half of a deliberate wait,
+    so the kill switch passes such a press by and says `ENTER_TOO_SOON`, and not with the half
+    that makes a typed line a no: the question has no no in it (`TOO_SOON_ONLY`). A wait asked
+    any other way, an ordinary one or a wholly deliberate one, fails here."""
+    from roboglot.safety import TOO_SOON_ONLY
+
+    mock = LeRobotMock(rest_pose=REST)
+    person = ScriptedPerson(mock, places=PLACED)
+    result = await run_glot(_by_hand(mock, person, tmp_path))
+    assert result.outcome == "success", result.reason
+    assert person.asked[0][0] == AgentLoop.PLACE_IT
+    assert person.deliberate[0] == TOO_SOON_ONLY, "an Enter typed ahead or held, or a no"
+
+
 async def test_the_time_a_person_takes_is_not_the_pilots_budget(tmp_path: Path) -> None:
     """`max_minutes` starts before the rest move, and an arm can then sit released while
     somebody goes to find the pencil the task is about. That waiting used to be spent out of
@@ -7159,6 +7179,43 @@ async def test_a_turn_the_api_could_not_answer_is_asked_again_with_the_same_requ
         why="rate limited (429)", tries=len(loop_module.ASK_AGAIN_AFTER_S)
     )
     assert notes.count(said) == 1, notes
+
+
+async def test_a_turn_asked_again_on_a_piped_stdin_offers_no_key_nothing_reads(
+    hello_glot: GlotFile,
+    tmp_path: Path,
+    instant_waits: list[float],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The note a run says before it waits on the LLM's API said `Ctrl-C or q ends the run
+    instead` whatever stdin was, and with stdin a pipe or a file the kill switch reads no key,
+    so `q` ends nothing there. Behind a switch that reads no key the note offers Ctrl-C alone;
+    where keys are read it reads as it always did (the test above)."""
+    import io
+    import sys
+
+    from roboglot.safety import KillSwitch
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("not a terminal"))
+    switch = KillSwitch(asyncio.Event())
+    switch.install()
+    try:
+        assert switch._thread is None, "no key is read on a pipe"
+        result = await run_glot(
+            RunConfig(
+                glot=hello_glot,
+                provider=FlakyProvider([None, _rate_limited()]),
+                transport=MockTransport(),
+                runs_dir=tmp_path,
+            )
+        )
+    finally:
+        switch.uninstall()
+    assert result.outcome == "success", result.reason
+    notes = [e["text"] for e in _events(result.run_dir, "note")]
+    (said,) = [n for n in notes if n.startswith(loop_module.ASKING_AGAIN.split("(")[0])]
+    assert said.endswith("and Ctrl-C ends the run instead"), said
+    assert "or q" not in said, said
 
 
 async def test_a_retry_is_not_charged_to_the_task_s_llm_calls(

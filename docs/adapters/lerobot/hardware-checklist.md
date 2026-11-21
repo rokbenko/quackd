@@ -224,10 +224,12 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    off, leaves the arm holding itself up, and says so once:
 
    ```
-   the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-   stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01,
-   which folds it to its rest pose and lets go of it there: support the arm while that connects,
-   because connecting takes torque off every motor for a moment. Or hold it and cut its power
+   the arm is not at its rest pose (...), so torque was left on and it is holding its pose.
+   Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing
+   it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot
+   robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm
+   while that connects, because connecting takes torque off every motor for a moment. Or hold it
+   and cut its power
    ```
 
    That line is for an arm that answered the close's own read. An arm that stopped answering
@@ -238,7 +240,8 @@ clear and the switch from step 3 has to be fitted and within reach before you st
    > [!WARNING]
    > That is a change in behaviour and it is the one to read twice. A probe or a dry run on an
    > arm away from its recorded rest pose now leaves torque **on** where it used to drop it.
-   > The arm will not fall as it stands, and it will also not let go until
+   > The arm holds its pose with torque on, which heats its servos, and a servo that reaches its
+   > cut-off goes slack without announcing it, so do not leave it so. It stays energised until
    > `roboglot robot release arm-01` folds it back to the pose and lets go of it there, until a
    > run or `doctor` puts it back, or until you cut its power. Support it for every one of
    > those, not only the first: a run, `doctor` and the release all begin by connecting, and
@@ -514,7 +517,7 @@ means, and which moments move the arm without anybody asking for it.
     the arm should stay where it stopped. The close's line then says the arm is not
     at its rest pose, names the joint furthest from it with where it reads and its goal, says it
     has stopped moving, or that the time ran out, and goes on
-    `so torque was left on and it will not fall as it stands`. Until 0.15.0 it said that joint
+    `so torque was left on and it is holding its pose`. Until 0.15.0 it said that joint
     and its angles twice. Once is right, and so is twice with two different angles, which is the
     close's own read finding the joint somewhere other than where the move stopped it. Report
     the line as it came, and whether the arm moved after your hand left it.

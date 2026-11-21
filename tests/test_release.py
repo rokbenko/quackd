@@ -837,6 +837,31 @@ async def test_two_folds_and_two_questions_in_order_before_anything_drops() -> N
     assert settled.how == "released" and settled.asked == "drop"
 
 
+async def test_a_fold_reason_quoted_inside_a_question_carries_no_escape() -> None:
+    """Both questions over an arm whose fold missed quote the fold's reason, which can carry a
+    transport's error text, and the terminal printed it as it came: an escape sequence in it
+    could erase the warning around it, in the one question whose Enter drops the arm. The reason
+    is written out through `printable`, so this fails if one reaches the question again; a
+    reason with no control character reads as it did (the test above)."""
+    from roboglot.ui import printable
+
+    why = "the bus said \x1b[2K\x1b[1Aall clear"
+    missed = RestResult("stalled", why)
+    person, arm = Person(True), Arm()
+    fold, _made = _folds(missed)
+
+    async def stop() -> None:
+        return None
+
+    await settle_missed_fold(arm, person, missed, fold=fold, stop=stop)
+    asked = [a[0] for a in person.asked]
+    assert asked == [
+        CLEAR_THE_WAY.format(why=printable(why), seconds=CLEAR_THE_WAY_S),
+        DROP_AFTER_TWO_FOLDS.format(why=printable(why), seconds=ENTER_DROPS_S),
+    ]
+    assert not any("\x1b" in question for question in asked), asked
+
+
 async def test_a_fold_that_missed_over_limp_joints_asks_nothing() -> None:
     """A fold that missed because servos lost their torque on the way, a brown-out under stall
     current, is no arm holding itself up where it stopped, which is what the first question

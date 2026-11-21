@@ -634,7 +634,11 @@ async def settle_missed_fold(
     stay = getattr(person, "stay_to_the_close", None)
     if stay is not None:
         stay()
-    first = CLEAR_THE_WAY.format(why=missed.reason, seconds=CLEAR_THE_WAY_S)
+    from roboglot.ui import printable
+
+    # the fold's reason may carry a transport's error text, quoted inside the question: written
+    # out, so nothing in it can act on the terminal the question is put on
+    first = CLEAR_THE_WAY.format(why=printable(missed.reason), seconds=CLEAR_THE_WAY_S)
     answer = await ask(person, first, CLEAR_THE_WAY_S, asked=asked)
     if answer != ENTER:
         kept_at_a_wait(answer, event=event, note=note)
@@ -682,7 +686,7 @@ async def settle_missed_fold(
         event(stage="kept", reason=FOLD_UNANSWERED)
         note(said)
         return Settled("kept", FOLD_UNANSWERED, asked="clear", fold=again, said=said)
-    second = DROP_AFTER_TWO_FOLDS.format(why=again.reason, seconds=ENTER_DROPS_S)
+    second = DROP_AFTER_TWO_FOLDS.format(why=printable(again.reason), seconds=ENTER_DROPS_S)
     # from before the question: a press during it ends it anyway, and one made after the Enter was
     # taken, as its record was written, was counted before the release's own watch began
     async with one_watch(person) as stopped:
