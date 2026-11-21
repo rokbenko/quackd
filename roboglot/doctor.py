@@ -21,10 +21,12 @@ import importlib.metadata as md
 import os
 import platform
 import re
+import socket
 import threading
+import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 from rich.console import Console
 from rich.rule import Rule
@@ -57,7 +59,7 @@ from roboglot.agent.providers.factory import (
 )
 from roboglot.agent.providers.local import PRESETS, on_host
 from roboglot.boards import l4t as _l4t
-from roboglot.command import redacted_url
+from roboglot.command import HIDDEN, redacted_url
 from roboglot.glotfile.parser import list_bundled_tasks
 from roboglot.host import (
     PROTOCOL,
@@ -104,6 +106,23 @@ EXTRAS = {
 # loads its tokenizer with in the policy server, and importing it costs seconds. ultralytics
 # brings torch too, and this table is read after the arm's close, with nothing moving and
 # maybe somebody still pressing Ctrl-C (`safety.AfterTheClose`).
+_SDK_BY_METADATA = {
+    "anthropic": "anthropic",
+    "openai": "openai",
+    "google.genai": "google-genai",
+    "typesafe_sdk": "typesafe-sdk",
+    "zeroconf": "zeroconf",
+    "paho.mqtt.client": "paho-mqtt",
+    "roslibpy": "roslibpy",
+}
+"""The provider SDKs and the extras that are Python alone, read by their distribution's metadata
+too. Importing one proved only that its files were there, which the metadata the installer wrote
+says as well, and cost doctor a fraction of a second or more each, one after another: the run
+that uses one imports it itself and says so when that fails. Every core package is still
+imported, since that import is the check that Roboglot itself can start, and so are aiortc and
+pyzmq, which load a native library that can be missing or built for another Python while the
+metadata says the package is installed."""
+
 _METADATA_ONLY = {
     "lerobot": "lerobot",
     "rustypot": "rustypot",
@@ -111,6 +130,7 @@ _METADATA_ONLY = {
     "transformers": "transformers",
     "streamlit": "streamlit",
     "ultralytics": "ultralytics",
+    **_SDK_BY_METADATA,
 }
 
 CORE_MODULES = (
@@ -129,6 +149,32 @@ TEAM_NOTE = (
     "team mode (--team): one LLM pilot per robot, in-process bus by default. The MQTT bus "
     "(roboglot[lan]) is library-only (docs/guides/lan.md)."
 )
+
+NO_DROP_QUESTION = (
+    "doctor stopped on the error above, so it asked nothing about dropping the arm into your "
+    "hands: the line before this one is what its close did with the torque"
+)
+"""Said after the close note on a probe that failed after the connect, where the CLI's one
+question whether to drop the arm (`before_close`) is never reached, and only over a body that
+question would have been put to (`_would_have_asked`)."""
+
+
+def _would_have_asked(before_close: Callable[[Any], Awaitable[None]] | None, body: Any) -> bool:
+    """Whether `before_close` would have asked about dropping `body`, had the probe reached it.
+
+    The CLI's hook (`cli._DoctorHands.before_close`) asks only over a body handed to people whose
+    close keeps its torque (`unposed`), at a terminal (`prompting`), and not after a press of the
+    kill switch, so a wheeled base, an arm with a rest pose, or a run under `--json` is never
+    asked, and is not told it was not. A hook that says none of that about itself is taken to
+    ask over a body handed to people that has no rest pose to fold to."""
+    if before_close is None or not getattr(body, "supports_hand_off", False):
+        return False
+    owner = getattr(before_close, "__self__", None)
+    prompting, unposed = getattr(owner, "prompting", None), getattr(owner, "unposed", None)
+    if isinstance(prompting, bool) and isinstance(unposed, bool):
+        pressed = getattr(owner, "pressed", None)
+        return prompting and unposed and not (callable(pressed) and pressed())
+    return getattr(body, "rest_pose", None) is None
 
 
 _DISTRIBUTION_OF = {
@@ -643,8 +689,148 @@ class DoctorReport:
 
 # ── asking ──────────────────────────────────────────────────────────────────────────────
 
+PROBE_TIMEOUT_S = 1.5
+"""How long one probe of an LLM server waits on its socket for any one step, and then for the
+whole of the reply's body: the timeout the section titles name."""
 
-def _probe_llms(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+REPLY_LIMIT_BYTES = 1 << 20
+"""The most a probe reads of a reply. A list of LLMs is a few kilobytes even from a server that
+holds hundreds, so a mebibyte is past any real one, and small enough that a reply that never
+ends cannot fill this machine's memory first."""
+
+PROBES_DEADLINE_S = 4 * PROBE_TIMEOUT_S
+"""When the probes asked together have all answered or are given up on. A probe that keeps to
+its timeouts takes at most one to connect (every address at once, `_connection_to`), one for
+the reply's headers, one for its body, and one for the read in flight when the body's deadline
+passes. Only a server sending its headers a byte at a time takes longer, and that is not a
+server to wait for."""
+
+_clock = time.monotonic
+"""The clock every deadline here is kept on, a module attribute so a test can move it."""
+
+
+def _addresses(host: str, port: int) -> list[Any]:
+    """Every address `host` has, as `getaddrinfo` gives them."""
+    return socket.getaddrinfo(host, port, 0, socket.SOCK_STREAM)
+
+
+def _connect_one(info: Any, timeout: float | None) -> socket.socket:
+    """A socket connected to one of `_addresses`, or the OSError the connect raised."""
+    family, kind, proto, _name, address = info
+    sock = socket.socket(family, kind, proto)
+    try:
+        sock.settimeout(timeout)
+        sock.connect(address)
+    except BaseException:
+        sock.close()
+        raise
+    return sock
+
+
+def _connection_to(
+    address: tuple[str, int], timeout: float | None = None, source_address: Any = None
+) -> Any:
+    """`socket.create_connection`, with every address the name has asked at once.
+
+    `create_connection` asks them in turn, each with the whole timeout. The presets are
+    `localhost`, which is `::1` and `127.0.0.1`, and a closed loopback port on Windows takes all
+    of its timeout to say so, so a server on one of them was asked only after the other had used
+    up its 1.5 s, and a machine running none waited twice. The first address to connect is the
+    one used, and a later one is closed as it connects; when none does, the first error is
+    raised, as `create_connection` raises it. `source_address` is never set by the probes."""
+    host, port = address
+    infos = _addresses(host, port)
+    lock = threading.Lock()
+    done = threading.Event()
+    won: list[Any] = []
+    failed: list[BaseException] = []
+
+    def attempt(info: Any) -> None:
+        try:
+            sock = _connect_one(info, timeout)
+        except BaseException as e:  # raised below if no address connects, whatever its kind
+            with lock:
+                failed.append(e)
+                if len(failed) == len(infos):
+                    done.set()
+            return
+        with lock:
+            if not won:
+                won.append(sock)
+                done.set()
+                return
+        sock.close()  # an address that connected after another had
+
+    for info in infos:
+        threading.Thread(
+            target=attempt, args=(info,), name="roboglot-doctor-connect", daemon=True
+        ).start()
+    if infos:
+        done.wait()
+    if won:
+        return won[0]
+    if failed:
+        raise failed[0]
+    raise OSError(f"getaddrinfo found no address for {host}")
+
+
+@functools.cache
+def _opener() -> Any:
+    """urllib's own opener, its proxies and redirects as `urlopen` has them, with a plain http
+    connection made through `_connection_to`. An https server is one somebody named, and is
+    asked as before."""
+    import http.client
+    import urllib.request
+
+    class EveryAddressAtOnce(http.client.HTTPConnection):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            self._create_connection = _connection_to
+
+    class Handler(urllib.request.HTTPHandler):
+        def http_open(self, req: Any) -> Any:
+            return self.do_open(EveryAddressAtOnce, req)
+
+    return urllib.request.build_opener(Handler)
+
+
+def _open(url: str, timeout: float) -> Any:
+    """`urllib.request.urlopen(url, timeout=timeout)`, through `_opener`."""
+    return _opener().open(url, timeout=timeout)
+
+
+class _TooLong(Exception):
+    """A reply past `REPLY_LIMIT_BYTES`."""
+
+
+class _TooSlow(Exception):
+    """A reply whose body had not ended by its deadline."""
+
+
+def _read_reply(r: Any, timeout_s: float) -> bytes:
+    """The body of `r`, read no further than `REPLY_LIMIT_BYTES` and for no longer than
+    `timeout_s` from now.
+
+    `r.read()` with no bound was the whole read: the socket's timeout bounds each wait for a
+    byte, not the reply, so a server sending a byte at a time, or one that never ends its body,
+    held doctor for as long as it went on. `read1` returns what one wait for the socket gave, so
+    the deadline is looked at between them."""
+    deadline = _clock() + timeout_s
+    read = getattr(r, "read1", None) or r.read
+    got = bytearray()
+    while chunk := read(REPLY_LIMIT_BYTES + 1 - len(got)):
+        got += chunk
+        if len(got) > REPLY_LIMIT_BYTES:
+            raise _TooLong
+        if _clock() > deadline:
+            raise _TooSlow
+    return bytes(got)
+
+
+_MIB = f"{REPLY_LIMIT_BYTES >> 20} MiB"
+
+
+def _probe_llms(base_url: str, timeout_s: float = PROBE_TIMEOUT_S) -> tuple[str, str]:
     """Reachability of an OpenAI-compatible server, as (state, detail). Never raises.
 
     Whatever answered is read with no trust in its shape. A reply that is JSON but not an
@@ -657,13 +843,16 @@ def _probe_llms(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
     no LLMs loaded."""
     import json
     import urllib.error
-    import urllib.request
 
     try:
-        with urllib.request.urlopen(f"{base_url.rstrip('/')}/models", timeout=timeout_s) as r:
-            payload = json.loads(r.read().decode("utf-8", errors="replace"))
+        with _open(f"{base_url.rstrip('/')}/models", timeout_s) as r:
+            payload = json.loads(_read_reply(r, timeout_s).decode("utf-8", errors="replace"))
     except urllib.error.HTTPError as e:
         return "http", f"HTTP {e.code}"
+    except _TooLong:
+        return "http", f"answered /models with more than {_MIB}"
+    except _TooSlow:
+        return "http", f"did not finish its /models reply in {timeout_s:g} s"
     except Exception:
         # A body that is not JSON lands here too, and reads as no LLM server there, which is
         # what a dev web server's index page on 8000 or 8080 is. That is the row this probe has
@@ -678,34 +867,72 @@ def _probe_llms(base_url: str, timeout_s: float = 1.5) -> tuple[str, str]:
     return "up", f"{shown}{more}" if ids else "no LLMs loaded"
 
 
+_LATE_LLMS = ("http", f"did not finish answering in {PROBES_DEADLINE_S:g} s")
+"""The row of a server whose probe was still asking at `PROBES_DEADLINE_S`."""
+
+
 def _probe_together(urls: Sequence[str]) -> dict[str, tuple[str, str]]:
     """`_probe_llms` for each of `urls`, all at once.
 
     A closed port on Windows takes its whole timeout to say so, for each address `localhost` has,
     so four presets asked one after the other held the report for twelve seconds to learn that
     nothing was running. Daemon threads rather than a pool, and a join that wakes: a Ctrl-C does not
-    wait for a probe, and nothing does on the way out."""
-    answers: dict[str, tuple[str, str]] = {}
-    raised: list[BaseException] = []
+    wait for a probe, and nothing does on the way out. A probe still asking at `PROBES_DEADLINE_S`
+    is left to its daemon thread and has the row that says so."""
+    return _Asking({url: functools.partial(_ask_llms, url) for url in urls}).answers(_LATE_LLMS)
 
-    def ask(url: str) -> None:
+
+def _ask_llms(url: str) -> tuple[str, str]:
+    """`_probe_llms` looked up when it is called, which is where the tests replace it."""
+    return _probe_llms(url)
+
+
+def _ask_placement(root: str) -> tuple[list[PlacementRow], str]:
+    """`_probe_placement` looked up when it is called, as `_ask_llms` is."""
+    return _probe_placement(root)
+
+
+_K = TypeVar("_K")
+_V = TypeVar("_V")
+
+
+class _Asking(Generic[_K, _V]):
+    """Each of `jobs` on a daemon thread of its own, started at once, so the caller can do
+    something else while they ask, and their answers by `PROBES_DEADLINE_S` from the start, or
+    by the `deadline` of the probes asked before them: Ollama's `/api/ps` is asked once its
+    `/v1/models` has answered, and on the same deadline, so every probe doctor makes ends by
+    one."""
+
+    def __init__(
+        self, jobs: Mapping[_K, Callable[[], _V]], *, deadline: float | None = None
+    ) -> None:
+        self._answers: dict[_K, _V] = {}
+        self._raised: list[BaseException] = []
+        self._threads = {
+            key: threading.Thread(
+                target=self._ask, args=(key, job), name="roboglot-doctor-probe", daemon=True
+            )
+            for key, job in jobs.items()
+        }
+        self.deadline = _clock() + PROBES_DEADLINE_S if deadline is None else deadline
+        for thread in self._threads.values():
+            thread.start()
+
+    def _ask(self, key: _K, job: Callable[[], _V]) -> None:
         try:
-            answers[url] = _probe_llms(url)
-        except BaseException as e:  # never from the real one, which is `Never raises`
-            raised.append(e)
+            self._answers[key] = job()
+        except BaseException as e:  # never from the real probes, which never raise
+            self._raised.append(e)
 
-    threads = [
-        threading.Thread(target=ask, args=(url,), name="roboglot-doctor-probe", daemon=True)
-        for url in dict.fromkeys(urls)
-    ]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        while thread.is_alive():
-            thread.join(0.05)
-    if raised:
-        raise raised[0]
-    return answers
+    def answers(self, late: _V) -> dict[_K, _V]:
+        """Every job's answer, in the order the jobs were given; one still running at the
+        deadline answers `late`. What a job raised is raised here, from the first that did."""
+        for thread in self._threads.values():
+            while thread.is_alive() and _clock() < self.deadline:
+                thread.join(0.05)
+        if self._raised:
+            raise self._raised[0]
+        return {key: self._answers.get(key, late) for key in self._threads}
 
 
 def _ollama_root(url: str) -> str:
@@ -715,7 +942,9 @@ def _ollama_root(url: str) -> str:
     return root[: -len("/v1")] if root.endswith("/v1") else root
 
 
-def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[PlacementRow], str]:
+def _probe_placement(
+    root_url: str, timeout_s: float = PROBE_TIMEOUT_S
+) -> tuple[list[PlacementRow], str]:
     """What an Ollama at `root_url` has loaded and where, from its own `GET /api/ps`, as
     (rows, note). The note says why there are no rows. Never raises, and nothing it finds
     touches `ok`: an LLM on the CPU is slow, not broken.
@@ -723,14 +952,17 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
     A module attribute for the reason `_probe_llms` is one: the tests replace it."""
     import json
     import urllib.error
-    import urllib.request
 
     url = f"{root_url.rstrip('/')}/api/ps"
     try:
-        with urllib.request.urlopen(url, timeout=timeout_s) as r:
-            raw = r.read()
+        with _open(url, timeout_s) as r:
+            raw = _read_reply(r, timeout_s)
     except urllib.error.HTTPError as e:
         return [], f"GET /api/ps answered HTTP {e.code}, so this may not be Ollama"
+    except _TooLong:
+        return [], f"GET /api/ps answered with more than {_MIB}"
+    except _TooSlow:
+        return [], f"GET /api/ps did not finish its reply in {timeout_s:g} s"
     except Exception:
         return [], "GET /api/ps did not answer"
     try:
@@ -776,11 +1008,77 @@ def _probe_placement(root_url: str, timeout_s: float = 1.5) -> tuple[list[Placem
     return [], "nothing loaded yet: Ollama loads an LLM on its first request"
 
 
-def _urls(camera_url: str | Sequence[str] | None) -> str:
-    """`--camera-url` as written: one address, or several joined by commas."""
-    if camera_url is None or isinstance(camera_url, str):
-        return camera_url or ""
-    return ", ".join(str(url) for url in camera_url)
+_URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]+")
+"""A URL inside a sentence, up to the first space, quote or angle bracket. Not up to a comma,
+which a password can hold: a comma that ends a URL stays in its path, which keeps it."""
+
+
+def _shown_url(url: str) -> str:
+    """An address or a camera URL, whole, as doctor shows and writes it: `redacted_url`'s, the
+    one rule Roboglot has for credentials, because doctor's output is what people paste into
+    issues. A URL it hides nothing in is left exactly as it was written, rather than as
+    `urlunsplit` would rebuild it."""
+    shown = redacted_url(url)
+    return shown if HIDDEN in shown else url
+
+
+def _url_list(camera_url: str | Sequence[str] | None) -> list[str]:
+    """`--camera-url` as the list of addresses it is."""
+    if camera_url is None:
+        return []
+    return [camera_url] if isinstance(camera_url, str) else [str(url) for url in camera_url]
+
+
+def _shown_urls(camera_url: str | Sequence[str] | None) -> str:
+    """`--camera-url` as written, one address or several joined by commas, each through
+    `_shown_url`: a list, as `--camera-url` given twice arrives, is never printed as a Python
+    list (`url ['opencv://0']`)."""
+    return ", ".join(_shown_url(url) for url in _url_list(camera_url))
+
+
+def _sentence_end(url: str) -> str:
+    """The punctuation that ends a sentence or a clause after a URL in it, which is the
+    sentence's and not the URL's: a secret query value would otherwise take it along when it is
+    replaced. A bracket the URL opened is its own, as an IPv6 host's `]` is."""
+    end = len(url)
+    while end and url[end - 1] in ".,:;)]":
+        closing = url[end - 1]
+        opening = "[" if closing == "]" else "(" if closing == ")" else ""
+        if opening and url[:end].count(opening) >= url[:end].count(closing):
+            break
+        end -= 1
+    return url[end:]
+
+
+def _hidden(text: str, known: Sequence[str] = ()) -> str:
+    """Free text, an error or a note, with no credential from a URL left in it. Each of `known`,
+    the addresses and camera URLs this probe was given or read, is replaced wherever it appears
+    whole by its `_shown_url`, so a password holding a quote or a space goes too; then any other
+    URL in the text goes through `_shown_url` as well."""
+    for url in sorted({u for u in known if u}, key=len, reverse=True):
+        if (shown := _shown_url(url)) != url:
+            text = text.replace(url, shown)
+
+    def one(found: re.Match[str]) -> str:
+        whole = found.group()
+        tail = _sentence_end(whole)
+        url = whole[: len(whole) - len(tail)]
+        return _shown_url(url) + tail
+
+    return _URL_IN_TEXT.sub(one, text)
+
+
+def _without_credentials(report: ProbeReport, known: Sequence[str]) -> ProbeReport:
+    """The probe's report with no credential from an address or a camera URL left in it: the
+    table's title, every row (a camera's address comes from its backend as it was given), the
+    error, which a transport can write its address into, and the advisories. `known` is every
+    address and camera URL the probe was given or read."""
+    report.address = _shown_url(report.address)
+    report.error = _hidden(report.error, known) if report.error is not None else None
+    for row in report.rows:
+        row.value = _hidden(row.value, known)
+    report.advisories = [_hidden(a, known) for a in report.advisories]
+    return report
 
 
 def probe(
@@ -835,6 +1133,17 @@ def probe(
     from roboglot.adapters.host_camera import HOST_CAMERA_NAME, HostCameraAdapter
     from roboglot.transport.base import DEFAULT_CAMERA_NAME, TransportError, frames_of
 
+    # What the close on the exception path wrote, and whether `before_close` was reached first.
+    # The note is the only place the person at the arm is told what became of its torque and how
+    # to put it down, so an error after the connect has to carry it as the path that succeeds does.
+    error_note: str | None = None
+    asked = False
+    connected = False
+    would_ask = False
+    # every address and camera URL this probe was given or read, which no line it writes shows
+    # with a credential in it
+    known = [address, map_address or "", *_url_list(camera_url)]
+
     async def go() -> tuple[
         Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
     ]:
@@ -847,6 +1156,7 @@ def probe(
     async def probed() -> tuple[
         Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
     ]:
+        nonlocal error_note, asked, connected, would_ask
         parsed = parse_robot_spec(spec)
         adapter = make_adapter(
             RobotSpec(parsed.adapter, parsed.backend, name or None, robot_type=robot_type),
@@ -860,6 +1170,7 @@ def probe(
         if before_connect is not None:
             before_connect(adapter)
         live = await adapter.connect()
+        connected = True
         hosted = isinstance(adapter, HostCameraAdapter)
         # the connect attempts a body had to make again, read here and not after the close:
         # the list belongs to the connect that just happened
@@ -933,6 +1244,7 @@ def probe(
             parked = await (park(adapter) if park is not None else go_to_rest_if_any(adapter))
             if before_close is not None:
                 await before_close(adapter)
+                asked = True
             # close_note is written by the disconnect, so the disconnect happens here and is
             # read from; the finally below is left as the safety net for the exception path.
             await adapter.disconnect()
@@ -941,13 +1253,32 @@ def probe(
             return live, health, camera, told, parked, note, retried
         finally:
             if not closed:
+                would_ask = not asked and _would_have_asked(before_close, adapter)
                 await adapter.disconnect()
+                error_note = getattr(transport, "close_note", None)
+
+    def failed(e: BaseException, *, kind: bool) -> ProbeReport:
+        where = f" at {address}" if address else ""
+        said = f"{type(e).__name__}: {e}" if kind else str(e)
+        report = ProbeReport(address=address, ok=False, error=f"{spec}{where}: {said}")
+        if error_note:
+            report.advisories.append(error_note)
+            if would_ask:
+                report.advisories.append(NO_DROP_QUESTION)
+        return _without_credentials(report, known)
 
     try:
         live, health, camera, told, parked, note, retried = asyncio.run(go())
     except (TransportError, OSError, HostError) as e:
-        where = f" at {address}" if address else ""
-        return ProbeReport(address=address, ok=False, error=f"{spec}{where}: {e}")
+        return failed(e, kind=False)
+    except Exception as e:
+        # anything else after the connect, a backend's own bug among it, takes the same road:
+        # the body was closed, and its close note is the one place that says what became of its
+        # torque. Named by its kind, since it is no failure of the link. Before the connect it
+        # is raised as it always was.
+        if not connected:
+            raise
+        return failed(e, kind=True)
 
     report = ProbeReport(address=address, ok=True)
     add = report.rows.append
@@ -1028,7 +1359,10 @@ def probe(
             # the configured address when the camera names none of its own: a list of
             # them, as `--camera-url` can be given twice, is written out, never as a
             # Python list (`url ['opencv://0']`)
-            add(ProbeRow("  url", str(cam.get("url") or _urls(camera_url))))
+            url = cam.get("url")
+            if url:
+                known.append(str(url))
+            add(ProbeRow("  url", _shown_url(str(url)) if url else _shown_urls(camera_url)))
             if cam.get("error"):
                 add(ProbeRow("  error", str(cam["error"]), "fail"))
     rest_ok = parked.reached or not parked.recorded
@@ -1128,7 +1462,7 @@ def probe(
     if isinstance(mapd, dict):
         report.rows.append(ProbeRow("mapd", mapd_words(mapd), _mapd_state(mapd)))
     report.ok = bool(health.ok) and camera_ok and rest_ok and not note and mapd_ok
-    return report
+    return _without_credentials(report, known)
 
 
 def mapd_words(mapd: dict[str, Any]) -> str:
@@ -1419,6 +1753,40 @@ def collect(
     if host is not None:
         report.host = _ask_host(host, host_token, say, token_fix=host_token_fix)
 
+    custom = os.environ.get("ROBOGLOT_BASE_URL")
+    # With a board, the four presets are asked on it, as a run with --host would reach them;
+    # `local` has no preset address and keeps meaning ROBOGLOT_BASE_URL. A host that is no
+    # machine was already reported above, and its presets stay where they were. A daemon that
+    # is down or refused still has its board's presets asked, since the LLM server can be up
+    # without it; a name that found no address has none asked, since there is no machine to ask.
+    board = report.host if report.host is not None and report.host.address else None
+    # In the order they print: a row with its answer already, or a server still to be asked.
+    slots: list[ServerRow | tuple[str, str, str, bool]] = []
+    for preset, url in {**PRESETS, **({"local": custom} if custom else {})}.items():
+        if not url:
+            slots.append(ServerRow(preset, "", "unset", "set ROBOGLOT_BASE_URL or --base-url"))
+            continue
+        on_board = False
+        if board is not None and preset != "local":
+            with contextlib.suppress(ValueError):
+                url, on_board = on_host(url, board.host), True
+        # ROBOGLOT_BASE_URL is a URL a person typed, so it can carry a password in its userinfo,
+        # and this screen and its spinner are what people paste into issues
+        shown = redacted_url(url)
+        if board is not None and on_board and board.unresolved:
+            skipped = ServerRow(
+                preset, shown, "skipped", f"not asked: {host_of(board.host)} has no address"
+            )
+            slots.append(skipped)
+            board.servers.append(skipped)
+            continue
+        say(f"probing {preset} at {shown}")
+        slots.append((preset, url, shown, on_board))
+    # Started here and read after the import checks below, which used to run first and add
+    # their own seconds to the ones the probes spend waiting on ports nothing listens on.
+    to_ask = [slot[1] for slot in slots if isinstance(slot, tuple)]
+    asking = _Asking({url: functools.partial(_ask_llms, url) for url in to_ask})
+
     say("checking the core packages")
     for name, module in CORE_MODULES:
         version = _installed(module)
@@ -1529,36 +1897,7 @@ def collect(
             )
         )
 
-    custom = os.environ.get("ROBOGLOT_BASE_URL")
-    # With a board, the four presets are asked on it, as a run with --host would reach them;
-    # `local` has no preset address and keeps meaning ROBOGLOT_BASE_URL. A host that is no
-    # machine was already reported above, and its presets stay where they were. A daemon that
-    # is down or refused still has its board's presets asked, since the LLM server can be up
-    # without it; a name that found no address has none asked, since there is no machine to ask.
-    board = report.host if report.host is not None and report.host.address else None
-    # In the order they print: a row with its answer already, or a server still to be asked.
-    slots: list[ServerRow | tuple[str, str, str, bool]] = []
-    for preset, url in {**PRESETS, **({"local": custom} if custom else {})}.items():
-        if not url:
-            slots.append(ServerRow(preset, "", "unset", "set ROBOGLOT_BASE_URL or --base-url"))
-            continue
-        on_board = False
-        if board is not None and preset != "local":
-            with contextlib.suppress(ValueError):
-                url, on_board = on_host(url, board.host), True
-        # ROBOGLOT_BASE_URL is a URL a person typed, so it can carry a password in its userinfo,
-        # and this screen and its spinner are what people paste into issues
-        shown = redacted_url(url)
-        if board is not None and on_board and board.unresolved:
-            skipped = ServerRow(
-                preset, shown, "skipped", f"not asked: {host_of(board.host)} has no address"
-            )
-            slots.append(skipped)
-            board.servers.append(skipped)
-            continue
-        say(f"probing {preset} at {shown}")
-        slots.append((preset, url, shown, on_board))
-    answers = _probe_together([slot[1] for slot in slots if isinstance(slot, tuple)])
+    answers = asking.answers(_LATE_LLMS)
     for slot in slots:
         if isinstance(slot, ServerRow):
             report.servers.append(slot)
@@ -1569,7 +1908,16 @@ def collect(
         if preset == "ollama" and state == "up":
             root = _ollama_root(url)
             say(f"asking ollama at {redacted_url(root)} where its LLMs are")
-            row.placement, row.placement_note = _probe_placement(root)
+            # on the deadline the probes above keep, not a second one after it: a server that
+            # answered /v1/models and then held /api/ps kept doctor two deadlines
+            within = f"within the probes' {PROBES_DEADLINE_S:g} s"
+            late: tuple[list[PlacementRow], str] = (
+                [],
+                f"GET /api/ps did not finish answering {within}",
+            )
+            jobs = {root: functools.partial(_ask_placement, root)}
+            placed = _Asking(jobs, deadline=asking.deadline).answers(late)
+            row.placement, row.placement_note = placed[root]
         report.servers.append(row)
         if board is not None and on_board:
             board.servers.append(row)
@@ -1602,7 +1950,8 @@ def collect(
             # a real body with no address is never guessed at
             if address:
                 shown = f"{robot_name} ({robot})" if robot_name else robot
-                say(f"connecting to {shown}" + (f" at {address}" if address else ""))
+                # the address as the probe's report shows it, with no credential in it
+                say(f"connecting to {shown}" + (f" at {_shown_url(address)}" if address else ""))
                 # the board's camera joins the body as it would a run's, but only a board that
                 # answered: one that did not has already failed this report with a row of its
                 # own, and asking it again from inside the probe would only say so twice
@@ -2241,6 +2590,8 @@ def render(console: Console, report: DoctorReport) -> None:
     )
 
     at_host = report.host is not None and bool(report.host.address)
+    # the 1.5 s is PROBE_TIMEOUT_S, written out because tests/test_llm_wording.py reads these
+    # two titles in the source
     if report.host is not None and at_host:
         machine = host_of(report.host.host)
         _section(console, f"LLM servers, the presets on {machine} (GET /v1/models, 1.5 s timeout)")
@@ -2300,15 +2651,75 @@ def run_doctor(
     host_token: str | None = None,
     progress: Progress = None,
 ) -> bool:
-    """Collect, render, and say whether this machine is in a state to run anything."""
-    report = collect(
-        robot,
-        address=address,
-        camera_url=camera_url,
-        token=token,
-        host=host,
-        host_token=host_token,
-        progress=progress,
+    """Collect, render, and say whether this machine is in a state to run anything.
+
+    With a robot and an address it connects the body, so it goes through the hooks `roboglot
+    doctor` passes (`cli._DoctorHands`): the warning to support an arm before the connect, the
+    countdown for the hands to come away before the fold, the kill switch that stops the fold,
+    and, at a terminal, the question over an arm whose close keeps its torque. It called
+    `collect` with none of them, so a library caller handing it an arm connected and folded the
+    arm with no word and no way to stop it."""
+    from roboglot.adapters.factory import needs_rest_pose
+    from roboglot.cli import _can_prompt, _deprecated_backends, _doctor_warning, _DoctorHands
+    from roboglot.cli import _warn_line as warn_line
+
+    # as the CLI's doctor builds them, for a robot with no rest pose recorded: this function has
+    # never taken one
+    hands = _DoctorHands(
+        robot or "",
+        prompting=_can_prompt(),
+        unposed=bool(robot) and needs_rest_pose(robot or ""),
     )
+
+    def warn(adapter: Any) -> None:
+        # what the CLI's doctor says just before the probe connects (`cli.doctor`'s `warn`)
+        if robot:
+            _deprecated_backends([robot])
+        if getattr(adapter, "supports_hand_off", False):
+            line = _doctor_warning(
+                folds=getattr(adapter, "rest_pose", None) is not None,
+                keeps=hands.unposed,
+                asks=hands.prompting,
+            )
+            console.print(warn_line(line))
+        hands.start(adapter)
+
+    import signal
+
+    # The switch, taken down, leaves `safety.AfterTheClose` on Ctrl-C for the rest of the process,
+    # which is right for the command, whose process ends next, and wrong for a library's caller:
+    # a press swallowed for a while, and then the process ended under it. So the caller gets back
+    # the handler it had the moment the switch comes down, in the probe's `after_close`, and not
+    # only once `collect` has read the extras and the pins after it, where a press more than
+    # `safety.OUTSTAYED_S` after the close still ended the process; and again on every way out of
+    # here. `AfterTheClose.not_stuck_yet`, which the command calls before its table, is for that
+    # handler, so there is nothing here for it to do.
+    found = signal.getsignal(signal.SIGINT)
+
+    def callers_handler_back() -> None:
+        on_main = threading.current_thread() is threading.main_thread()
+        if found is not None and on_main and signal.getsignal(signal.SIGINT) is not found:
+            signal.signal(signal.SIGINT, found)
+
+    def finish() -> None:
+        hands.finish()
+        callers_handler_back()
+
+    try:
+        report = collect(
+            robot,
+            address=address,
+            camera_url=camera_url,
+            token=token,
+            host=host,
+            host_token=host_token,
+            progress=progress,
+            before_connect=warn,
+            park=hands.park,
+            before_close=hands.before_close,
+            after_close=finish,
+        )
+    finally:
+        finish()
     render(console, report)
     return report.ok
