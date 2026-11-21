@@ -198,6 +198,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and what older entries below say about files in the home directory, the keys 0.23 to 0.28 left
   there among them, means the renamed one. A robot on an earlier release does not discover one on
   this release.
+- **The Enter that starts a `--by-hand` run is pressed on purpose.** It takes hold of the arm
+  where you put it and starts the run, and it was the one such question that took any Enter: one
+  typed before the question was printed, or the next repeat of an Enter held down from the
+  question before, answered it before anybody had read it. One that comes too soon is passed by
+  now, as at the question at the end of the run: an Enter or a line typed before the question was
+  put, however late it is read, without a word, and one within half a second after it, a bare
+  Enter within 2 seconds of the last one or from a key held down, the first of which
+  says `that Enter answered nothing, because it came too soon after the question or too close to
+  another: take your finger off it, wait 2 s and press it once`. A line typed after the question
+  starts the run whatever is typed on it, as it always did.
 - **A task file is a `.glot` file, and a group of robots is a team.** A task file ends in `.glot`,
   and `.task` and `.brief` are read the same way. Its first key, the version of the format, is
   `glot:`, the bundled tasks live in `tasks/`, and the MCP tool that loads one is
@@ -251,6 +261,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models` and
   TAB completion no longer offer it, and a run on it asks for its call with `auto` rather than
   insisting on one with `required`.
+- **An arm's move still moving when its time runs out goes on.** `move_joints`, `gripper` and
+  `place` gave a move the time its ramp and the step cap said it needed, plus a settle, and at the
+  end of it failed the move `when the time ran out`, with the joint still on its way: the cap is a
+  ceiling on speed and not a speed the servo keeps, and one under load is slower than it. A move
+  still moving then goes on now, up to the verb's overall limit inside the executor's timeout, 18 s
+  for `move_joints`, where still moving means still getting nearer its goal: every joint that has
+  not arrived has closed on its goal over the last 5 ticks by at least its tolerance, 5 degrees,
+  or by a fifth of what the step cap lets it cover in them where that is less, 1 degree under the
+  run sheet's slow step of 1 degree a send. Judged over those ticks rather than one, a slow servo
+  that moves on one tick and not the next is waited for. A joint a hand pushes back, one bouncing
+  on something that gives, or one that has stopped is not on its way, and the move ends as it
+  did: within its time on the stall rule, and past it as the budget ended it, saying the time ran
+  out. What changes for you: a slow arm arrives where it used to fail.
 - **`find-and-kick` tells the pilot to check a kick with a fresh frame or a person's word.** Its
   strategy said the kick's result tells you whether the ball moved and by how much, which only a
   simulator's ever did. It says now that the result says the kick was sent, not whether the ball
@@ -456,6 +479,69 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   disk full already, Enter at the first question folded nothing and said nothing. The second fold
   and the release go on now, the person is told what they did, and the log says the record could
   not be written.
+- **An arm's move ends on the tick a servo loses its torque or runs hot.** `move_joints`, `gripper`
+  and `place` read the arm's torque and temperature on every tick and judged only its joints, so a
+  servo whose own protection dropped its torque during a move, or a joint that crossed the heat
+  limit, was sent goals for the rest of the move, and the result said the joint had stopped moving,
+  or even that it moved. A move ends on the tick that reads it now, holds the arm, and says which
+  joint and which of the two, in the words a policy segment ends on. `move_joints` judges the
+  whole arm, as its preconditions do. The gripper's verbs judge the gripper's own torque and never
+  heat, so a hot or tripped arm can still open its jaws.
+- **An arm's verb whose stop did not reach the arm says so.** A move that stalled, ran out of
+  time or was ended holds the arm, and a hold the bus lost was kept by the arm's backend and read
+  by nobody: `move_joints`, `gripper`, `place`, `pick`, and `manipulate` on every ending but its
+  stall, said only how they ended, while a servo went on pushing toward its last goal, a step past
+  what stopped it. Each reads it now, as the core verbs read their stop, and fails saying that its
+  stop could not be delivered and why, in the arm's words, and that a servo may still be pushing
+  toward the last goal it was sent. A fold that stalls says the same of its hold, inside the line
+  that asks you to clear the arm's way. And a hold that fails says why it failed, where it used to
+  keep the reason an earlier stop had failed for, unless a call still out on the bus has given one.
+- **An arm left holding is told what holding does, and no longer that it will not fall.** A close
+  away from the rest pose keeps torque on, and said the arm `will not fall as it stands`, with no
+  word of time, while from the close on nothing reads its servos: holding a pose heats them, and
+  a servo that reaches its cut-off goes slack without announcing it. The line says now that the arm
+  is holding its pose, that holding heats the servos and a servo at its cut-off goes slack without
+  announcing it, so not to leave it holding, and then the ways to put it down as before. After a
+  release you asked for and the arm refused, it says the arm is holding its pose, and to hold it
+  and cut its power. What changes for you: the close's line reads `the arm is not at its rest pose
+  (...), so torque was left on and it is holding its pose. Holding heats the servos, ...`.
+- **A refused connect says that torque came off where the arm stood.** A connect Roboglot refuses
+  once LeRobot has energised the arm, one not calibrated, with no calibration file or with no motors
+  bus, takes torque off every motor wherever the arm stands, as ADR-0036 decided, and said only
+  the reason. An arm a close had left holding, connected again under a calibration that is not its
+  own, dropped with nothing said of torque, and a torque-off LeRobot could not confirm on a joint
+  went unsaid, that joint still holding. The refusal says now that torque was taken off every motor
+  where the arm stood, and to hold it and put it down. It names a joint whose torque-off LeRobot
+  could not confirm, in LeRobot's words, says so where which motors hold is not known, and says the
+  arm keeps its torque where the request for the release did not take.
+- **Loading a policy leaves no temporary file behind.** LeRobot writes each policy config it loads
+  out again to a temporary JSON file it never deletes, so every checkpoint `roboglot policy serve`
+  loaded left one in the machine's temporary directory. The load gets a temporary directory of its
+  own now, and only the files and directories the load itself made through `tempfile` are
+  removed, then its directory: a file another thread or process makes meanwhile is left alone.
+  What cannot be removed, a file held open on Windows, is said once in the log with its path, and
+  never refuses a load: the server serves a config that loaded, and a config that did not is
+  refused in its own words.
+- **An arm's camera whose open outlasts its bound is let go of once it opens, and not opened
+  again.** A webcam whose connect outlasted its bound, or was cancelled while the camera opened,
+  was left to open in its worker, the close then disconnected the same camera from a second
+  thread while its connect still ran, and a later connect in the same process, the MCP server's or
+  the onboard service's, called connect on it again. It is no longer the arm's once abandoned, it
+  is let go of on a worker once its connect comes back, and a later connect builds a camera of its
+  own.
+- **A `pick` pressed against something it cannot move ends on a stall.** Only `manipulate`'s
+  segment ended when the arm stopped moving under a policy still sending, so a `pick` whose policy
+  drove the arm into the desk went on sending goals a step past the reading, into joints with no
+  torque cap, until its own time was up. It ends now, with the arm held, as a pick that held
+  nothing, when for 1 s of goals over at least 2 of the policy's ticks every joint stays within
+  0.5 degrees of where it was while a body joint's goal, as it is sent, clipped into its travel,
+  stays more than 5 degrees from where it reads, the arm's own tolerance for a loaded joint
+  settling short: a servo pushing and getting nowhere. A policy that holds the arm where it
+  reads, or a joint that sags short of the goal it is held at by less than that, is no stall,
+  however long it holds, and a joint at the edge of its travel sent a goal past it is the clip
+  guard's to end, as before. At the band's lowest rate, 1 Hz, where 1 s is one tick, a pick runs
+  to its time as before. A grasp ends as holding, as it did: the jaws closing are the arm moving,
+  and the gripper's goal never counts as pressing.
 - **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
@@ -629,6 +715,48 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a head to look with: refused, the verb ends before anything moves, rather than steering on
   bearings taken through a head pointing wherever it was left. A body with no head, which
   refuses a look as a matter of course, goes on as before.
+- **The confirm question shows every argument that runs, whole.** It cut a string at 57
+  characters and a list or a dict at 117, and wrote a number to three figures, while the verb
+  ran with all of it: a person said yes to the first four of a UR arm's six joint goals, to
+  `'gripper': 1...` where 100 opened the jaws, or to half of a policy's instruction, and the
+  pilot chooses the order of the keys. The question, and the `prompt` event that quotes it, now
+  show every argument whole, and a number as one that reads back as the value that runs, as in
+  `duration_s=11.25` where it read `duration_s=11.2`. A question that hid nothing reads as it did,
+  `duration_s=5` included. A step line and the run's panels keep the short form.
+- **`roboglot onboard goal --yes` is recorded as `--yes`, never as a person.** The client answers
+  every question of such a goal itself, unseen, while the service took each one for a person's
+  for as long as the connection was open: the record wrote a person's `prompt` row, and the pilot
+  was told `a person read that and said go`. The record now names `--yes` and writes no `prompt`
+  row, the pilot hears that the run was started to go ahead without asking anybody, and a verb
+  only a person may clear, or one its backend has a person answer each time, is refused.
+- **An answer given at `roboglot onboard goal` is recorded as given there.** Its `prompt` row said
+  `channel: web`, the page `roboglot ui` serves, which nobody had open. It says
+  `channel: onboard` now; a run's questions answered in the page still say `web`.
+- **A question on a piped stdin no longer holds the run.** With stdin a pipe or a file, each
+  question was read on the run's own thread, so while it waited the heartbeat did not beat,
+  nothing else ran, and on Windows a Ctrl-C was not seen until a line or the end of input came.
+  The run now goes on while the question waits, and a Ctrl-C or a failing heartbeat takes the
+  question back. Lines a pipe does deliver are read as before, one for each question in order,
+  the end of input included, and a question still waits on a quiet pipe as one at a terminal
+  waits. A read still waiting when the run ends does not hold the process.
+- **A page that stops reading is a page that went away.** A run driven from the page kept every
+  line for a page that stopped reading with its pipe still open, so the rest of the run's record
+  queued in memory behind a write that never finished. Once a write has waited 60 seconds, the run
+  treats the page as gone, as it does when the page closes: its questions are taken back and the
+  run stops. A line in longer than 65536 bytes, which no page or client sends, is skipped with a
+  notice rather than kept growing, and the page's chat holds a line to 5459 characters, which
+  always fits. A goal's connection to the onboard service is closed when the goal ends, so its
+  socket and the threads that served it no longer outlast it.
+- **`roboglot onboard goal` shows why it asks.** It printed only a question's last words, so a
+  person was asked `Go ahead anyway?` without the pilot's doubt, and `Are you watching the robot
+  right now?` without the warning that nothing on it detects a fall, while the record said they
+  had read both. The doubt or the warning is printed above the question.
+- **The line under the run panel names `q` only where `q` is read.** It said `Ctrl-C or q stops the
+  robot` whatever stdin was, and a team run made the same promise for every robot, while keys are
+  read only at a terminal. With stdin a pipe or a file it says `Ctrl-C stops the robot. Ctrl-C
+  twice quits at once.`, and `Ctrl-C stops every robot.` for a team. The note a run says before
+  it waits to ask the LLM's API again ends `and Ctrl-C ends the run instead` there, where it
+  ended `Ctrl-C or q ends the run instead`. At a terminal both read as they did.
 - **A body whose manifest has no blurb is introduced to the pilot as a robot.** The system prompt
   opens with `You are the brain of` and the manifest's `blurb`, and for a manifest that left the
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
@@ -829,6 +957,50 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **The AlohaMini host wrapper and the Jetson daemon start under `python -OO`.** Each built its
   `--help` from its module docstring, which `-OO` strips, and died before it had parsed a flag.
   The description is spelled out now, and reads as it did.
+- **A Ctrl-C during the fold `roboglot drive` opens with stops that fold for good.** The press
+  stopped the fold, and the session's close then sent a stop and started the same fold again, so
+  the arm the person had just stopped went on to its rest pose with nothing said, and the close's
+  line spoke of that second fold rather than the one that was stopped. The arm is now held where
+  the press stopped it, the session says the fold was stopped, nothing folds the arm again, and
+  the close's line names the fold that was stopped. A press the fold does not hear, as Python
+  3.11's `asyncio.wait_for` can lose one, opened the session as if nobody had pressed: it ends the
+  session there now, and says the fold went on to its end. A press on the close the session makes
+  after an opening fold that missed, by stalling or by a rest move that raised, was said to have
+  stopped a fold, and the refusal the session was making was lost: both are said now, the refusal
+  and that the press came on that close.
+- **A Ctrl-C while `roboglot drive` closes no longer skips the rest of the close.** Once the
+  prompt had closed, a press during the closing stop or fold went past every step after it: the
+  transport was never closed, the arm was left energised partway through its fold with nothing
+  said of its torque, and the session wrote neither its `run_end` nor its `summary.json`. A press
+  during the fold now stops it, holds the arm with a stop and says so, and one before the fold
+  keeps it from starting and says the arm was not folded, at the keyboard and on the page as from
+  a pipe. A press on the transport's own close no longer cuts it short: the close goes on to its
+  end, and the session says the press came, or, where the close was cut short anyway, raised, or
+  is still going as long after the press as the body says its close can take, that Roboglot
+  cannot tell what it did. The arm counts that from each of its cameras, its read and its
+  disconnect. A later press while the stop that holds the arm is on its way
+  no longer loses what became of that stop. The record ends as any session's does.
+- **The page's Stop stops an arm's fold in a `roboglot drive` session.** The page's front end
+  reads its Stops only while the session runs, so a Stop while the robot connected, or once the
+  chat had quit, stopped nothing, and the arm went on to its pose. A Stop then is a press now, as a
+  Ctrl-C is: it stops the fold and holds the arm. A session the Stop ended as it connected is
+  refused in the page's words, as one it stopped before the connect is.
+- **Each step of a `roboglot drive` session's end is taken whatever the one before did.** A
+  `summary.json` that could not be written, on a full disk or with the run folder gone, skipped
+  the `run_end` record, the record's close and the page's word that the session had finished, and
+  its `OSError` took the place of the error the session was ending on. Each step is tried now, one
+  that fails is said on stderr, and the session's own error is the one that leaves.
+- **A piped `roboglot drive` ends its process after a Ctrl-C.** Each line was read in asyncio's
+  default executor, which `asyncio.run` waits for as it closes, so once the session and the robot
+  had closed in order the process stayed until another line or the end of input came, which from
+  a producer that keeps its end open never did. Each line is read on a thread of its own now, which
+  the process does not wait for.
+- **`roboglot drive`'s exact lane leaves out a verb whose calls could be said in too many ways.**
+  Every order of a call's values was a line of its own, so each parameter of a single value
+  multiplied a verb's lines by their count, built on the event loop after the robot had connected:
+  ten such parameters were 3,628,800 lines. A verb whose calls would be more than 72 lines gets
+  none now, a line naming it goes on to the fast lane or the pilot, and the session names it once
+  as it opens. Every verb Roboglot ships reads as it did.
 - **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
   went straight on to the next leg before the walker looked at the shape, so a square was judged
   from the end of a fifth leg, a whole side from where it began, and passed or failed by a few
@@ -937,6 +1109,45 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and what is allowed there is as it was, the lift on upstream's own host among it. A field that
   is there vouches only as JSON `true`: `false`, `0` and `null` are not calibrated and refused,
   as before, and so is any string, and the arms' torque is on only for `true`.
+- **`roboglot doctor --robot` says what the close did with the torque when a read fails after
+  the connect.** A health check, a camera frame or the fold that raised ended the probe with one
+  fail line built from the error alone, though the arm was closed and its close had written what
+  became of the torque: held where it stood away from its rest pose, or let go, and how to put it
+  down. An error of a kind other than the link's, a backend's own bug, left doctor with no report
+  at all. The error now carries that note in the close's own words, named by its kind when it is
+  not the link's, and over an arm doctor would have asked whether to drop it into your hands (a
+  real arm with no rest pose, at a terminal) it says that doctor asked nothing, since that
+  question comes only after a probe that succeeds. A probe that succeeds reads as before.
+- **A probe whose connect failed answers even when the close after it never ends.** `roboglot
+  robot list --probe` and the page's check bounded a robot's connect, its health and the close
+  of a probe that answered by the probe's deadline, and closed a robot whose connect had timed
+  out or failed with no deadline at all, so a close waiting on a peer that never answered held
+  the command for ever. That close is bounded the same way now, and a close that runs out says
+  so on the robot's line: `timed out after 5 s, and its close timed out after 5 s`. The close of
+  a probe that answered said nothing when it ran out, and reads `ok, and its close timed out
+  after 5 s` now.
+- **`roboglot doctor` no longer waits for ever on an LLM server that keeps its reply going.** The
+  probes of `/v1/models` and of Ollama's `/api/ps` read the whole reply, and the 1.5 s timeout
+  bounded each wait for a byte, not the reply, so a server that sent a byte at a time held doctor
+  for as long as it sent, and one whose body never ended held it for ever while its reply filled
+  memory. Each probe now reads at most 1 MiB, and its reply's body for at most 1.5 s, and says
+  `did not finish its /models reply in 1.5 s` or `answered /models with more than 1 MiB`. The
+  probes together, Ollama's `/api/ps` among them, are given up on 6 s after they start, and one
+  still asking then reads `did not finish answering in 6 s`. A server that answers as servers do
+  reads as before.
+- **`roboglot doctor` waits less on local LLM servers that are not running.** It asked
+  `localhost` one address after the other, `::1` and then `127.0.0.1`, with the whole 1.5 s
+  timeout each, and a closed loopback port on Windows takes all of it to say so. And it asked only
+  after importing the core packages and each provider SDK in turn to read their versions. Every
+  address is asked at once now, the probes start before the packages are checked, and the
+  provider SDKs and the extras that are Python alone have their versions read from what the
+  installer recorded, without an import. What doctor prints is as before.
+- **`roboglot.doctor.run_doctor` warns, counts down and arms the kill switch as `roboglot doctor`
+  does.** Called with an arm and an address, it connected the arm with no warning to support it,
+  folded it with no countdown for the hands to come away and no kill switch to stop the fold, and
+  never asked whether to drop an arm whose close keeps its torque, since it passed none of the
+  hooks the command passes. It goes through the same ones now, prints the warning on the console
+  it renders to, and puts back the Ctrl-C handler its caller had when it returns or raises.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for
@@ -982,6 +1193,48 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Security
 
+- **The pilot's words beside a question can no longer act on the terminal or hide on the page.**
+  The pilot's reason for doubting a task reached the terminal raw above `Go ahead anyway?`, and
+  Rich takes out only a few control characters, so an escape sequence in it could erase
+  Roboglot's own lines and print others in its voice before a yes that lets every verb move the
+  body. The same held for a goal's doubt in `roboglot drive`, for the run's own terminal line
+  when the page asks, for the text beside the watching and the judging questions, for a fold's
+  reason quoted inside the questions over an arm whose fold missed, and for every line
+  `roboglot onboard goal` prints from the service, its status and its outcome among them. Every
+  character that could act on a terminal is now written out as its escape, as in `\x1b[2K`, and
+  the page shows a question, the pilot's doubt, the status line above them, the run's steps and
+  the frame's caption beside them, a chat's earlier lines, the reason a run ended on, a saved
+  run's summary and frames, and what a robot or a server answered a check with, as plain text
+  rather than Markdown, where a strike-through or a hidden formula could hide part of them. Text
+  with no such character reads as it did.
+- **What an LLM, a robot or a server wrote can no longer act on the live terminal.** A run
+  printed an LLM's reply and its thinking, a verb's result, a note the pilot asked to keep, a
+  refusal, a detection, the reason the run ended on and a server's error body as they came, and
+  Rich takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
+  an OSC 52 sequence wrote their clipboard, and the `llm<` line is printed just above the
+  questions a run puts, with the live status line under it naming the call the LLM chose. Every
+  line Roboglot's terminal output carries, these and the rest, on a terminal and on a pipe
+  alike, now writes each character a terminal could act on, or that reorders the text around
+  it, as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error or a verdict's
+  reason that runs over several lines, by its breaks or by its length, has every line after the
+  first indented, so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a
+  server's error. A line too long for the console is folded by Roboglot at the console's width,
+  as it is shown, every row after the first indented, never left to the terminal, whose fold
+  began at the first column: a reply padded with spaces to the width put a row that read as
+  Roboglot's own estimate just above `Go ahead anyway?`, and so did one padded with Hangul
+  fillers, which the Windows console counts as two cells and Rich as none. That holds for a
+  step's line, the reason above a question, the confirm question itself, whose every row after
+  the first now begins with Roboglot's mark `¦` (`|` where the stream has only ASCII), a warning,
+  drive's lines and the hand-off's. A run of what draws as a blank inside a line of the pilot's,
+  a robot's or a server's, spaces, braille blanks and the like, is drawn as one space, except in
+  the confirm question, which shows what runs. A line that fits and has no such character prints
+  as it did, the joiners Persian, Hindi and emoji need and Korean included; the four Hangul
+  fillers, which draw nothing, are written out, and a line is folded by a count of cells no
+  terminal exceeds, so a vowel sign of Hindi and the like, which Rich counts as none and the
+  console as one, folds a line early rather than late, and never between a letter and a mark,
+  a joiner or a skin tone that belongs to it. `terminal.txt` leaves out every character the
+  screen writes out, the one-character CSI and the bidi overrides among them, which it kept,
+  and a lone surrogate, which a strict UTF-8 stdout refused, ending the print, is written out too.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any
@@ -1015,6 +1268,40 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   `api.github.com` itself now, and never on to where a redirect leads. Neither script ever
   fetched such an address: each builds every URL it asks from its own constants and GitHub's
   answers.
+- **`roboglot doctor --robot` prints no password or token from the robot's address or a camera
+  URL.** The progress line, the probe table's title, each camera's url row, the error a failed
+  read gives and `--json` carried `--address` and every `--camera-url`, typed or registered,
+  exactly as given, though doctor already replaced the credentials in `ROBOGLOT_BASE_URL`
+  because its output is what people paste into issues. Every URL the probe shows or writes now
+  keeps its scheme, host, port, path and username and has its password and any query parameter
+  named like a credential replaced with `***`, as the run's record has them. An address with no
+  credentials in it reads as before.
+- **A robot name that would share another robot's memory and places is refused.** Those files
+  are named with each run of hyphens folded into one and the hyphens at the ends taken off, and a
+  name may hold both, so `arm-01`, `arm--01` and `arm-01-` registered as three robots that read
+  and wrote one memory file and one places file: a note one kept was in another's prompt, and a
+  place one saved was where another went. `microduck-mock-` passed the check that refuses
+  `microduck-mock`, which compared the name exactly, and shared the memory of every bare `--robot
+  microduck:mock` run. `roboglot robot add` refuses such a name now and says whose files they
+  are, as in `'arm--01' would share its memory and places files (arm-01) with 'arm-01', which is
+  registered: pick another name`. Robots already in a `robots.json` read and run as they did.
+- **The registry's files are written through a temporary file of their own, and a token file the
+  filesystem will not make owner-only is said.** Every writer of `robots.json`, the endpoint
+  record and the page's saved settings wrote through one fixed temporary name, opened with no
+  exclusive create, so a file or a link planted there in a registry directory somebody else can
+  write received the tokens, and a second command writing at the same moment truncated the
+  first's file before it was renamed: a half-written `robots.json` could be published, and the
+  first command ended in a traceback after its change was written, or on Windows deleted the
+  other command's file before it was renamed. The owner-only mode was set inside a check that
+  swallowed its failure, so on a filesystem that refuses it (vfat with its default mask, some
+  network mounts) the tokens were written readable by every user with nothing said. Each write
+  now has a temporary file of its own, created exclusively, never through a link, and owner-only
+  from its creation when it holds a token; a command whose rename is refused removes only its own
+  file and ends with one line; a write that fails removes its own file; a write removes the
+  temporary files a killed writer left beside the file once they are a minute old, and leaves a
+  younger one, which can be a live writer's; and a file the filesystem leaves readable by others
+  is written, with a warning on stderr naming it. A write that meets no other writer gives the
+  same file as before.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,

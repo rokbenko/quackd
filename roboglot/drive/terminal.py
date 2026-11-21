@@ -16,7 +16,9 @@ prompt_toolkit is imported here and nowhere else in Roboglot, and only when the 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import sys
+import threading
 import time
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, TextIO
@@ -47,13 +49,46 @@ def told(cmd: Command) -> list[str]:
     return lines
 
 
+async def _next_line(source: TextIO) -> str:
+    """The next line of `source`, read on a daemon thread of its own, and only once the pipe asks
+    for it, as each line always was.
+
+    Read in asyncio's default executor, a line nobody sent held the process after a Ctrl-C had
+    closed the session and the robot in order: `asyncio.run` joins that executor as it closes, on
+    Python 3.11 with no bound, and the read waits for a line or the end of input, which from a
+    producer that keeps its end open never comes. A daemon thread is left behind at the exit."""
+    loop = asyncio.get_running_loop()
+    read: asyncio.Future[str] = loop.create_future()
+
+    def got(line: str) -> None:
+        if not read.done():  # the session stopped waiting for it: a press, among the ways
+            read.set_result(line)
+
+    def failed(error: Exception) -> None:
+        if not read.done():
+            read.set_exception(error)
+
+    def reading() -> None:
+        try:
+            line = source.readline()
+        except Exception as e:  # the session ends on it, as it did when the read raised there
+            with contextlib.suppress(RuntimeError):  # the loop has closed: the session is over
+                loop.call_soon_threadsafe(failed, e)
+            return
+        with contextlib.suppress(RuntimeError):  # the loop has closed: the session is over
+            loop.call_soon_threadsafe(got, line)
+
+    threading.Thread(target=reading, name="roboglot-drive-pipe", daemon=True).start()
+    return await read
+
+
 async def drive_from_pipe(
     session: DriveSession, stream: TextIO | None = None, *, say: Callable[[str], None] = print
 ) -> None:
     """Every line of `stream`, stdin by default, one at a time, each waited for, as `a pipe`."""
     source = stream if stream is not None else sys.stdin
     while True:
-        line = await asyncio.to_thread(source.readline)
+        line = await _next_line(source)
         if not line:
             return
         text = line.rstrip("\r\n")
@@ -63,6 +98,18 @@ async def drive_from_pipe(
             say(out)
         if session_word(text) in ENDS:
             return
+
+
+def _ask_line(label: str | None, detail: str | None, question: str) -> str:
+    """The words of an `ask` line: whose question it is, the detail, the question.
+
+    The detail is a goal's doubt in the pilot's own words, so it goes through `printable`:
+    printed raw, an escape sequence in it could erase lines of the session above the question
+    and write others in Roboglot's voice."""
+    from roboglot.ui import printable
+
+    said = printable(detail) if detail else ""
+    return " ".join(part for part in (f"{label}:" if label else "", said, question) if part)
 
 
 class Asker:
@@ -102,7 +149,7 @@ class Asker:
         behind: bool = False,
         label: str | None = None,
     ) -> bool:
-        shown = " ".join(part for part in (f"{label}:" if label else "", detail, question) if part)
+        shown = _ask_line(label, detail, question)
         future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         if behind:
             self.waiting.append((shown, future))
@@ -222,7 +269,7 @@ class PageAsker:
         label: str | None = None,
     ) -> bool:
         asked = f"{label}: {question}" if label else question
-        shown = " ".join(part for part in (f"{label}:" if label else "", detail, question) if part)
+        shown = _ask_line(label, detail, question)
         self.say(f"{'ask':<8} {shown} [answered in the page]")
         return await self.front.questions.ask_async(kind, asked, detail)
 

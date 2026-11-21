@@ -570,10 +570,12 @@ down, or you cut its power.
 The line when it could not get there reads:
 
 ```
-the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01,
-which folds it to its rest pose and lets go of it there: support the arm while that connects,
-because connecting takes torque off every motor for a moment. Or hold it and cut its power
+the arm is not at its rest pose (...), so torque was left on and it is holding its pose.
+Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it,
+so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot
+release arm-01, which folds it to its rest pose and lets go of it there: support the arm while
+that connects, because connecting takes torque off every motor for a moment. Or hold it and cut
+its power
 ```
 
 Something is in the way, or a servo tripped. A fold past the calibrated travel is no longer
@@ -777,7 +779,10 @@ What happens, in order, and the order is the whole of the feature:
 4. **You lift it, load the gripper, close the jaws on whatever it is with your fingers, and
    press Enter.** Lift it clear of the fold first: Roboglot takes hold only with every joint
    inside its travel, so a joint still lying in a fold past the edge of its travel ends the run
-   with the arm limp.
+   with the arm limp. Press it once, after the question: an Enter or a line typed before it is
+   passed by without a word, however late it is read, and one within half a second after it, a
+   bare Enter within 2 seconds of the last one or from a key held down, is passed by, and the
+   first of those says so.
 5. **Roboglot takes hold of what you left.** It writes the position the arm is in as the goal
    *before* it enables torque, writes it again afterwards, waits a tick, reads back, and tells
    you that you can let go. Only if every joint you placed is inside its calibrated travel,
@@ -2486,7 +2491,7 @@ The arm is left where it stood, on the mock still `shoulder_pan` 45, and its tor
 [M10](#m10-rehearse-with---dry-run) keeping its promise rather than a fault:
 
 ```
-roboglot-mcp WARNING arm-01: the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+roboglot-mcp WARNING arm-01: the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; nothing moved it there), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 **When the arm cannot reach the pose, the session never starts.** The server raises before it
@@ -2498,7 +2503,7 @@ stalls names the joint and both numbers, in the form `shoulder_lift is at -50 wi
 `when the time ran out` and the seconds:
 
 ```
-arm-01: the arm did not reach its rest pose: shoulder_lift stopped 40 deg short. the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; shoulder_lift stopped 40 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+arm-01: the arm did not reach its rest pose: shoulder_lift stopped 40 deg short. the arm is not at its rest pose (shoulder_pan is at 45 with a goal of 0; shoulder_lift stopped 40 deg short), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 The same warning reaches the server's stderr, under one line carrying the mock's scripted
