@@ -17,7 +17,7 @@ import math
 import re
 import sys
 import time
-from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TextIO, TypeVar
@@ -31,7 +31,6 @@ from roboglot.glotfile.schema import POLICY_TOTAL_MAX_S, POLICY_VERB, Budgets, G
 from roboglot.verbs.watch import WATCH
 
 if TYPE_CHECKING:
-    from roboglot.adapters.base import RestResult
     from roboglot.front import Front
     from roboglot.mcp_server import RobotSession
 
@@ -251,14 +250,16 @@ FOLD_DID_NOT_STOP = (
     "the fold the session opened with did not stop for the press and went on to its end, so the "
     "session ends here, and nothing folds the arm again"
 )
-"""Said when a press during the connect was taken by it and not passed on, a fold that lost the
-cancel (Python 3.11's `asyncio.wait_for`, as `FOLD_WENT_ON` says) having gone on to its pose."""
+"""Said when a press during the opening fold was taken by it, which then went on to its end, at
+its pose or short of it (`RobotSession.opening_fold` is `ended`), as a fold that lost the cancel in
+Python 3.11's `asyncio.wait_for` does; and when the connect took a press and did not pass it on."""
 
 CONNECTS_CLOSE_PRESSED = (
     "the press came as the session was closing the arm after that, and the close is made again here"
 )
-"""Said after the connect's own refusal, when the opening fold missed and a press then landed on
-the close the connect makes before it refuses the session."""
+"""Said after the connect's own refusal, when the opening fold missed with nobody pressing and a
+press then landed on the close the connect makes before it refuses the session
+(`RobotSession.opening_fold` is `missed`)."""
 
 _CLOSES_LEFT: set[asyncio.Future[Any]] = set()
 """A close still going past `_close_bound_s`, held until it ends or the loop's close cancels it."""
@@ -300,63 +301,31 @@ async def _to_its_end(
     return running, press
 
 
-class _FoldSeen:
-    """What became of the fold `RobotSession.connect` makes, watched from outside it."""
+def _said_of_the_opening_fold(robot: RobotSession) -> tuple[str | None, str | None]:
+    """What is said of the fold the session opened with, where a press ended the connect, and the
+    refusal said before it, or None for each, read from what the connect saw
+    (`RobotSession.opening_fold`): `FOLD_STOPPED`; `FOLD_WENT_ON` for a fold told twice that had
+    not ended; `FOLD_DID_NOT_STOP` for one that took the press and went on to its end; and for a
+    press on the close the connect makes after a fold that missed, its refusal and then
+    `CONNECTS_CLOSE_PRESSED`. A press before any fold began is said nothing of here, and the close
+    folds the arm, as a run's does.
 
-    def __init__(self) -> None:
-        self.watched = False
-        """Whether the body's rest move could be watched at all."""
-        self.began = False
-        self.ended: RestResult | None = None
-        """What the fold ended with, where it ended rather than raised."""
+    Read once, where the connect saw it. Read from outside as well, by wrapping the body's rest
+    move, a stopped fold was said by the session's logger and by drive, and a fold that took the
+    press and ended short of its pose was said to have been pressed on the connect's close, which
+    the connect never reached."""
+    from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON
 
-
-_NOT_ITS_OWN = object()
-
-
-@contextlib.contextmanager
-def _watching_the_fold(transport: Any) -> Iterator[_FoldSeen]:
-    """The body's rest move watched while the session connects, so a press that ends the connect
-    is told apart by where it landed: during the fold, on the close the connect makes after a fold
-    that missed, or before any fold began. Read off the manifest alone, a press on that close was
-    said to have stopped a fold that had ended by missing, and the connect's refusal was lost.
-
-    The move is wrapped on this transport for the connect alone, and whatever it had of its own
-    under that name is put back after. A body whose move cannot be wrapped is not watched, and is
-    read as it was before (`_FoldSeen.watched`)."""
-    from roboglot.adapters.base import RestResult
-
-    seen = _FoldSeen()
-    move: Any = getattr(transport, "go_to_rest", None)
-    own: Any = getattr(transport, "__dict__", None)
-    before = own.get("go_to_rest", _NOT_ITS_OWN) if isinstance(own, dict) else _NOT_ITS_OWN
-
-    async def watched() -> Any:
-        seen.began = True
-        try:
-            result = await move()
-        except Exception as e:
-            # a move that raised ended as `go_to_rest_if_any` ends it, a fold refused with the
-            # error, and was read as one a press stopped where it had ended by raising
-            seen.ended = RestResult("refused", f"{type(e).__name__}: {e}")
-            raise
-        seen.ended = result if isinstance(result, RestResult) else None
-        return result
-
-    if callable(move) and isinstance(own, dict):
-        try:
-            transport.go_to_rest = watched
-            seen.watched = True
-        except Exception as e:  # a body that will not take it is read as before
-            logger.debug("the opening fold is not watched: %s: %s", type(e).__name__, e)
-    try:
-        yield seen
-    finally:
-        if seen.watched:
-            if before is _NOT_ITS_OWN:
-                own.pop("go_to_rest", None)
-            else:
-                own["go_to_rest"] = before
+    what = robot.opening_fold
+    if what == "stopped":
+        return FOLD_STOPPED, None
+    if what == "went on":
+        return FOLD_WENT_ON, None
+    if what == "ended":
+        return FOLD_DID_NOT_STOP, None
+    if what == "missed":
+        return CONNECTS_CLOSE_PRESSED, robot.rest_refusal()
+    return None, None
 
 
 async def _no_press() -> None:
@@ -725,35 +694,19 @@ async def run_drive(
             # nothing connects. A quit or the page's input ending ends a connected session as
             # asked, and so ends this one; a Stop pressed while it was set up is a run stopped
             raise Halted(_HALTED[halted], as_asked=halted != "stop")
-        from roboglot.release import FOLD_STOPPED
-
         presses = _cancels()
         folding[0] = connecting = True
-        with _watching_the_fold(adapter) as fold:
-            try:
-                await robot.connect()
-            except PRESSES:
-                if not fold.watched:
-                    # Read as it was: once the body has described itself (`manifest`), the only
-                    # thing `connect` waits on before the heartbeat starts is the fold
-                    if robot.manifest is not None and _folds(robot):
-                        opening_fold_stopped = FOLD_STOPPED
-                elif fold.began and fold.ended is None:
-                    opening_fold_stopped = FOLD_STOPPED
-                elif fold.ended is not None and not fold.ended.reached:
-                    # the fold had ended by missing, and the press landed on the close the
-                    # connect makes before it refuses the session: the refusal, in the connect's
-                    # own words, and then what the press did to that close
-                    opening_refused = (
-                        f"{robot.name}: the arm did not reach its rest pose: {fold.ended.reason}"
-                    )
-                    opening_fold_stopped = CONNECTS_CLOSE_PRESSED
-                raise
+        try:
+            await robot.connect()
+        except PRESSES:
+            # what the press did to the opening fold, as the connect saw it, said once
+            opening_fold_stopped, opening_refused = _said_of_the_opening_fold(robot)
+            raise
         if _cancels() > presses:
-            # a press the connect took and did not pass on: a fold that lost the cancel went on
-            # to its pose, and the session opened as if nobody had pressed. It ends here, as one
-            # a press stopped the fold of ends
-            if fold.began or (not fold.watched and _folds(robot)):
+            # a press the connect took and did not pass on, which a body's own connect can do: a
+            # body that folds has folded to its end since, and the session opened as if nobody
+            # had pressed. It ends here, as one a press stopped the fold of ends
+            if _folds(robot):
                 opening_fold_stopped = FOLD_DID_NOT_STOP
             raise asyncio.CancelledError
         folding[0] = False

@@ -33,7 +33,7 @@ first member, else the first Microduck, else the first declared.
 | `robot_run_verb(robot?, verb, params?)` | Run any verb through that robot's executor (`search_scan`, `go_to` or its alias `walk_to`, `kick`, `gaze`, `express`, …). Refusals come back as `ok: false`, and a verb the manifest does not list is a refusal too. The result carries a `log` list of what happened behind it (see below). |
 | `robot_observe(robot?)` | The `observe` verb through the executor (it counts against the budget), returning the camera frame as a PNG image, a one-line detection summary, and the log as a final text block. A robot with several cameras returns one image per camera, each preceded by a `camera <name>:` line, and the detection summary is the primary camera's alone, because a bearing measured through one lens means nothing through another. A camera that gave nothing this step costs its own picture and nothing else. |
 | `robot_say(robot?, text)` | The `say` verb, with a `log` like `robot_run_verb`. No robot here has text to speech, so it degrades: one of seven tones on a Microduck, the same seven tags sent to its shim on a Huebot, one of the duck's own sounds on an Open Duck. A robot without a `sound` intent refuses with `ok: false`. |
-| `robot_load_glotfile(robot?, path)` | Adopt a `.glot` contract on one robot: its `requires` (or, for `glot: 0`, its allowlist) is checked against that robot's manifest first, then allowlist and budgets are enforced for that robot only; the body is returned as instructions. A file with `play: true` also returns `play`, Roboglot's paragraphs on playing a part, worded for a chat, and its `note` says to read them before the verdict ([guides/play.md](play.md#over-mcp)). Team tasks are refused. |
+| `robot_load_glotfile(robot?, path)` | Adopt a `.glot` contract on one robot: its `requires` (or, for `glot: 0`, its allowlist) is checked against that robot's manifest first, then allowlist and budgets are enforced for that robot only; the body is returned as instructions. A file with `play: true` also returns `play`, Roboglot's paragraphs on playing a part, worded for a chat, and its `note` says to read them before the verdict ([guides/play.md](play.md#over-mcp)). Team tasks are refused. `path` is a file, of any name, or a bundled task's name, as `roboglot run` takes one. A file larger than 65536 bytes is refused before it is read, and a frontmatter that is not valid YAML is refused with the error's kind and its line, `frontmatter is not valid YAML: ScannerError at line 2 of the frontmatter, column 23`, and nothing of the file's text. One the task format does not fit is refused by each fault's path in the format's own words and its kind, `verbs.allow: value_error`, with `?` for a key of the file's, and no value. |
 | `robot_recall(robot?)` | What that robot remembers from earlier sessions and runs: the notes a pilot saved and how its recent runs ended ([guides/memory.md](memory.md)). On a body that says where it is it adds `places`, every place it knows read against where it stands, and each note saved where it knew says how far that was from them. Costs no step; the server's instructions ask the LLM to call it early. |
 | `robot_remember(robot?, text, tags?)` | Keep one short fact for future sessions on that robot. Moves nothing, costs no step; the same sentence twice updates the old note. On a body that says where it is the note keeps where it stood, read off the body. Off with `--no-memory`. |
 
@@ -315,6 +315,22 @@ exposing them (`ssh -L 9871:127.0.0.1:9871 -L 9872:127.0.0.1:9872 your-pi`), the
 }
 ```
 
+Nothing on the duck sees a fall when its runtime reports no fall signal, and it has no
+`stand_up`, so `roboglot run` and `roboglot drive` ask whether somebody is watching before it
+walks. This server asks nobody and lets Claude walk it as before, and says so instead. It reads
+the duck once, when Claude first assesses a task that can make it walk, and stderr then has:
+
+```
+roboglot-mcp WARNING open-duck-01: nothing on this robot detects a fall, and it has no way to get up. Roboglot will not know it is down, no verb will refuse because it is, and this task can make it walk. Keep it on a stand with a hand near the power switch, and watch it. Nobody is asked here whether they are watching it, so somebody must be.
+```
+
+The server's instructions are written before the duck connects, so they cannot say it. A
+`feasible` or `uncertain` reply to `robot_assess_task`, which every move waits for, carries the
+same words in `warning`, ending `tell the person you are chatting with before anything moves
+it.` A duck whose state cannot be read then is warned of all the same, in words that begin by
+saying the read failed, and is read again at the next assessment. A task that cannot make the
+duck walk says neither, and a team server says it for each member whose body is like that.
+
 The verbs Claude is offered come from what that duck reports at connect, not from the
 description, so a duck with no camera or no head simply has fewer. Nothing has been run
 against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README.md) and its
@@ -366,6 +382,25 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   nothing to fold it to and it would be left holding itself up wherever it stopped, and a mock
   with none ends the way it always did. Recording one is `roboglot robot rest-pose NAME`
   ([guides/registry.md](registry.md)).
+- When the session ends, because the client closed it or because the client died with a call in
+  flight, every robot is sent its `stop` first, all at once, each waited for as long as that
+  robot's own `stop` verb is given and left to go on by itself after that. Only then is each
+  robot put down in turn: a pause it granted a robot it met is waited out, an arm is folded, and
+  its transport is closed. A stdio client ends the server a fixed grace after it closes the
+  server's stdin (the MCP Python SDK's own client waits two seconds), and nothing runs in a
+  process killed outright,
+  which is why the stops go first: a kill during a pause or a fold finds every robot already
+  sent its stop. Run from a terminal, a Ctrl-C while the server closes means stop. A fold under
+  way stops where it is, and the arm is held there and said to be; a fold that does not end when
+  told is told twice, and said to have gone on if it still does, and one that goes on to its end
+  after the press is said to have done so. From that press on no fold
+  starts on any robot, and each arm is said to be held where it stands. Every robot's transport
+  is still closed and its line said: the stops run to their end through a later Ctrl-C, each for
+  as long as a stop is given, and each close for as long as the body says its close can take, or
+  30 s where it says nothing, as `roboglot drive` waits. A close still going after that is said
+  to be given up as the server ends, with what to do. A Ctrl-C during an arm's fold at start-up
+  stops it the same way, and every
+  robot that had connected is closed.
 - MOSS's `explore` runs for up to eight minutes, and a client may wait less than that for one
   tool call: ask for fewer minutes than your client waits, and a `stop` from beside it ends it
   at the check it makes every second. It is confirm-gated, so a server reaches it only with `--yes`.
