@@ -503,6 +503,13 @@ else on a command line:
 | any adapter name (`microduck`, `lerobot`, ...) | `--robot microduck` already means `microduck:mock` |
 | any `adapter-backend` slug (`microduck-mock`, ...) | that is the memory file an unregistered run of that body already opens |
 
+A new name is refused as well when its memory and places files would be another's. Those files
+are named by the name with each run of hyphens folded into one and the hyphens at its ends taken
+off, so `arm--01` and `arm-01-` would open the files of an `arm-01` already registered, and
+`microduck-mock-` those of every unregistered `--robot microduck:mock` run. The refusal says
+whose files they are. Two such robots already in a `robots.json` read and run as they did,
+sharing their files.
+
 A colon is what tells the two vocabularies apart: `--robot duck-a` is a name, `--robot
 microduck:mock` is a spec, and a bare word that is neither says so in one line.
 
@@ -513,6 +520,16 @@ microduck:mock` is a spec, and a bare word that is neither says so in one line.
 | Directory | `--registry-dir`, else `$ROBOGLOT_REGISTRY_DIR`, else `~/.roboglot` |
 | Files | `robots.json`, and `teams.json` for [teams](team.md) |
 | Format | one JSON object, the name of each robot as its key |
+
+`robots.json` holds tokens, so on Linux and macOS it is readable by its owner alone (mode 0600)
+from the moment the file exists. On a filesystem that will not keep that mode, such as vfat or
+exfat with its default mask, or some network mounts, the file is written all the same, and the
+command says on stderr that it is readable by more than its owner. On Windows a file takes the
+permissions of the folder it sits in. Every write goes to a temporary file of its own beside the
+file and is renamed over it, so two commands writing at once each leave a whole file, and the
+later one is what the file holds. A command killed between its write and its rename leaves its
+temporary file, `robots.json.<16 hexadecimal digits>.tmp`, and the first write a minute or more
+after that removes it.
 
 ```jsonc
 {
