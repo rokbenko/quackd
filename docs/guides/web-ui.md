@@ -284,7 +284,9 @@ network.
 > that is not answering cannot hear it. Keep the robot's own power switch within reach.
 
 - **Stop** in a goal stops it. A second press, **Quit at once**, ends the run without waiting for
-  its fold, as a second Ctrl-C does. In a chat every Stop brakes, and the session goes on.
+  its fold, as a second Ctrl-C does. In a chat every Stop brakes, and the session goes on. While
+  the chat's robot connects, or once the chat has quit, a Stop is a Ctrl-C there: it stops an
+  arm's fold, and one while the robot connects ends the chat ([drive](drive.md)).
 - **Stop** stops every goal and chat the page has going, on every robot.
 - **A question nobody answers** within five minutes is taken back, and the run records it as
   unanswered, never as a no. A Stop takes it back too, and the run ends on the Stop.

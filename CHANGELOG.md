@@ -650,14 +650,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the arm the person had just stopped went on to its rest pose with nothing said, and the close's
   line spoke of that second fold rather than the one that was stopped. The arm is now held where
   the press stopped it, the session says the fold was stopped, nothing folds the arm again, and
-  the close's line names the fold that was stopped.
+  the close's line names the fold that was stopped. A press the fold does not hear, as Python
+  3.11's `asyncio.wait_for` can lose one, opened the session as if nobody had pressed: it ends the
+  session there now, and says the fold went on to its end. A press on the close the session makes
+  after an opening fold that missed was said to have stopped a fold, and the refusal the session
+  was making was lost: both are said now, the refusal and that the press came on that close.
 - **A Ctrl-C while `roboglot drive` closes no longer skips the rest of the close.** Once the
   prompt had closed, a press during the closing stop or fold went past every step after it: the
   transport was never closed, the arm was left energised partway through its fold with nothing
   said of its torque, and the session wrote neither its `run_end` nor its `summary.json`. A press
   during the fold now stops it, holds the arm with a stop and says so, and one before the fold
-  keeps it from starting and says the arm was not folded. Either way the transport is closed with
-  its note, and the record ends as any session's does.
+  keeps it from starting and says the arm was not folded, at the keyboard and on the page as from
+  a pipe. A press on the transport's own close no longer cuts it short: the close goes on to its
+  end, and the session says the press came, or, where it is still going 30 seconds later, that
+  Roboglot cannot tell what it did. A later press while the stop that holds the arm is on its way
+  no longer loses what became of that stop. The record ends as any session's does.
+- **The page's Stop stops an arm's fold in a `roboglot drive` session.** The page's front end
+  reads its Stops only while the session runs, so a Stop while the robot connected, or once the
+  chat had quit, stopped nothing, and the arm went on to its pose. A Stop then is a press now, as a
+  Ctrl-C is: it stops the fold and holds the arm. A session the Stop ended as it connected is
+  refused in the page's words, as one it stopped before the connect is.
 - **Each step of a `roboglot drive` session's end is taken whatever the one before did.** A
   `summary.json` that could not be written, on a full disk or with the run folder gone, skipped
   the `run_end` record, the record's close and the page's word that the session had finished, and

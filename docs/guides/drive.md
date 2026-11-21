@@ -206,8 +206,8 @@ moving the body is ended rather than waited out, and then the robot is stopped, 
 folds, and let go of.
 
 While the session connects, and once its prompt has closed, a Ctrl-C ends the session in the
-same order. On an arm with a rest pose, which the session folds as it opens and as it closes, it
-also brakes what it lands on:
+same order, and so does the page's Stop in a session the page drives. On an arm with a rest pose,
+which the session folds as it opens and as it closes, it also brakes what it lands on:
 
 - a press during either fold stops that fold where the arm is. A stop holds the arm there,
   nothing folds it again, and drive says:
@@ -216,19 +216,39 @@ also brakes what it lands on:
   brake    the fold was stopped where it was, and nothing was released: torque is as the fold left it
   ```
 
-  The arm's close then says, as at the end of a run, whether torque was left on, and names the
-  fold it read as `a fold to it was stopped partway`;
+  A fold that has not ended when told to stop twice is never said to have stopped: drive says
+  `the fold was told to stop, twice, and did not end`, and that Roboglot cannot tell whether the
+  arm is still moving. The arm's close then says, as at the end of a run, whether torque was left
+  on, and names a stopped fold as `a fold to it was stopped partway`;
+- a press the opening fold does not hear, as Python 3.11's `asyncio.wait_for` can lose one, still
+  ends the session there, once that fold has gone on to its end:
+
+  ```
+  brake    the fold the session opened with did not stop for the press and went on to its end, so the session ends here, and nothing folds the arm again
+  ```
+
+- a press on the close the session makes when its opening fold missed says the refusal it was
+  making, `the arm did not reach its rest pose`, and then `the press came as the session was
+  closing the arm after that, and the close is made again here`;
 - a press while the session is closing, before its fold has begun, keeps the fold from
-  starting:
+  starting, at the keyboard, on the page and from a pipe alike:
 
   ```
   brake    the arm was not folded and nothing was released: it is holding where it stopped
   ```
 
-Either way the transport is closed, the record still ends with its `run_end` and its
-`summary.json`, whose outcome is how the session ended, and the press then ends the process as
-a Ctrl-C does. A session reading a pipe or a file ends its process once it has closed, whether
-or not another line is on its way.
+A press on the robot's own close does not cut it short, since the close is what lets go of
+torque or keeps it. The close goes on to its end, and drive says `the press came as the robot's
+transport was closing, and the close went on to its end`; one still going 30 seconds after the
+press is said to be, with Roboglot unable to tell what it did, and is waited for no longer. A
+later press while the stop that holds the arm is on its way waits for that stop too, and drive
+says what became of it where it was not answered.
+
+The record still ends with its `run_end` and its `summary.json`, whose outcome is how the session
+ended, and a Ctrl-C then ends the process as a Ctrl-C does. The page's Stop during the connect
+ends the session as a Stop before it does, refused, and during the close as the session had
+ended. A session reading a pipe or a file ends its process once it has closed, whether or not
+another line is on its way.
 
 The prompt needs a terminal for its input and for its output. With either piped or redirected,
 drive reads lines one at a time, each waited for, as from a pipe.
