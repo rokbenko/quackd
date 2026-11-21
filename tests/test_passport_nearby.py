@@ -856,6 +856,41 @@ def test_a_copy_read_in_the_last_10_s_is_known_however_many_messages_came_since(
     assert copies == (INBOX_ADDRESSES + MAX_SESSIONS + 1) * each
 
 
+def test_the_copy_memory_keeps_a_few_hundred_bytes_of_a_message_however_large_it_was(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy memory kept the whole parsed message, a hello's passport of up to 16 KB among
+    it, so at its cap it could hold some 150 MB of hellos. It keeps what answering a copy needs
+    now: the envelope the endpoint knows a repeat by, a hello's beacon id and whether it was
+    addressed here, `KEPT_BYTES` at most. A copy is answered as before: one of a hello the radio
+    has not heard is refused unread, one of a word in a session is dropped as a repeat unread,
+    and one the endpoint would have to read again is read again."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    big = Endpoint(
+        CART.did,
+        passport(CART, OWNER_B, "cart-01", padding="x" * (document.MAX_BYTES // 2)),
+        CART,
+        runtime={"beacon": CART_BEACON},
+    )
+    hello = big.hello()
+    assert len(hello) > MAX_HELLO_BYTES // 2
+    far = _poster(duck, "10.0.0.9")
+    assert far(hello)[0] == 403  # the radio heard nobody at this address
+    cart = _visitor()
+    near = _poster(duck, "10.0.0.7")
+    open_session(cart, DUCK.did, near)
+    say = cart.say(DUCK.did, "passing on your left")
+    assert near(say) == (204, None)
+    kept = [e.kept for e in [*duck._copies.values(), *duck._taken_lately.values()]]
+    assert len(kept) == 4  # the far hello, the cart's first and third, and its say
+    assert all(k is not None and len(k) <= passport_talk.KEPT_BYTES for k in kept)
+    read = _counted(monkeypatch, passport_talk, "read_message")
+    assert far(hello)[0] == 403 and near(say) == (204, None)
+    assert read[0] == 0, "both copies answered from what was kept"
+    # the hello the radio has heard since is read again, as the endpoint has never seen it
+    assert near(hello)[0] == 200 and read[0] == 1
+
+
 def test_a_post_answered_429_looks_at_no_session(monkeypatch: pytest.MonkeyPatch) -> None:
     """Before it looked at an address's window, the inbox walked every live session, checking
     each one's passport dates, so a post it then refused unread cost as many date checks as

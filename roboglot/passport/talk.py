@@ -539,6 +539,33 @@ class Endpoint:
 
     # ── what this robot receives ────────────────────────────────────────────────────────
 
+    def repeat(self, message: Message) -> Reply | None:
+        """What `receive` answers `message`, and does, where that needs nothing of its body: a
+        type this robot ignores, a message it has seen already, and a word that belongs to no
+        session of this robot's; None where it would have to read the body, a hello or a word
+        in a session. A caller that kept nothing of a message but its envelope can ask, and
+        read the message again when the answer is None."""
+        with self._lock:
+            if message.to not in (None, "*", self.me):
+                return None
+            if message.type not in TYPES:
+                return Reply(204, reason=f"a {message.type} is a type this robot ignores")
+            memory, seen, limit = self._memory(message)
+            if seen in memory:
+                return self._repeat(message) or Reply(204, reason="a repeat, dropped")
+            if message.type == "hello":
+                return None
+            session = self.sessions.get(message.nonces) if message.nonces is not None else None
+            if session is not None and session.peer == message.sender:
+                return None
+            # `_spoken` answers it before it reads anything of the body, as `receive` would
+            reply = self._spoken(message)
+            if reply.status < 300:
+                memory[seen] = None
+                while len(memory) > limit:
+                    memory.popitem(last=False)
+            return reply
+
     def receive(self, message: Message, *, from_inbox: bool = False) -> Reply:
         """What `message` comes to. A refusal is a reply with a status, never an exception, so
         the caller only has to carry it back the way the message came. `from_inbox` is a message

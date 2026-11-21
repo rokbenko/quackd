@@ -5,6 +5,7 @@ in test_lan.py; the records are the ones `passport_record` registers."""
 from __future__ import annotations
 
 import enum
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -154,6 +155,89 @@ def test_closing_cancels_the_browse_and_closes_a_zeroconf_it_made() -> None:
     kept = PassportBrowser(zc=given, zeroconf=module).start()
     kept.close()
     assert not given.closed
+
+
+def test_the_status_says_how_many_lan_records_name_only_an_address_no_robot_can_be_at() -> None:
+    """A record naming only an unspecified or a multicast address is passed over, and nothing
+    said so: the robot's status showed no record and no reason. It counts each such record now,
+    once however often it is announced again, and no more once it is withdrawn or named a real
+    address. The status is the radio's part of status.json, on a robot with no radio."""
+    from roboglot.onboard.radio_side import DnsSdLan, RadioSide
+    from roboglot.radio import NoRadio
+
+    module, zc = Zeroconf(), Zc()
+    browser = PassportBrowser(zc=zc, zeroconf=module).start()
+    side = RadioSide(
+        NoRadio(),
+        lan=DnsSdLan(instance="duck-01", browser=browser),
+        server_host="127.0.0.1",
+        record_host="",
+    )
+    assert side.status()["lan_passed_over"] == 0
+    unspecified = announce(zc, "a", new_beacon_id(), address="0.0.0.0")
+    multicast = announce(zc, "b", new_beacon_id(), address="224.0.0.251")
+    real = announce(zc, "c", new_beacon_id())
+    for name in (unspecified, multicast, real, unspecified):
+        changed(module, name, Change.Added if name != unspecified else Change.Updated)
+    assert side.status()["lan_passed_over"] == 2
+    changed(module, multicast, Change.Removed)
+    announce(zc, "a", new_beacon_id(), address="192.0.2.9")
+    changed(module, unspecified, Change.Updated)
+    assert side.status()["lan_passed_over"] == 0
+    # a robot on the sim board has no such count
+    bare = RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="")
+    assert "lan_passed_over" not in bare.status()
+
+
+class NonUniqueNameException(Exception):
+    """python-zeroconf's refusal of a name another host on the LAN already announces."""
+
+
+def test_a_lan_record_that_cannot_be_announced_says_why_once_and_again_when_the_reason_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`DnsSdLan.publish` swallowed what registering raised, with no line in the service's log,
+    and the robot publishes again at every beacon rotation, so a robot whose name another host
+    holds was off the LAN with nothing to say why. It says so once a reason, again when the
+    reason changes, and afresh after a record that registered. Zeroconf is a stand-in module
+    whose `register_service` raises what the test sets."""
+    from roboglot.lan import passports
+    from roboglot.onboard.radio_side import DnsSdLan
+
+    failing: list[BaseException | None] = []
+
+    class Registrar:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def register_service(self, info: Any) -> None:
+            if failing[0] is not None:
+                raise failing[0]
+
+        def unregister_service(self, info: Any) -> None:
+            pass
+
+        def close(self) -> None:
+            self.closed = True
+
+    module = SimpleNamespace(
+        Zeroconf=Registrar, ServiceInfo=lambda kind, name, **kw: SimpleNamespace(name=name)
+    )
+    monkeypatch.setattr(passports, "require_zeroconf", lambda _what: module)
+    lines: list[str] = []
+    lan = DnsSdLan(instance="jetson-01", log=lines.append)
+    txt = {"id": SHORT_ID, "sha": "ab" * 32, "bt": new_beacon_id()}
+    taken = NonUniqueNameException("jetson-01._robot-passport._tcp.local. is taken")
+    for reason in (taken, taken, OSError("no network yet"), None, taken):
+        failing[:] = [reason]
+        assert lan.publish(txt, host="", port=8790) is (reason is None)
+    said = "radio: the LAN record was not announced: "
+    assert lines == [
+        said + "NonUniqueNameException: jetson-01._robot-passport._tcp.local. is taken",
+        said + "OSError: no network yet",
+        said + "NonUniqueNameException: jetson-01._robot-passport._tcp.local. is taken",
+    ]
+    lan.close()
 
 
 def test_record_from_info_needs_the_version_two_fields() -> None:

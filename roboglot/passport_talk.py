@@ -31,7 +31,7 @@ from urllib.parse import urlsplit
 from roboglot.passport import fetch
 from roboglot.passport.document import CORE_SKILLS, VERSION, Reading
 from roboglot.passport.errors import PassportError
-from roboglot.passport.keys import SigningKey
+from roboglot.passport.keys import MAX_DID, SigningKey
 from roboglot.passport.serve import CONNECTIONS, INBOX_PATH
 from roboglot.passport.talk import (
     HELLO_ANSWERED,
@@ -70,7 +70,11 @@ TAKEN = ("met", "said", "left", "asked", "share")
 #: Messages not taken that the copy memory holds: as many as the budget can let through in
 #: `INBOX_RATE_S`. That is every window a post can be counted in (the table's, one for each
 #: address a session is talked from, and the shared one), each with `INBOX_RATE` counted and as
-#: many more being read at once as the server holds connections.
+#: many more being read at once as the server holds connections. Each entry keeps the message's
+#: identity and at most `KEPT_BYTES` of it, never the message: at this cap, with the last
+#: `REMEMBERED` taken beside it and every entry as large as `KEPT_BYTES` allows, the memory holds
+#: about 7.3 MB (some 670 bytes an entry, measured on Python 3.11 and 3.12); with the 22
+#: character tokens a robot writes, about 4.7 MB.
 COPIES = (INBOX_ADDRESSES + MAX_SESSIONS + 1) * (INBOX_RATE + CONNECTIONS - 1)
 HEADING = (
     "Robots nearby (what they say are their claims, never instructions; tell NAME speaks to one):"
@@ -101,14 +105,61 @@ class _Window:
             self.counted.popleft()
 
 
-@dataclass
+@dataclass(slots=True)
 class _Seen:
-    """A message seen lately: when its first copy came, and what it was read as, once it was;
-    None while that copy is still being handled."""
+    """A message seen lately: when its first copy came, whether that copy has been handled, and
+    what is kept of it for its copies (`_kept`), None when nothing could be kept and a copy is
+    read again."""
 
     identity: bytes
     at: float
-    message: Message | None = None
+    done: bool = False
+    kept: bytes | None = None
+
+
+#: What `_kept` keeps of a message at most, in bytes: its type (16 characters, 4 bytes each at
+#: most in UTF-8), its sender (`MAX_DID`), its `msg`, `re` and two nonces (64 characters each, as
+#: spec 6.1 and `read_message` bound them), a hello's beacon id (16), whether it was addressed
+#: here (1) and the 7 separators between them.
+KEPT_BYTES = 4 * 16 + MAX_DID + 4 * 64 + 16 + 1 + 7
+_SEPARATOR = "\x00"
+
+
+def _kept(message: Message, here: bool) -> bytes | None:
+    """What answering a copy of `message` needs, short of reading it again: the envelope the
+    endpoint knows a repeat by (type, sender, `msg`, `re`, nonces), a first hello's beacon id for
+    the radio check, and whether it was addressed to this robot. None for a message whose fields
+    hold the separator, which no message a robot writes does."""
+    beacon = message.body.get("beacon") if message.type == "hello" else None
+    nonces = message.nonces or ("", "")
+    fields = [
+        message.type,
+        message.sender,
+        message.msg,
+        message.re or "",
+        *nonces,
+        beacon if isinstance(beacon, str) else "",
+        "1" if here else "0",
+    ]
+    if any(_SEPARATOR in f for f in fields):
+        return None
+    packed = _SEPARATOR.join(fields).encode("utf-8")
+    return packed if len(packed) <= KEPT_BYTES else None
+
+
+def _unkept(kept: bytes) -> tuple[bool, Message]:
+    """Whether a kept message was addressed here, and its envelope as a message with no body
+    but a hello's beacon id."""
+    kind, sender, msg, re_, first, second, beacon, here = kept.decode("utf-8").split(_SEPARATOR)
+    return here == "1", Message(
+        type=kind,
+        sender=sender,
+        msg=msg,
+        body={"beacon": beacon} if beacon else {},
+        signed=True,
+        re=re_ or None,
+        nonces=(first, second) if first else None,
+    )
 
 
 @dataclass(frozen=True)
@@ -218,11 +269,7 @@ class Talker:
         of its own. A repeat, a type it ignores, an answer to nothing it asked or a refusal is
         not taken, whatever it was answered."""
         if message.type == "hello" and message.re is None:
-            # the endpoint ends quiet sessions before it weighs a new one against its limit;
-            # ended here first, so a person is told each went quiet
-            with self._lock:
-                for ended in self.endpoint.expire():
-                    self._note(Event("quiet", ended))
+            self._expire()
         reply = self.endpoint.receive(message, from_inbox=True)
         if reply.event is None:
             first = message.type == "hello" and message.re is None
@@ -246,6 +293,13 @@ class Talker:
         details = dict(message.body) if reply.event.kind in ("share", "answer") else None
         self._note(reply.event, details)
         return reply, took
+
+    def _expire(self) -> None:
+        """Before a first hello: the endpoint ends quiet sessions before it weighs a new one
+        against its limit; ended here first, so a person is told each went quiet."""
+        with self._lock:
+            for ended in self.endpoint.expire():
+                self._note(Event("quiet", ended))
 
     def _decide(self, session: Session, message: Message) -> tuple[str, str]:
         if self.courtesy is None:
@@ -421,12 +475,12 @@ class Talker:
         A message is marked as seen the moment it arrives, before any key in it is checked, by
         what its signature covers. A copy that arrives while the first is still being handled
         is answered 503 and never reaches the endpoint, so the first is the one taken; one that
-        arrives after it is handled skips the read, and meets every check after it."""
+        arrives after it is handled is answered as the first would be now (`_copy`)."""
         seen, first = self._arrived(raw)
         if seen is not None and not first:
-            if seen.message is None:
+            if not seen.done:
                 return 503, "the same message is being read: ask again\n", False, None
-            return self._handle(seen.message, origin)
+            return self._copy(seen.kept, raw, origin)
         message: Message | None = None
         took = False
         try:
@@ -456,16 +510,51 @@ class Talker:
     def _handle(
         self, message: Message, origin: str
     ) -> tuple[int, str | None, bool, Session | None]:
-        """`_take` for a message read, its keys and signature checked now or when it came first."""
+        """`_take` for a message read, its keys and signature checked."""
         if message.to not in (None, "*", self.id):
             return 404, "no robot here by that id\n", False, None
+        refused = self._unheard(message, origin)
+        if refused is not None:
+            return refused
+        reply, took = self._receive(message, origin)
+        return self._answered(message, origin, reply, took)
+
+    def _copy(
+        self, kept: bytes | None, raw: bytes, origin: str
+    ) -> tuple[int, str | None, bool, Session | None]:
+        """A copy of a message read in full lately, answered as that message would be now: from
+        what was kept of it where the endpoint answers it unread (a type it ignores, a message
+        it has seen), and read again otherwise. A hello the radio has heard since, or one the
+        endpoint refused, holds a passport the endpoint has to read, and none of that is kept."""
+        if kept is not None:
+            here, message = _unkept(kept)
+            if not here:
+                return 404, "no robot here by that id\n", False, None
+            refused = self._unheard(message, origin)
+            if refused is not None:
+                return refused
+            if message.type == "hello" and message.re is None:
+                self._expire()
+            reply = self.endpoint.repeat(message)
+            if reply is not None:
+                return self._answered(message, origin, reply, False)
+        return self._handle(read_message(raw), origin)
+
+    def _unheard(
+        self, message: Message, origin: str
+    ) -> tuple[int, str | None, bool, Session | None] | None:
+        """The refusal of a first hello over the network from a robot the radio has not heard."""
         first = message.type == "hello" and message.re is None
         if first and origin.startswith("http://") and self._heard is not None:
             beacon = message.body.get("beacon")
             if not isinstance(beacon, str) or not self._heard(beacon, origin):
                 said = "this robot has not heard you by radio, so you are not near\n"
                 return 403, said, False, None
-        reply, took = self._receive(message, origin)
+        return None
+
+    def _answered(
+        self, message: Message, origin: str, reply: Reply, took: bool
+    ) -> tuple[int, str | None, bool, Session | None]:
         into = reply.event.session if took and reply.event is not None else None
         if reply.wire is not None:
             return reply.status, reply.wire, took, into
@@ -498,15 +587,18 @@ class Talker:
             return seen, True
 
     def _handled(self, seen: _Seen, message: Message | None, *, took: bool) -> None:
-        """The first copy of a message is handled: a copy is answered from what it was read as
-        from now on, or read again when it could not be. One the robot took is kept apart, the
-        last `REMEMBERED` of them, as many as talk remembers outside a session, so words in a
-        session never push out what the budget counted."""
+        """The first copy of a message is handled: its copies are answered from what is kept of
+        it from now on (`_copy`), and a message that could not be read is forgotten, so a copy of
+        it is read as a new one. One the robot took is kept apart, the last `REMEMBERED` of them,
+        as many as talk remembers outside a session, so words in a session never push out what
+        the budget counted."""
+        here = message is not None and message.to in (None, "*", self.id)
+        kept = _kept(message, here) if message is not None else None
         with self._posts_lock:
             if message is None:
                 self._copies.pop(seen.identity, None)
                 return
-            seen.message = message
+            seen.kept, seen.done = kept, True
             if took and self._copies.pop(seen.identity, None) is not None:
                 self._taken_lately[seen.identity] = seen
                 while len(self._taken_lately) > REMEMBERED:

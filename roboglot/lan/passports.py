@@ -150,6 +150,8 @@ class PassportBrowser:
         self.resolve_ms = resolve_ms
         self.max_records = max_records
         self._records: dict[str, LanRecord] = {}
+        #: the names of records passed over for naming only an address no robot can be at
+        self._nowhere: set[str] = set()
         self._lock = threading.Lock()
         self._browser: Any = None
 
@@ -168,6 +170,7 @@ class PassportBrowser:
         if state_change == changes.Removed:
             with self._lock:
                 self._records.pop(name, None)
+                self._nowhere.discard(name)
             return
         if state_change not in (changes.Added, changes.Updated):
             return
@@ -177,12 +180,22 @@ class PassportBrowser:
             )
         except Exception:  # one record that would not resolve is one robot not found over the LAN
             info = None
-        record = record_from_info(info) if info is not None else None
+        record, nowhere = _read_record(info) if info is not None else (None, False)
         with self._lock:
+            if nowhere and len(self._nowhere) < self.max_records:
+                self._nowhere.add(name)
+            elif not nowhere:
+                self._nowhere.discard(name)
             if record is None:
                 self._records.pop(name, None)
             elif name in self._records or len(self._records) < self.max_records:
                 self._records[name] = record
+
+    def passed_over(self) -> int:
+        """How many records the browse holds now that name only an address no robot can be at,
+        unspecified or multicast, and so lead to no robot."""
+        with self._lock:
+            return len(self._nowhere)
 
     def lookup(self, beacon_id: str) -> LanRecord | None:
         with self._lock:
@@ -205,18 +218,26 @@ def record_from_info(info: Any) -> LanRecord | None:
     """The LAN record a resolved service names, or None for one that is not a version-2
     passport record carrying a beacon id: a robot that does not say which advert is its own
     cannot be told apart from any other on the LAN."""
+    return _read_record(info)[0]
+
+
+def _read_record(info: Any) -> tuple[LanRecord | None, bool]:
+    """`record_from_info`, and whether the record was passed over for naming only an address
+    no robot can be at."""
     beacon = beacon_from_info(info)
     if beacon is None or not beacon.beacon_id or not beacon.short_id:
-        return None
+        return None, False
     # an unspecified or a multicast address is no robot's, and the hello is posted to the
     # address a record names: such an address is dropped, and a record left with none with it
     kept = tuple(a for a in beacon.addresses if not _nowhere(a))
     if beacon.addresses and not kept:
-        return None
+        return None, True
     host = urlsplit(replace(beacon, addresses=kept).url()).hostname
-    if not host or _nowhere(host):
-        return None
-    return LanRecord(host, beacon.port, beacon.short_id, beacon.beacon_id, (host, *kept))
+    if not host:
+        return None, False
+    if _nowhere(host):
+        return None, True
+    return LanRecord(host, beacon.port, beacon.short_id, beacon.beacon_id, (host, *kept)), False
 
 
 def _nowhere(address: str) -> bool:

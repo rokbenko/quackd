@@ -1346,8 +1346,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   announces the same name, that instance stayed open with its multicast sockets and threads; so it
   did when withdrawing the record failed, which python-zeroconf does when its loop is blocked. A
   robot's service withdraws and announces again at each beacon rotation, every 15 minutes, so it
-  could keep one more each time for as long as it ran. The instance is closed now whenever
-  registering or withdrawing fails, and a record that registers is announced as before.
+  could keep one more each time for as long as it ran, and said nothing of why it was off the
+  LAN. The instance is closed now whenever registering or withdrawing fails, the service's log
+  says `radio: the LAN record was not announced:` and the reason, once until the reason changes,
+  and a record that registers is announced as before.
 - **A Content-Length of a digit outside ASCII, or of thousands of digits, is refused, where it
   was a traceback.** Headers are read as Latin-1, where a superscript digit passes Python's test
   for a digit and then fails to convert, and so do ASCII digits past the 4,300 Python converts, so
@@ -1494,8 +1496,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   address. A message is marked as seen now the moment it arrives, by the text its signature covers,
   so whitespace around a copy does not hide it. A copy that comes while the first is still being
   handled is answered `503`, and one that comes after it, within 10 seconds, is known before any
-  key in it is checked and answered as before: the robot remembers as many messages it did not
-  take as its budget lets through in 10 seconds, and the last 1,024 it took. Every post the robot
+  key in it is checked and answered as before, read again only where answering it means reading
+  it, as a hello the radio has heard since does: the robot remembers as many messages it did not
+  take as its budget lets through in 10 seconds, and the last 1,024 it took, a few hundred bytes
+  of each, never the message itself. Every post the robot
   does not take, into a session or as a first hello it answers, counts against the address it
   came from once it is read, whatever it is answered: a refusal, a type the robot ignores, an
   answer to nothing it asked, a copy. An address with 20 of them in 10 seconds, the figures of a
@@ -1509,7 +1513,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   over the LAN posts a signed hello to the address a robot's record names, and a record could
   name `0.0.0.0`, `::` or a multicast group, where no robot can be. Such an address, written as
   IPv4 or as an IPv4 address in IPv6, is dropped from a record now, and a record left with no
-  address is no robot found; one that names a real address beside it is reached there.
+  address is no robot found; one that names a real address beside it is reached there. The
+  radio's part of `status.json` says how many records the robot passes over so, as
+  `lan_passed_over`.
 - **An answer to an ask counts only from the robot asked, in its session.** `Talker.ask` took the
   answer that came back on the response after a look at its type and the ask it named, though the
   robot had just refused it as outside the session, so an answer signed by any key, or by the
