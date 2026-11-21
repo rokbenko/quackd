@@ -33,16 +33,20 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import IO, Any
 
 from rich import box
-from rich.console import Console, NewLine, RenderableType
+from rich.cells import cell_len
+from rich.console import Console, Group, NewLine, RenderableType
 from rich.control import Control
 from rich.measure import Measurement
 from rich.panel import Panel
+from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
 from rich.theme import Theme
@@ -102,6 +106,11 @@ class Glyphs:
     bubble: str
     dot: str
     spinner: str
+    carry: str
+    """The mark at the start of each row after the first of the confirm question, where the
+    question goes on: Roboglot's own cells, so no row of the arguments, however they are padded,
+    can begin where a question begins. A character, not a style, so a pipe with no colour shows
+    it, and one cell wide in every terminal (East Asian Width narrow), so the fold has it right."""
 
     def mark(self, name: str | None) -> str:
         """The glyph for a `LogLine.mark`, or nothing for a line that speaks for itself."""
@@ -121,6 +130,7 @@ UNICODE = Glyphs(
     bubble="\U0001f4ac",
     dot="·",
     spinner="dots",
+    carry="¦",
 )
 ASCII = Glyphs(
     start=">",
@@ -135,6 +145,7 @@ ASCII = Glyphs(
     bubble="",
     dot="-",
     spinner="line",
+    carry="|",
 )
 
 _PLAIN = {
@@ -186,19 +197,29 @@ def degrade(text: str, glyphs: Glyphs) -> str:
 
 
 def tolerate_narrow_encodings() -> None:
-    """Stop a non-UTF-8 stdout turning Roboglot's own output into a crash.
+    """Stop a stream's encoding turning Roboglot's output into a crash.
 
     Windows uses the ANSI codepage when Python writes to a pipe, and Roboglot prints ticks and
     a speech bubble and the status emoji in `doctor`. On cp1252 those raise UnicodeEncodeError and
     take the command with them, which is why `glyphs_for` exists to avoid printing them at
     all. This is the backstop for the text Roboglot did not choose: replacing what the
-    codepage cannot carry costs a glyph, and raising costs the command."""
+    codepage cannot carry costs a glyph, and raising costs the command.
+
+    A UTF-8 stream can carry every character but half of one, a lone surrogate, and a strict one
+    (stdout on a pipe) raises on it. The consoles write one out (`ACTS`), and so does `printable`,
+    but Roboglot prints some JSON raw, a robot's entry among it, with its letters as letters, and
+    a JSON string can hold one (`"\\ud800"` decodes to it). There it is written as the same
+    escape (`backslashreplace`, which stderr has always had), which is what JSON itself writes."""
     for stream in (sys.stdout, sys.stderr):
-        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-        if encoding.startswith("utf") or not hasattr(stream, "reconfigure"):
+        if not hasattr(stream, "reconfigure"):
             continue
-        with contextlib.suppress(Exception):
-            stream.reconfigure(errors="replace")
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if not encoding.startswith("utf"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(errors="replace")
+        elif getattr(stream, "errors", None) in ("strict", "surrogateescape"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(errors="backslashreplace")
 
 
 class TeeConsole(Console):
@@ -214,6 +235,8 @@ class TeeConsole(Console):
     `Capture.forward`; and `Live.stop` asks for its trailing blank line through `line()`,
     which is overridden below because on the terminal that newline is erased again by a
     cursor control the capture never gets.
+
+    And the screen never obeys a character in the text it is handed (`_write_buffer`).
     """
 
     def print(self, *objects: Any, **kwargs: Any) -> None:
@@ -221,6 +244,34 @@ class TeeConsole(Console):
         capture = _capture
         if capture is not None:
             capture.forward(self, objects, kwargs)
+
+    def _write_buffer(self) -> None:
+        """Where everything this console prints leaves it, filtered before Rich chooses how.
+
+        About a thousand calls hand Roboglot's two consoles text, and an LLM's, a robot's, a
+        server's or a stored run's words reach many of them: a step line, the live status
+        line, a panel's cell, a rule's title, the hand-off's lines. Filtered one at a time, the
+        next one written raw would have been the hole. So each segment of text in the buffer
+        has every character in `ACTS` written out as its escape, its line breaks kept, while a
+        segment Rich made for its own cursor (`control`) goes as it is, and so do the colours,
+        which Rich adds from styles after this. Text with none of them leaves byte for byte as
+        before.
+
+        Here and not in `_render_buffer`, which an earlier round used: on Windows a console
+        Rich found without VT when it was built, which is every pipe, is written by Rich's
+        legacy renderer, which takes the segments from the buffer and never calls
+        `_render_buffer`. This runs before either road is chosen, and changes nothing about
+        which. Read against Rich 15.0.0, the only Rich on this machine and the one the lock
+        holds; the project allows 13.7 and later, which could not be read here.
+        `tests/test_ui.py` fails if Rich stops calling this: through a buffer, and through a
+        real pipe on each platform's own road."""
+        with self._lock:
+            if self._buffer_index == 0:
+                self._buffer[:] = [
+                    segment if segment.control else Segment(_shown(segment.text), *segment[1:])
+                    for segment in self._buffer
+                ]
+        super()._write_buffer()
 
     def line(self, count: int = 1) -> None:
         """Rich's own blank line, kept off the capture.
@@ -259,25 +310,24 @@ err_console = make_console(stderr=True)
 """Everything else: the log, the status line, warnings, errors."""
 
 
-_CONTROL = {c: None for c in range(0x20) if c not in (0x09, 0x0A)} | {0x7F: None}
-"""Every C0 control except tab and newline, and DEL, dropped on the way into the file.
-
-`terminal.txt` is the one thing in a run directory meant to be read with `cat`, and a control
-character in it is executed by the reader's terminal rather than shown to them. Rich strips
-its own set (`rich.control.STRIP_CONTROL_CODES`) and ESC is not in it, so an escape that
-arrived inside *text* rather than from a style goes straight through: `ESC[2J` clears the
-reader's screen, `ESC]0;...BEL` retitles their window, `ESC[?1049h` swaps their buffer. The
-text is not ours. It is the goal somebody typed, the body of a `.glot` fetched off the
-internet, whatever the LLM said it was thinking, and an error message from a robot.
-
-Dropped rather than escaped, because this file is read by a person and not parsed, and
-`transcript.jsonl` beside it keeps every byte as it came (JSON escapes it, so it is safe
-there and recoverable from there)."""
-
-
 def _printable(text: str) -> str:
-    """The text with anything that would drive the reader's terminal taken out."""
-    return text.translate(_CONTROL)
+    """The text with everything in `ACTS` but its line breaks taken out, on the way into the file.
+
+    `terminal.txt` is the one thing in a run directory meant to be read with `cat`, and a control
+    character in it is executed by the reader's terminal rather than shown to them. Rich strips
+    its own set (`rich.control.STRIP_CONTROL_CODES`) and ESC is not in it, so an escape that
+    arrived inside *text* rather than from a style goes straight through: `ESC[2J` clears the
+    reader's screen, `ESC]0;...BEL` retitles their window, `ESC[?1049h` swaps their buffer. A
+    one-character CSI does the same on a terminal that takes 8-bit controls, and a bidi override
+    reorders the line the reader reads. The text is not ours. It is the goal somebody typed, the
+    body of a `.glot` fetched off the internet, whatever the LLM said it was thinking, and an
+    error message from a robot.
+
+    The same table the screen writes out (`ACTS`), so the file keeps nothing the screen would
+    not have shown. Dropped rather than escaped, because this file is read by a person and not
+    parsed, and `transcript.jsonl` beside it keeps every character as it came (JSON escapes it,
+    so it is safe there and recoverable from there)."""
+    return _DROPPED.sub("", text)
 
 
 class _CaptureSink:
@@ -513,23 +563,329 @@ def _deferred(build: Callable[[Glyphs], RenderableType], glyphs: Glyphs | None) 
     return build(glyphs) if glyphs is not None else Deferred(build)
 
 
-def printable(text: str) -> str:
-    """`text` with every character a terminal could act on written out as its escape.
+ACTS = re.compile(
+    "["
+    "\x00-\x08\x0a-\x1f\x7f"  # C0 but the tab, and DEL
+    "\x80-\x9f"  # C1
+    "\\u2028\\u2029"  # the line and paragraph separators
+    "\\u202a-\\u202e"  # the bidirectional embeddings and overrides
+    "\\u2066-\\u2069"  # the bidirectional isolates
+    "\\ud800-\\udfff"  # a lone surrogate, half of a character
+    "\\u115f\\u1160\\u3164\\uffa0"  # the Hangul fillers, blank, of a width terminals disagree on
+    "]"
+)
+"""The one table of what is written out as its escape wherever Roboglot shows text it did not
+write, read by `printable` and by the consoles' filter (`TeeConsole._write_buffer`) alike:
 
-    For text a stranger wrote, a robot passport's or a LAN record's. Rich strips only a few
-    control codes, so an escape sequence in a robot's name could move the cursor and redraw a
-    line of the panel around it, and a bidi override could reorder one. Printable text, accents
-    and emoji included, is left exactly as it is."""
-    if text.isprintable():
+- a control character: C0 but the tab, DEL, and C1, the escape and the one-character CSI among
+  them. The newline is one: `printable` keeps a stranger's text on the line Roboglot gives it,
+  and what keeps its line breaks (`printable_lines`, the filter) splits on them first. The tab
+  is drawn as the spaces Rich expands it to, as it always was: it can neither go back nor start
+  a line.
+- the line and paragraph separators, which a terminal may take for a line of their own.
+- the explicit bidirectional embeddings, overrides and isolates, which reorder the text around
+  them, so that what a line seems to say is not what it holds.
+- a lone surrogate, which no stream can encode: a strict UTF-8 one, which stdout is on a pipe,
+  refuses it, and the print that held it ends with `UnicodeEncodeError`. A JSON string an LLM or
+  a server sends can carry one (`"\\ud800"` decodes to it), and so can a note kept as JSON.
+- the four Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), which draw nothing and which a
+  terminal and Rich count differently: the Windows console gives U+3164 two cells and U+FFA0
+  one, where Rich gives each none, so a reply padded with them is wider on the screen than the
+  fold Roboglot made for it (`Hanging`), and the console folds it again, at its first column.
+  They are the only letters among Unicode's default-ignorable characters, and Korean is written
+  without them: its syllables, and the jamo it is spelled with, are drawn as given.
+
+Everything else is drawn as given. That includes the format characters that cannot move the
+cursor, change what the terminal does or reorder what is shown: the zero-width joiner and
+non-joiner Persian, Hindi and every emoji sequence need, the tags a flag is made of, the soft
+hyphen, and the left-to-right, right-to-left and Arabic letter marks."""
+
+
+def printable(text: str) -> str:
+    """`text` with every character in `ACTS` written out as its escape.
+
+    For text a stranger wrote, a robot passport's or a LAN record's, an LLM's. Rich strips only a
+    few control codes, so an escape sequence in a robot's name could move the cursor and redraw a
+    line of the panel around it, and a bidi override could reorder one. Everything else, accents,
+    scripts and emoji included, is left exactly as it is."""
+    if not ACTS.search(text):
         return text
-    return "".join(c if c.isprintable() else c.encode("unicode_escape").decode() for c in text)
+    return ACTS.sub(lambda found: found.group().encode("unicode_escape").decode(), text)
+
+
+def printable_lines(text: str, *, indent: str = "") -> str:
+    """`printable` on each line of `text`, its line breaks kept: for what a terminal prints on
+    lines of its own, where a line break is the text's own and every other character in `ACTS`
+    is written out.
+
+    `indent` goes in front of every line after the first. A text on one line is returned as it
+    is. Where a stranger's text is set where a line of Roboglot's own would begin, an error or a
+    verdict's reason, `Hanging` indents the lines its width folds it into as well."""
+    if not ACTS.search(text):
+        return text
+    return f"\n{indent}".join(printable(line) for line in text.split("\n"))
+
+
+CONTINUED = "  "
+"""What goes in front of each line after the first of an outside text set inside a panel, a
+verdict's reason: an indent the text cannot take away (`Hanging`)."""
+
+_BLANK_SYMBOLS = (
+    "\\u115f\\u1160\\u3164\\uffa0"  # the Hangul fillers, should one reach here unwritten
+    "\\u2800"  # the braille pattern blank
+    "\\U00013441\\U00013442"  # the Egyptian hieroglyph full and half blanks
+    "\\U0001d159"  # the musical null notehead
+)
+"""The letters and symbols that draw as a blank and are no whitespace: found by reading every
+character whose name says it is blank, a filler or a space, and by the default-ignorable letters."""
+
+_UNSEEN = (
+    "\\u00ad\\u034f\\u061c\\u180e\\u200b-\\u200f\\u2060-\\u2064\\ufe00-\\ufe0f\\ufeff"
+    "\\U000e0000-\\U000e007f"
+)
+"""What draws nothing and takes no cell, or none of its own: the soft hyphen, the joiners and the
+marks, the zero-width spaces, the invisible operators, the variation selectors and the tags. Inside
+a run of blanks each does nothing a reader needs, and a pad that set one between every two spaces
+was no run of whitespace."""
+
+_BLANK_RUN = re.compile(f"(?:[^\\S\\n]|[{_BLANK_SYMBOLS}{_UNSEEN}])+")
+_DRAWS_BLANK = re.compile(f"[^\\S\\n]|[{_BLANK_SYMBOLS}]")
+_DIRECTION_MARKS = re.compile("[\\u061c\\u200e\\u200f]")
+
+
+def one_space(text: str) -> str:
+    """`text` with each run of what draws as a blank between two words on a line drawn as one
+    space: whitespace, a braille blank, a Hangul filler and the other blank symbols, and what draws
+    nothing among them, a tab or a no-break space alone included. For a line of outside text:
+    padded with blanks, a reply could put words of its choosing wherever it liked along a row,
+    under a column of Roboglot's own. A direction mark in the run is kept after the space, since
+    it can change the order a right-to-left line is shown in. A line's breaks, the blanks that
+    begin or end it, and what draws nothing between two letters (a joiner in a word) are left as
+    they are."""
+
+    def one(found: re.Match[str]) -> str:
+        run, start, end = found.group(), found.start(), found.end()
+        inside = start > 0 and end < len(text) and "\n" not in (text[start - 1], text[end])
+        if not inside or not _DRAWS_BLANK.search(run):
+            return run
+        return " " + "".join(_DIRECTION_MARKS.findall(run))
+
+    return _BLANK_RUN.sub(one, text)
+
+
+def _written_out(line: Text) -> Text:
+    """`line`, one line of a `Hanging`, with each character in `ACTS` written out, its styles kept:
+    the screen writes them out as it draws them (`TeeConsole._write_buffer`), which is after the
+    fold, so a row holding an escape, or a Hangul filler, was wider on the screen than the room the
+    fold had left it, and the terminal folded it again at its first column. Folded as it is
+    shown, it fits. A line with none of them is handed back as it is."""
+    plain = line.plain
+    if not ACTS.search(plain):
+        return line
+    pieces: list[str] = []
+    moved = [0] * (len(plain) + 1)  # where each character of `line` begins in what is shown
+    at_shown = 0
+    for at, character in enumerate(plain):
+        moved[at] = at_shown
+        pieces.append(printable(character))
+        at_shown += len(pieces[-1])
+    moved[len(plain)] = at_shown
+    shown = line.blank_copy("".join(pieces))
+    for span in line.spans:  # each span once, where its characters went
+        shown.stylize(span.style, moved[span.start], moved[span.end])
+    return shown
+
+
+_WIDE_STAND_IN = chr(0x4E00)  # two cells in Rich and in every terminal
+_EMOJI_SELECTOR = chr(0xFE0F)  # VARIATION SELECTOR-16
+
+
+@lru_cache(maxsize=4096)
+def _counted_as(character: str) -> str:
+    """`character`, or a stand-in for it as wide as a terminal may draw it, where Rich counts it as
+    fewer cells: never fewer than its East Asian Width gives a character that is no mark and no
+    format character, and one for the variation selector that asks for emoji.
+
+    Rich counts a spacing mark (`Mc`, the vowel signs of Hindi, Bengali, Tamil and the rest), the
+    Hangul vowel and final jamo, the emoji skin tones and that selector as no cells, and the
+    Windows console gives each one cell after a letter (measured in a real console, its own cursor
+    read back, round seven). A line of them is short to Rich and long to the console, which folds
+    it again at its first column. Each is drawn as given; only the count the fold goes by is
+    raised, so a line holding one folds early, never late. Found by reading Rich's count of every
+    character against the East Asian Width and the general category, and by measuring a sample
+    of every kind of character in a real console, which added the selector and nothing else."""
+    rich = cell_len(character)
+    category = unicodedata.category(character)
+    if character == _EMOJI_SELECTOR:
+        most = 1
+    elif category in ("Mn", "Me", "Cf"):
+        most = 0
+    else:
+        most = 2 if unicodedata.east_asian_width(character) in ("W", "F") else 1
+    if most <= rich:
+        return character
+    return "x" if most == 1 else _WIDE_STAND_IN
+
+
+def _counted(plain: str) -> str | None:
+    """`plain` with every character Rich counts as fewer cells than a terminal may draw stood in
+    for (`_counted_as`), one for one, so its offsets are the line's own; None where there is none,
+    which is every line of ASCII."""
+    if plain.isascii():
+        return None
+    counted = "".join(map(_counted_as, plain))
+    return None if counted == plain else counted
+
+
+def _is_hangul(character: str) -> bool:
+    """A Hangul jamo or syllable, which a vowel or final jamo after it joins."""
+    point = ord(character)
+    return 0x1100 <= point <= 0x11FF or 0xA960 <= point <= 0xA97F or 0xAC00 <= point <= 0xD7FF
+
+
+def _continues(plain: str, at: int) -> bool:
+    """Whether the character at `at` belongs to the cluster before it, so a row may not begin
+    there: a mark (`Mn`, `Mc`, `Me`, the variation selectors among them), a zero-width joiner or
+    the character after one, a skin tone, a tag (the rest of a flag), and a Hangul vowel or final
+    jamo after another jamo or a syllable."""
+    if at == 0:
+        return False
+    character = plain[at]
+    point = ord(character)
+    if unicodedata.category(character) in ("Mn", "Mc", "Me"):
+        return True
+    if point == 0x200D or ord(plain[at - 1]) == 0x200D:
+        return True
+    if 0x1F3FB <= point <= 0x1F3FF or 0xE0020 <= point <= 0xE007F:
+        return True
+    hangul_follows = 0x1160 <= point <= 0x11FF or 0xD7B0 <= point <= 0xD7FF
+    return hangul_follows and _is_hangul(plain[at - 1])
+
+
+def _wrapped(line: Text, target: Console, width: int) -> list[Text]:
+    """`line`, one line, folded at `width` as `Text.wrap` folds it, by a count of cells no terminal
+    exceeds (`_counted`): Rich's own fold for a line it counts as a terminal does, and where it
+    counts fewer, the same fold made on the stand-ins (`rich._wrap.divide_line`, which `Text.wrap`
+    folds by, the same in every Rich the project allows) and cut from the line itself.
+
+    A row never begins inside a character cluster (`_continues`). Myanmar and Khmer are written
+    without spaces, so their lines are folded inside a word, and counted as a terminal counts them
+    the fold could fall between a letter and its spacing vowel sign: the row above read another
+    syllable, and the sign began the next row alone. The fold goes back to the cluster's first
+    character, and a cluster wider than the row is kept whole. Each row is folded from where the
+    last one ended, so a fold moved back never leaves a row wider than `width`."""
+    counted = _counted(line.plain)
+    if counted is None:
+        return list(line.wrap(target, width, overflow="fold"))
+    from rich._wrap import divide_line
+
+    plain, cuts, start = line.plain, [], 0
+    while True:
+        breaks = divide_line(counted[start:], width, fold=True)
+        if not breaks:
+            break
+        cut = start + breaks[0]
+        while cut > start and _continues(plain, cut):
+            cut -= 1
+        if cut == start:  # one cluster wider than the row: whole, and the row ends after it
+            cut = start + breaks[0]
+            while cut < len(plain) and _continues(plain, cut):
+                cut += 1
+            if cut == len(plain):
+                break
+        cuts.append(cut)
+        start = cut
+    rows = list(line.divide(cuts))
+    for row in rows:
+        row.rstrip_end(width)
+    return rows
+
+
+def _fold(text: Text, target: Console, width: int, indent: Text) -> list[Text]:
+    """The rows `Hanging` draws `text` as, `width` wide: its first line folded at the full width,
+    and every row after that, of the first line or of the lines its breaks make, behind `indent`.
+
+    A tab is spaces before the fold, as many as the console draws it as. Rich expands a tab while
+    it folds, so the first row is longer than the text it came from, and the rest of that line,
+    taken off by the row's length, began in the wrong place: words were lost. A line is folded as
+    it is shown, its escapes written out (`_written_out`), and by a count of cells no terminal
+    exceeds (`_wrapped`)."""
+    narrow = max(1, width - indent.cell_len)
+    tab_size = (text.tab_size if text.tab_size is not None else target.tab_size) or 8
+    rows: list[Text] = []
+    for n, part in enumerate(text.split("\n", allow_blank=True)):
+        part.expand_tabs(tab_size)  # `split` hands back copies, so the text itself is not changed
+        part = _written_out(part)
+        rest = part
+        if n == 0:
+            first = _wrapped(part, target, width)
+            if len(first) <= 1:
+                rows.extend(first or [Text()])
+                continue
+            rows.append(first[0])
+            rest = part[len(first[0].plain) :]
+            rest = rest[len(rest.plain) - len(rest.plain.lstrip(" ")) :]
+        rows.extend(indent + row for row in _wrapped(rest, target, narrow) or [Text()])
+    return rows
+
+
+class Hanging:
+    """`text` with every line after its first indented by `indent`, the lines its own breaks
+    make and the lines the width folds it into alike: an outside text printed where a line of
+    Roboglot's own begins, an error or a verdict's reason, cannot begin one of its lines there,
+    whether by a line break or by its length. The first line is wrapped as it always was, at the
+    full width, so a text on one short line is drawn byte for byte as before.
+
+    `indent` may be a `Text`, for an indent that wears a style: a team member's name in front of
+    every row of its step lines."""
+
+    def __init__(self, text: Text, indent: str | Text) -> None:
+        self.text = text
+        self.indent = Text(indent) if isinstance(indent, str) else indent
+
+    def __rich_measure__(self, target: Console, options: Any) -> Measurement:
+        """As wide as the text is shown and folded (`_fold`), its indented lines measured with
+        their indent."""
+        shown = printable_lines(self.text.plain)
+        counted = _counted(shown) or shown
+        measured = Measurement.get(target, options, Text(counted))
+        first, *rest = counted.split("\n")
+        pad = self.indent.cell_len
+        widest = max([cell_len(first)] + [cell_len(line) + pad for line in rest])
+        least = min(measured.minimum + pad, widest)
+        return Measurement(least, widest).clamp(max_width=options.max_width)
+
+    def __rich_console__(self, target: Console, options: Any) -> Iterator[RenderableType]:
+        drawn = Text("\n").join(_fold(self.text, target, options.max_width, self.indent))
+        drawn.no_wrap = True
+        yield drawn
+
+
+def hang(text: str, target: Console, *, indent: str = CONTINUED) -> str:
+    """`text` folded at `target`'s width as `Hanging` folds it, its rows joined by line breaks:
+    for a question written to the terminal raw, which Rich never draws. A text on one row comes
+    back as it is."""
+    return "\n".join(row.plain for row in _fold(Text(text), target, target.width, Text(indent)))
+
+
+_DROPPED = re.compile(f"(?!\n){ACTS.pattern}")
+"""`ACTS` but the line break: what the saved terminal leaves out (`_printable`)."""
+
+
+def _shown(text: str) -> str:
+    """One segment of text as the screen is handed it (`TeeConsole._write_buffer`): every
+    character in `ACTS` written out, but for the line breaks Rich itself splits lines on."""
+    if not ACTS.search(text) or text == "\n":
+        return text
+    return "\n".join(printable(part) for part in text.split("\n"))
 
 
 def _renderable(value: Any) -> RenderableType:
     """A cell: anything Rich already knows how to draw, or a string that must not be read as
-    markup because a manifest wrote it."""
+    markup because a manifest wrote it, nor acted on by the terminal because a robot, a board or
+    a server may have (`printable_lines`)."""
     if isinstance(value, str):
-        return Text(value)
+        return Text(printable_lines(value))
     if hasattr(value, "__rich__") or hasattr(value, "__rich_console__"):
         return value  # type: ignore[no-any-return]
     return Text(str(value))
@@ -641,7 +997,10 @@ def verdict(
         body = Table.grid()
         body.add_column(overflow="fold")
         if reason:
-            body.add_row(Text(reason))
+            # the pilot's or a robot's own words as often as Roboglot's, its lines after the
+            # first, by a break or by its length, indented so none can pass for the counters'
+            # row or one of its own, and a run of spaces in a line drawn as one
+            body.add_row(Hanging(Text(one_space(printable_lines(reason))), CONTINUED))
         if counters:
             body.add_row(joined(counters, g))
         where = [("run dir", path_text(run_dir))] if run_dir else []
@@ -660,16 +1019,22 @@ def fail_line(
     """`error:` and what went wrong, with one dim line saying where to look next.
 
     The message routinely names an extra (`roboglot[anthropic]`), which is why it is appended
-    to a `Text` rather than formatted into markup that would eat the brackets."""
+    to a `Text` rather than formatted into markup that would eat the brackets. It can carry a
+    server's whole error body, so it goes through `printable_lines` as well, and a run of spaces
+    in one of its lines is drawn as one (`one_space`)."""
 
     def build(g: Glyphs) -> RenderableType:
         out = Text()
-        out.append(f"{g.fail} error: ", style=STYLES["fail"])
-        out.append(message)
-        if hint:
-            out.append("\n")
-            out.append(f"  {hint}", style=STYLES["muted"])
-        return out
+        said = f"{g.fail} error: "
+        out.append(said, style=STYLES["fail"])
+        out.append(one_space(printable_lines(message)))
+        # a line after the first, by a break or by its length, starts under the first, never at
+        # the first column, where a server's text could otherwise print a line that reads as
+        # one of Roboglot's own
+        shown = Hanging(out, " " * len(said))
+        if not hint:
+            return shown
+        return Group(shown, Text(f"  {hint}", style=STYLES["muted"]))
 
     return _deferred(build, glyphs)
 
@@ -832,10 +1197,13 @@ class RunStatus:
             step, text, since = self._step, self._text, self._since
         g = glyphs_for(self.console)
         out = Text(no_wrap=True, overflow="ellipsis")
+        # after an answer the words name the call the LLM chose as it wrote it, redrawn four
+        # times a second under the step lines, so they are written out on whatever console
+        # this line is drawn on: an escape left in could erase the lines above it
         if step:
-            out.append(step, style=STYLES["key"])
+            out.append(printable(step), style=STYLES["key"])
             out.append(f" {g.dot} ", style=STYLES["muted"])
-        out.append(text, style=STYLES["muted"])
+        out.append(printable(text), style=STYLES["muted"])
         waited = self._clock() - since
         if waited >= _SLOW_S:
             out.append(f" {g.dot} {waited:.0f} s", style=STYLES["muted"])

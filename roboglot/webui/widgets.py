@@ -242,37 +242,58 @@ def last_saved_frame(folder: Path) -> Path | None:
 
 def frame(view: dict[str, Any]) -> None:
     """The newest frame: as it streams in while the run goes, and once the run has ended, the
-    last one it saved, which the stream may have dropped to keep its pace."""
+    last one it saved, which the stream may have dropped to keep its pace.
+
+    Drawn straight under a question's box, and its caption names the last call the LLM made as
+    the LLM wrote it, so the caption is plain text under the image: an image's own caption is
+    Markdown, which could dress up or hide what is shown beside the Yes."""
+    from roboglot.ui import printable
+
     folder = run_folder(view) if view.get("end") else None
     saved = last_saved_frame(folder) if folder is not None else None
     if saved is not None:
-        st.image(str(saved), caption=saved.stem)
+        st.image(str(saved))
+        st.text(printable(saved.stem))
         return
     shot = view.get("frame")
     if shot and shot.get("jpeg"):
-        st.image(base64.b64decode(shot["jpeg"]), caption=shot.get("caption") or None)
+        st.image(base64.b64decode(shot["jpeg"]))
+        if shot.get("caption"):
+            st.text(printable(str(shot["caption"])))
 
 
 def status(view: dict[str, Any]) -> None:
+    """The run's status, drawn straight above its question: plain text, since while a confirm
+    waits it names the call in the pilot's own words (`the LLM chose ...`), and as a caption,
+    which is Markdown, what the pilot put in an argument could hide or dress up the question."""
+    from roboglot.ui import printable
+
     if view.get("end"):
         return
     said = view.get("status") or {}
     text = said.get("text")
     if text:
         step = said.get("step")
-        st.caption(f"{step} · {text}" if step else text)
+        st.text(printable(f"{step} · {text}" if step else str(text)))
     elif view.get("running"):
         st.caption("starting")
 
 
 def questions(job: Any, view: dict[str, Any]) -> None:
     """The run's questions, each with its own two buttons: an answer names the question it
-    answers, so a second tap answers nothing."""
+    answers, so a second tap answers nothing.
+
+    The detail is the pilot's doubt in its own words, and a confirm question quotes the pilot's
+    arguments, so both are drawn as plain text: as Markdown a strike-through or a hidden formula
+    could hide part of them or dress them up above the Yes. `printable` writes out a bidi
+    override and every other character that could act on the text around it."""
+    from roboglot.ui import printable
+
     for asked in view.get("asks") or ():
         with st.container(border=True, key=f"roboglot-ask-{job.id}-{asked['id']}"):
             if asked.get("detail"):
-                st.warning(asked["detail"])
-            st.markdown(f"**{asked['question']}**")
+                st.text(printable(str(asked["detail"])))
+            st.text(printable(str(asked["question"])))
             yes, no = st.columns(2)
             if yes.button(
                 "Yes", key=f"yes-{job.id}-{asked['id']}", type="primary", width="stretch"
@@ -315,30 +336,47 @@ def lines(job: Any, *, goal: int | None = None) -> list[str]:
 
 
 def narration(job: Any, *, goal: int | None = None, tail: int = 300) -> None:
-    text = "\n".join(lines(job, goal=goal)[-tail:])
+    """The run's steps, beside its question: an LLM's, a robot's and a server's words among
+    them, written out as the terminal writes them (`ui.printable_lines`), so a bidi override
+    cannot reorder what is shown next to the Yes."""
+    from roboglot.ui import printable_lines
+
+    text = "\n".join(printable_lines(line) for line in lines(job, goal=goal)[-tail:])
     if text:
         st.code(text, language=None, wrap_lines=True)
 
 
 def outcome(view: dict[str, Any]) -> None:
+    """How the run ended, in its box, and the reason under it: the reason is the pilot's, a
+    robot's or a server's words as often as Roboglot's, so it is plain text, never the box's
+    Markdown. So are the notices, which can quote what a robot or the page sent."""
+    from roboglot.ui import printable, printable_lines
+
     end = view.get("end")
     if end:
-        shown = f"{end.get('outcome')}: {end.get('reason') or ''}".rstrip(": ")
+        word = printable(str(end.get("outcome")))
+        reason = printable_lines(f"{end.get('reason') or ''}")
         if end.get("outcome") == "success":
-            st.success(shown)
+            st.success(word)
         elif end.get("outcome") in ("refused", "error"):
-            st.error(shown + (f"\n\n{end['hint']}" if end.get("hint") else ""))
+            st.error(word)
         else:
-            st.warning(shown)
+            st.warning(word)
+        if reason:
+            st.text(reason)
+        if end.get("hint"):
+            st.text(printable_lines(str(end["hint"])))
     for notice in view.get("notices") or ():
-        st.info(notice)
+        st.text(printable_lines(str(notice)))
 
 
 def terminal(view: dict[str, Any]) -> None:
+    from roboglot.ui import printable_lines
+
     said = view.get("stderr") or []
     if said:
         with st.expander("What a terminal would show"):
-            st.code("\n".join(said), language=None)
+            st.code("\n".join(printable_lines(str(line)) for line in said), language=None)
 
 
 # ── the way here from a phone ──

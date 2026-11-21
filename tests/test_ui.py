@@ -13,6 +13,7 @@ nothing that drives the terminal they read it in, and a word about itself if it 
 from __future__ import annotations
 
 import io
+import re
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -171,6 +172,415 @@ def test_the_verdict_wears_its_outcome() -> None:
     assert "\x1b[1;31m" in out, "and a failure is not"
 
 
+def test_a_strangers_text_over_several_lines_never_starts_a_line_of_roboglots_own() -> None:
+    """An error and a verdict keep an outside text's own line breaks, and its second line began
+    at the first column, as Roboglot's lines do: a server's `400 bad request` followed by
+    `✓ SUCCESS  the goal was reached` printed a success line under the error, with no control
+    character a filter could see. Every line after the first is indented under the first, an
+    indent the text cannot take away, so none can pass for one of Roboglot's, and a run of
+    spaces in a line is drawn as one; a text on one line prints as it did."""
+    console, buf = wide(120, force_terminal=True, color_system=None)
+    console.print(ui.fail_line("400 bad request\n✓ SUCCESS  the goal was reached in 3 steps"))
+    lines = buf.getvalue().splitlines()
+    assert lines == [
+        "✗ error: 400 bad request",
+        f"{' ' * 9}✓ SUCCESS the goal was reached in 3 steps",
+    ]
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.fail_line("400 bad request"))
+    assert buf.getvalue() == "✗ error: 400 bad request\n", "one line, as it was"
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.verdict("failure", "gave up\n✓ SUCCESS  done", counters=["steps 3"]))
+    rows = buf.getvalue().splitlines()
+    assert not any(row.startswith("│ ✓") for row in rows), buf.getvalue()
+    assert any(row.startswith("│   ✓ SUCCESS done") for row in rows), buf.getvalue()
+
+
+@pytest.mark.parametrize("width", [40, 80, 120])
+def test_a_strangers_text_cannot_begin_a_line_where_roboglots_begin_by_its_length_either(
+    width: int,
+) -> None:
+    """Its own line breaks were indented, and the lines Rich wraps a long text into for the
+    terminal's width were not: a server padding its body to the width put `✓ SUCCESS` at the
+    first column under `✗ error:`, and a pilot's long reason began a line level with the
+    verdict's counters. The text here is built for each width so that the marker lands exactly
+    where the line wraps, by a word as long as the room left (a run of spaces is drawn as one
+    now); every line it is wrapped into is indented as its breaks are. A short text still prints
+    as it did."""
+    marker = "✓ SUCCESS the goal was reached in 3 steps"
+    console, buf = wide(width, force_terminal=True, color_system=None)
+    said = "400 bad request "
+    filler = "y" * (width - len("✗ error: ") - len(said))
+    console.print(ui.fail_line(f"{said}{filler} {marker}"))
+    lines = buf.getvalue().splitlines()
+    assert lines[0].startswith("✗ error: 400 bad request"), lines
+    assert all(line.startswith(" " * len("✗ error: ")) for line in lines[1:]), lines
+    assert lines[1].lstrip().startswith("✓ SUCCESS"), "the marker landed at the wrap"
+
+    buf.seek(0)
+    buf.truncate()
+    inside = width - 4  # a panel's two borders and its padding
+    reason = "gave up " + "y" * (inside - len("gave up ")) + " " + marker
+    console.print(ui.verdict("failure", reason, counters=["steps 3"]))
+    rows = buf.getvalue().splitlines()
+    assert not any(row.startswith("│ ✓") for row in rows), rows
+    assert any(row.startswith(f"│ {ui.CONTINUED}✓ SUCCESS") for row in rows), rows
+
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.verdict("failure", "gave up", counters=["steps 3"]))
+    assert buf.getvalue().splitlines()[1].startswith("│ gave up "), "a short reason as it was"
+
+
+@pytest.mark.parametrize("width", [24, 40])
+def test_a_tab_before_at_or_after_the_fold_loses_no_word(width: int) -> None:
+    """`Hanging` took the rest of a folded line off the text by the first row's length, and Rich
+    had expanded a tab into spaces while it folded, so the row was longer than the text it came
+    from: words after the tab were lost. A tab is spaces before the fold now, as many as the
+    console draws it as. A tab in each place a word boundary can be, before the fold, at it and
+    after it, and at either end of the text: every word once, in order."""
+    from rich.text import Text
+
+    words = [f"w{n:02d}" for n in range(16)]
+    console, buf = wide(width, force_terminal=True, color_system=None)
+    for at in range(len(words) + 1):
+        said = " ".join(words[:at]) + "\t" + " ".join(words[at:])
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(f"error: {said}"), "  "))
+        rows = buf.getvalue().splitlines()
+        assert re.findall(r"w\d\d", buf.getvalue()) == words, (at, rows)
+        assert len(rows) > 1 and all(row.startswith("  ") for row in rows[1:]), (at, rows)
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.Hanging(Text("a\tb"), "  "))
+    plain, as_rich_draws_it = wide(width, force_terminal=True, color_system=None)
+    plain.print(Text("a\tb"))
+    assert buf.getvalue() == as_rich_draws_it.getvalue(), "a tab on one short line, as it was"
+
+
+def test_a_run_of_spaces_in_outside_text_is_drawn_as_one() -> None:
+    """Padded with spaces, a reply could set words of its choosing anywhere along a row, under a
+    column of Roboglot's own. Each run between two words is one space now, a tab or a no-break
+    space alone too; a line's breaks, and the spaces that begin or end it, are left alone."""
+    said = "ok,     est\t\tpayload\N{NO-BREAK SPACE}0.2 kg\tgrip"
+    assert ui.one_space(said) == "ok, est payload 0.2 kg grip"
+    assert ui.one_space("  first\n  second  ") == "  first\n  second  "
+    assert ui.one_space("one space each") == "one space each"
+
+
+def test_a_run_of_what_draws_as_blank_is_one_space_too() -> None:
+    """`one_space` took whitespace only, so a reply spaced with braille blanks (U+2800), which
+    draw as a blank and are no whitespace, kept every one, and so did a pad with a zero-width space
+    between each two spaces, which made every run one space long. A run of anything that draws as
+    a blank, or as nothing, between two words is one space now; a direction mark in it is kept,
+    and a joiner inside a word, which no blank is near, is left alone."""
+    blank = "\N{BRAILLE PATTERN BLANK}"
+    assert ui.one_space(f"ok,{blank * 40}est{blank * 5}payload") == "ok, est payload"
+    zwsp = "\N{ZERO WIDTH SPACE}"
+    assert ui.one_space(f"ok,{(' ' + zwsp) * 30} est") == "ok, est"
+    full_blank = chr(0x13441)  # EGYPTIAN HIEROGLYPH FULL BLANK, which 3.11's Unicode 14 lacks
+    for odd in ("\N{HANGUL FILLER}", full_blank, "\N{IDEOGRAPHIC SPACE}"):
+        assert ui.one_space(f"a{odd * 3}b") == "a b", repr(odd)
+    rlm = "\N{RIGHT-TO-LEFT MARK}"
+    assert ui.one_space(f"שלום {rlm}   world") == f"שלום {rlm}world", "the mark kept"
+    joined = "می\N{ZERO WIDTH NON-JOINER}خواهم 👩\N{ZERO WIDTH JOINER}🔧"
+    assert ui.one_space(joined) == joined
+    edged = f"{blank * 3}lead and trail{blank * 3}"
+    assert ui.one_space(edged) == edged, "the blanks a line begins or ends with stay"
+
+
+@pytest.mark.parametrize("width", [40, 80])
+def test_what_the_screen_writes_out_is_folded_as_it_is_shown(width: int) -> None:
+    """The screen writes out an escape, or a Hangul filler, as it draws it, after `Hanging` has
+    folded the line, so a row holding them was wider on the screen than the fold had left room for,
+    and the terminal folded it again at its first column: a warning or one of drive's lines, printed
+    with the pilot's words as they came, padded with fillers that Rich counts as no cells and the
+    Windows console as two. `Hanging` folds a line as it is shown now: every row fits the width and
+    every row after the first starts under the words."""
+    from rich.text import Text
+
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for pad in ("\x1b[2K", "\N{HANGUL FILLER}", "\N{HALFWIDTH HANGUL FILLER}"):
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(f"! camera lost:{pad * 40}   est payload 0.2 kg"), "  "))
+        rows = buf.getvalue().splitlines()
+        assert len(rows) > 1 and all(len(row) <= width for row in rows), rows
+        assert all(row.startswith("  ") for row in rows[1:]), rows
+        assert "est payload" in " ".join(rows) and ui.printable(pad) in buf.getvalue()
+
+
+_AFTER_A_LETTER = {
+    "\N{DEVANAGARI VOWEL SIGN AA}": 1,
+    "\N{HANGUL JUNGSEONG A}": 1,
+    "\N{EMOJI MODIFIER FITZPATRICK TYPE-1-2}": 1,
+    "\N{VARIATION SELECTOR-16}": 1,
+}
+"""What the Windows console gives each of these after a letter, read off its own cursor in a real
+console (round seven's sweep of every character): one cell, where Rich counts none."""
+
+
+@pytest.mark.parametrize("width", [40, 80])
+def test_a_line_is_folded_by_a_count_no_terminal_exceeds(width: int) -> None:
+    """Rich counts a spacing mark (a vowel sign of Hindi, Bengali, Tamil and the rest), a Hangul
+    vowel jamo, an emoji skin tone and the selector that asks for emoji as no cells, and the
+    Windows console gives each a cell after a letter: a reply padded with `aा` was half as wide to
+    Roboglot as on the screen, and the console folded it again at its first column. A line is
+    folded by the larger count now: counted as the console counts, every row fits and every row
+    after the first starts under the words, and every character is drawn as given."""
+    from rich.cells import cell_len
+    from rich.text import Text
+
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for mark in _AFTER_A_LETTER:
+        said = f"! said:{('a' + mark) * width} est payload 0.2 kg"
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(said), "  "))
+        rows = buf.getvalue().splitlines()
+        cells = [sum(_AFTER_A_LETTER.get(c, cell_len(c)) for c in row) for row in rows]
+        assert len(rows) > 2 and max(cells) <= width, (repr(mark), cells)
+        assert all(row.startswith("  ") for row in rows[1:]), rows
+        assert "".join([rows[0], *(row[2:] for row in rows[1:])]).split() == said.split()
+
+
+@pytest.mark.parametrize("width", [24, 40])
+def test_a_fold_never_parts_a_letter_from_what_joins_it(width: int) -> None:
+    """Counted as the console counts them, spacing vowel signs fold a line early, and Myanmar and
+    Khmer, written without spaces, are folded inside a word: the fold fell between KA and its
+    vowel sign, the row above read another syllable and the sign began the next row alone. A row
+    never begins inside a cluster now, its letter and its marks, a decomposed Hangul syllable, an
+    emoji and its skin tone: the fold goes back to the cluster's first character, and every
+    character is drawn once. Latin, Korean syllables and CJK take Rich's own fold, as before."""
+    from rich.text import Text
+
+    clusters = {
+        "myanmar": "\N{MYANMAR LETTER KA}\N{MYANMAR VOWEL SIGN AA}",
+        "khmer": "\N{KHMER LETTER KA}\N{KHMER VOWEL SIGN AA}",
+        "hindi": "\N{DEVANAGARI LETTER KA}\N{DEVANAGARI VOWEL SIGN AA}",
+        "hangul": "\N{HANGUL CHOSEONG HIEUH}\N{HANGUL JUNGSEONG A}\N{HANGUL JONGSEONG NIEUN}",
+        "skin-tone": "👍\N{EMOJI MODIFIER FITZPATRICK TYPE-4}",
+    }
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for name, cluster in clusters.items():
+        said = cluster * 40
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(said), "  "))
+        rows = buf.getvalue().splitlines()
+        bodies = [rows[0], *(row[2:] for row in rows[1:])]
+        assert len(rows) > 2 and "".join(bodies) == said, (name, rows)
+        for body in bodies:
+            assert body == cluster * (len(body) // len(cluster)), (name, body)
+    for clean in ("the robot found the ball " * 4, "로봇이 공을 찾았어요 " * 6, "機械" * 30):
+        assert ui._counted(clean) is None, "Rich's own fold, as before"
+
+
+def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """There are about a thousand places in Roboglot that hand text to its two consoles, from a
+    step line and the live status line to a table's cell and the hand-off's lines, and an LLM's,
+    a robot's, a server's or a stored run's words reach many of them. They were filtered one at
+    a time, and the next one written raw would have been the hole. The console itself now
+    writes every character a terminal could act on as its escape, in whatever it is handed,
+    while Rich's own colours and cursor moves go through as before: a new road through it
+    cannot reach the screen raw, which is what this checks, one road of each kind."""
+    from rich.rule import Rule
+    from rich.text import Text
+
+    from roboglot.cli import _TerminalHandOff
+
+    erase = "\x1b[3A\x1b[J"
+    csi = "\x9b2J"  # the one-character CSI some terminals still obey
+    console, buf = tee(160, force_terminal=True, color_system="standard")
+    monkeypatch.setattr(ui, "err_console", console)
+    grid = ui.table("robots")
+    grid.add_column("name")
+    grid.add_row(Text(f"cell{erase}"))
+    for shown in (
+        f"plain {erase}",
+        Text(f"text {erase}", style="red"),
+        ui.run_header(f"title{erase}", [("robot", f"header cell{erase}")]),
+        grid,
+        Rule(f"rule{erase}"),
+        ui.verdict("success", f"why{csi}"),
+    ):
+        console.print(shown)
+    _TerminalHandOff().say(f"the arm said {erase}, you can let go")
+    out = buf.getvalue()
+    assert erase not in out and csi not in out, out
+    assert out.count("\\x1b[3A\\x1b[J") == 7 and "\\x9b2J" in out, out
+    assert "\x1b[31m" in out, "Rich's own colours still go through"
+
+
+_PIPED = r"""
+from rich.text import Text
+from roboglot import ui
+said = "walked 0.2 m \x1b[3A\x1b[JRoboglot: every limit met \x9b2J"
+ui.console.print(said, soft_wrap=True, highlight=False, markup=False)  # drive's `say`
+ui.err_console.print(Text(said, style=ui.STYLES["warn"]))  # the hand-off's `say`
+ui.console.print("a clean line, as it always was")
+"""
+
+
+@pytest.mark.parametrize("forced", [False, True], ids=["plain", "FORCE_COLOR"])
+def test_outside_text_printed_to_a_real_pipe_reaches_it_written_out(forced: bool) -> None:
+    """The console's filter sat where Rich turns segments into text (`_render_buffer`), and on
+    Windows Rich decides at import whether a console does VT and, where it does not, which is
+    every pipe, writes the segments through its legacy renderer instead, which never goes there:
+    drive's lines, the hand-off's, every table, raw on a pipe that a terminal such as Git Bash's
+    reads and obeys. The filter is applied to the segments before Rich chooses its road. A real
+    child Python with real pipes on stdout and stderr, Roboglot's own two consoles, with and
+    without colour forced; on Windows this takes the legacy road, elsewhere the other one, and
+    on both nothing it is handed reaches the pipe raw, while a clean line arrives as it was."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1")
+    for name in ("FORCE_COLOR", "NO_COLOR"):
+        env.pop(name, None)
+    if forced:
+        env["FORCE_COLOR"] = "1"
+    done = subprocess.run(
+        [sys.executable, "-X", "utf8", "-c", _PIPED], capture_output=True, env=env, timeout=120
+    )
+    assert done.returncode == 0, done.stderr.decode("utf-8", "replace")
+    out, err = done.stdout.decode("utf-8"), done.stderr.decode("utf-8")
+    for name, said in (("stdout", out), ("stderr", err)):
+        assert "\x1b[3A" not in said and "\x1b[J" not in said and "\x9b" not in said, (name, said)
+        assert "\\x1b[3A\\x1b[JRoboglot: every limit met \\x9b2J" in said, (name, said)
+    assert "a clean line, as it always was" in out, out
+
+
+def test_half_a_character_on_a_strict_stream_is_written_out_and_ends_no_print(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lone surrogate is half a character, and a strict UTF-8 stream, which stdout is on a pipe,
+    refuses it: a note kept as JSON (`"\\ud800"` decodes to one) ended `roboglot memory list` with
+    `UnicodeEncodeError`. A console writes it out as it writes out the rest of `ui.ACTS`, and a
+    raw print of JSON with its letters as letters, as `roboglot robot list --json` prints a robot,
+    writes it as the escape JSON itself would (`ui.tolerate_narrow_encodings`)."""
+    import json
+    import sys
+
+    def strict(into: io.BytesIO) -> io.TextIOWrapper:
+        return io.TextIOWrapper(into, encoding="utf-8", newline="\n", write_through=True)
+
+    raw = io.BytesIO()
+    console = ui.make_console()
+    console.file = strict(raw)
+    console.legacy_windows = False
+    console.print(f"a note: the bowl {chr(0xD800)} is left", markup=False)
+    assert raw.getvalue() == b"a note: the bowl \\ud800 is left\n"
+
+    out, err = io.BytesIO(), io.BytesIO()
+    for name, into in (("stdout", out), ("stderr", err)):
+        monkeypatch.setattr(sys, name, strict(into))
+    ui.tolerate_narrow_encodings()
+    print(json.dumps({"name": f"arm{chr(0xDC80)}01"}, ensure_ascii=False))
+    assert json.loads(out.getvalue()) == {"name": f"arm{chr(0xDC80)}01"}, out.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("said", "shown"),
+    [
+        ("esc \x1b[2J", "esc \\x1b[2J"),  # C0: an escape sequence
+        ("soh \x01 and del \x7f", "soh \\x01 and del \\x7f"),  # C0 and DEL
+        ("csi \x9b2J and nel \x85", "csi \\x9b2J and nel \\x85"),  # C1
+        ("line\nbreak", "line\\nbreak"),  # a line break, where the text is kept on one line
+        (
+            "embed \N{LEFT-TO-RIGHT EMBEDDING} \N{RIGHT-TO-LEFT EMBEDDING} "
+            "\N{POP DIRECTIONAL FORMATTING} pops",
+            "embed \\u202a \\u202b \\u202c pops",
+        ),
+        (
+            "override \N{LEFT-TO-RIGHT OVERRIDE} \N{RIGHT-TO-LEFT OVERRIDE}",
+            "override \\u202d \\u202e",
+        ),
+        (
+            "isolate \N{LEFT-TO-RIGHT ISOLATE} \N{RIGHT-TO-LEFT ISOLATE} "
+            "\N{FIRST STRONG ISOLATE} \N{POP DIRECTIONAL ISOLATE}",
+            "isolate \\u2066 \\u2067 \\u2068 \\u2069",
+        ),
+        ("separators \N{LINE SEPARATOR} \N{PARAGRAPH SEPARATOR}", "separators \\u2028 \\u2029"),
+        (f"halves {chr(0xD800)} {chr(0xDFFF)}", "halves \\ud800 \\udfff"),  # lone surrogates
+        (
+            "fillers \N{HANGUL FILLER} \N{HALFWIDTH HANGUL FILLER} "
+            "\N{HANGUL CHOSEONG FILLER} \N{HANGUL JUNGSEONG FILLER}",
+            "fillers \\u3164 \\uffa0 \\u115f \\u1160",
+        ),
+    ],
+    ids=[
+        "esc",
+        "c0-del",
+        "c1",
+        "newline",
+        "embeddings",
+        "overrides",
+        "isolates",
+        "separators",
+        "surrogates",
+        "hangul-fillers",
+    ],
+)
+def test_what_can_act_on_a_terminal_or_reorder_a_line_is_written_out(said: str, shown: str) -> None:
+    """One table says what is written out (`ui.ACTS`), read by `printable` and by the console's
+    filter alike: a control character (C0 but the tab, DEL, C1), the explicit bidirectional
+    embeddings, overrides and isolates, which reorder the text around them, and the line and
+    paragraph separators, which can start a line. Each class, written out."""
+    assert ui.printable(said) == shown
+    console, buf = tee(200, force_terminal=True, color_system=None)
+    console.print(said.replace("\n", " "), markup=False)
+    assert buf.getvalue() == ui.printable(said.replace("\n", " ")) + "\n"
+
+
+@pytest.mark.parametrize(
+    "said",
+    [
+        "می\N{ZERO WIDTH NON-JOINER}خواهم توپ را پیدا کنم",  # Persian, a non-joiner in a word
+        "रोबोट को क्\N{ZERO WIDTH JOINER}ष ओर भेजो",  # Hindi, a joiner shaping a conjunct
+        "the mechanic 👩\N{ZERO WIDTH JOINER}🔧 fixed the arm",  # an emoji joined by a ZWJ
+        "the flag 🏴\U000e0067\U000e0062\U000e0073\U000e0063\U000e0074\U000e007f flies",  # tags
+        "a soft hy\N{SOFT HYPHEN}phen",
+        "marks \N{LEFT-TO-RIGHT MARK} \N{RIGHT-TO-LEFT MARK} \N{ARABIC LETTER MARK}",
+        "a\ttab",
+        "로봇이 공을 찾았어요 ㅋㅋ ㅠㅠ ㄱㄴㄷ",  # Korean: syllables, and the letters chat uses
+        # and spelled with its conjoining jamo, as a decomposed file name has it: 한국
+        "\N{HANGUL CHOSEONG HIEUH}\N{HANGUL JUNGSEONG A}\N{HANGUL JONGSEONG NIEUN}"
+        "\N{HANGUL CHOSEONG KIYEOK}\N{HANGUL JUNGSEONG U}\N{HANGUL JONGSEONG KIYEOK} 로봇",
+    ],
+    ids=[
+        "persian-zwnj",
+        "hindi-zwj",
+        "emoji-zwj",
+        "flag-tags",
+        "soft-hyphen",
+        "marks",
+        "tab",
+        "korean",
+        "korean-jamo",
+    ],
+)
+def test_what_cannot_act_on_a_terminal_is_drawn_as_it_always_was(said: str) -> None:
+    """The filter wrote out every character `str.isprintable` rejects, and that includes the
+    joiners Persian, Hindi and every emoji sequence need, the tags a flag is made of, the soft
+    hyphen and the direction marks: format characters that cannot move the cursor, change what
+    the terminal does or reorder what is shown. A goal, a reply or a robot's name in any of them
+    was shown with escapes in the middle of its words. Each is drawn as it was, a tab as the
+    spaces Rich expands it to, and Korean, whose fillers alone are written out, as well."""
+    assert ui.printable(said) == said
+    console, buf = tee(200, force_terminal=True, color_system=None)
+    console.print(said, markup=False)
+    plain, _ = wide(200, force_terminal=True, color_system=None)
+    plain.print(said, markup=False)
+    assert buf.getvalue() == plain.file.getvalue(), repr(buf.getvalue())  # type: ignore[attr-defined]
+
+
 def test_a_panel_on_a_codepage_that_has_no_box_still_says_everything() -> None:
     console, raw = narrow()
     console.print(
@@ -308,6 +718,28 @@ def test_the_line_names_the_call_the_llm_chose_and_how_long_the_last_answer_took
     assert "the call to anthropic failed" in status.__rich__().plain
     status.sink(LogEvent("llm_request", 0.0, request))
     assert "(last call 1.0 s)" in status.__rich__().plain, "a failure's seconds are not kept"
+
+
+def test_the_live_status_line_writes_no_escape_an_llm_sent() -> None:
+    """The step lines above it write an LLM's escapes out, and the live status line did not:
+    after an answer it names the call the LLM chose as the LLM wrote it, its tool's name and
+    its argument keys unchecked, redrawn four times a second until the next record, so
+    `ESC[3A ESC[J` there moved up over the step lines and erased them, just before a confirm
+    question. Its words go through `ui.printable`; the console here is a plain one, so this
+    fails whatever the run's own console does."""
+    import time
+
+    erase = "\x1b[3A\x1b[J"
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=200)
+    status = ui.RunStatus(console)
+    call = {"name": f"kick{erase}Roboglot: checked", "arguments": {f"leg{erase}": "left"}}
+    with status:
+        status.sink(LogEvent("llm", 1.0, {"provider": "fake", "tool_calls": [call]}))
+        time.sleep(0.6)  # a couple of its redraws
+    shown = out.getvalue()
+    assert erase not in shown, f"the LLM's escape reached the terminal: {shown[-300:]!r}"
+    assert "kick\\x1b[3A\\x1b[JRoboglot: checked" in status.__rich__().plain
 
 
 def test_a_provider_that_names_no_llm_still_reads_as_a_sentence() -> None:
@@ -657,14 +1089,15 @@ the screen of whoever cats the file and `ESC[31m` repaints the rest of it red.""
 
 def test_an_escape_sequence_drives_the_terminal_and_never_the_file(tmp_path: Path) -> None:
     """The text is not ours. Rich strips its own small set on the way out and ESC has never
-    been in it, so an escape that arrived inside a string rather than from a style reaches
-    both ends. The screen is the one that was meant to obey it."""
+    been in it, so an escape that arrived inside a string rather than from a style reached
+    both ends, and the screen obeyed it. Neither end obeys it now: the screen shows it
+    written out (`TeeConsole`), and the file drops it."""
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
     console.print(ESCAPED)
     capture.close()
-    assert buf.getvalue() == f"{ESCAPED}\n", "the terminal it was drawn for sees all of it"
+    assert buf.getvalue() == f"{ui.printable(ESCAPED)}\n", "the screen sees it, written out"
     out = saved(tmp_path)
     assert "\x1b" not in out
     assert out == "[2Jthe ball is [31mbehind[0m the sofa\n", "inert, and still readable"
@@ -673,18 +1106,38 @@ def test_an_escape_sequence_drives_the_terminal_and_never_the_file(tmp_path: Pat
 def test_the_other_characters_that_drive_a_terminal_are_dropped_too(tmp_path: Path) -> None:
     """A bell, a carriage return, a window title and a delete. Rich's own set covers the
     bell and the carriage return before either end sees them; the ESC and the DEL are this
-    file's to take out, which is why the screen still has both."""
+    file's to take out, and the screen's to write out (`TeeConsole`)."""
     said = "\x07the arm stalled\x7f\r\x1b]0;Roboglot owns your title bar\x07 at 0.3 rad"
     console, buf = tee()
     capture = ui.begin_capture()
     capture.attach(tmp_path)
     console.print(said)
     capture.close()
-    assert "\x1b" in buf.getvalue() and "\x7f" in buf.getvalue()
+    assert "\x1b" not in buf.getvalue() and "\x7f" not in buf.getvalue()
+    assert "\\x1b]0;" in buf.getvalue() and "\\x7f" in buf.getvalue()
     out = saved(tmp_path)
     for control in ("\x07", "\r", "\x1b", "\x7f"):
         assert control not in out, repr(control)
     assert out == "the arm stalled]0;Roboglot owns your title bar at 0.3 rad\n"
+
+
+def test_the_file_keeps_nothing_the_screen_writes_out(tmp_path: Path) -> None:
+    """The screen writes out one table (`ui.ACTS`), and the file dropped only C0 and DEL of it: a
+    one-character CSI, a line separator, a bidi override and isolate and a lone surrogate reached
+    `terminal.txt` as they came, by every door the screen's filter alone covers, and a reader who
+    `cat`s it got the override reordering the line. The file drops the whole table now, its line
+    breaks kept."""
+    said = (
+        "walked 0.2 m \x9b2J\N{RIGHT-TO-LEFT OVERRIDE}done\N{LEFT-TO-RIGHT ISOLATE}x"
+        f"\N{LINE SEPARATOR}y{chr(0xD800)}z\nsecond"
+    )
+    console, buf = tee()
+    capture = ui.begin_capture()
+    capture.attach(tmp_path)
+    console.print(said, markup=False)
+    capture.close()
+    assert "\\x9b2J\\u202edone\\u2066x\\u2028y\\ud800z" in buf.getvalue(), "the screen's"
+    assert saved(tmp_path) == "walked 0.2 m 2Jdonexyz\nsecond\n"
 
 
 def test_tab_and_newline_are_layout_and_are_kept(tmp_path: Path) -> None:
