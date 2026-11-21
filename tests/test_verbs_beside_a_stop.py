@@ -15,7 +15,6 @@ from typing import Any
 
 import pytest
 
-from roboglot.perception.color_blob import ColorBlobDetector
 from roboglot.safety import Executor, allow_all
 from roboglot.transport.base import Intent, RobotState
 from roboglot.verbs.core import TICK_S, _waited_out, send_or_fail
@@ -38,6 +37,7 @@ from roboglot_toddlerbot import ToddlerBotAdapter
 from roboglot_toddlerbot.mock import ToddlerBotMock
 from roboglot_xlerobot import XLerobotAdapter
 from roboglot_xlerobot.mock import XLerobotMock
+from tests.support import executor_for
 
 
 def _aloha() -> Any:
@@ -53,13 +53,8 @@ def _toddlerbot() -> Any:
 
 
 async def _executor(adapter: Any) -> Executor:
-    manifest = await adapter.connect()
-    return Executor(
-        registry_from_manifest(manifest, adapter),
-        adapter,
-        contract=None,
-        detector=ColorBlobDetector(),
-        confirm=allow_all,
+    return executor_for(
+        adapter, await adapter.connect(), seeing=True, contract=None, confirm=allow_all
     )
 
 

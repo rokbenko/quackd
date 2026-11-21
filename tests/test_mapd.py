@@ -7,7 +7,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import math
-import socket
 import threading
 import time
 from collections.abc import Iterator
@@ -35,6 +34,7 @@ from roboglot_microduck.transports.mapd import (
 )
 from tests.fake_mapd import FakeMapd
 from tests.fake_robotd import FakeRobotd
+from tests.support import until_async, unused_port
 
 
 @pytest.fixture
@@ -53,25 +53,10 @@ async def mapd() -> Any:
     await fake.stop()
 
 
-async def _eventually(check: Any, what: str, wait_s: float = 30.0) -> None:
-    deadline = time.monotonic() + wait_s
-    while not check():
-        if time.monotonic() > deadline:
-            raise AssertionError(f"{what} did not happen within {wait_s:g} s")
-        await asyncio.sleep(0.01)
-
-
 async def _connected(robotd: FakeRobotd, map_address: str | None) -> JsonRpcUnixTransport:
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", map_address=map_address)
     await t.connect()
     return t
-
-
-def _free_port() -> int:
-    """A port nothing listens on: bound, read and let go."""
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 # ── beside robotd ───────────────────────────────────────────────────────────────────────
@@ -108,7 +93,7 @@ async def test_no_mapd_at_an_address_nobody_named_leaves_odometry_without_a_word
 async def test_a_named_address_nothing_answers_at_leaves_odometry_and_says_so(
     robotd: FakeRobotd,
 ) -> None:
-    address = f"tcp://127.0.0.1:{_free_port()}"
+    address = f"tcp://127.0.0.1:{unused_port()}"
     t = await _connected(robotd, address)
     try:
         assert isinstance(t.spatial, OdometrySource)
@@ -117,7 +102,11 @@ async def test_a_named_address_nothing_answers_at_leaves_odometry_and_says_so(
         assert t.map_warning is not None and f"--map-address {address}" in t.map_warning
         # and robotd's link goes on as if nothing had been tried
         frames = robotd.frames_sent
-        await _eventually(lambda: robotd.frames_sent > frames + 2, "robotd's frames going on")
+        await until_async(
+            lambda: robotd.frames_sent > frames + 2,
+            30.0,
+            what="robotd's frames going on did not happen",
+        )
         age = t.state_age_s()
         assert age is not None and age < 1.0
     finally:
@@ -137,7 +126,11 @@ async def test_something_that_does_not_take_mapds_stream_leaves_odometry_and_nam
         assert f"API v{mapd_api.API_VERSION}" in warning
         assert f"API v{robotd.api_version}" in warning
         frames = robotd.frames_sent
-        await _eventually(lambda: robotd.frames_sent > frames + 2, "robotd's frames going on")
+        await until_async(
+            lambda: robotd.frames_sent > frames + 2,
+            30.0,
+            what="robotd's frames going on did not happen",
+        )
     finally:
         await t.close()
 
@@ -172,7 +165,11 @@ async def test_a_slow_mapd_never_holds_robot_move_back(robotd: FakeRobotd, mapd:
             await asyncio.sleep(0.1)
         assert not asking.done(), "mapd answered before the moves were sent"
         assert max(took) < t.request_timeout_s / 2, took
-        await _eventually(lambda: robotd.twist[0] == pytest.approx(0.1), "robotd taking the twist")
+        await until_async(
+            lambda: robotd.twist[0] == pytest.approx(0.1),
+            30.0,
+            what="robotd taking the twist did not happen",
+        )
         asking.cancel()
         with contextlib.suppress(asyncio.CancelledError, Exception):
             await asking
@@ -197,7 +194,9 @@ async def test_mapd_gone_mid_walk_ends_the_walk_lost_and_never_walks_on_by_odome
         walk = asyncio.create_task(
             PLACE_VERBS["go_to_place"].execute(ctx, GoToPlaceParams(name="ahead", face=False))
         )
-        await _eventually(lambda: robotd.twist[0] > 0, "the walk's first twist")
+        await until_async(
+            lambda: robotd.twist[0] > 0, 30.0, what="the walk's first twist did not happen"
+        )
         mapd.hang_up()
         result = await asyncio.wait_for(walk, 30)
         assert not result.ok and result.data["outcome"] == "lost", result.summary
@@ -219,11 +218,13 @@ async def test_mapd_back_after_a_drop_is_walked_by_again_in_the_map_it_was(
         before = book.frame()
         assert before is not None and source.fingerprint
         mapd.hang_up()
-        await _eventually(lambda: source.fix().lost is not None, "the drop being seen")
-        await _eventually(
+        await until_async(
+            lambda: source.fix().lost is not None, 30.0, what="the drop being seen did not happen"
+        )
+        await until_async(
             lambda: source.fix().lost is None and book.frame() is not None,
-            "mapd answering again, its map read",
             15,
+            what="mapd answering again, its map read did not happen",
         )
         assert book.frame() == before, "the same map was taken for another"
     finally:
@@ -495,7 +496,7 @@ def test_doctor_says_mapd_answered_and_that_it_is_unverified() -> None:
 
 
 def test_doctor_fails_a_map_address_that_does_not_answer() -> None:
-    report = _probe(f"tcp://127.0.0.1:{_free_port()}")
+    report = _probe(f"tcp://127.0.0.1:{unused_port()}")
     assert not report.ok
     row = next(r for r in report.rows if r.what == "mapd")
     assert row.value.startswith("absent at ") and row.state == "fail"
@@ -561,7 +562,9 @@ async def test_a_map_roboglot_saw_replaced_is_never_known_again_and_its_places_s
         assert f1 is not None
         book.store.mark(Place("door", 2.0, 1.0, 0.0, f1.id, "map", 0.0))
         fake.keyframes = [dict(KITCHEN[0])]  # wiped from elsewhere: a new map where it stands
-        await _eventually(lambda: f1.id in source.retired_frames, "the drop being seen")
+        await until_async(
+            lambda: f1.id in source.retired_frames, 30.0, what="the drop being seen did not happen"
+        )
         for k in KITCHEN[1:]:
             fake.keyframes.append(dict(k))
             await asyncio.sleep(0.6)
@@ -604,11 +607,15 @@ async def test_a_duck_held_two_seconds_beside_mapd_is_walked_by_its_map_again(
     try:
         source = t.spatial
         assert isinstance(source, MapdSource)
-        await _eventually(lambda: source.fix().lost is None, "mapd knowing where it is")
+        await until_async(
+            lambda: source.fix().lost is None, 30.0, what="mapd knowing where it is did not happen"
+        )
         robotd.picked_up, mapd.lost = True, "carried"
         await asyncio.sleep(2 * STALE_S)
         robotd.picked_up, mapd.lost = False, None
-        await _eventually(lambda: source.fix().lost is None, "mapd believed again")
+        await until_async(
+            lambda: source.fix().lost is None, 30.0, what="mapd believed again did not happen"
+        )
         assert source.off is None
     finally:
         await t.close()
@@ -627,7 +634,9 @@ async def test_one_slow_grid_at_connect_never_takes_the_same_map_for_another(tmp
         second, book = await _session(fake, tmp_path, 0.5)
         fake.slow_s = 0.0
         assert book.frame() is None, "a frame was named before the map's stops were read"
-        await _eventually(lambda: book.frame() is not None, "the map's stops being read")
+        await until_async(
+            lambda: book.frame() is not None, 30.0, what="the map's stops being read did not happen"
+        )
         sofa = book.view(book.store.get("sofa"))  # type: ignore[arg-type]
         await second.close()
         assert book.frame() == f1 and sofa.status == "here", sofa
@@ -646,10 +655,16 @@ async def test_an_observation_while_the_link_comes_back_does_not_name_another_ma
         assert before is not None
         fake.slow_s = 1.0  # the grid after the link comes back takes a second
         fake.hang_up()
-        await _eventually(lambda: source.fix().lost is not None, "the drop being seen")
-        await _eventually(lambda: source.fix().lost is None, "the link back", 15)
+        await until_async(
+            lambda: source.fix().lost is not None, 30.0, what="the drop being seen did not happen"
+        )
+        await until_async(
+            lambda: source.fix().lost is None, 15, what="the link back did not happen"
+        )
         during = book.frame()  # an agent turn's observation in that second
-        await _eventually(lambda: book.frame() is not None, "the map's stops being read")
+        await until_async(
+            lambda: book.frame() is not None, 30.0, what="the map's stops being read did not happen"
+        )
         await source.close()
         assert during in (None, before) and book.frame() == before
     finally:
@@ -665,9 +680,13 @@ async def test_a_young_maps_frame_outlives_a_blip_in_the_link(tmp_path: Any) -> 
         before = book.frame()
         assert before is not None
         fake.hang_up()  # mapd restarts with the same map
-        await _eventually(lambda: source.fix().lost is not None, "the drop being seen")
-        await _eventually(
-            lambda: source.fix().lost is None and book.frame() is not None, "the link back", 15
+        await until_async(
+            lambda: source.fix().lost is not None, 30.0, what="the drop being seen did not happen"
+        )
+        await until_async(
+            lambda: source.fix().lost is None and book.frame() is not None,
+            15,
+            what="the link back did not happen",
         )
         await source.close()
         assert book.frame() == before, "the same young map is another after a blip"

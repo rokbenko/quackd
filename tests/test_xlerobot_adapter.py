@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import sys
+from functools import partial
 
 import pytest
 from typer.testing import CliRunner
@@ -42,6 +43,7 @@ from roboglot_xlerobot import (
 from roboglot_xlerobot.mock import XLerobotMock
 from roboglot_xlerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN, JOINTS
 from tests.conftest import REPO
+from tests.support import executor_for, verb_column
 
 runner = CliRunner()
 
@@ -49,21 +51,6 @@ runner = CliRunner()
 #: Wide enough that rich never elides a verb name into `report_sta…`, which would make the
 #: absence checks below weaker than they look.
 WIDE = {"COLUMNS": "200"}
-
-
-def _verb_column(output: str) -> set[str]:
-    """The names in the rendered table's first column.
-
-    Searching the whole output is wrong: `approach_and`'s own description names `kick` and
-    `grab` as example follow-up verbs, so a substring check finds verbs that are not there.
-    """
-    names = {
-        line.split(chr(9474))[1].strip()
-        for line in output.splitlines()
-        if line.count(chr(9474)) > 2
-    }
-    assert not any(chr(8230) in n for n in names), f"rendered too narrow, names elided: {names}"
-    return names
 
 
 XLEROBOT_VERBS = {
@@ -84,18 +71,11 @@ GLOT = load_glot("xlerobot-lookout")
 GLOT_TEXT = (REPO / "tasks" / "xlerobot-lookout.glot").read_text(encoding="utf-8")
 
 
-def _executor(adapter: XLerobotAdapter, manifest: object, *, contract: object = None) -> Executor:
-    """No contract means every non-dangerous verb, which is what exercising the body needs.
-
-    The shipped lookout task deliberately allows three verbs and nothing else, so it is the
-    contract for the validation tests and the wrong one for these."""
-    return Executor(
-        registry_from_manifest(manifest, adapter),  # type: ignore[arg-type]
-        adapter,
-        contract=contract,  # type: ignore[arg-type]
-        detector=ColorBlobDetector(),
-        confirm=allow_all,
-    )
+# No contract means every non-dangerous verb, which is what exercising the body needs.
+#
+# The shipped lookout task deliberately allows three verbs and nothing else, so it is the
+# contract for the validation tests and the wrong one for these.
+_executor = partial(executor_for, seeing=True, contract=None, confirm=allow_all)
 
 
 # ── the manifest ────────────────────────────────────────────────────────────────────────
@@ -564,7 +544,7 @@ def test_a_kicking_task_is_refused_against_this_cart_with_the_validators_words()
 def test_list_verbs_shows_the_real_set() -> None:
     result = runner.invoke(env=WIDE, app=app, args=["list-verbs", "--robot", "xlerobot:mock"])
     assert result.exit_code == 0
-    names = _verb_column(result.output)
+    names = verb_column(result.output)
     assert {"move", "gripper", "observe"} <= names, names
     assert not names & {"kick", "quack", "say", "gaze", "lift", "perform"}, names
 

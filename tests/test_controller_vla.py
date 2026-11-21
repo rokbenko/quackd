@@ -48,10 +48,9 @@ from roboglot.registry import Registry, RobotEntry
 from roboglot.safety import Budget, BudgetExceeded, allow_all
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import REST, LeRobotMock
-from roboglot_lerobot.policy import server as S
 from tests.test_glot_policy import INSTRUCTIONS, SEGMENT_S, _v3
 from tests.test_lerobot_adapter import _segment_arm, built_arm
-from tests.test_policy_contract import TOKEN, Serving, _serving
+from tests.test_policy_contract import TOKEN, Serving, serving
 
 runner = CliRunner()
 
@@ -840,13 +839,8 @@ def test_the_judge_prompt_is_marked_as_reaching_a_person_only_at_a_terminal(
 def held() -> Iterator[Serving]:
     """`roboglot policy serve --policy scripted:hold`: a `manipulate` of it ends on a stall,
     which is a segment that ran and is ok."""
-    serving = _serving(S.ServeOptions(policy="scripted:hold"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
+    with serving("scripted:hold") as s:
+        yield s
 
 
 @pytest.mark.parametrize("said", [True, False], ids=["yes", "no"])

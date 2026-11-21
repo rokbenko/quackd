@@ -42,6 +42,7 @@ from roboglot.transport.mock import MockTransport
 from roboglot_toddlerbot import ToddlerBotAdapter
 from roboglot_toddlerbot.mock import ToddlerBotMock
 from tests.fake_jetson_hostd import FakeHostd, dead_address
+from tests.support import one_line
 from tests.test_mcp_team import _data, connected
 
 runner = CliRunner()
@@ -102,10 +103,6 @@ def _run(tmp_path: Path, *args: str, log: bool = False, task: str = "hello-world
         ],
         env={"COLUMNS": "200"},
     )
-
-
-def _flat(result: Any) -> str:
-    return " ".join(result.output.split())
 
 
 def _run_line(start: dict[str, Any]) -> str:
@@ -249,7 +246,7 @@ def test_detector_host_without_detect_is_refused_before_connecting(
         tmp_path, "--robot", "microduck:mock", "--host", hostd.address, "--detector", "host"
     )
     assert result.exit_code == 1, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert f"the daemon at {hostd.address} cannot detect" in flat, flat
     assert "detect=false: started with --no-detect" in flat
     assert nothing_connects == []
@@ -261,7 +258,7 @@ def test_detector_host_without_a_board_is_refused_before_connecting(
 ) -> None:
     result = _run(tmp_path, "--robot", "microduck:mock", "--detector", "host")
     assert result.exit_code == 1, result.output
-    assert "no board is named: add --host" in _flat(result)
+    assert "no board is named: add --host" in one_line(result.output)
     assert nothing_connects == []
 
 
@@ -271,14 +268,14 @@ def test_detector_yolo_without_the_extra_names_the_install(
     monkeypatch.setitem(sys.modules, "ultralytics", None)
     result = _run(tmp_path, "--robot", "microduck:mock", "--detector", "yolo")
     assert result.exit_code == 1, result.output
-    assert "uv pip install 'roboglot[yolo]'" in _flat(result)
+    assert "uv pip install 'roboglot[yolo]'" in one_line(result.output)
     assert nothing_connects == []
 
 
 def test_a_detector_nobody_offers_is_refused(tmp_path: Path, nothing_connects: list[Any]) -> None:
     result = _run(tmp_path, "--robot", "microduck:mock", "--detector", "sonar")
     assert result.exit_code == 1, result.output
-    assert "--detector is one of color, host, yolo, not 'sonar'" in _flat(result)
+    assert "--detector is one of color, host, yolo, not 'sonar'" in one_line(result.output)
     assert nothing_connects == []
 
 
@@ -294,7 +291,9 @@ def test_a_detector_is_for_one_robot(
     both commands refuse `--detector` for `--robots`, and `run` once took it from one member."""
     result = _run(tmp_path, "--robots", robots, "--detector", "color")
     assert result.exit_code == 1, result.output
-    assert "--detector is for one robot, and this run drives several robots" in _flat(result)
+    assert "--detector is for one robot, and this run drives several robots" in one_line(
+        result.output
+    )
     assert nothing_connects == []
 
 
@@ -305,7 +304,7 @@ def test_a_daemon_that_is_down_refuses_the_run_before_the_body_moves(
     it did not have, so the board not answering refuses it too."""
     result = _run(tmp_path, "--robot", "microduck:mock", "--host", "127.0.0.1:1", "--dry-run")
     assert result.exit_code == 1, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert "--host 127.0.0.1:1 did not answer" in flat, flat
     assert "drop --host to run without it" in flat
     assert nothing_connects == []
@@ -322,13 +321,13 @@ def test_a_board_nobody_typed_is_refused_by_where_it_was_named(
     and the refusal says where it did come from and how to run without it from there."""
     dead = dead_address()
     Registry(tmp_path / "reg").add_robot(RobotEntry(name="jet", spec="microduck:mock", host=dead))
-    stored = _flat(_run(tmp_path, "--robot", "jet"))
+    stored = one_line(_run(tmp_path, "--robot", "jet").output)
     assert f"the host {dead} from robot jet (robots.json) did not answer" in stored, stored
     assert "roboglot robot edit jet --clear host to run without it" in stored
     # no stored token to carry, so the doctor it names asks the board and leaves the body alone
     assert f"roboglot doctor --host {dead} shows what the board says" in stored
     monkeypatch.setenv(HOST_ENV, dead)
-    usual = _flat(_run(tmp_path, "--robot", "microduck:mock"))
+    usual = one_line(_run(tmp_path, "--robot", "microduck:mock").output)
     assert f"the host {dead} from {HOST_ENV} did not answer" in usual, usual
     assert f"unset {HOST_ENV} to run without it" in usual
     assert nothing_connects == []
@@ -354,7 +353,7 @@ def test_the_header_and_run_start_name_the_boards_detector(
         log=True,
     )
     assert result.exit_code == 0, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert f"detector yolo@host {hostd.address} yolov8n.pt on cuda (asked for on a mock)" in flat, (
         flat
     )
@@ -377,7 +376,7 @@ def test_a_mock_with_a_board_keeps_the_colour_detector_and_says_so(
 ) -> None:
     result = _run(tmp_path, "--robot", "microduck:mock", "--host", hostd.address, log=True)
     assert result.exit_code == 0, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert "detector color_blob on this machine" in flat, flat
     start = _start(tmp_path)
     line = _run_line(start)
@@ -391,7 +390,7 @@ def test_a_mock_with_a_board_keeps_the_colour_detector_and_says_so(
 def test_a_run_without_a_board_names_the_colour_detector_and_no_host(tmp_path: Path) -> None:
     result = _run(tmp_path, "--robot", "microduck:mock")
     assert result.exit_code == 0, result.output
-    assert "detector color_blob on this machine" in _flat(result)
+    assert "detector color_blob on this machine" in one_line(result.output)
     start = _start(tmp_path)
     assert start["detector"] == "color_blob" and "host" not in start
 
@@ -422,7 +421,7 @@ def test_a_body_described_blind_that_reports_its_own_camera_is_measured_through_
         tmp_path, "--robot", "toddlerbot:bridge", "--host", hostd.address, "--yes", task=task
     )
     assert result.exit_code == 0, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert "camera as the primary view unless the body reports its own" in flat, flat
     (loop,) = loops
     detector = loop.cfg.detector
@@ -480,7 +479,7 @@ def test_the_boards_detector_waits_for_a_camera_on_a_body_described_without_one(
     assert result.exit_code == 0, result.output
     assert (
         f"detector yolo@host {hostd.address} yolov8n.pt on cuda (once the body reports a camera)"
-        in _flat(result)
+        in one_line(result.output)
     )
     (loop,) = loops
     assert isinstance(loop.cfg.detector, HostDetector)
@@ -508,7 +507,7 @@ def test_a_body_with_nothing_to_look_at_is_told_nothing_about_a_lens(
         tmp_path, "--robot", "toddlerbot:bridge", "--host", hostd.address, "--yes", task=task
     )
     assert result.exit_code == 0, result.output
-    assert "(once the body reports a camera)" in _flat(result)
+    assert "(once the body reports a camera)" in one_line(result.output)
     assert _lens_warnings(caplog) == []
     start = _start(tmp_path)
     assert start["detector"] is None
@@ -537,7 +536,7 @@ def test_the_header_names_the_colour_detector_a_body_described_blind_gets_at_con
         task=_task(tmp_path, look=True),
     )
     assert asked.exit_code == 0, asked.output
-    flat = _flat(asked)
+    flat = one_line(asked.output)
     assert "detector color_blob on this machine" in flat, flat
     assert "(once the body reports a camera)" not in flat
     assert _start(tmp_path)["detector"] == "color_blob"
@@ -545,7 +544,9 @@ def test_the_header_names_the_colour_detector_a_body_described_blind_gets_at_con
         tmp_path, "--robot", "toddlerbot:bridge", "--yes", task=_task(tmp_path, look=False)
     )
     assert alone.exit_code == 0, alone.output
-    assert "detector color_blob on this machine (once the body reports a camera)" in _flat(alone)
+    assert "detector color_blob on this machine (once the body reports a camera)" in one_line(
+        alone.output
+    )
 
 
 # ── validate and list-verbs ask no board ────────────────────────────────────────────────
@@ -573,7 +574,7 @@ def test_validate_and_list_verbs_say_the_boards_camera_is_not_counted(
 
     checked = cli("validate", look, "--robot", "tb")
     assert checked.exit_code == 1, checked.output
-    flat = _flat(checked)
+    flat = one_line(checked.output)
     assert f"validate {note}" in flat, flat
     assert f"roboglot doctor --host {hostd.address} shows whether it does" in flat
     (row,) = [
@@ -583,10 +584,10 @@ def test_validate_and_list_verbs_say_the_boards_camera_is_not_counted(
     assert row["notes"][0].startswith(f"validate {note}")
     listed = cli("list-verbs", "--robot", "tb")
     assert listed.exit_code == 0, listed.output
-    assert f"list-verbs {note}" in _flat(listed)
+    assert f"list-verbs {note}" in one_line(listed.output)
     quiet = cli("list-verbs", "--robot", "tb", "--json")
     assert all(json.loads(line) for line in quiet.stdout.splitlines()), "stdout stays JSON"
-    assert "does not ask" not in _flat(cli("list-verbs", "--robot", "duck"))
+    assert "does not ask" not in one_line(cli("list-verbs", "--robot", "duck").output)
     assert hostd.requests == [], "neither command asks the board anything"
 
 

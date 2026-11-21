@@ -7,12 +7,12 @@ the file `$GITHUB_STEP_SUMMARY` names. None of it runs pytest or reaches the net
 
 from __future__ import annotations
 
-import importlib.util
-import sys
+from functools import partial
 from pathlib import Path
-from types import ModuleType
 
 import pytest
+
+from tests.support import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "scripts" / "ci_failed_tests.py"
@@ -46,15 +46,9 @@ ERRORED = """<?xml version="1.0" encoding="utf-8"?>
 """
 
 
-def _script() -> ModuleType:
-    """The script loaded by path, as `tests/test_upstream_drift.py` loads its own, and
-    registered under its name first, which its dataclass's string annotations need."""
-    spec = importlib.util.spec_from_file_location("ci_failed_tests", SCRIPT)
-    assert spec and spec.loader, f"{SCRIPT} could not be loaded as a module"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["ci_failed_tests"] = module
-    spec.loader.exec_module(module)
-    return module
+# The script loaded by path, as `tests/test_upstream_drift.py` loads its own, and
+# registered under its name first, which its dataclass's string annotations need.
+_script = partial(load_script, SCRIPT, "ci_failed_tests")
 
 
 @pytest.fixture

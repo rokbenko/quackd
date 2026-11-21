@@ -16,7 +16,7 @@ import asyncio
 import json
 import math
 import time
-from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import pytest
@@ -35,18 +35,13 @@ from roboglot_xlerobot.zmq_host import (
     split_address,
 )
 from tests.fake_xlerobot_host import FakeXLerobotHost
+from tests.support import until_async
 
 pytest.importorskip("zmq", reason="the xlerobot zmq backend needs roboglot[xlerobot]")
 
 
-async def _until(predicate: Callable[[], bool], limit_s: float = 3.0) -> None:
-    """Wait for the fake's own loop to catch up, without sleeping a fixed amount."""
-    deadline = asyncio.get_running_loop().time() + limit_s
-    while asyncio.get_running_loop().time() < deadline:
-        if predicate():
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError("the fake host never reached the expected state")
+# Wait for the fake's own loop to catch up, without sleeping a fixed amount.
+_until = partial(until_async, within_s=3.0, what="the fake host never reached the expected state")
 
 
 A_MINUTE_MS = 60_000.0
@@ -462,7 +457,7 @@ async def test_silence_trips_the_hosts_watchdog_and_stops_the_base() -> None:
         # A trip AFTER the move landed. `watchdog_trips` is cumulative, so waiting for `>= 1`
         # can be satisfied by a trip that happened before it.
         tripped = host.watchdog_trips
-        await _until(lambda: host.watchdog_trips > tripped, limit_s=5.0)
+        await _until(lambda: host.watchdog_trips > tripped, within_s=5.0)
         assert host.state["x.vel"] == 0.0
         await link.close()
 

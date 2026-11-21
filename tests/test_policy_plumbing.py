@@ -45,7 +45,6 @@ from roboglot.glotfile.validate import validate_glot
 from roboglot.registry import Registry, RobotEntry
 from roboglot_lerobot.mock import REST
 from roboglot_lerobot.policy import protocol as wire
-from roboglot_lerobot.policy import server as S
 from roboglot_lerobot.policy.client import RemoteRunner, policy_address
 from roboglot_lerobot.verbs import JOINTS, MANIPULATE_S
 from tests.test_lerobot_adapter import _segment_arm, built_arm
@@ -55,7 +54,7 @@ from tests.test_policy_contract import (
     _arm_on,
     _as_checkpoint,
     _quantiles,
-    _serving,
+    serving,
 )
 
 runner = CliRunner()
@@ -97,13 +96,8 @@ def registered_arm(_registry_in_tmp: None) -> str:
 def held() -> Iterator[Serving]:
     """`roboglot policy serve --policy scripted:hold`, on loopback, with a token: a `manipulate`
     of it ends on a stall, which is a segment that ran and is ok."""
-    serving = _serving(S.ServeOptions(policy="scripted:hold"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
+    with serving("scripted:hold") as s:
+        yield s
 
 
 def _flat(text: str) -> str:
