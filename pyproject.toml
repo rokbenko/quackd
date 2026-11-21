@@ -171,6 +171,20 @@ moss = ["roboglot-moss>=0.34.0,<0.35"]
 # stream. Heavy (aiortc pulls av, which pulls FFmpeg), needed by nobody who is not pulling the
 # track off a real Microduck, and never imported unless --camera-url says webrtc://.
 microduck-camera = ["roboglot-microduck[camera]>=0.34.0,<0.35"]
+
+[project.scripts]
+roboglot = "roboglot.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rokbenko/quackd"
+Repository = "https://github.com/rokbenko/quackd"
+Issues = "https://github.com/rokbenko/quackd/issues"
+Changelog = "https://github.com/rokbenko/quackd/blob/main/CHANGELOG.md"
+
+# A contributor's environment, and what CI's jobs sync: a dependency group (PEP 735) and not an
+# extra, so it is never published with the wheel and nobody is offered `roboglot[dev]`. uv
+# installs the `dev` group by default, so a bare `uv sync` is the whole setup.
+[dependency-groups]
 dev = [
   # hatchling is already the build backend; dev gets it so tests/test_pypi_readme.py
   # can import the metadata hook that rewrites the README for PyPI.
@@ -206,15 +220,6 @@ dev = [
   # reads the QR codes back (tests/test_webui_launch.py). Nothing in a Roboglot wheel imports it.
   "opencv-python-headless>=4.9",
 ]
-
-[project.scripts]
-roboglot = "roboglot.cli:main"
-
-[project.urls]
-Homepage = "https://github.com/rokbenko/quackd"
-Repository = "https://github.com/rokbenko/quackd"
-Issues = "https://github.com/rokbenko/quackd/issues"
-Changelog = "https://github.com/rokbenko/quackd/blob/main/CHANGELOG.md"
 
 # One repository, several distributions. The adapters are their own packages so that
 # `uv pip install roboglot` brings no robot and you choose the one you own.

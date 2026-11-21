@@ -673,7 +673,7 @@ uv pip install "roboglot[lerobot-vla]"                   # the arm's policy serv
 uv pip install "roboglot[ui]"                            # the page in a browser or on a phone, roboglot ui: Streamlit
 uv tool install "roboglot[onboard]"                      # on a robot's own computer: roboglot onboard, Robot Passport, with --python 3.12 on JetPack 6
 uv pip install "roboglot[anthropic]"                     # the brain: or openai, gemini, grok, mistral, deepseek, cohere, qwen, kimi, glm, meta, openrouter, all
-git clone https://github.com/rokbenko/quackd && cd Roboglot && uv sync --extra dev   # contributors: the core and all ten adapters, editable
+git clone https://github.com/rokbenko/quackd && cd Roboglot && uv sync   # contributors: the core and all ten adapters, editable
 ```
 
 The extras are independent and they compose, so a body and a brain are one install (`uv pip install "roboglot[microduck,anthropic]"`) or none at all (`uvx --from "roboglot[microduck,anthropic]" roboglot run ...`). `roboglot[lerobot]` installs anywhere and reaches a real arm only on Python 3.12 or newer, because LeRobot itself does: below that floor the marker resolves to no SDK and you are left with `lerobot:mock`, which is why `roboglot doctor` is where you check rather than the install output. `roboglot[lerobot-vla]` is the arm's policy server, `roboglot policy serve`, which needs LeRobot and Python 3.12 and belongs wherever the policy runs rather than in the process that drives the arm ([docs/guides/policies.md](docs/guides/policies.md)). And `roboglot[yolo]`, `roboglot[lan]` and `roboglot[ui]` are the other detector, LAN discovery and the page `roboglot ui` serves. `roboglot[decision]` is the System One client for the optional discrete stepper and `roboglot[laya]` is the one that runs in this process instead of behind a server. Both are off unless a run names a decision LLM, and neither is part of `roboglot[all]`, deliberately, because a stepper nobody asked for should never be installed by asking for everything. `--decision-llm openai` needs neither, because its client is the `openai` SDK the pilot already uses ([docs/guides/decision-llms/README.md](docs/guides/decision-llms/README.md)). `roboglot[onboard]` goes on a robot's own computer, and on a laptop for the `sim` board and its demo: `roboglot onboard` with zeroconf, an OpenAI-compatible client for the robot's brain and, on Linux alone, the Bluetooth libraries, and it is not part of `roboglot[all]` either. Which body a command means when you do not name one is in [Configuration](#configuration), and `roboglot doctor` says what this machine has.
@@ -1310,7 +1310,21 @@ Why a task can refuse a body, whether two robots can share a task, and more: [do
 
 ## Contributing
 
-**Add your `.glot` to [`tasks/`](tasks/). PRs welcome.** That is the community funnel and the number we actually care about. Adding a verb to a robot is one function plus one manifest entry. Both are described in [CONTRIBUTING.md](CONTRIBUTING.md), and design decisions live in [docs/adr/](docs/adr/). Tests run with no network and no keys: `uv sync --extra dev && uv run pytest`, which installs the core and all ten adapters as editable workspace members and not one robot SDK.
+**Add your `.glot` to [`tasks/`](tasks/). PRs welcome.** That is the community funnel and the number we actually care about. Adding a verb to a robot is one function plus one manifest entry. Both are described in [CONTRIBUTING.md](CONTRIBUTING.md), and design decisions live in [docs/adr/](docs/adr/). Tests run with no network and no keys: `uv sync && uv run pytest`, which installs the core and all ten adapters as editable workspace members and not one robot SDK.
+
+Before a push, run what CI's test job runs, in its order:
+
+```bash
+uv lock --check
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest -n auto -m "not serial"
+uv run pytest -m serial
+uv run roboglot validate tasks/*.glot
+```
+
+CI runs them on Python 3.11 and 3.12, on Linux, macOS and Windows, and one Python on your own machine is enough before a push. A bare `uv sync` builds the environment on 3.12, the Python `.python-version` names, and [CONTRIBUTING.md](CONTRIBUTING.md) says how to keep a 3.11 one beside it.
 
 **Thank you to everyone who has sent Roboglot code.** 0.6 was the first release built on other people's pull requests, and both of them changed the project: one gave every robot a memory between runs, the other closed a budget a slow LLM could walk straight through. A bug report or a `.glot` that mostly fails counts too, because that is data.
 

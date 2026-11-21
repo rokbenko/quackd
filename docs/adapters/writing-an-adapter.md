@@ -83,7 +83,7 @@ roboglot = { workspace = true }
 | the environment marker | LeRobot needs Python 3.12 and pulls torch. The marker is what keeps the lock solvable on 3.11, where this package still installs and the mock still runs |
 | `[project.entry-points."roboglot.adapters"]` | `lerobot = "roboglot_lerobot"` is the robot's name mapped to the module carrying `describe`, `make`, `implementations` and `conditions`. This is how Roboglot finds it, and the only way it finds a third party's |
 | `[tool.hatch.version] path` | the version lives in `src/roboglot_lerobot/__init__.py` as `__version__`, because an adapter's sdist holds only its own source and cannot read the core's. `scripts/set_version.py X.Y.Z` writes all eleven at once, the core's among them |
-| `[tool.uv.sources] roboglot = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync --extra dev` install the core and all ten editable. An adapter published from somewhere else deletes this block and depends on the released core |
+| `[tool.uv.sources] roboglot = { workspace = true }` | **in this repository only.** It points the dependency at the checkout instead of PyPI, which is what makes `uv sync` install the core and all ten editable. An adapter published from somewhere else deletes this block and depends on the released core |
 
 The `README.md` is the package's PyPI page. Keep it to what the body is, the one command
 that installs it, what has actually been run against hardware, and a link to the full page
@@ -624,7 +624,7 @@ Then, for one Roboglot publishes:
    with none of them installed, each marked "not installed". Append, never insert: the tables
    that print these rows are order sensitive and a test pins them.
 7. A `roboglot[<name>]` extra in the core's `pyproject.toml` pointing at `roboglot-<name>` (with
-   `[sdk]` if there is one), the package listed in the `dev` extra and in
+   `[sdk]` if there is one), the package listed in the `dev` group and in
    `[tool.uv.sources]` as a workspace member, and `uv lock`. The module gets a row in
    `doctor.py`'s `EXTRAS` if it has an SDK worth probing.
 8. `docs/adapters/<name>/README.md` (every ref name, the pin, "never"), a row in the README

@@ -3,7 +3,7 @@
 Skipped wherever the SDK is not installed, which includes CI: nothing in the suite installs a
 provider SDK. To run it, sync an environment with the extra and run pytest there:
 
-    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openai
+    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra openai
 
 It has run, all of it, against the eleven releases of the SDK in uv's cache, on 2026-10-12, and
 against no other: 1.66.0, the extras' floor, which sends through `httpx` rather than `httpx2`, and
