@@ -1086,6 +1086,128 @@ def test_the_wizard_refuses_root(
     assert not (tmp_path / "robot" / "robot.yaml").exists()
 
 
+@pytest.mark.parametrize(
+    ("refused", "said"),
+    [
+        ("no account for the uid", "no account on this system has uid 1000"),
+        ("roboglot's own path", "roboglot's own path"),
+        ("a quote in roboglot's own path", "roboglot's own path"),
+        ("a folder with .. parts", "without '..' parts"),
+    ],
+)
+def test_what_the_unit_would_refuse_is_refused_before_any_sudo_line_runs(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    named_computer: None,
+    refused: str,
+    said: str,
+) -> None:
+    """The wizard offered BlueZ's address privacy, and ran its sudo lines, bluetoothd's restart
+    among them, before anything the unit checks: a uid with no account, or a folder, user or
+    path no unit can hold, was refused only after those lines had run. It is refused first now,
+    and no command runs at all. The commands go to a stand-in, main.conf is a scratch file, and
+    the platform is Linux's, the one the wizard offers both on."""
+    import shutil
+
+    from roboglot.onboard import wizard
+    from roboglot.radio.bluez import privacy
+    from tests.test_onboard_wizard import runs_as
+
+    main_conf = tmp_path / "main.conf"
+    main_conf.write_text("[General]\n", encoding="utf-8")
+    monkeypatch.setattr(privacy, "MAIN_CONF", str(main_conf))
+    monkeypatch.setattr(privacy, "BACKUP", str(tmp_path / "main.conf.backup"))
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(wizard, "run_command", lambda command: ran.append(command) or 0)
+    monkeypatch.setattr(sys, "platform", "linux")
+    runs_as(monkeypatch, None if refused == "no account for the uid" else "robot")
+    home = tmp_path / "robot"
+    if refused == "a folder with .. parts":
+        (tmp_path / "x").mkdir()
+        home = tmp_path / "x" / ".." / "robot"
+    unrunnable = {
+        "roboglot's own path": "/usr/bin/roboglot\nExecStartPre=+/bin/true",
+        # systemd runs no program from a path with a quote in it, however it is quoted
+        "a quote in roboglot's own path": "/home/robot/Rok's robot/.venv/bin/roboglot",
+    }
+    if refused in unrunnable:
+        which = shutil.which
+        bad = unrunnable[refused]
+        monkeypatch.setattr(
+            wizard.shutil, "which", lambda name, *a, **k: bad if name == "roboglot" else which(name)
+        )
+    result = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(home),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert said in flat(result.output)
+    assert ran == [], f"sudo lines ran before the refusal: {ran}"
+
+
+def test_a_wizard_with_nothing_to_refuse_offers_privacy_then_installs_the_unit_as_before(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    named_computer: None,
+) -> None:
+    """Checking the unit before the privacy changes nothing for a run it does not refuse: the
+    privacy lines, then the unit's, each as it always was, through the same stand-ins."""
+    from roboglot.onboard import systemd, wizard
+    from roboglot.radio.bluez import privacy
+    from tests.test_onboard_wizard import runs_as
+
+    main_conf = tmp_path / "main.conf"
+    main_conf.write_text("[General]\n", encoding="utf-8")
+    monkeypatch.setattr(privacy, "MAIN_CONF", str(main_conf))
+    monkeypatch.setattr(privacy, "BACKUP", str(tmp_path / "main.conf.backup"))
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(wizard, "run_command", lambda command: ran.append(command) or 0)
+    monkeypatch.setattr(sys, "platform", "linux")
+    runs_as(monkeypatch, "robot")
+    result = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(tmp_path / "robot"),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert ran == [
+        *privacy.install_commands(str(staged / "main.conf"), backup_exists=False),
+        *systemd.install_commands(staged / systemd.UNIT_NAME),
+    ]
+    assert "the service is running" in flat(result.output)
+
+
 def test_a_laptop_is_no_robot_and_is_told_how_to_try_it_as_a_simulation(tmp_path: Path) -> None:
     refused = runner.invoke(app, ["onboard", "--dir", str(tmp_path / "robot")])
     if refused.exit_code == 0:  # pragma: no cover - a test machine that is a Jetson
@@ -1149,6 +1271,48 @@ def test_pin_trusts_a_robot_met_and_forget_takes_it_back(
     assert config.load(home / "robot.yaml").trust.pins == []
     nobody = runner.invoke(app, ["onboard", "pin", "beef", "--yes", "--dir", str(home)])
     assert nobody.exit_code == 1 and "met no robot" in flat(nobody.output)
+
+
+def test_forget_never_says_forgot_for_a_pin_it_left_trusted(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """`forget` found the pin in robot.yaml, asked for its line to be taken out, and said
+    `forgot` whatever came back: a pin written over lines of its own, as a person may write it,
+    stayed trusted under that word. It says it could not, and exits 1, and the pin stays."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    yaml = home / "robot.yaml"
+    other = "did:key:z6MkehRgf7yJbgaGfYsdoAsKdBPE3dj2CYhowQdcjqSJgvVd"
+    block = (
+        f'  pins:\n    - kind: robot\n      id: "{other}"\n      name: two\n'
+        '      pinned: "2026-11-21"\n'
+    )
+    text = yaml.read_text(encoding="utf-8")
+    assert text.count("  pins: []\n") == 1
+    yaml.write_text(text.replace("  pins: []\n", block), encoding="utf-8")
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [other]
+    forgot = runner.invoke(app, ["onboard", "forget", other, "--dir", str(home)])
+    assert forgot.exit_code == 1, forgot.output
+    assert "forgot robot" not in flat(forgot.output) and "by hand" in flat(forgot.output)
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [other]
+
+
+def test_a_robots_did_forgets_it_whatever_another_pin_is_named(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """A robot's passport name is its own text, so a stranger pinned with A's did for its name
+    made `forget <A's did>` match two pins and refuse, and the did could no longer forget A. An
+    exact did wins over a name now: A's pin alone goes, and the stranger's stays."""
+    from tests.passport_helpers import INTRUDER, A
+
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    yaml = home / "robot.yaml"
+    config.add_pin(yaml, config.Pin(kind="robot", id=A.did, name="g1-edu-02", pinned="2026-11-21"))
+    config.add_pin(yaml, config.Pin(kind="robot", id=INTRUDER.did, name=A.did, pinned="2026-11-21"))
+    forgot = runner.invoke(app, ["onboard", "forget", A.did, "--dir", str(home)])
+    assert forgot.exit_code == 0, forgot.output
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [INTRUDER.did]
 
 
 def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(

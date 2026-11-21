@@ -345,7 +345,15 @@ for the last is `timedatectl`.
 
 The wizard prints every sudo line before it runs one: the unit installed, systemd reloaded, the
 service enabled and started. The unit runs `roboglot onboard serve` as your user, never as root, with
-the robot's folder as the only place it may write:
+the robot's folder as the only place it may write. Your user is the account the system's account
+database names for the uid running the wizard, whatever `USER` says; with no account for it, or
+with a name systemd would find as another uid (`root`, digits alone, another account's), the
+wizard installs nothing and says why. The folder, the path to `roboglot` and the user go into the
+unit in systemd's own quoting, so a folder with a space or a `%` in its name is the one the service
+runs in, and a `roboglot` found through a relative entry in `PATH` goes in absolute. A folder with
+`..` parts, a path to `roboglot` with a quote or a backslash, which systemd runs no program from,
+a user name systemd refuses, and any of them holding a control character, a newline say, is
+refused, naming which, before any sudo line runs, the address privacy's included:
 
 | In the unit | Why |
 |---|---|
@@ -491,7 +499,9 @@ A pin is the one thing in Robot Passport only a person makes. `roboglot onboard 
 robot this one met, named by the start of its short id, four hex characters or more, by the name it
 was met under, or by its `did:key`. `--owner` pins the owner key that signed it instead, so every
 robot that owner signs is known, including ones this robot has never met. The pin goes into
-`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive. A robot's
+`robot.yaml` under `trust.pins`, one line each, edited as text so your comments survive, under the
+name the robot's passport gives, or with `--owner` its owner's label, written as it reads, an emoji
+included, and any character that does not show or would end the line escaped. A robot's
 pin names the owner key that signed it then, so if another owner key ever signs for that robot key,
 it is a stranger again until you pin it once more. The service reads the pin at once and judges every
 open session again, so the robot is known from its next word:
@@ -511,7 +521,8 @@ met by one (1)
 ```
 
 `roboglot onboard forget WHICH` removes a pin the same way, and an open session with that robot is a
-stranger's from its next word. A robot whose name, or owner label, reads like a pinned one's under
+stranger's from its next word. A pin not on one line as `pin` writes it is left, and `forget` says
+so and exits 1. A robot whose name, or owner label, reads like a pinned one's under
 another key is warned about, in the service's log, in `met` and before `pin` asks, and only a key
 decides a tier
 ([trust.md](trust.md#a-name-that-looks-like-another)).

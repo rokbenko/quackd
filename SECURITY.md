@@ -256,9 +256,11 @@ Also in scope:
   can make it hold is bounded, 32 connections at once, five seconds a read and ten a connection, and
   a first hello there is refused unless its sender was heard by radio in the last eight seconds. Its
   control connection listens on `127.0.0.1` alone, with a token in `control.json` compared in
-  constant time. Every talk message is signed by its sender's robot key, at most 16 KB for a hello
-  and 4 KB for anything else, and both robots verify each other's owner-signed passport before a
-  word passes. The owner key, the one to guard most, lives in the robot's directory sealed with a
+  constant time, a file readable by its owner alone and written through a new temporary file of
+  its own, never through a link. Every talk message is signed by its sender's robot key, at most
+  16 KB for a hello and 4 KB for anything else, and both robots verify each other's owner-signed
+  passport before a word passes.
+  The owner key, the one to guard most, lives in the robot's directory sealed with a
   passphrase by scrypt and AES-256-GCM, and is opened only while the owner signs. The passphrase is
   typed hidden, or read from `--passphrase-file`, which is refused on Linux and macOS when anybody
   but its owner can read it, and no environment variable carries one. The robot's own key is a plain
@@ -266,8 +268,9 @@ Also in scope:
   footing as the tokens in `robots.json`: whoever holds it can speak as the robot until its passport
   expires, and cannot change what its owner signed. The brain's key is in `robot.env`, readable by
   its owner alone and handed to the service by systemd, and never in `robot.yaml`. The unit runs as
-  the user who installed it and never as root, which the wizard refuses, in the `bluetooth` group,
-  with `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome=read-only`, a private `/tmp` and
+  the account that ran the wizard, as the system's account database names it, and never as root,
+  which the wizard refuses, in the `bluetooth` group, with `NoNewPrivileges`,
+  `ProtectSystem=strict`, `ProtectHome=read-only`, a private `/tmp` and
   write access to the robot's directory alone, and the sudo lines that install it are printed before
   they run. Nothing a robot says moves anything. An `ask` is decided by the courtesy handler, never
   the pilot, and only while a run holds the body: a pause of 5 s at most for a stranger and 10 s for

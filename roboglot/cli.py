@@ -8607,6 +8607,7 @@ def onboard(
     on_a_robot = chosen.radio_kind == "bluez" and sys.platform.startswith("linux")
     if on_a_robot and not no_service:
         try:
+            wizard.check_service(home)  # what the unit would refuse, before any sudo line
             wizard.offer_privacy(
                 say=lambda line: ui.console.print(line), ask=ask, run=wizard.run_command
             )
@@ -8948,16 +8949,22 @@ def onboard_forget(
     home = _onboard_home(directory)
     robot = _onboard_file(home)
     wanted = which.strip()
-    matches = [
+    # a did names its pin exactly, and a name is the other robot's own text, which may be a did
+    matches = [p for p in robot.trust.pins if p.id == wanted] or [
         p
         for p in robot.trust.pins
-        if wanted in (p.id, p.name)
-        or (len(wanted) >= 4 and str(short_id_of(p.id)).startswith(wanted))
+        if wanted == p.name or (len(wanted) >= 4 and str(short_id_of(p.id)).startswith(wanted))
     ]
     if len(matches) != 1:
         _fail(f"{wanted!r} names {len(matches)} pins: give its did or more of its short id")
         return
-    config.remove_pin(home.robot_yaml, matches[0].id)
+    if not config.remove_pin(home.robot_yaml, matches[0].id):
+        _fail(
+            f"could not forget {matches[0].kind} {ui.printable(matches[0].name)}: its pin in "
+            f"{home.robot_yaml} is not one line as roboglot onboard pin writes it, so it is left "
+            "as it is; take it out there by hand"
+        )
+        return
     ui.console.print(_ok_line(f"forgot {matches[0].kind} {ui.printable(matches[0].name)}"))
     _tell_service(home, {"op": "reload"})
 

@@ -7,6 +7,7 @@ the file, and a change to the file after signing is named member by member.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -18,7 +19,7 @@ from roboglot.onboard import config, facts
 from roboglot.onboard.body import VERBS, described_manifest
 from roboglot.onboard.meeting import NAME, meeting_glot
 from roboglot.passport import document, strict
-from tests.passport_helpers import OWNER, A
+from tests.passport_helpers import INTRUDER, OWNER, A, B
 
 DEMO = Path(__file__).resolve().parents[1] / "roboglot" / "onboard" / "demo"
 SIM = {"kind": "sim", "model": "a computer standing in for a robot's own"}
@@ -201,6 +202,25 @@ def test_a_pin_is_added_and_removed_as_a_line_and_every_comment_stays(tmp_path: 
     assert path.read_text(encoding="utf-8") == template()
 
 
+def test_a_pinned_robot_whose_name_reads_like_another_pins_id_can_still_be_forgotten(
+    tmp_path: Path,
+) -> None:
+    """A pin's line was found by the last `id:` on it, and a name is the other robot's own text,
+    up to 64 characters: a robot named `id: ` and another key's did was pinned under its own key,
+    and its line then read as the other key's, so `forget` could not take it out and it stayed
+    trusted, while forgetting the other key took it out instead. A line's `id` is read as YAML
+    reads the line now, and only the pin it names goes."""
+    path = tmp_path / "robot.yaml"
+    path.write_text(template(), encoding="utf-8")
+    name = f"id: {B.did}"
+    assert len(name) <= 64, len(name)
+    config.add_pin(path, config.Pin(kind="robot", id=INTRUDER.did, name=name, pinned="2026-11-21"))
+    config.add_pin(path, config.Pin(kind="robot", id=A.did, name="g1-edu-02", pinned="2026-11-21"))
+    assert not config.remove_pin(path, B.did), "a key nobody pinned took a pin out"
+    assert config.remove_pin(path, INTRUDER.did)
+    assert [pin.id for pin in config.load(path).trust.pins] == [A.did]
+
+
 def test_a_file_laid_out_another_way_gets_the_line_to_paste(tmp_path: Path) -> None:
     path = tmp_path / "robot.yaml"
     start, end = template().index("trust:"), template().index("radio:")
@@ -222,6 +242,73 @@ def test_a_pinned_name_with_backslashes_and_control_characters_reads_back_as_it_
     name = 'cart \\ "01" \x1b[2J'
     config.add_pin(path, config.Pin(kind="robot", id=A.did, name=name, pinned="2026-10-31"))
     assert config.load(path).trust.pins[0].name == name
+
+
+@pytest.mark.parametrize(
+    ("name", "shown", "escaped"),
+    [
+        ("cart \U0001f916", "\U0001f916", ""),
+        ("Rok's lab \U0001f916", "\U0001f916", ""),
+        (
+            "crew \U0001f468\U0000200d\U0001f469\U0000200d\U0001f467",
+            "\U0001f468\U0001f469\U0001f467",
+            "\U0000200d",
+        ),
+        (
+            "flag \U0001f3f4\U000e0067\U000e0062\U000e007f",
+            "\U0001f3f4",
+            "\U000e0067\U000e0062\U000e007f",
+        ),
+        ("caf\xe9\xa0e\U00000301 \U0000e000", "\xe9\xa0\U00000301\U0000e000", ""),
+        ("one\U00002028two\U00002029three\x85four", "", "\U00002028\U00002029\x85"),
+        (
+            "\U0000202eevil\U0000202c \U0000feff\U0000200b\U00002066",
+            "",
+            "\U0000202e\U0000202c\U0000feff\U0000200b\U00002066",
+        ),
+        ("\x7f \x9b2J \U0000fffe\U0000ffff", "", "\x7f\x9b\U0000fffe\U0000ffff"),
+    ],
+    ids=[
+        "an emoji",
+        "an owner's label with one",
+        "emoji joined",
+        "a flag made of tags",
+        "letters and marks",
+        "what ends a line",
+        "the invisible and the overrides",
+        "controls and noncharacters",
+    ],
+)
+def test_a_pinned_name_past_ascii_reads_back_as_it_was_each_character_shown_or_escaped(
+    tmp_path: Path, name: str, shown: str, escaped: str
+) -> None:
+    """A robot's passport name, or with --owner its owner's label, is a stranger's free text, and
+    `json.dumps` wrote a character past the Basic Multilingual Plane, an emoji above all, as two
+    UTF-16 halves, which YAML read one at a time: the file refused its own pin, and the robot
+    could not be pinned by any name. Any name reads back as it was now, each character a person
+    sees written as itself, and each one they would not, or that ends a line, escaped as before;
+    the pin is still one line, which `forget` finds again."""
+    path = tmp_path / "robot.yaml"
+    path.write_text(template(), encoding="utf-8")
+    config.add_pin(path, config.Pin(kind="robot", id=A.did, name=name, pinned="2026-11-16"))
+    assert config.load(path).trust.pins[0].name == name
+    text = path.read_text(encoding="utf-8")
+    assert [char for char in shown if char not in text] == []
+    assert [char for char in escaped if char in text] == []
+    assert len(text.splitlines()) == len(template().splitlines()) + 1
+    assert config.remove_pin(path, A.did)
+    assert path.read_text(encoding="utf-8") == template()
+
+
+def test_a_pinned_name_in_ascii_is_written_as_json_wrote_it_before(tmp_path: Path) -> None:
+    """Keeping a name past ASCII whole must leave a name in ASCII byte for byte as it was, with
+    JSON's own escapes: each of the 128 characters, in names of the 64 a pin holds at most."""
+    every = "".join(map(chr, range(128)))
+    for name in (every[:64], every[64:], "Courier company", 'cart \\ "01" \x1b[2J'):
+        pin = config.Pin(kind="robot", id=A.did, name=name, pinned="2026-11-16")
+        assert config.pin_line(pin) == (
+            f'    - {{kind: robot, id: "{A.did}", name: {json.dumps(name)}, pinned: "2026-11-16"}}'
+        )
 
 
 def test_a_robot_file_that_is_not_utf8_is_refused_as_a_file(tmp_path: Path) -> None:

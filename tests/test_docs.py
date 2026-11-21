@@ -2710,6 +2710,15 @@ def test_robot_passport_says_nothing_of_it_has_met_a_jetson_or_a_radio() -> None
     )
 
 
+def test_security_md_says_where_the_owner_key_lives_once() -> None:
+    """A rewrap of SECURITY.md's Robot Passport paragraph kept the old line beside the new one,
+    so it read "... sealed with a word passes. The owner key, the one to guard most, lives in
+    the robot's directory sealed with a passphrase", the sentence twice and garbled once."""
+    security = (REPO / "SECURITY.md").read_text(encoding="utf-8")
+    assert security.count("The owner key, the one to guard most") == 1
+    assert "sealed with a word passes." not in " ".join(security.split())
+
+
 def test_the_readme_counts_the_passport_schemas_the_folder_holds() -> None:
     """The README's Robot Passport section says how many JSON Schemas sit beside the
     specification, and 0.29.0 took two of them away with stamps and the index. The count is read

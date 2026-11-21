@@ -12,6 +12,7 @@ file given with `--file` answers all of them.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import subprocess
@@ -78,7 +79,7 @@ def sign(
     """Sign robot.yaml's passport section with the owner key and write passport.jws. A clock
     before any passport Roboglot signs refuses, before a key is made: the signature would carry
     its date for a year."""
-    from roboglot.onboard.keys import read_sealed, unseal
+    from roboglot.onboard.keys import OPEN_MODE, _replace, read_sealed, unseal
     from roboglot.passport import document
 
     moment = (now or datetime.now(UTC)).replace(microsecond=0)
@@ -106,9 +107,9 @@ def sign(
     )
     token = document.sign(doc, owner_key)
     path = home.passport_jws
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(token + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    # through a file of this write's own, never a link, at the mode any new file takes here,
+    # since others are meant to read it
+    _replace(path, (token + "\n").encode("utf-8"), sync=False, mode=OPEN_MODE)
     return Signed(token, path, robot_made, owner_made)
 
 
@@ -221,6 +222,64 @@ def refuse_root() -> None:
         raise WizardError("run roboglot onboard as the robot's own user, not as root")
 
 
+def unit_user() -> str:
+    """The account the unit runs as: the one whose effective uid runs the wizard, as the system's
+    account database names it. Never `USER` or `LOGNAME`, which a shell, `sudo` or `env` can
+    leave naming another account or none at all, and never root for want of a name: with no
+    account to name, the service has nobody to run as and is not installed."""
+    uid, accounts = _account_database()
+    try:
+        return str(accounts.getpwuid(uid).pw_name)
+    except KeyError:
+        raise WizardError(
+            f"the service has no user to run as: no account on this system has uid {uid}, which "
+            "runs roboglot onboard; run roboglot onboard serve in a terminal instead"
+        ) from None
+
+
+#: The names systemd takes a uid for without asking the account database (`get_user_creds`,
+#: in its src/basic/user-util.c): root's, and nobody's, the uid it keeps for that name.
+FOUND_WITHOUT_THE_DATABASE = {"root": 0, "nobody": 65534}
+
+
+def refuse_another_uid(user: str) -> None:
+    """Refuse a `User=` that systemd would find as another uid than the one running the wizard:
+    it takes `root` and `nobody` without the account database and finds every other name in it,
+    so a name the database gives this uid that leads systemd to another uid would have the
+    service run as that account, root among them."""
+    uid, accounts = _account_database()
+    found = FOUND_WITHOUT_THE_DATABASE.get(user)
+    if found is None:
+        try:
+            found = int(accounts.getpwnam(user).pw_uid)
+        except KeyError:
+            raise WizardError(
+                f"the service has no user to run as: the account database names uid {uid} "
+                f"{user!r}, and has no account named {user!r} for systemd to find"
+            ) from None
+    if found != uid:
+        raise WizardError(
+            f"the service has no user to run as: the account database names uid {uid} "
+            f"{user!r}, and systemd would run the service as uid {found} by that name"
+        )
+
+
+def _account_database() -> tuple[int, Any]:
+    """The effective uid running the wizard and the system's account database, or a
+    `WizardError` saying there is none to name the service's user from."""
+    euid = getattr(os, "geteuid", None)  # POSIX only, as `pwd` is
+    try:
+        accounts = importlib.import_module("pwd")
+    except ImportError:
+        accounts = None
+    if euid is None or accounts is None:
+        raise WizardError(
+            "the service has no user to run as: this system has no account database to name "
+            "the one running roboglot onboard; run roboglot onboard serve in a terminal instead"
+        )
+    return int(euid()), accounts
+
+
 def write_key_file(path: Path, variable: str, value: str) -> None:
     """The brain's key, as the one line of robot.env, readable by this user alone."""
     from roboglot.onboard.keys import write_secret
@@ -230,21 +289,45 @@ def write_key_file(path: Path, variable: str, value: str) -> None:
     write_secret(path, f"{variable}={value}\n")
 
 
+def check_service(home: Any) -> None:
+    """Refuse all that the service's unit would refuse, before any sudo line runs, the address
+    privacy's included: root, a uid with no account, a name systemd would find as another uid,
+    and a folder, user or path to roboglot no unit can hold. `install_service` checks the same
+    again as it writes the unit."""
+    _unit_text(home, bluetooth_group=True)
+
+
+def _unit_text(home: Any, *, bluetooth_group: bool) -> str:
+    """The unit for the robot directory `home.root`, run as the account running the wizard, or
+    a `WizardError` saying why there is none."""
+    from roboglot.onboard import systemd
+
+    refuse_root()
+    found = shutil.which("roboglot") or sys.argv[0]
+    # a relative entry in PATH, or a relative argv[0], means a path from the folder the wizard
+    # runs in, which systemd would refuse, or read from a folder of its own
+    roboglot = found if os.path.isabs(found) else os.path.abspath(found)
+    user = unit_user()
+    try:
+        text = systemd.unit_text(
+            user=user, directory=home.root, roboglot=roboglot, bluetooth_group=bluetooth_group
+        )
+    except systemd.UnitError as e:  # before a file is staged or a command runs
+        raise WizardError(str(e)) from None
+    refuse_another_uid(user)
+    return text
+
+
 def install_service(
     home: Any, *, say: Callable[[str], None], ask: Asker, run: Callable[[list[str]], int]
 ) -> bool:
     """Write the unit, show every sudo command, and run them when the person says yes."""
     from roboglot.onboard import systemd
 
-    refuse_root()
-    roboglot = shutil.which("roboglot") or sys.argv[0]
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "root"
     with_group = systemd.group_exists(systemd.BLUETOOTH_GROUP)
+    text = _unit_text(home, bluetooth_group=with_group)
     if not with_group:
         say(f"this system has no {systemd.BLUETOOTH_GROUP} group, so the unit names none")
-    text = systemd.unit_text(
-        user=user, directory=home.root, roboglot=roboglot, bluetooth_group=with_group
-    )
     staged = Path(tempfile.mkdtemp()) / systemd.UNIT_NAME
     staged.write_text(text, encoding="utf-8", newline="\n")
     commands = systemd.install_commands(staged)

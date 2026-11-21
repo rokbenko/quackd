@@ -21,7 +21,6 @@ from __future__ import annotations
 import contextlib
 import hmac
 import json
-import os
 import secrets
 import socket
 import threading
@@ -206,14 +205,17 @@ def _cut(sock: socket.socket) -> None:
 
 
 def write_private(path: Path, text: str) -> None:
-    """`text` to `path`, readable by this user alone where the system has modes: the mode is
-    set on the empty file before a byte of the token is in it."""
+    """`text` to `path`, readable by this user alone where the system has modes, the way
+    `keys.write_secret` writes a key: through a temporary file of this write's own, made new and
+    exclusive at mode 0600 before a byte is in it and never through a link, then renamed over
+    `path`. The one fixed temporary name this used let a file left there keep its own mode and
+    owner, and a link there take the token elsewhere; whatever lies at any other name is left as
+    it is. Not synced, as before: status.json is rewritten every few seconds, and the service
+    writes its token afresh each time it starts."""
+    from roboglot.onboard.keys import _replace
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with open(fd, "w", encoding="utf-8", newline="") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    _replace(path, text.encode("utf-8"), sync=False)
 
 
 # ── the client's end ────────────────────────────────────────────────────────────────────
