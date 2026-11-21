@@ -19,7 +19,7 @@ import json
 import os
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -29,8 +29,30 @@ ENV_DIR = "ROBOGLOT_MEMORY_DIR"
 MAX_ENTRIES = 400
 """Hard cap on lines per file; the oldest are dropped past it (episodes first, notes last)."""
 NOTE_MAX_CHARS = 200
+NOTE_MAX_TAGS = 8
+"""The most tags a note keeps, its own and those a refresh adds. The tool asks for "optional
+short labels (place, object, strategy)", which is one or two of each of three kinds; eight is that
+with room to spare. Past it the rest are dropped, as text past `NOTE_MAX_CHARS` is, so one call
+cannot grow the file every run reads whole by as much as an answer holds."""
+TAG_MAX_CHARS = 32
+"""The longest a tag is kept, cut as a note's text is cut. A place's name, the first of the labels
+the tool names, may be as long (`space.places.PLACE_NAME_MAX`, whose module reads this one, so it
+is written here rather than imported)."""
 
 Kind = Literal["note", "episode"]
+
+
+def _bounded_tags(*groups: Sequence[Any]) -> list[str]:
+    """Tags as a note stores them: sorted, each cut to `TAG_MAX_CHARS`, and no more than
+    `NOTE_MAX_TAGS`, filled from the first group before the next, so a refreshed note keeps its
+    own tags before any new one. A handful of short tags comes back as `sorted(set(...))` gave."""
+    kept: set[str] = set()
+    for group in groups:
+        for tag in sorted({str(t)[:TAG_MAX_CHARS] for t in group}):
+            if len(kept) >= NOTE_MAX_TAGS:
+                break
+            kept.add(tag)
+    return sorted(kept)
 
 
 def memory_dir(override: str | Path | None = None) -> Path:
@@ -188,7 +210,7 @@ class RobotMemory:
         for i, e in enumerate(entries):
             if e.kind == "note" and e.text.lower() == clean.lower():
                 e.ts = ts
-                e.tags = sorted(set(e.tags) | set(tags or []))
+                e.tags = _bounded_tags(e.tags, tags or [])
                 if task:
                     e.task = task
                 if where:
@@ -203,7 +225,7 @@ class RobotMemory:
             text=clean,
             ts=ts,
             task=task,
-            tags=sorted(set(tags or [])),
+            tags=_bounded_tags(tags or []),
             run_dir=str(run_dir) if run_dir else None,
             where=where or None,
         )

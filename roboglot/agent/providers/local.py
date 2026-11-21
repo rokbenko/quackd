@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import os
-import re
+from collections.abc import Collection
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -31,11 +31,29 @@ PRESETS: dict[str, str | None] = {
 }
 LOCAL_NAMES = tuple(PRESETS)
 
+_BARE_CALL = "exactly one JSON object and nothing else"
+"""What text has to be to count as a call: the rule the hint asks for and the fallback holds
+an answer to (`read_call`), read by both from here."""
+_CALL_SHAPE = '{"name": "<verb>", "arguments": {<parameters>}}'
+
 TOOL_HINT = (
     "\n## If you cannot call tools natively\n"
-    "Reply with exactly one JSON object and nothing else, in this shape:\n"
-    '{"name": "<verb>", "arguments": {<parameters>}}\n'
+    f"Reply with {_BARE_CALL}, in this shape:\n"
+    f"{_CALL_SHAPE}\n"
 )
+
+NOT_A_BARE_CALL = (
+    f"Your last answer was not a call. Text is a call only when it is {_BARE_CALL}, "
+    f"in this shape: {_CALL_SHAPE}."
+)
+"""What the LLM is told when its text was read and was no call, in front of the loop's own
+re-prompt (`ProviderTurn.not_a_call`): a call quoted in prose, or one of several listed, is not
+one, and an LLM that thought it had answered is told what would have been."""
+
+NOT_OFFERED = "Your last answer called {name}, which is not one of your tools, so nothing was run."
+"""What the LLM is told of one object in the hint's shape that names no tool it was given: it was
+in the right shape, so being told it was not would have it send the same object again. The name
+is quoted as JSON, so nothing in it can start a line of its own."""
 
 _LOCAL_NEEDS_A_URL = (
     "--llm local needs the server address: --base-url http://host:port/v1 "
@@ -47,8 +65,26 @@ _A_HOST_MOVES_ONLY_A_PRESET = (
     "preset: --llm ollama, vllm, llamacpp, lmstudio."
 )
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
-_THINK_RE = re.compile(r"<think>(.*?)</think>", re.S)
+MAX_CALL_CHARS = 16 * 1024
+"""The most text the fallback reads as a call, its fence and the space around it included.
+
+Chosen from what a call can need: the largest Roboglot offers is `assess_task`, and one written
+out in full, with a reason of several sentences, an estimate for every quantity it names twice
+over, the nine datasheet fields consulted and the nine needs, is about 3.3 kB, or 4.2 kB laid out
+with an indent. This is four times that. Anything longer is no call: a local server is sent no
+output limit, so a repetition loop runs to the end of its context, and none of that is decoded."""
+
+_FENCE_MIN = 3
+"""The fewest backticks or tildes that open a code fence, as CommonMark has it."""
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
+_TOOL_CALL_OPEN = "<tool_call>"
+_TOOL_CALL_CLOSE = "</tool_call>"
+"""The tags Hermes and Qwen chat templates wrap a call in, which reach the text whenever the
+server's own tool parser does not take them: one block round one call is that call."""
+_INVISIBLE = "".join(map(chr, (0xFEFF, 0x200B, 0x200C, 0x200D, 0x2060)))
+"""What an answer can carry round its call that shows nothing and that `str.strip` keeps: a byte
+order mark and the zero-width characters. Trimmed as whitespace is (`_trimmed`)."""
 _NAME_KEYS = ("name", "tool", "function", "verb")
 _ARGS_KEYS = ("arguments", "parameters", "params", "args", "input")
 
@@ -94,58 +130,207 @@ def split_thinking(text: str) -> tuple[str | None, str]:
     `content`. Left there they would be shown as the answer and replayed to the LLM next
     turn as something it said. An opening tag with no closing one is thinking to the end of
     the reply: a max_tokens cut mid-thought must not turn a half-finished thought into the
-    answer."""
-    thoughts = [m.group(1).strip() for m in _THINK_RE.finditer(text)]
-    rest = _THINK_RE.sub("", text)
-    if (cut := rest.find("<think>")) != -1:
-        thoughts.append(rest[cut + len("<think>") :].strip())
+    answer.
+
+    Found with plain searches in one pass: each opening, then the first closing after it. A lazy
+    pattern looked for a closing from every opening to the end of the reply, so thousands of
+    openings never closed cost the square of their number on the event loop's thread. The first
+    opening with no closing after it ends the pass, since no later one can have one either.
+
+    A chat template that writes the opening tag itself, at the end of the prompt, gets a reply
+    whose thinking has only its closing tag: everything up to a first `</think>` with no
+    `<think>` before it is that block (`_template_opened`), unless the reply opens as a call
+    does, whose own strings may hold the tag (`_opens_as_a_call`)."""
+    thoughts: list[str] = []
+    kept: list[str] = []
+    at = 0
+    if not _opens_as_a_call(text) and (lead := _template_opened(text)) is not None:
+        thoughts.append(text[:lead].strip())
+        at = lead + len(_THINK_CLOSE)
+    while (opened := _find(text, _THINK_OPEN, at)) != -1:
+        inside = opened + len(_THINK_OPEN)
+        closed = _find(text, _THINK_CLOSE, inside)
+        if closed == -1:
+            break
+        kept.append(text[at:opened])
+        thoughts.append(text[inside:closed].strip())
+        at = closed + len(_THINK_CLOSE)
+    kept.append(text[at:])
+    rest = "".join(kept)
+    if (cut := _find(rest, _THINK_OPEN, 0)) != -1:
+        thoughts.append(rest[cut + len(_THINK_OPEN) :].strip())
         rest = rest[:cut]
     return "\n\n".join(t for t in thoughts if t) or None, rest.strip()
 
 
-def _candidates(text: str) -> list[dict[str, Any]]:
-    """Every JSON object we can find in the text: fenced blocks first, then bare ones."""
-    found: list[dict[str, Any]] = []
-    for m in _FENCE_RE.finditer(text):
-        try:
-            obj = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            found.append(obj)
-    decoder = json.JSONDecoder()
-    for i, ch in enumerate(text):
-        if ch != "{":
-            continue
-        try:
-            obj, _end = decoder.raw_decode(text, i)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj not in found:
-            found.append(obj)
-    return found
+def _find(text: str, needle: str, start: int) -> int:
+    """`str.find`, the one way `split_thinking` reads the reply, so a test can count what it
+    read rather than time it."""
+    return text.find(needle, start)
 
 
-def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
+def _template_opened(text: str) -> int | None:
+    """Where a thinking block whose opening tag the chat template wrote ends: the first
+    `</think>` when no `<think>` comes before it, or None."""
+    closed = _find(text, _THINK_CLOSE, 0)
+    if closed == -1:
+        return None
+    opened = _find(text, _THINK_OPEN, 0)
+    return closed if opened == -1 or opened > closed else None
+
+
+def _trimmed(text: str) -> str:
+    """`text` without whitespace or `_INVISIBLE` characters at either end, read once from each."""
+    start, end = 0, len(text)
+    while start < end and (text[start].isspace() or text[start] in _INVISIBLE):
+        start += 1
+    while end > start and (text[end - 1].isspace() or text[end - 1] in _INVISIBLE):
+        end -= 1
+    return text[start:end]
+
+
+def _opens_as_a_call(text: str) -> bool:
+    """Whether an answer begins as a call does: an object, a fence or a `<tool_call>` block.
+    Such an answer is no thinking, whatever its strings hold."""
+    return _trimmed(text).startswith(("{", "`" * _FENCE_MIN, "~" * _FENCE_MIN, _TOOL_CALL_OPEN))
+
+
+def _fenced(body: str) -> str | None:
+    """The inside of the one code fence `body` opens with, or None where it opens with none.
+
+    A fence is a run of at least `_FENCE_MIN` backticks or tildes, as Markdown has it, closed at
+    the very end by a run of the same at least as long, or left open there, as an answer the
+    server cut at its own stop word is. What it holds is still the decode's to judge, which takes
+    nothing after the object, so an open fence with prose after its call is no call."""
+    char = body[:1]
+    if char not in ("`", "~"):
+        return None
+    run = len(body) - len(body.lstrip(char))
+    if run < _FENCE_MIN:
+        return None
+    inner = body[run:]
+    closing = len(inner) - len(inner.rstrip(char))
+    return inner[:-closing] if closing >= run else inner
+
+
+def _bare(text: str) -> str | None:
+    """The one JSON object an answer is nothing but, as text, or None: the whole of it once
+    trimmed, the inside of one code fence that is the whole of it (`_fenced`), whatever the
+    fence's opening line says it holds, or the inside of one `<tool_call>` block that is the whole
+    of it, closed at the end or left open there. Whether that is one object and nothing after it
+    is the decode's to say, which takes nothing after the value."""
+    body = _trimmed(text)
+    if body.startswith(_TOOL_CALL_OPEN):
+        inner = body[len(_TOOL_CALL_OPEN) :]
+        if inner.endswith(_TOOL_CALL_CLOSE):
+            inner = inner[: -len(_TOOL_CALL_CLOSE)]
+        if _TOOL_CALL_OPEN in inner or _TOOL_CALL_CLOSE in inner:
+            return None  # two blocks, and whatever is between them
+        body = _trimmed(inner)
+    elif (fenced := _fenced(body)) is not None:
+        inner = fenced
+        line, newline, below = inner.partition("\n")
+        at = line.find("{")
+        if newline and _trimmed(below).startswith("{"):
+            # the opening line is the fence's info string, whatever it says (`json`, `JSON`,
+            # `jsonc`, `js`, a pandoc `{.json}`, none at all), and it goes with the fence
+            inner = below
+        elif at == -1:
+            inner = ""
+        elif len(line[:at].split()) > 1:
+            return None  # words before the object on the fence's own line
+        else:
+            inner = inner[at:]  # the object on the opening line, after one word or none
+        body = _trimmed(inner)
+    return body if body.startswith("{") else None
+
+
+def _as_call(
+    obj: dict[str, Any], tool_names: set[str], no_parameters: Collection[str]
+) -> ToolCall | str:
+    """The call one object is, or the words the LLM is told about why it is none."""
     fn = obj.get("function")
     if isinstance(fn, dict):  # OpenAI style {"function": {"name": .., "arguments": ..}}
         obj = {**obj, **fn}
     name = next((obj[k] for k in _NAME_KEYS if isinstance(obj.get(k), str)), None)
-    if name is None or name not in tool_names:
-        return None
-    # Not `{}` for what cannot be read: that is a call with its defaults, on nothing the LLM
-    # said.
-    args: Any = next((obj[k] for k in _ARGS_KEYS if k in obj), {})
+    if name is None:
+        return NOT_A_BARE_CALL
+    if name not in tool_names:
+        return NOT_OFFERED.format(name=json.dumps(name))
+    # Not `{}` for what cannot be read, nor for arguments never written to a verb that takes
+    # some: that is a call with its defaults, on nothing the LLM said. A verb that takes none
+    # has no defaults to fill in, so it is called with none.
+    key = next((k for k in _ARGS_KEYS if k in obj), None)
+    if key is None:
+        return ToolCall(name=name, arguments={}) if name in no_parameters else NOT_A_BARE_CALL
+    args: Any = obj[key]
     return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
-def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:
-    """A tool call an LLM wrote as JSON text instead of a native tool call, or None."""
-    for obj in _candidates(text or ""):
-        call = _as_call(obj, tool_names)
-        if call is not None:
-            return call
-    return None
+def read_call(
+    text: str, tool_names: set[str], *, no_parameters: Collection[str] = ()
+) -> ToolCall | str | None:
+    """The call an answer written as text is nothing but, the words the LLM is told about why it
+    is none, or None for an answer with nothing after its thinking, which is asked again in the
+    loop's own words.
+
+    Text is a call only when the answer is nothing but the call (`_BARE_CALL`): one JSON object,
+    optionally inside one code fence or one `<tool_call>` block, after an optional thinking block.
+    The block is `<think>...</think>` at the very start, or everything up to a first `</think>`
+    with no `<think>` before it, from a template that wrote the opening itself; the whole answer
+    is read as a call before that second reading is tried, since a call's own string may hold the
+    tag. What follows a block is read as it is, any further thinking included, so a call with a
+    thought after it, or a second block before it, is not nothing but the call. The first object
+    anywhere in the answer used to be taken, so a call the LLM quoted in order to decline it, or
+    the first of several it listed as options, ran as its choice. `no_parameters` names the
+    tools that take none, which are called with none when the object has no arguments.
+
+    At most `MAX_CALL_CHARS` of each reading is read, and each is decoded once, so an answer is
+    decoded twice at most. Text the decoder raises on is no call: a `JSONDecodeError`,
+    `ValueError` for an integer longer than the interpreter converts and `RecursionError` for
+    nesting deeper than it follows. This runs outside the provider's try, so either used to leave
+    it raw and end the run on one odd answer."""
+    text = text or ""
+    opened = _find(text, _THINK_OPEN, 0)
+    if opened != -1 and not _trimmed(text[:opened]):
+        closed = _find(text, _THINK_CLOSE, opened + len(_THINK_OPEN))
+        if closed == -1:
+            return None  # thinking to the end
+        return _read_one(text[closed + len(_THINK_CLOSE) :], tool_names, no_parameters)
+    whole = _read_one(text, tool_names, no_parameters)
+    if whole != NOT_A_BARE_CALL or (lead := _template_opened(text)) is None:
+        return whole
+    return _read_one(text[lead + len(_THINK_CLOSE) :], tool_names, no_parameters)
+
+
+def _read_one(
+    said: str, tool_names: set[str], no_parameters: Collection[str]
+) -> ToolCall | str | None:
+    """One reading of an answer as a call (`read_call`): the call, the words, or None for one
+    with nothing in it."""
+    if not _trimmed(said):
+        return None
+    if len(said) > MAX_CALL_CHARS:
+        return NOT_A_BARE_CALL
+    body = _bare(said)
+    if body is None:
+        return NOT_A_BARE_CALL
+    try:
+        obj = json.loads(body)
+        # arguments written as a string are decoded again here (`tool_arguments`)
+        if not isinstance(obj, dict):
+            return NOT_A_BARE_CALL
+        return _as_call(obj, tool_names, no_parameters)
+    except (ValueError, RecursionError):
+        return NOT_A_BARE_CALL
+
+
+def parse_tool_call_from_text(
+    text: str, tool_names: set[str], *, no_parameters: Collection[str] = ()
+) -> ToolCall | None:
+    """A tool call an LLM wrote as text instead of a native tool call, or None (`read_call`)."""
+    read = read_call(text, tool_names, no_parameters=no_parameters)
+    return read if isinstance(read, ToolCall) else None
 
 
 class LocalProvider(OpenAIProvider):
@@ -215,6 +400,8 @@ class LocalProvider(OpenAIProvider):
             reasoning_effort=reasoning_effort,
         )
         self.text_fallbacks = 0
+        self._answer: str | None = None
+        """The last answer's text as it came, before its thinking was split off (`_normalise`)."""
 
     @staticmethod
     def _address(preset: str | None, base_url: str | None, host: str | None) -> str:
@@ -287,16 +474,29 @@ class LocalProvider(OpenAIProvider):
         `turn.text`: an LLM that weighs a verb in its reasoning and then rejects it
         (`<think>maybe {"name": "kick"} but no</think>I will wait.`) would otherwise have
         that call parsed out of the discarded thought and executed.
+
+        The answer as it came is kept for the fallback (`_answer`), which reads the call from
+        it and not from what is left once every block is split off: a call with a thought after
+        it, or a second thought before it, is not nothing but the call.
         """
-        if turn.thinking is None and turn.text and "<think>" in turn.text:
-            thinking, rest = split_thinking(turn.text)
+        text = turn.text
+        self._answer = text
+        if turn.thinking is None and text and (_THINK_OPEN in text or _THINK_CLOSE in text):
+            thinking, rest = split_thinking(text)
             turn = turn.model_copy(update={"thinking": thinking, "text": rest or None})
         return turn
 
     def _fallback(self, turn: ProviderTurn, tools: list[dict[str, Any]]) -> ProviderTurn:
-        call = parse_tool_call_from_text(turn.text or "", {t["name"] for t in tools})
-        if call is None:
+        # a tool whose schema has no parameters is called with none when no arguments were written
+        bare = {t["name"] for t in tools if not (t.get("input_schema") or {}).get("properties")}
+        read = read_call(self._answer or "", {t["name"] for t in tools}, no_parameters=bare)
+        if read is None:
+            # an answer with nothing after its thinking is asked again in the loop's own words
             return turn
+        if isinstance(read, str):
+            # text that was read and was no call: the LLM is told why when it is asked again
+            return turn.model_copy(update={"not_a_call": read})
+        call = read
         self.text_fallbacks += 1
         call = call.model_copy(update={"id": f"text-{self.text_fallbacks}"})
         return turn.model_copy(update={"tool_calls": [call], "stop_reason": "text_fallback"})

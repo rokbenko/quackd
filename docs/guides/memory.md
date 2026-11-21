@@ -66,7 +66,9 @@ When memory is on, the LLM gets one more tool beside `assess_task`, `declare_suc
 
 It is deliberately cheap: it moves nothing, it counts as an LLM call but **not as a step**,
 and the same sentence twice refreshes the old note instead of duplicating it (and moves it
-to the newest position, because newest is what `recall` and the cap both read). Under
+to the newest position, because newest is what `recall` and the cap both read). A note's text
+is cut to 200 characters, and it keeps at most 8 tags of at most 32 characters each, a refresh
+keeping the note's own tags before any new one, whoever writes it. Under
 `--dry-run` it saves nothing and says so, like every other intent a dry run refuses to
 send: an inert run must not leave a permanent conclusion drawn from results it invented. The reply
 lands in the next observation like any verb result (`last verb remember: ok — remembered
