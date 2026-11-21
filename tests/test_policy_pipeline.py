@@ -27,7 +27,9 @@ import math
 import os
 import re
 import sys
+import tempfile
 import threading
+import types
 from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -1560,6 +1562,50 @@ def test_closing_a_checkpoint_waits_on_no_step_still_inferring(tmp_path: Path) -
     with pytest.raises(RuntimeError, match="closed"):
         runner.begin(JOINTS, {})
     assert runner._features is None, "a begin after the close undid it"
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["loads", "fails"])
+def test_a_config_load_leaves_no_temporary_file_and_touches_no_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fails: bool
+) -> None:
+    """LeRobot rewrites each policy config it loads into a temporary JSON file it never deletes,
+    so every checkpoint the server loaded left one in the machine's temporary directory for
+    good. The load Roboglot triggers removes what it made, and only that: a file another process
+    keeps in the same directory, from before the load or made while it runs, is left alone. The
+    stand-in for LeRobot's config class writes its file as upstream does, with nothing said of
+    where, and raises after it for a load that fails."""
+    shared = tmp_path / "temp"
+    shared.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(shared))
+    before = shared / "tmp-of-another-process.json"
+    before.write_text("{}", encoding="utf-8")
+    meanwhile = shared / "tmp-made-while-it-loads.json"
+    made: list[Path] = []
+
+    class StandIn:
+        @classmethod
+        def from_pretrained(cls, where: str) -> dict[str, str]:
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+                json.dump({"read": where}, f)
+            made.append(Path(f.name))
+            meanwhile.write_text("{}", encoding="utf-8")  # another process, in the meantime
+            if fails:
+                raise ValueError("a config this test refuses")
+            return {"read": where}
+
+    policies = types.ModuleType("lerobot.configs.policies")
+    policies.PreTrainedConfig = StandIn  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "lerobot", types.ModuleType("lerobot"))
+    monkeypatch.setitem(sys.modules, "lerobot.configs", types.ModuleType("lerobot.configs"))
+    monkeypatch.setitem(sys.modules, "lerobot.configs.policies", policies)
+    if fails:
+        with pytest.raises(ValueError, match="refuses"):
+            P.load_config("the checkpoint")
+    else:
+        assert P.load_config("the checkpoint") == {"read": "the checkpoint"}
+    assert made and not any(path.exists() for path in made), made
+    assert sorted(path.name for path in shared.iterdir()) == sorted([before.name, meanwhile.name])
+    assert tempfile.tempdir == str(shared), "the shared directory was not given back"
 
 
 class _TrainConfigOfAnotherCommit(FakeHub):

@@ -66,6 +66,7 @@ import importlib.util
 import json
 import math
 import re
+import tempfile
 import threading
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -1543,6 +1544,40 @@ def build_policy(policy_class: Any, where: Path, config: Any) -> Any:
     return policy
 
 
+CONFIG_TEMP_PREFIX = "roboglot-lerobot-config-"
+"""How the temporary directory a config load is given begins (`load_config`), so a person who
+finds one left behind by a process that died in the middle of a load knows whose it is."""
+
+_TEMPDIR_LOCK = threading.Lock()
+"""Held while a config load has `tempfile`'s directory to itself (`load_config`), so two loads
+in one process never give each other's directory back in the wrong order."""
+
+
+def load_config(where: str) -> Any:
+    """LeRobot's own `PreTrainedConfig.from_pretrained(where)`, with the temporary file it leaves
+    behind removed.
+
+    LeRobot writes each policy config it loads out again to a temporary JSON file of its own
+    (`lerobot/configs/policies.py`), made not to delete itself, and never deletes it, so every
+    checkpoint the server loaded left one in the machine's temporary directory for good. The
+    load is given a temporary directory made for it alone, as `tempfile`'s directory while it
+    runs, which is a parse of one file, and that directory is removed afterwards with what the
+    load left in it, whether the load went through or raised. Nothing in the shared directory is
+    read or removed, so a file another process keeps there is never touched. The policy server
+    loads before it serves, with nothing else of its own making temporary files meanwhile. A
+    directory that cannot be removed raises, and the load is refused in its words, rather than
+    leave a file behind unsaid."""
+    from lerobot.configs.policies import PreTrainedConfig
+
+    with _TEMPDIR_LOCK, tempfile.TemporaryDirectory(prefix=CONFIG_TEMP_PREFIX) as own:
+        shared = tempfile.tempdir
+        tempfile.tempdir = own
+        try:
+            return PreTrainedConfig.from_pretrained(where)
+        finally:
+            tempfile.tempdir = shared
+
+
 def load(
     spec: str,
     *,
@@ -1561,7 +1596,6 @@ def load(
     served as the random network it would be."""
     try:
         import torch
-        from lerobot.configs.policies import PreTrainedConfig
         from lerobot.policies.factory import get_policy_class, make_pre_post_processors
         from lerobot.utils.device_utils import auto_select_torch_device
     except ImportError as e:
@@ -1576,7 +1610,7 @@ def load(
     torch.set_num_threads(count)
     where = str(checkpoint.directory)
     try:
-        config = PreTrainedConfig.from_pretrained(where)
+        config = load_config(where)
         for key, value in checkpoint.config_overrides.items():
             setattr(config, key, value)
         policy = build_policy(get_policy_class(config.type), checkpoint.directory, config)

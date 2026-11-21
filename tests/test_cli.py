@@ -2517,7 +2517,7 @@ def test_release_left_unanswered_keeps_torque_and_exits_one(
     flat = " ".join(result.output.split())
     assert "torque stays on and nothing was released" in flat, flat
     assert "torque reads off" not in flat
-    assert "so torque was left on and it will not fall as it stands" in flat, "the close's line"
+    assert "so torque was left on and it is holding its pose" in flat, "the close's line"
 
 
 @pytest.mark.parametrize("reaches", [True, False], ids=["the fold arrives", "the fold misses"])
@@ -2879,7 +2879,7 @@ def test_a_run_with_nobody_at_the_terminal_keeps_torque_and_names_the_arm_s_way_
     assert result.exit_code == 1, result.output
     flat = " ".join(result.output.split())
     assert "tries the fold once more" not in flat, "a question was put to nobody"
-    assert "so torque was left on and it will not fall as it stands" in flat, flat
+    assert "so torque was left on and it is holding its pose" in flat, flat
     assert (
         f"To put it down, clear whatever is in its way and run roboglot robot release {name}, "
         "which folds it to its rest pose and lets go of it there: support the arm while that "
@@ -2963,8 +2963,8 @@ def _holding_out(monkeypatch: pytest.MonkeyPatch, holdouts: tuple[str, ...]) -> 
         (
             JOINT_NAMES,
             2,
-            "the release did not take, so torque was left on and it will not fall as it "
-            "stands: hold it and cut its power",
+            "the release did not take, so torque was left on and it is holding its pose: hold "
+            "it and cut its power",
         ),
         (
             JOINT_NAMES,
