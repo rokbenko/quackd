@@ -174,15 +174,42 @@ Developer tab → Start Server (default port 1234), load an LLM that supports to
 
 Roboglot asks for exactly one tool call per turn. Frontier LLMs do this reliably. Small
 local LLMs sometimes answer with JSON in plain text instead of a native tool call, or
-call a verb that is not allowed, or add chatter. Three things make that workable:
+call a verb that is not allowed, or wrap a call in chatter, which makes it no call. Three
+things make that workable:
 
-1. **Text fallback.** If a reply has no native tool call, Roboglot looks for a JSON object
-   like `{"name": "walk_to", "arguments": {"target": "ball"}}` in the text and uses it. Only
-   the answer is read: an inline `<think>...</think>` block is split off first, so a verb the
-   LLM weighed inside its reasoning and dropped is never executed, and a turn that carries
-   the server's own refusal, or that a content filter cut short, is not read at all. The
-   transcript marks a rescued turn with `stop_reason: "text_fallback"` so you can see how
-   often it happened. The system prompt tells local LLMs this shape exists.
+1. **Text fallback.** If a reply has no native tool call, Roboglot reads its text as a call
+   only when the answer is nothing but the call, after an optional thinking block at its
+   start: one JSON object like `{"name": "walk_to", "arguments": {"target": "ball"}}`, or one
+   inside one code fence of three or more backticks or tildes whatever its opening line names
+   (`json`, `JSON`, `js`, `{.json}` or nothing), or one inside one `<tool_call>...</tool_call>`
+   block, the wrapper Hermes and Qwen chat templates write when the server's tool parser does
+   not take it; a fence or a block left open at the very end of the answer counts as closed
+   there. The thinking block is `<think>...</think>`, or everything up to a first `</think>`
+   where the chat template wrote the opening tag itself, read for only once the whole answer has
+   been read as a call and was none, so a call whose own string holds the tag is still a call.
+   A verb the LLM weighed inside the block and dropped is never executed. Whitespace, a byte
+   order mark and zero-width characters round the call are ignored.
+   Anything else is not a call: a call quoted in a sentence, say to decline it, one of several
+   listed as options, a call with a thought after it or a second thought before it, two
+   `<tool_call>` blocks, or text after the thinking longer than any call needs (16 KiB). An
+   object with no `arguments` is no call for a verb that takes parameters, whose defaults would
+   fill what the LLM never wrote, and a verb that takes none is called with none. None of what
+   is not a call runs, and the LLM is told so and asked again, in these words:
+
+   ```text
+   Your last answer was not a call. Text is a call only when it is exactly one JSON object and nothing else, in this shape: {"name": "<verb>", "arguments": {<parameters>}}. You must call exactly one tool. Choose now.
+   ```
+
+   One object in that shape naming a tool the LLM was not given is told so, here for `fly`:
+
+   ```text
+   Your last answer called "fly", which is not one of your tools, so nothing was run. You must call exactly one tool. Choose now.
+   ```
+
+   A turn that carries the server's own refusal, that a content filter cut short, or that the
+   output limit cut off (`finish_reason: "length"`) is not read at all. The transcript marks a
+   rescued turn with `stop_reason: "text_fallback"` so you can see how often it happened. The
+   system prompt tells local LLMs this shape exists.
 2. **One retry.** A turn with no usable call is re-prompted once, then counts as a failure.
    Budgets still apply.
 3. **The executor never trusts the LLM.** A disallowed verb or bad parameters come back

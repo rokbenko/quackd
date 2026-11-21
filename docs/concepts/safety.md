@@ -840,7 +840,7 @@ and a read that got the bus just before a write says nothing about what that wri
   LeRobot's flag off for that one case, leaves the arm holding itself up, and prints one line:
 
   ```
-  the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+  the arm is not at its rest pose (...), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
   ```
 
   The brackets name the joint furthest from where it was asked to be, what it reads, and why
@@ -848,8 +848,10 @@ and a read that got the bus just before a write says nothing about what that wri
   edge of its travel, or folded past it, has reached the pose. `NAME` is the name the arm was
   registered under wherever Roboglot knows it, and stays `NAME` where it does not, which is a
   bare spec such as `doctor --robot lerobot:real`. The arm is energised, the run is over, and
-  nothing is going to put it down on its own, but "it will not fall" is true of the arm as it
-  stands and of nothing that connects to it. `roboglot robot release` begins with a connect that
+  nothing is going to put it down on its own. Nothing reads its servos either, and holding a
+  pose is what heats them: one that reaches its own cut-off goes slack without announcing it,
+  so the line says the arm is holding its pose, which is true of it as it stands and of nothing
+  that connects to it. `roboglot robot release` begins with a connect that
   takes torque off every motor for a moment, so support the arm while it connects, and then it
   folds the arm to its rest pose from wherever it now is and lets go of it there. Clear the way
   first, because a fold that runs into whatever stopped the last one stops again. The power

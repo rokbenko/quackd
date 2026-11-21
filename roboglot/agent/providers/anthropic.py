@@ -232,6 +232,8 @@ def parse_response(response: Any) -> ProviderTurn:
             cache_write_tokens=cache_write,
         ),
         stop_reason=stop_reason,
+        # the output limit ended the answer, or the context window left it no room to go on
+        cut_off=stop_reason in ("max_tokens", "model_context_window_exceeded"),
         refused=stop_reason == "refusal",
         raw=[_replayable(_block_to_dict(b)) for b in response.content],
         thinking="\n\n".join(thoughts) or None,

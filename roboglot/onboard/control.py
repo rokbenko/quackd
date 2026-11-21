@@ -32,6 +32,8 @@ from typing import Any
 PROTOCOL = 1
 #: How long a client may take to say hello, and to send its op after it.
 HELLO_S = 5.0
+#: How long a client waits for the service's answer to one op (`request`).
+ANSWER_S = 10.0
 #: The most clients at once: a person's terminals, never a crowd.
 CLIENTS = 8
 #: The longest line either side sends.
@@ -126,9 +128,7 @@ class ControlServer:
         kept = False
         # the hello and the op inside `HELLO_S` in all, however slowly the bytes come, so no
         # client without the token holds one of the slots for longer than that
-        cut_off = threading.Timer(HELLO_S, _close_quietly, args=(sock,))
-        cut_off.daemon = True
-        cut_off.start()
+        cut_off = _Deadline(sock)
         try:
             sock.settimeout(HELLO_S)
             hello = conn.read()
@@ -145,7 +145,8 @@ class ControlServer:
             if op is None or not isinstance(op.get("op"), str):
                 conn.send({"ev": "refused", "reason": "no op after the hello"})
                 return
-            cut_off.cancel()
+            if not cut_off.accept():
+                return  # cut off as the op came: its client heard nothing, and nothing is done
             sock.settimeout(None)
             reply = self._handle(op, conn)
             if reply is None:
@@ -161,7 +162,45 @@ class ControlServer:
             self._clients.release()
 
 
-def _close_quietly(sock: socket.socket) -> None:
+class _Deadline:
+    """One connection's `HELLO_S`, for its hello and its op together. The cut and the op's
+    acceptance are decided once, under one lock, whichever comes first, for both sides: an op
+    accepted is never cut, and once cut, no op the connection read is handled."""
+
+    def __init__(self, sock: socket.socket) -> None:
+        self._sock = sock
+        self._lock = threading.Lock()
+        self._cut = self._accepted = False
+        self._timer = threading.Timer(HELLO_S, self._fire)
+        self._timer.daemon = True
+        self._timer.start()
+
+    def _fire(self) -> None:
+        with self._lock:
+            if self._accepted:
+                return
+            self._cut = True
+        _cut(self._sock)
+
+    def accept(self) -> bool:
+        """The op read is the service's to handle, unless the connection was cut first."""
+        with self._lock:
+            if self._cut:
+                return False
+            self._accepted = True
+        self._timer.cancel()
+        return True
+
+    def cancel(self) -> None:
+        self._timer.cancel()
+
+
+def _cut(sock: socket.socket) -> None:
+    """End a connection from another thread. A close alone only marks the socket closed while
+    the connection's two files hold it, and the read in hand goes on; a shutdown ends that read
+    on every platform, as `PassportServer` ends a connection past its time."""
+    with contextlib.suppress(OSError):
+        sock.shutdown(socket.SHUT_RDWR)
     with contextlib.suppress(OSError):
         sock.close()
 
@@ -232,7 +271,9 @@ def connect(
         conn.close()
 
 
-def request(control_json: Path, op: Mapping[str, Any], *, timeout: float = 10.0) -> dict[str, Any]:
+def request(
+    control_json: Path, op: Mapping[str, Any], *, timeout: float = ANSWER_S
+) -> dict[str, Any]:
     """One op and the service's reply to it."""
     with connect(control_json, timeout=timeout, then=timeout) as conn:
         conn.send(dict(op))
