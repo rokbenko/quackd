@@ -46,6 +46,179 @@ def test_every_server_is_asked_at_once(monkeypatch: pytest.MonkeyPatch) -> None:
     assert [s.state for s in report.servers if s.url] == ["down"] * len(_urls())
 
 
+def test_a_name_with_two_addresses_is_asked_at_both_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The presets are `localhost`, which has two addresses, and urllib asked them one after the
+    other with the whole timeout each: on Windows a closed loopback port takes all of it to say
+    so, so a server listening on 127.0.0.1 alone was reached only after ::1 had used up its 1.5 s.
+    This catches it with a first address whose connect waits on an event nobody sets until the
+    end: the second is connected to while the first is still waiting."""
+    ipv6 = (doctor.socket.AF_INET6, doctor.socket.SOCK_STREAM, 6, "", ("::1", 8000, 0, 0))
+    ipv4 = (doctor.socket.AF_INET, doctor.socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))
+    release = threading.Event()
+
+    class Connected:
+        closed = False
+
+        def close(self) -> None:
+            self.closed = True
+
+    reached = Connected()
+    refused = threading.Event()
+
+    def connect_one(info: tuple[object, ...], timeout: float | None) -> object:
+        if info is ipv6:
+            release.wait(60)
+            refused.set()
+            raise ConnectionRefusedError("::1 refused, at last")
+        return reached
+
+    monkeypatch.setattr(doctor, "_addresses", lambda host, port: [ipv6, ipv4])
+    monkeypatch.setattr(doctor, "_connect_one", connect_one)
+    try:
+        assert doctor._connection_to(("localhost", 8000), 1.5) is reached
+        assert not refused.is_set(), "the second address was asked only once the first refused"
+    finally:
+        release.set()
+    assert reached.closed is False
+
+
+def test_an_address_that_connects_after_another_has_its_socket_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every address is asked at once, so a second can connect after the first was taken, and
+    its socket was then nobody's: left open, one per probe, for the life of the process. This
+    catches it with a second address whose connect the test lets through only once the first
+    has been returned: its socket is closed as it connects."""
+    ipv6 = (doctor.socket.AF_INET6, doctor.socket.SOCK_STREAM, 6, "", ("::1", 8000, 0, 0))
+    ipv4 = (doctor.socket.AF_INET, doctor.socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))
+    late_may_connect, late_closed = threading.Event(), threading.Event()
+
+    class Socket:
+        def __init__(self, on_close: threading.Event | None = None) -> None:
+            self.on_close = on_close
+
+        def close(self) -> None:
+            if self.on_close is not None:
+                self.on_close.set()
+
+    first = Socket()
+
+    def connect_one(info: tuple[object, ...], timeout: float | None) -> object:
+        if info is ipv6:
+            return first
+        assert late_may_connect.wait(20), "the first address was never returned"
+        return Socket(on_close=late_closed)
+
+    monkeypatch.setattr(doctor, "_addresses", lambda host, port: [ipv6, ipv4])
+    monkeypatch.setattr(doctor, "_connect_one", connect_one)
+    try:
+        assert doctor._connection_to(("localhost", 8000), 1.5) is first
+    finally:
+        late_may_connect.set()
+    assert late_closed.wait(20), "the socket that connected second was left open"
+
+
+def test_ollamas_placement_probe_ends_by_the_deadline_the_other_probes_keep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama's `/api/ps` is asked once its `/v1/models` has answered, and it was given a
+    deadline of its own, so an Ollama that answered and then held `/api/ps` kept doctor two
+    deadlines under titles that name a 1.5 s timeout. This catches it on a clock the test moves:
+    Ollama's `/v1/models` answers five seconds in, the other servers at once, and once the
+    placement probe is waiting, on an event the test sets at the end, each reading of the clock
+    moves it half a second. Every probe is done or given up on within one `PROBES_DEADLINE_S`."""
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
+    now = [0.0]
+    readings: list[float] = []
+    placing = threading.Event()
+
+    def clock() -> float:
+        if placing.is_set():
+            now[0] += 0.5
+        readings.append(now[0])
+        return now[0]
+
+    def answers(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+        if url == doctor.PRESETS["ollama"]:
+            now[0] += 5.0
+        return "up", "llama3"
+
+    release = threading.Event()
+
+    def held(root: str, timeout_s: float = 1.5) -> tuple[list[doctor.PlacementRow], str]:
+        placing.set()
+        release.wait(60)
+        return [], "too late to be read"
+
+    monkeypatch.setattr(doctor, "_clock", clock)
+    monkeypatch.setattr(doctor, "_probe_llms", answers)
+    monkeypatch.setattr(doctor, "_probe_placement", held)
+    try:
+        report = doctor.collect()
+    finally:
+        release.set()
+    ollama = next(s for s in report.servers if s.preset == "ollama")
+    assert ollama.placement_note == "GET /api/ps did not finish answering within the probes' 6 s"
+    assert readings[-1] - readings[0] <= doctor.PROBES_DEADLINE_S, readings
+
+
+def test_the_servers_are_asked_before_any_package_is_imported(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The probes were asked only after the core packages and every provider's SDK had been
+    imported one after another, so the second or two the probes wait on closed ports came on top
+    of the imports rather than under them. This catches it by holding the first import doctor
+    makes until every probe has started: asked first, they all have; asked after the imports,
+    none can."""
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
+    urls = _urls()
+    started: list[str] = []
+    everyone = threading.Event()
+    held: list[bool] = []
+
+    def records(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+        started.append(url)
+        if len(started) == len(urls):
+            everyone.set()
+        return "down", "not running"
+
+    real_import = doctor.importlib.import_module
+
+    def first_waits(name: str, package: str | None = None) -> object:
+        if not held:
+            held.append(everyone.wait(20))
+        return real_import(name, package)
+
+    monkeypatch.setattr(doctor, "_probe_llms", records)
+    monkeypatch.setattr(doctor, "_probe_placement", lambda root, timeout_s=1.5: ([], "not asked"))
+    monkeypatch.setattr(doctor.importlib, "import_module", first_waits)
+    doctor.collect()
+    assert held == [True], f"the first import came before the probes: {started}"
+
+
+@pytest.mark.parametrize("module", sorted(doctor._SDK_BY_METADATA))
+def test_an_sdk_is_not_imported_to_read_its_version(
+    monkeypatch: pytest.MonkeyPatch, module: str
+) -> None:
+    """Every provider SDK and most of the optional extras were imported only to read a version
+    the installer had already written down, one after another, each import costing a fraction of
+    a second or more. This catches it by refusing every import and answering the metadata: the
+    version comes from the metadata, and nothing was imported for it."""
+
+    def no_import(name: str, package: str | None = None) -> object:
+        raise AssertionError(f"imported {name} to read its version")
+
+    def version(distribution: str) -> str:
+        assert distribution == doctor._SDK_BY_METADATA[module], distribution
+        return "9.9.9"
+
+    monkeypatch.setattr(doctor.importlib, "import_module", no_import)
+    monkeypatch.setattr(doctor.md, "version", version)
+    assert doctor._installed(module) == "9.9.9"
+
+
 @pytest.mark.usefixtures("_no_board")
 def test_the_rows_keep_their_order_whichever_answer_comes_first(
     monkeypatch: pytest.MonkeyPatch,
@@ -102,6 +275,35 @@ def test_ctrl_c_lands_while_a_probe_is_stuck(monkeypatch: pytest.MonkeyPatch) ->
         release.set()
         timer.join()
     assert time.monotonic() - began < 30, "the interrupt waited for the probe"
+
+
+def test_a_probe_that_never_ends_is_given_up_on_by_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The join waited for every probe however long it took, so a server that kept its reply
+    going held doctor for ever under a title promising a 1.5 s timeout. This catches it with a
+    probe that waits on an event nobody sets until the end, and a clock that reads the deadline
+    as passed once the probe has started: the answer comes, and says the server did not
+    finish, while the probe is still waiting."""
+    started, release = threading.Event(), threading.Event()
+
+    def never_ends(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+        started.set()
+        release.wait(60)
+        return "up", "too late to be read"
+
+    def clock() -> float:
+        return doctor.PROBES_DEADLINE_S + 1 if started.is_set() else 0.0
+
+    monkeypatch.setattr(doctor, "_probe_llms", never_ends)
+    monkeypatch.setattr(doctor, "_clock", clock)
+    try:
+        answers = doctor._probe_together(["http://never-ends"])
+        assert not release.is_set() and started.is_set()
+    finally:
+        release.set()
+    late = f"did not finish answering in {doctor.PROBES_DEADLINE_S:g} s"
+    assert answers == {"http://never-ends": ("http", late)}
 
 
 @pytest.mark.usefixtures("_no_board", "_fresh_walks")
