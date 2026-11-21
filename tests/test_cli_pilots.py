@@ -232,16 +232,19 @@ def test_a_stored_team_brings_its_own_robots(tmp_path: Path) -> None:
         assert "brings its own robots" in result.output
 
 
-@pytest.mark.parametrize("where", ["--robots", "robots:", "--robot NAME", "--robot SPEC"])
+@pytest.mark.parametrize(
+    "where", ["--robots", "robots:", "--robot NAME", "--robot SPEC", "--robot SPEC and --robots"]
+)
 def test_a_robot_given_for_no_member_is_refused_before_anything_connects(
     tmp_path: Path, where: str
 ) -> None:
     """`ghost` is no member of `team-hello`, and the robot given for it was passed over: the run
     went on as if it had never been typed, and the member it was meant for took whatever this
     machine had. So was a registered robot named with `--robot` that is no member, and a bare
-    `--robot lerobot:mock`, which names a body and no member at all. Each is refused now, naming
-    what was given and the members, with nothing written; the bare one also says how to give a
-    body to a member by name."""
+    `--robot lerobot:mock`, which names a body and no member at all, alone or beside the
+    `--robots` that named every member (the refuter's test). Each is refused now, naming what was
+    given and the members, with nothing written; the bare one also says how to give a body to a
+    member by name."""
     named = "ghost=lerobot:mock"
     if where == "--robots":
         args = ["team-hello", "--robots", "duck=microduck:mock,arm=lerobot:mock,ghost=lerobot:mock"]
@@ -250,6 +253,9 @@ def test_a_robot_given_for_no_member_is_refused_before_anything_connects(
         args = ["team-hello", "--robot", "ghost"]
     elif where == "--robot SPEC":
         args, named = ["team-hello", "--robot", "lerobot:mock"], "--robot lerobot:mock"
+    elif where == "--robot SPEC and --robots":
+        both = ["--robots", "duck=microduck:mock,arm=lerobot:mock", "--robot", "lerobot:mock"]
+        args, named = ["team-hello", *both], "--robot lerobot:mock"
     else:
         bundled = Path(__file__).resolve().parents[1] / "tasks" / "team-hello.glot"
         text = bundled.read_text(encoding="utf-8")
@@ -263,7 +269,7 @@ def test_a_robot_given_for_no_member_is_refused_before_anything_connects(
     assert result.exit_code == 1, result.output
     said = " ".join(result.output.split())
     assert f"{named} names no member of this team, whose members are duck, arm" in said, said
-    if where == "--robot SPEC":
+    if where.startswith("--robot SPEC"):
         assert "--robots duck=lerobot:mock" in said, said
     assert "Traceback" not in result.output
     assert not (tmp_path / "runs").exists(), "nothing was written"
@@ -505,6 +511,101 @@ async def test_q_pressed_while_a_member_is_asked_finds_every_body_still_and_ends
     assert {row["outcome"] for row in result.per_member.values()} == {"aborted"}
 
 
+async def test_an_answer_typed_too_soon_after_a_question_is_passed_by_and_the_question_put_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """At a console the second duck's question comes up a moment after the first is answered, so
+    a `y` meant for the first, typed twice or held, answered the second before anybody could have
+    read its warning (the refuter's test). The team's questions keep the rule the question
+    branch's Enter-only waits keep: an answer typed within `TYPED_AHEAD_S` of the question is
+    passed by, said once, and the question is put again in the same words. The person here
+    answers the first question after that, types the second's `y` the moment it is put, and
+    answers it again once it is put again; the real `KillSwitch` and key thread over the console
+    stand-in, the question the CLI's own."""
+    import asyncio
+    import threading
+
+    from roboglot import cli as cli_mod
+    from roboglot.adapters.factory import RobotSpec
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.cli import ANSWER_TOO_SOON
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.safety import TYPED_AHEAD_S, KillSwitch
+    from roboglot.team.pilots import roster_from_specs, run_pilot_team
+    from tests.support import until
+
+    _fall_blind(monkeypatch)
+    ks = KillSwitch(asyncio.Event())
+    ks._loop = asyncio.get_running_loop()
+    console = _Console()
+    ks._keys = console  # type: ignore[assignment]
+    ks._thread = threading.Thread(target=ks._watch_keys, name="test-keys", daemon=True)
+    ks._thread.start()
+    monkeypatch.setattr(cli_mod, "_SWITCH", ks)
+    monkeypatch.setattr(cli_mod, "_can_prompt", lambda: True)
+    monkeypatch.setattr("roboglot.safety.in_the_background", lambda _stream: False)
+    puts: list[str] = []
+    ask = cli_mod._ask
+
+    def spied(question: str) -> Any:
+        puts.append(question)
+        return ask(question)
+
+    monkeypatch.setattr(cli_mod, "_ask", spied)
+    said: list[str] = []
+    printed = cli_mod.ui.err_console.print
+
+    def heard(*args: Any, **kwargs: Any) -> None:
+        said.append(" ".join(str(arg) for arg in args))
+        printed(*args, **kwargs)
+
+    monkeypatch.setattr(cli_mod.ui.err_console, "print", heard)
+
+    def put(n: int) -> None:
+        until(lambda: len(puts) == n and ks._line_wanted.is_set(), 60, what=f"question {n}")
+
+    def person() -> None:
+        put(1)
+        threading.Event().wait(TYPED_AHEAD_S)  # the warning read
+        console.keys.put("y")
+        console.keys.put("\r")
+        put(2)
+        console.keys.put("y")  # the moment it is put: meant for the first
+        console.keys.put("\r")
+        put(3)
+        threading.Event().wait(TYPED_AHEAD_S)
+        console.keys.put("y")
+        console.keys.put("\r")
+
+    walk = ToolCall(name="move", arguments={"vx": 0.1, "wz": 0.0, "duration_s": 0.5})
+    verdict = ToolCall(name="assess_task", arguments={"verdict": "feasible", "reason": "flat"})
+    done = ToolCall(name="declare_success", arguments={"reason": "walked"})
+    ducks = ("d1", "d2")
+    providers = {name: FakeProvider(script=[verdict, walk, done]) for name in ducks}
+    typist = threading.Thread(target=person, name="test-person", daemon=True)
+    typist.start()
+    try:
+        result = await asyncio.wait_for(
+            run_pilot_team(
+                parse_glot_text(TWO_BLIND),
+                roster_from_specs({name: RobotSpec("open_duck", "mock", name) for name in ducks}),
+                providers=providers,
+                runs_dir=tmp_path,
+                acknowledge=cli_mod._member_acknowledge_prompt,
+            ),
+            timeout=120,
+        )
+    finally:
+        console.close()
+        typist.join(timeout=60)
+    assert len(puts) == 3 and puts[1] == puts[2] != puts[0], puts
+    assert sum(ANSWER_TOO_SOON in line for line in said) == 1, said
+    assert result.outcome == "success", result.reason
+    second = puts[1].split()[3]
+    assert _prompts(_rows(result.run_dir, second)) == [("acknowledge", True)]
+
+
 ASKED_THEN_STOPPED = """
 import asyncio, sys
 from roboglot_open_duck.mock import OpenDuckMock
@@ -611,6 +712,34 @@ def test_a_question_the_team_takes_back_is_taken_back_on_the_screen(tmp_path: Pa
     said = flat.find(TAKEN_BACK.format(member="duck"))
     assert -1 < flat.find("Are you watching duck") < said < flat.find("buddy error"), text
     assert code == 1, (code, text[-3000:])
+
+
+TWO_BLIND = (
+    "---\nglot: 1\nname: two-blind\ndescription: d\nverbs:\n"
+    "  allow: [move, report_state, stop]\nsuccess: [x]\nrequires: [report_state]\n"
+    "team:\n  members: [d1, d2]\n  allocation:\n    method: pilots\n"
+    "robots:\n  d1: open_duck:mock\n  d2: open_duck:mock\n---\n# Task\nx\n"
+)
+"""Two Open Ducks on a task that can make them walk, so the team asks about each in turn."""
+
+
+def test_a_question_off_a_pipe_ends_its_line_once_it_has_its_answer_or_the_end_of_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A line read off a pipe is not echoed, so a question answered there left its line open:
+    the next member's warning was printed on the end of the first question's line, and the
+    verdict on the end of the one the end of input left unanswered (the refuter's test). Each
+    question's line holds the question and nothing after it now."""
+    _fall_blind(monkeypatch)
+    task = tmp_path / "two-blind.glot"
+    task.write_text(TWO_BLIND, encoding="utf-8")
+    result = runner.invoke(
+        app, ["run", str(task), *_run_args(tmp_path)], input="y\n", env={"COLUMNS": "200"}
+    )
+    asked = [line for line in result.output.splitlines() if "[y/N]:" in line]
+    after = [line.split("[y/N]:", 1)[1].strip()[:60] for line in asked]
+    assert len(asked) == 2 and after == ["", ""], f"printed on the end of a question: {after}"
+    assert result.exit_code == 1, result.output
 
 
 def test_a_stored_team_refuses_the_endpoint_flags_it_would_have_dropped(

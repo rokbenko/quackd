@@ -1729,35 +1729,71 @@ def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
 def _member_acknowledge_prompt(member: str, why: str) -> bool | Awaitable[bool]:
     """`_acknowledge_prompt` about one member of a team, with its name on the warning and in the
     question, since every member shares this terminal. A team puts these one at a time, before
-    any body moves (`roboglot.team.pilots`)."""
+    any body moves (`roboglot.team.pilots`).
+
+    At a console it keeps the rule the question branch's Enter-only waits keep: an answer typed
+    within `TYPED_AHEAD_S` of the question being put was typed before anybody could have read it,
+    so it is passed by, said once (`ANSWER_TOO_SOON`), and the question is put again in the same
+    words. The next member's question comes up a moment after one is answered, and a `y` meant
+    for the first, typed twice or held, answered the second before its warning could be read."""
+    import time
+
+    from roboglot.safety import TYPED_AHEAD_S
+
+    question = f"Are you watching {ui.printable(member)} right now?"
+    told = False
     with ui.pause_status():
         ui.err_console.print(_reason(f"{member}: {why}"))
-        asked = _ask(f"Are you watching {ui.printable(member)} right now?")
+        while True:
+            switch = _SWITCH
+            put_at = time.monotonic()
+            asked = _ask(question)
+            # only a line a console gave: a stream's lines were written before any question,
+            # and a press, a key thread gone or a background process is no line anybody typed
+            typed = isinstance(asked, bool) and switch is not None and switch.unanswered is None
+            if not typed or time.monotonic() - put_at >= TYPED_AHEAD_S:
+                break
+            if not told:
+                ui.err_console.print(Text(ANSWER_TOO_SOON, style=ui.STYLES["warn"]))
+                told = True
     # at a terminal the question holds the loop until it is answered, and on a stream it waits
     # beside the team, whose stop can take it back
-    return asked if isinstance(asked, bool) else _said_when_taken_back(member, asked)
+    return asked if isinstance(asked, bool) else _on_its_own_line(member, asked)
 
 
 TAKEN_BACK = "{member}: that question was taken back: the team stopped before you answered"
 """Said under a team's question that its stop took back, with the member it was about."""
 
+ANSWER_TOO_SOON = (
+    "that answer came too soon after the question to have been meant for it: read the question, "
+    "then answer it"
+)
+"""Said once a question, at the first answer a console gave a team's question within
+`TYPED_AHEAD_S` of its being put, which is passed by, and the question is put again
+(`_member_acknowledge_prompt`)."""
 
-async def _said_when_taken_back(member: str, asked: Awaitable[bool]) -> bool:
-    """A team's question on a stdin that is no terminal, which waits while the team goes on and
-    which the team's stop takes back. It was left open on the screen, and whatever came next,
-    the verdict, was printed on the end of its line. The line is ended now, and a line under it
-    says the question was taken back."""
+
+async def _on_its_own_line(member: str, asked: Awaitable[bool]) -> bool:
+    """A team's question on a stdin that is no terminal, which waits while the team goes on. A
+    line read off a pipe is not echoed, so the question's line was left open whatever became of
+    it, and what came next, the next member's warning or the verdict, was printed on its end. The
+    line is ended once the question has its answer, the end of input or the team's stop, and a
+    question the stop took back says so under it."""
     import asyncio
 
+    taken_back = False
     try:
         return await asked
     except asyncio.CancelledError:
+        taken_back = True
+        raise
+    finally:
         sys.stdout.write("\n")
         sys.stdout.flush()
-        ui.err_console.print(
-            Text(TAKEN_BACK.format(member=ui.printable(member)), style=ui.STYLES["muted"])
-        )
-        raise
+        if taken_back:
+            ui.err_console.print(
+                Text(TAKEN_BACK.format(member=ui.printable(member)), style=ui.STYLES["muted"])
+            )
 
 
 def _judge_prompt(why: str) -> bool | Awaitable[bool]:
@@ -2445,9 +2481,18 @@ def _run_impl(
             )
         if roster is None and section is not None:
             bare = next((s for s in specs if s.name is None), None)
-            if robot is not None and not robots and bare is not None:
-                # A body and no member: the run went on with the task's own robots and never
-                # said the flag had been passed over, as a misnamed member was passed over.
+            if robot is not None and robots:
+                # `--robots` names every member's body, and `--robot` beside it was never read
+                try:
+                    beside = _robot_specs(robot, None, glot, registry_dir=registry_dir)[0].spec
+                except (_AdapterError, TransportError, RegistryError) as e:
+                    _fail(str(e))
+                    return
+                bare = beside if beside.name is None else bare
+            if robot is not None and bare is not None:
+                # A body and no member: the run went on with the task's own robots, or with
+                # `--robots`, and never said the flag had been passed over, as a misnamed
+                # member was passed over.
                 _fail(
                     f"--robot {bare.key} names no member of this team, whose members are "
                     f"{', '.join(section.member_names)}",

@@ -435,6 +435,54 @@ async def test_the_first_exception_stops_the_others_and_names_itself(
     assert (result.run_dir / "robots" / "arm" / "transcript.jsonl").exists()
 
 
+async def test_a_member_the_teams_stop_cut_before_its_first_step_reads_aborted_in_the_team(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The arm's connect fails while the duck's first state read is out, and the team's stop cuts
+    that read (`AgentLoop._read_state`), which ends the duck before its first step by raising
+    `Aborted`. Its own record said `aborted`, and the team's said `error`, `Aborted: stopped by
+    the team: ...`, so the team's reason opened on the duck, which was only stopped. The team
+    says what the member's own record says now, and the reason opens on the arm, on a task none
+    of whose members can walk as on any other (the refuter's test, held to the newer record)."""
+    from roboglot.adapters import factory
+
+    real = factory.make_adapter
+    reading = asyncio.Event()
+
+    def build(spec: Any, **kwargs: Any) -> Any:
+        adapter = real(spec, **kwargs)
+        if spec.name == "duck":
+            first = adapter.get_state
+            calls = {"n": 0}
+
+            async def quiet() -> Any:
+                calls["n"] += 1
+                if calls["n"] == 1:
+                    reading.set()
+                    await asyncio.Event().wait()  # a link gone quiet: ended only by the stop
+                return await first()
+
+            adapter.get_state = quiet
+        if spec.name == "arm":
+
+            async def refused() -> Any:
+                await reading.wait()
+                raise RuntimeError("no socket")
+
+            adapter.connect = refused
+        return adapter
+
+    monkeypatch.setattr("roboglot.team.pilots.make_adapter", build)
+    result = await _run(tmp_path)
+    own = Transcript.read(result.run_dir / "robots" / "duck" / "transcript.jsonl")[-1]
+    stopped = "stopped by the team: arm raised RuntimeError: no socket"
+    assert (own["kind"], own["outcome"], own["reason"]) == ("run_end", "aborted", stopped), own
+    duck = result.per_member["duck"]
+    assert (duck["outcome"], duck["reason"]) == ("aborted", stopped), duck
+    assert result.per_member["arm"]["outcome"] == "error"
+    assert result.reason.startswith("arm error: RuntimeError: no socket"), result.reason
+
+
 async def test_a_provider_that_raises_is_that_members_error(tmp_path: Path) -> None:
     class _Angry:
         name, llm_id, supports_vision = "angry", "none", False

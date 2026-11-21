@@ -104,17 +104,22 @@ a fall. A no, or a question nobody answered, ends the team before any body moved
 question is put, the member asked ends `aborted` with your answer in its transcript, as a solo run
 on its body does, and every other member ends on `stopped by the team: duck ended aborted: nobody
 confirmed they were watching a robot that cannot see a fall`. While a question is up, `q` goes
-into its answer as at any question, and with its Enter it is a no; Ctrl-C ends the team. A
-question the team's stop takes back, with stdin a pipe, says
+into its answer as at any question, and with its Enter it is a no; Ctrl-C ends the team. At a
+console, an answer typed within half a second of a question being put was typed before anybody
+could have read it, the next member's question following one you have just answered among them,
+so it is passed by, once with `that answer came too soon after the question to have been meant
+for it: read the question, then answer it`, and the question is put again. A question the team's
+stop takes back, with stdin a pipe, says
 `duck: that question was taken back: the team stopped before you answered`. `--yes` answers every
 member's question at once, as it answers a solo run's: nobody is asked, and each such member's
 transcript keeps the warning.
 
 A robot given for a name that is no member is refused before anything connects, whether it was
 given in the task file's `robots:`, in `--robots` or as a registered robot with `--robot`. So is
-a `--robot` that names a body and no member, which the run used to pass over for the task's own
-robots: `--robot lerobot:mock names no member of this team, whose members are duck, arm`, and the
-line under it says how to give it to one, `--robots duck=lerobot:mock`.
+a `--robot` that names a body and no member, alone or beside `--robots`, which the run used to
+pass over for the task's own robots or for the `--robots`: `--robot lerobot:mock names no member
+of this team, whose members are duck, arm`, and the line under it says how to give it to one,
+`--robots duck=lerobot:mock`.
 
 ## Talking
 

@@ -258,12 +258,22 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   on the warning and in the question, `Are you watching duck right now? [y/N]:`, one question at a
   time. Every member waits before it moves until each member whose part can make it walk has read
   its body and been answered, so nothing moves while a question is up: `q` goes into its answer,
-  as at any question, and with its Enter is a no, and Ctrl-C ends the team. A no, or a question
+  as at any question, and with its Enter is a no, and Ctrl-C ends the team. At a console an
+  answer typed within half a second of a question being put is passed by, once with `that answer
+  came too soon after the question to have been meant for it: read the question, then answer
+  it`, and the question is put again, as the questions that take only Enter pass one by, so a
+  `y` meant for one member cannot answer the next. A no, or a question
   nobody answered, ends the team before any body moved: no other question is put, the member
   asked ends `aborted` with the answer in its transcript, and the others end on `stopped by the
   team: duck ended aborted: nobody confirmed they were watching a robot that cannot see a fall`.
+  On a pipe each question ends its line once it has its answer or the end of input, so the next
+  member's warning and the verdict start on lines of their own.
   A question the team's stop takes back while it waits on a pipe ends its line and says so
-  before the verdict. A team none of whose members can be made to walk runs as before.
+  before the verdict. A team none of whose members can be made to walk runs as before, but for
+  one record, on any team: a member the team's stop ends before its first step, its first
+  reading cut short, was `error`, `Aborted: stopped by the team: ...`, in the team's record while
+  its own said `aborted`, and the team's reason could open on it rather than on the member that
+  stopped the team. The team's record says `aborted` now, as the member's own does.
 - **`--yes` answers a team's questions about a fall as it answers a solo run's, and the team's
   own `yes` does not.** The `--yes` you type answers every such member's question at once: nobody
   is asked, and each member's transcript keeps the warning. `run_pilot_team`, called from Python,
@@ -776,7 +786,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   name in `--robots` or a registered robot named with `--robot` that matched no member was
   passed over, and the member it was meant for took whatever this machine had, on a machine with
   one adapter its mock. So was a `--robot lerobot:mock` on a team task, which names a body and no
-  member: the team ran on the task's own robots without a word. Each is refused now before
+  member: the team ran on the task's own robots, or beside `--robots` on those, without a word.
+  Each is refused now before
   anything connects, naming what was given and the team's members,
   `--robot lerobot:mock names no member of this team, whose members are duck, arm`, and the bare
   one with the way to give it to a member, `--robots duck=lerobot:mock`.
