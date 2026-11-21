@@ -201,6 +201,9 @@ ASKING_AGAIN = (
 )
 """Said once a run, before its first wait. Each try after that is a line of the log's own, from
 the failed call's `llm` record and its `retry_in_s`."""
+ASKING_AGAIN_KEYLESS = ASKING_AGAIN.replace("Ctrl-C or q", "Ctrl-C")
+"""`ASKING_AGAIN` for a run whose kill switch reads no key, its stdin a pipe or a file, where `q`
+ends nothing (`KillSwitch.q_is_read`)."""
 
 STOPPED_WAITING = "stopped waiting to ask the LLM's API again: {reason}"
 """A wait to ask again that the kill switch, the heartbeat or a team ended. The run then ends
@@ -391,13 +394,14 @@ class HandOff(Protocol):
         *,
         timeout_s: float | None = None,
         until_abort: bool = True,
-        deliberate: bool = False,
+        deliberate: bool | Literal["too soon only"] = False,
     ) -> bool:
         """Say `text`, then wait for Enter. True if it came, False if anything else ended it.
 
         `deliberate` is a question whose Enter moves an arm or drops it (`roboglot.release`):
         only a bare Enter answers it, read after the question was put, and a line with
-        anything typed on it is a no (`KillSwitch.wait_for_enter`).
+        anything typed on it is a no (`KillSwitch.wait_for_enter`). `"too soon only"`
+        (`roboglot.safety.TOO_SOON_ONLY`) is the timing half alone, for `--by-hand`'s start.
 
         A person who can say *what* else ended it sets `ended` after each wait (the CLI's
         `_TerminalHandOff` does: `enter`, `kill switch`, `no keys`, `stopped` or `timeout`),
@@ -1079,7 +1083,10 @@ class AgentLoop:
             # which is over before a person could read it
             if not self._said_asking_again and transient is not None and not first_try:
                 self._said_asking_again = True
-                self._note(ASKING_AGAIN.format(why=transient.why, tries=len(ASK_AGAIN_AFTER_S)))
+                from roboglot.safety import KillSwitch
+
+                asking = ASKING_AGAIN if KillSwitch.q_is_read() else ASKING_AGAIN_KEYLESS
+                self._note(asking.format(why=transient.why, tries=len(ASK_AGAIN_AFTER_S)))
             waited = time.perf_counter()
             try:
                 stopped = await _wait_or_abort(self.executor.abort, then)
@@ -1719,7 +1726,14 @@ class AgentLoop:
         self._emit("hand_off", stage="released", how=released.how, reason=released.reason)
         if not released.ok:
             raise Aborted(f"the arm was not handed over: {released.reason}")
-        placed = await hand.wait(self.PLACE_IT)
+        # this Enter energises the arm where it is and starts the run, so an Enter typed ahead,
+        # or the repeat of one held from the question before, is passed by with
+        # `ENTER_TOO_SOON` rather than taken, as at every other question whose Enter moves the
+        # arm. Only that half of a deliberate wait: the question has no no in it, so a line
+        # typed after it starts the run whatever it holds, as it always did
+        from roboglot.safety import TOO_SOON_ONLY
+
+        placed = await hand.wait(self.PLACE_IT, deliberate=TOO_SOON_ONLY)
         self._ask_recorded("hand_off", self.PLACE_IT, placed, hand)
         if not placed:
             # The invitation said "put whatever it needs in the gripper", so from the moment it
