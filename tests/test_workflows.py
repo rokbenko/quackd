@@ -158,6 +158,28 @@ def test_every_job_that_installs_from_the_lock_refuses_a_stale_one() -> None:
     assert "uv sync --locked " in script and "--frozen" not in script
 
 
+def test_a_job_that_syncs_on_another_python_keeps_every_uv_command_on_it() -> None:
+    """`.python-version` names the Python a bare `uv sync` builds a contributor's environment on,
+    the one CI's test job runs beside 3.11, and a `uv run` rebuilds an environment on any other
+    Python to match that file. So a job whose sync names another, as the 3.11 cells of `test` and
+    `onboard` do, would run every step after the sync on the file's Python and say nothing. Such
+    a job sets UV_PYTHON to the Python its sync names, which uv reads before the file."""
+    pinned = (REPO / ".python-version").read_text(encoding="utf-8").strip()
+    assert pinned in _workflow("ci.yml")["jobs"]["test"]["strategy"]["matrix"]["python"], pinned
+    elsewhere = 0
+    for name in JOBS:
+        workflow = _workflow(name)
+        for job_id, job in workflow["jobs"].items():
+            env = {**workflow.get("env", {}), **job.get("env", {})}
+            for step in job["steps"]:
+                run = step.get("run", "")
+                for python in re.findall(r"\buv sync\b.*?--python (\$\{\{.*?\}\}|\S+)", run):
+                    if python != pinned:
+                        elsewhere += 1
+                        assert env.get("UV_PYTHON") == python, f"{name} {job_id}: {python}"
+    assert elsewhere, "no job syncs on another Python than .python-version's, so this holds none"
+
+
 def test_every_checkout_drops_its_token_but_the_one_that_pushes() -> None:
     """actions/checkout leaves the job's token in `.git/config` unless told not to, where every
     later step can read it. Only the contributors job pushes, and it is the one checkout that

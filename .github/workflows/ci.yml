@@ -57,6 +57,10 @@ jobs:
         # Windows job that test never ran anywhere, and neither did the path it describes.
         os: [ubuntu-latest, macos-latest, windows-latest]
         python: ["3.11", "3.12"]
+    env:
+      # .python-version asks for 3.12, and a `uv run` rebuilds an environment on any other Python
+      # to match it, so without this every step after the sync would run the 3.11 cells on 3.12.
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,8 +75,8 @@ jobs:
         # `uv sync` re-locks in silence when pyproject has drifted, so a stale lock used to
         # reach a release rather than a CI failure. roboglot[alohamini] once shipped unlocked.
         run: uv lock --check
-      - name: Sync (default deps + dev extra — every adapter, no SDKs, no keys)
-        run: uv sync --python ${{ matrix.python }} --extra dev
+      - name: Sync (default deps + the dev group — every adapter, no SDKs, no keys)
+        run: uv sync --python ${{ matrix.python }}
       - name: Lint
         run: uv run ruff check .
       - name: Format
@@ -196,7 +200,7 @@ jobs:
           version: "0.12.21"
           enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Sync (dev + the ui extra, Streamlit and what it brings)
-        run: uv sync --python 3.12 --extra dev --extra ui
+        run: uv sync --python 3.12 --extra ui
       - name: Types, with Streamlit's own present
         run: uv run mypy roboglot/webui
       - name: The page, and a goal, a chat and a Stop run through it
@@ -239,6 +243,8 @@ jobs:
       # without it a runner where dbus-fast or the bus went missing would skip the D-Bus tests
       # and go green having proved nothing
       ROBOGLOT_REQUIRE_DBUS: "1"
+      # the 3.11 cell stays on 3.11 for every `uv run`, as in `test`
+      UV_PYTHON: ${{ matrix.python }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -252,7 +258,7 @@ jobs:
           version: "0.12.21"
           enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
       - name: Sync (dev + the onboard extra, which on Linux brings bleak and dbus-fast)
-        run: uv sync --python ${{ matrix.python }} --extra dev --extra onboard
+        run: uv sync --python ${{ matrix.python }} --extra onboard
       - name: Prove the imports before blaming the radio
         run: uv run python -c "import bleak, dbus_fast, zeroconf; print('bleak and dbus-fast import')"
       - name: Types, with bleak's and dbus-fast's own present
@@ -306,8 +312,8 @@ jobs:
         with:
           version: "0.12.21"
           enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
-      - name: Sync (default deps + dev extra)
-        run: uv sync --python 3.12 --extra dev
+      - name: Sync (default deps + the dev group)
+        run: uv sync --python 3.12
       - name: torch from its CPU wheel index, then LeRobot 0.7.0
         run: |
           uv pip install --index-url https://download.pytorch.org/whl/cpu "torch>=2.7,<2.16" "torchvision>=0.22,<0.30"

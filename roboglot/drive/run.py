@@ -545,6 +545,11 @@ async def run_drive(
                 await sessions[0].close()
         with contextlib.suppress(Exception):
             await robot.close()
+        if note := getattr(adapter, "close_note", None):
+            # the close's own line, which `RobotSession.close` gives the logger alone, a bare
+            # line on stderr: in the record too, which `roboglot log` replays and the page shows
+            with contextlib.suppress(Exception):
+                event_log.emit("note", text=str(note))
         spent = sessions[0].usage if sessions else None
         summary = {
             "glot": "drive",
