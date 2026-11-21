@@ -22,12 +22,15 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ParamSpec, TypeVar
 
 from roboglot.glotfile.parser import glot_from_goal
 from roboglot.glotfile.schema import GlotFile
 from roboglot.onboard.config import RobotFile
 from roboglot.onboard.meeting import NEARBY_LINE, meeting_glot
+
+_P = ParamSpec("_P")
+_T = TypeVar("_T")
 
 #: Seconds before the same robot can start another meeting, and how long a meeting runs on once
 #: every robot in it has left, for a last word to arrive.
@@ -74,6 +77,48 @@ class Running:
     emptied_at: float | None = None
     #: a stop asked for, kept so a run stopped before its loop existed stops as it starts
     stop_wanted: str | None = None
+    #: the run itself has returned, its teardown done as far as it went, though its thread may
+    #: still be telling the terminal that gave it how it ended
+    returned: bool = False
+
+
+class CallPool(concurrent.futures.ThreadPoolExecutor):
+    """A thread pool that counts the calls under way on it. Nothing in Python ends a thread, and
+    the interpreter waits at its exit for every call a pool is running, while an idle worker
+    leaves at once: the count, not a thread's being alive, is what says a pool would hold the
+    process. `who` names the pool's owner in the line that says so."""
+
+    def __init__(self, name: str, who: str, max_workers: int | None = None) -> None:
+        super().__init__(max_workers=max_workers, thread_name_prefix=name)
+        self.who = who
+        self._busy = 0
+        self._calls = threading.Condition()
+
+    @property
+    def busy(self) -> int:
+        with self._calls:
+            return self._busy
+
+    def submit(
+        self, fn: Callable[_P, _T], /, *args: _P.args, **kwargs: _P.kwargs
+    ) -> concurrent.futures.Future[_T]:
+        def call() -> _T:
+            # counted from its start: one cancelled before it ran never holds anything
+            with self._calls:
+                self._busy += 1
+            try:
+                return fn(*args, **kwargs)
+            finally:
+                with self._calls:
+                    self._busy -= 1
+                    self._calls.notify_all()
+
+        return super().submit(call)
+
+    def wait_idle(self, timeout: float) -> bool:
+        """Whether no call is under way, waiting up to `timeout` seconds for the last to end."""
+        with self._calls:
+            return self._calls.wait_for(lambda: self._busy == 0, max(0.0, timeout))
 
 
 @dataclass
@@ -123,6 +168,9 @@ class RunSlot:
         self._closed: str | None = None
         #: a goal waiting for the meeting it took the slot from to end, while nothing else starts
         self._waiting: _Waiting | None = None
+        #: the pools the runs handed calls to: the run in hand's, and an earlier run's while a
+        #: call it left is still under way (`CallPool.busy`)
+        self.pools: list[CallPool] = []
 
     # ── which run may start ─────────────────────────────────────────────────────────────
 
@@ -301,11 +349,12 @@ class RunSlot:
     def _run(self, running: Running) -> None:
         aio = asyncio.new_event_loop()
         # the calls this run hands to threads of their own (`asyncio.to_thread`, a verb's
-        # blocking call) on threads named for it, so the service's close can find one that would
-        # hold the process at its exit (`CALL_THREADS`)
-        aio.set_default_executor(
-            concurrent.futures.ThreadPoolExecutor(thread_name_prefix=CALL_THREADS + running.kind)
-        )
+        # blocking call) go to a pool of its own that counts those under way, so the service's
+        # close can tell one that would hold the process at its exit from an idle worker
+        pool = CallPool(CALL_THREADS + running.kind, f"the {running.kind}")
+        with self._lock:
+            self.pools = [kept for kept in self.pools if kept.busy] + [pool]
+        aio.set_default_executor(pool)
         running.aio = aio
         front = running.front
         try:
@@ -314,6 +363,7 @@ class RunSlot:
             running.error = str(e)
             self._log(f"the {running.kind} ended with an error: {e}")
         finally:
+            running.returned = True
             with contextlib.suppress(Exception):
                 aio.close()
         result = running.result

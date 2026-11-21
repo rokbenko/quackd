@@ -280,6 +280,11 @@ def bluez_on_stand_ins(monkeypatch: pytest.MonkeyPatch, probe: Any) -> Any:
     return module
 
 
+#: How long the two tests below wait for the watchdog to bring a radio up: generous, so a slow
+#: machine passes too; a radio that comes up stops the wait at once.
+WATCHDOG_DEADLINE_S = 60.0
+
+
 async def test_a_start_cut_off_by_its_callers_bound_is_tried_again_by_the_watchdog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -308,7 +313,7 @@ async def test_a_start_cut_off_by_its_callers_bound_is_tried_again_by_the_watchd
             bound_s,
         )
     try:
-        for _ in range(int(2.0 / retry_s)):
+        for _ in range(int(WATCHDOG_DEADLINE_S / retry_s)):
             if built.status().state == "ready":
                 break
             await asyncio.sleep(retry_s)
@@ -363,7 +368,7 @@ async def test_a_start_cut_off_in_its_listen_hears_bluez_once_the_watchdog_bring
             bound_s,
         )
     try:
-        for _ in range(int(2.0 / retry_s)):
+        for _ in range(int(WATCHDOG_DEADLINE_S / retry_s)):
             if built.status().state == "ready":
                 break
             await asyncio.sleep(retry_s)

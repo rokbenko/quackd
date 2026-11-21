@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from roboglot.lan.lookup import LanDirectory, LanRecord
+from roboglot.onboard.brain import CallPool
 from roboglot.passport.beacon import WELL_KNOWN_JSON, ble_service_data, txt_record
 from roboglot.passport.talk import MAX_SESSIONS, Session
 from roboglot.passport_talk import Talker
@@ -35,6 +36,7 @@ from roboglot.radio import NoRadio, Pipe, Radio, RadioStatus, RadioUnavailable, 
 from roboglot.radio.links import (
     LinkChange,
     LinkInbox,
+    LinkPolicy,
     LinkTable,
     LinkTransport,
     talk_inbox,
@@ -55,6 +57,8 @@ CALL_S = 5.0
 #: What the journal says of a radio whose start the service's close cut short: the start is
 #: cancelled where it waits, and the radio's stop then takes down what it had brought up.
 CUT_SHORT = "radio {kind}: its start was cut short, as the service stops"
+#: How many hellos the meeter says at once: its own default (`Meeter.executor`), kept.
+MEET_WORKERS = 4
 
 
 class Lan(Protocol):
@@ -149,6 +153,15 @@ class RadioSide:
         #: every proximity event, for a narration
         self.on_proximity: Callable[[ProximityEvent], None] | None = None
         self.loop = LoopThread("roboglot-radio")
+        # the calls the radio, its meetings and its links run on threads of their own (BlueZ's
+        # question to the board, a hello's post, a link's inbox) go to pools that count those
+        # under way, so the service's close can say which would hold the process at its exit
+        self._calls = (
+            CallPool("roboglot-radio-call", "the radio's loop"),
+            CallPool("meet", "the radio's meetings", max_workers=MEET_WORKERS),
+            CallPool("passport-link", "the radio's links", max_workers=LinkPolicy().inflight),
+        )
+        self.loop.loop.set_default_executor(self._calls[0])
         self.rotor = BeaconRotor(
             period_s=rotate_s,
             busy=self._busy,
@@ -160,7 +173,9 @@ class RadioSide:
         self.planner = Planner(
             lambda: self.rotor.current, meet_policy or MeetPolicy(), advertising=advertising
         )
-        self.links = LinkTable(on_change=self._link_changed, on_gone=self._link_gone)
+        self.links = LinkTable(
+            on_change=self._link_changed, on_gone=self._link_gone, executor=self._calls[2]
+        )
         self.transports = Transports(http=http_post, link=LinkTransport(self.links, self.loop))
         self.talker: Talker | None = None
         self.meeter: Meeter | None = None
@@ -244,6 +259,7 @@ class RadioSide:
             lan=self.lan,
             clock=self.clock,
             on_event=self._meet_event,
+            executor=self._calls[1],
         )
         self._txt = txt_record(short_id=short_id, digest=digest, beacon=self.rotor.current)
         self._port = http_port
@@ -305,6 +321,10 @@ class RadioSide:
         else:
             self.tracker.suspend(now)
         return self.tracker.tick(now)
+
+    def pools(self) -> tuple[CallPool, ...]:
+        """The pools the radio's own calls run on, its loop's, its meetings' and its links'."""
+        return self._calls
 
     def withdraw(self) -> None:
         """This robot's LAN record withdrawn, alone and at once, and for good: it is what other

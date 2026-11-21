@@ -52,9 +52,21 @@ SPEED = 4.0
 WALK = "7,0@0 1,0@8 1,0@600"
 STANDS = "0,0@0"
 DEADLINE_S = 60.0
-#: How long a stand-in holds a race's window open for a second caller to land in it.
-WINDOW_S = 3.0
 PASSPHRASE = "a passphrase for these tests only"
+
+
+@pytest.fixture(autouse=True)
+def no_real_end_of_process(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The service's real end of the process (`os._exit`) is out of reach under pytest: a
+    service a test builds without a stand-in of its own, reaching it, ended the whole run of
+    tests with no summary and no failure named. Such a test fails here instead, by name. Every
+    test file that builds a service uses this fixture (the guard test below holds it so)."""
+    from roboglot.onboard import service as onboard_service
+
+    def refused(code: int) -> None:
+        raise AssertionError(f"a service tried to end the test process with exit code {code}")
+
+    monkeypatch.setattr(onboard_service, "_end_process", refused)
 
 
 class NoQuestions:
@@ -477,9 +489,11 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
         assert len(byes) == 2 and stopping < min(byes), lines
         # this run waits on a call in a thread of its own, which nothing in Python ends and the
         # interpreter waits for at its exit: the process is ended, on every path, and said
+        # this stand-in keeps no record the service could read, so nothing is known of either
         assert (
-            "the goal has not ended though it was told to stop, and the service ends its process "
-            "now with exit code 70: its record says what stop the body was sent; not done: the "
+            "the goal has not ended though it was told to stop, and a call it handed to a thread "
+            "of its own would hold the process at its exit, so the service ends its process now "
+            "with exit code 70: nothing is known of the stop the body was sent; not known: the "
             "body's close, the run's end record"
         ) in lines
         assert ended == [onboard_service.LEFT_EXIT] == [70]
@@ -506,9 +520,10 @@ def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
     a radio loop that does not answer can take two calls onto it, so the close could run on past
     the unit's timeout by that much. The budget counts from the stop now. The service's clock
     here is the test's: the stop comes at its nought, and the close at a moment past the whole
-    budget, as after a look that held the stop that long, so the close waits for nothing; the
-    run does not end and a robot met does not answer, either of which would hold a close
-    counted from its own start for the whole budget."""
+    budget, as after a look that held the stop that long, so the close gives the run nothing;
+    the run does not end and a robot met does not answer. What the close gave the run is read
+    off its joins (`JoinSpy`), never off a clock: a close counted from its own start gives it
+    all but the byes' share."""
     import asyncio
 
     from roboglot.onboard import service as onboard_service
@@ -540,11 +555,16 @@ def test_the_close_budget_counts_from_the_stop_and_not_from_the_start_of_close(
         service.talker.peers_open = lambda: {"did:key:z6MkOne"}  # type: ignore[method-assign]
         service.talker.leave = lambda peer: hung.wait(DEADLINE_S)  # type: ignore[method-assign]
         assert service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        assert running is not None and running.thread is not None
+        spy = JoinSpy(running.thread, threading.Event())
+        running.thread = SimpleNamespace(join=spy.join, is_alive=spy.is_alive)  # type: ignore[assignment]
         service.stop()  # what the SIGTERM handler and the shutdown op call, at nought
         now[0] = onboard_service.CLOSE_S + 1.0  # the look in hand held the stop past it all
         closer.start()
-        closer.join(WINDOW_S)
-        assert not closer.is_alive(), "the close waited, though its budget was spent"
+        closer.join(DEADLINE_S)
+        assert not closer.is_alive(), "the close waited for its whole budget, and more"
+        assert spy.given and set(spy.given) == {0.0}, f"the close gave the run {spy.given}"
         assert ended == [onboard_service.LEFT_EXIT]
     finally:
         hung.set()
@@ -599,22 +619,28 @@ def test_a_call_an_ended_run_left_behind_ends_the_process_and_says_so(tmp_path: 
         assert ended == [onboard_service.LEFT_EXIT], lines
         assert lines[-1] == (
             "a call the goal handed to a thread of its own has not ended, and would hold the "
-            "process for good: the service ends its process now with exit code 70"
+            "process at its exit: the service ends its process now with exit code 70"
         ), lines
     finally:
         never.set()
 
 
-def test_the_line_of_a_run_left_says_what_its_record_says_of_the_stop_the_body_was_sent(
+def test_the_line_speaks_only_of_the_stops_sent_since_the_services_stop_the_last_one_winning(
     tmp_path: Path,
 ) -> None:
-    """The line a close says of a run it ends the process on names what was sent to the body,
-    from the run's own record as it was written: the `intent` row its transport writes once a
-    stop has come back, taken or not. Each row still goes on to the goal's terminal."""
+    """The line said "the body took the stop it was sent" once any stop of the run had come back
+    taken, the pilot's own an hour before included, and of a stop that went out unconfirmed;
+    and a record that could not be written hid its stop from the line altogether. It speaks
+    now of the stops sent since the service's stop came, the last one winning, in the words the
+    record uses, and says so when the record could not be written or nothing is known. The rows
+    are the transport's own, through the record the service watches."""
     from roboglot.log import LogEvent
     from roboglot.onboard import service as onboard_service
 
-    shown: list[Any] = []
+    def stop(accepted: bool, **more: Any) -> LogEvent:
+        return LogEvent("intent", 0.0, {"intent": "stop", "accepted": accepted, **more})
+
+    written: list[str] = []
     service = Service(
         robot(tmp_path, HOUSEHOLD),
         facts=sim_facts(),
@@ -622,16 +648,499 @@ def test_the_line_of_a_run_left_says_what_its_record_says_of_the_stop_the_body_w
         log=lambda _line: None,
     )
     agent = object()
-    assert service._stop_said(agent) == "its record says what stop the body was sent"
-    heard = onboard_service._StopsHeard(shown.append)
+    assert service._stop_said(agent) == "nothing is known of the stop the body was sent"
+    heard = onboard_service._StopsHeard(lambda event: written.append(event.kind))
     service._stops_heard = {id(agent): heard}
-    assert service._stop_said(agent) == "no stop it was sent has come back"
-    refused = LogEvent("intent", 1.0, {"intent": "stop", "accepted": False, "reason": "link down"})
-    heard(refused)
-    assert service._stop_said(agent) == "the stop it was sent did not land: link down"
-    heard(LogEvent("intent", 2.0, {"intent": "stop", "accepted": True, "reason": None}))
+    heard(stop(True))  # the pilot's own stop, before the service's
+    assert service._stop_said(agent) == "no stop sent since the service's stop has come back"
+    heard.told()
+    heard(stop(True, stop_unconfirmed=True, reason="the bridge did not confirm it"))
+    assert service._stop_said(agent) == (
+        "the stop it was sent went out but is not known to have reached the body: the bridge "
+        "did not confirm it"
+    )
+    heard(stop(True))
     assert service._stop_said(agent) == "the body took the stop it was sent"
-    assert [event.t for event in shown] == [1.0, 2.0]
+    heard(stop(False, reason="link down"))  # the last one wins
+    assert service._stop_said(agent) == "the stop it was sent did not land: link down"
+    assert written == ["intent"] * 4, "every row still goes to the record"
+
+    def full(event: Any) -> None:
+        raise OSError(28, "No space left on device")
+
+    unwritable = onboard_service._StopsHeard(full)
+    service._stops_heard = {id(agent): unwritable}
+    unwritable.told()
+    with pytest.raises(OSError):
+        unwritable(stop(True))
+    assert service._stop_said(agent) == (
+        "its record could not be written ([Errno 28] No space left on device), so nothing is "
+        "known of the stop the body was sent"
+    )
+
+
+#: A process of its own that writes a stop's row to a run's record and then ends as the close's
+#: forced end ends it, with the real `os._exit`, the row still in its buffer.
+CHILD_BUFFERED_ROW = r"""
+import sys
+from pathlib import Path
+from roboglot.agent.transcript import Transcript
+from roboglot.onboard.service import _end_process
+
+transcript = Transcript(Path(sys.argv[1]))
+transcript.write("verb_start", verb="stop")
+transcript.write("intent", intent="stop", params={}, accepted=True, reason=None)
+on_disk = (Path(sys.argv[1]) / "transcript.jsonl").read_text(encoding="utf-8")
+print("BUFFERED" if '"intent"' not in on_disk else "ON DISK ALREADY", flush=True)
+_end_process(70)
+"""
+
+
+def test_whatever_ends_the_process_the_runs_record_is_flushed_first(tmp_path: Path) -> None:
+    """A run's record writes a stop's `intent` row without a flush (a stalled disk must not hold
+    the deadman's next send), and a run stuck after its stop wrote nothing more to flush it:
+    the forced end flushed stdout and stderr only and went, and the row the line had just
+    quoted was lost from the run's own record. Everything open for writing on disk is flushed
+    first now. The row is still in its buffer when the process ends, by the real `os._exit`,
+    and is read off the disk after."""
+    import subprocess
+    import sys
+
+    child = subprocess.run(
+        [sys.executable, "-c", CHILD_BUFFERED_ROW, str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        capture_output=True,
+        text=True,
+        timeout=DEADLINE_S,
+    )
+    assert child.returncode == 70, child
+    assert child.stdout.split() == ["BUFFERED"], "the row was meant to be in its buffer still"
+    on_disk = (tmp_path / "transcript.jsonl").read_text(encoding="utf-8")
+    assert '"intent"' in on_disk, f"the record lost the stop's row: {on_disk!r}"
+
+
+def closing_service(
+    tmp_path: Path, now: list[float], lines: list[str], ended: list[int], make: Any
+) -> Service:
+    """A started service on the sim board whose clock is the test's, whose process's end is
+    the test's stand-in, and whose runs `make` builds."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(
+            NoRadio(), lan=None, server_host="127.0.0.1", record_host="", log=lines.append
+        ),
+        log=lines.append,
+        clock=lambda: now[0],
+        end_process=ended.append,
+    )
+    service._make_loop = make  # type: ignore[method-assign]
+    return service.start()
+
+
+def test_a_run_is_never_cut_while_the_budget_has_time_left_for_it(tmp_path: Path) -> None:
+    """With a robot met, the run was joined only until the byes' share began, and once the byes
+    were said the process was ended at once if the run's thread was still alive, with up to five
+    seconds of the budget unspent. The run is joined again with all that is left before anything
+    is ended now. The service's clock stands at the end of the run's share, the bye answers at
+    once, and the run ends as soon as a join gives it any time: what it was given is read off
+    its joins, never off a clock."""
+    import asyncio
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    release, now, lines, ended = threading.Event(), [0.0], [], []
+
+    class EndsWhenGivenTime(Run):
+        async def run(self) -> Any:
+            await asyncio.to_thread(release.wait, DEADLINE_S)
+            return await super().run()
+
+    service = closing_service(
+        tmp_path, now, lines, ended, lambda glot, kind, front: EndsWhenGivenTime(glot, kind)
+    )
+    try:
+        assert service.talker is not None and service.slot is not None
+        service.talker.peers_open = lambda: {"did:key:z6MkOne"}  # type: ignore[method-assign]
+        service.talker.leave = lambda peer: None  # type: ignore[method-assign]
+        assert service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        assert running is not None and running.thread is not None
+        spy = JoinSpy(running.thread, threading.Event())
+
+        def given(timeout: float | None = None) -> None:
+            if timeout:
+                release.set()  # any time given is enough for this run
+            spy.join(timeout)
+
+        running.thread = SimpleNamespace(join=given, is_alive=spy.is_alive)  # type: ignore[assignment]
+        service.stop()
+        now[0] = onboard_service.CLOSE_S - onboard_service.AFTER_RUN_S  # its share is spent
+        service.close()
+        assert ended == [] and service.exit_code is None, lines
+        assert spy.given[0] == 0.0 and spy.given[-1] == onboard_service.AFTER_RUN_S, spy.given
+    finally:
+        release.set()
+
+
+#: What the run's thread is doing when the budget is spent, in the test below.
+LEFT_AS = [
+    "returned, telling its terminal",
+    "returned, no record known",
+    "returned, its record with no end",
+    "its record ended, still finishing",
+    "stuck in an await",
+]
+#: The close's last line for each, and the exit code it names.
+FINISHING = (
+    "the goal had ended when the service stopped, and was only still writing its summary or "
+    "memory, or telling its terminal how: the service ends with exit code 0, and what was left "
+    "of that is not done",
+    0,
+)
+SAID_OF = {
+    "returned, telling its terminal": FINISHING,
+    "returned, no record known": FINISHING,
+    "returned, its record with no end": (
+        "the goal had returned though its record has no end: no stop sent since the service's "
+        "stop has come back; not done: the run's end record; not known: the body's close; the "
+        "service ends with exit code 70, and the run's thread, which holds nothing, ends with it",
+        70,
+    ),
+    "its record ended, still finishing": FINISHING,
+    "stuck in an await": (
+        "the goal has not ended though it was told to stop: the body took the stop it was sent; "
+        "not done: the run's end record; not known: the body's close; the service ends with exit "
+        "code 70, and the run's thread, which holds nothing, ends with it",
+        70,
+    ),
+}
+
+
+@pytest.mark.parametrize("left", LEFT_AS)
+def test_a_run_whose_thread_holds_nothing_ends_by_the_ordinary_road_and_says_what_is_true(
+    tmp_path: Path, left: str
+) -> None:
+    """The end of the process came for a run's thread that was merely alive, but that thread is a
+    daemon and holds nothing at exit: a run that had closed its body and ended its record, and
+    was still telling a terminal that had stopped reading, was cut with exit code 70 and a line
+    saying neither was done. Now, with nothing it left holding the process, the close returns by
+    the ordinary road and says what is true: a run whose record has its end, or that returned
+    with no record known, ends with exit code 0; one that returned with no end in its record, or
+    is stuck in an await (an LLM's call, a connect), with 70, the stop it sent and what was not
+    done, the stop's row flushed to its record first. A terminal here blocks in its last line;
+    the stuck run writes its stop's row, unflushed, and waits on its loop; the clock is the
+    test's."""
+    import asyncio
+
+    from roboglot.agent.transcript import Transcript
+    from roboglot.log import LogEvent
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    in_end, let_go, now, lines, ended = threading.Event(), threading.Event(), [0.0], [], []
+    wrote = threading.Event()
+    (tmp_path / "run").mkdir()
+    transcript = Transcript(tmp_path / "run")
+    record = onboard_service._StopsHeard(transcript.sink, transcript)
+
+    class Terminal:
+        questions = SimpleNamespace(close=lambda why: None)
+
+        def run_dir(self, path: Any) -> None: ...
+        def bind(self, agent: Any, aio: Any) -> None: ...
+        def unbind(self) -> None: ...
+        def finished(self, *args: Any, **kwargs: Any) -> None: ...
+        def errored(self, why: str) -> None: ...
+
+        def end(self, code: int) -> None:
+            in_end.set()
+            let_go.wait(DEADLINE_S)  # a terminal that has stopped reading
+
+    class Ends(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            if left == "stuck in an await":
+                # the stop it sent, as its transport writes it: no flush
+                record(LogEvent("intent", 0.0, {"intent": "stop", "accepted": True}))
+                wrote.set()
+                await asyncio.Event().wait()  # nothing it handed to a thread: an await, for good
+            if left != "returned, its record with no end":
+                record(LogEvent("run_end", 0.0, {}))  # its body closed, its record ended
+            if left == "its record ended, still finishing":
+                wrote.set()
+                await asyncio.Event().wait()  # its summary or its memory, for good
+            return SimpleNamespace(
+                outcome="aborted", reason="stopped", run_dir=Path("."), summary=None
+            )
+
+    def make(glot: Any, kind: str, front: Any) -> Run:
+        run = Ends(glot, kind)
+        if left != "returned, no record known":
+            service._stops_heard = {id(run): record}
+        return run
+
+    service = closing_service(tmp_path, now, lines, ended, make)
+    try:
+        assert service.slot is not None
+        assert service.slot.goal("Wait by the door.", Terminal()) is None
+        service.stop()
+        if left.startswith("returned"):
+            assert in_end.wait(DEADLINE_S), "the run never reached its terminal's last line"
+        else:
+            assert wrote.wait(DEADLINE_S), "the run never wrote what it was to write"
+        on_disk = (tmp_path / "run" / "transcript.jsonl").read_text(encoding="utf-8")
+        assert left != "stuck in an await" or '"intent"' not in on_disk, "meant to be buffered"
+        now[0] = onboard_service.CLOSE_S  # the budget is spent
+        service.close()
+        assert ended == [], "nothing held the process: no forced end"
+        said, code = SAID_OF[left]
+        assert (lines[-1], service.exit_code) == (said, code), lines
+        if left == "stuck in an await":
+            on_disk = (tmp_path / "run" / "transcript.jsonl").read_text(encoding="utf-8")
+            assert '"intent"' in on_disk, f"the stop's row is not in the record: {on_disk!r}"
+        assert not [line for line in lines if "for good" in line], lines
+    finally:
+        let_go.set()
+        transcript.close()
+
+
+@pytest.mark.parametrize("code", [None, 0, 70])
+def test_serve_ends_by_the_ordinary_road_with_the_exit_code_its_close_named(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code: int | None
+) -> None:
+    """A close that leaves a run's thread, which holds nothing, no longer ends the process
+    itself: it names the exit code, and `serve` raises it as `SystemExit` once the directory's
+    lock is let go, so the interpreter's own exit flushes what is open. No code, or 0, returns as
+    before. The service is a stand-in whose close names `code`."""
+    from roboglot.onboard import service as onboard_service
+
+    home = robot(tmp_path, HOUSEHOLD)
+
+    class Named:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            self.exit_code: int | None = None
+
+        def start(self) -> Named:
+            return self
+
+        def run(self) -> None: ...
+
+        def close(self) -> None:
+            self.exit_code = code
+
+    monkeypatch.setattr(onboard_service, "Service", Named)
+    if code:
+        with pytest.raises(SystemExit) as stopped:
+            serve(home, board="sim", log=lambda line: None)
+        assert stopped.value.code == code
+    else:
+        assert serve(home, board="sim", log=lambda line: None) is None  # type: ignore[func-returns-value]
+    with held(home.lock):  # let go before the exit
+        pass
+
+
+#: A process of its own, as `roboglot onboard serve` is: a goal stuck in an await for good, with
+#: nothing handed to a thread, and the budget spent the moment the close begins.
+CHILD_HOLDS_NOTHING = r"""
+import asyncio, sys, threading
+from pathlib import Path
+from roboglot.onboard import service as onboard_service
+from roboglot.onboard.radio_side import RadioSide
+from roboglot.radio import NoRadio
+from tests.test_onboard_brain import Run
+from tests.test_onboard_service import HOUSEHOLD, robot
+
+now = [0.0]
+
+
+class Stuck(Run):
+    async def run(self):
+        await self.executor.abort.wait()
+        await asyncio.Event().wait()
+
+
+class Clocked(onboard_service.Service):
+    def __init__(self, home, *, facts, radio_side, log):
+        super().__init__(
+            home,
+            facts=facts,
+            log=log,
+            clock=lambda: now[0],
+            radio_side=lambda: RadioSide(
+                NoRadio(), lan=None, server_host="127.0.0.1", record_host=""
+            ),
+        )
+        self._make_loop = lambda glot, kind, front: Stuck(glot, kind)
+
+    def close(self):
+        now[0] = onboard_service.CLOSE_S
+        super().close()
+
+
+def started(service):
+    assert service.slot.goal("Wait by the door.") is None
+    service.stop()
+
+
+onboard_service.Service = Clocked
+try:
+    onboard_service.serve(
+        robot(Path(sys.argv[1]), HOUSEHOLD),
+        board="sim",
+        log=lambda line: print("JOURNAL " + line, flush=True),
+        started=started,
+    )
+finally:
+    alive = [thread.name for thread in threading.enumerate() if thread.name == "onboard-goal"]
+    print("SERVE ENDED, ALIVE: " + ",".join(alive), flush=True)
+"""
+
+
+def test_a_process_whose_run_holds_nothing_ends_by_itself_with_the_code_its_close_named(
+    tmp_path: Path,
+) -> None:
+    """The ordinary road, proved on a process of its own: a goal stuck in an await is a daemon's
+    thread with no call on a thread of its own, so nothing holds the interpreter's exit. The
+    close says so in one line, journal and stderr, `serve` raises the exit code, and the process
+    ends by itself with 70, the run's thread still alive at the end; the real `os._exit` is in
+    reach there, and had it been used, `serve`'s caller would never have seen it end."""
+    import subprocess
+    import sys
+
+    from roboglot.onboard import service as onboard_service
+
+    child = subprocess.run(
+        [sys.executable, "-c", CHILD_HOLDS_NOTHING, str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        capture_output=True,
+        text=True,
+        timeout=DEADLINE_S,
+    )
+    journal = [line.removeprefix("JOURNAL ") for line in child.stdout.splitlines()]
+    assert child.returncode == onboard_service.LEFT_EXIT, (journal, child.stderr[-600:])
+    assert "SERVE ENDED, ALIVE: onboard-goal" in journal, journal[-3:]
+    said = (
+        "the goal has not ended though it was told to stop: nothing is known of the stop the "
+        "body was sent; not known: the body's close, the run's end record; the service ends with "
+        "exit code 70, and the run's thread, which holds nothing, ends with it"
+    )
+    assert said in journal and said in child.stderr, (journal[-3:], child.stderr[-600:])
+
+
+@pytest.mark.parametrize("run", ["none", "stuck in an await"])
+def test_a_call_on_the_radios_own_threads_that_would_hold_the_process_is_named(
+    tmp_path: Path, run: str
+) -> None:
+    """The radio's loop, its meetings and its links run calls on thread pools of their own, and
+    when the budget was spent before the radio's close, a call still under way on one of them
+    held the process at its exit, until systemd's kill, with nothing said. The close names it
+    now and ends the process as for a run's call, and says what a run it leaves did too, never
+    that the run's own pool held it. A meeting's call here never comes back."""
+    import asyncio
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    never, now, lines, ended = threading.Event(), [0.0], [], []
+    record = onboard_service._StopsHeard(lambda event: None)
+
+    class Stuck(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            await asyncio.Event().wait()  # nothing it handed to a thread: an await, for good
+
+    def make(glot: Any, kind: str, front: Any) -> Run:
+        stuck = Stuck(glot, kind)
+        service._stops_heard = {id(stuck): record}
+        return stuck
+
+    service = closing_service(tmp_path, now, lines, ended, make)
+    try:
+        side = service.radio_side
+        assert side is not None and side.meeter is not None and service.slot is not None
+        started = threading.Event()
+        side.meeter.executor.submit(lambda: (started.set(), never.wait(DEADLINE_S)))
+        assert started.wait(DEADLINE_S)
+        if run == "stuck in an await":
+            assert service.slot.goal("Wait by the door.") is None
+        service.stop()
+        if run == "stuck in an await":
+            assert wait_for(lambda: service.slot is not None and service.slot._closed is not None)
+        now[0] = onboard_service.CLOSE_S
+        service.close()
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        said = (
+            "a call on the radio's meetings has not ended, and would hold the process at its "
+            "exit: the service ends its process now with exit code 70"
+        )
+        if run == "stuck in an await":
+            said += (
+                "; and the goal has not ended though it was told to stop: no stop sent since the "
+                "service's stop has come back; not done: the run's end record; not known: the "
+                "body's close"
+            )
+        assert lines[-1] == said, lines
+    finally:
+        never.set()
+
+
+def test_a_stop_starts_no_thread_and_only_wakes_the_one_made_before_the_service_served(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The SIGTERM handler started a thread, and starting a thread takes locks the code a signal
+    interrupts may hold, so a stop that came in the instant the tick was starting one could hang
+    the main thread for good. A stop now notes when it came and wakes a thread made when the
+    service started, which tells the run; it starts no thread itself. Starting one here fails
+    the stop."""
+    from tests.test_onboard_brain import Run
+
+    now, lines, ended = [0.0], [], []
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    try:
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+
+        def no_thread(self: threading.Thread) -> None:
+            raise RuntimeError("a stop started a thread")
+
+        with monkeypatch.context() as patched:
+            patched.setattr(threading.Thread, "start", no_thread)
+            service.stop()
+        assert running is not None and wait_for(lambda: running.stop_wanted is not None)
+        assert wait_for(service._stop.is_set)
+    finally:
+        service.close()
+
+
+def test_every_test_file_that_builds_a_service_keeps_the_real_end_of_the_process_away() -> None:
+    """A service that a test built with the real end of the process, reaching it, ended the
+    whole run of tests with exit code 70 and no summary. Every test file that builds a service
+    takes `no_real_end_of_process`, and in this one the real end is out of reach."""
+    import re
+
+    from roboglot.onboard import service as onboard_service
+
+    assert onboard_service._end_process.__name__ == "refused"
+    builds = re.compile(r"\bService\(|(?<!def )\bserve\(")
+    builders = [
+        path
+        for path in sorted(Path(__file__).parent.glob("test_*.py"))
+        if "roboglot.onboard" in (text := path.read_text(encoding="utf-8")) and builds.search(text)
+    ]
+    assert builders, "no test file builds a service"
+    bare = [
+        path.name
+        for path in builders
+        if "no_real_end_of_process" not in path.read_text(encoding="utf-8")
+    ]
+    assert not bare, f"these build a service with the real end of the process in reach: {bare}"
 
 
 class JoinSpy:
@@ -694,7 +1203,8 @@ def test_a_stop_tells_the_run_at_once_whatever_the_look_in_hand_is_doing(
         look.start()
         assert wait_for(lambda: service._turning), "the look never began to turn talk off"
         service.stop()
-        assert wait_for(lambda: running is not None and running.stop_wanted is not None, 10)
+        # the look's bye is held until the test lets it go, so any wait sees the look still on
+        assert wait_for(lambda: running is not None and running.stop_wanted is not None)
         assert look.is_alive(), "told while the look still says its byes"
         assert running is not None and running.stop_wanted == "the service is stopping"
     finally:
@@ -1056,8 +1566,8 @@ def test_talk_starts_once_when_a_reload_and_the_tick_both_find_it_off(
     two radio sides and two passport servers, the service keeping one of each and closing neither
     of the others, and with a fixed port the second bind raised instead. The radio factory here
     waits, between the check and the act, for a second call a service that starts talk once never
-    makes; in the real service that window is making the radio side (on a board, starting the
-    DNS-SD browse) and starting the passport server."""
+    makes, or for the look to be over; in the real service that window is making the radio side
+    (on a board, starting the DNS-SD browse) and starting the passport server."""
     from roboglot.onboard import service as onboard_service
     from roboglot.onboard.radio_side import RadioSide
     from roboglot.passport.serve import PassportServer
@@ -1073,14 +1583,15 @@ def test_talk_starts_once_when_a_reload_and_the_tick_both_find_it_off(
 
     monkeypatch.setattr(onboard_service, "PassportServer", Counted)
     sides: list[RadioSide] = []
-    second = threading.Event()
+    # held between the check and the act until a second call comes or the look is over
+    go_on = threading.Event()
 
     def make_side() -> RadioSide:
         sides.append(RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""))
         if len(sides) == 1:
-            second.wait(WINDOW_S)  # between the check and the act: does a second one come?
+            go_on.wait(DEADLINE_S)
         else:
-            second.set()
+            go_on.set()
         return sides[-1]
 
     service = Service(home, facts=sim_facts(), radio_side=make_side, log=lambda _line: None)
@@ -1093,8 +1604,9 @@ def test_talk_starts_once_when_a_reload_and_the_tick_both_find_it_off(
         assert service.talker is None, "talk is off: its own passport has run out"
         sign_again()
         reload.start()
-        assert wait_for(lambda: bool(sides), WINDOW_S)
+        assert wait_for(lambda: bool(sides))
         service.tick()  # the main thread's look lands while the reload starts talk
+        go_on.set()
         reload.join(DEADLINE_S)
         assert len(sides) == 1 and len(servers) == 1, (len(sides), len(servers))
         assert service.server is servers[0] and service.talker is not None
@@ -1163,6 +1675,73 @@ def test_a_passport_signed_again_while_talk_is_being_made_is_the_one_served(
         service.close()
 
 
+def test_a_reload_while_talk_is_being_turned_off_waits_for_it_and_answers_what_is_true(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A `roboglot onboard sign` that landed while the tick was turning talk off (a passport
+    that ran out, a bye to a robot gone) waited its whole bound, since nothing said the turning
+    off was done, and answered that talk was still being made, or was off, though the passport
+    just signed checked out. It waits for the turning off now, turns talk on with that passport,
+    and answers that it is served. The bye is held until the reload is under way, and the wait's
+    bound is past the test's deadline, so an answer that came only at the bound never comes."""
+    from roboglot.onboard import service as onboard_service
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    monkeypatch.setattr(onboard_service, "TALK_WAITS_S", 2 * DEADLINE_S)
+    home = robot(tmp_path, HOUSEHOLD)
+    first = home.passport_jws.read_text(encoding="utf-8").strip()
+    real, expired = onboard_service.check_own_passport, [False]
+
+    def check(token: str | None, did: str, *, now: int | None = None) -> Any:
+        if expired[0] and token == first:
+            return onboard_service.SelfCheck(False, "its own passport does not check out: 4.5")
+        return real(token, did, now=now)
+
+    monkeypatch.setattr(onboard_service, "check_own_passport", check)
+    in_bye, bye_held = threading.Event(), threading.Event()
+    service = Service(
+        home,
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=lambda _line: None,
+    )
+    answers: list[Any] = []
+    look = threading.Thread(target=service.tick, name="look", daemon=True)
+    reload = threading.Thread(
+        target=lambda: answers.append(service._control({"op": "reload"}, None)), daemon=True
+    )
+    try:
+        service.start()
+        assert service.talker is not None
+        service.talker.peers_open = lambda: {"did:key:z6MkGone"}  # type: ignore[method-assign]
+        service.talker.leave = lambda peer: (in_bye.set(), bye_held.wait(DEADLINE_S))  # type: ignore[method-assign,func-returns-value]
+        expired[0] = True
+        service._last_status = 0.0  # the next look is due, and turns talk off
+        look.start()
+        assert in_bye.wait(DEADLINE_S), "the look never began to turn talk off"
+        wizard.sign(
+            home,
+            config.load(home.robot_yaml),
+            sim_facts().passport(),
+            ask=NoQuestions(),
+            passphrase_file=tmp_path / f"{home.root.name}.passphrase",
+            days=2,
+        )
+        reload.start()
+        bye_held.set()  # the turning off ends while the reload is under way, or before it waits
+        reload.join(DEADLINE_S)
+        assert answers, "the reload waited for the bound, not for the turning off"
+        assert "unserved" not in answers[0], answers
+        assert service.talker is not None and service.server is not None
+    finally:
+        bye_held.set()
+        for thread in (look, reload):
+            if thread.ident is not None:
+                thread.join(DEADLINE_S)
+        service.close()
+
+
 class SlowToStart:
     """A radio whose start waits until the test releases it, or until it is cut short, as BlueZ
     waiting on its controller at boot does, inside the start's bound; it says when its start
@@ -1190,6 +1769,9 @@ class SlowToStart:
             await asyncio.to_thread(self.release.wait, DEADLINE_S)
         except asyncio.CancelledError:
             self.cut_short.set()
+            # its wait on a thread of its own let go with it: a wait still under way there would
+            # hold the process at its exit, and the close would end it (`HELD_RADIO`)
+            self.release.set()
             raise
         finally:
             self._starting = False
@@ -1514,7 +2096,9 @@ def test_a_reload_whose_talk_could_not_start_answers_that_the_passport_is_not_se
     """A reload with a passport signed while talk was off, whose talk then could not start (a
     fixed port another program holds), answered as any other reload, and `roboglot onboard sign`
     told the person the running service served the passport with no passport server running.
-    The answer says now that it is not served, and why, over the real control port."""
+    The answer says now that it is not served, and why, over the real control port, and the
+    reload does not try again itself: the port here is free on a second try, which would hide
+    why the first failed (that is the next look's to do)."""
     from roboglot import cli
     from roboglot.onboard import service as onboard_service
     from roboglot.onboard.radio_side import RadioSide
@@ -1522,10 +2106,14 @@ def test_a_reload_whose_talk_could_not_start_answers_that_the_passport_is_not_se
     from roboglot.radio import NoRadio
 
     home, sign_again = talk_off_until_signed_again(tmp_path, monkeypatch)
+    tries: list[int] = []
 
     class Taken(PassportServer):
         def __init__(self, *args: Any, **kwargs: Any) -> None:
-            raise OSError("address already in use")
+            tries.append(len(tries))
+            if len(tries) == 1:
+                raise OSError("address already in use")
+            super().__init__(*args, **kwargs)
 
     monkeypatch.setattr(onboard_service, "PassportServer", Taken)
     service = Service(
@@ -1545,6 +2133,7 @@ def test_a_reload_whose_talk_could_not_start_answers_that_the_passport_is_not_se
             "pins": 0,
             "unserved": "talk could not start: address already in use",
         }
+        assert tries == [0], "the reload tried talk again itself"
     finally:
         service.close()
 

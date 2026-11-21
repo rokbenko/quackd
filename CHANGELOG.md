@@ -585,7 +585,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   next look, the way from a stop to its close, and the answer to `roboglot onboard sign`,
   `pin` or `forget` go on while it starts, and a radio's start that never comes back no longer
   keeps talk on once the passport runs out. A passport signed again while talk is being set up
-  is the one served, and the robot's hellos carry it.
+  is the one served, and the robot's hellos carry it; one signed while talk is being turned off
+  waits for that to end and turns talk on with it, and `sign` is told it is served.
 - **A radio slow to start no longer ends the onboard service.** A Bluetooth radio that took
   longer than its 20 s to start, BlueZ waiting on its controller at boot say, raised out of
   `roboglot onboard serve` once the passport server was up: the service ended, and after five
@@ -614,17 +615,27 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   stop the moment the stop comes now, whatever the service was doing, and the close keeps
   inside 18 s, counted from the stop as systemd counts its timeout, the unit's stop timeout
   less a margin for the process's exit: the run has all of it but 5 s for the byes when robots
-  are met, and all of it when none is; beside the run's stop the LAN record other robots find
-  this one by is withdrawn at once, and no rotation or late start publishes it again; then the
-  byes go out all at once, beside the passport server's and the listener's close, and the
-  radio last. Whatever had not finished is said as `the service stops before it finished` and
-  what it was, as in `saying bye to 2 robots met and closing the radio`. A run, or a call one
-  handed to a thread of its own, still going when the time is spent held the process for good,
-  until systemd's kill or, in a terminal, until a person ended it: the service says so in one
-  line now, in the journal and on stderr, as in `the goal has not ended though it was told to
-  stop, and the service ends its process now with exit code 70: the body took the stop it was
-  sent; not done: the body's close, the run's end record`, and ends its process with exit code
-  70. A run that is only slow and ends inside the time is never cut.
+  are met, then whatever the byes left, and all of it when none is met; beside the run's stop
+  the LAN record other robots find this one by is withdrawn at once, and no rotation or late
+  start publishes it again; then the byes go out all at once, beside the passport server's and
+  the listener's close, and the radio last. Whatever had not finished is said as `the service
+  stops before it finished` and what it was, as in `saying bye to 2 robots met and closing the
+  radio`. A call a run handed to a thread of its own, or one on the radio's own threads, still
+  going at the end of the close held the process at its exit until systemd's kill, or in a
+  terminal until a person ended it, with nothing said: the service says so now in one line, in
+  the journal and on stderr, as in `a call the goal handed to a thread of its own has not ended,
+  and would hold the process at its exit: the service ends its process now with exit code 70`,
+  flushes every file the process has open for writing on disk, the run's record first, and ends
+  its process with exit code 70. A
+  run whose own thread is still going when the time is spent, which holds nothing at exit, is
+  said as it is, as in `the goal has not ended though it was told to stop: the body took the
+  stop it was sent; not done: the run's end record; not known: the body's close; the service
+  ends with exit code 70, and the run's thread, which holds nothing, ends with it`, and the
+  process ends by the ordinary road, with exit code 70, or 0 when the run had ended, its
+  record's end written, and was only still writing its summary or memory, or telling its
+  terminal how. The line speaks only of the stops sent since the service's
+  stop came, the last one winning, in the run's record's own words. Where the run had not ended,
+  the robot is as it left it: an arm keeps its torque on and holds where it stood.
 - **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
   run in hand` as soon as the service had passed the stop on, so a run whose stop had not
   landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at

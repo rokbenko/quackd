@@ -40,6 +40,9 @@ from roboglot.passport import document
 from roboglot.radio import NoRadio
 from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
 
+# this file builds services: the real end of the process stays out of the run of tests' reach
+from tests.test_onboard_service import no_real_end_of_process  # noqa: F401
+
 runner = CliRunner()
 PASSPHRASE = "a passphrase for these tests only"
 COURIER = "g1-edu-mock"
