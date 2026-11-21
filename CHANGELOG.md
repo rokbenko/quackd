@@ -1012,6 +1012,50 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **The AlohaMini host wrapper and the Jetson daemon start under `python -OO`.** Each built its
   `--help` from its module docstring, which `-OO` strips, and died before it had parsed a flag.
   The description is spelled out now, and reads as it did.
+- **A Ctrl-C during the fold `roboglot drive` opens with stops that fold for good.** The press
+  stopped the fold, and the session's close then sent a stop and started the same fold again, so
+  the arm the person had just stopped went on to its rest pose with nothing said, and the close's
+  line spoke of that second fold rather than the one that was stopped. The arm is now held where
+  the press stopped it, the session says the fold was stopped, nothing folds the arm again, and
+  the close's line names the fold that was stopped. A press the fold does not hear, as Python
+  3.11's `asyncio.wait_for` can lose one, opened the session as if nobody had pressed: it ends the
+  session there now, and says the fold went on to its end. A press on the close the session makes
+  after an opening fold that missed, by stalling or by a rest move that raised, was said to have
+  stopped a fold, and the refusal the session was making was lost: both are said now, the refusal
+  and that the press came on that close.
+- **A Ctrl-C while `roboglot drive` closes no longer skips the rest of the close.** Once the
+  prompt had closed, a press during the closing stop or fold went past every step after it: the
+  transport was never closed, the arm was left energised partway through its fold with nothing
+  said of its torque, and the session wrote neither its `run_end` nor its `summary.json`. A press
+  during the fold now stops it, holds the arm with a stop and says so, and one before the fold
+  keeps it from starting and says the arm was not folded, at the keyboard and on the page as from
+  a pipe. A press on the transport's own close no longer cuts it short: the close goes on to its
+  end, and the session says the press came, or, where the close was cut short anyway, raised, or
+  is still going as long after the press as the body says its close can take, that Roboglot
+  cannot tell what it did. The arm counts that from each of its cameras, its read and its
+  disconnect. A later press while the stop that holds the arm is on its way
+  no longer loses what became of that stop. The record ends as any session's does.
+- **The page's Stop stops an arm's fold in a `roboglot drive` session.** The page's front end
+  reads its Stops only while the session runs, so a Stop while the robot connected, or once the
+  chat had quit, stopped nothing, and the arm went on to its pose. A Stop then is a press now, as a
+  Ctrl-C is: it stops the fold and holds the arm. A session the Stop ended as it connected is
+  refused in the page's words, as one it stopped before the connect is.
+- **Each step of a `roboglot drive` session's end is taken whatever the one before did.** A
+  `summary.json` that could not be written, on a full disk or with the run folder gone, skipped
+  the `run_end` record, the record's close and the page's word that the session had finished, and
+  its `OSError` took the place of the error the session was ending on. Each step is tried now, one
+  that fails is said on stderr, and the session's own error is the one that leaves.
+- **A piped `roboglot drive` ends its process after a Ctrl-C.** Each line was read in asyncio's
+  default executor, which `asyncio.run` waits for as it closes, so once the session and the robot
+  had closed in order the process stayed until another line or the end of input came, which from
+  a producer that keeps its end open never did. Each line is read on a thread of its own now, which
+  the process does not wait for.
+- **`roboglot drive`'s exact lane leaves out a verb whose calls could be said in too many ways.**
+  Every order of a call's values was a line of its own, so each parameter of a single value
+  multiplied a verb's lines by their count, built on the event loop after the robot had connected:
+  ten such parameters were 3,628,800 lines. A verb whose calls would be more than 72 lines gets
+  none now, a line naming it goes on to the fast lane or the pilot, and the session names it once
+  as it opens. Every verb Roboglot ships reads as it did.
 - **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
   went straight on to the next leg before the walker looked at the shape, so a square was judged
   from the end of a fifth leg, a whole side from where it began, and passed or failed by a few
