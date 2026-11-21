@@ -13,6 +13,7 @@ nothing that drives the terminal they read it in, and a word about itself if it 
 from __future__ import annotations
 
 import io
+import re
 import threading
 from collections.abc import Iterator
 from pathlib import Path
@@ -176,14 +177,14 @@ def test_a_strangers_text_over_several_lines_never_starts_a_line_of_roboglots_ow
     at the first column, as Roboglot's lines do: a server's `400 bad request` followed by
     `✓ SUCCESS  the goal was reached` printed a success line under the error, with no control
     character a filter could see. Every line after the first is indented under the first, an
-    indent the text cannot take away, so none can pass for one of Roboglot's; a text on one
-    line prints as it did."""
+    indent the text cannot take away, so none can pass for one of Roboglot's, and a run of
+    spaces in a line is drawn as one; a text on one line prints as it did."""
     console, buf = wide(120, force_terminal=True, color_system=None)
     console.print(ui.fail_line("400 bad request\n✓ SUCCESS  the goal was reached in 3 steps"))
     lines = buf.getvalue().splitlines()
     assert lines == [
         "✗ error: 400 bad request",
-        f"{' ' * 9}✓ SUCCESS  the goal was reached in 3 steps",
+        f"{' ' * 9}✓ SUCCESS the goal was reached in 3 steps",
     ]
     buf.seek(0)
     buf.truncate()
@@ -194,7 +195,7 @@ def test_a_strangers_text_over_several_lines_never_starts_a_line_of_roboglots_ow
     console.print(ui.verdict("failure", "gave up\n✓ SUCCESS  done", counters=["steps 3"]))
     rows = buf.getvalue().splitlines()
     assert not any(row.startswith("│ ✓") for row in rows), buf.getvalue()
-    assert any(row.startswith("│   ✓ SUCCESS  done") for row in rows), buf.getvalue()
+    assert any(row.startswith("│   ✓ SUCCESS done") for row in rows), buf.getvalue()
 
 
 @pytest.mark.parametrize("width", [40, 80, 120])
@@ -205,12 +206,14 @@ def test_a_strangers_text_cannot_begin_a_line_where_roboglots_begin_by_its_lengt
     terminal's width were not: a server padding its body to the width put `✓ SUCCESS` at the
     first column under `✗ error:`, and a pilot's long reason began a line level with the
     verdict's counters. The text here is built for each width so that the marker lands exactly
-    where the line wraps; every line it is wrapped into is indented as its breaks are. A short
-    text still prints as it did."""
-    marker = "✓ SUCCESS  the goal was reached in 3 steps"
+    where the line wraps, by a word as long as the room left (a run of spaces is drawn as one
+    now); every line it is wrapped into is indented as its breaks are. A short text still prints
+    as it did."""
+    marker = "✓ SUCCESS the goal was reached in 3 steps"
     console, buf = wide(width, force_terminal=True, color_system=None)
-    said = "400 bad request"
-    console.print(ui.fail_line(said + " " * (width - len("✗ error: ") - len(said)) + marker))
+    said = "400 bad request "
+    filler = "y" * (width - len("✗ error: ") - len(said))
+    console.print(ui.fail_line(f"{said}{filler} {marker}"))
     lines = buf.getvalue().splitlines()
     assert lines[0].startswith("✗ error: 400 bad request"), lines
     assert all(line.startswith(" " * len("✗ error: ")) for line in lines[1:]), lines
@@ -219,7 +222,7 @@ def test_a_strangers_text_cannot_begin_a_line_where_roboglots_begin_by_its_lengt
     buf.seek(0)
     buf.truncate()
     inside = width - 4  # a panel's two borders and its padding
-    reason = "gave up" + " " * (inside - len("gave up")) + marker
+    reason = "gave up " + "y" * (inside - len("gave up ")) + " " + marker
     console.print(ui.verdict("failure", reason, counters=["steps 3"]))
     rows = buf.getvalue().splitlines()
     assert not any(row.startswith("│ ✓") for row in rows), rows
@@ -229,6 +232,43 @@ def test_a_strangers_text_cannot_begin_a_line_where_roboglots_begin_by_its_lengt
     buf.truncate()
     console.print(ui.verdict("failure", "gave up", counters=["steps 3"]))
     assert buf.getvalue().splitlines()[1].startswith("│ gave up "), "a short reason as it was"
+
+
+@pytest.mark.parametrize("width", [24, 40])
+def test_a_tab_before_at_or_after_the_fold_loses_no_word(width: int) -> None:
+    """`Hanging` took the rest of a folded line off the text by the first row's length, and Rich
+    had expanded a tab into spaces while it folded, so the row was longer than the text it came
+    from: words after the tab were lost. A tab is spaces before the fold now, as many as the
+    console draws it as. A tab in each place a word boundary can be, before the fold, at it and
+    after it, and at either end of the text: every word once, in order."""
+    from rich.text import Text
+
+    words = [f"w{n:02d}" for n in range(16)]
+    console, buf = wide(width, force_terminal=True, color_system=None)
+    for at in range(len(words) + 1):
+        said = " ".join(words[:at]) + "\t" + " ".join(words[at:])
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(f"error: {said}"), "  "))
+        rows = buf.getvalue().splitlines()
+        assert re.findall(r"w\d\d", buf.getvalue()) == words, (at, rows)
+        assert len(rows) > 1 and all(row.startswith("  ") for row in rows[1:]), (at, rows)
+    buf.seek(0)
+    buf.truncate()
+    console.print(ui.Hanging(Text("a\tb"), "  "))
+    plain, as_rich_draws_it = wide(width, force_terminal=True, color_system=None)
+    plain.print(Text("a\tb"))
+    assert buf.getvalue() == as_rich_draws_it.getvalue(), "a tab on one short line, as it was"
+
+
+def test_a_run_of_spaces_in_outside_text_is_drawn_as_one() -> None:
+    """Padded with spaces, a reply could set words of its choosing anywhere along a row, under a
+    column of Roboglot's own. Each run between two words is one space now, a tab or a no-break
+    space alone too; a line's breaks, and the spaces that begin or end it, are left alone."""
+    said = "ok,     est\t\tpayload\N{NO-BREAK SPACE}0.2 kg\tgrip"
+    assert ui.one_space(said) == "ok, est payload 0.2 kg grip"
+    assert ui.one_space("  first\n  second  ") == "  first\n  second  "
+    assert ui.one_space("one space each") == "one space each"
 
 
 def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
@@ -309,6 +349,35 @@ def test_outside_text_printed_to_a_real_pipe_reaches_it_written_out(forced: bool
     assert "a clean line, as it always was" in out, out
 
 
+def test_half_a_character_on_a_strict_stream_is_written_out_and_ends_no_print(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A lone surrogate is half a character, and a strict UTF-8 stream, which stdout is on a pipe,
+    refuses it: a note kept as JSON (`"\\ud800"` decodes to one) ended `roboglot memory list` with
+    `UnicodeEncodeError`. A console writes it out as it writes out the rest of `ui.ACTS`, and a
+    raw print of JSON with its letters as letters, as `roboglot robot list --json` prints a robot,
+    writes it as the escape JSON itself would (`ui.tolerate_narrow_encodings`)."""
+    import json
+    import sys
+
+    def strict(into: io.BytesIO) -> io.TextIOWrapper:
+        return io.TextIOWrapper(into, encoding="utf-8", newline="\n", write_through=True)
+
+    raw = io.BytesIO()
+    console = ui.make_console()
+    console.file = strict(raw)
+    console.legacy_windows = False
+    console.print(f"a note: the bowl {chr(0xD800)} is left", markup=False)
+    assert raw.getvalue() == b"a note: the bowl \\ud800 is left\n"
+
+    out, err = io.BytesIO(), io.BytesIO()
+    for name, into in (("stdout", out), ("stderr", err)):
+        monkeypatch.setattr(sys, name, strict(into))
+    ui.tolerate_narrow_encodings()
+    print(json.dumps({"name": f"arm{chr(0xDC80)}01"}, ensure_ascii=False))
+    assert json.loads(out.getvalue()) == {"name": f"arm{chr(0xDC80)}01"}, out.getvalue()
+
+
 @pytest.mark.parametrize(
     ("said", "shown"),
     [
@@ -331,8 +400,19 @@ def test_outside_text_printed_to_a_real_pipe_reaches_it_written_out(forced: bool
             "isolate \\u2066 \\u2067 \\u2068 \\u2069",
         ),
         ("separators \N{LINE SEPARATOR} \N{PARAGRAPH SEPARATOR}", "separators \\u2028 \\u2029"),
+        (f"halves {chr(0xD800)} {chr(0xDFFF)}", "halves \\ud800 \\udfff"),  # lone surrogates
     ],
-    ids=["esc", "c0-del", "c1", "newline", "embeddings", "overrides", "isolates", "separators"],
+    ids=[
+        "esc",
+        "c0-del",
+        "c1",
+        "newline",
+        "embeddings",
+        "overrides",
+        "isolates",
+        "separators",
+        "surrogates",
+    ],
 )
 def test_what_can_act_on_a_terminal_or_reorder_a_line_is_written_out(said: str, shown: str) -> None:
     """One table says what is written out (`ui.ACTS`), read by `printable` and by the console's
@@ -911,6 +991,25 @@ def test_the_other_characters_that_drive_a_terminal_are_dropped_too(tmp_path: Pa
     for control in ("\x07", "\r", "\x1b", "\x7f"):
         assert control not in out, repr(control)
     assert out == "the arm stalled]0;Roboglot owns your title bar at 0.3 rad\n"
+
+
+def test_the_file_keeps_nothing_the_screen_writes_out(tmp_path: Path) -> None:
+    """The screen writes out one table (`ui.ACTS`), and the file dropped only C0 and DEL of it: a
+    one-character CSI, a line separator, a bidi override and isolate and a lone surrogate reached
+    `terminal.txt` as they came, by every door the screen's filter alone covers, and a reader who
+    `cat`s it got the override reordering the line. The file drops the whole table now, its line
+    breaks kept."""
+    said = (
+        "walked 0.2 m \x9b2J\N{RIGHT-TO-LEFT OVERRIDE}done\N{LEFT-TO-RIGHT ISOLATE}x"
+        f"\N{LINE SEPARATOR}y{chr(0xD800)}z\nsecond"
+    )
+    console, buf = tee()
+    capture = ui.begin_capture()
+    capture.attach(tmp_path)
+    console.print(said, markup=False)
+    capture.close()
+    assert "\\x9b2J\\u202edone\\u2066x\\u2028y\\ud800z" in buf.getvalue(), "the screen's"
+    assert saved(tmp_path) == "walked 0.2 m 2Jdonexyz\nsecond\n"
 
 
 def test_tab_and_newline_are_layout_and_are_kept(tmp_path: Path) -> None:

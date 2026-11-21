@@ -188,19 +188,29 @@ def degrade(text: str, glyphs: Glyphs) -> str:
 
 
 def tolerate_narrow_encodings() -> None:
-    """Stop a non-UTF-8 stdout turning Roboglot's own output into a crash.
+    """Stop a stream's encoding turning Roboglot's output into a crash.
 
     Windows uses the ANSI codepage when Python writes to a pipe, and Roboglot prints ticks and
     a speech bubble and the status emoji in `doctor`. On cp1252 those raise UnicodeEncodeError and
     take the command with them, which is why `glyphs_for` exists to avoid printing them at
     all. This is the backstop for the text Roboglot did not choose: replacing what the
-    codepage cannot carry costs a glyph, and raising costs the command."""
+    codepage cannot carry costs a glyph, and raising costs the command.
+
+    A UTF-8 stream can carry every character but half of one, a lone surrogate, and a strict one
+    (stdout on a pipe) raises on it. The consoles write one out (`ACTS`), and so does `printable`,
+    but Roboglot prints some JSON raw, a robot's entry among it, with its letters as letters, and
+    a JSON string can hold one (`"\\ud800"` decodes to it). There it is written as the same
+    escape (`backslashreplace`, which stderr has always had), which is what JSON itself writes."""
     for stream in (sys.stdout, sys.stderr):
-        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
-        if encoding.startswith("utf") or not hasattr(stream, "reconfigure"):
+        if not hasattr(stream, "reconfigure"):
             continue
-        with contextlib.suppress(Exception):
-            stream.reconfigure(errors="replace")
+        encoding = (getattr(stream, "encoding", "") or "").lower().replace("-", "")
+        if not encoding.startswith("utf"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(errors="replace")
+        elif getattr(stream, "errors", None) in ("strict", "surrogateescape"):
+            with contextlib.suppress(Exception):
+                stream.reconfigure(errors="backslashreplace")
 
 
 class TeeConsole(Console):
@@ -291,25 +301,24 @@ err_console = make_console(stderr=True)
 """Everything else: the log, the status line, warnings, errors."""
 
 
-_CONTROL = {c: None for c in range(0x20) if c not in (0x09, 0x0A)} | {0x7F: None}
-"""Every C0 control except tab and newline, and DEL, dropped on the way into the file.
-
-`terminal.txt` is the one thing in a run directory meant to be read with `cat`, and a control
-character in it is executed by the reader's terminal rather than shown to them. Rich strips
-its own set (`rich.control.STRIP_CONTROL_CODES`) and ESC is not in it, so an escape that
-arrived inside *text* rather than from a style goes straight through: `ESC[2J` clears the
-reader's screen, `ESC]0;...BEL` retitles their window, `ESC[?1049h` swaps their buffer. The
-text is not ours. It is the goal somebody typed, the body of a `.glot` fetched off the
-internet, whatever the LLM said it was thinking, and an error message from a robot.
-
-Dropped rather than escaped, because this file is read by a person and not parsed, and
-`transcript.jsonl` beside it keeps every byte as it came (JSON escapes it, so it is safe
-there and recoverable from there)."""
-
-
 def _printable(text: str) -> str:
-    """The text with anything that would drive the reader's terminal taken out."""
-    return text.translate(_CONTROL)
+    """The text with everything in `ACTS` but its line breaks taken out, on the way into the file.
+
+    `terminal.txt` is the one thing in a run directory meant to be read with `cat`, and a control
+    character in it is executed by the reader's terminal rather than shown to them. Rich strips
+    its own set (`rich.control.STRIP_CONTROL_CODES`) and ESC is not in it, so an escape that
+    arrived inside *text* rather than from a style goes straight through: `ESC[2J` clears the
+    reader's screen, `ESC]0;...BEL` retitles their window, `ESC[?1049h` swaps their buffer. A
+    one-character CSI does the same on a terminal that takes 8-bit controls, and a bidi override
+    reorders the line the reader reads. The text is not ours. It is the goal somebody typed, the
+    body of a `.glot` fetched off the internet, whatever the LLM said it was thinking, and an
+    error message from a robot.
+
+    The same table the screen writes out (`ACTS`), so the file keeps nothing the screen would
+    not have shown. Dropped rather than escaped, because this file is read by a person and not
+    parsed, and `transcript.jsonl` beside it keeps every character as it came (JSON escapes it,
+    so it is safe there and recoverable from there)."""
+    return _DROPPED.sub("", text)
 
 
 class _CaptureSink:
@@ -552,6 +561,7 @@ ACTS = re.compile(
     "\\u2028\\u2029"  # the line and paragraph separators
     "\\u202a-\\u202e"  # the bidirectional embeddings and overrides
     "\\u2066-\\u2069"  # the bidirectional isolates
+    "\\ud800-\\udfff"  # a lone surrogate, half of a character
     "]"
 )
 """The one table of what is written out as its escape wherever Roboglot shows text it did not
@@ -565,6 +575,9 @@ write, read by `printable` and by the consoles' filter (`TeeConsole._write_buffe
 - the line and paragraph separators, which a terminal may take for a line of their own.
 - the explicit bidirectional embeddings, overrides and isolates, which reorder the text around
   them, so that what a line seems to say is not what it holds.
+- a lone surrogate, which no stream can encode: a strict UTF-8 one, which stdout is on a pipe,
+  refuses it, and the print that held it ends with `UnicodeEncodeError`. A JSON string an LLM or
+  a server sends can carry one (`"\\ud800"` decodes to it), and so can a note kept as JSON.
 
 Everything else is drawn as given. That includes the format characters that cannot move the
 cursor, change what the terminal does or reorder what is shown: the zero-width joiner and
@@ -601,45 +614,80 @@ CONTINUED = "  "
 """What goes in front of each line after the first of an outside text set inside a panel, a
 verdict's reason: an indent the text cannot take away (`Hanging`)."""
 
+_SPACES = re.compile(r"(?<=\S)(?:[^\S\n]{2,}|[^\S\n ])(?=\S)")
+
+
+def one_space(text: str) -> str:
+    """`text` with each run of whitespace between two words on a line drawn as one space, a tab or
+    a no-break space alone included. For a line of outside text: padded with spaces, a reply could
+    put words of its choosing wherever it liked along a row, under a column of Roboglot's own. A
+    line's breaks, and the whitespace that begins or ends it, are left as they are."""
+    return _SPACES.sub(" ", text)
+
+
+def _fold(text: Text, target: Console, width: int, indent: Text) -> list[Text]:
+    """The rows `Hanging` draws `text` as, `width` wide: its first line folded at the full width,
+    and every row after that, of the first line or of the lines its breaks make, behind `indent`.
+
+    A tab is spaces before the fold, as many as the console draws it as. Rich expands a tab while
+    it folds, so the first row is longer than the text it came from, and the rest of that line,
+    taken off by the row's length, began in the wrong place: words were lost."""
+    narrow = max(1, width - indent.cell_len)
+    tab_size = (text.tab_size if text.tab_size is not None else target.tab_size) or 8
+    rows: list[Text] = []
+    for n, part in enumerate(text.split("\n", allow_blank=True)):
+        part.expand_tabs(tab_size)  # `split` hands back copies, so the text itself is not changed
+        rest = part
+        if n == 0:
+            first = part.wrap(target, width, overflow="fold")
+            if len(first) <= 1:
+                rows.extend(first or [Text()])
+                continue
+            rows.append(first[0])
+            rest = part[len(first[0].plain) :]
+            rest = rest[len(rest.plain) - len(rest.plain.lstrip(" ")) :]
+        rows.extend(indent + row for row in rest.wrap(target, narrow, overflow="fold") or [Text()])
+    return rows
+
 
 class Hanging:
     """`text` with every line after its first indented by `indent`, the lines its own breaks
     make and the lines the width folds it into alike: an outside text printed where a line of
     Roboglot's own begins, an error or a verdict's reason, cannot begin one of its lines there,
     whether by a line break or by its length. The first line is wrapped as it always was, at the
-    full width, so a text on one short line is drawn byte for byte as before."""
+    full width, so a text on one short line is drawn byte for byte as before.
 
-    def __init__(self, text: Text, indent: str) -> None:
+    `indent` may be a `Text`, for an indent that wears a style: a team member's name in front of
+    every row of its step lines."""
+
+    def __init__(self, text: Text, indent: str | Text) -> None:
         self.text = text
-        self.indent = indent
+        self.indent = Text(indent) if isinstance(indent, str) else indent
 
     def __rich_measure__(self, target: Console, options: Any) -> Measurement:
         """As wide as the text, its indented lines measured with their indent."""
         measured = Measurement.get(target, options, self.text)
         first, *rest = self.text.plain.split("\n")
-        widest = max([cell_len(first)] + [cell_len(line) + len(self.indent) for line in rest])
-        least = min(measured.minimum + len(self.indent), widest)
+        pad = self.indent.cell_len
+        widest = max([cell_len(first)] + [cell_len(line) + pad for line in rest])
+        least = min(measured.minimum + pad, widest)
         return Measurement(least, widest).clamp(max_width=options.max_width)
 
     def __rich_console__(self, target: Console, options: Any) -> Iterator[RenderableType]:
-        width = options.max_width
-        narrow = max(1, width - len(self.indent))
-        lines: list[Text] = []
-        for n, part in enumerate(self.text.split("\n", allow_blank=True)):
-            rest = part
-            if n == 0:
-                first = part.wrap(target, width, overflow="fold")
-                if len(first) <= 1:
-                    lines.extend(first or [Text()])
-                    continue
-                lines.append(first[0])
-                rest = part[len(first[0].plain) :]
-                rest = rest[len(rest.plain) - len(rest.plain.lstrip(" ")) :]
-            for line in rest.wrap(target, narrow, overflow="fold") or [Text()]:
-                lines.append(Text(self.indent) + line)
-        drawn = Text("\n").join(lines)
+        drawn = Text("\n").join(_fold(self.text, target, options.max_width, self.indent))
         drawn.no_wrap = True
         yield drawn
+
+
+def hang(text: str, target: Console, *, indent: str = CONTINUED) -> str:
+    """`text` folded at `target`'s width as `Hanging` folds it, its rows joined by line breaks:
+    for a question written to the terminal raw, which Rich never draws. A text on one row comes
+    back as it is."""
+    return "\n".join(row.plain for row in _fold(Text(text), target, target.width, Text(indent)))
+
+
+_DROPPED = re.compile(f"(?!\n){ACTS.pattern}")
+"""`ACTS` but the line break: what the saved terminal leaves out (`_printable`)."""
 
 
 def _shown(text: str) -> str:
@@ -769,8 +817,8 @@ def verdict(
         if reason:
             # the pilot's or a robot's own words as often as Roboglot's, its lines after the
             # first, by a break or by its length, indented so none can pass for the counters'
-            # row or one of its own
-            body.add_row(Hanging(Text(printable_lines(reason)), CONTINUED))
+            # row or one of its own, and a run of spaces in a line drawn as one
+            body.add_row(Hanging(Text(one_space(printable_lines(reason))), CONTINUED))
         if counters:
             body.add_row(joined(counters, g))
         where = [("run dir", path_text(run_dir))] if run_dir else []
@@ -790,13 +838,14 @@ def fail_line(
 
     The message routinely names an extra (`roboglot[anthropic]`), which is why it is appended
     to a `Text` rather than formatted into markup that would eat the brackets. It can carry a
-    server's whole error body, so it goes through `printable_lines` as well."""
+    server's whole error body, so it goes through `printable_lines` as well, and a run of spaces
+    in one of its lines is drawn as one (`one_space`)."""
 
     def build(g: Glyphs) -> RenderableType:
         out = Text()
         said = f"{g.fail} error: "
         out.append(said, style=STYLES["fail"])
-        out.append(printable_lines(message))
+        out.append(one_space(printable_lines(message)))
         # a line after the first, by a break or by its length, starts under the first, never at
         # the first column, where a server's text could otherwise print a line that reads as
         # one of Roboglot's own

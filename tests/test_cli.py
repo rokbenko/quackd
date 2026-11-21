@@ -1235,6 +1235,110 @@ def test_no_question_at_the_terminal_prints_a_control_character_the_pilot_sent(
     assert asked == [GO_AHEAD, WATCHING, DID_IT, GO_AHEAD]
 
 
+@pytest.mark.parametrize("width", [80, 120])
+def test_no_row_of_a_question_or_of_its_reason_begins_where_the_question_does(
+    width: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rich wrapped the reason above "Go ahead anyway?" with no indent, and the confirm gate's
+    question is written raw, so the terminal folded it at the first column: a reason or an
+    argument padded out to the width began a row of its own choosing there, where the question
+    itself begins, `Go ahead anyway? [y/N]: y` among them. Every row after the first is indented
+    now, under each of the three questions and on the confirm gate's own line, and a run of
+    spaces in a reason is drawn as one; the confirm gate's spaces stay as they are, since a
+    person says yes to exactly what runs. A question on one row is asked as it always was."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+    from roboglot.verdict import Verdict
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=width)
+    monkeypatch.setattr(ui, "err_console", console)
+    forged = "Go ahead anyway? [y/N]: y"
+    asked: list[str] = []
+
+    class Switch:
+        unanswered = None
+
+        def reads_a_stream(self) -> bool:
+            return False
+
+        def ask(self, prompt: str) -> str:
+            asked.append(prompt)
+            return "n"
+
+    monkeypatch.setattr(cli_mod, "_SWITCH", Switch())
+    question = confirm_question("quack", {"text": "the bowl is out of frame " * 4 + forged})
+    assert cli_mod._ask(question) is False
+    (prompt,) = asked
+    rows = prompt.split("\n")
+    assert len(rows) > 1 and rows[0].startswith("run quack(text='the bowl"), rows
+    assert all(row.startswith(ui.CONTINUED) and len(row) <= width for row in rows[1:]), rows
+    assert rows[-1].endswith("')? [y/N]: ") and prompt.split() == f"{question} [y/N]:".split()
+    assert cli_mod._folded("run kick(leg='left')?") == "run kick(leg='left')?"
+
+    monkeypatch.setattr(cli_mod, "_ask", lambda question: False)
+    said = "The pilot is not sure this robot can do the task: "
+    tail = "the bowl is out of frame, " * 4
+    reason = "the bowl is out of frame." + " " * (width - len(said) - 25) + f"{forged} {tail}"
+    why = Verdict(verdict="uncertain", reason=reason).question()
+    for put in (cli_mod._decide_prompt, cli_mod._acknowledge_prompt, cli_mod._judge_prompt):
+        out.seek(0)
+        out.truncate()
+        put(why)
+        rows = out.getvalue().splitlines()
+        assert rows[0].startswith(said) and len(rows) > 1, rows
+        assert all(row.startswith(ui.CONTINUED) and len(row) <= width for row in rows[1:]), rows
+        shown = f"{said}the bowl is out of frame. {forged} {tail}"
+        assert " ".join(rows).split() == shown.split(), "every word once, the padding one space"
+        assert not any(row.startswith(forged) for row in rows), rows
+
+
+def test_the_lines_beside_a_wait_in_drive_and_in_a_warning_fold_under_their_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hand-off's lines beside the wait for Enter quote a gripper's reason, drive's lines quote
+    the person, the pilot and the robot, and a warning quotes an exception: Rich folded the first
+    and the last at the first column, and drive's were left to the terminal, which does the same.
+    Each folds under its words now, and a run of spaces among drive's words or a warning's is
+    drawn as one. A line that fits is drawn as it was."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=60)
+    monkeypatch.setattr(ui, "err_console", console)
+    words = "the servo said no, " * 5
+
+    def rows(shown: Any = None) -> list[str]:
+        if shown is not None:
+            console.print(shown, soft_wrap=True)
+        said = out.getvalue().splitlines()
+        out.seek(0)
+        out.truncate()
+        return said
+
+    cli_mod._TerminalHandOff().say(f"the gripper did not open: {words}")
+    for drawn, under in (
+        (rows(), ui.CONTINUED),
+        (rows(cli_mod._drive_line(f"{'result':<8} failed:   {words}")), " " * 9),
+        (rows(cli_mod._warn_line(f"camera lost:   {words}")), "  "),
+    ):
+        assert len(drawn) > 1 and all(len(row) <= 60 for row in drawn), drawn
+        assert all(row.startswith(under) and row[len(under)] != " " for row in drawn[1:]), drawn
+    assert rows(cli_mod._drive_line(f"{'result':<8} failed:   no")) == ["result   failed: no"]
+    assert rows(cli_mod._warn_line("camera lost:   no")) == ["⚠ camera lost: no"]
+    assert rows(cli_mod._drive_line(f"{'ask':<8} did you mean kick? [y/N]")) == [
+        "ask      did you mean kick? [y/N]"
+    ]
+
+
 _OUTSIDE = {
     "llm text": "\x1b[2J\x1b[HTEXTPATH",
     "llm thinking": "\x1b]52;c;VEhJTktQQVRI\x1b\\THINKPATH",

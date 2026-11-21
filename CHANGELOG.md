@@ -856,8 +856,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   it, as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error or a verdict's
   reason that runs over several lines, by its breaks or by its length, has every line after the
   first indented, so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a
-  server's error. A line with no such character prints as it did, the joiners Persian, Hindi
-  and emoji need included.
+  server's error. A line too long for the console is folded by Roboglot at the console's width,
+  every row after the first indented, never left to the terminal, whose fold began at the first
+  column: a reply padded with spaces to the width put a row that read as Roboglot's own estimate
+  just above `Go ahead anyway?`. That holds for a step's line, the reason above a question, the
+  confirm question itself, a warning, drive's lines and the hand-off's, and a run of spaces
+  inside a line of the pilot's, a robot's or a server's is drawn as one, except in the confirm
+  question, which shows what runs. A line that fits and has no such character prints as it did,
+  the joiners Persian, Hindi and emoji need included. `terminal.txt` leaves out every character the screen
+  writes out, the one-character CSI and the bidi overrides among them, which it kept, and a lone
+  surrogate, which a strict UTF-8 stdout refused, ending the print, is written out too.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

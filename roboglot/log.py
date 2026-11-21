@@ -1363,12 +1363,13 @@ class ConsoleLog(LineLog):
         Roboglot's (a reply and its thinking, a verb's result, a refusal, a detection, an error),
         so every character a terminal could act on is written out as its escape first
         (`ui.printable`): Rich takes out only a few, and the `llm<` line sits just above the
-        questions a run puts. A line with no such character is drawn as it always was."""
+        questions a run puts. A line with no such character is drawn as it always was. A step's
+        line also has each run of spaces inside it drawn as one (`ui.one_space`, in `_show`)."""
         return self._ui.degrade(self._ui.printable(text), self._glyphs)
 
     def _write_line(self, text: Any) -> None:
         # never markup: an LLM that thinks about `[/think]` must not raise a format error,
-        # and soft_wrap so a long observation is never cropped
+        # and soft_wrap so nothing is cropped: a step line arrives folded already (`_show`)
         self.console.print(text, markup=False, highlight=False, soft_wrap=True)
 
     def _rule(self, title: str = "") -> None:
@@ -1400,6 +1401,13 @@ class ConsoleLog(LineLog):
         label = self.LABELS.get(line.label, line.label)
         glyph = self._glyphs.mark(line.mark)
         head = f"{glyph:<{_GUTTER - 1}} {label:<{_LABEL}}"
+        # Every row after a line's first starts under the words, behind the label column, and
+        # a member's name in front where there is one: folded here at the console's width, and
+        # never left to the terminal, whose fold begins at the first column, where Roboglot's own
+        # rows begin. A reply padded out to the width put a row of its choosing there.
+        under = Text()
+        under.append(self.prefix, style=self.prefix_style or None)
+        under.append(" " * len(head))
         for i, raw in enumerate(body.splitlines() or [""]):
             text = Text(overflow="fold")
             if self.prefix:
@@ -1409,8 +1417,8 @@ class ConsoleLog(LineLog):
                 text.append(f"{label:<{_LABEL}}", style=self._ui.STYLES["muted"])
             else:
                 text.append(" " * len(head))
-            text.append(self._plain(raw), style=line.style or None)
-            self._write_line(text)
+            text.append(self._ui.one_space(self._plain(raw)), style=line.style or None)
+            self._write_line(self._ui.Hanging(text, under))
 
     def _block(self, body: str) -> None:
         """The system prompt: forty to seventy lines of somebody else's words, indented under
@@ -1422,7 +1430,11 @@ class ConsoleLog(LineLog):
             # redirected log turns out to be
             shown = self._plain(raw.rstrip())
             body_line = pad_text + shown if shown else ""
-            self._write_line(Text(body_line, style=self._ui.STYLES["muted"]))
+            # a memory note and a task file's body are in it, so a long line folds under the
+            # block's own indent as a step line does, its spaces as they were written
+            self._write_line(
+                self._ui.Hanging(Text(body_line, style=self._ui.STYLES["muted"]), pad_text)
+            )
         self._rule()
 
     def _run_panel(self, event: LogEvent) -> None:

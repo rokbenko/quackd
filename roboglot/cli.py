@@ -938,9 +938,17 @@ def _ok_line(message: str) -> Any:
 
 
 def _warn_line(message: str) -> Any:
-    """Something the run carried on without. `_fail` is for what it cannot carry on without."""
+    """Something the run carried on without. `_fail` is for what it cannot carry on without.
+
+    Folded as `_fail`'s line is (`ui.fail_line`): an exception's words are a robot's or a
+    server's as often as Roboglot's, so its rows after the first start under the message."""
     return ui.Deferred(
-        lambda g: Text.assemble((f"{g.warn} ", ui.STYLES["warn"]), (message, ui.STYLES["warn"]))
+        lambda g: ui.Hanging(
+            Text.assemble(
+                (f"{g.warn} ", ui.STYLES["warn"]), (ui.one_space(message), ui.STYLES["warn"])
+            ),
+            " " * (len(g.warn) + 1),
+        )
     )
 
 
@@ -1449,8 +1457,10 @@ class _TerminalHandOff:
         self.switch = switch
 
     def say(self, text: str) -> None:
+        """A line beside the wait for Enter, folded with its rows after the first indented
+        (`ui.Hanging`): a gripper's or a robot's reason is quoted in some of them."""
         with ui.pause_status():
-            ui.err_console.print(Text(text, style=ui.STYLES["warn"]))
+            ui.err_console.print(ui.Hanging(Text(text, style=ui.STYLES["warn"]), ui.CONTINUED))
 
     async def wait(
         self,
@@ -1610,23 +1620,41 @@ def _ask(question: str) -> bool | Awaitable[bool]:
 
     With stdin a pipe or a file the answer comes later, from a coroutine (`_asked_on_a_stream`),
     so the run's loop goes on while the question waits: its heartbeat beats, and its abort
-    takes the question back (`roboglot.answers.answered`)."""
+    takes the question back (`roboglot.answers.answered`).
+
+    The question is written folded (`_folded`), and the saved terminal is told it on one line."""
     if _FRONT is not None:
         # every question a run driven from the page puts goes to the page, and a prompt here
         # would read the page's own lines off stdin (`roboglot.front`)
         raise RuntimeError("a run driven from the page puts no question to a terminal")
     switch = _SWITCH
     if switch is None:
-        agreed = typer.confirm(question, default=False)
+        agreed = typer.confirm(_folded(question), default=False)
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
     # read through `ask` as before by anything that cannot say it reads a stream
     reads_a_stream = getattr(switch, "reads_a_stream", None)
     if reads_a_stream is not None and reads_a_stream():
         return _asked_on_a_stream(switch, question)
-    answer = switch.ask(f"{question} [y/N]: ")
+    answer = switch.ask(f"{_folded(question)} [y/N]: ")
     ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
+
+
+_YN = " [y/N]:"
+
+
+def _folded(question: str) -> str:
+    """`question` as the terminal is handed it: folded at the console's width with every row after
+    the first indented (`ui.hang`), room kept on its last row for the `[y/N]` the asker adds.
+
+    The confirm gate's question holds the pilot's arguments whole, and it is written raw, so Rich
+    never folded it: the terminal did, at the first column, where Roboglot's own rows begin, and
+    a long argument could begin one there in Roboglot's voice. Its spaces are kept as they are,
+    since a person says yes to exactly what runs. A question on one row is asked as it always
+    was."""
+    said = ui.hang(f"{question}{_YN}", ui.err_console)
+    return said.removesuffix(_YN) if said.endswith(_YN) else question
 
 
 async def _asked_on_a_stream(switch: KillSwitch, question: str) -> bool:
@@ -1634,7 +1662,7 @@ async def _asked_on_a_stream(switch: KillSwitch, question: str) -> bool:
     the question (`KillSwitch.ask_async`), with the status line kept out of its way for as long
     as it waits, and the answer told to the saved terminal as the other branches tell it."""
     with ui.pause_status():
-        answer = await switch.ask_async(f"{question} [y/N]: ")
+        answer = await switch.ask_async(f"{_folded(question)} [y/N]: ")
     ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 
@@ -1650,31 +1678,41 @@ def _confirm_prompt(name: str, params: dict[str, Any]) -> bool | Awaitable[bool]
         return _ask(confirm_question(name, params))
 
 
-def _decide_prompt(why: str) -> bool | Awaitable[bool]:
-    """Asked when the pilot says it is not sure this body can do the task at all.
+def _reason(why: str) -> Any:
+    """The words a question is asked about, as the terminal shows them just above it.
 
-    `why` carries the pilot's own reason and estimates, so it is printed through
-    `ui.printable`: Rich strips only a few control characters, and an escape sequence left in
-    would let the pilot erase the lines above the question and write its own in their place."""
+    Through `ui.printable`: Rich strips only a few control characters, and an escape sequence
+    left in would let the pilot erase the lines above the question and write its own in their
+    place. Folded at the console's width with every row after the first indented (`ui.Hanging`),
+    and a run of spaces drawn as one (`ui.one_space`): left to Rich's plain wrap, a reason padded
+    out to the width began a row of its own choosing, `Go ahead anyway? [y/N]: y`, at the first
+    column, where the question itself begins."""
+    shown = Text(ui.one_space(ui.printable(why)), style=ui.STYLES["warn"])
+    return ui.Hanging(shown, ui.CONTINUED)
+
+
+def _decide_prompt(why: str) -> bool | Awaitable[bool]:
+    """Asked when the pilot says it is not sure this body can do the task at all. `why` carries
+    the pilot's own reason and estimates (`_reason`)."""
     with ui.pause_status():
-        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(GO_AHEAD)
 
 
 def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
-    """Asked once, before anything moves, when the human is the only safety left. Printed
-    through `ui.printable` as `_decide_prompt` is, whoever wrote `why`."""
+    """Asked once, before anything moves, when the human is the only safety left. Printed as
+    `_decide_prompt` prints it, whoever wrote `why`."""
     with ui.pause_status():
-        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(WATCHING)
 
 
 def _judge_prompt(why: str) -> bool | Awaitable[bool]:
     """Asked once, after the last segment of a `--controller vla` run: its pilot cannot tell
     whether the task was done, so the person who watched the arm says. `why` quotes the task
-    file's instructions and its words for done, printed through `ui.printable`."""
+    file's instructions and its words for done (`_reason`)."""
     with ui.pause_status():
-        ui.err_console.print(Text(ui.printable(why), style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(DID_IT)
 
 
@@ -3953,6 +3991,19 @@ _LOG_RUN = typer.Argument(
     None, help="A run directory, a transcript file, a name or a prefix. Default: the newest."
 )
 
+_DRIVE_LABEL = 9
+"""The columns in front of the words on a line of drive's, its label padded to eight and a
+space (`roboglot.drive.terminal.told`), under which a line's folded rows start."""
+
+
+def _drive_line(line: str) -> Any:
+    """A line of drive's as the terminal shows it: a label and the words, which quote what the
+    person typed, the pilot and the robot, so the line is folded under the words (`ui.Hanging`),
+    never left to the terminal, which folds it at the first column, where a label begins; and a
+    run of spaces among the words is drawn as one."""
+    label, words = line[:_DRIVE_LABEL], line[_DRIVE_LABEL:]
+    return ui.Hanging(Text(label + ui.one_space(words)), " " * _DRIVE_LABEL)
+
 
 @app.command("drive", rich_help_panel="Run a task")
 def drive_cmd(
@@ -4193,8 +4244,10 @@ def _drive_command(
 
     front = _FRONT
 
-    def say(line: str) -> None:
-        ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
+    def say(line: str, *, whole: bool = False) -> None:
+        # `whole` for a line of Roboglot's own that a person copies, the session's folder
+        shown = line if whole else _drive_line(line)
+        ui.console.print(shown, soft_wrap=True, highlight=False, markup=False)
         if front is not None:
             front.say(line)
 
@@ -4292,7 +4345,7 @@ def _drive_command(
             _fail(e.code)
             return
         raise
-    say(f"{'record':<8} {run_dir}")
+    say(f"{'record':<8} {run_dir}", whole=True)
 
 
 @app.command("log", rich_help_panel="Run a task")
