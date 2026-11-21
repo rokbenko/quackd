@@ -1472,6 +1472,10 @@ async def test_marked_live_llm(monkeypatch, tmp_path):
 """Three tests that make the same request, for the session below to run."""
 
 
+# The session below is capped at 600 s by its own `timeout=`, so that cap speaks first, with the
+# session's output, and not the suite's 300 s per test (pyproject.toml), which would end this test
+# before the cap and say nothing of the session.
+@pytest.mark.timeout(660)
 def test_the_suites_guard_fails_the_test_that_reached_for_openai_and_spares_a_live_one(
     tmp_path: Path,
 ) -> None:
