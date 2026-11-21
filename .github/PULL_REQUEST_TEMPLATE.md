@@ -12,11 +12,21 @@
 
 ## Checklist
 
-- [ ] `uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest` pass locally
+- [ ] What CI's test job runs passes locally, in its order, on one Python (CI runs it on Python 3.11 and 3.12, on Linux, macOS and Windows):
+
+  ```bash
+  uv lock --check
+  uv run ruff check .
+  uv run ruff format --check .
+  uv run mypy
+  uv run pytest -n auto -m "not serial"
+  uv run pytest -m serial
+  uv run roboglot validate tasks/*.glot
+  ```
+
 - [ ] No network calls in tests; no API keys needed
 - [ ] No upstream assets added, from any project: no logos, meshes (`.stl`), MJCF or URDF, ONNX policies, keyframes or videos
 - [ ] CHANGELOG.md updated under *Unreleased*
-- [ ] `uv run roboglot validate tasks/*.glot` passes (CI runs it)
 
 <!--
 What happens next: your commits are merged as they are, under your name, and never

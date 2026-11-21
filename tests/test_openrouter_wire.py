@@ -3,7 +3,7 @@
 Skipped wherever the SDK is not installed, which includes CI: nothing in the suite installs a
 provider SDK. To run it, sync an environment with the extra and run pytest there:
 
-    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openrouter
+    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra openrouter
 
 No key and no network. `tests/fake_openrouter.py` answers every request on 127.0.0.1, so what
 this proves is what Roboglot puts on the wire through the SDK and what it makes of an answer in

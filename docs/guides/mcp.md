@@ -164,7 +164,7 @@ Then in Claude Code: *"List the duck's verbs, then walk it forward for a second 
 > `uv run --no-sync` rather than `uvx` on purpose: it serves the code in your working tree
 > instead of the last release, and `--no-sync` keeps the launch from re-syncing the
 > environment while the previous server still holds `Scripts/roboglot.exe` open on Windows.
-> Run `uv sync --extra dev` once first, which installs the core and all ten adapters as
+> Run `uv sync` once first, which installs the core and all ten adapters as
 > editable workspace members. That is also why the repo's file carries no `--from`: every
 > robot is already in that environment. A server that is already running keeps the tools it
 > started with, so after changing a verb or upgrading Roboglot, restart it (`/mcp` in Claude

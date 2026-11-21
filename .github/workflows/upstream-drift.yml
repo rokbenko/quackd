@@ -64,8 +64,8 @@ jobs:
 
       - name: Sync Roboglot and its ten adapters, no SDKs
         # The ref modules import `roboglot.upstream` and nothing of any robot's SDK, so the dev
-        # extra is enough and nothing heavy is fetched.
-        run: uv sync --python 3.12 --extra dev
+        # group is enough and nothing heavy is fetched.
+        run: uv sync --python 3.12
 
       - name: Compare every ref with its baseline
         env:
