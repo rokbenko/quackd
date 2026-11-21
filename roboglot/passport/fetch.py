@@ -131,10 +131,12 @@ def _exchange(
         sock = raw
         try:
             if parts.scheme == "https":
+                context = ssl.create_default_context()
+                # Python has refused anything older since 3.10, and this says so where it is used:
+                # a floor a reader, and a scanner, can see without knowing which Python runs it
+                context.minimum_version = ssl.TLSVersion.TLSv1_2
                 # the TLS socket takes over the connection, so it is the one to close
-                sock = ssl.create_default_context().wrap_socket(
-                    raw, server_hostname=host, do_handshake_on_connect=False
-                )
+                sock = context.wrap_socket(raw, server_hostname=host, do_handshake_on_connect=False)
                 _handshake(sock, deadline, url, timeout)
             sock.settimeout(_left(deadline, url, timeout))
             sock.sendall(request)
