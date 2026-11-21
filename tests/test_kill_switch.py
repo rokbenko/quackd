@@ -48,13 +48,16 @@ def waited(timeout_s: float) -> float:
 
     asyncio fires a timer as soon as the loop's clock is within one resolution tick of the
     deadline, and that tick is `time.get_clock_info("monotonic").resolution`: about 15.6 ms on
-    Windows and a fraction of a microsecond on Linux. So a 50 ms wait legitimately returns
-    after 34 ms on one runner and after very nearly 50 ms on the next, and a floor typed as a
-    constant is a floor that passes on the machine it was written on. This one is the
-    platform's own answer, and the gap it leaves is still three orders of magnitude wider than
-    a wait that was satisfied at once, which is the only thing these tests are telling apart.
+    Windows before Python 3.13 and a fraction of a microsecond on Linux. The deadline itself was
+    set from a read of that clock, which can lag the real time by one more tick, so measured by
+    `perf_counter` a timer can fire up to two ticks early: a 0.5 s wait came back after 0.479 s
+    on a Windows runner with Python 3.11. So a 50 ms wait legitimately returns after under
+    20 ms on one runner and after very nearly 50 ms on the next, and a floor typed as a constant
+    is a floor that passes on the machine it was written on. This one is the platform's own
+    answer, and the gap it leaves is still wide enough to tell apart a wait that was satisfied
+    at once, which is the only thing these tests are telling apart.
     """
-    return timeout_s - time.get_clock_info("monotonic").resolution
+    return timeout_s - 2 * time.get_clock_info("monotonic").resolution
 
 
 async def feed(ks: KillSwitch, keys: str, monkeypatch: pytest.MonkeyPatch) -> None:
