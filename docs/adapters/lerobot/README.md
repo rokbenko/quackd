@@ -550,8 +550,14 @@ looks like one before LeRobot opens anything. The `real` backend calls
 
 ```
 lerobot real: the arm is not calibrated; run LeRobot's calibration first
-(it is interactive, Roboglot never triggers it)
+(it is interactive, Roboglot never triggers it). Torque was taken off every motor where the arm
+stood, so nothing holds it up: hold it, and put it down
 ```
+
+LeRobot's connect has switched torque on by the time Roboglot can ask whether the arm is
+calibrated, and the refusal lets go of it wherever it stands, so the second sentence says so.
+Where LeRobot could not confirm the torque-off on some joints, it names them and says they may
+still hold; where it cannot tell which, it says so, and to hold the arm and cut its power.
 
 Calibration is upstream's own interactive step, under the id Roboglot will use, and it writes
 the file every joint's range is read from: step 5 of
@@ -795,8 +801,20 @@ every slow move. The price is that a joint blocked partway is found when the ram
 than when it stopped, pushing meanwhile against a goal one step ahead of it, as it always did.
 The verb then fails naming the joint, where it stopped and its goal, and holds the arm. It
 gives the move the time asked for, or the time the cap needs if that is longer, plus 2.5
-seconds to settle, and never more than 18: the executor's own timeout for `move_joints` is 20,
-and the verb ends first so that the reason names the joint that fell short.
+seconds to settle. The cap is a ceiling and not a speed the servo keeps, so a move still moving
+when that time is up goes on, up to 18 seconds: the executor's own timeout for `move_joints` is
+20, and the verb ends first so that the reason names the joint that fell short. Still moving
+means still getting nearer its goal: every joint that has not arrived has closed on its goal
+over the last 5 ticks, half a second, by at least its 5 degree tolerance, or by a fifth of what
+the step cap lets it cover in those ticks where that is less, 1 degree at the run sheet's slow
+step of 1 degree a send. Judged over those ticks and not one, a slow servo that moves on one
+tick and not the next is waited for, and a joint a hand pushes back, or one bouncing on
+something that gives, is not on its way, so the move ends as soon as its time is up. A known
+limit: the gain is read at the window's two ends, so a servo that sticks for some ticks and
+then slips, a slip worth less than that floor, ends at its time while on its way, though on
+average it gains more. Another: a joint that swings past its goal once, past its time, ends the
+move as it comes back, as one swinging about its goal does. The gripper's verbs go on the same
+way, inside their own timeout.
 
 Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
@@ -1209,7 +1227,20 @@ verb that sends a goal meanwhile is refused, as on the arm.
   played, or a policy that says it is done, end it, and so does the arm no longer moving under
   it: every joint within 0.5 degrees of where it was for 1 s of goals. That stall holds the
   arm where it stopped, because what stopped it may be in its way, and the policy's last goal
-  would leave the servo pushing on.
+  would leave the servo pushing on. A `pick` ends on a stall only pressed against something: for
+  1 s of goals over at least 2 of its policy's ticks, every joint within 0.5 degrees of where it
+  was while a body joint's goal, as it is sent, clipped into its travel, stays more than 5
+  degrees from where it reads, a servo pushing and getting nowhere. It ends then as a pick that
+  held nothing. Five is the arm's own tolerance for a loaded joint settling short of its goal, so
+  a hold that sags that much is not a press, and a joint at the edge of its travel sent a goal
+  past it pushes on nothing: the clip guard ends that pick. A policy that holds the arm where it
+  reads, for as long as it likes, is no stall, and at the band's lowest rate, 1 Hz, where 1 s is
+  one tick, a pick runs to its time. A grasp is not cut short by it: the jaws closing are the arm
+  moving, the gripper's goal never counts as pressing, and jaws settled on something end the
+  pick as holding before any stall is judged. A known limit: one tick whose goals all come back
+  within 5 degrees of where the arm reads, or on which the jaws move, starts that second again,
+  so a pick pressing while its jaws open and close, or whose goal dips inside the tolerance now
+  and then, runs to its time as it always did.
   The verb then holds it again, as it does after every ending that held, since a bus can lose
   a hold's packet, and a stall whose last hold did not reach the arm is a failure that says
   so. Otherwise those three are a segment that ran, and the verb is ok on them and on nothing
@@ -1754,10 +1785,12 @@ Roboglot, side by side, is [concepts/safety.md](../../concepts/safety.md).
   itself up, with one line saying so and naming the ways out:
 
   ```
-  the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-  stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which
-  folds it to its rest pose and lets go of it there: support the arm while that connects,
-  because connecting takes torque off every motor for a moment. Or hold it and cut its power
+  the arm is not at its rest pose (...), so torque was left on and it is holding its pose.
+  Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing
+  it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot
+  robot release NAME, which folds it to its rest pose and lets go of it there: support the arm
+  while that connects, because connecting takes torque off every motor for a moment. Or hold it
+  and cut its power
   ```
 
   The support comes with its reason, because the command begins by connecting, and the connect
@@ -2423,10 +2456,12 @@ hold, Roboglot writes LeRobot's `disable_torque_on_disconnect` as False on the c
 before the call, closes the port with every motor still holding its goal, and prints one line:
 
 ```
-the arm is not at its rest pose (...), so torque was left on and it will not fall as it
-stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which
-folds it to its rest pose and lets go of it there: support the arm while that connects,
-because connecting takes torque off every motor for a moment. Or hold it and cut its power
+the arm is not at its rest pose (...), so torque was left on and it is holding its pose.
+Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it,
+so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot
+release NAME, which folds it to its rest pose and lets go of it there: support the arm while
+that connects, because connecting takes torque off every motor for a moment. Or hold it and cut
+its power
 ```
 
 The parenthesis names the joints and how far short they are, and, where the rest move itself
@@ -2435,9 +2470,12 @@ joint is at rest. An arm parked at the edge of its travel and let go there print
 the close: the sentence about its fold was said once, by the rest move, and a close line is
 read everywhere as torque left on.
 
-The clearing comes first because a fold that runs into what stopped the last one stops again,
-and the support comes with its reason: the command connects, and connecting takes every
-motor's torque off for a moment, so "it will not fall" is true of the arm as it stands and of
+The line says the arm is holding its pose, and not that it will stay up. From the close on
+nothing reads the servos, holding a pose is what heats them, and a servo that reaches its own
+cut-off takes its torque off without a word, so an arm left holding for hours can drop. The
+clearing comes first because a fold that runs into what stopped the last one stops again, and
+the support comes with its reason: the command connects, and connecting takes every motor's
+torque off for a moment, so "it is holding its pose" is true of the arm as it stands and of
 nothing that connects to it. Two closes say something else, because this line would be wrong in
 them. An arm that did not answer the close's own read may be one whose supply you have just cut,
 limp in your hands, as easily as one whose cable came out in front of live servos, so its line
@@ -2453,7 +2491,7 @@ is rather than offering the calibration id as a name nobody may have registered.
 a dry run never drives it to, so the parenthesis ends on nothing having moved it there:
 
 ```
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; nothing moved it there), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; nothing moved it there), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 > [!CAUTION]
@@ -2684,8 +2722,8 @@ question, so nothing was released and torque is kept. The same arm, every motor 
 gripper: cut the power
   the arm still reports torque on, so it was not released
 ⚠ the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30
-deg short) and the release did not take, so torque was left on and it will not fall as it stands:
-hold it and cut its power
+deg short) and the release did not take, so torque was left on and it is holding its pose: hold it
+and cut its power
 ```
 
 Every motor held at the rest pose, which is where the folded arm is: the close lets go of it
@@ -2767,7 +2805,7 @@ And left alone at the first question:
 ```
 ·  release kept: nobody pressed Enter
 ·  note    nobody pressed Enter, so torque stays on and the arm holds itself up
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 The record says which of those ended each wait. A Ctrl-C at a question, the first of the run or a
@@ -2791,7 +2829,7 @@ questions, and the interrupt landing there:
 ·  release kept: interrupted before the release was sent
 ·  note    the release was interrupted before anything was sent, so torque is as it was
 the release was interrupted before anything was sent, so torque is as it was
-·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
+·  note    the arm is not at its rest pose (shoulder_pan is at 0 with a goal of 30; shoulder_pan stopped 30 deg short), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release arm-01, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power
 ```
 
 Either way the close, the summary and the rest of the teardown still happen. When the release is
@@ -2974,14 +3012,16 @@ And once it is running:
 |---|---|---|
 | `move_joints: shoulder_pan=170.0 is outside this arm's calibrated range -100.0..100.0` | the goal is outside the travel in your calibration file | aim inside it, or recalibrate if the file does not match the arm's real travel. Nothing was sent. On `wrist_roll` this refusal will never fire, because upstream records a full turn for that joint rather than a sweep |
 | `cannot move_joints: elbow_flex reads 61°C: let the arm cool before moving it ...` | the heat gate, below the servo's own 70 °C cut-off | let it cool. A joint that trips its own protection goes slack without announcing it |
-| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint was still moving when the verb's limit came: the time asked for, or the time the step cap needs if that is longer, plus 2.5 s, and never more than 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
+| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint fell short when its time was up, the time asked for, or the time the step cap needs if that is longer, plus 2.5 s: it was no longer getting nearer its goal then, or it went on getting nearer until 5 ticks gained less than its tolerance (less under a lowered step cap, a fifth of what the cap allows in them), or until the verb's limit of 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
+| `move_joints: elbow_flex is at 40 with a goal of -90, and the move was ended there because torque reads off on elbow_flex, so a goal would reach a limp servo, and a servo that trips its own overload protection reads this way` | a tick of the move read torque off on a joint, or a body joint at or above the heat gate, in the words a policy segment ends on, and the move was ended there with the arm held. `move_joints` judges the whole arm, as its preconditions do. `gripper` and `place` end the same way on the gripper's own torque, and never on heat | a tripped servo or the supply, as for the torque refusal below. A hot joint: let it cool |
+| `... But move_joints's stop could not be delivered, so the body may still be moving: the hold did not reach the arm: ... A servo may still be pushing toward the last goal it was sent` | the hold the move ended with was lost on the bus, so a servo still has its last goal, a step past where it reads. Any of the arm's verbs that ends on a stop says so, under its own name | send `stop`, and look at the arm before the next step |
 | `the camera gave no frame: TimeoutError: ... too old` | the webcam stalled or was unplugged | only `observe` is affected, and a `pick` in flight. The arm carries on, and `report_state` starts saying `CAMERA DOWN:` with the reason, so a run that cannot call `observe` still records it |
 | `cannot move_joints: the arm's torque is off, so a goal would reach a limp servo` | torque reads off | no verb can toggle torque either way. A fresh connect re-enables it, so torque still off after one points at a tripped servo or the supply. On a `--by-hand` run this is also what the arm reads like between the release and the moment Roboglot takes hold again, which is before the first turn |
 | `cannot place: nothing is held: pick something first` | the `holding` precondition | holding is inferred from the gripper stopping short of shut, so an empty hand reads as nothing held. After a `--by-hand` start it is also what a pilot gets for the pencil you put between the jaws yourself: closing the gripper by hand sets a position and not a grip, and the pilot has to close on the object itself first |
 | the run ends saying the arm did not answer | the heartbeat's round trip to the motors failed, and the words after `TimeoutError:` name the call and its budget. Before 0.15.0 there was one more cause: the event loop's thread busy past the deadline, parsing a pilot's first response or encoding a frame, while the arm answered in time, and the answer was thrown away. That was never measured on an arm. An answer that came back in time is now kept, and a probe queued behind a call which came back in time keeps its place and goes out rather than failing | the cable, the power, or a servo that has tripped. The arm holds its last goal under torque |
 | `NAME (lerobot:real) has no rest pose recorded, so at the end of a run, a dry one included, there is nothing to fold it to, and it would be left holding itself up wherever it stopped` | a run, a dry run, an MCP session and a team refuse a real arm with no rest pose before anything connects, and a spec such as `--robot lerobot:real` the same way, saying it `names no registered arm`, since a pose lives only under a name | fold the arm by hand and record one: `roboglot robot rest-pose NAME`. For a spec, register the arm first: `roboglot robot add NAME lerobot:real --address PORT`. A spec in `--robots` or a task file's `robots:` runs from a stored team once registered, since neither reads the registry: `roboglot team create TEAM --robot NAME`, one `--robot` for each member, then `--team TEAM` |
 | `NAME has no rest pose recorded, so torque was left on rather than let go of where the arm stands, where it would fall` | a probe, `doctor` or `robot list --probe`, read a real arm with no rest pose and kept it powered where it stands, which 0.23 and before let go of there | hold it and cut its power, or press Enter at doctor's question holding the arm, or run `roboglot robot release <name>` and press Enter when it asks. Then fold it by hand and record the pose: `roboglot robot rest-pose <name>` |
-| `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so Roboglot kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `roboglot robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
+| `the arm is not at its rest pose (...), so torque was left on and it is holding its pose. Holding heats the servos, and a servo that reaches its cut-off goes slack without announcing it, so do not leave it holding. To put it down, clear whatever is in its way and run roboglot robot release NAME, which folds it to its rest pose and lets go of it there: support the arm while that connects, because connecting takes torque off every motor for a moment. Or hold it and cut its power` | the arm did not reach the pose you recorded, or the edge of its travel where the pose lies past it, so Roboglot kept torque rather than dropping it. A run at a terminal asked you to clear its way and fold it once more first, and nobody pressed Enter | clear whatever stopped the fold, then run `roboglot robot release NAME`, supporting the arm while it connects, since connecting drops torque for a moment: it folds the arm to its rest pose and lets go there, and if that fold misses too it asks again before anything drops ([Releasing it](#releasing-it)). Or cut the servo supply. The parenthesis names the joints that fell short |
 | `the close was letting go of the arm and its disconnect did not finish, so some motors may have torque and some not: hold it, and cut its power to be sure` | the disconnect that takes torque off at a close raised, naming no joint or every one, or had not come back in 15 s. The exit does not wait for it after that, so what the motors are doing is not known | hold it, and cut the servo supply |
 | `the close took torque off, at the rest pose, on every joint but <joint>, whose write LeRobot could not confirm (...), so it may still hold: hold the arm as though nothing holds it, and cut its power to be sure` | the disconnect that takes torque off at a close tried every motor, and LeRobot could not confirm the write to the joint it names, so that joint may still have torque and every other one let go. With several, the line names each of them, `whose writes` and `they may still hold` | hold the arm, and cut the servo supply |
 | `roboglot cannot tell whether the arm is holding itself up (the arm did not answer: ...), so it kept whatever torque the arm has: hold it, and cut its power` | the arm did not answer the close's last read, so nothing says where it is or whether its servos are powered. Cutting the supply looks exactly like this, and so does a cable that came out in front of live servos | hold it, and cut the servo supply. No offer is made at the end of a run over an arm that went quiet |

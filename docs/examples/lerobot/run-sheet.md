@@ -4253,7 +4253,7 @@ Free space. Its files are in [e179/](e179/).
 
 **Goal.** Show that a first Ctrl-C stops the fold at the end of a run that ended by itself. Until 0.24.0 the fold finished first. Step 9 of 0.24.0's bench steps.
 
-**Expect.** The run has declared. As it folds, one press: `the fold was stopped where it was, and nothing was released: torque is as the fold left it`, then the close's own line, `the arm is not at its rest pose (...), so torque was left on and it will not fall as it stands`, and the run still ends a success with its summary written. Rehearsed on the arm's twin, never on the arm. Then put it down.
+**Expect.** The run has declared. As it folds, one press: `the fold was stopped where it was, and nothing was released: torque is as the fold left it`, then the close's own line, `the arm is not at its rest pose (...), so torque was left on and it is holding its pose`, and the run still ends a success with its summary written. Rehearsed on the arm's twin, never on the arm. Then put it down.
 
 - Keep E171's slow step on in this window, `$env:ROBOGLOT_LEROBOT_MAX_STEP_DEG = "1"`: a fold at 10 degrees a second, with its goal 1 degree ahead, gives you time and pushes less.
 - Wait for `moving to the rest pose`, then press Ctrl-C once. Hand on the switch.
@@ -5340,7 +5340,7 @@ Free space.
 
 **Goal.** E175 presses once. Somebody who asked for torque off has a hand on the arm, and from the moment `roboglot robot release` has connected no press quits past its close since 0.30.2, which is the line that says what became of the torque.
 
-**Expect.** During the count: `✗ error: stopped before the fold: nothing was moved, and the close lets go of the arm only where it reads at its rest pose`, then `⚠ the arm is not at its rest pose ..., so torque was left on and it will not fall as it stands`. During the fold, on the second take: `the fold was stopped where it was, and nothing was released`. However many more you press, that last line still comes, and the exit code is 1. It says the arm is holding itself up, and it is.
+**Expect.** During the count: `✗ error: stopped before the fold: nothing was moved, and the close lets go of the arm only where it reads at its rest pose`, then `⚠ the arm is not at its rest pose ..., so torque was left on and it is holding its pose`. During the fold, on the second take: `the fold was stopped where it was, and nothing was released`. However many more you press, that last line still comes, and the exit code is 1. It says the arm is holding itself up, and it is.
 
 - Keep E171's slow step on in this window, `$env:ROBOGLOT_LEROBOT_MAX_STEP_DEG = "1"`: a fold at 10 degrees a second, with its goal 1 degree ahead, gives you time and pushes less.
 - **Leave it raised, with the slow step on:** do the first lines of E171, with no LLM and no key.

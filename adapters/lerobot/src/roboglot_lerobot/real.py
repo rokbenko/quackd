@@ -235,6 +235,37 @@ torque on by then, and no read has said where the arm stands, so whether letting
 it is not something Roboglot knows. It keeps the torque, as a close does over an arm that did not
 answer (`TORQUE_UNKNOWN_AT_CLOSE`), and cutting the power is the way out, because
 `roboglot robot release` connects the same way and would fail in the same place."""
+REFUSED_LIMP = (
+    "Torque was taken off every motor where the arm stood, so nothing holds it up: hold it, and "
+    "put it down"
+)
+"""What a connect Roboglot refused once `configure()` had energised the arm says after its reason
+(`LeRobotReal._give_up`): its disconnect takes torque off every motor, which ADR-0036 decided,
+wherever the arm stands, and nothing has read where that is. The refusal used to say only the
+reason, and an arm a close had left holding itself up, connected again under a calibration that
+is not its own, dropped with nothing said of torque."""
+REFUSED_LIMP_NAMED = (
+    "Torque was taken off where the arm stood on every joint but {joints}, whose {writes} LeRobot "
+    "could not confirm ({said}), so {they} may still hold and the rest hold nothing up: hold the "
+    "arm as though nothing holds it, and cut its power to be sure"
+)
+"""`REFUSED_LIMP` where the disconnect's torque-off raised naming some of the arm's motors: every
+other joint let go, and each it names may still hold, as a close says it of its own release
+(`TORQUE_RELEASE_NAMED`). The disconnect went out under `suppress`, and those joints were never
+named."""
+REFUSED_TORQUE_NOT_KNOWN = (
+    "Torque was being taken off where the arm stood and the disconnect did not finish, so some "
+    "motors may have torque and some not: hold it, and cut its power to be sure"
+)
+"""`REFUSED_LIMP` where the disconnect raised naming none of the arm's motors, or every one of
+them, or never came back, as a close says it (`TORQUE_RELEASE_NOT_KNOWN`)."""
+REFUSED_TORQUE_KEPT = (
+    "Roboglot asked for torque to come off where the arm stood and that did not take, so it keeps "
+    "the torque connecting switched on: hold it, and cut its power"
+)
+"""`REFUSED_LIMP` where the flag that asks the disconnect for the release did not take, read back
+as a close reads it: the follower is built asking its disconnect to keep torque, so nothing came
+off, and saying the arm was let go of would be the opposite of what it did."""
 TORQUE_RETRIES = 5
 """Extra tries LeRobot gives each motor's `Torque_Enable` and `Lock` writes when Roboglot lets go of
 the arm or takes hold of it again: the count upstream's own `disconnect()` gives its torque-off
@@ -2065,21 +2096,69 @@ class LeRobotReal:
         with contextlib.suppress(Exception):
             await self._call(disconnect, deadline_s=self.port_close_deadline_s)
 
-    async def _camera_call(self, fn: Callable[..., Any], *args: Any, timeout_s: float) -> Any:
+    async def _camera_call(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,
+        timeout_s: float,
+        abandon: Callable[[], Callable[[], None]] | None = None,
+    ) -> Any:
         """A camera call: its own thread and its own deadline, and never the serial lock.
 
         The camera touches no bus, so it has no business under `_lock`. Worse than needless:
         `_call` files a call that blows its deadline as a wedged serial thread and refuses
         every later call until it returns, so a webcam whose open or release takes a few
         seconds (routine on Windows) would have refused the arm's own disconnect and left
-        torque on. A camera that hangs here is simply abandoned, and says so."""
-        loop = asyncio.get_running_loop()
+        torque on. A camera that hangs here is simply abandoned, and says so. `abandon` is
+        called as it is, and what it gives back runs on a worker once the abandoned call has
+        come back (`_abandon_camera`).
+
+        A call whose awaiting task is cancelled, by a press or an abort as the arm connects, is
+        left running in its worker just as one that ran out of time is, and takes the same road:
+        it was left in `_cameras`, and the close that came after disconnected the same camera
+        from a second thread while its open still ran. The cancel goes on up as it came."""
+        call = _THREADS.submit(fn, *args)
         try:
-            return await asyncio.wait_for(loop.run_in_executor(_THREADS, fn, *args), timeout_s)
-        except TimeoutError:
+            return await asyncio.wait_for(asyncio.wrap_future(call), timeout_s)
+        except (TimeoutError, asyncio.CancelledError) as cut_short:
+            if abandon is not None:
+                then = abandon()
+                call.add_done_callback(lambda _came_back: _THREADS.submit(then))
+            if isinstance(cut_short, asyncio.CancelledError):
+                raise
             raise TimeoutError(
                 f"{getattr(fn, '__name__', 'the call')}() did not return within {timeout_s:g} s"
             ) from None
+
+    def _abandon_camera(self, name: str, camera: Any) -> Callable[[], None]:
+        """Make a camera whose open outlasted its deadline no longer this transport's, and give
+        back what lets go of it once that open has come back (`_let_go_late`).
+
+        It used to stay in `_cameras`, so the refusal's own close disconnected the same object
+        from a second thread while its open still ran in the first, and a later connect in the
+        same process, the MCP server's or the onboard service's, called connect on it again. Out
+        of `_cameras`, the close passes it over and a later connect builds a camera of its own."""
+        if self._cameras.get(name) is camera:
+            del self._cameras[name]
+        return functools.partial(self._let_go_late, name, camera)
+
+    def _let_go_late(self, name: str, camera: Any) -> None:
+        """Disconnect a camera abandoned in the middle of its open (`_abandon_camera`), on a
+        worker once that open has come back, where it did open. Nothing waits on this, so a
+        release that fails is said in the log, where the person at the arm reads it."""
+        try:
+            if not bool(getattr(camera, "is_connected", True)):
+                return
+            camera.disconnect()  # up.CAMERA_DISCONNECT
+        except Exception as e:
+            logger.warning(
+                "lerobot %s: the %s camera, abandoned while it opened, could not be let go of "
+                "once its open came back: %s: %s",
+                self.label,
+                name,
+                type(e).__name__,
+                e,
+            )
 
     async def _connect_cameras(self) -> None:
         """A camera the owner asked for and did not get is a refusal, not a warning.
@@ -2101,11 +2180,14 @@ class LeRobotReal:
             try:
                 if spec.name not in self._cameras:
                     self._cameras[spec.name] = await asyncio.to_thread(self._build_camera, spec)
+                camera = self._cameras[spec.name]
                 # warmup reads frames before it returns (up.CAMERA_CONNECT); an index that
                 # will not open raises here, with upstream's own instructions in it
                 # (up.OPENCV_OPEN_FAILS)
                 await self._camera_call(
-                    self._cameras[spec.name].connect, timeout_s=self.camera_connect_s
+                    camera.connect,
+                    timeout_s=self.camera_connect_s,
+                    abandon=functools.partial(self._abandon_camera, spec.name, camera),
                 )
             except AdapterNotInstalled:
                 raise
@@ -2196,15 +2278,52 @@ class LeRobotReal:
         that reads it (`up.SO_DISCONNECT_READS_ITS_CONFIG_LATE`). One refusal changed with
         that: a transport connected again after a close that kept torque used to carry that
         close's flag into this disconnect, and keep the arm energised with nothing said, and
-        now lets go like any other."""
+        now lets go like any other.
+
+        The refusal says, after its reason, what became of the torque (`_given_up`): nothing has
+        read where the arm stands, and it may be up, held there by a close that kept its torque.
+        It used to say the reason alone, and a disconnect that raised went unread under
+        `suppress`, so a joint whose torque-off LeRobot could not confirm was left holding with
+        nobody told which."""
         await self._close_cameras()
-        with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):  # read back below, as the close reads it
             self._robot.config.disable_torque_on_disconnect = True
+        # what the disconnect will do, read back rather than assumed; a config that cannot be
+        # read is taken to release, as the close takes it
+        releases: bool | None = None
         with contextlib.suppress(Exception):
+            releases = bool(self._robot.config.disable_torque_on_disconnect)
+        failed: Exception | None = None
+        try:
             # the close's own budget for the same torque-off, which tries every motor on
             # LeRobot 0.7.0 (DISCONNECT_S)
             await self._call(self._robot.disconnect, deadline_s=DISCONNECT_S)
-        raise TransportError(why)
+        except Exception as e:
+            failed = e
+        raise TransportError(f"{why}. {self._given_up(releases, failed)}")
+
+    def _given_up(self, releases: bool | None, failed: Exception | None) -> str:
+        """What a refused connect's disconnect did to the arm's torque, as `_give_up` says it:
+        let go everywhere (`REFUSED_LIMP`), everywhere but the joints its torque-off named
+        (`REFUSED_LIMP_NAMED`, as the close's `_release_not_known` names them), not known
+        (`REFUSED_TORQUE_NOT_KNOWN`), or kept, where the flag that asks for the release did not
+        take (`REFUSED_TORQUE_KEPT`)."""
+        if releases is False:
+            return REFUSED_TORQUE_KEPT
+        if failed is None:
+            return REFUSED_LIMP
+        motors = getattr(getattr(self._robot, "bus", None), "motors", None)
+        stuck = torque_failed_on(str(failed))
+        if not stuck or _every_motor(stuck, motors):
+            return REFUSED_TORQUE_NOT_KNOWN
+        joints = [_named(n, motors)[1] for n in stuck]
+        one = len(joints) == 1
+        return REFUSED_LIMP_NAMED.format(
+            joints=_listed(joints),
+            writes="write" if one else "writes",
+            said=self._quoted(failed),
+            they="it" if one else "they",
+        )
 
     async def close(self) -> None:
         """Let go of the arm, and let go of its torque only where it can be let go of.
@@ -2963,18 +3082,26 @@ class LeRobotReal:
             return f"the policy was not started: {why}"
         return None
 
-    def _unsafe_to_drive(self) -> str | None:
+    def _unsafe_to_drive(self, *, gripper_only: bool = False) -> str | None:
         """What in the last reading of the registers rules out another goal, or None: a body
         joint at or above this arm's own limit (`_hot_c`), or torque off on any motor. What
-        becomes of the policy is the caller's to say."""
-        if hot := self.hot_joints:
+        becomes of the policy, or of a verb's move (`verbs._drive`), is the caller's to say.
+
+        `gripper_only` judges the one motor the gripper's verbs send goals to, and its torque
+        alone: its heat is never judged (`hot_joints`), and no precondition gates those verbs on
+        the body's, because opening the jaws is how an arm that is hot or tripped puts down what
+        it holds."""
+        if not gripper_only and (hot := self.hot_joints):
             worst = max(hot, key=lambda joint: self._temperature_c.get(joint, 0.0))
             return (
                 f"{worst} reads {self._temperature_c[worst]:.0f}°C, and Roboglot moves no joint at "
                 f"or above {self._hot_c():g}°C: let the arm cool"
             )
+        judged = ("gripper",) if gripper_only else JOINTS
         if not self._torque:
-            off = [j for j in JOINTS if j in self._joints and j not in self._torque_on]
+            off = [j for j in judged if j in self._joints and j not in self._torque_on]
+            if gripper_only and not off:
+                return None
             where = f" on {', '.join(off)}" if off else ""
             return (
                 f"torque reads off{where}, so a goal would reach a limp servo, and a servo that "
@@ -2985,9 +3112,9 @@ class LeRobotReal:
     async def _run_policy(self, segment: Segment, ready: asyncio.Future[None]) -> SegmentEnd:
         """One policy segment, `pick`'s or `manipulate`'s, in the policy task: its start here,
         and its ticks in the policy loop (`PolicyLoop.run`), until something is held, the
-        policy is done, its time or its chunks run out, the arm stops moving under
-        `manipulate`, the policy starves, a guard ends it or something else cancels it. Roboglot
-        only says which verb, and holds the arm to its rules.
+        policy is done, its time or its chunks run out, the arm stops moving under a segment
+        that stalls (`Segment.stalls_at`), the policy starves, a guard ends it or something else
+        cancels it. Roboglot only says which verb, and holds the arm to its rules.
 
         It starts with a reading of its own, registers and all, which the `do` waits on: one
         that rules the segment out ends it `refused` before the policy is reset or asked for
@@ -3292,8 +3419,11 @@ class LeRobotReal:
                 await self._send(body, clip=False)
         except Exception as e:
             # the core `stop` verb reads this and refuses to say "stopped" over a hold that
-            # never reached the arm; a wedged call has already set its own, better, reason
-            if self.stop_error is None:
+            # never reached the arm; a wedged call has already set its own, better, reason. One
+            # an earlier stop left, with no call still out, is that stop's and not this one's:
+            # a verb that ends on this stop quotes it as its own (`verbs._held_or_not`)
+            wedged = self._wedged is not None and not self._wedged.done()
+            if self.stop_error is None or not wedged:
                 self.stop_error = f"the hold did not reach the arm: {type(e).__name__}: {e}"
             raise
         self.stop_error = None
@@ -3880,11 +4010,10 @@ class LeRobotReal:
             previous = {j: joints[j] for j in goal if j in joints}
             if still >= STALL_TICKS:
                 # hold, so the servo stops pushing at a goal it has been told it cannot reach
-                with contextlib.suppress(Exception):
-                    await self._hold()
+                stopped = await self._rest_hold()
                 return RestResult(
                     "stalled",
-                    f"{shortfall(goal, joints, recorded)}, and it has stopped moving",
+                    f"{shortfall(goal, joints, recorded)}, and it has stopped moving{stopped}",
                     # whether the hold's own read came back: an arm that went silent as it
                     # stalled is nothing a person can be told is holding itself up
                     answered=self._answered,
@@ -3892,13 +4021,30 @@ class LeRobotReal:
                     # under the stall stops moving because it has no torque, not against a hand
                     limp=self._limp_joints(),
                 )
-        with contextlib.suppress(Exception):
-            await self._hold()
+        stopped = await self._rest_hold()
         return RestResult(
             "timeout",
-            f"{shortfall(goal, joints, recorded)} when the time ran out ({budget_s:.0f} s)",
+            f"{shortfall(goal, joints, recorded)} when the time ran out ({budget_s:.0f} s)"
+            f"{stopped}",
             answered=self._answered,
             limp=self._limp_joints(),
+        )
+
+    async def _rest_hold(self) -> str:
+        """The hold a rest move that did not arrive ends with, and what to add to its reason:
+        nothing where the hold reached the arm, and where it did not, that it could not be
+        delivered and why, in the words a verb's stop is said in
+        (`roboglot.verbs.core._unstopped`), with what the arm is left doing. It went out under
+        `suppress` and its `stop_error` was never read, so a fold that stalled against a hand
+        said only that the joint had stopped moving, and a person was asked to clear its way,
+        while the servo went on pushing toward the rest pose."""
+        with contextlib.suppress(Exception):  # said through `stop_error`, below
+            await self._hold()
+        if not self.stop_error:
+            return ""
+        return (
+            ", but the rest move's stop could not be delivered, so the arm may still be pushing "
+            f"toward its rest pose: {self.stop_error}"
         )
 
     def _limp_joints(self) -> tuple[str, ...]:
