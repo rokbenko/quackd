@@ -2173,6 +2173,142 @@ async def test_a_backends_own_timeout_is_recorded_by_its_type_alone(how: str) ->
     assert stepper.errors == 1
 
 
+def _held_laya(
+    monkeypatch: pytest.MonkeyPatch, *, load: Any = None, passes: Any = None
+) -> tuple[Any, Any, dict[str, int]]:
+    """Laya in this process with its load, its forward pass or both held on a `threading.Event`
+    the test releases, and a count of the threads inside each at their peak.
+
+    Held on an event rather than slept, so that which turns the work outlasts is the test's
+    choice and never the machine's speed. Each wait is bounded by `UNTIL_WITHIN_S`, so a test
+    that fails before it releases its events leaves no thread holding the process open. A pass
+    is counted where `_predict` is entered, before its lock, so a thread waiting on the lock
+    counts as one inside: counted inside the lock, the pile-up would never show."""
+    import threading
+
+    from tests import fake_laya
+    from tests.support import UNTIL_WITHIN_S
+
+    peak = {"load": 0, "pass": 0}
+    inside = {"load": 0, "pass": 0}
+    lock = threading.Lock()
+
+    def counted(what: str, work: Any) -> Any:
+        with lock:
+            inside[what] += 1
+            peak[what] = max(peak[what], inside[what])
+        try:
+            return work()
+        finally:
+            with lock:
+                inside[what] -= 1
+
+    class Held(fake_laya.FakeRouter):
+        def __call__(self, **kwargs: Any) -> Any:
+            def built() -> Any:
+                if load is not None:
+                    load.wait(UNTIL_WITHIN_S)
+                return super(Held, self).__call__(**kwargs)
+
+            return counted("load", built)
+
+        def predict(self, state: Any, questions: Any, model: Any = None) -> Any:
+            if passes is not None:
+                passes.wait(UNTIL_WITHIN_S)
+            return super().predict(state, questions, model)
+
+    router = fake_laya.install(monkeypatch, Held(answers=fake_laya.turn("report_state")))
+    from roboglot.agent.decision.factory import make_decision_llm
+
+    llm: Any = make_decision_llm(PRESETS["laya"])
+    real = llm._predict
+    llm._predict = lambda state, questions: counted("pass", lambda: real(state, questions))
+    return llm, router, peak
+
+
+def _laya_threads() -> list[Any]:
+    """The threads Laya's load and passes run on, by the names `laya.py` gives them."""
+    import threading
+
+    return [t for t in threading.enumerate() if t.name.startswith("laya-") and t.is_alive()]
+
+
+async def test_a_load_the_turns_bound_overtook_is_kept_and_the_turns_meanwhile_say_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Under `roboglot run` the first turn loads the weights inside the stepper's second. The
+    bound cancelled the await and abandoned the load in its thread, the router it built was
+    never kept, and every later turn started another full load: the decision LLM in the process
+    never answered at all. Now the load goes on to its end once and is kept, a turn while it
+    runs starts nothing and says why it got no answer, and the first turn after it is answered.
+    """
+    import threading
+
+    from roboglot.agent.decision.base import LOAD_STILL_RUNNING
+    from tests.support import until_async
+
+    release = threading.Event()
+    llm, router, peak = _held_laya(monkeypatch, load=release)
+    stepper, adapter, _manifest = await _arm(llm=llm)
+    try:
+        said = []
+        for _ in range(3):
+            advice = await stepper.advise(await _observation(adapter), budget=BUDGET, cleared=True)
+            said.append(advice.record.get("error"))
+        assert said == [
+            f"TimeoutError: no answer within {TIMEOUT_S:.1f} s",
+            f"Busy: {LOAD_STILL_RUNNING}",
+            f"Busy: {LOAD_STILL_RUNNING}",
+        ]
+        assert peak["load"] == 1, f"{peak['load']} loads ran at once"
+        release.set()
+        await until_async(lambda: not _laya_threads(), what="the held load ended")
+        answered = await stepper.advise(await _observation(adapter), budget=BUDGET, cleared=True)
+    finally:
+        release.set()
+        await adapter.disconnect()
+    assert router.loads == 1
+    assert answered.gate != "error" and "error" not in answered.record, answered.record
+
+
+async def test_a_pass_the_turns_bound_overtook_starts_no_thread_behind_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A forward pass that outlasts the stepper's second went on in its worker holding the lock,
+    and each later turn started another thread that waited on that lock where no cancel reaches,
+    which filled the default executor the frame save, the detector and name lookups share. Now
+    a turn while a pass runs starts nothing and says so, at most one pass exists at a time,
+    counted at its peak rather than after the last turn, and the turn after it is answered."""
+    import threading
+
+    from roboglot.agent.decision.base import PASS_STILL_RUNNING
+    from tests.support import until_async
+
+    release = threading.Event()
+    llm, router, peak = _held_laya(monkeypatch, passes=release)
+    await llm.warm()
+    stepper, adapter, _manifest = await _arm(llm=llm)
+    try:
+        said = []
+        for _ in range(3):
+            advice = await stepper.advise(await _observation(adapter), budget=BUDGET, cleared=True)
+            said.append(advice.record.get("error"))
+        assert said == [
+            f"TimeoutError: no answer within {TIMEOUT_S:.1f} s",
+            f"Busy: {PASS_STILL_RUNNING}",
+            f"Busy: {PASS_STILL_RUNNING}",
+        ]
+        assert peak["pass"] == 1, f"{peak['pass']} threads were inside _predict at once"
+        release.set()
+        await until_async(lambda: not _laya_threads(), what="the held pass ended")
+        answered = await stepper.advise(await _observation(adapter), budget=BUDGET, cleared=True)
+    finally:
+        release.set()
+        await adapter.disconnect()
+    assert len(router.calls) == 2
+    assert answered.gate != "error" and "error" not in answered.record, answered.record
+
+
 def test_roboglots_own_words_about_a_reply_are_kept_and_nobody_elses() -> None:
     """A reply Roboglot could not read is described in Roboglot's own words, by the type of what
     came back, and those words quote nothing, so the record keeps them: a page that was not JSON and

@@ -125,6 +125,40 @@ async def test_a_failure_and_a_question_out_of_its_second_are_gates_and_not_rais
     assert late.gate == "timeout" and "no answer within" in late.record["error"]
 
 
+async def test_a_line_while_layas_pass_still_runs_starts_no_thread_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fast lane bounds its question as the stepper does, and a Laya pass that outlasted
+    that bound went on holding its lock: every line typed after it started one more thread that
+    waited on the lock where no cancel reaches. Now a line while the pass runs starts nothing,
+    goes to the pilot as any failed question does, and its record says why. The pass is held on
+    an event, so it outlasts the bound whatever the machine's speed."""
+    import threading
+
+    from roboglot.agent.decision.base import PASS_STILL_RUNNING
+    from tests.support import UNTIL_WITHIN_S
+
+    release = threading.Event()
+
+    class Held(fake_laya.FakeRouter):
+        def predict(self, state: Any, questions: Any, model: Any = None) -> Any:
+            release.wait(UNTIL_WITHIN_S)
+            return super().predict(state, questions, model)
+
+    fake_laya.install(monkeypatch, Held(answers=_said("sit", 0.95)))
+    llm = make_decision_llm(PRESETS["laya"])
+    await llm.warm()  # type: ignore[attr-defined]
+    monkeypatch.setattr(commands, "TIMEOUT_S", 0.01)
+    chooser = _chooser(llm)
+    try:
+        late = await chooser.choose("sit", "")
+        meanwhile = await chooser.choose("sit", "")
+    finally:
+        release.set()
+    assert late.gate == "timeout"
+    assert (meanwhile.gate, meanwhile.record["error"]) == ("error", f"Busy: {PASS_STILL_RUNNING}")
+
+
 async def test_laya_warms_its_weights_once_and_a_failed_load_waits_for_decide(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

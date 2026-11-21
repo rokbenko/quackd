@@ -1440,6 +1440,43 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
   `north-mini-code-1-0`, its changelog entry's address, and it is priced at $0 now that its own
   page says it is free on trial and production keys alike.
+- **OpenRouter's LLM list is read up to a bound on its size, and its reader stops with the
+  refusal.** The list behind `--llm openrouter:` an id Roboglot does not carry was read whole, with
+  no cap on its size. A run waited ten seconds for it and was refused, but the thread reading it
+  was left behind, not stopped, and went on reading a body that did not end into memory for as
+  long as the server kept sending, and a long-lived caller that builds a provider per goal, the
+  onboard service, left one more such thread at every attempt. The read now stops at 8 MiB, room
+  for 2,048 entries of 4 KiB each, more than four times the LLMs the list named when it was first
+  read, with the refusal `sent an LLM list
+  longer than 8,388,608 bytes, so the LLM could not be checked against it`, and at its ten
+  seconds, and either way its thread ends and closes its connection. A list that fits is read and
+  used as before.
+- **Laya, the decision LLM in this process, answers under `roboglot run` once its weights are
+  loaded.** The first turn loaded the weights inside the stepper's one second. The bound cancelled
+  the wait and abandoned the load in its thread, the weights it loaded were never kept, and every
+  later turn started another full load, so the decision LLM never answered a turn of the run. A
+  load the bound overtook now goes on to its end once and is kept, and the first turn after it is
+  answered. And a forward pass slower than the bound used to go on holding its lock while every
+  later turn, in the stepper and in `roboglot drive`'s fast lane, started another thread that
+  waited behind it, could not be cancelled, and held a place in the pool the frame save, the
+  detector and name lookups share. While a load or a pass no turn is still waiting for runs now, a turn starts
+  nothing behind it, goes to the pilot LLM as `gate: error`, and its record says `Busy: the load
+  of the decision LLM's weights was still running` or `Busy: a forward pass an earlier turn
+  started was still running` where it said `TimeoutError: no answer within 1.0 s`. In
+  `roboglot drive`'s fast lane such a line's gate is now `error` where it was `timeout`, because
+  it is refused at once and its second never runs out; the pilot takes the line either way. A
+  decision LLM that answers inside its second is asked and answered as before.
+- **Two writers of one robot's memory at once no longer damage notes already saved.** Every
+  write went through the same temporary file name, so a run beside the MCP server, or two
+  terminals, writing at the same moment shared one file. On Windows their bytes interleaved and
+  the file put in place lost notes saved before, in silence; on POSIX one writer's rename raised,
+  and the pilot was told it could not remember a note that had landed. Each write now has a
+  temporary file of its own beside the memory file and replaces the file with it in one step,
+  removes it on every path, and tells the pilot what happened to its own note. A writer killed
+  between its write and its replace leaves its file, so each write first removes the ones beside
+  the memory file older than a minute, as the registry's writes do, and leaves a younger one,
+  which may be a live writer's. Two writers that each read, change and write the file at the
+  same moment can still lose one of the two new notes, as documented.
 - **Rates and statuses read again on 2026-11-14.** Gemini 4 Carbon and Argon carry the rate their
   page prints from 2026-12-01, since the introductory one ends sixteen days after the read. Eleven
   Qwen rows carry the cached-input rate their own pages now print, OpenAI's Decisions API prices its

@@ -117,6 +117,23 @@ class UnreadableReply(ValueError):
     a turn on the record rather than a sentence before the robot connects."""
 
 
+class Busy(Exception):
+    """A decision LLM in this process still at work an earlier turn started, which the record
+    keeps in Roboglot's own words.
+
+    The turn's bound cancels the wait for a load or a forward pass, never the work itself, which
+    goes on in its thread. A turn that started another behind it would only add a thread that
+    waits where no cancel reaches, so a turn asked while one runs is refused at once, says which
+    of the two was still running, and goes to the pilot as any failed turn does."""
+
+
+LOAD_STILL_RUNNING = "the load of the decision LLM's weights was still running"
+"""What a turn asked while the load an earlier turn started is still running says."""
+
+PASS_STILL_RUNNING = "a forward pass an earlier turn started was still running"
+"""What a turn asked while a forward pass an earlier turn started is still running says."""
+
+
 @runtime_checkable
 class DecisionLLM(Protocol):
     """One decision LLM, however it is reached.
