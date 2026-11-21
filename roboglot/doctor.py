@@ -2689,9 +2689,22 @@ def run_doctor(
     # The switch, taken down, leaves `safety.AfterTheClose` on Ctrl-C for the rest of the process,
     # which is right for the command, whose process ends next, and wrong for a library's caller:
     # a press swallowed for a while, and then the process ended under it. So the caller gets back
-    # the handler it had, on every way out of here. `AfterTheClose.not_stuck_yet`, which the
-    # command calls before its table, is for that handler, so there is nothing here for it to do.
+    # the handler it had the moment the switch comes down, in the probe's `after_close`, and not
+    # only once `collect` has read the extras and the pins after it, where a press more than
+    # `safety.OUTSTAYED_S` after the close still ended the process; and again on every way out of
+    # here. `AfterTheClose.not_stuck_yet`, which the command calls before its table, is for that
+    # handler, so there is nothing here for it to do.
     found = signal.getsignal(signal.SIGINT)
+
+    def callers_handler_back() -> None:
+        on_main = threading.current_thread() is threading.main_thread()
+        if found is not None and on_main and signal.getsignal(signal.SIGINT) is not found:
+            signal.signal(signal.SIGINT, found)
+
+    def finish() -> None:
+        hands.finish()
+        callers_handler_back()
+
     try:
         report = collect(
             robot,
@@ -2704,12 +2717,9 @@ def run_doctor(
             before_connect=warn,
             park=hands.park,
             before_close=hands.before_close,
-            after_close=hands.finish,
+            after_close=finish,
         )
     finally:
-        hands.finish()
-        on_main = threading.current_thread() is threading.main_thread()
-        if found is not None and on_main and signal.getsignal(signal.SIGINT) is not found:
-            signal.signal(signal.SIGINT, found)
+        finish()
     render(console, report)
     return report.ok

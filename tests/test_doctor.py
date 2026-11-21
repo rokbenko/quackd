@@ -1831,6 +1831,58 @@ def test_run_doctor_leaves_its_callers_ctrl_c_as_it_found_it(
     assert signal.getsignal(signal.SIGINT) is before
 
 
+class _Ended(BaseException):
+    """What `os._exit` does in the test below, in place of ending the test's process."""
+
+
+def test_run_doctor_never_ends_its_callers_process_while_it_runs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The caller's Ctrl-C handler came back only once `collect` had finished, so from the
+    probe's close through the extras, the adapters' rows and the upstream pins, imports that can
+    take seconds, `safety.AfterTheClose` held Ctrl-C, and a press more than `OUTSTAYED_S` after
+    the close ended the library caller's process with `os._exit(130)`. This catches it by reading
+    the handler from inside that stretch (`doctor._upstreams`, the last thing `collect` asks),
+    ageing it by `OUTSTAYED_S` as a slow import would, and calling it as a function, with
+    `os._exit` made a raise, and by checking the caller's own handler is the one in place."""
+    import signal
+
+    from roboglot import cli, safety
+
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter",
+        lambda *_a, **_k: LeRobotAdapter(LeRobotMock(rest_pose=dict(AWAY_FROM_REST))),
+    )
+
+    async def instant() -> None:
+        return None
+
+    def ended(code: int) -> None:
+        raise _Ended(code)
+
+    monkeypatch.setattr(cli, "_hands_away", instant)
+    monkeypatch.setattr(safety.os, "_exit", ended)
+    before = signal.getsignal(signal.SIGINT)
+    real_upstreams = doctor._upstreams
+    seen: list[str] = []
+
+    def upstreams() -> Any:
+        handler = signal.getsignal(signal.SIGINT)
+        if handler is not before:
+            seen.append(f"Ctrl-C is {handler!r} while collect runs")
+        if isinstance(handler, safety.AfterTheClose):
+            handler.since -= safety.OUTSTAYED_S
+            try:
+                handler(signal.SIGINT, None)
+            except _Ended as e:
+                seen.append(f"a press here ends the process with {e.args[0]}")
+        return real_upstreams()
+
+    monkeypatch.setattr(doctor, "_upstreams", upstreams)
+    doctor.run_doctor(Console(file=io.StringIO(), width=200), "lerobot:mock", address="mock://arm")
+    assert seen == [], seen
+
+
 def test_run_doctor_asks_the_commands_question_before_it_lets_go(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

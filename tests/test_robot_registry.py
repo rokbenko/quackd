@@ -293,6 +293,39 @@ def test_a_later_write_removes_a_dead_writers_temporary_file_and_never_a_live_on
     assert not list(tmp_path.glob("robots.json.*.tmp"))
 
 
+def test_a_temporary_file_that_cannot_be_removed_is_said_by_its_age_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """On Windows the removal of a file a writer still has open is refused, and a live writer's
+    file can look older than the bound when its clock, or a share's, is behind: stderr called it
+    "a write that did not finish" while that write was still going. This catches it with an aged
+    temporary file whose removal is refused: the write goes on, and the warning says only what
+    is known, its age."""
+    import os
+    import time
+
+    import roboglot.registry as registry
+
+    path = tmp_path / "robots.json"
+    held = tmp_path / "robots.json.0123456789abcdef.tmp"
+    held.write_text("{}", encoding="utf-8")
+    old = time.time() - registry.STALE_TEMP_S - 1
+    os.utime(held, (old, old))
+    real_unlink = Path.unlink
+
+    def refused(self: Path, missing_ok: bool = False) -> None:
+        if self == held:
+            raise PermissionError(13, "The process cannot access the file", str(self))
+        real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", refused)
+    registry.write_json(path, {"robots": {}}, private=True)
+    said = capsys.readouterr().err
+    assert f"could not remove {held}, a temporary file that looks older than 60 s" in said, said
+    assert "did not finish" not in said
+    assert held.exists() and json.loads(path.read_text(encoding="utf-8")) == {"robots": {}}
+
+
 def test_the_directory_is_the_flag_then_the_env_then_the_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

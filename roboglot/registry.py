@@ -186,7 +186,13 @@ def _sweep_stale_temporaries(path: Path) -> None:
         except FileNotFoundError:
             continue  # another write removed it first, or its writer renamed it
         except OSError as e:
-            _say_on_stderr(f"warning: could not remove {left}, a write that did not finish: {e}")
+            # not "a write that did not finish": on Windows the removal is refused because a
+            # writer still has the file open, its clock or the share's behind, so only its age
+            # is known
+            _say_on_stderr(
+                f"warning: could not remove {left}, a temporary file that looks older than "
+                f"{STALE_TEMP_S:g} s: {e}"
+            )
 
 
 def _not_owner_only(fd: int) -> str | None:
