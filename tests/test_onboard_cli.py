@@ -40,6 +40,9 @@ from roboglot.passport import document
 from roboglot.radio import NoRadio
 from tests.linux_board_fixtures import DRAGON_Q6A, UBUNTU_24
 
+# this file builds services: the real end of the process stays out of the run of tests' reach
+from tests.test_onboard_service import no_real_end_of_process  # noqa: F401
+
 runner = CliRunner()
 PASSPHRASE = "a passphrase for these tests only"
 COURIER = "g1-edu-mock"
@@ -538,6 +541,30 @@ def test_sign_says_so_when_the_running_service_will_not_take_it(
     assert "serves it from now on" not in said
     monkeypatch.setattr("roboglot.cli._tell_service", lambda _home, _op: {"ok": True})
     assert "serves it from now on" in flat(runner.invoke(app, argv).output)
+
+
+def test_sign_says_so_when_the_running_service_could_not_serve_it(
+    tmp_path: Path, robot_file: Path, secret: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A passport signed while talk was off, whose talk then could not start (a fixed port
+    another program holds), was answered as any other, and sign said the running service served
+    it from now on with no passport server running. The service says now that it does not, and
+    why, and sign and the wizard say so too."""
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    argv = ["onboard", "sign", "--board", "sim", "--dir", str(home)]
+    argv += ["--passphrase-file", str(secret)]
+    why = "talk could not start: address already in use"
+
+    def unserved(_home: Any, _op: Any) -> dict[str, Any]:
+        return {"ok": True, "pins": 0, "unserved": why}
+
+    monkeypatch.setattr("roboglot.cli._tell_service", unserved)
+    said = flat(runner.invoke(app, argv).output)
+    assert f"the running service does not serve it: {why}" in said
+    assert "serves it from now on" not in said
+    wizard = flat(onboard(tmp_path / "another", robot_file, secret).output)
+    assert f"the running service does not serve it: {why}" in wizard
 
 
 def test_the_wizard_says_so_when_the_running_service_will_not_take_it(
@@ -1313,6 +1340,31 @@ def test_what_needs_a_service_says_none_is_running(
         assert answered.exit_code == 1, (words, answered.output)
     served = runner.invoke(app, ["onboard", "serve", "--board", "sim", "--dir", str(tmp_path)])
     assert served.exit_code == 1 and "no robot here" in flat(served.output)
+
+
+def test_stop_says_the_run_stopped_only_once_the_service_saw_it_end(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`roboglot onboard stop` printed "stopped the run in hand" as soon as the service had
+    posted the stop. It says so now only when the service saw the run end; otherwise that the
+    run was told to stop and has not ended yet, and, to a service from before that does not
+    say, only that it was told."""
+    from roboglot import cli
+
+    told = "told the run in hand to stop"
+    for reply, said in (
+        ({"ev": "stopped", "was": True, "ended": True}, "stopped the run in hand"),
+        (
+            {"ev": "stopped", "was": True, "ended": False},
+            f"{told}, and it has not ended yet: roboglot onboard status shows when it has",
+        ),
+        ({"ev": "stopped", "was": True}, told),
+        ({"ev": "stopped", "was": False}, "nothing was running"),
+    ):
+        monkeypatch.setattr(cli, "_tell_service", lambda _home, _op, reply=reply: reply)
+        answered = runner.invoke(app, ["onboard", "stop", "--dir", str(tmp_path / "robot")])
+        assert answered.exit_code == 0, answered.output
+        assert flat(answered.output).endswith(said), (reply, answered.output)
 
 
 def test_the_demo_asks_which_brain_before_it_starts_anything(tmp_path: Path) -> None:

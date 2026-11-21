@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import json
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,11 @@ import pytest
 
 from roboglot.onboard import brain, config, control
 from roboglot.onboard.brain import COOLDOWN_S, LINGER_S, RunSlot
+
+#: The most any test here waits on a thread, a run or a condition: an outcome, never a timing.
+WAIT_S = 10.0
+#: How long a stuck meeting holds out unless released: longer than the slot ever waits for one.
+STUCK_S = 3 * WAIT_S
 
 
 class Executor:
@@ -88,6 +94,15 @@ def wait_idle(s: RunSlot) -> None:
         assert not running.thread.is_alive()
 
 
+def wait_until(check: Any, seconds: float = WAIT_S) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if check():
+            return True
+        time.sleep(0.01)
+    return bool(check())
+
+
 def test_a_robot_near_an_idle_robot_starts_a_meeting_and_a_second_one_joins_it() -> None:
     s = slot()
     assert s.robot_near("did:a", "known") == "a meeting starts"
@@ -110,6 +125,127 @@ def test_a_goal_takes_the_slot_from_a_meeting_and_never_from_a_goal() -> None:
     assert "joins the goal" in s.robot_near("did:c", "known")
     s.stop()
     wait_idle(s)
+
+
+class Stuck(Run):
+    """A meeting whose teardown does not end on its abort, as one in a body connect that does not
+    read the abort, or a state read with no deadline, does: it ends when the test releases it."""
+
+    def __init__(self, glot: Any, kind: str, release: threading.Event) -> None:
+        super().__init__(glot, kind)
+        self.release = release
+
+    async def run(self) -> Any:
+        await asyncio.to_thread(self.release.wait, STUCK_S)
+        return type("Result", (), {"outcome": "aborted", "reason": self.stop_reason})()
+
+
+def hooked_slot(release: threading.Event, calls: list[str]) -> RunSlot:
+    """A slot whose meetings are `Stuck` and whose hooks say which run held and let go."""
+
+    def make(glot: Any, kind: str, front: Any) -> Run:
+        calls.append(f"made({kind})")
+        return Stuck(glot, kind, release) if kind == "meeting" else Run(glot, kind)
+
+    return RunSlot(
+        robot_file(),
+        make,
+        safe_verbs=lambda: ["report_state", "stop"],
+        holding=lambda agent: calls.append(f"holding({agent.kind})"),
+        released=lambda: calls.append("released"),
+    )
+
+
+def test_a_goal_never_runs_beside_a_meeting_that_has_not_stopped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A goal stopped the meeting in hand, waited for it and then started whether it had ended or
+    not: two runs on one body, the meeting's teardown sending its own stop in the middle of the
+    goal, and its released hook clearing the courtesy the goal's holding hook had just set. A
+    meeting still running when the wait is over refuses the goal now, with a reason that says so,
+    and stays the slot's one run."""
+    monkeypatch.setattr(brain, "MEETING_STOPS_S", 0.2)
+    release, calls = threading.Event(), []
+    s = hooked_slot(release, calls)
+    try:
+        assert s.robot_near("did:a", "known") == "a meeting starts"
+        meeting = s.running
+        assert s.goal("Wait by the door.") == brain.STILL_STOPPING
+        assert meeting is not None and meeting.thread is not None and meeting.thread.is_alive()
+        assert s.running is meeting and s.state()["run"] == "meeting"
+    finally:
+        release.set()
+        wait_idle(s)
+    assert calls == ["made(meeting)", "holding(meeting)", "released"]
+
+
+def test_the_slot_answers_while_a_goal_waits_for_its_meeting_to_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """goal() waited for the meeting it stopped while it held the slot's lock, so status, stop,
+    the service's tick and a robot coming near all waited with it, for as long as the meeting
+    took, and `roboglot onboard status` and `stop` gave up on a service that was running. They
+    answer now while the goal waits, no meeting starts in the gap, and once the meeting ends
+    the goal holds the body after the meeting let go of it, never before."""
+    monkeypatch.setattr(brain, "MEETING_STOPS_S", WAIT_S)
+    release, calls = threading.Event(), []
+    s = hooked_slot(release, calls)
+    answers: list[str | None] = []
+    giver = threading.Thread(target=lambda: answers.append(s.goal("Wait by the door.")))
+    try:
+        s.robot_near("did:a", "known")
+        meeting = s.running
+        assert meeting is not None
+        giver.start()
+        assert wait_until(lambda: meeting.stop_wanted == brain.FOR_A_GOAL)
+        meanwhile: list[Any] = []
+        other = threading.Thread(
+            target=lambda: meanwhile.extend(
+                [s.state()["run"], s.tick(), s.robot_near("did:b", "known"), s.goal("Another.")]
+            )
+        )
+        other.start()
+        other.join(WAIT_S)
+        assert not other.is_alive() and giver.is_alive(), "the slot waited with the goal"
+        assert meanwhile == ["meeting", None, brain.NO_MEETING_FOR_A_GOAL, brain.GOAL_WAITING]
+        release.set()
+        giver.join(WAIT_S)
+        assert answers == [None] and s.state()["run"] == "goal"
+        assert wait_until(lambda: "holding(goal)" in calls)
+        assert calls == [
+            "made(meeting)",
+            "holding(meeting)",
+            "released",
+            "made(goal)",
+            "holding(goal)",
+        ]
+    finally:
+        release.set()
+        if giver.ident is not None:
+            giver.join(WAIT_S)
+        s.stop()
+        wait_idle(s)
+
+
+def test_a_run_that_is_no_longer_the_slots_changes_nothing_of_the_one_that_is() -> None:
+    """The released hook of a run the slot no longer held cleared the courtesy the slot's run had
+    set, so every pause a robot met asked for was refused while that run moved the body. Its
+    hooks now act only while it is the slot's run; here another run is put in its place by hand,
+    as the slot itself no longer lets happen."""
+    release, calls = threading.Event(), []
+    s = hooked_slot(release, calls)
+    try:
+        s.robot_near("did:a", "known")
+        meeting = s.running
+        assert meeting is not None and wait_until(lambda: "holding(meeting)" in calls)
+        s.running = brain.Running("goal", "goal", 0.0, set(), Run(None, "goal"))
+        release.set()
+        assert meeting.thread is not None
+        meeting.thread.join(WAIT_S)
+        assert not meeting.thread.is_alive()
+        assert calls == ["made(meeting)", "holding(meeting)"]
+    finally:
+        release.set()
 
 
 def test_meetings_are_bounded_by_the_hour_by_robot_and_by_strangers() -> None:
@@ -174,6 +310,92 @@ def test_only_a_client_with_the_token_is_answered(tmp_path: Path) -> None:
         server.close()
 
 
+def test_a_client_that_trickles_bytes_inside_every_read_timeout_is_cut_off_after_hello_s(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cut-off meant to give the hello and the op `HELLO_S` in all closed the socket from
+    a timer, which only marked it closed while the connection's two files held it open, and the
+    read went on. So a client without the token that sent a byte inside every per-read timeout
+    kept its slot for as long as it liked, and eight of them turned away status, stop and goal.
+    This one sends a byte every 0.6 x `HELLO_S`, never a newline, for six times `HELLO_S`."""
+    import socket
+    import time
+
+    hello_s = 1.0
+    monkeypatch.setattr(control, "HELLO_S", hello_s)
+    server = control.ControlServer(lambda op, conn: {"ev": "ok"}, hello={"robot": "r"})
+    server.start(tmp_path / "control.json")
+    slow = socket.create_connection(("127.0.0.1", server.port), timeout=WAIT_S)
+    slow.settimeout(0.6 * hello_s)
+    started, cut_at = time.monotonic(), None
+    try:
+        while cut_at is None and time.monotonic() - started < 6 * hello_s:
+            try:
+                slow.sendall(b"x")
+                data = slow.recv(100)
+            except TimeoutError:
+                continue  # nothing came back: still connected, still holding its slot
+            except OSError:
+                data = b""
+            if data == b"" or b"refused" in data:
+                cut_at = time.monotonic() - started
+        assert cut_at is not None, f"still connected after {6 * hello_s:g} s of trickling"
+        assert wait_until(lambda: server._clients._value == control.CLIENTS)  # type: ignore[attr-defined]
+    finally:
+        with contextlib.suppress(OSError):
+            slow.close()
+        server.close()
+
+
+@pytest.mark.parametrize("op_lands", ["just before the cut-off", "just as the cut-off fires"])
+def test_an_op_is_either_handled_and_answered_or_cut_off_and_never_handled(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, op_lands: str
+) -> None:
+    """The cut-off was cancelled only once the op had been read, and a timer already firing
+    cannot be cancelled: an op read just as it fired was handled, a goal started or a run
+    stopped, while its client was cut off and told the service had not answered. When the op
+    lands as the cut-off fires, the read here holds the moment between the op's read and its
+    acceptance open until the cut has happened; when it lands before, `HELLO_S` is longer than
+    the test. Nothing waits on a clock: the test waits for the cut, and for the connection's
+    slot to come back, which is when its handler, if any, has run."""
+    late = op_lands == "just as the cut-off fires"
+    monkeypatch.setattr(control, "HELLO_S", 0.5 if late else WAIT_S * 10)
+    cut, real_cut, real_read = threading.Event(), control._cut, control.Connection.read
+
+    def cutting(sock: Any) -> None:
+        real_cut(sock)
+        cut.set()
+
+    def read(self: Any) -> Any:
+        got = real_read(self)
+        if late and not isinstance(self, control._Client) and got and got.get("op") == "status":
+            cut.wait(WAIT_S)  # the op is read; the cut-off fires before it is accepted
+        return got
+
+    monkeypatch.setattr(control, "_cut", cutting)
+    monkeypatch.setattr(control.Connection, "read", read)
+    handled: list[str] = []
+    server = control.ControlServer(
+        lambda op, conn: handled.append(str(op.get("op"))) or {"ev": "status"},
+        hello={"robot": "r"},
+    ).start(tmp_path / "control.json")
+    try:
+        try:
+            reply: Any = control.request(
+                tmp_path / "control.json", {"op": "status"}, timeout=WAIT_S
+            )
+        except control.ControlError as e:
+            reply = e
+        # the connection's slot comes back once its thread is done, a handler and all
+        assert wait_until(lambda: server._clients._value == control.CLIENTS)  # type: ignore[attr-defined]
+        if late:
+            assert isinstance(reply, control.ControlError) and handled == [], (reply, handled)
+        else:
+            assert reply == {"ev": "status"} and handled == ["status"], (reply, handled)
+    finally:
+        server.close()
+
+
 def test_with_no_service_running_a_client_is_told_so(tmp_path: Path) -> None:
     with pytest.raises(control.ControlError, match="no service is running"):
         control.request(tmp_path / "control.json", {"op": "status"})
@@ -230,6 +452,26 @@ def test_a_stop_takes_back_the_question_a_goal_waits_on() -> None:
         assert front.questions.closed == "stopped by roboglot onboard stop"
     finally:
         hold.set()
+
+
+def test_a_stop_says_whether_the_run_it_stopped_has_ended() -> None:
+    """`roboglot onboard stop` said "stopped the run in hand" as soon as the stop was posted, so a
+    run whose stop had not landed, or whose teardown was still sending, read as stopped. The
+    slot waits now for the run it stopped, a bound at most and holding nothing the slot needs,
+    and says whether it ended: whether there was a run, and whether it has ended."""
+    s = slot()
+    assert s.stop_and_wait(WAIT_S) == (False, True)
+    s.robot_near("did:a", "known")
+    assert s.stop_and_wait(WAIT_S) == (True, True)
+    release, calls = threading.Event(), []
+    stuck = hooked_slot(release, calls)
+    try:
+        stuck.robot_near("did:a", "known")
+        assert stuck.stop_and_wait(0.2) == (True, False)
+        assert stuck.state()["run"] == "meeting"
+    finally:
+        release.set()
+        wait_idle(stuck)
 
 
 def test_a_client_that_says_hello_slowly_is_cut_off_and_a_goals_reads_wait(

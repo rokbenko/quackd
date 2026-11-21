@@ -103,6 +103,9 @@ class BlueZRadio:
         self._lifecycle = asyncio.Lock()
         self._tasks: set[asyncio.Task[None]] = set()
         self._stopped = False
+        #: whether BlueZ's signals reach this radio on its bus: true only once the handler is in,
+        #: so a bring-up cut short before that listens again when it is tried again
+        self._listening = False
         self._status = RadioStatus("off", "bluez", adapter=adapter, detail="not started")
 
     # ── Radio ────────────────────────────────────────────────────────────────────────────
@@ -117,9 +120,12 @@ class BlueZRadio:
         self._advert, self._advert_at = advert, time.monotonic()
         self._on_sighting, self._on_link = on_sighting, on_link
         self._stopped = False
+        # the watchdog before the first bring-up: a start its caller cuts off, BlueZ slow at
+        # boot, leaves a radio that is down, and that is tried again like any other
+        if self._watchdog is None or self._watchdog.done():
+            self._watchdog = asyncio.get_running_loop().create_task(self._watch())
         async with self._lifecycle:
             await self._bring_up()
-        self._watchdog = asyncio.get_running_loop().create_task(self._watch())
         return self.status()
 
     async def set_advert(self, advert: bytes) -> None:
@@ -184,6 +190,7 @@ class BlueZRadio:
         if self._bus is not None:
             self._bus.disconnect()
             self._bus = None
+            self._listening = False
         self._status = RadioStatus("off", "bluez", adapter=self.adapter, detail="stopped")
 
     def status(self) -> RadioStatus:
@@ -234,7 +241,9 @@ class BlueZRadio:
             except RadioUnavailable as e:
                 self._set(e.state, e.detail, e.hint)
                 return
+        if not self._listening:
             await self._listen(self._bus)
+            self._listening = True
         found = self._probe = await probe(self._bus, self.adapter)
         if found.state not in ("ready", "degraded"):
             self._set(found.state, found.detail, found.hint)
