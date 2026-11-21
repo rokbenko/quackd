@@ -210,6 +210,12 @@ def _the_run(runs: Path) -> Path:
     return run
 
 
+_HANG_S = 300.0
+"""How long a test of a press waits for the event it asserts: the suite's own hang bound
+(`faulthandler_timeout`), so only a hang runs it out. Shorter waits ran out on a machine under
+load, where nothing had hung."""
+
+
 def _notes(run: Path) -> list[str]:
     return [e["text"] for e in Transcript.read(run / "transcript.jsonl") if e["kind"] == "note"]
 
@@ -400,11 +406,11 @@ async def _pressed_during_fold(
     session = asyncio.ensure_future(
         run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for((held or folds.folding).wait(), 30)
+    await asyncio.wait_for((held or folds.folding).wait(), _HANG_S)
     session.cancel()
     if then is not None:
         then()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.done(), "the session never ended"
     return session, folds, said, _the_run(runs)
 
@@ -463,9 +469,9 @@ async def test_a_press_the_opening_fold_loses_still_ends_the_session_there(
     session = asyncio.ensure_future(
         run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for(folding.wait(), 30)
+    await asyncio.wait_for(folding.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.cancelled(), "the session went on past the press"
     assert not [line for line in said if line.startswith("drive ")], said
     assert len(arms) == 1, "the arm was folded again"
@@ -506,6 +512,66 @@ async def test_a_press_on_the_close_after_a_missed_opening_fold_says_the_refusal
     assert notes.index(refusal) < notes.index(CONNECTS_CLOSE_PRESSED), notes
     assert any(refusal in line for line in said), said
     assert not folds.arm.connected and str(folds.arm.close_note) in notes, notes
+
+
+async def test_a_press_on_the_close_after_a_rest_move_that_raised_says_the_refusal_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A body whose rest move raises, which `go_to_rest_if_any` turns into a fold that missed:
+    the connect closes the arm before it refuses the session, and a press lands on that close. The
+    fold was watched beginning and never ending, so the press was said to have stopped it, and the
+    refusal was lost, as for a fold that missed by stalling. The stand-in is the arm's adapter's
+    own rest move raising, as a third party's that does not catch its backend's error would."""
+    from roboglot.drive.run import CONNECTS_CLOSE_PRESSED
+    from roboglot_lerobot import LeRobotAdapter
+
+    async def raising(_adapter: Any) -> Any:
+        raise RuntimeError("the rest move's first read raised")
+
+    monkeypatch.setattr(LeRobotAdapter, "go_to_rest", raising)
+    reading, released = _hold_the_close_read(monkeypatch)
+    session, _folds, _said, run = await _pressed_during_fold(
+        tmp_path, monkeypatch, fold=0, held=reading, then=released.set
+    )
+    assert session.cancelled()
+    notes = _notes(run)
+    refusal = (
+        "arm-01: the arm did not reach its rest pose: "
+        "RuntimeError: the rest move's first read raised"
+    )
+    assert FOLD_STOPPED not in notes, "a rest move that raised is said to have been stopped"
+    assert notes.index(refusal) < notes.index(CONNECTS_CLOSE_PRESSED), notes
+
+
+@pytest.mark.parametrize("ending", ["nobody", "pressed-in-the-fold"])
+async def test_watching_the_opening_fold_leaves_the_adapter_as_it_found_it(
+    ending: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The opening fold is watched by wrapping the adapter's rest move for the connect alone
+    (`_watching_the_fold`). An adapter with no `go_to_rest` of its own, as every shipped one is,
+    must have none after the session, however it ended: a wrapper left behind would be read as the
+    opening fold by anything that folded the arm later."""
+    import roboglot.mcp_server as mcp_server
+
+    plan_of, adapters = mcp_server.team_from_flags, []
+
+    def planned(*args: Any, **kwargs: Any) -> Any:
+        plan = plan_of(*args, **kwargs)
+        adapters.extend(plan.adapters.values())
+        return plan
+
+    monkeypatch.setattr(mcp_server, "team_from_flags", planned)
+    if ending == "nobody":
+        _Folds(monkeypatch, hold_on=0)
+        registry = _arm_with_a_rest_pose(tmp_path)
+        args = DriveArgs(
+            robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(tmp_path)
+        )
+        await run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
+    else:
+        await _pressed_during_fold(tmp_path, monkeypatch, fold=1)
+    (adapter,) = adapters
+    assert "go_to_rest" not in vars(adapter), vars(adapter)["go_to_rest"]
 
 
 async def test_a_press_during_the_closing_fold_holds_the_arm_and_the_session_still_ends(
@@ -562,11 +628,11 @@ async def test_a_second_press_while_the_hold_is_out_still_says_what_became_of_it
     session = asyncio.ensure_future(
         run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for(folds.folding.wait(), 30)
+    await asyncio.wait_for(folds.folding.wait(), _HANG_S)
     session.cancel()  # the first press, on the closing fold
-    await asyncio.wait_for(stopping.wait(), 30)
+    await asyncio.wait_for(stopping.wait(), _HANG_S)
     session.cancel()  # the second, while the hold is on its way
-    await asyncio.wait({session}, timeout=60)
+    await asyncio.wait({session}, timeout=_HANG_S)
     released.set()
     assert session.cancelled()
     notes = _notes(_the_run(runs))
@@ -603,9 +669,9 @@ async def test_a_closing_fold_that_will_not_end_when_told_is_never_said_to_have_
     session = asyncio.ensure_future(
         run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for(folding.wait(), 30)
+    await asyncio.wait_for(folding.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=60)
+    await asyncio.wait({session}, timeout=_HANG_S)
     let_go.set()
     assert session.cancelled(), "the session waited on a fold that would not end"
     notes = _notes(_the_run(runs))
@@ -658,12 +724,14 @@ async def test_a_press_during_the_transports_close_lets_that_close_end_and_says_
 async def test_a_close_still_going_after_its_bound_is_said_and_left_to_end(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A close that has not ended `CLOSE_AFTER_A_PRESS_S` after a press is not waited for longer:
-    the person is told Roboglot cannot tell what it did, the record still ends, and the close is
-    left to end by itself. The bound is made nothing here, so no clock decides the test."""
+    """A close that has not ended as long after a press as the body says its close can take
+    (`close_bound_s`) is not waited for longer: the person is told Roboglot cannot tell what it
+    did, in that figure, the record still ends, and the close is let go of. The arm's figure is
+    made nothing here, so no clock decides the test, and the line saying it shows drive read it."""
     import roboglot.drive.run as drive_run
+    from roboglot_lerobot.mock import LeRobotMock
 
-    monkeypatch.setattr(drive_run, "CLOSE_AFTER_A_PRESS_S", 0.0)
+    monkeypatch.setattr(LeRobotMock, "close_bound_s", property(lambda _arm: 0.0))
     reading, released = _hold_the_close_read(monkeypatch)
     session, folds, _said, run = await _pressed_during_fold(
         tmp_path, monkeypatch, fold=0, held=reading
@@ -676,8 +744,55 @@ async def test_a_close_still_going_after_its_bound_is_said_and_left_to_end(
     left = set(drive_run._CLOSES_LEFT)
     assert left, "the close was not left to end by itself"
     released.set()
-    await asyncio.wait(left, timeout=30)
+    await asyncio.wait(left, timeout=_HANG_S)
     assert not folds.arm.connected and not drive_run._CLOSES_LEFT
+
+
+@pytest.mark.parametrize("ends", ["cancelled", "raised"])
+async def test_a_close_cut_short_after_a_press_is_never_said_to_have_ended(
+    ends: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A close a press landed on was said to have gone on to its end whenever its task was done,
+    and a task asyncio cancelled is done, as every task is that `asyncio.Runner.close` cancels
+    after a second real Ctrl-C, and so is one whose close raised: the arm stayed connected and
+    energised, with no close note, under a line saying the close had ended. Only a close that
+    returned is said to have; one cut short or failed is said not to have finished, and what to
+    do. The stand-in is the arm's close's read, held until the press and then cancelled with
+    every other task, or let go to raise."""
+    from roboglot.drive.run import CLOSE_CUT_SHORT, CLOSED_THROUGH_A_PRESS
+    from roboglot_lerobot.mock import LeRobotMock
+
+    reading, released = asyncio.Event(), asyncio.Event()
+
+    async def read(arm: Any) -> Any:
+        reading.set()
+        await released.wait()
+        raise ConnectionError("the bus went quiet")
+
+    monkeypatch.setattr(LeRobotMock, "_not_resting", read)
+    folds = _Folds(monkeypatch, hold_on=0)
+    registry = _arm_with_a_rest_pose(tmp_path)
+    runs = tmp_path / "runs"
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    session = asyncio.ensure_future(
+        run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
+    )
+    await asyncio.wait_for(reading.wait(), _HANG_S)
+    session.cancel()
+    if ends == "raised":
+        released.set()
+    else:
+        for _ in range(20):  # the press taken first, then what `Runner.close` does
+            await asyncio.sleep(0)
+        for task in asyncio.all_tasks() - {asyncio.current_task()}:
+            task.cancel()
+    await asyncio.wait({session}, timeout=_HANG_S)
+    assert session.done()
+    why = "it was cancelled" if ends == "cancelled" else "ConnectionError: the bus went quiet"
+    notes = _notes(_the_run(runs))
+    assert CLOSED_THROUGH_A_PRESS not in notes, notes
+    assert CLOSE_CUT_SHORT.format(why=why) in notes, notes
+    assert folds.arm.connected, "the stand-in keeps the close from its disconnect"
 
 
 async def test_a_press_on_the_closes_stop_keeps_the_closing_fold_from_starting(
@@ -745,7 +860,7 @@ async def test_a_press_the_heartbeats_stop_takes_still_keeps_the_closing_fold_fr
 
     class _QuitOnceBeating(io.StringIO):
         def readline(self, size: int | None = -1) -> str:
-            beating.wait(30)
+            beating.wait(_HANG_S)
             return super().readline()
 
     monkeypatch.setattr(LeRobotMock, "heartbeat", held_beat)
@@ -755,9 +870,9 @@ async def test_a_press_the_heartbeats_stop_takes_still_keeps_the_closing_fold_fr
     session = asyncio.ensure_future(
         run_drive(args, say=lambda _: None, stream=_QuitOnceBeating("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for(told.wait(), 30)
+    await asyncio.wait_for(told.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.cancelled(), "the press the heartbeat's stop took was not raised again"
     assert folds.calls == 1, "the closing fold started after the press"
     events = Transcript.read(_the_run(runs) / "transcript.jsonl")
@@ -804,9 +919,9 @@ async def test_a_press_on_the_closes_stop_where_nothing_folds_says_nothing_of_a_
     session = asyncio.ensure_future(
         run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
     )
-    await asyncio.wait_for(stopping.wait(), 30)
+    await asyncio.wait_for(stopping.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     events = Transcript.read(_the_run(runs) / "transcript.jsonl")
     notes = {e["text"] for e in events if e["kind"] == "note"}
     assert closed[0] == 1 and events[-1]["kind"] == "run_end", (closed, events[-1])
@@ -870,15 +985,50 @@ async def test_a_press_while_the_page_closes_its_commands_keeps_the_closing_fold
     front = Front(Channel(io.StringIO()), "drive")
     args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
     session = asyncio.ensure_future(run_drive(args, say=say, front=front))
-    await asyncio.wait_for(ready.wait(), 30)
+    await asyncio.wait_for(ready.wait(), _HANG_S)
     front.on_op({"op": "stop"})
-    await asyncio.wait_for(stopping.wait(), 30)
+    await asyncio.wait_for(stopping.wait(), _HANG_S)
     front.on_op({"op": "quit"})
-    await asyncio.wait_for(closing.wait(), 30)
+    await asyncio.wait_for(closing.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.cancelled()
     assert folds.calls == 1, "the closing fold started after the press"
+    _held_back_and_success(_the_run(runs))
+
+
+async def test_the_pages_stop_while_the_page_closes_its_commands_raises_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The page's Stop while the page's front end closes its commands, which wait here on a
+    brake's stop still on its way, is a press during the close, and keeps the fold from starting.
+    No Ctrl-C was made, so nothing may leave the session: a bare cancel there, which asyncio has
+    no Ctrl-C to turn into an interrupt, would be a traceback where the session had ended as
+    asked."""
+    from roboglot.front import Channel, Front
+
+    stopping, closing = _a_brake_on_its_way(monkeypatch)
+    folds = _Folds(monkeypatch, hold_on=0)
+    registry = _arm_with_a_rest_pose(tmp_path)
+    runs = tmp_path / "runs"
+    ready = asyncio.Event()
+
+    def say(line: str) -> None:
+        if line.startswith("drive "):
+            ready.set()
+
+    front = Front(Channel(io.StringIO()), "drive")
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    session = asyncio.ensure_future(run_drive(args, say=say, front=front))
+    await asyncio.wait_for(ready.wait(), _HANG_S)
+    front.on_op({"op": "stop"})
+    await asyncio.wait_for(stopping.wait(), _HANG_S)
+    front.on_op({"op": "quit"})
+    await asyncio.wait_for(closing.wait(), _HANG_S)
+    front.on_op({"op": "stop"})
+    await asyncio.wait({session}, timeout=_HANG_S)
+    assert session.done() and not session.cancelled() and session.exception() is None
+    assert folds.calls == 1, "the closing fold started after the Stop"
     _held_back_and_success(_the_run(runs))
 
 
@@ -914,9 +1064,9 @@ async def test_the_pages_stop_during_the_opening_fold_stops_it_as_a_press_does(
     from roboglot.drive.run import PAGE_STOP_WHILE_CONNECTING, DriveError
 
     session, folds, front, runs, _ready = await _page_session(tmp_path, monkeypatch, fold=1)
-    await asyncio.wait_for(folds.folding.wait(), 30)
+    await asyncio.wait_for(folds.folding.wait(), _HANG_S)
     front.on_op({"op": "stop"})
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.done() and isinstance(session.exception(), DriveError), session
     assert str(session.exception()) == PAGE_STOP_WHILE_CONNECTING
     assert folds.calls == 1, "the fold the Stop stopped was started again"
@@ -930,6 +1080,31 @@ async def test_the_pages_stop_during_the_opening_fold_stops_it_as_a_press_does(
     )
 
 
+async def test_the_pages_stop_before_the_connect_says_nothing_of_an_arm(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A Stop the page sent before the session began refuses it before anything connects. The
+    same Stop also reached the session's own reader, ran at its first wait, in its close, and was
+    taken there for a press on the close: the person was told that an arm nothing had connected
+    to was holding where it stopped. It ends the session in the page's words, and says nothing of
+    an arm."""
+    from roboglot.agent.loop import AgentLoop
+    from roboglot.drive.run import DriveError
+    from roboglot.front import Channel, Front
+
+    folds = _Folds(monkeypatch, hold_on=0)
+    registry = _arm_with_a_rest_pose(tmp_path)
+    runs = tmp_path / "runs"
+    said: list[str] = []
+    front = Front(Channel(io.StringIO()), "drive")
+    front.on_op({"op": "stop"})
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    with pytest.raises(DriveError, match="the page's Stop came before the robot connected"):
+        await run_drive(args, say=said.append, front=front)
+    assert folds.calls == 0 and AgentLoop.HELD_BACK not in _notes(_the_run(runs))
+    assert not [line for line in said if line.startswith("brake")], said
+
+
 async def test_the_pages_stop_during_the_closing_fold_stops_it_as_a_press_does(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -937,11 +1112,11 @@ async def test_the_pages_stop_during_the_closing_fold_stops_it_as_a_press_does(
     stopped nothing and the arm went on to its pose. It stops the fold now as a Ctrl-C does, and
     the session, which ended as asked, ends as one: nothing is raised."""
     session, folds, front, runs, ready = await _page_session(tmp_path, monkeypatch, fold=2)
-    await asyncio.wait_for(ready.wait(), 30)
+    await asyncio.wait_for(ready.wait(), _HANG_S)
     front.on_op({"op": "quit"})
-    await asyncio.wait_for(folds.folding.wait(), 30)
+    await asyncio.wait_for(folds.folding.wait(), _HANG_S)
     front.on_op({"op": "stop"})
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.done() and not session.cancelled() and session.exception() is None
     sequence = folds.arm.sequence
     closing = len(sequence) - 1 - sequence[::-1].index("rest")
@@ -975,11 +1150,11 @@ async def test_a_press_while_the_keyboard_closes_its_commands_keeps_the_closing_
         args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
         session = asyncio.ensure_future(run_drive(args, say=lambda _: None, keyboard=True))
         typed.send_text("stop\r")
-        await asyncio.wait_for(stopping.wait(), 30)
+        await asyncio.wait_for(stopping.wait(), _HANG_S)
         typed.send_text("quit\r")
-        await asyncio.wait_for(closing.wait(), 30)
+        await asyncio.wait_for(closing.wait(), _HANG_S)
         session.cancel()
-        await asyncio.wait({session}, timeout=30)
+        await asyncio.wait({session}, timeout=_HANG_S)
     assert session.cancelled()
     assert folds.calls == 1, "the closing fold started after the press"
     _held_back_and_success(_the_run(runs))
@@ -999,10 +1174,10 @@ async def test_a_press_while_a_pipe_closes_its_commands_keeps_the_closing_fold_f
     session = asyncio.ensure_future(
         run_drive(args, say=lambda _: None, stream=io.StringIO("stop\nquit\n"), keyboard=False)
     )
-    await asyncio.wait_for(stopping.wait(), 30)
-    await asyncio.wait_for(closing.wait(), 30)
+    await asyncio.wait_for(stopping.wait(), _HANG_S)
+    await asyncio.wait_for(closing.wait(), _HANG_S)
     session.cancel()
-    await asyncio.wait({session}, timeout=30)
+    await asyncio.wait({session}, timeout=_HANG_S)
     assert session.cancelled()
     assert folds.calls == 1, "the closing fold started after the press"
     _held_back_and_success(_the_run(runs))

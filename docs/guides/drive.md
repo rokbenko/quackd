@@ -227,9 +227,10 @@ which the session folds as it opens and as it closes, it also brakes what it lan
   brake    the fold the session opened with did not stop for the press and went on to its end, so the session ends here, and nothing folds the arm again
   ```
 
-- a press on the close the session makes when its opening fold missed says the refusal it was
-  making, `the arm did not reach its rest pose`, and then `the press came as the session was
-  closing the arm after that, and the close is made again here`;
+- a press on the close the session makes when its opening fold missed, whether the fold stalled
+  or the rest move raised, says the refusal it was making, `the arm did not reach its rest pose`,
+  and then `the press came as the session was closing the arm after that, and the close is made
+  again here`;
 - a press while the session is closing, before its fold has begun, keeps the fold from
   starting, at the keyboard, on the page and from a pipe alike:
 
@@ -238,17 +239,21 @@ which the session folds as it opens and as it closes, it also brakes what it lan
   ```
 
 A press on the robot's own close does not cut it short, since the close is what lets go of
-torque or keeps it. The close goes on to its end, and drive says `the press came as the robot's
-transport was closing, and the close went on to its end`; one still going 30 seconds after the
-press is said to be, with Roboglot unable to tell what it did, and is waited for no longer. A
-later press while the stop that holds the arm is on its way waits for that stop too, and drive
-says what became of it where it was not answered.
+torque or keeps it. The close goes on to its end, and where it returned drive says `the press
+came as the robot's transport was closing, and the close went on to its end`. A close that was
+cut short anyway, as asyncio cuts every task short after a second Ctrl-C, or that raised, is said
+not to have finished, `the robot's transport did not finish closing`, with Roboglot unable to
+tell what it did. So is one still going as long after the press as the body says its close can
+take, which the arm counts from each of its cameras, its read and its disconnect, and that close
+is waited for no longer. A later press while the stop that holds the arm is on its way waits for
+that stop too, and drive says what became of it where it was not answered.
 
 The record still ends with its `run_end` and its `summary.json`, whose outcome is how the session
-ended, and a Ctrl-C then ends the process as a Ctrl-C does. The page's Stop during the connect
-ends the session as a Stop before it does, refused, and during the close as the session had
-ended. A session reading a pipe or a file ends its process once it has closed, whether or not
-another line is on its way.
+ended, and a Ctrl-C then ends the process as a Ctrl-C does. A Stop from the page before the
+connect ends the session before anything connects, refused, and says nothing of an arm; during
+the connect it ends the session the same way, and during the close as the session had ended. A
+session reading a pipe or a file ends its process once it has closed, whether or not another line
+is on its way.
 
 The prompt needs a terminal for its input and for its output. With either piped or redirected,
 drive reads lines one at a time, each waited for, as from a pipe.

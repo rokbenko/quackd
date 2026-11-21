@@ -791,8 +791,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the close's line names the fold that was stopped. A press the fold does not hear, as Python
   3.11's `asyncio.wait_for` can lose one, opened the session as if nobody had pressed: it ends the
   session there now, and says the fold went on to its end. A press on the close the session makes
-  after an opening fold that missed was said to have stopped a fold, and the refusal the session
-  was making was lost: both are said now, the refusal and that the press came on that close.
+  after an opening fold that missed, by stalling or by a rest move that raised, was said to have
+  stopped a fold, and the refusal the session was making was lost: both are said now, the refusal
+  and that the press came on that close.
 - **A Ctrl-C while `roboglot drive` closes no longer skips the rest of the close.** Once the
   prompt had closed, a press during the closing stop or fold went past every step after it: the
   transport was never closed, the arm was left energised partway through its fold with nothing
@@ -800,8 +801,10 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   during the fold now stops it, holds the arm with a stop and says so, and one before the fold
   keeps it from starting and says the arm was not folded, at the keyboard and on the page as from
   a pipe. A press on the transport's own close no longer cuts it short: the close goes on to its
-  end, and the session says the press came, or, where it is still going 30 seconds later, that
-  Roboglot cannot tell what it did. A later press while the stop that holds the arm is on its way
+  end, and the session says the press came, or, where the close was cut short anyway, raised, or
+  is still going as long after the press as the body says its close can take, that Roboglot
+  cannot tell what it did. The arm counts that from each of its cameras, its read and its
+  disconnect. A later press while the stop that holds the arm is on its way
   no longer loses what became of that stop. The record ends as any session's does.
 - **The page's Stop stops an arm's fold in a `roboglot drive` session.** The page's front end
   reads its Stops only while the session runs, so a Stop while the robot connected, or once the

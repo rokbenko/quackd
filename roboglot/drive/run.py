@@ -13,6 +13,7 @@ import asyncio
 import contextlib
 import functools
 import logging
+import math
 import re
 import sys
 import time
@@ -202,11 +203,26 @@ def _cancels() -> int:
 
 
 CLOSE_AFTER_A_PRESS_S = 30.0
-"""How long the robot's close is waited for once a press has landed on it. The close is what lets
-go of an arm's torque or keeps it, so a press does not cut it short; every shipped body bounds its
-own close, and the longest, the arm's, is its cameras' 10 s, a 1 s read of where it is and its
-disconnect's 15 s, which this outlasts. A close still going after it is said, and waited for no
-longer: as the session raises, `asyncio.run` cancels it with every other task."""
+"""How long the close of a body that does not say how long its close can take is waited for once
+a press has landed on it (`_close_bound_s`). Such a body closes a socket or a link, which ends at
+once; the arm, whose close releases its cameras one after another and then reads and lets go of
+the arm, says its own figure."""
+
+
+def _close_bound_s(transport: Any) -> float:
+    """How long the robot's close is waited for once a press has landed on it. The close is what
+    lets go of an arm's torque or keeps it, so a press does not cut it short; it is waited for as
+    long as the body says its close can take (`close_bound_s`, the arm's counted from its cameras,
+    its read and its disconnect, where one fixed figure counted a single camera), or
+    `CLOSE_AFTER_A_PRESS_S` for a body that does not say. Counted from the press, which comes after
+    the close began, so the close has less than that left by then. A close still going after it is
+    said, and waited for no longer: as the session raises, `asyncio.run` cancels it with every
+    other task."""
+    said = getattr(transport, "close_bound_s", None)
+    if isinstance(said, int | float) and not isinstance(said, bool) and 0 <= said < math.inf:
+        return float(said)
+    return CLOSE_AFTER_A_PRESS_S
+
 
 CLOSED_THROUGH_A_PRESS = (
     "the press came as the robot's transport was closing, and the close went on to its end, since "
@@ -218,8 +234,15 @@ CLOSE_NOT_ENDED = (
     "the robot's transport had not finished closing {seconds:g} s after the press, so Roboglot "
     "cannot tell what the close did: keep clear of the robot, and cut its power"
 )
-"""Said, and recorded, when a close a press landed on was still going `CLOSE_AFTER_A_PRESS_S`
-later."""
+"""Said, and recorded, when a close a press landed on was still going as long after the press as
+the close can take (`_close_bound_s`)."""
+
+CLOSE_CUT_SHORT = (
+    "the robot's transport did not finish closing ({why}), so Roboglot cannot tell what the close "
+    "did: keep clear of the robot, and cut its power"
+)
+"""Said, and recorded, when a close a press landed on was cancelled or raised before it returned:
+`why` is which."""
 
 FOLD_DID_NOT_STOP = (
     "the fold the session opened with did not stop for the press and went on to its end, so the "
@@ -235,8 +258,7 @@ CONNECTS_CLOSE_PRESSED = (
 the close the connect makes before it refuses the session."""
 
 _CLOSES_LEFT: set[asyncio.Future[Any]] = set()
-"""A close still going past `CLOSE_AFTER_A_PRESS_S`, held until it ends or the loop's close
-cancels it."""
+"""A close still going past `_close_bound_s`, held until it ends or the loop's close cancels it."""
 
 
 def _close_left_ended(closing: asyncio.Future[Any]) -> None:
@@ -308,7 +330,13 @@ def _watching_the_fold(transport: Any) -> Iterator[_FoldSeen]:
 
     async def watched() -> Any:
         seen.began = True
-        result = await move()
+        try:
+            result = await move()
+        except Exception as e:
+            # a move that raised ended as `go_to_rest_if_any` ends it, a fold refused with the
+            # error, and was read as one a press stopped where it had ended by raising
+            seen.ended = RestResult("refused", f"{type(e).__name__}: {e}")
+            raise
         seen.ended = result if isinstance(result, RestResult) else None
         return result
 
@@ -425,15 +453,21 @@ async def _close_robot(
             tell(said)
     # to its end through a press, which used to cut it short where it landed: the arm stayed
     # connected and energised, and the close's line, which `FOLD_STOPPED` promises, never came
-    closing, during = await _to_its_end(robot.transport.close(), bound_s=CLOSE_AFTER_A_PRESS_S)
+    bound = _close_bound_s(robot.transport)
+    closing, during = await _to_its_end(robot.transport.close(), bound_s=bound)
     if during is not None:
         pressed = pressed or during
-        ended = closing.done()
-        tell(
-            CLOSED_THROUGH_A_PRESS
-            if ended
-            else CLOSE_NOT_ENDED.format(seconds=CLOSE_AFTER_A_PRESS_S)
-        )
+        # only a close that returned went on to its end: one asyncio cancelled, as its runner
+        # cancels every task after a second Ctrl-C, or one that raised is done as well, and was
+        # said to have ended over an arm still connected and energised
+        if not closing.done():
+            tell(CLOSE_NOT_ENDED.format(seconds=bound))
+        elif closing.cancelled():
+            tell(CLOSE_CUT_SHORT.format(why="it was cancelled"))
+        elif (error := closing.exception()) is not None:
+            tell(CLOSE_CUT_SHORT.format(why=f"{type(error).__name__}: {error}"))
+        else:
+            tell(CLOSED_THROUGH_A_PRESS)
     if not closing.done():
         _CLOSES_LEFT.add(closing)
         closing.add_done_callback(_close_left_ended)
@@ -681,6 +715,7 @@ async def run_drive(
     opening_fold_stopped: str | None = None
     opening_refused: str | None = None
     closed_on: BaseException | None = None
+    connecting = False
     try:
         halted = front.halted() if front is not None else None
         if halted is not None:
@@ -690,7 +725,7 @@ async def run_drive(
         from roboglot.release import FOLD_STOPPED
 
         presses = _cancels()
-        folding[0] = True
+        folding[0] = connecting = True
         with _watching_the_fold(adapter) as fold:
             try:
                 await robot.connect()
@@ -886,7 +921,10 @@ async def run_drive(
         ending = sys.exc_info()[1]
         cancels = _cancels()
         pressed: BaseException | None = closed_on
-        folding[0] = True
+        # the page's Stop is a press in the close only where the robot began to connect: one sent
+        # before it has refused the session already, and taken again here it said an arm nothing
+        # had connected to was holding where it stopped
+        folding[0] = connecting
 
         def tell(text: str) -> None:
             """A line for the person who pressed, which the record keeps as a run's keeps it."""

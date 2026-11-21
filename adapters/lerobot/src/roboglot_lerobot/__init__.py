@@ -349,6 +349,13 @@ class LeRobotAdapter:
         return str(note) if note else None
 
     @property
+    def close_bound_s(self) -> float | None:
+        """The longest `close()` can take, the transport's own figure (`LeRobotReal.close_bound_s`),
+        or None where it gives none. Proxied for `close_note`'s reason."""
+        bound = getattr(self.transport, "close_bound_s", None)
+        return float(bound) if isinstance(bound, int | float) else None
+
+    @property
     def connect_notes(self) -> tuple[str, ...]:
         """One sentence per connect attempt the backend had to make again, from the last
         `connect()`. Proxied for `close_note`'s reason: the run narrates them into its

@@ -2172,6 +2172,15 @@ class LeRobotReal:
             ) from e
         self.connect_notes.extend(str(note) for note in notes)
 
+    @property
+    def close_bound_s(self) -> float:
+        """The longest `close()` can take, from what it is made of: each camera released in turn,
+        under `camera_close_s` each (`_close_cameras`); the read of where the arm is that decides
+        its torque, under `timeout_s`; and the disconnect that lets go of it or keeps it, under
+        `DISCONNECT_S`. `roboglot drive` waits on a close a Ctrl-C landed on for this long, where
+        a figure that counted one camera ran out on an arm with two before its disconnect."""
+        return len(self._cameras) * self.camera_close_s + self.timeout_s + DISCONNECT_S
+
     async def _close_cameras(self) -> None:
         for camera in list(self._cameras.values()):
             with contextlib.suppress(Exception):
