@@ -102,6 +102,7 @@ from roboglot_lerobot.verbs import (
     PICK_SETTLE_S,
     STALL_DEG,
     TICK_S,
+    TOL_DEG,
     SegmentEnd,
     SegmentHow,
     SegmentStats,
@@ -148,10 +149,20 @@ behind any inference the last segment left on the runner's worker. A runner stil
 that is not handed the arm, and the segment is refused rather than started on a stale policy."""
 STALL_S = 1.0
 """How long every joint of the arm may read within `STALL_DEG` of where it was while the policy
-is sending, before `manipulate`'s segment ends on it, with the arm held: an arm that has stopped
-moving under a policy that is still sending is a policy that has done what it will do, or one
-pressing the arm on something it cannot move, whose last goal must not be left pushing a servo.
-Only ticks that sent count, so a policy starved of chunks is starving and not stalled."""
+is sending, before a segment that stalls ends on it (`Segment.stalls_at`), with the arm held: an
+arm that has stopped moving under a policy that is still sending is a policy that has done what it
+will do, or one pressing the arm on something it cannot move, whose last goal must not be left
+pushing a servo. Only ticks that sent count, so a policy starved of chunks is starving and not
+stalled."""
+PICK_STALL_TICKS = 2
+"""The fewest ticks `STALL_S` must span at a policy's rate for a `pick` to end on a stall as
+`manipulate` does (`Segment.stalls_at`). The stall rule compares each reading with the one it
+began counting from, and across a single tick a reading that has not moved is also what one goal
+sent where the arm already is gives, as the first goal of a reach often is: one tick cannot tell a
+position held from a tick that happened not to move. Two ticks in a row unmoved under two goals
+is the least that can. Below it, as at the band's lowest rate, where `STALL_S` is one tick, a
+pick runs to its time as it always did; `manipulate` ends on a stall at every rate, as it always
+has."""
 REFILL_LATENCIES = 2
 """How many of a chunked runner's declared latencies before its queue runs dry it is asked for
 its next chunk, where that is sooner than half the chunk (`refill_at`): one for the answer to
@@ -191,6 +202,55 @@ class Segment:
     def ends_on_stall(self) -> bool:
         """`manipulate` is done when the arm stops moving under it (`STALL_S`)."""
         return self.verb == "manipulate"
+
+    def stalls_at(self, period_s: float) -> bool:
+        """Whether this segment ends on a stall at a pacer's `period_s`: `manipulate` at every
+        rate (`ends_on_stall`), and `pick` where `STALL_S` spans `PICK_STALL_TICKS` ticks, and
+        then only pressed against something (`pressing`).
+
+        A `pick` ended only on something held, its time, its chunks or a guard, so one whose
+        policy pressed the arm into something it cannot move went on sending goals a step past
+        the reading, into joints with no torque cap, until its time was up. A stall ends it
+        now, held, and it is no grasp. A pick whose policy holds the arm where it is, by choice,
+        sends goals where the arm reads and is no stall, however long it holds. Its grasp is
+        not cut short either: the jaws closing are the arm moving to the stall rule, and once
+        they stop on something the tick's own read finds them settled, which is judged before
+        any stall is (`PolicyLoop._ticks`)."""
+        if self.ends_on_stall:
+            return True
+        ticks = STALL_S / period_s  # how many of the pacer's ticks a stall's second spans
+        return self.verb == "pick" and ticks >= PICK_STALL_TICKS - EXACT
+
+
+def pressing(
+    goals: Mapping[str, float],
+    joints: Mapping[str, float],
+    travel: Mapping[str, tuple[float, float]],
+) -> bool:
+    """Whether a tick's goals press the arm against something: a body joint sent a goal further
+    from where it reads than `TOL_DEG`, the shortfall the arm already allows a body joint. The
+    controller is P-only, so a loaded joint held still settles short of the goal a policy keeps
+    re-sending by up to that much, and that is a healthy hold, not a press. Over `STALL_S` of
+    ticks on which the arm also moved no further than the stall's bound (`STALL_DEG`), a goal
+    further off is a servo pushing and getting nowhere, which is what a `pick` stalls on
+    (`Segment.stalls_at`). The gripper is left out: squeezing what it holds is what a grasp is,
+    and LeRobot caps its torque and current, where the body joints have no cap
+    (`upstream_api.SO_BODY_HAS_NO_TORQUE_CAP`).
+
+    Each goal is judged as it is sent, clipped into its joint's `travel` as `_send` clips it. A
+    joint at the edge of its travel whose goal lies past the edge is sent the edge, where it
+    already is, and pushes on nothing: that is the clip guard's to end (`clipped_too_long`), and
+    judged before the clip it was taken for a press and ended a tick before that guard did."""
+    return any(
+        abs(_sent_as(goal, travel.get(joint)) - joints[joint]) > TOL_DEG
+        for joint, goal in goals.items()
+        if joint != "gripper" and joint in joints
+    )
+
+
+def _sent_as(goal: float, span: tuple[float, float] | None) -> float:
+    """`goal` clipped into `span`, as `LeRobotReal._clip` sends it, with nothing counted."""
+    return float(goal) if span is None else min(float(span[1]), max(float(span[0]), float(goal)))
 
 
 @dataclass(frozen=True)
@@ -677,7 +737,7 @@ class PolicyLoop:
                 # stall's clock starts there, which for a runner of one action at a time can be
                 # ticks after the reading it was judged on
                 sent_at = arm.now() if run.awaited else now
-                ended = await self._play(arm, run, segment, action, sent_at)
+                ended = await self._play(arm, run, segment, action, sent_at, plan.period_s)
                 if ended is not None:
                     return ended
             arm._tick_timing.add(time.perf_counter() - ticked)
@@ -913,8 +973,10 @@ class PolicyLoop:
         segment: Segment,
         action: Mapping[str, Any],
         now: float,
+        period_s: float,
     ) -> SegmentEnd | None:
-        """Judge this tick's action and send it, or end the segment on it."""
+        """Judge this tick's action and send it, or end the segment on it. `period_s` is the
+        pacer's, which says whether the segment stalls (`Segment.stalls_at`)."""
         goals, why = arm._policy_goals(action)
         if why is None:
             why = clipped_too_long(goals, run.clipped_since, now, arm.joint_range_deg)
@@ -937,25 +999,39 @@ class PolicyLoop:
         if sent:
             # what went out, after the clip and LeRobot's step cap, for the runner's next ask
             run.last_sent = dict(sent)
-        if segment.ends_on_stall:
-            return await self._stall(arm, run, now)
+        if segment.stalls_at(period_s):
+            # `manipulate` stalls on the arm not moving; a `pick` only on that pressed
+            # against something, every tick of the second (`pressing`)
+            pushed = (
+                None if segment.ends_on_stall else pressing(goals, arm._joints, arm.joint_range_deg)
+            )
+            return await self._stall(arm, run, now, pressing=pushed)
         return None
 
-    async def _stall(self, arm: LeRobotReal, run: _Run, now: float) -> SegmentEnd | None:
-        """End `manipulate` once every joint has read within `STALL_DEG` of where it was for
-        `STALL_S`, on ticks that sent, with the arm held where it is, as a verb's own stall
-        holds it (`verbs._drive`). An arm stopped by something in its way still has the
-        policy's last goal past it, and the servo would push on toward it through the pilot's
-        thinking. The hold leaves the gripper's goal alone, so a grasp keeps its squeeze. A hold
-        between chunks, one at a time, is left out of the second (`_idle`)."""
+    async def _stall(
+        self, arm: LeRobotReal, run: _Run, now: float, *, pressing: bool | None = None
+    ) -> SegmentEnd | None:
+        """End a segment that stalls (`Segment.stalls_at`), `manipulate`'s, and `pick`'s where
+        its rate lets a stall be told from one tick, once every joint has read within
+        `STALL_DEG` of where it was for `STALL_S`, on ticks that sent, with the arm held where it
+        is, as a verb's own stall holds it (`verbs._drive`). An arm stopped by something in its
+        way still has the policy's last goal past it, and the servo would push on toward it
+        through the pilot's thinking. The hold leaves the gripper's goal alone, so a grasp keeps
+        its squeeze. A hold between chunks, one at a time, is left out of the second (`_idle`).
+
+        `pressing` is `pick`'s, and False starts the second again: a tick whose goals are where
+        the arm reads is a policy holding it by choice, not one pushing it and getting nowhere.
+        None, as for `manipulate`, judges the arm's movement alone, as it always did."""
         if run.paused_at is not None:
             if run.still is not None:
                 run.still = (run.still[0] + now - run.paused_at, run.still[1])
             run.paused_at = None
         joints = {j: arm._joints[j] for j in JOINTS if j in arm._joints}
         anchor = run.still
-        if anchor is None or any(
-            abs(joints[j] - anchor[1].get(j, joints[j])) > STALL_DEG for j in joints
+        if (
+            anchor is None
+            or pressing is False
+            or any(abs(joints[j] - anchor[1].get(j, joints[j])) > STALL_DEG for j in joints)
         ):
             run.still = (now, joints)
             return None
