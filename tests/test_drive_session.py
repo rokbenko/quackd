@@ -6,8 +6,7 @@ import asyncio
 import contextlib
 import io
 import json
-import time
-from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +30,7 @@ from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbResult, def
 from roboglot_microduck.verbs import KickParams
 from roboglot_open_duck import OpenDuckAdapter
 from roboglot_open_duck.mock import OpenDuckMock
+from tests.support import until_async
 
 REPO = Path(__file__).resolve().parents[1]
 
@@ -124,13 +124,8 @@ async def _settled(*commands: Any) -> None:
     await asyncio.wait_for(asyncio.gather(*(c.ended for c in commands)), 30)
 
 
-async def _until(done: Callable[[], bool], within_s: float = 10.0) -> None:
-    """Wait until `done()`: a bound on a wait, never a figure a test checks."""
-    deadline = time.monotonic() + within_s
-    while not done():
-        if time.monotonic() > deadline:
-            raise AssertionError("it never came")
-        await asyncio.sleep(0.001)
+# Wait until `done()`: a bound on a wait, never a figure a test checks.
+_until = partial(until_async, every_s=0.001)
 
 
 def _hold(body: MockTransport, name: str) -> asyncio.Event:

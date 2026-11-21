@@ -6,28 +6,22 @@ by a stand-in that records each request, so nothing here reaches the network.
 
 from __future__ import annotations
 
-import importlib.util
 import io
-import sys
 import urllib.request
+from functools import partial
 from http.client import HTTPMessage
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
+
+from tests.support import load_script
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / "docs" / "assets" / "contributors.py"
 
 
-def _script() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("contributors", SCRIPT)
-    assert spec and spec.loader, f"{SCRIPT} could not be loaded as a module"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["contributors"] = module
-    spec.loader.exec_module(module)
-    return module
+_script = partial(load_script, SCRIPT, "contributors")
 
 
 class _Answer(io.BytesIO):

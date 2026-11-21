@@ -6,34 +6,28 @@ about it, so the tests that matter most compare what is committed with what the 
 
 from __future__ import annotations
 
-import importlib.util
 import json
 import re
 import shlex
 import shutil
 import subprocess
 import tomllib
+from functools import partial
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import pytest
 import yaml
+
+from tests.support import load_script
 
 from .conftest import help_text
 
 REPO = Path(__file__).resolve().parent.parent
 
 
-def _script() -> ModuleType:
-    """`scripts/example_log.py`, loaded by path as `tests/test_docs.py` loads its neighbours."""
-    spec = importlib.util.spec_from_file_location(
-        "example_log", REPO / "scripts" / "example_log.py"
-    )
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+# `scripts/example_log.py`, loaded by path as `tests/test_docs.py` loads its neighbours.
+_script = partial(load_script, REPO / "scripts" / "example_log.py", "example_log")
 
 
 script = _script()

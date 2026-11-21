@@ -10,6 +10,7 @@ import textwrap
 import threading
 import time
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ import pytest
 from roboglot.front import PROTOCOL
 from roboglot.webui import jobs as jobs_mod
 from roboglot.webui.jobs import Job, Jobs, _child_environment
+from tests.support import until
 from tests.test_front_run import _gated_glot
 
 FAKE_CHILD = textwrap.dedent(
@@ -70,13 +72,8 @@ def _fake(tmp_path: Path, mode: str) -> Callable[..., Any]:
     return spawn
 
 
-def _until(done: Callable[[], bool], within_s: float = 60.0) -> None:
-    """Wait until `done()`: a bound on a wait, never a figure a test checks."""
-    deadline = time.monotonic() + within_s
-    while not done():
-        if time.monotonic() > deadline:
-            raise AssertionError("it never came")
-        time.sleep(0.02)
+# Wait until `done()`: a bound on a wait, never a figure a test checks.
+_until = partial(until, within_s=60.0, every_s=0.02)
 
 
 def test_a_job_reads_the_childs_lines_and_keeps_the_rest_as_its_terminal(tmp_path: Path) -> None:

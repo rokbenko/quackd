@@ -12,7 +12,6 @@ import dataclasses
 import json
 import re
 import sys
-import time
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +66,7 @@ from roboglot_lerobot.verbs import (
     lerobot_verbs,
 )
 from tests import fake_systemone
+from tests.support import until_async
 from tests.test_decision import BUDGET, JEV, _fake, _observation, _records
 from tests.test_lerobot_adapter import FakeArm, SteppedClock
 
@@ -495,19 +495,6 @@ def test_a_segment_is_charged_what_it_said_or_else_the_robots_clock_across_the_c
     )
 
 
-async def _until(adapter: LeRobotAdapter, t: float) -> None:
-    """Let the mock's segments run until its clock reads `t`: they are the only sleepers on it.
-
-    Each of their ticks is the real backend's bus calls, on threads of their own, so the wait
-    is bounded by the wall's seconds, on a clock of its own, and not by a count of turns of the
-    event loop, which a slow machine spends before the mock's clock gets there."""
-    deadline = time.monotonic() + 10.0
-    while adapter.now() < t:
-        if time.monotonic() > deadline:
-            raise AssertionError(f"nothing ran the mock's clock to {t:g} s")
-        await asyncio.sleep(0.001)
-
-
 async def test_a_segment_cancelled_or_aborted_mid_way_is_charged_the_clock_it_ran_on() -> None:
     """A call cancelled from outside, as an MCP client's is when it gives up on it, and one an
     abort ends mid-segment leave with no result, and each is charged the robot's clock across
@@ -522,7 +509,11 @@ async def test_a_segment_cancelled_or_aborted_mid_way_is_charged_the_clock_it_ra
 
     before = adapter.now()
     call = asyncio.create_task(ex.run_verb(POLICY_VERB, {"instruction": INSTRUCTIONS[0]}))
-    await _until(adapter, before + SEGMENT_S / 2)
+    await until_async(
+        lambda: adapter.now() >= before + SEGMENT_S / 2,
+        every_s=0.001,
+        what=f"nothing ran the mock's clock to {before + SEGMENT_S / 2:g} s",
+    )
     call.cancel()
     with pytest.raises(asyncio.CancelledError):
         await call
@@ -535,7 +526,11 @@ async def test_a_segment_cancelled_or_aborted_mid_way_is_charged_the_clock_it_ra
 
     spent, before = budget.policy_s, adapter.now()
     call = asyncio.create_task(ex.run_verb(POLICY_VERB, {"instruction": INSTRUCTIONS[2]}))
-    await _until(adapter, before + SEGMENT_S / 2)
+    await until_async(
+        lambda: adapter.now() >= before + SEGMENT_S / 2,
+        every_s=0.001,
+        what=f"nothing ran the mock's clock to {before + SEGMENT_S / 2:g} s",
+    )
     ex.abort.set()
     with pytest.raises(Aborted):
         await call
@@ -560,7 +555,11 @@ async def test_a_second_segment_is_refused_while_one_runs_so_one_at_most_overrun
 
     before = adapter.now()
     first = asyncio.create_task(ex.run_verb(POLICY_VERB, {"instruction": OTHERS[0]}))
-    await _until(adapter, before + SEGMENT_S / 2)
+    await until_async(
+        lambda: adapter.now() >= before + SEGMENT_S / 2,
+        every_s=0.001,
+        what=f"nothing ran the mock's clock to {before + SEGMENT_S / 2:g} s",
+    )
     steps = budget.steps
     for verb, params in (
         (POLICY_VERB, {"instruction": OTHERS[1]}),
