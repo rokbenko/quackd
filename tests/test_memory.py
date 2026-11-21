@@ -217,6 +217,14 @@ OLD_NOTES = ["the charger is by the door", "the rug is slippery", "the cat sleep
 
 B_NOTE = "B: the door is shut"
 
+CHILD_WITHIN_S = 60.0
+"""How long the test waits on a `WRITER` process, and a held writer on the test. A writer is a
+new Python that imports Roboglot before it writes, and on a loaded machine (the whole suite in
+four workers, a slow CI runner) that start alone can outlast `UNTIL_WITHIN_S`: the import took
+4.2 s here with the suite running. A bound that ends a test whose writer never comes, never a
+measure of speed, since every wait returns as soon as its file is there; three or four of them
+in one test stay inside the suite's per-test timeout."""
+
 WRITER = r"""
 import io, os, sys, time
 from roboglot.memory import RobotMemory
@@ -296,14 +304,14 @@ class _Writer:
         import subprocess
         import sys
 
-        from tests.support import UNTIL_EVERY_S, UNTIL_WITHIN_S
+        from tests.support import UNTIL_EVERY_S
 
         self.signals = signals
         self.hold = hold
         self.proc = subprocess.Popen(
             [
                 *(sys.executable, "-X", "utf8", "-c", WRITER),
-                *(str(base), note, hold, str(signals), str(UNTIL_WITHIN_S), str(UNTIL_EVERY_S)),
+                *(str(base), note, hold, str(signals), str(CHILD_WITHIN_S), str(UNTIL_EVERY_S)),
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -315,16 +323,18 @@ class _Writer:
         from tests.support import until
 
         where = self.signals / f"{self.hold}.held"
-        until(lambda: where.exists() or self.proc.poll() is not None, what=f"held {self.hold}")
+        until(
+            lambda: where.exists() or self.proc.poll() is not None,
+            within_s=CHILD_WITHIN_S,
+            what=f"held {self.hold}",
+        )
         assert where.exists(), f"the writer ended before {self.hold}: {self.said()}"
 
     def go(self) -> None:
         (self.signals / f"{self.hold}.go").touch()
 
     def said(self) -> str:
-        from tests.support import UNTIL_WITHIN_S
-
-        out, err = self.proc.communicate(timeout=UNTIL_WITHIN_S)
+        out, err = self.proc.communicate(timeout=CHILD_WITHIN_S)
         assert self.proc.returncode == 0, err
         return out.strip()
 
