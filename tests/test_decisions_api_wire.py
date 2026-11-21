@@ -3,7 +3,7 @@
 Skipped wherever the SDK is not installed, which includes CI: nothing in the suite installs a
 provider SDK. To run it, sync an environment with the extra and run pytest there:
 
-    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra dev --extra openai
+    UV_PROJECT_ENVIRONMENT=<scratch> uv sync --frozen --extra openai
 
 It has run, all of it but the tests that send a camera frame, against three releases of the SDK,
 on 2026-10-11 and again on 2026-10-19, once the decision client took the pilot's rule for the

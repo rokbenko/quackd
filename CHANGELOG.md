@@ -77,10 +77,24 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   task under `glot` and `member_end` names the member under `robot`, where both said `duck`. No
   reader keeps the old key, so `roboglot log` given a team's record from an earlier release shows
   each member's end without the member's name, as `success after 0 steps`.
+- **A bare `uv sync` is a contributor's whole setup, and `roboglot[dev]` is no longer an extra.**
+  The test, lint and type tools, all ten adapters from the workspace, `pyzmq` and the headless
+  OpenCV a contributor works with were the `dev` extra, published with the wheel, so a `uv sync`
+  without `--extra dev` took them all away again. They are the `dev` dependency group now
+  (PEP 735), which uv installs by default and no wheel carries, entry for entry what the extra held:
+  `uv sync` installs the packages `uv sync --extra dev` did, at the same versions, and `uv.lock`
+  moves none. `.python-version` names 3.12, the Python CI's test job runs beside 3.11, so a bare
+  `uv sync` builds `.venv` on it. For 3.11, `UV_PROJECT_ENVIRONMENT=.venv311 uv sync --python 3.11`
+  keeps an environment beside it, and each `uv run` there names 3.11 too, with `UV_PYTHON=3.11` or
+  `--python 3.11`, or uv rebuilds it on 3.12. CI's jobs and `tests/rosarm_contract/run.sh` sync
+  without `--extra dev`, and CI's 3.11 cells set `UV_PYTHON`, so they still run on 3.11.
+  CONTRIBUTING.md, the pull request template, the README and RELEASING.md show the commands of
+  CI's test job as one block in CI's order, which a test reads off `ci.yml`. For a user,
+  `roboglot[dev]` is no longer an extra: it was never meant to be installed.
 - **The page `roboglot ui` serves forgets its saved choice of a bundled task file once.** The choice
   is kept in `ui-setup.json` under a new name, so one saved before is not read, and the Task file
   picker starts on `hello-world` until another is chosen.
-- **`uv.lock` moves 37 packages inside the ranges Roboglot already asks for, and `roboglot[dev]`
+- **`uv.lock` moves 37 packages inside the ranges Roboglot already asks for, and the `dev` group
   brings `pytest-cov` and `pytest-timeout`.** A refresh of the lock changes no requirement a user
   installs against, so what it moves is a checkout and CI: `openai` 3.46.0 to 3.51.0, `laya` 0.4.26
   to 0.4.35, `bleak` 3.0.2 to 3.1.0, `zeroconf` 0.153.0 to 0.154.0, `packaging` 25.0 to 26.3,
@@ -91,11 +105,17 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   GHSA-vvf4-9x63-8xvv. CI installs no provider SDK, so its checks say the lock resolves, and the
   rest was checked by hand: the three OpenAI wire test files pass on 3.51.0, whose client and base
   client are 3.46.0's unchanged, and laya's `Router` and `predict` take the same arguments they
-  did. `roboglot[dev]` asks for `pytest-cov>=7.1` and `pytest-timeout>=2.4`, the current releases,
+  did. The `dev` group asks for `pytest-cov>=7.1` and `pytest-timeout>=2.4`, the current releases,
   and nothing configures either yet. The pre-commit hooks run `ruff check` and `ruff format`
   through `uv run --no-sync`, so they are the `ruff` the lock holds where they were 0.6.9, and
   pre-commit-hooks moves to v6.0.0, whose hooks do on this tree what v5.0.0's did. What changes
-  for a contributor: `uv sync --extra dev` again.
+  for a contributor: `uv sync` again.
+- **The ToddlerBot daemon refuses to start on a wide address with no token.** Started with a
+  `--host` that is not loopback and no token, it served anything that could reach the address and
+  said only where it was listening. It refuses now, and names the two ways out: a token, with
+  `--token-file` or `ROBOGLOT_TODDLERBOT_TOKEN`, or `--allow-no-token` to serve anyone who can
+  reach it on purpose, which its log then says. On loopback it starts with no token, as before.
+  What changes for you: a daemon you start on `0.0.0.0` with no token needs one of the two.
 - **`roboglot policy check --bench` says what a declared latency is for on the arm.** Its advice
   says `so the arm asks for each chunk in time`, where it said the simulator holds each chunk back
   as long.
@@ -297,6 +317,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and its line in `roboglot doctor` are gone. What changes for you: `--decision-llm von` is refused as
   an unknown name, and a Von server you still run is reached as
   `--decision-llm local --decision-url http://127.0.0.1:8000`.
+
+- **`roboglot[dev]` is no longer an extra.** It held a contributor's tools and was never meant to
+  be installed by a user. What it held is the `dev` dependency group of a checkout now, which a
+  bare `uv sync` installs (see Changed, above). `pip install "roboglot[dev]"` installs the core
+  alone, and the installer warns that the extra is unknown.
 
 ### Fixed
 
@@ -665,6 +690,138 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
   its rover told it is `a small biped duck robot (25 cm, 800 g)`. It is told it is `a robot` now.
   Every body Roboglot ships has a blurb of its own, so none of them was affected.
+- **A ToddlerBot daemon moves nothing nobody is driving.** Its deadman was armed when it started,
+  so with nobody connected it slewed the robot from wherever it stood to the home pose half a
+  second in. A stop armed it too, the one Roboglot's client sends as it disconnects included, so a
+  `roboglot doctor` check sent an idle robot home half a second after it left, and a stop that
+  landed before the first good reading held the home pose, so the robot slewed there. The deadman
+  watches only the parts a client is driving now, a stop leaves it nothing to watch, and a stop
+  before the first reading holds wherever that reading finds the robot.
+- **A ToddlerBot stop stops the head and the grippers too.** `bot.stop` held the body and left the
+  neck and gripper goals in place, so after a stop, the executor's brake after Ctrl+C included, a
+  closing gripper went on closing to its limit and the head went on turning to its last aim. The
+  stop holds all of it, leaves every part owned by nobody, and the daemon's answer lists what it
+  stopped.
+- **A connected client cannot keep the ToddlerBot daemon's shutdown from the safe pose, and a
+  second signal cannot cut it short.** Commands from a client still connected overrode the settle
+  on the way out, so it never reached the safe pose and torque went off wherever the robot stood.
+  Once a shutdown begins every command that moves the robot is refused with the reason, health
+  says the daemon is shutting down, where it said ok throughout, and the settle runs to the safe
+  pose. A signal during a shutdown begun by something else, the server failing for one, went
+  straight through the settle and skipped `close()`, so the interpreter's exit turned torque off
+  wherever the robot stood; two shutdowns could also race. Shutdown is entered once now, from
+  whatever began it, takes no lock on the way in that a second signal could find held by its own
+  thread and wait on for ever, and reaches `close()` on every path.
+- **Each part of a ToddlerBot has its own owner, and only a silent owner's parts are brought to
+  rest.** A keepalive from any connection fed one deadman, so an idle second client, a
+  `serve-mcp` session or a `doctor` probe, kept a walk going after the client that started it had
+  died, and while one connection owned the whole robot a second client's look or grip took over a
+  walk it never asked for and kept it going the same way. The body, the neck and each gripper are
+  owned by the connection whose command each is executing, a connection's keepalive keeps alive
+  only its own parts, and when it goes quiet or away the deadman brings those parts, and only
+  those, to rest. A stop from any connection stops every part and leaves them all owned by nobody,
+  and so does a stand or a motion that has played to its end, whose client's leaving stood the
+  robot up from a kneel minutes later. A connection that lost a part to a stop, to a shutdown or
+  to another connection's command is told at its next keepalive or command, where nothing said
+  so, and its heartbeat fails with the reason. A motion moves the head and the hands too, and
+  played a hundred times slower round a head another client held, or one the deadman had put to
+  rest, which stayed at rest for good; it takes them with the body now, except what its own client
+  holds by a look or a grip, which stays held through it (a hand closed on something stays closed,
+  and the answer lists it as kept), is refused with the reason while another connection drives
+  one or one is still coming to rest, and a rest ends once the part is there, or, when it stops
+  closing on its goal, as soon as a keyframe that cannot be reached would be given up on, saying
+  so. Whatever ends a motion lets go of every part it took, except a head or a hand its client has
+  aimed or gripped since the motion began, which stays that client's, as a look or a grip made
+  outside a motion does, and is brought to rest when that client goes.
+- **A ToddlerBot loop that gives up takes no more orders and settles.** After ten failing ticks in
+  a row the loop stopped without settling, and every move went on answering accepted with nothing
+  to carry it out. It refuses every move with the reason now, its health says so, and it settles
+  the robot to the safe pose for as long as the bus answers, stopping after twenty failures in a
+  row. Only a restart lets the daemon take orders again; a stop is accepted, with the reason as its
+  note.
+- **A fall ends whatever was driving a ToddlerBot's body, and the deadman holds a fallen robot
+  where it lies.** A walk went on through a fall, and so did a stand or a motion accepted just
+  before it, and a new walk was accepted on a fallen robot, which `stand` and `perform` refuse;
+  the deadman meanwhile drove a fallen robot towards the standing pose. Whatever is in flight on
+  the body ends on the tick that reads the fall now, the robot holds where it lies, a walk is
+  refused while it is down, and on a fallen robot the deadman's rest is that hold. `crawl` and
+  `push_up` go to the floor on purpose, face down, so they play to their end, the robot lying
+  face down after one is not read as fallen and its posture reads `unknown` rather than
+  `standing`, and `stand` brings it back up, done only once the trunk reads upright. A stand that
+  cannot lift it stops pushing towards standing by its deadline and holds the robot where it
+  lies, as after a fall, health says it did not get up, and another stand may try again. A lean
+  any other way, on its side or its back, during such a motion, after it or standing back up, is
+  a fall. Which motions those are is a table in the daemon, by what each is named for, since the
+  keyframes carry no orientation of the trunk. Which way is face down in the orientation it reads
+  is an assumption, listed with the adapter's others: the daemon's state reports the world's up
+  in the body's frame as `up_in_body`, `report_state` returns it in the JSON an MCP client is
+  given (its one-line summary does not show it), and the hardware checklist reads it there with
+  the robot tipped nose down on its stand before either motion is tried.
+- **The ToddlerBot daemon holds every walk to its envelope.** A walk command outside the envelope
+  the daemon itself reports reached the walk policy as sent. Each axis is held to the envelope
+  now, the answer saying what it was held to.
+- **A hung bus cannot keep the ToddlerBot daemon from exiting, and nothing leaves the robot
+  uncommanded on the way out.** The hard exit around `close()` was a Python timer, which cannot
+  fire while `close()` holds the GIL, as it does on a dead bus, and a settle tick that hung had no
+  deadline at all. The deadline needs no GIL now, covers the settle too, and is armed in a process
+  started with no standard error as well. Shutdown also closed the camera, up to two seconds on a
+  wedged USB read, between stopping the loop and settling, with nothing commanding the robot; the
+  camera closes after the settle.
+- **A ToddlerBot daemon's shutdown reaches the safe pose on a slow loop.** The settle gave itself
+  a deadline in seconds sized to the distance, while its slew is handed out a tick at a time, so
+  on a loop making a few ticks a second instead of fifty it gave up partway and took torque off a
+  robot still on its way. It goes on now for as long as the slew keeps closing on the safe pose,
+  waiting through ticks that fail on the bus, ends once nothing has come nearer for a hundred
+  ticks that landed (while the waist untwists first, its target or the waist as read, and the
+  whole pose after), and stops at 120 s whatever the loop or the bus does: a robot still short of
+  the safe pose then is left torqued and holding where it is rather than dropped, the log says
+  the safe pose was not reached, how far is left, the rate the loop made and how many of its
+  ticks failed, and asks for the robot to be supported before it is powered off, and the daemon
+  exits with 3. A settle that stops closing ends the same way unless the robot is where it can
+  be put down (every joint at its place or as near as its limits allow, the waist straight) or
+  lies on the floor already: a jammed waist, which used to end in a close with the robot held
+  mid-pose, now leaves it holding, its line giving the waist's reading. The hard exit, there for a tick that hangs, moves
+  on as the settle's ticks come back.
+- **A ToddlerBot bus that comes back is handed one step, not every step it missed.** The loop
+  moved its target on before writing it, so a write that failed moved it all the same: a stand, a
+  motion or the shutdown's settle went on as if it had been sent, and the first write to land
+  after a run of failures carried every step missed at once, a snap on a body where a position
+  command is full torque. The target moves only on a write that lands now, and the joints a
+  client reads are the ones last sent.
+- **A ToddlerBot body that sags under load is no longer walked off its pose while its waist
+  untwists.** A twisted waist is straightened first, as upstream's own reset does, and every other
+  joint held meanwhile at the pose measured that tick, read again every tick. A joint under load
+  sits a little off where it was sent, so its target was moved after it each tick, away from home,
+  and the error that would make it hold never built: a body sagging by a degree was walked about
+  0.7 rad off its pose in the deadman's rest, a stand and the shutdown's settle, a crouch on a
+  standing robot. Those joints hold the pose last sent for the whole of the waist's stage now.
+- **A stalled ToddlerBot tick fails the heartbeat.** Health read numbers the control thread writes
+  after each tick, so a tick blocked on the bus answered healthy at the last rate while the deadman
+  inside it could not fire, and a first tick that never ended read as healthy for ever. Health
+  fails once no tick has ended for half a second, the first included, and says why.
+- **A ToddlerBot stop that did not land is reported as not delivered, and one that landed is not.**
+  The client swallowed every failure of its stop, so the `stop` verb and the executor's brake
+  recorded a stop that got no answer, or was refused, as a stop. The verb says `stop could not be
+  delivered` now, in words that point at the daemon's deadman and away from the power switch,
+  which on this robot is a fall. The client's keepalive also went on feeding the daemon's deadman
+  after such a stop, and with the walk the stop was meant to end still running, it was the only
+  thing keeping the robot walking. It stops after a stop that did not land, so the daemon's
+  deadman trips within half a second and brings what the session was driving to rest, the
+  heartbeat fails saying why, and the next command the daemon accepts, or the stop's own late
+  answer, starts it again. The daemon accepts a stop in every state: while it shuts down, or after
+  its loop has given up, the robot is already being brought to rest and the stop's note says so,
+  where the stop was refused and recorded as one that never arrived. A request, the heartbeat's and
+  the stop's among them, also waited with no deadline on a send buffer a silent daemon had let
+  fill: its timeout covers the write too.
+- **Roboglot checks what a ToddlerBot daemon says about itself before repeating it.** The motion
+  and robot names a daemon reported reached the manifest and the body summary the pilot reads as
+  sent, and a name that was not a string made connect raise. A motion Roboglot does not offer is
+  left out now, a robot name, motor count or envelope of the wrong kind refuses the connect, and
+  the `perform` tool names only the motions the daemon loaded, where it named all five. An
+  envelope with a key Roboglot does not read made the connect raise with the link left open; the
+  key is left out now.
+- **The ToddlerBot daemon starts under `python -OO`.** It built its help from its docstring, which
+  `-OO` removes, and raised before it read a flag.
 - **A place on a map `roboglot map --wipe` wiped reads as orphaned at once.** Right after a wipe
   mapd names no map yet, and the place read as waiting for the robot's map to be known until the
   next session found it orphaned. It says `its map was wiped` from the moment of the wipe.
@@ -914,6 +1071,20 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   named file, deleting it for the default one. With no `--token-file`, a missing file at the
   default path is still no token. A token file that is not UTF-8 text refuses with the reason,
   where it ended in a traceback.
+- **The ToddlerBot daemon's token need not travel on its command line, and an empty one is no
+  token.** It took its token from `--token`, which every account on the robot can read (`ps`,
+  `/proc/<pid>/cmdline`), or from `ROBOGLOT_TODDLERBOT_TOKEN`. `--token-file` reads it from a file,
+  and refuses to start on a named file that is missing, unreadable or empty, as the Jetson and MOSS
+  daemons do; one that is not UTF-8 text is refused without quoting the decoder, which would have
+  written a byte of the token to the journal. `--token` still works, and warns. An empty token,
+  from the flag or the variable, is no token: it was kept as an empty one, which a handshake that
+  sent no token matched.
+- **Roboglot says when a ToddlerBot it reached over the network checks no token.** The daemon's
+  handshake said nothing about it, so a client that sent a token connected to a daemon that checked
+  none exactly as to one that had. The handshake says whether a token is checked (`auth`), and
+  when a robot reached over an address that is not loopback checks none, Roboglot keeps a warning
+  that `roboglot doctor` shows. The refusal for a missing token no longer points at an installer
+  this robot has not got.
 
 ### Documentation
 
