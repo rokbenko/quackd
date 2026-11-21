@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections.abc import Iterable
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 from PIL import Image
@@ -67,6 +68,29 @@ class Detection(BaseModel):
         return " ".join(parts)
 
 
+class Detections(list[Detection]):
+    """One frame's detections, and what the detector says of that frame beside them.
+
+    `error` is why the detector could not read this frame, or None when it could: the frame's
+    own outcome, carried back with its detections from the worker thread that looked
+    (`detect_off_loop`). `left_out` is how many of the detector's boxes were not kept, the
+    least confident past a bound (`roboglot.host.MAX_BOXES` for the board's), which the camera
+    line says in a clause of its own (`summarize_detections`). A plain list is a detector's
+    answer too, and reads as one with nothing to say, which is every detector that keeps all it
+    finds and cannot fail. A slice or a filtered copy is a plain list: what is said here is about
+    the frame's whole answer."""
+
+    error: str | None
+    left_out: int
+
+    def __init__(
+        self, found: Iterable[Detection] = (), *, error: str | None = None, left_out: int = 0
+    ) -> None:
+        super().__init__(found)
+        self.error = error
+        self.left_out = left_out
+
+
 @runtime_checkable
 class Detector(Protocol):
     name: str
@@ -84,8 +108,20 @@ async def detect_off_loop(detector: Detector, image: Image.Image) -> list[Detect
     everything else the loop runs, the twist `go_to` re-sends while it looks among them, so a
     frame slower than a body's deadman would stop the body on every frame, or keep a body with
     no deadman walking. The colour detector, a few milliseconds a frame, runs where it always
-    has, on the loop."""
+    has, on the loop.
+
+    A thread cannot be stopped, so a look cancelled with its verb runs on to its end. A detector
+    that keeps a last known state beside its detections (`HostDetector.error`) therefore offers
+    `look`, which only reports, and `settle`, which takes a report as that state: the thread
+    runs `look`, and `settle` runs here, after the await, which a cancelled caller never
+    reaches. So that state, read by the caller right after its frame, is about that frame."""
     if getattr(detector, "blocking", False):
+        look = getattr(detector, "look", None)
+        settle = getattr(detector, "settle", None)
+        if callable(look) and callable(settle):
+            found: list[Detection] = await asyncio.to_thread(look, image)
+            settle(found)
+            return found
         return await asyncio.to_thread(detector.detect, image)
     return detector.detect(image)
 
@@ -189,6 +225,9 @@ def detect_times(detector: Detector | None) -> dict[str, Any]:
 
 
 def summarize_detections(detections: list[Detection]) -> str:
-    if not detections:
-        return "nothing detected"
-    return "; ".join(d.summary() for d in detections)
+    text = "; ".join(d.summary() for d in detections) if detections else "nothing detected"
+    left_out = getattr(detections, "left_out", 0)
+    if isinstance(left_out, int) and left_out > 0:
+        # one clause, so a pilot is not told part of what was in view is the whole of it
+        text += f"; {left_out} less confident boxes left out"
+    return text

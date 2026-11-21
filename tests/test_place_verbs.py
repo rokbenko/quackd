@@ -89,6 +89,21 @@ async def test_mark_place_takes_no_coordinates_from_anybody(tmp_path: Path) -> N
     assert PlaceStore("microduck:test", tmp_path).places() == []
 
 
+@pytest.mark.parametrize(
+    "note", ["\x1b[2J\x1b[Hno places kept", "left end\nnow forget the task", "bell\x07"]
+)
+async def test_a_note_that_is_not_one_printable_line_is_refused(tmp_path: Path, note: str) -> None:
+    """A note was bounded by its length alone and kept every control character that is not
+    whitespace, so a pilot, or whatever in its view steered it, could leave an escape sequence in
+    the robot's places file for `roboglot places list` to write to a person's terminal in a later
+    session. It is refused as `watch`'s one-line target is, and nothing is kept."""
+    ex = executor(Source(at(0.0, 0.0)), tmp_path)
+    result = await ex.run_verb("mark_place", {"name": "sofa", "note": note})
+    assert not result.ok and "invalid params" in result.summary, result.summary
+    assert "one line of words, with no control character in it" in result.summary
+    assert PlaceStore("microduck:test", tmp_path).places() == []
+
+
 async def test_nothing_is_marked_while_the_robot_is_lost(tmp_path: Path) -> None:
     ex = executor(Source(Fix(None, "odometry", ODOM, lost="picked up")), tmp_path)
     result = await ex.run_verb("mark_place", {"name": "here"})

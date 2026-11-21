@@ -4,7 +4,9 @@ place is worth in the frame the robot is in now."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -116,6 +118,35 @@ def test_a_store_told_not_to_persist_writes_nothing(tmp_path: Path) -> None:
     assert not tmp_path.joinpath("r.places.jsonl").exists()
 
 
+def test_two_writers_of_one_places_file_never_break_each_others_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every writer used one temporary name, so a second writer (a run and `serve-mcp` on one
+    robot) truncated the first's temporary file before it was renamed: the first rename could
+    put a half-written file in place, and the second found no file to rename and raised, out
+    of `views()` on the observation path too. B's whole mark is run inside A's rename here,
+    the order two processes can reach. A's mark raises nothing, the file is whole records, and
+    no temporary file is left behind."""
+    a = PlaceStore("r", tmp_path)
+    b = PlaceStore("r", tmp_path)
+    real = os.replace
+    nested: list[str] = []
+
+    def replace(src: Any, dst: Any) -> None:
+        if not nested:
+            nested.append(str(src))
+            b.mark(Place("door", 1.0, 1.0, 0.0, ODOM.id, "odometry", 2.0))
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    a.mark(Place("sofa", 0.0, 0.0, 0.0, ODOM.id, "odometry", 1.0))
+    monkeypatch.undo()
+    assert nested, "the interleaving did not happen"
+    lines = a.path.read_text(encoding="utf-8").splitlines()
+    assert [json.loads(line)["name"] for line in lines] == ["sofa"], lines
+    assert sorted(p.name for p in tmp_path.iterdir()) == [a.path.name]
+
+
 def test_a_place_in_the_frame_the_robot_is_in_is_here_with_where_it_is(tmp_path: Path) -> None:
     source = Source(at(0.0, 0.0, 0.0))
     book = PlaceBook(PlaceStore("r", tmp_path), source)
@@ -187,6 +218,50 @@ def test_the_frames_a_place_was_marked_in_are_remembered_with_it(tmp_path: Path)
     assert (record.id, record.kind, record.persistent) == (MAP.id, "map", True)
     lines = [json.loads(line) for line in store.path.read_text(encoding="utf-8").splitlines()]
     assert {line["type"] for line in lines} == {"frame", "place"}
+
+
+def test_a_frame_is_kept_only_while_something_needs_it_and_one_look_reads_the_file_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every observation's `views()` wrote a record of any frame the file did not know, an
+    odometry frame is new on every connection, and nothing removed one, so the file grew by a
+    line a run whether or not a place was marked; and one `views()` read the whole file once
+    more per place, on the event loop. A frame is kept while a place was marked in it, or while
+    it is a map (which outlives a connection) or was wiped, and one `views()` reads the file once.
+    """
+    store = PlaceStore("r", tmp_path)
+    runs = 50
+    for i in range(runs):
+        PlaceBook(
+            store, Source(at(0.0, 0.0, frame=FrameRef("odometry", f"odom:{i}", False)))
+        ).views()
+    assert store.frames() == [], f"{runs} runs with no place marked kept their frames"
+    assert not store.path.exists(), "nothing a run needs kept, so nothing was written"
+
+    earlier = FrameRef("odometry", "odom:earlier", persistent=False)
+    for name in ("sofa", "door", "desk"):
+        PlaceBook(store, Source(at(1.0, 1.0, frame=earlier))).mark(name)
+    PlaceBook(store, Source(at(0.0, 0.0, frame=MAP))).views()  # a map with no place yet
+    assert sorted(f.id for f in store.frames()) == sorted([earlier.id, MAP.id])
+
+    reads: list[Path] = []
+    real = Path.read_text
+
+    def counted(self: Path, *args: Any, **kwargs: Any) -> str:
+        reads.append(self)
+        return real(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", counted)
+    views = PlaceBook(
+        store, Source(at(0.0, 0.0, frame=FrameRef("odometry", "odom:now", False)))
+    ).views()
+    monkeypatch.undo()
+    assert [v.status for v in views] == ["orphaned"] * 3
+    assert len(reads) == 1, f"one views() over three places read the file {len(reads)} times"
+    assert sorted(f.id for f in store.frames()) == sorted([earlier.id, MAP.id])
+    for name in ("sofa", "door", "desk"):
+        store.forget(name)
+    assert [f.id for f in store.frames()] == [MAP.id], "a frame no place needs is dropped"
 
 
 def test_a_line_a_person_broke_by_hand_is_skipped_and_the_rest_read(tmp_path: Path) -> None:

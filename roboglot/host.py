@@ -92,6 +92,12 @@ before eight megabytes cross a robot's Wi-Fi only to be turned away."""
 MAX_REPLY_BYTES = 16 * 1024 * 1024
 """No reply the protocol defines comes near this: a board dump is five files of at most 64 KB
 and two lines. Anything bigger is not the daemon, and reading it whole is the laptop's memory."""
+MAX_BOXES = 300
+"""The most boxes one `/detect` reply is read for. It is ultralytics' default `max_det`, the most
+boxes one prediction returns, and the board's daemon passes no other (`_predict` in
+`bridge/jetson/roboglot_jetson_hostd.py`), so the daemon's own replies never carry more. A reply
+with more is not the daemon's, and every box kept becomes a clause of each observation's camera
+line and an entry in the record: the most confident are kept and the rest only counted."""
 
 SNAPSHOT_PATH = "/snapshot.jpg"
 _READ_CHUNK = 64 * 1024
@@ -543,7 +549,8 @@ class HostBox:
 class HostDetections:
     """`/detect`'s answer. `w` and `h` are the decoded image's size, which the geometry needs,
     and `ms` is the time the board spent in the model, so a slow round trip can be split into
-    the network's share and the GPU's."""
+    the network's share and the GPU's. `left_out` is how many boxes the reply carried past
+    `MAX_BOXES`, the least confident, which `boxes` does not hold."""
 
     w: int
     h: int
@@ -551,6 +558,7 @@ class HostDetections:
     model: str | None
     device: str | None
     ms: float | None
+    left_out: int = 0
 
 
 # ── reading a reply field by field ──────────────────────────────────────────────────────
@@ -797,10 +805,16 @@ def _detections_from(payload: dict[str, Any], address: str, token: str | None) -
                 y2=_number(raw, "y2", where, label=f"{at}.y2"),
             )
         )
+    # every box is read and checked first, so a malformed one is refused wherever it sits;
+    # only then are the most confident kept, and a reply within the bound keeps its own order
+    left_out = max(0, len(boxes) - MAX_BOXES)
+    if left_out:
+        boxes = sorted(boxes, key=lambda box: box.conf, reverse=True)[:MAX_BOXES]
     return HostDetections(
         w=w,
         h=h,
         boxes=tuple(boxes),
+        left_out=left_out,
         model=_text_or_none(payload, "model", where),
         device=_text_or_none(payload, "device", where),
         ms=_number_or_none(payload, "ms", where),
@@ -936,9 +950,20 @@ class HostClient:
             )
             self._camera_failed(str(stale), age)
             raise stale
+        # Imported here, not at the top: the module imports only the standard library and PIL,
+        # and the transport module brings pydantic, which `doctor` should not pay for
+        from roboglot.transport.base import FrameTooLarge, check_frame_pixels, frame_header_guard
+
         try:
-            with Image.open(io.BytesIO(raw), formats=["JPEG"]) as picture:
+            with frame_header_guard(), Image.open(io.BytesIO(raw), formats=["JPEG"]) as picture:
+                # the header alone is read so far: a JPEG of a few megabytes can claim a frame
+                # of hundreds, and the board is reached over plain HTTP
+                check_frame_pixels(*picture.size)
                 image = picture.convert("RGB")
+        except FrameTooLarge as e:
+            bad = self._fail(f"{self.address} sent a snapshot that {e}")
+            self._camera_failed(str(bad), None)
+            raise bad from e
         except Exception as e:
             bad = self._fail(f"{self.address} sent a snapshot that is not a JPEG PIL can read")
             self._camera_failed(str(bad), None)

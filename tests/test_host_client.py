@@ -18,6 +18,7 @@ from contextlib import contextmanager
 from typing import Any
 
 import pytest
+from PIL import ImageFile
 
 from roboglot import host as host_module
 from roboglot.host import (
@@ -25,6 +26,7 @@ from roboglot.host import (
     DEFAULT_PORT,
     DETECT_TIMEOUT_S,
     HELLO_TIMEOUT_S,
+    MAX_BOXES,
     MAX_JPEG_BYTES,
     PROTOCOL,
     PROTOCOL_VERSION,
@@ -55,6 +57,7 @@ from tests.fake_jetson_hostd import (
     dead_address,
     jpeg_bytes,
 )
+from tests.support import jpeg_claiming
 
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 """Shaped like `openssl rand -hex 32`, the token bridge/jetson/README.md tells people to make,
@@ -613,6 +616,34 @@ def test_a_snapshot_that_is_not_an_image_is_a_host_error(hostd: FakeHostd) -> No
     assert client.camera_error == str(error)
 
 
+@pytest.mark.parametrize(
+    ("side", "said"),
+    [(12000, "12000x12000 pixels"), (20000, "400000000 pixels")],
+    ids=["past-the-bound", "past-pillows-own-error-line"],
+)
+def test_a_snapshot_claiming_more_pixels_than_a_frame_may_have_is_refused_before_decoding(
+    hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch, side: int, said: str
+) -> None:
+    """A snapshot was opened and converted to RGB with no bound but Pillow's: a warning past
+    about 89 M pixels and an error only past twice that, so a 2 MB JPEG whose header claimed
+    12000 by 12000 decoded to 432 MB on the board path. The header alone is served here, and
+    any decode is recorded and stopped, so the test never allocates the frame either way: the
+    refusal must come before a decode, name the size, and reach the camera's error line."""
+    decoded: list[tuple[int, int]] = []
+
+    def no_decode(picture: ImageFile.ImageFile) -> Any:
+        decoded.append(picture.size)
+        raise OSError("decoded")
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", no_decode)
+    hostd.snapshot_jpeg = jpeg_claiming(side, side)
+    client = HostClient(hostd.address)
+    error = _raises(client.snapshot)
+    assert decoded == []
+    assert said in str(error) and hostd.address in str(error)
+    assert client.camera_error == str(error)
+
+
 @pytest.mark.parametrize("stamp", ["soon", "nan", "-1.0", "inf"])
 def test_a_frame_age_that_is_not_an_age_is_a_host_error(hostd: FakeHostd, stamp: str) -> None:
     hostd.replies["/snapshot.jpg"] = CannedReply(
@@ -649,6 +680,28 @@ def test_detect_without_a_confidence_sends_no_query_and_takes_no_boxes_as_an_ans
     found = HostClient(hostd.address).detect(jpeg_bytes(ball=None))
     assert found.boxes == ()
     assert hostd.requests_to("/detect")[0].query == ""
+
+
+def test_a_detect_reply_keeps_the_most_confident_boxes_up_to_the_bound_and_counts_the_rest(
+    hostd: FakeHostd,
+) -> None:
+    """A reply could carry any number of boxes up to the reply cap, and every one was kept, so a
+    board, or anything answering on its port, could put thousands of clauses into each
+    observation's camera line and the record. The boxes kept are the bound's worth, the most
+    confident of them, and the rest are counted; a reply at the bound keeps every box as it came."""
+    extra = 7
+    confs = [round(0.2 + 0.7 * ((i * 37) % 101) / 100, 4) for i in range(MAX_BOXES + extra)]
+    hostd.detect_reply["boxes"] = [
+        {"name": "sports ball", "conf": c, "x1": 1.0, "y1": 2.0, "x2": 3.0, "y2": 4.0}
+        for c in confs
+    ]
+    found = HostClient(hostd.address).detect(jpeg_bytes())
+    assert len(found.boxes) == MAX_BOXES and found.left_out == extra
+    assert [box.conf for box in found.boxes] == sorted(confs, reverse=True)[:MAX_BOXES]
+
+    hostd.detect_reply["boxes"] = hostd.detect_reply["boxes"][:MAX_BOXES]
+    at_bound = HostClient(hostd.address).detect(jpeg_bytes())
+    assert [box.conf for box in at_bound.boxes] == confs[:MAX_BOXES] and at_bound.left_out == 0
 
 
 def test_a_board_without_a_detector_says_why_when_asked_to_detect(hostd: FakeHostd) -> None:

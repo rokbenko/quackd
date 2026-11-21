@@ -11,9 +11,10 @@ can use core's twist helpers without the two modules importing each other.
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from roboglot.space.places import PLACE_NAME_MAX, Place, PlaceBook, PlaceView, place_listing
 from roboglot.space.pose import Fix, where_record, where_summary
@@ -46,6 +47,17 @@ class MarkPlaceParams(BaseModel):
     note: str | None = Field(
         default=None, max_length=200, description="Optional: what is there, in a few words."
     )
+
+    @field_validator("note")
+    @classmethod
+    def _one_line(cls, value: str | None) -> str | None:
+        """One line of words, as `watch`'s target is. The note is kept in the robot's places
+        file and printed by `roboglot places list` in a later session, so an escape sequence
+        in it would be written to a person's terminal, and a second line is where an
+        instruction to the next pilot would hide."""
+        if value is not None and any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in value):
+            raise ValueError("the note is one line of words, with no control character in it")
+        return value
 
 
 class ForgetPlaceParams(BaseModel):

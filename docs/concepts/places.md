@@ -79,10 +79,15 @@ heading to convert by, and a guess would send a robot somewhere nobody chose.
 
 In `<memory dir>/<robot slug>.places.jsonl`, beside the robot's memory file and keyed as it is
 ([guides/memory.md](../guides/memory.md)), one JSON record a line: the places, and the frames
-they were marked in. Like memory, every write goes to a temporary file renamed over the old one,
-and nothing is locked. A robot keeps at most 100 places, a name is 1 to 32 letters, digits, spaces,
-hyphens or apostrophes, and names are the same in any case. With `--no-memory`, places last as
-long as the run or the session and nothing is written. A dry run reads the places a robot has
+they were marked in. A frame is kept while a place was marked in it, or while it is a map, which
+outlives a connection and can be known again, or its map was wiped; any other frame, such as
+the odometry of a connection where nothing was marked, is dropped when the file is next written.
+Like memory, every write goes to a temporary file of its own renamed over the old one, and
+nothing is locked: of two writes at once the later wins, and the file it leaves is whole. A
+robot keeps at most 100 places, a name is 1 to 32 letters, digits, spaces, hyphens or
+apostrophes, and names are the same in any case. A note is up to 200 characters on one line,
+and one with a line break or another control character is refused. With `--no-memory`, places
+last as long as the run or the session and nothing is written. A dry run reads the places a robot has
 and changes none, as it runs no `mark_place` or `forget_place`. `roboglot drive` keeps them as
 a run does.
 

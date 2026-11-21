@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import threading
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Any
@@ -21,6 +22,7 @@ from roboglot.space.pose import Fix, FrameRef, Pose2D
 from roboglot.space.source import SpatialSource, SpatialSourceBase
 from roboglot.transport.base import Ack, Intent, RobotState, TransportError, spatial_of
 from roboglot.transport.mock import MockTransport
+from roboglot.verbs import navigate
 from roboglot.verbs.core import speed_limits
 from roboglot.verbs.navigate import BLIND_S, SHARE, Gait, steer
 from roboglot.verbs.places import PLACE_VERBS, GoToPlaceParams
@@ -29,6 +31,7 @@ from roboglot_microduck import MicroduckAdapter
 from roboglot_rosbridge import RosbridgeAdapter
 from roboglot_rosbridge.mock import TICK_S as BASE_TICK_S
 from roboglot_rosbridge.mock import RosbridgeMock
+from tests.support import UNTIL_WITHIN_S, until_async
 
 FLOOR = {"vx": 0.2, "wz": 1.5}
 """A gait floor a body publishes (`extras.gait_floor`), this test's own: a walk above the share of
@@ -815,6 +818,48 @@ async def test_the_way_is_planned_with_room_for_how_closely_the_walk_follows_it(
     await _go(ctx, "away", face=False)
     gait = Gait.of(ctx, ctx.places.source, {})
     assert radii and radii[0] == pytest.approx(0.08 + gait.track_m)
+
+
+async def test_the_way_is_planned_off_the_event_loop_and_a_stop_meanwhile_does_not_wait_for_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Planning a walk ran on the event loop, in pure Python over a grid as large as the map
+    service sends, and a few hundred cells a side held the loop for seconds: the heartbeat, the
+    kill switch's callbacks and MCP waited for it. The seam records which thread plans, and holds
+    the plan until the test lets it go, so nothing here is timed: the plan and the search for
+    floor the body fits on run off the loop's thread, and a walk cancelled while its plan is out
+    ends at once, the body stopped, and the plan is let go only after."""
+    loop_thread = threading.get_ident()
+    threads: dict[str, int] = {}
+    entered, release = threading.Event(), threading.Event()
+    real_plan, real_standable = OccupancyGrid.plan, navigate._standable
+
+    def plan(self: OccupancyGrid, *args: Any, **kw: Any) -> Any:
+        threads["plan"] = threading.get_ident()
+        entered.set()
+        if not release.wait(UNTIL_WITHIN_S):
+            raise AssertionError("the plan was never let go")
+        return real_plan(self, *args, **kw)
+
+    def standable(*args: Any, **kw: Any) -> Any:
+        threads["standable"] = threading.get_ident()
+        return real_standable(*args, **kw)
+
+    monkeypatch.setattr(OccupancyGrid, "plan", plan)
+    monkeypatch.setattr(navigate, "_standable", standable)
+    mock, ctx = await _still_duck(OccupancyGrid(0.05, (-1.0, -1.0), np.zeros((40, 40), np.uint8)))
+    _mark(ctx, "away", 0.5, 0.0)
+    walking = asyncio.create_task(_go(ctx, "away", face=False))
+    try:
+        await until_async(entered.is_set, what="the walk starting its plan")
+        assert loop_thread not in threads.values(), "planned on the event loop's thread"
+        walking.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await walking
+        assert not release.is_set() and mock.intents[-1].kind == "stop"
+        assert [i for i in mock.intents if i.kind == "move"] == []
+    finally:
+        release.set()
 
 
 async def test_a_way_too_narrow_says_how_much_room_it_needed() -> None:

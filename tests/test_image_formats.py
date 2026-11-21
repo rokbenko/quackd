@@ -23,7 +23,8 @@ from PIL import Image, ImageFile
 
 from roboglot.agent.images import FORMATS, TaskImageError, load_task_images
 from roboglot.host import HostClient, HostError
-from roboglot.transport.base import camera_url_frame
+from roboglot.transport.base import MAX_FRAME_PIXELS, camera_url_frame
+from tests.support import jpeg_claiming
 
 REPO = Path(__file__).resolve().parent.parent
 SIZE = (16, 16)
@@ -272,6 +273,28 @@ async def test_a_frame_claiming_to_be_enormous_is_a_refusal_and_not_an_exception
 def test_a_camera_url_that_serves_anything_else_is_told_what_to_serve() -> None:
     with pytest.raises(ValueError, match="a JPEG or a PNG"):
         camera_url_frame(_picture("BMP"))
+
+
+def test_a_camera_url_frame_claiming_more_pixels_than_a_frame_may_have_is_refused_undecoded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every `--camera-url` frame went from `Image.open` straight to `convert("RGB")`, so a
+    header claiming 12000 by 12000, past the bound but inside Pillow's own error line, decoded
+    to 432 MB with a warning and nothing else. Any decode is recorded and stopped here, so the
+    frame is never allocated: the refusal must come first and name the size it claims."""
+    decoded: list[tuple[int, int]] = []
+
+    def no_decode(picture: ImageFile.ImageFile) -> Any:
+        decoded.append(picture.size)
+        raise OSError("decoded")
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", no_decode)
+    side = 12000
+    # the bound a task's picture is held to (load_task_images), and this side is past it
+    assert MAX_FRAME_PIXELS == Image.MAX_IMAGE_PIXELS < side * side
+    with pytest.raises(ValueError, match="the camera sent a frame that claims 12000x12000 pixels"):
+        camera_url_frame(jpeg_claiming(side, side))
+    assert decoded == []
 
 
 async def test_the_refusal_is_what_a_person_reads_in_camera_error(

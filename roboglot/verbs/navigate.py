@@ -38,13 +38,14 @@ core's twist helpers and core carries the place verbs as templates.
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import math
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from roboglot.safety import SafetyStop
-from roboglot.space.grid import OCCUPIED, UNKNOWN, OccupancyGrid
+from roboglot.space.grid import OCCUPIED, UNKNOWN, OccupancyGrid, Plan
 from roboglot.space.pose import Fix, Pose2D, wrap_angle
 from roboglot.space.source import SpatialError, SpatialSource
 from roboglot.transport.base import Intent, TransportError
@@ -452,7 +453,16 @@ class _Walk:
         # where the body fits at the place, or beside it: a body's width and the place's own
         # tolerance away at most
         within = 2 * footprint + self.gait.tol_xy
-        goal = _standable(grid, self.goal, footprint, within)
+        # room beside the body for how closely the walk follows its way
+        radius = footprint + self.gait.track_m
+        # Off the event loop's thread, waited for as any other read is. Both are pure Python
+        # over a grid as large as the map service sends, and a few hundred cells a side held the
+        # loop for seconds, with the heartbeat, the kill switch's callbacks and MCP waiting
+        # behind them. They read only the grid handed to them. A stop that comes meanwhile
+        # cancels this wait at once, and the thread's answer, when it comes, is dropped.
+        goal, found = await asyncio.to_thread(
+            _route, grid, (pose.x, pose.y), self.goal, footprint, within, radius
+        )
         if goal is None:
             raise _End(
                 self.walked(
@@ -461,9 +471,6 @@ class _Walk:
                     f"{within:.2f} m of it that a body {2 * footprint:.2f} m across fits on",
                 )
             )
-        # room beside the body for how closely the walk follows its way
-        radius = footprint + self.gait.track_m
-        found = grid.plan((pose.x, pose.y), goal, radius_m=radius)
         if found is None:
             raise _End(
                 self.walked(
@@ -654,6 +661,24 @@ def _arc_over_chord(bearing: float) -> float:
     """How much longer the arc pure pursuit walks to a point at `bearing` is than the straight
     line to it: the bearing over its sine, 1 dead ahead and pi/2 at a right angle."""
     return 1.0 if abs(bearing) < 1e-6 else bearing / math.sin(bearing)
+
+
+def _route(
+    grid: OccupancyGrid,
+    start: tuple[float, float],
+    goal: tuple[float, float],
+    body_m: float,
+    within: float,
+    radius_m: float,
+) -> tuple[tuple[float, float] | None, Plan | None]:
+    """Where a body of radius `body_m` fits at `goal` or within `within` of it (`_standable`),
+    and the way there from `start` keeping `radius_m` clear (`OccupancyGrid.plan`): None for
+    the first when it fits nowhere, and None for the second when there is no way. What
+    `_Walk.plan` runs in a worker thread: it reads `grid` and nothing else."""
+    standable = _standable(grid, goal, body_m, within)
+    if standable is None:
+        return None, None
+    return standable, grid.plan(start, standable, radius_m=radius_m)
 
 
 def _standable(

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import io
 import math
-from collections.abc import AsyncIterator, Sequence
+import warnings
+from collections.abc import AsyncIterator, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Protocol, runtime_checkable
 
@@ -248,17 +250,72 @@ CAMERA_URL_FORMATS = ("JPEG", "PNG")
 """What a `--camera-url` may answer with. It names a server of the person's own, and these are
 what an HTTP camera serves: `mediad`'s `/frame` is a PNG and `camd`'s `/snapshot.jpg` a JPEG."""
 
+MAX_FRAME_PIXELS = 1024 * 1024 * 1024 // 4 // 3
+"""The most pixels a camera frame's header may claim before Roboglot decodes it: 89,478,485.
+
+The largest frame a camera a robot carries serves is 8K UHD, 7680 by 4320, about 33 M pixels,
+and the cameras the adapters read serve 640 by 480 to 1080p. A header claiming more than this is
+not a camera's frame at all: a few megabytes of JPEG can claim 12000 by 12000 and decode to
+432 MB, on a board with a few gigabytes. The value is Pillow's own `MAX_IMAGE_PIXELS` (a quarter
+gigabyte as RGB), the bound a task's picture is held to (`agent/images.py` turns Pillow's
+warning past it into a refusal), so a frame and a task's picture stop at the same size. It is
+written out rather than read from Pillow at run time because Pillow's is a global that any
+library may lift or set to None, and Pillow itself only warns until twice it."""
+
+
+class FrameTooLarge(ValueError):
+    """A frame whose header claims more than `MAX_FRAME_PIXELS`, refused before it is decoded.
+
+    A ValueError, which is what every camera reader already keeps as its error line. The message
+    is a clause ("claims 12000x12000 pixels, ...") for the reader to put its source before."""
+
+
+def check_frame_pixels(width: int, height: int) -> None:
+    """Refuse a frame of `width` by `height` past `MAX_FRAME_PIXELS`, with a `FrameTooLarge`
+    that names the size, before anything is decoded.
+
+    Called on a picture's header: the `size` of what `Image.open` returned, which has read the
+    header and decoded nothing, inside `frame_header_guard`; or the width and height a wire
+    states beside raw pixels, before an array is built from them."""
+    if width * height > MAX_FRAME_PIXELS:
+        raise FrameTooLarge(
+            f"claims {width}x{height} pixels, more than the {MAX_FRAME_PIXELS:,} Roboglot "
+            "decodes from a camera"
+        )
+
+
+@contextmanager
+def frame_header_guard() -> Iterator[None]:
+    """Around a camera frame's `Image.open` and the `check_frame_pixels` on its header.
+
+    Pillow checks the same header inside `Image.open`. Between its limit and twice it, that is a
+    warning, which would land in the terminal as a raw line about a frame `check_frame_pixels`
+    refuses in any case, so it is not shown. Past twice it, that is an error that is neither an
+    OSError nor a ValueError and gives a pixel count but no width and height: it comes out of
+    here as a `FrameTooLarge` with Pillow's words. Everything else passes through as it was."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", Image.DecompressionBombWarning)
+        try:
+            yield
+        except Image.DecompressionBombError as e:
+            raise FrameTooLarge(f"claims more pixels than Pillow will open ({e})") from e
+
 
 def camera_url_frame(data: bytes) -> Image.Image:
     """The picture a `--camera-url` answered with, as RGB.
 
     Named formats only, because the first bytes would otherwise choose among Pillow's decoders
     and these come from across a network (tests/test_image_formats.py). A refusal says what to
-    serve, since it ends up in `camera_error` for a person to read."""
+    serve, since it ends up in `camera_error` for a person to read, and one that claims more
+    pixels than a frame may have says how many, before it is decoded (`MAX_FRAME_PIXELS`)."""
     try:
-        return Image.open(io.BytesIO(data), formats=CAMERA_URL_FORMATS).convert("RGB")
+        with frame_header_guard(), Image.open(io.BytesIO(data), formats=CAMERA_URL_FORMATS) as pic:
+            check_frame_pixels(*pic.size)
+            return pic.convert("RGB")
     except UnidentifiedImageError as e:
         raise ValueError("the camera did not answer with a JPEG or a PNG") from e
+    except FrameTooLarge as e:
+        raise FrameTooLarge(f"the camera sent a frame that {e}") from e
 
 
 async def frames_of(transport: Any) -> list[CameraFrame]:
