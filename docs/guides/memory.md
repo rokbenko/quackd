@@ -143,3 +143,8 @@ is read by the next `roboglot run` on the same `adapter:backend`, and the other 
   all five back out of its own prompt.
 - **Not trusted.** A note is text the LLM wrote; the executor never reads it. Safety
   lives in the contract, as before ([concepts/safety.md](../concepts/safety.md)).
+- **Not private to this machine.** The file stays here and what it says does not: every run
+  sends its newest notes and episodes to the pilot's LLM in the system prompt, which is a
+  vendor's service unless the LLM runs on this machine, and over MCP `robot_recall` hands
+  them, the robot's places and the file's path to the MCP client. Write nothing into a note,
+  or with `roboglot memory add`, that you would not send there.

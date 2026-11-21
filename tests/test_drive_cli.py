@@ -543,13 +543,151 @@ async def test_a_press_on_the_close_after_a_rest_move_that_raised_says_the_refus
     assert notes.index(refusal) < notes.index(CONNECTS_CLOSE_PRESSED), notes
 
 
+_FOLD_WORDS = ("the fold was stopped", "the fold was told to stop", "did not stop for the press")
+"""What each line saying what became of a fold under a press says, in drive's words and in the
+session logger's (`FOLD_STOPPED`, `FOLD_WENT_ON`, `FOLD_DID_NOT_STOP`, `FOLD_WENT_TO_ITS_END`)."""
+
+
+@pytest.mark.parametrize("ends", ["stopped", "went on", "at its pose", "short of its pose"])
+async def test_what_a_press_did_to_the_opening_fold_is_said_once_and_truly(
+    ends: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The connect folds through `fold_unless_stopped` and keeps what a press did to that fold
+    (`RobotSession.opening_fold`), and the session read the same fold again from outside, by
+    wrapping the arm's rest move: a stopped fold was said twice, on the session's logger and by
+    drive, and a fold that took the press and ended short of its pose was recorded as the refusal
+    and "the press came as the session was closing the arm after that", of a close the connect
+    never reached. The fold here is pressed and stops; takes every cancel and does not end; or
+    takes the press and runs the mock's own drive on to its pose, or ends short of it (`stalled`,
+    as the real drive ends on a joint that stops moving). What became of it is said once, in
+    drive's words, the arm is held and nothing folds it again. The second case waits out the
+    fold's bound twice (`release.STOPPED_FOLD_S`)."""
+    from roboglot.drive.run import CONNECTS_CLOSE_PRESSED, FOLD_DID_NOT_STOP
+    from roboglot.release import FOLD_WENT_ON
+    from roboglot_lerobot.mock import LeRobotMock
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    folding, let_go = asyncio.Event(), asyncio.Event()
+    own, arms = LeRobotMock._drive_to_rest, []
+
+    async def drive_to_rest(arm: Any, goal: dict[str, float], recorded: dict[str, float]) -> Any:
+        arms.append(arm)
+        if len(arms) != 1:
+            return RestResult("arrived", "a stand-in fold")
+        folding.set()
+        while not let_go.is_set():
+            try:
+                await let_go.wait()
+            except asyncio.CancelledError:
+                if ends == "stopped":
+                    raise
+                if ends != "went on":
+                    break
+        if ends == "at its pose":
+            return await own(arm, goal, recorded)
+        if ends == "short of its pose":
+            return RestResult("stalled", "shoulder_pan stopped moving 20 degrees short")
+        return RestResult("arrived", "a stand-in fold, let go once the session had ended")
+
+    monkeypatch.setattr(LeRobotMock, "_drive_to_rest", drive_to_rest)
+    registry = _arm_with_a_rest_pose(tmp_path)
+    runs = tmp_path / "runs"
+    said: list[str] = []
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    session = asyncio.ensure_future(
+        run_drive(args, say=said.append, stream=io.StringIO("quit\n"), keyboard=False)
+    )
+    try:
+        await asyncio.wait_for(folding.wait(), _HANG_S)
+        session.cancel()
+        await asyncio.wait({session}, timeout=_HANG_S)
+        assert session.done(), "the session never ended"
+    finally:
+        let_go.set()
+    expected = {
+        "stopped": FOLD_STOPPED,
+        "went on": FOLD_WENT_ON,
+        "at its pose": FOLD_DID_NOT_STOP,
+        "short of its pose": FOLD_DID_NOT_STOP,
+    }[ends]
+    told = [line for line in said if any(w in line for w in _FOLD_WORDS)]
+    logged = [m for m in caplog.messages if any(w in m for w in _FOLD_WORDS)]
+    assert told == [f"{'brake':<8} {expected}"] and not logged, f"{ends}: {said}\n{logged}"
+    assert session.cancelled(), "the press is what the session ended on"
+    assert len(arms) == 1, "the arm was folded again"
+    sequence = arms[0].sequence
+    assert sequence[sequence.index("rest") :] == ["rest", "stop", "close"], sequence
+    events = Transcript.read(_the_run(runs) / "transcript.jsonl")
+    notes = [e["text"] for e in events if e["kind"] == "note"]
+    assert notes.count(expected) == 1, notes
+    assert CONNECTS_CLOSE_PRESSED not in notes, "the press came during the fold, not on a close"
+    assert not [n for n in notes if "did not reach its rest pose" in n], notes
+    assert events[-1]["kind"] == "run_end" and events[-1]["outcome"] == "aborted"
+    assert (_the_run(runs) / "summary.json").exists()
+
+
+async def test_a_press_while_the_close_stops_the_heartbeat_still_ends_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A session's close stops the heartbeat first, and the press lands there. Drive closes its
+    robot with its own steps (`_close_robot`), each taking a press, and never calls
+    `RobotSession.close`, which raises the press it meets once the close has run: through it, the
+    press went past the session's end, and the record had no `run_end` and no `summary.json`. The
+    beat stand-in takes the cancel `Heartbeat.stop` sends it and answers once let go after the
+    press, as a beat whose cancel Python 3.11's `wait_for` lost does. The line `quit` is read
+    once the beat is under way, so the close finds it there."""
+    import threading
+
+    from roboglot_lerobot.mock import LeRobotMock
+
+    _Folds(monkeypatch, hold_on=0)
+    beating, held, released = threading.Event(), asyncio.Event(), asyncio.Event()
+    beat = LeRobotMock.heartbeat
+
+    async def heartbeat(arm: Any) -> None:
+        task = asyncio.current_task()
+        if task is None or task.get_name() != "roboglot-heartbeat":
+            return await beat(arm)
+        beating.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            held.set()
+            await released.wait()
+
+    class _QuitOnceBeating(io.StringIO):
+        def readline(self, size: int | None = -1) -> str:
+            beating.wait(_HANG_S)
+            return super().readline()
+
+    monkeypatch.setattr(LeRobotMock, "heartbeat", heartbeat)
+    registry = _arm_with_a_rest_pose(tmp_path)
+    runs = tmp_path / "runs"
+    args = DriveArgs(robot="arm-01", registry_dir=str(registry), llm="fake", runs_dir=str(runs))
+    session = asyncio.ensure_future(
+        run_drive(args, say=lambda _: None, stream=_QuitOnceBeating("quit\n"), keyboard=False)
+    )
+    await asyncio.wait_for(held.wait(), _HANG_S)
+    session.cancel()
+    await asyncio.sleep(0)
+    released.set()
+    await asyncio.wait({session}, timeout=_HANG_S)
+    assert session.cancelled(), "the press goes on up once the session has ended in order"
+    run = _the_run(runs)
+    events = Transcript.read(run / "transcript.jsonl")
+    assert events[-1]["kind"] == "run_end", [e["kind"] for e in events[-6:]]
+    assert events[-1]["outcome"] == "success", "the session had ended as asked, by `quit`"
+    assert (run / "summary.json").exists()
+
+
 @pytest.mark.parametrize("ending", ["nobody", "pressed-in-the-fold"])
 async def test_watching_the_opening_fold_leaves_the_adapter_as_it_found_it(
     ending: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The opening fold is watched by wrapping the adapter's rest move for the connect alone
-    (`_watching_the_fold`). An adapter with no `go_to_rest` of its own, as every shipped one is,
-    must have none after the session, however it ended: a wrapper left behind would be read as the
+    """The opening fold was once watched by wrapping the adapter's rest move for the connect
+    alone; the session now reads what `RobotSession.connect` recorded of it, and nothing wraps
+    the rest move. An adapter with no `go_to_rest` of its own, as every shipped one is, must still
+    have none after the session, however it ended: a wrapper left behind would be read as the
     opening fold by anything that folded the arm later."""
     import roboglot.mcp_server as mcp_server
 

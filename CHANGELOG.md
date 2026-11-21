@@ -255,6 +255,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   kinds.** These are the rows and the `--json` that `roboglot policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
   now follow them, so a script that reads `--kind all --json` gets rows of a third `kind`, `policy`.
+- **`serve-mcp` says when nobody is watching for a body's fall.** `roboglot run` and `roboglot
+  drive` ask whether somebody is watching a body that cannot see its own fall and cannot get up
+  before it walks, the Open Duck Mini on a bridge whose runtime reports no fall signal among
+  them, and `serve-mcp` asked nobody and told nobody. It still asks nothing and refuses nothing,
+  and says it: at the first assessment of a task that can make such a body walk, stderr has the
+  warning those two put, ending `Nobody is asked here whether they are watching it, so somebody
+  must be.`, and a `feasible` or `uncertain` answer from `robot_assess_task` carries the same
+  words in a `warning` field for the client. A body whose state cannot be read then is warned of
+  all the same. A team server says it for each such member, and every other body reads as before.
 - **Four vendors' defaults moved to a newer LLM, and Jev's pin moved with them.** A bare
   `--llm openai` is `gpt-6.1-sol` (it was `gpt-6-sol`, which OpenAI no longer lists among its
   flagships), `--llm gemini` is `gemini-4-hydrogen` (it was `gemini-3.8-flash`, which Google now
@@ -746,6 +755,43 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   twist for as long as the frame took; the heartbeat waited with it. The pass runs in a worker
   thread now, as the board's detector does, one at a time, so `go_to` holds its twist for one
   deadman window and then zeroes it while the frame is still being looked at.
+- **An MCP session that ends stops every robot before it folds any.** `serve-mcp` closed its robots
+  one after another, and each close waited out a pause the robot had granted a robot it met and
+  folded its arm before the next robot was sent its stop. A stdio client ends the server a fixed
+  grace after it closes the server's stdin, two seconds for the MCP Python SDK's own client, so a
+  robot late in the team could be left driving on its last command. Every robot is sent its stop
+  first now, all at once, each waited for as long as that robot's `stop` verb is given, and only
+  then is each one put down and closed. A stop that never answered held the close for good, and
+  now goes on by itself after that time, said on stderr, and a stop the transport says did not
+  land is said in its words. A Ctrl-C during the close means stop, and no longer skips a
+  transport's close or what it says. One that lands in a fold stops it where it is, holds the arm
+  there and says so; a fold that does not end when told is told twice, and said to have gone on
+  if it still does, and one that goes on to its end after the press is said to have done so,
+  never to have stopped. From that press on no fold starts on any robot, and each arm is said to be
+  held where it stands, where the arm in a pause's wait, and the next arm, used to go down after
+  it. The close's stops run to their end through a later Ctrl-C, each for as long as a stop is
+  given, and every transport's close for as long as the body says its close can take, or 30 s
+  where it says nothing, as `roboglot drive` waits; a close still going after that is said to be
+  given up as the server ends, with what to do. Such a press used to leave a transport open, with
+  nothing said of its torque, and every robot after it untouched. A Ctrl-C during an arm's fold
+  to its rest pose at start-up
+  stops that fold too, and that arm and every robot that had connected are held and closed,
+  where the arm was left connected and energised with nothing said.
+- **A client that dies mid-call no longer leaves its robots unstopped.** When the client died with
+  a call in flight, the task group the MCP SDK runs a stdio server in cancelled the server's close
+  again at every turn of the loop, so it was cut at the first robot's stop: no robot after that one
+  was stopped, folded or closed, and nothing was said of an arm's torque. The close is shielded
+  from that cancel now, so every robot is stopped, put down and closed, and a Ctrl-C at a terminal
+  still reaches it.
+- **Two `robot_observe` calls at once each return their own picture.** The pictures came from one
+  slot per robot, which each call emptied as it started and every observe overwrote, so a call
+  made while another waited on a slow detector, a board's for one, handed the first its own
+  picture under the first's summary and detections, or left the first words with no picture.
+  Each call returns what its own `observe` captured.
+- **`robot_observe` encodes its pictures in a worker thread.** Each camera's PNG was encoded on the
+  event loop that every robot's heartbeat and every verb still sending share, so a body walking
+  beside the call missed its resends for as long as the encodes took. They are encoded in a worker
+  thread now, as a run's own frames are, and the pictures are the same bytes.
 - **`go_to` says when the distance it arrived by was a guess.** Through a lens nobody measured,
   `observe` says a distance is `(uncalibrated: distance is a rough guess)`, and `go_to`'s
   `reached the ball: ~0.25 m away` left that out, though on a guessed lens it is the difference
@@ -1441,6 +1487,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   service user's group's and mode 0640, and otherwise stops and says what to run, since it may
   be another daemon's token: the MOSS bridge's and the Jetson daemon's look the same. It stops
   on any symlink, and creates a new token with its mode as it is written.
+- **`robot_load_glotfile` reads no file larger than a task file, and refuses one that is not a
+  task without quoting it.** A file larger than 65536 bytes is refused before it is read. A
+  frontmatter that is not valid YAML is refused with the error's kind and its line,
+  `frontmatter is not valid YAML: ScannerError at line 2 of the frontmatter, column 23`, in place
+  of the YAML parser's own words, and one the task format does not fit by each fault's path in
+  the format's own words and its kind, `verbs.allow: value_error`, with no key or value of the
+  file's. A bundled task's name and a task file load as before, and `roboglot run` is unchanged.
 - **The scripts that read GitHub send its token to GitHub's API alone.** The drift nightly's
   `scripts/upstream_drift.py` sent `GITHUB_TOKEN` to any address that began as the API's does,
   and `docs/assets/contributors.py` to any address with the API's host anywhere in it, so a host
