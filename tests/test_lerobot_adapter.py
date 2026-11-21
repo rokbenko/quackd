@@ -70,6 +70,9 @@ from roboglot_lerobot.real import (
     MAX_STEP_DEG,
     OUT_OF_RANGE_DEG,
     POLICY_HZ,
+    REFUSED_LIMP,
+    REFUSED_TORQUE_KEPT,
+    REFUSED_TORQUE_NOT_KNOWN,
     REGISTER_PERIOD_S,
     SPLIT_TORQUE,
     STEP_ENV,
@@ -103,12 +106,15 @@ from roboglot_lerobot.verbs import (
     MANIPULATE_S,
     MOVE_HEADROOM_S,
     MOVE_JOINTS_TIMEOUT_S,
+    MOVE_LIMIT_S,
     MOVE_MAX_S,
     MOVE_MIN_S,
     MOVE_SETTLE_S,
     NO_INSTRUCTION,
     PICK_POLL_S,
     PICK_SETTLE_S,
+    PROGRESS_SHARE,
+    PROGRESS_TICKS,
     RAMP_DECIMALS,
     RAMP_RESOLUTION,
     REST_MAX_S,
@@ -126,6 +132,7 @@ from roboglot_lerobot.verbs import (
     UNREAD_IN_HAND,
     MoveJointsParams,
     PickParams,
+    _progress_floor,
     at_rest,
     gripper_budget_s,
     lerobot_verbs,
@@ -839,6 +846,101 @@ async def test_a_joint_that_stops_moving_is_a_failure_and_not_a_success() -> Non
     assert "stopped moving" in stalled.summary
 
 
+async def _holding_on_the_mock(mock: LeRobotMock, ex: Executor) -> None:
+    """Put the mock's jaws round its object, which `place` asks for before it opens them."""
+    there = {"positions": dict(OBJECT_AT), "duration_s": 2}
+    assert (await ex.run_verb("move_joints", there)).ok
+    closed = await ex.run_verb("gripper", {"open": False})
+    assert closed.ok and closed.data["holding"] is True, closed.summary
+
+
+@pytest.mark.parametrize(
+    ("verb", "params", "joint", "fault"),
+    [
+        pytest.param("move_joints", None, "elbow_flex", "torque", id="a move, torque off"),
+        pytest.param("move_joints", None, "elbow_flex", "hot", id="a move, too hot"),
+        pytest.param("move_joints", None, "wrist_flex", "torque", id="a move, another joint"),
+        pytest.param("gripper", {"open": False}, "gripper", "torque", id="closing"),
+        pytest.param("gripper", {"open": True}, "gripper", "torque", id="opening"),
+        pytest.param("place", {}, "gripper", "torque", id="place"),
+    ],
+)
+async def test_a_move_ends_on_the_tick_a_servo_loses_torque_or_runs_hot(
+    verb: str, params: dict[str, Any] | None, joint: str, fault: str
+) -> None:
+    """Every tick of `move_joints`, `gripper` and `place` reads the arm's registers, and the move
+    judged only the joints on them: torque and heat were judged once, before the verb. A servo
+    whose own protection dropped its torque during a move, or that crossed the heat limit, was
+    sent goals for the rest of the budget, and the result said it had stopped moving, or even
+    that it moved, with no word of either. A policy segment ends on the same reading at once.
+    So a move ends on the tick that reads it, with a stop, in the segment's words, naming the
+    joint. `move_joints` judges the whole arm, as its preconditions do; the gripper's verbs judge
+    the one servo they send goals to and never heat, which no precondition gates them on either,
+    because opening the jaws is how a hot arm puts down what it holds."""
+    mock = LeRobotMock()
+    adapter = LeRobotAdapter(mock)
+    ex = _executor(adapter, await adapter.connect(), confirm=allow_all)
+    if verb == "place":
+        await _holding_on_the_mock(mock, ex)
+    elif params == {"open": True}:
+        assert (await ex.run_verb("gripper", {"open": False})).ok
+    follower = mock.follower
+    if params is None:
+        # a move of the elbow across most of its travel, the fault on it or on another joint
+        low, high = mock.joint_range_deg["elbow_flex"]
+        start = mock.joints["elbow_flex"]
+        far = low + 1.0 if start - low > high - start else high - 1.0
+        params = {"positions": {"elbow_flex": far}, "duration_s": 1.0}
+    sends = follower.send_action
+    sent: list[dict[str, Any]] = []
+
+    def send_action(action: Any) -> Any:
+        out = sends(action)
+        sent.append(dict(action))
+        if len(sent) == 1:
+            if fault == "torque":
+                follower.torque[joint] = False
+            else:
+                follower.temperature[joint] = mock._hot_c() + 1.0
+        return out
+
+    follower.send_action = send_action  # type: ignore[method-assign]
+    result = await ex.run_verb(verb, params)
+    assert not result.ok, result.summary
+    if fault == "torque":
+        said = f"torque reads off on {joint}, so a goal would reach a limp servo"
+    else:
+        said = f"{joint} reads {mock._hot_c() + 1.0:.0f}°C, and Roboglot moves no joint at or above"
+    assert said in result.summary, result.summary
+    assert "stopped moving" not in result.summary and "time ran out" not in result.summary
+    # the tick after the fault read it, and nothing went out after that but the stop's hold
+    assert len(sent) == 2 and "gripper.pos" not in sent[-1], sent
+    assert mock.sequence[-1] == "stop", mock.sequence
+
+
+@pytest.mark.parametrize(
+    ("fault", "joint"),
+    [("hot", "shoulder_lift"), ("torque", "elbow_flex")],
+)
+async def test_the_gripper_goes_on_over_a_body_joint_that_runs_hot_or_loses_torque(
+    fault: str, joint: str
+) -> None:
+    """The gripper's verbs have no precondition on the body joints, so that a hot or tripped arm
+    can still let go of what it holds, and a body joint going wrong while the jaws move does not
+    end them either: the goals they send go to the gripper alone."""
+    mock = LeRobotMock()
+    adapter = LeRobotAdapter(mock)
+    ex = _executor(adapter, await adapter.connect(), confirm=allow_all)
+    await _holding_on_the_mock(mock, ex)
+    if fault == "torque":
+        mock.follower.torque[joint] = False
+    else:
+        mock.follower.temperature[joint] = mock._hot_c() + 1.0
+    placed = await ex.run_verb("place")
+    assert placed.ok, placed.summary
+    assert mock.joints["gripper"] >= GRIPPER_OPEN - GRIPPER_TOL
+
+
 # ── move_joints paces its motion across duration_s ──────────────────────────────────────
 
 
@@ -1183,6 +1285,146 @@ async def test_a_joint_blocked_partway_is_a_stall_once_the_ramp_is_done_and_says
     assert arm.actions[-1][f"{joint}.pos"] == pytest.approx(stopped)
 
 
+LOST_WRITE = "Failed to sync write 'Goal_Position'"
+"""What LeRobot raises for a goal write whose status packet did not come back."""
+
+
+class _HoldLost(FakeArm):
+    """An arm whose bus loses the hold a stop sends: a goal for the five body joints at once,
+    each where it reads, which only a hold is, raises as a write that lost its packet, and every
+    other goal goes through, a rest move's included. `losing` is False for a test's own setup."""
+
+    losing = True
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        here = {key.removesuffix(".pos"): goal for key, goal in action.items()}
+        held = set(here) == BODY_JOINTS and all(self.positions[j] == v for j, v in here.items())
+        if held and self.losing:
+            raise ConnectionError(LOST_WRITE)
+        return super().send_action(action)
+
+
+def _said_unheld(result: VerbResult, verb: str) -> None:
+    """`result` is a failure that says its own stop's hold did not reach the arm, in the backend's
+    words, and that a servo may still be pushing, with the reason in its data."""
+    assert not result.ok, result.summary
+    assert f"{verb}'s stop could not be delivered" in result.summary, result.summary
+    assert f"the hold did not reach the arm: ConnectionError: {LOST_WRITE}" in result.summary
+    assert "A servo may still be pushing toward the last goal it was sent" in result.summary
+    assert LOST_WRITE in result.data["stop_error"], result.data
+
+
+@pytest.mark.parametrize(
+    ("verb", "params", "stuck"),
+    [
+        ("move_joints", {"positions": {"shoulder_lift": 40.0}, "duration_s": 1.0}, "shoulder_lift"),
+        ("gripper", {"open": False}, "gripper"),
+        ("place", {}, "gripper"),
+    ],
+)
+async def test_a_stall_whose_hold_did_not_reach_the_arm_says_so(
+    verb: str, params: dict[str, Any], stuck: str
+) -> None:
+    """A stalled move ends with the transport's stop, whose hold may not reach the arm: a Feetech
+    bus loses packets. The backend keeps that in `stop_error`, and the verbs never read it, so a
+    move said only that its joint had stopped moving while the servo went on pushing toward a goal
+    a step past what stopped it, a hand or the desk. Each reads it through the core's own reading
+    of a stop (`roboglot.verbs.core._stop`), as `manipulate`'s stall always did."""
+    arm = _HoldLost(object_in_jaws=verb == "place")
+    _adapter, ex, _clock = await _paced(arm)
+    if verb == "place":
+        arm.losing = False
+        assert (await ex.run_verb("gripper", {"open": False})).ok
+        arm.losing = True
+    arm.stuck.add(stuck)
+    ended = await ex.run_verb(verb, params)
+    assert "it has stopped moving" in ended.summary, ended.summary
+    _said_unheld(ended, verb)
+
+
+@pytest.mark.parametrize(
+    ("verb", "params", "begins"),
+    [
+        ("pick", {"target": "cup", "max_s": 1}, "pick 'cup' did not end with something held"),
+        ("manipulate", {"instruction": "wave"}, "manipulate 'wave' was stopped: "),
+    ],
+)
+async def test_a_policy_verb_whose_own_stop_did_not_reach_the_arm_says_so(
+    verb: str, params: dict[str, Any], begins: str
+) -> None:
+    """`pick` stops the arm after a segment that ended without a grasp, and `manipulate` after
+    one a guard ended, and neither read what that stop did: the same lost hold, said the same
+    way. `manipulate`'s stall already said it, in words of its own."""
+    arm = _HoldLost(camera=False)
+    # a pan that never grasps, and that a policy's goal past a number ends at its third tick
+    policy = Scripted(lambda n: {"shoulder_pan": math.nan} if n == 3 else _pan(n))
+    _, _, adapter, ex = await _segment(policy if verb == "manipulate" else Scripted(_pan), arm)
+    ended = await ex.run_verb(verb, params)
+    assert ended.summary.startswith(begins), ended.summary
+    _said_unheld(ended, verb)
+    await adapter.close()
+
+
+@pytest.mark.parametrize("ends", ["time out", "guard", "interrupted", "refused"])
+async def test_a_move_ended_any_way_whose_own_stop_did_not_reach_the_arm_says_so(
+    ends: str,
+) -> None:
+    """`_drive` stops the arm on every way a move ends short, and reads that stop on each: run
+    out of time, ended by a guard, told to end from beside it (a run's minutes spent), and a goal
+    the arm refused. Each says its stop could not be delivered, as a stall does."""
+    step = 0.4 if ends == "time out" else MAX_STEP_DEG  # too low a cap to get there in time
+    arm = _HoldLost(step=step)
+    _adapter, ex, clock = await _paced(arm, step=step)
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    goal = round(_share_of(travel, -0.86 if ends == "time out" else 0.6), 1)
+    sends = arm.send_action
+
+    def faults(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        if ends == "guard":
+            arm.torque = False
+        elif ends == "refused":
+            arm.send_fails = True  # the next goal is refused, and the hold after it lost
+        return sent
+
+    arm.send_action = faults  # type: ignore[method-assign]
+    if ends == "interrupted":
+        ex.budget = Budget(Budgets(max_minutes=0.01), now=clock.now)
+        ex.budget.start()
+    duration = MOVE_MAX_S if ends == "time out" else 5.0
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": duration})
+    said = {
+        "time out": "when the time ran out",
+        "guard": "the move was ended there because torque reads off",
+        "interrupted": "max_minutes",
+        "refused": "joint failed: ConnectionError",
+    }[ends]
+    assert said in moved.summary, moved.summary
+    _said_unheld(moved, "move_joints")
+    arm.send_fails = False
+
+
+async def test_a_move_that_arrives_on_the_tick_its_servo_trips_ends_on_the_guard() -> None:
+    """The guard is judged before arrival: a move that reads its joint arrived on the same tick
+    it reads the arm's torque off says so, held, and never `moved`, which would leave the pilot
+    sure of an arm that has gone limp."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    _adapter, ex, _clock = await _paced(arm)
+    joint = "shoulder_pan"
+    goal = arm.positions[joint] + RAMP_RESOLUTION / 2  # sent whole, judged on the first tick
+    sends = arm.send_action
+
+    def trips(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        arm.torque = False
+        return sent
+
+    arm.send_action = trips  # type: ignore[method-assign]
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": 1.0})
+    assert not moved.ok, moved.summary
+    assert "the move was ended there because torque reads off" in moved.summary, moved.summary
+
+
 @pytest.mark.parametrize(
     ("past", "goals"),
     [
@@ -1480,6 +1722,199 @@ async def test_a_move_the_cap_cannot_finish_runs_out_of_time_inside_the_executor
     assert not late.ok and "when the time ran out" in late.summary, late.summary
     assert f"with a goal of {goal:.0f}" in late.summary
     assert ceiling <= clock.t <= ceiling + TICK_S + 1e-9, clock.t
+
+
+SLOW_PACE = 0.4
+"""How much of each step a slow stand-in servo covers per send: a share of the step cap that
+the move's timer takes every send to cover. A number of this test's own, and nothing measured."""
+
+
+class _Slow(FakeArm):
+    """A servo slower than the step cap the move's timer is made of: each send moves a joint no
+    further than `pace` of a step from where it was, `SLOW_PACE` unless a test says otherwise,
+    and it gets there in the end."""
+
+    pace = SLOW_PACE
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        before = dict(self.positions)
+        sent = super().send_action(action)
+        reach = self.step * self.pace
+        for key in action:
+            joint = key.removesuffix(".pos")
+            gone = self.positions[joint] - before[joint]
+            self.positions[joint] = before[joint] + max(-reach, min(reach, gone))
+        self.trail[-1] = dict(self.positions)
+        return sent
+
+
+@pytest.mark.parametrize("wall", [None, 0.6], ids=["arrives", "stopped past its time"])
+async def test_a_move_still_moving_when_its_time_runs_out_goes_on_until_it_stops(
+    wall: float | None,
+) -> None:
+    """The move's timer is the time its ramp and the step cap say it needs, plus a settle, and an
+    arm slower than the cap, still moving toward its goal, was failed for running out of time
+    while it went (the run sheet's E114). It goes on while the joint still gets nearer its goal,
+    up to the overall limit that keeps the verb inside the executor's timeout, and arrives. A
+    move that has stopped ends as it did: within its time on the stall rule, and past it once
+    its last `PROGRESS_TICKS` ticks no longer gained its tolerance on the goal, saying the time
+    ran out."""
+    arm = _Slow(step=MAX_STEP_DEG)
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.8), 1)
+    goal = round(_share_of(travel, 0.8), 1)
+    if wall is not None:
+        arm.obstacles[joint] = (-math.inf, round(_share_of(travel, wall), 1))
+    _adapter, ex, clock = await _paced(arm)
+    distance = abs(goal - arm.positions[joint])
+    budget = move_budget_s(distance, MOVE_MIN_S, MAX_STEP_DEG)
+    limit = MOVE_JOINTS_TIMEOUT_S - MOVE_HEADROOM_S
+    slow_s = (distance - TOL_DEG) / (MAX_STEP_DEG * SLOW_PACE / TICK_S)
+    assert budget < slow_s < limit, "the stand-in must be slower than the timer and arrive"
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    if wall is None:
+        assert moved.ok, moved.summary
+        assert budget < clock.t < limit, (budget, clock.t)
+        return
+    assert not moved.ok and moved.summary.endswith("when the time ran out"), moved.summary
+    at = round(_share_of(travel, wall), 1)
+    assert arm.positions[joint] == pytest.approx(at), arm.positions
+    assert budget < clock.t < limit, (budget, clock.t)
+    # past its time, it ended within the window once its gain over the window fell short: fewer
+    # goals after the send that reached the wall than the window has ticks, then the stop's hold
+    there = next(i for i, where in enumerate(arm.trail) if where[joint] == pytest.approx(at))
+    goals = [a for a in arm.actions[there + 1 :] if set(a) == {f"{joint}.pos"}]
+    assert 1 <= len(goals) < PROGRESS_TICKS, arm.actions[there:]
+
+
+PUSH_DEG = 2 * STALL_DEG
+"""How far a hand back-driving a joint moves it per send, away from its goal: twice the stall
+rule's bound on a tick, so the joint reads as moving on every tick. This test's own number."""
+
+
+class _PushedBack(_Slow):
+    """`_Slow`'s servo, a hand on its pan pushing it back by `PUSH_DEG` a send once `from_s` has
+    passed on `clock`, however it is driven: moving on every tick, and the wrong way."""
+
+    clock: Any = None
+    from_s = math.inf
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        before = self.positions["shoulder_pan"]
+        sent = super().send_action(action)
+        if self.clock is not None and self.clock.t >= self.from_s:
+            self.positions["shoulder_pan"] = before - PUSH_DEG
+            self.trail[-1] = dict(self.positions)
+        return sent
+
+
+class _Jerky(FakeArm):
+    """A slow servo that sticks and slips: on every other send it covers twice `SLOW_PACE` of a
+    step, and on the rest it does not move, as slow on average as `_Slow` and never still for the
+    stall rule's ticks in a row."""
+
+    sends = 0
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        before = dict(self.positions)
+        sent = super().send_action(action)
+        self.sends += 1
+        reach = self.step * 2 * SLOW_PACE if self.sends % 2 else 0.0
+        for key in action:
+            joint = key.removesuffix(".pos")
+            gone = self.positions[joint] - before[joint]
+            self.positions[joint] = before[joint] + max(-reach, min(reach, gone))
+        self.trail[-1] = dict(self.positions)
+        return sent
+
+
+@pytest.mark.parametrize("arm_kind", ["pushed back", "in jerks"])
+async def test_past_its_time_a_move_goes_on_only_while_it_gains_on_its_goal(arm_kind: str) -> None:
+    """Still moving is still getting nearer the goal: a slow servo a hand starts pushing back
+    once the move's time is up moves on every tick, the wrong way, and the move ends as the
+    budget always ended it, rather than drive the servo into the hand to the overall limit. A
+    servo that moves on one tick and not the next, as slow as `_Slow` on average, is judged on
+    what it gained over the window, and arrives."""
+    arm: FakeArm = (
+        _PushedBack(step=MAX_STEP_DEG) if arm_kind == "pushed back" else _Jerky(step=MAX_STEP_DEG)
+    )
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.8), 1)
+    goal = round(_share_of(travel, 0.8), 1)
+    _adapter, ex, clock = await _paced(arm)
+    budget = move_budget_s(abs(goal - arm.positions[joint]), MOVE_MIN_S, MAX_STEP_DEG)
+    if isinstance(arm, _PushedBack):
+        arm.clock, arm.from_s = clock, budget - PROGRESS_TICKS * TICK_S
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    if arm_kind == "in jerks":
+        assert moved.ok and budget < clock.t, (moved.summary, budget, clock.t)
+        return
+    assert not moved.ok and moved.summary.endswith("when the time ran out"), moved.summary
+    assert clock.t <= budget + 2 * TICK_S, f"pushed back for {clock.t - budget:.1f} s past its time"
+
+
+def test_at_the_default_cap_the_progress_floor_is_the_tolerance_it_always_was() -> None:
+    """The floor a move past its time must gain over its window scales with the step cap, and at
+    the arm's default cap it is each joint's tolerance, as it was before it scaled: what every
+    other test of the rule runs under is unchanged. A lowered cap brings it down, and neither a
+    raised cap nor a manifest that publishes none lifts it past the tolerance."""
+    assert PROGRESS_SHARE * MAX_STEP_DEG * PROGRESS_TICKS == TOL_DEG == GRIPPER_TOL
+    assert _progress_floor(TOL_DEG, MAX_STEP_DEG) == TOL_DEG
+    assert _progress_floor(TOL_DEG, MAX_STEP_DEG / 2) < TOL_DEG
+    assert _progress_floor(TOL_DEG, 2 * MAX_STEP_DEG) == TOL_DEG == _progress_floor(TOL_DEG, None)
+
+
+SLOW_STEP_DEG = 1.0
+"""The run sheet's own slow step, `ROBOGLOT_LEROBOT_MAX_STEP_DEG = "1"`, the cap the slow
+examples run under."""
+SLOW_STEP_PACE = 0.6
+"""How much of each step the servo under the slow step covers per send: just over half, as half
+the cap a tick is the stall rule's own bound at this cap (`_stall_threshold`), and a tick that
+moves no more than that counts as still. A number of this test's own, and nothing measured."""
+
+
+async def test_under_the_slow_step_a_servo_slower_than_the_cap_is_waited_for() -> None:
+    """With the cap at 1 degree a send, the most a joint can gain over the progress rule's window
+    was the tolerance itself, so a servo slower than the cap was failed for time as it went, as
+    though the rule were not there. The floor scales with the cap, and the move arrives."""
+    arm = _Slow(step=SLOW_STEP_DEG)
+    arm.pace = SLOW_STEP_PACE
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.5), 1)
+    goal = round(_share_of(travel, 0.5), 1)
+    _adapter, ex, clock = await _paced(arm, step=SLOW_STEP_DEG)
+    distance = abs(goal - arm.positions[joint])
+    budget = move_budget_s(distance, MOVE_MIN_S, SLOW_STEP_DEG)
+    slow_s = (distance - TOL_DEG) / (SLOW_STEP_DEG * SLOW_STEP_PACE / TICK_S)
+    window_s = PROGRESS_TICKS * TICK_S
+    assert budget + window_s < slow_s < MOVE_LIMIT_S, "the stand-in must need past its window"
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    assert moved.ok, f"{moved.summary} at {clock.t:.1f} s, its budget {budget:.1f} s"
+    assert budget + window_s < clock.t < MOVE_LIMIT_S, (budget, clock.t)
+    assert abs(arm.positions[joint] - goal) <= TOL_DEG, arm.positions
+
+
+async def test_a_servo_that_trips_on_a_slow_move_past_its_time_ends_it_on_the_guard() -> None:
+    """S4-02 in the extension: a slow move still gaining on its goal past its time, whose servo
+    trips then, ends on the tick that reads it, held, in the guard's words."""
+    arm = _Slow(step=MAX_STEP_DEG)
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.8), 1)
+    goal = round(_share_of(travel, 0.8), 1)
+    _adapter, ex, clock = await _paced(arm)
+    budget = move_budget_s(abs(goal - arm.positions[joint]), MOVE_MIN_S, MAX_STEP_DEG)
+    sends = arm.send_action
+
+    def trips(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        if clock.t >= budget + PROGRESS_TICKS * TICK_S:
+            arm.torque = False
+        return sent
+
+    arm.send_action = trips  # type: ignore[method-assign]
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    assert not moved.ok and "the move was ended there because torque reads off" in moved.summary
+    assert budget + PROGRESS_TICKS * TICK_S <= clock.t, (budget, clock.t)
 
 
 async def test_the_gripper_verb_sends_its_yes_or_no_and_is_never_ramped() -> None:
@@ -2049,6 +2484,92 @@ async def test_real_backend_refuses_an_arm_with_no_calibration_file() -> None:
     adapter = LeRobotAdapter(LeRobotReal("COM5", robot=arm))
     with pytest.raises(TransportError, match="no calibration file"):
         await adapter.connect()
+
+
+def _refused_on(why: str) -> FakeArm:
+    """An arm of one of the three kinds a connect refuses once LeRobot's `configure()` has
+    energised it (`LeRobotReal._refusal`). The one with no motors bus is a robot of another kind,
+    whose own disconnect reads the flag as LeRobot's does and never reaches a bus."""
+    if why == "no motors bus":
+        arm = FakeArm()
+        connect = arm.connect
+
+        def connect_with_no_bus(calibrate: bool = True) -> None:
+            connect(calibrate)
+            arm.bus = None  # type: ignore[assignment]
+
+        arm.connect = connect_with_no_bus  # type: ignore[method-assign]
+        return arm
+    arm = DisconnectsThroughItsBus()
+    if why == "not calibrated":
+        arm.calibrated = False
+    else:
+        arm.calibration = {}
+    return arm
+
+
+@pytest.mark.parametrize("why", ["not calibrated", "no calibration file", "no motors bus"])
+async def test_a_refused_connect_says_torque_came_off_where_the_arm_stood(why: str) -> None:
+    """A connect refused after `configure()` switched torque on takes torque off every motor
+    wherever the arm stands (ADR-0036 decided the release), and the refusal said only the
+    reason. An arm a close left holding, connected again under a calibration that is not its
+    own, dropped with nothing said of torque. It says so now, after the reason."""
+    arm = _refused_on(why)
+    with pytest.raises(TransportError) as refused:
+        await LeRobotAdapter(LeRobotReal("COM5", robot=arm)).connect()
+    said = str(refused.value)
+    assert why in said, said
+    assert said.endswith(f". {REFUSED_LIMP}"), said
+    assert arm.torque is False and not arm.connected
+
+
+@pytest.mark.parametrize(
+    ("held", "named"),
+    [(("elbow_flex",), "every joint but elbow_flex, whose write"), (JOINTS, None)],
+    ids=["one joint", "every joint"],
+)
+async def test_a_refused_connect_names_a_motor_whose_torque_off_was_not_confirmed(
+    held: tuple[str, ...], named: str | None
+) -> None:
+    """The refused connect's disconnect sat in `suppress`, so one whose torque-off raised naming a
+    motor LeRobot could not confirm left that joint holding, and unnamed. It is named, with
+    LeRobot's words; an error naming every motor, as an arm with no power gives, says which motors
+    hold is not known."""
+    arm = DisconnectsThroughItsBus(calibrated=False)
+    arm.bus = LeavesSomeHolding(arm)
+    arm.torque_holdouts = set(held)
+    with pytest.raises(TransportError) as refused:
+        await LeRobotAdapter(LeRobotReal("COM5", robot=arm)).connect()
+    said = str(refused.value)
+    assert said.startswith("lerobot real: the arm is not calibrated"), said
+    assert REFUSED_LIMP not in said, said
+    if named is None:
+        assert said.endswith(f". {REFUSED_TORQUE_NOT_KNOWN}"), said
+        return
+    assert f"Torque was taken off where the arm stood on {named}" in said, said
+    assert "LeRobot could not confirm (ConnectionError: Failed to disable torque" in said, said
+    assert "so it may still hold" in said, said
+
+
+async def test_a_refused_connect_whose_release_did_not_take_says_torque_is_kept() -> None:
+    """The release rides on a flag written just before the disconnect that reads it, and a write
+    that did not take leaves the hold the follower was built with: then nothing came off, and the
+    refusal says the arm keeps its torque rather than that it was let go."""
+
+    class KeepsItsHold:
+        disable_torque_on_disconnect = False
+        max_relative_target = MAX_STEP_DEG
+
+        def __setattr__(self, name: str, value: object) -> None:
+            raise AttributeError(name)
+
+    arm = DisconnectsThroughItsBus(calibrated=False)
+    arm.config = KeepsItsHold()  # type: ignore[assignment]
+    with pytest.raises(TransportError) as refused:
+        await LeRobotAdapter(LeRobotReal("COM5", robot=arm)).connect()
+    said = str(refused.value)
+    assert said.endswith(f". {REFUSED_TORQUE_KEPT}"), said
+    assert arm.torque is True
 
 
 @pytest.mark.serial
@@ -2901,6 +3422,32 @@ async def test_a_slow_camera_release_never_costs_the_arm_its_disconnect() -> Non
     assert transport._wedged is None and transport.stop_error is None
 
 
+async def test_the_arm_says_how_long_its_close_can_take_counting_every_camera() -> None:
+    """`roboglot drive` waits on the arm's close through a Ctrl-C for as long as the close can
+    take, and waited a figure that counted one camera, where the close releases its cameras one
+    after another, each under its own bound: an arm with two could still be releasing them when
+    the wait ran out, and its disconnect was then cancelled. The arm says the whole of it, from
+    what its close is made of: each camera, the read of where the arm is, and the disconnect."""
+    from roboglot_lerobot.real import DISCONNECT_S
+
+    two = LeRobotReal(
+        "COM5",
+        robot=FakeArm(camera=False),
+        cameras=parse_camera_urls(("opencv://1?name=top", "opencv://2?name=side")),
+        camera_objects={"top": FakeCamera(), "side": FakeCamera()},
+    )
+    none = LeRobotReal("COM5", robot=FakeArm(camera=False))
+    adapters = (LeRobotAdapter(two), LeRobotAdapter(none))
+    for adapter in adapters:
+        await adapter.connect()
+    with_two, with_none = (adapter.close_bound_s for adapter in adapters)
+    assert with_two is not None and with_none is not None
+    assert with_two - with_none == 2 * two.camera_close_s, "a camera was not counted"
+    assert with_none == none.timeout_s + DISCONNECT_S
+    for adapter in adapters:
+        await adapter.close()
+
+
 async def test_a_camera_that_hangs_on_open_says_so_and_leaves_the_arm_alone() -> None:
     arm = FakeArm()
     transport = LeRobotReal(
@@ -2913,6 +3460,81 @@ async def test_a_camera_that_hangs_on_open_says_so_and_leaves_the_arm_alone() ->
     with pytest.raises(TransportError, match="did not return within"):
         await LeRobotAdapter(transport).connect()
     assert arm.calls == [] and transport._wedged is None
+
+
+class _OpensLate(FakeCamera):
+    """A webcam whose open outlasts any bound: `connect` waits until the test lets it through,
+    then marks it open, and `disconnect` records whether that open had come back yet."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.inside = threading.Event()
+        self.let_through = threading.Event()
+        self.returned = threading.Event()
+        self.closed_mid_open: list[bool] = []
+
+    def connect(self, warmup: bool = True) -> None:
+        self.calls.append("connect")
+        self.inside.set()
+        # a generous bound of the wall's, only so a test that fails cannot hang the suite
+        self.let_through.wait(30.0)
+        self.connected = True
+        self.returned.set()
+
+    def disconnect(self) -> None:
+        self.calls.append("disconnect")
+        self.closed_mid_open.append(not self.returned.is_set())
+        self.connected = False
+
+
+async def test_a_camera_open_past_its_bound_is_let_go_of_after_it_returns_not_reused() -> None:
+    """A camera whose connect outlasted its bound was abandoned in its worker, and the refusal's
+    close then disconnected the same object from a second thread while that connect still ran,
+    and kept it: a later connect in the same process, the MCP server's or the onboard service's,
+    called connect on it again. It is no longer the transport's once abandoned, is let go of
+    only after its connect has come back, and a later connect builds a camera of its own."""
+    arm = FakeArm()
+    late = _OpensLate()
+    transport = LeRobotReal(
+        "COM5", robot=arm, camera=parse_camera_url("opencv://3"), camera_object=late
+    )
+    # the open waits for the test, so any bound runs out; the next connect gets the default back
+    bound, transport.camera_connect_s = transport.camera_connect_s, 0.05
+    with pytest.raises(TransportError, match="did not return within"):
+        await LeRobotAdapter(transport).connect()
+    assert late.closed_mid_open == [], "the camera was disconnected while its connect still ran"
+    late.let_through.set()
+    await _until(lambda: late.closed_mid_open)
+    assert late.closed_mid_open == [False] and not late.connected, late.calls
+    fresh = FakeCamera()
+    transport._build_camera = lambda spec: fresh  # type: ignore[method-assign]
+    transport.camera_connect_s = bound
+    await LeRobotAdapter(transport).connect()
+    assert late.calls == ["connect", "disconnect"], "the abandoned camera was opened again"
+    named = (transport.camera_specs[0].name,)
+    assert fresh.calls == ["connect"] and transport.camera_keys == named, fresh.calls
+    await transport.close()
+
+
+async def test_a_camera_whose_connect_is_cancelled_is_let_go_of_after_its_open_returns() -> None:
+    """The same road for a connect cancelled while the camera opens, a press or an abort as the
+    arm connects: the camera's open goes on in its worker, and the close that follows used to
+    disconnect the same object from a second thread while that open ran. It is abandoned as one
+    that ran out of time is, and let go of once its open has come back."""
+    late = _OpensLate()
+    transport = LeRobotReal(
+        "COM5", robot=FakeArm(), camera=parse_camera_url("opencv://3"), camera_object=late
+    )
+    connecting = asyncio.create_task(LeRobotAdapter(transport).connect())
+    await _until(late.inside.is_set)
+    connecting.cancel()
+    await asyncio.wait({connecting})
+    assert connecting.cancelled()
+    await transport.close()
+    assert late.closed_mid_open == [], f"disconnected while its open still ran: {late.calls}"
+    late.let_through.set()
+    await _until(lambda: late.closed_mid_open)
+    assert late.closed_mid_open == [False] and not late.connected, late.calls
 
 
 async def test_an_arm_that_refuses_after_the_camera_opened_lets_the_camera_go() -> None:
@@ -3424,7 +4046,7 @@ async def test_an_arm_that_cannot_reach_its_rest_pose_keeps_its_torque_and_says_
     assert arm.torque_disabled == 0 and arm.torque is True
     note = adapter.close_note
     assert note is not None
-    assert "torque was left on" in note and "it will not fall" in note
+    assert "torque was left on" in note and "it is holding its pose" in note
     assert "shoulder_lift" in note, note
 
 
@@ -3485,6 +4107,7 @@ async def test_an_arm_roboglot_cannot_keep_powered_is_told_so_instead_of_the_opp
     assert "could not keep torque on" in note, note
     assert "released where it stood" in note, note
     assert "it will not fall" not in note, "the note promised the arm was being held"
+    assert "it is holding its pose" not in note, "the note said the arm was being held"
 
 
 def collected(arm: FakeArm) -> None:
@@ -3688,6 +4311,7 @@ async def test_a_flag_that_cannot_be_read_back_is_taken_for_the_release(
     await adapter.close()
     note = adapter.close_note or ""
     assert "could not keep torque on" in note and "it will not fall" not in note, note
+    assert "it is holding its pose" not in note, note
 
 
 async def test_a_refused_release_the_close_could_not_repeat_is_not_said_to_have_gone_out() -> None:
@@ -4293,7 +4917,7 @@ async def test_a_joint_that_slipped_as_torque_arrived_is_refused_but_not_called_
     assert transport._in_hand is False, "torque is on, so the arm is not hanging off a hand"
     await adapter.close()
     note = adapter.close_note or ""
-    assert "torque was left on" in note and "it will not fall" in note
+    assert "torque was left on" in note and "it is holding its pose" in note
     assert "limp and in your hands" not in note, note
 
 
@@ -5883,8 +6507,8 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
     The clearing comes first, because a fold that runs into what stopped the last one stops
     again, and the support comes with its reason: the command connects, and connecting takes
     torque off every motor for a moment, so an arm held up by torque alone is limp for that
-    moment. "It will not fall" is said of the arm as it stands, and no further, and the power
-    switch is the one way out after it."""
+    moment. That the arm is holding its pose is said of it as it stands, and no further, and the
+    power switch is the one way out after it."""
     mock = make("mock", robot_id=name, rest_pose=dict(REST))
     await mock.connect()
     await _sent_there(mock, {"shoulder_pan": 30.0})
@@ -5900,13 +6524,41 @@ async def test_the_torque_note_names_the_ways_out_under_the_name_the_arm_was_reg
 
     for note in (mock.close_note or "", transport.close_note or ""):
         assert note.startswith(TORQUE_LEFT_ON.split("(")[0]), note
-        assert "it will not fall as it stands" in note, note
+        assert "it is holding its pose" in note, note
         clear = note.index("clear whatever is in its way")
         release = note.index(f"roboglot robot release {name}, which folds it to its rest pose")
         support = note.index("support the arm while that connects, because connecting takes")
         power = note.index("Or hold it and cut its power")
         assert clear < release < support < power, "the way out is not said in the order done"
         assert "doctor" not in note and "park" not in note, note
+
+
+@pytest.mark.parametrize("asked", [False, True], ids=["left holding", "release refused"])
+async def test_an_arm_left_holding_is_told_what_holding_does_and_never_that_it_will_not_fall(
+    asked: bool,
+) -> None:
+    """A close away from the rest pose keeps torque on, and said the arm "will not fall as it
+    stands", with no word of time: from the close on nothing reads the servos, and holding a pose
+    is what heats them, while the code's own refusal says a joint that reaches the servo's cut-off
+    goes slack without announcing it. The promise goes. The line says the arm is holding its pose
+    with torque on, what holding does, that it is not to be left so, and the ways to put it down;
+    after a release the person asked for and the arm refused, which already says to hold it and
+    cut its power, it says only what is so."""
+    mock = make("mock", robot_id="arm-07", rest_pose=dict(REST))
+    await mock.connect()
+    await _sent_there(mock, {"shoulder_pan": 30.0})
+    if asked:
+        assert (await mock.let_go(asked=True)).how == "refused"
+    await mock.close()
+    note = mock.close_note or ""
+    assert "will not fall" not in note, note
+    assert "torque was left on and it is holding its pose" in note, note
+    if asked:
+        assert note.endswith("it is holding its pose: hold it and cut its power"), note
+        return
+    heat = note.index("Holding heats the servos, and a servo that reaches its cut-off goes slack")
+    assert "without announcing it, so do not leave it holding" in note, note
+    assert heat < note.index("roboglot robot release arm-07") < note.index("cut its power"), note
 
 
 async def test_an_arm_built_without_a_name_says_name_rather_than_its_default_id() -> None:
@@ -9067,6 +9719,25 @@ async def test_a_stall_whose_hold_found_the_arm_silent_says_it_did_not_answer() 
     parked = await transport.go_to_rest()
     assert parked.how == "stalled", parked
     assert parked.answered is False, "a stall nothing read back was said to have answered"
+
+
+async def test_a_stalled_fold_whose_hold_did_not_reach_the_arm_says_so() -> None:
+    """The fold's stall ends in a hold, so the servo stops pushing at a goal it cannot reach, and
+    that hold went out under `suppress`: one lost on the bus left the result saying only that the
+    joint had stopped moving, which a person is then asked to clear the way of, while the servo
+    went on pushing toward the rest pose. The result says the hold did not land, in the backend's
+    words, as a verb's stop says it."""
+    arm = _HoldLost(step=40.0, stuck=("shoulder_lift",))
+    transport = LeRobotReal("COM5", robot=arm, rest_pose=dict(FOLDED))
+    await transport.connect()
+    parked = await transport.go_to_rest()
+    assert parked.how == "stalled" and parked.answered, parked
+    assert parked.reason.startswith("shoulder_lift is at 0 with a goal of"), parked.reason
+    assert "it has stopped moving, but the rest move's stop could not be delivered" in (
+        parked.reason
+    )
+    assert "so the arm may still be pushing toward its rest pose" in parked.reason
+    assert f"the hold did not reach the arm: ConnectionError: {LOST_WRITE}" in parked.reason
 
 
 # ── what the close says over what its own reads found ───────────────────────────────────

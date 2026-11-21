@@ -364,6 +364,11 @@ def _verbose_line(msg: str) -> None:
 EXIT_INFEASIBLE = 3
 """`roboglot run` when the pilot judged the task beyond this body and nothing moved."""
 
+EXIT_RECORD_INCOMPLETE = 4
+"""`roboglot run` when the run succeeded and its record refused a write on the way out, so the
+transcript or `summary.json` does not hold all of it (`RunResult.record_incomplete`). A run that
+did not succeed exits 1, or 3, as it would have."""
+
 
 def _print_outcome(
     outcome: str,
@@ -2854,6 +2859,9 @@ def _run_impl(
         front.finished(
             result.outcome, result.reason, run_dir=result.run_dir, summary=result.summary
         )
+        if result.record_incomplete is not None:
+            # the page is told what stderr was, once: the record it would show is incomplete
+            front.record("note", {"text": result.record_incomplete})
     _print_outcome(
         result.outcome,
         result.reason,
@@ -2880,6 +2888,11 @@ def _run_impl(
         raise typer.Exit(code=EXIT_INFEASIBLE)
     if result.outcome != "success":
         raise typer.Exit(code=1)
+    if result.record_incomplete is not None:
+        # the run did what it was asked and its record did not keep all of it, which a script
+        # must be able to tell from both a clean success and a failure (the loop said it on
+        # stderr already, once)
+        raise typer.Exit(code=EXIT_RECORD_INCOMPLETE)
 
 
 def _member_views(
@@ -8362,11 +8375,17 @@ def _tell_service(home: Any, op: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def _said_refused(told: dict[str, Any] | None) -> bool:
-    """Whether the running service refused the passport just signed, said if it did."""
-    if told is None or not told.get("passport_refused"):
+    """Whether the running service refused the passport just signed, or does not serve it, said
+    if so. A service from before never says it does not serve one."""
+    if told is None:
         return False
-    why = ui.printable(str(told["passport_refused"]))
-    said = f"the running service keeps the passport it had, and refuses this one: {why}"
+    if told.get("passport_refused"):
+        why = ui.printable(str(told["passport_refused"]))
+        said = f"the running service keeps the passport it had, and refuses this one: {why}"
+    elif told.get("unserved"):
+        said = f"the running service does not serve it: {ui.printable(str(told['unserved']))}"
+    else:
+        return False
     ui.console.print(Text(said, style=ui.STYLES["warn"]))
     return True
 
@@ -8673,9 +8692,19 @@ def onboard_stop(directory: str | None = _ONBOARD_DIR) -> None:
     if reply is None:
         _fail("no service is running for this robot")
         return
-    ui.console.print(
-        _ok_line("stopped the run in hand" if reply.get("was") else "nothing was running")
-    )
+    told = "told the run in hand to stop"
+    if not reply.get("was"):
+        ui.console.print(_ok_line("nothing was running"))
+    elif "ended" not in reply:  # a service from before, which answers before the run has ended
+        ui.console.print(_ok_line(told))
+    elif reply["ended"]:
+        ui.console.print(_ok_line("stopped the run in hand"))
+    else:
+        ui.console.print(
+            _warn_line(
+                f"{told}, and it has not ended yet: roboglot onboard status shows when it has"
+            )
+        )
 
 
 @onboard_app.command("met")

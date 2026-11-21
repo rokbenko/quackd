@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -33,7 +34,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from roboglot.adapters.base import CONNECTING_TAKES_TORQUE_OFF, published_travel, said_past
 from roboglot.glotfile.schema import DEFAULT_SEGMENT_S, INSTRUCTION_MAX_CHARS, instruction_line
 from roboglot.transport.base import Intent, RobotState
-from roboglot.verbs.core import send_or_fail
+from roboglot.verbs.core import _stop, _Unlanded, _unstopped, send_or_fail
 from roboglot.verbs.registry import (
     STOP_ENDED,
     STOPPED,
@@ -65,6 +66,25 @@ GRIPPER_TOL = 5.0
 STALL_TICKS = 5
 STALL_DEG = 0.5
 """No joint moved this far for this many ticks, and it is not going to."""
+PROGRESS_TICKS = STALL_TICKS
+"""How many ticks back a move past its time is judged over, for whether it is still on its way
+(`_closing`): the stall rule's own count of ticks for a joint that has stopped. Over a window and
+not one tick, so a slow servo that sticks and slips, moving on one tick and not the next, is
+judged on what it gained over the window, never on the one tick it happened not to move. The
+least gain that counts is each joint's own arrival tolerance (`TOL_DEG`, `GRIPPER_TOL`), or
+`PROGRESS_SHARE` of what the step cap lets it cover over the window, where that is less: a joint
+pushed back by a hand, bouncing on something that gives, or swinging about its goal gains less
+than that on it, or loses."""
+PROGRESS_SHARE = 0.2
+"""The share of what the step cap lets a joint cover over `PROGRESS_TICKS` sends that it must
+gain on its goal, past its time, to be on its way, where that is less than its tolerance
+(`_closing`). A fifth: at the arm's default cap, 5 degrees a send (`real.MAX_STEP_DEG`), a fifth
+of its 25 degrees over the window is the 5 degree tolerance itself, so at the default the floor
+is the tolerance as it was, and a test holds the three together. Under a lowered cap the floor
+comes down with it, as the stall's own bound does (`_stall_threshold`): at the run sheet's slow
+step of 1 degree the most a joint could gain over the window was the tolerance itself, so no
+servo slower than the cap was ever waited for, and now one the stall rule sees moving on every
+tick, more than half the cap a tick there, gains more than its floor over the window."""
 GRIPPER_S = 6.0
 """The least time to give the gripper. The step cap applies to its 0..100 range too, so a full
 open takes 100 divided by the step, times the tick, and a lowered cap needs longer than this
@@ -108,6 +128,12 @@ MOVE_HEADROOM_S = 2.0
 between ticks, and after it the verb still sends, reads and stops the arm; on a real bus each of
 those is a call with its own deadline, and all of it has to land before the executor's clock
 does."""
+MOVE_LIMIT_S = MOVE_JOINTS_TIMEOUT_S - MOVE_HEADROOM_S
+"""The longest `move_joints` watches a move on any account: its budget ends no later
+(`move_budget_s`), and a move still moving when its budget runs out goes on to this and no
+further (`_drive`)."""
+GRIPPER_LIMIT_S = GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S
+"""`MOVE_LIMIT_S` for the gripper's verbs, inside their own executor timeout."""
 
 PICK_POLL_S = 0.5
 PICK_SETTLE_S = STALL_TICKS * TICK_S
@@ -166,7 +192,9 @@ class SegmentEnd:
     `holding` is the gripper closed and settled on something, which is what `pick` is for.
     `finished` is the policy saying it was done and the grasp not settling on anything in the
     settle after. `time` is the segment's time run out, `chunks` its chunks played or a policy
-    that said it was done, and `stall` the arm no longer moving under `manipulate`'s policy.
+    that said it was done, and `stall` the arm no longer moving under `manipulate`'s policy, or
+    under `pick`'s pressed against something, at a rate where that can be told from one tick
+    (`Segment.stalls_at`).
     `guard` is the loop ending the segment itself on a reading or an action it would not send,
     with the arm held where it is: `reason` says which. `starved` is a policy that gave nothing
     to send for too long, with the arm held too. `error` is the policy raising. `refused` is the
@@ -290,6 +318,12 @@ def _holding(state: RobotState) -> str | None:
     return None if state.holding else "nothing is held: pick something first"
 
 
+GOES_SLACK = "goes slack without announcing it"
+"""What a servo does at its own heat cut-off: its protection takes its torque off, and nothing
+on the bus says so. Said where a joint is refused for heat (`_not_hot`), and where a close leaves
+the arm holding its pose, which is what heats a servo (`TORQUE_LEFT_ON`)."""
+
+
 def _not_hot(state: RobotState) -> str | None:
     """Only on the verbs that move the five body joints. LeRobot caps the gripper's torque
     and current and caps nothing else (`upstream_api.SO_BODY_HAS_NO_TORQUE_CAP`), so this is
@@ -303,7 +337,7 @@ def _not_hot(state: RobotState) -> str | None:
     reading = temperatures.get(worst, "?")
     return (
         f"{worst} reads {reading}°C: let the arm cool before moving it. The servo's own "
-        "cut-off is 70°C and a joint that trips it goes slack without announcing it"
+        f"cut-off is 70°C and a joint that trips it {GOES_SLACK}"
     )
 
 
@@ -460,13 +494,17 @@ def move_budget_s(distance: float, duration_s: float, step_deg: float | None) ->
     behind a ramp faster than it may go, then closes the rest of the gap at the cap. After that
     the move gets `MOVE_SETTLE_S` to arrive or be called stalled.
 
-    Bounded by `MOVE_HEADROOM_S` inside `MOVE_JOINTS_TIMEOUT_S`, so the verb always ends on its
-    own verdict, with where the joint stopped, rather than on the executor's. A move the cap
-    says needs longer than that (a step lowered through `ROBOGLOT_LEROBOT_MAX_STEP_DEG`, a long
-    reach) runs out of time and says how far it got. Where no step is known, as on a manifest
-    that publishes none, the cap adds nothing."""
+    Bounded by `MOVE_HEADROOM_S` inside `MOVE_JOINTS_TIMEOUT_S` (`MOVE_LIMIT_S`), so the verb
+    always ends on its own verdict, with where the joint stopped, rather than on the executor's.
+    A move the cap says needs longer than that (a step lowered through
+    `ROBOGLOT_LEROBOT_MAX_STEP_DEG`, a long reach) runs out of time and says how far it got.
+    Where no step is known, as on a manifest that publishes none, the cap adds nothing.
+
+    The cap is a ceiling and not a speed: a servo slower than it, under load or on a lower
+    supply, is still on its way when this runs out, and a move still moving then goes on, up to
+    `MOVE_LIMIT_S` (`_drive`)."""
     cap_s = distance / (step_deg / TICK_S) if step_deg and step_deg > 0 else 0.0
-    return min(max(duration_s, cap_s) + MOVE_SETTLE_S, MOVE_JOINTS_TIMEOUT_S - MOVE_HEADROOM_S)
+    return min(max(duration_s, cap_s) + MOVE_SETTLE_S, MOVE_LIMIT_S)
 
 
 def gripper_budget_s(step_deg: float | None) -> float:
@@ -474,12 +512,51 @@ def gripper_budget_s(step_deg: float | None) -> float:
     with the bus's time (`GRIPPER_TICK_SLACK`) and a settle, where a lowered cap
     (`ROBOGLOT_LEROBOT_MAX_STEP_DEG`) makes that longer. It was `GRIPPER_S` alone, so at a cap of 1
     a gripper in good order stopped part of the way and said it had run out of time. Ends inside the
-    executor's timeout, as a move's does."""
+    executor's timeout (`GRIPPER_LIMIT_S`), as a move's does, and a gripper still moving when it
+    runs out goes on to that limit, as a move does (`_drive`)."""
     if not step_deg or step_deg <= 0:
         return GRIPPER_S
     sends = (GRIPPER_OPEN - GRIPPER_CLOSED) / step_deg
     whole = sends * TICK_S * GRIPPER_TICK_SLACK + MOVE_SETTLE_S
-    return min(max(GRIPPER_S, whole), GRIPPER_TIMEOUT_S - MOVE_HEADROOM_S)
+    return min(max(GRIPPER_S, whole), GRIPPER_LIMIT_S)
+
+
+def _unsafe(ctx: VerbContext, *, gripper_only: bool) -> str | None:
+    """What the reading a tick of `_drive` just took rules out another goal for, as the arm's
+    backend says it (`LeRobotAdapter.unsafe_to_drive`), or None, as from a backend that does not
+    say. The whole arm for `move_joints`, as its preconditions judge it (`torque_on`,
+    `not_hot`); the gripper alone for `gripper` and `place` (`unsafe_to_grip`), which send goals
+    to nothing else and which no precondition gates on the body."""
+    said = getattr(ctx.transport, "unsafe_to_grip" if gripper_only else "unsafe_to_drive", None)
+    return str(said) if said else None
+
+
+def _closing(
+    gaps: deque[dict[str, float]], tolerance: Callable[[str], float], step_deg: float | None
+) -> bool:
+    """Whether a move past its time is still on its way: `gaps` holds each joint's distance from
+    its goal on the last `PROGRESS_TICKS` ticks and the one before them, oldest first, and every
+    joint not yet within its tolerance of its goal has closed on it over that window by at least
+    its floor (`_progress_floor`). False until the window is full, and for a joint that read on
+    the last tick and not on the first, which is no gain anybody saw."""
+    if len(gaps) <= PROGRESS_TICKS:
+        return False
+    then, now = gaps[0], gaps[-1]
+    behind = [joint for joint, gap in now.items() if gap > tolerance(joint)]
+    return bool(behind) and all(
+        joint in then and then[joint] - now[joint] >= _progress_floor(tolerance(joint), step_deg)
+        for joint in behind
+    )
+
+
+def _progress_floor(tolerance: float, step_deg: float | None) -> float:
+    """The least a joint must gain on its goal over `PROGRESS_TICKS` ticks, past its time, to be on
+    its way: its tolerance, or `PROGRESS_SHARE` of what the step cap lets it cover in those ticks
+    where that is less, and the tolerance where no cap is known, as on a manifest that publishes
+    none (`_stall_threshold` reads the same)."""
+    if not step_deg or step_deg <= 0:
+        return tolerance
+    return min(tolerance, PROGRESS_SHARE * step_deg * PROGRESS_TICKS)
 
 
 async def _drive(
@@ -488,11 +565,13 @@ async def _drive(
     intent_for: Callable[[dict[str, float]], Intent],
     *,
     budget_s: float,
+    limit_s: float,
     tolerance: Callable[[str], float],
     start: dict[str, float] | None = None,
     ramp_s: float = 0.0,
-) -> tuple[dict[str, float], RobotState | None, str, str | None]:
-    """Send a goal until the arm is there, stops moving, or the budget runs out.
+    gripper_only: bool = False,
+) -> tuple[dict[str, float], RobotState | None, str, str | None, _Unlanded | None]:
+    """Send a goal until the arm is there, stops moving, reads unsafe, or the time runs out.
 
     With a `start` and a `ramp_s`, the goal is walked there: each tick sends `intent_for` the
     target as far from `start` toward `goal` as the time gone is through `ramp_s`
@@ -510,52 +589,96 @@ async def _drive(
     found when the ramp ends, not before; what it pushes with meanwhile is what the step cap
     allows, the same as it always was.
 
+    The time is `budget_s`, what the ramp and the step cap say the move needs and a settle, and
+    a move still on its way when it runs out goes on, up to `limit_s`, the verb's overall limit
+    inside the executor's timeout. On its way means still getting nearer its goal: every joint
+    that has not arrived has closed on its goal over the last `PROGRESS_TICKS` ticks by at least
+    its tolerance, or a share of what the step cap allows in them where that is less
+    (`_closing`, `_progress_floor`). The cap is a ceiling on speed and never a promise of it,
+    and a servo slower than it, still on its way, was failed for running out of time as it went.
+    A joint pushed back by a hand, bouncing on something that gives or swinging about its goal is
+    moving and not on its way, and past the budget the move ends on it as the budget always
+    ended a move, said as the time running out; a joint that stops within the budget is a stall
+    as before. The budget is on the transport's clock, the wall's on the arm, and the window
+    counts ticks: past the budget it is the ticks that say whether the move goes on.
+
     It also ends when it is told to from beside it (`VerbContext.interrupted`), a `stop` from
     a second MCP call or a run's minutes running out, and it looks before every send. Each tick
     is a fresh goal, so a stop that held the arm lasted until the next tick carried it on to
     where it was going, with the pilot told the brake had worked.
 
+    And it ends on the tick whose reading rules out another goal, in the words a policy segment
+    ends on (`_unsafe`): a servo whose own protection dropped its torque, or a joint that
+    crossed the heat limit, during the move. Torque and heat used to be judged once, before the
+    verb, while every tick read both registers, so a servo that tripped mid-move was sent goals
+    for the rest of the budget and the move said it had stopped moving, or that it had moved.
+    `gripper_only` is the gripper's verbs, which judge the gripper's torque alone (`_unsafe`).
+
     Returns the last joint reading, the last state, how it ended (`arrived`, `stalled`,
-    `timeout`, `refused` or `ended`) and a reason when it did not arrive. A failure stops the
-    arm first: `stop` holds the present position and deliberately leaves the gripper's goal
-    alone, so stopping mid-move never drops what is held."""
+    `timeout`, `refused`, `ended` or `guard`), a reason when it did not arrive, and what the
+    transport said of the stop it ended on, where that stop did not land (`_stop`), for the verb
+    to say (`_held_or_not`). A failure stops the arm first: `stop` holds the present position and
+    deliberately leaves the gripper's goal alone, so stopping mid-move never drops what is held."""
     started = ctx.transport.now()
     stall = _stall_threshold(ctx)
+    step = ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
     ramping = bool(start) and ramp_s > 0
     joints: dict[str, float] = {}
     previous: dict[str, float] = {}
     state: RobotState | None = None
     still = 0
-    while (elapsed := ctx.transport.now() - started) < budget_s:
+    gaps: deque[dict[str, float]] = deque(maxlen=PROGRESS_TICKS + 1)
+    closing = False
+    while (elapsed := ctx.transport.now() - started) < budget_s or (closing and elapsed < limit_s):
         if (told := ctx.interrupted()) is not None:
-            await ctx.transport.stop()
-            return joints, state, "ended", told
+            missed = await _stop(ctx)
+            return joints, state, "ended", told, missed
         share = min(1.0, elapsed / ramp_s) if ramping else 1.0
         target = ramp_target(start or {}, goal, share)
         if (fail := await send_or_fail(ctx, intent_for(target))) is not None:
-            await ctx.transport.stop()
-            return joints, state, "refused", fail.summary
+            missed = await _stop(ctx)
+            return joints, state, "refused", fail.summary, missed
         await ctx.transport.sleep(TICK_S)
         state = await ctx.transport.get_state()
         joints = _joints_of(state)
+        if (unsafe := _unsafe(ctx, gripper_only=gripper_only)) is not None:
+            missed = await _stop(ctx)
+            why = f"{shortfall(goal, joints)}, and the move was ended there because {unsafe}"
+            return joints, state, "guard", why, missed
         moved = [abs(joints[k] - previous[k]) for k in previous if k in joints]
         previous = {k: joints[k] for k in goal if k in joints}
         if share < 1.0:
             continue  # still on the ramp: neither arrived nor stalled yet
         error = {k: abs(joints[k] - v) for k, v in goal.items() if k in joints}
         if error and all(gap <= tolerance(joint) for joint, gap in error.items()):
-            return joints, state, "arrived", None
+            return joints, state, "arrived", None, None
         still = still + 1 if moved and max(moved) <= stall else 0
+        gaps.append(error)
+        closing = _closing(gaps, tolerance, step)
         if still >= STALL_TICKS:
-            await ctx.transport.stop()
-            return (
-                joints,
-                state,
-                "stalled",
-                f"{shortfall(goal, joints)}, and it has stopped moving",
-            )
-    await ctx.transport.stop()
-    return joints, state, "timeout", f"{shortfall(goal, joints)} when the time ran out"
+            missed = await _stop(ctx)
+            why = f"{shortfall(goal, joints)}, and it has stopped moving"
+            return joints, state, "stalled", why, missed
+    missed = await _stop(ctx)
+    return joints, state, "timeout", f"{shortfall(goal, joints)} when the time ran out", missed
+
+
+STILL_PUSHING = "A servo may still be pushing toward the last goal it was sent"
+"""Said after the core's words for a verb's stop that did not reach the arm (`_held_or_not`).
+The stop is a hold, the present position written as every body joint's goal, and the one that
+did not land left each servo with its last goal, a step past where it reads: past what stopped
+it, after a stall against a hand or the desk."""
+
+
+def _held_or_not(verb: str, missed: _Unlanded | None, result: VerbResult) -> VerbResult:
+    """`result`, for a verb whose own stop reached the arm, or else the failure the core makes of
+    it (`_unstopped`): what `result` said, that `verb`'s stop could not be delivered and why in
+    the backend's words (`stop_error`), and then `STILL_PUSHING`. The core advises nothing
+    physical, and what a hold that did not land leaves is the arm's own to say."""
+    said = _unstopped(verb, missed, result)
+    if missed is None or said is result:
+        return result
+    return VerbResult.fail(f"{said.summary.removesuffix('.')}. {STILL_PUSHING}", **said.data)
 
 
 def _told_to_end(how: str, why: str | None) -> dict[str, Any]:
@@ -578,10 +701,11 @@ REST_MAX_S = 30.0
 would take minutes, and an arm nobody is watching must not hold a run open that long."""
 
 TORQUE_LEFT_ON = (
-    "the arm is not at its rest pose ({why}), so torque was left on and it will not fall as it "
-    "stands. To put it down, clear whatever is in its way and run roboglot robot release {name}, "
-    "which folds it to its rest pose and lets go of it there: support the arm while that "
-    f"connects, because {CONNECTING_TAKES_TORQUE_OFF}. Or hold it and cut its power"
+    "the arm is not at its rest pose ({why}), so torque was left on and it is holding its pose. "
+    f"Holding heats the servos, and a servo that reaches its cut-off {GOES_SLACK}, so do not "
+    "leave it holding. To put it down, clear whatever is in its way and run roboglot robot "
+    "release {name}, which folds it to its rest pose and lets go of it there: support the arm "
+    f"while that connects, because {CONNECTING_TAKES_TORQUE_OFF}. Or hold it and cut its power"
 )
 """Said once, by whichever caller closed the arm. The transport records it and prints
 nothing itself: a library that writes to a terminal has picked one, and Roboglot has four.
@@ -598,12 +722,16 @@ command. It is said with the name the arm was registered under, through `torque_
 because a command with the wrong name in it is a command that fails or, worse, reaches another
 arm.
 
-"It will not fall" is said of the arm as it stands and no further, and the support comes
-before the command, not after it. The release begins by connecting, and connecting takes torque
-off every motor while LeRobot configures them (`CONNECTING_TAKES_TORQUE_OFF`), so an arm held up
-by torque alone is limp for that moment: the one moment it cannot be left to hold itself. The
-clearing comes first of all, because a fold that runs into what stopped the last one stops
-again."""
+It used to say the arm "will not fall as it stands", with no word of time, and from the close on
+nothing reads the servos: the process that read their temperature is gone. Holding a pose is
+what heats a servo, and one that reaches its own cut-off takes its torque off without a word
+(`GOES_SLACK`), so an arm left holding for hours can drop after being told it would not. The
+line says what is so, that it holds now with torque on, and why it is not to be left so, with no
+number of minutes, which nobody has measured. The support comes before the command, not after
+it. The release begins by connecting, and connecting takes torque off every motor while LeRobot
+configures them (`CONNECTING_TAKES_TORQUE_OFF`), so an arm held up by torque alone is limp for
+that moment: the one moment it cannot be left to hold itself. The clearing comes first of all,
+because a fold that runs into what stopped the last one stops again."""
 
 UNNAMED = "NAME"
 """What `torque_left_on` and `rest_clip_note` say in place of a name nobody told the
@@ -650,7 +778,7 @@ pose" would name a pose it does not have."""
 
 TORQUE_KEPT_AFTER_REFUSAL = (
     "the arm is not at its rest pose ({why}) and the release did not take, so torque was left "
-    "on and it will not fall as it stands: hold it and cut its power"
+    "on and it is holding its pose: hold it and cut its power"
 )
 """The close's line for an arm a person just asked to have released, and whose release was
 refused: every motor still read torque on afterwards, or the arm did not answer before it. A
@@ -691,8 +819,8 @@ TORQUE_UNKNOWN_AT_CLOSE = (
 )
 """The close's line for an arm that did not answer the read the close decides by.
 
-`TORQUE_LEFT_ON` says the arm will not fall, which is a thing only an arm that answered can be
-said to be doing. An arm that stopped answering is, as often as not, one whose servo supply was
+`TORQUE_LEFT_ON` says the arm is holding its pose, which is a thing only an arm that answered can
+be said to be doing. An arm that stopped answering is, as often as not, one whose servo supply was
 cut at the switch, which is the stop `docs/concepts/safety.md` names, and that arm is limp; one
 whose cable came out is still holding. The close cannot tell them apart, so it keeps what torque
 there may be, which costs nothing on a limp arm, and says it does not know."""
@@ -1306,19 +1434,21 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
     whole = all(abs(goal[joint] - begin) < RAMP_RESOLUTION for joint, begin in start.items())
     distance = max((abs(goal[joint] - begin) for joint, begin in start.items()), default=0.0)
     step = ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
-    joints, _state, how, why = await _drive(
+    joints, _state, how, why, missed = await _drive(
         ctx,
         goal,
         lambda target: Intent.joint(target, p.duration_s),
         budget_s=move_budget_s(distance, p.duration_s, step),
+        limit_s=MOVE_LIMIT_S,
         tolerance=_joint_tolerance,
         start=start,
         ramp_s=0.0 if whole else p.duration_s,
     )
     if why is not None:
-        return VerbResult.fail(
+        failed = VerbResult.fail(
             f"move_joints: {why}", goal=goal, joints=joints, **_told_to_end(how, why)
         )
+        return _held_or_not("move_joints", missed, failed)
     return VerbResult.success(
         "moved " + ", ".join(f"{k}={joints.get(k, v):.0f}" for k, v in goal.items()),
         goal=goal,
@@ -1328,7 +1458,7 @@ async def move_joints(ctx: VerbContext, p: MoveJointsParams) -> VerbResult:
 
 async def _drive_gripper(
     ctx: VerbContext, *, open_: bool
-) -> tuple[float | None, RobotState | None, str, str | None]:
+) -> tuple[float | None, RobotState | None, str, str | None, _Unlanded | None]:
     """The gripper is a joint like the others: the step cap moves it a few units per send,
     and where it stops is the whole of what Roboglot knows about holding something.
 
@@ -1336,20 +1466,29 @@ async def _drive_gripper(
     turns into its own fully open or fully shut, and a ramp would have to invent the numbers in
     between. A gripper named in `move_joints` is a joint with a goal, and ramps like one."""
     goal = {"gripper": GRIPPER_OPEN if open_ else GRIPPER_CLOSED}
-    joints, state, how, why = await _drive(
+    joints, state, how, why, missed = await _drive(
         ctx,
         goal,
         lambda _target: Intent.gripper(open_),
         budget_s=gripper_budget_s(
             ctx.manifest.limits.get("step_deg") if ctx.manifest is not None else None
         ),
+        limit_s=GRIPPER_LIMIT_S,
         tolerance=lambda _: GRIPPER_TOL,
+        gripper_only=True,
     )
-    return joints.get("gripper"), state, how, why
+    return joints.get("gripper"), state, how, why, missed
 
 
 async def gripper(ctx: VerbContext, p: GripperParams) -> VerbResult:
-    position, state, how, why = await _drive_gripper(ctx, open_=p.open)
+    position, state, how, why, missed = await _drive_gripper(ctx, open_=p.open)
+    return _held_or_not("gripper", missed, _gripped(p, position, state, how, why))
+
+
+def _gripped(
+    p: GripperParams, position: float | None, state: RobotState | None, how: str, why: str | None
+) -> VerbResult:
+    """What `gripper` says of how its drive ended, before what became of the stop it ended on."""
     where = "" if position is None else f" (stopped at {position:.0f}/100)"
     if p.open:
         if how != "arrived":
@@ -1426,10 +1565,10 @@ async def pick(ctx: VerbContext, p: PickParams) -> VerbResult:
             ended=ended.how,
             timing=await _timing(ctx),
         )
-    await ctx.transport.stop()
+    missed = await _stop(ctx)
     held = ended.how in ("guard", "starved")
     said = "was stopped" if held else "did not end with something held"
-    return VerbResult.fail(
+    failed = VerbResult.fail(
         f"pick {p.target!r} {said}: {ended.reason}",
         target=p.target,
         seconds=seconds,
@@ -1437,6 +1576,7 @@ async def pick(ctx: VerbContext, p: PickParams) -> VerbResult:
         error=ended.reason if ended.how == "error" else None,
         timing=await _timing(ctx),
     )
+    return _held_or_not("pick", missed, failed)
 
 
 def _unstarted(refused: VerbResult) -> VerbResult:
@@ -1483,12 +1623,13 @@ async def _pick_polled(ctx: VerbContext, p: PickParams, t0: float) -> VerbResult
             if state.holding:
                 return picked()
             break  # the policy finished without a grasp
-    await ctx.transport.stop()
+    missed = await _stop(ctx)
     broke = state.extras.get("policy_error")
     why = f" (the policy raised {broke})" if broke else ""
-    return VerbResult.fail(
+    failed = VerbResult.fail(
         f"pick {p.target!r} did not end with something held{why}", target=p.target, error=broke
     )
+    return _held_or_not("pick", missed, failed)
 
 
 async def manipulate(ctx: VerbContext, p: ManipulateParams) -> VerbResult:
@@ -1561,10 +1702,11 @@ async def manipulate(ctx: VerbContext, p: ManipulateParams) -> VerbResult:
             )
     if ended.how in RAN:
         return VerbResult.success(_ran(told, seconds, ended.reason, counts), **data)
-    await ctx.transport.stop()
+    missed = await _stop(ctx)
     if ended.how == "error":
         data["error"] = ended.reason
-    return VerbResult.fail(f"manipulate {told!r} was stopped: {ended.reason} ({counts})", **data)
+    failed = VerbResult.fail(f"manipulate {told!r} was stopped: {ended.reason} ({counts})", **data)
+    return _held_or_not("manipulate", missed, failed)
 
 
 def _segment_counts(stats: SegmentStats) -> str:
@@ -1637,11 +1779,12 @@ async def _manipulate_polled(
 
 
 async def place(ctx: VerbContext, _: NoParams) -> VerbResult:
-    position, _state, how, why = await _drive_gripper(ctx, open_=True)
+    position, _state, how, why, missed = await _drive_gripper(ctx, open_=True)
     if how != "arrived":
-        return VerbResult.fail(
+        failed = VerbResult.fail(
             f"place: the gripper did not open: {why}", position=position, **_told_to_end(how, why)
         )
+        return _held_or_not("place", missed, failed)
     return VerbResult.success("placed: gripper opened where the arm is", position=position)
 
 

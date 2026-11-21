@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import ast
 import itertools
+import math
 import re
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from roboglot.agent.decision.stepper import discrete_calls
+from roboglot.agent.decision.stepper import MAX_CALLS_PER_VERB, discrete_calls
 from roboglot.drive.presets import Preset
 from roboglot.verbs.aliases import ALIASES
 from roboglot.verbs.registry import Verb
@@ -33,6 +34,26 @@ NO = ("n", "no")
 
 PRESET_VERBS = ("walk", "go", "move")
 """What may stand before `forward` or `back`: "walk forward" is the preset `forward`."""
+
+CHOSEN_VALUES = int(math.log2(MAX_CALLS_PER_VERB))
+"""The most values one call can carry when each is a choice of two or more: as many twos as
+multiply to no more than the stepper's `MAX_CALLS_PER_VERB`, which is three under its twelve."""
+
+MAX_KEYS_PER_VERB = MAX_CALLS_PER_VERB * math.factorial(CHOSEN_VALUES)
+"""The most lines the exact lane takes for one verb's calls, each call's values said in every
+order: as many as a verb can need while every value it is said with is a choice, which is
+`MAX_CALLS_PER_VERB` calls of `CHOSEN_VALUES` values each, seventy-two. The widest verb Roboglot
+ships needs twelve. Only a parameter of one value, a `const` or an enum of one, takes a verb past
+it: it adds a value to say and no call, so the stepper lets it by (`discrete_calls`), and every
+ordering of it was a key, built on the event loop after the robot had connected and its heartbeat
+started. Ten of them were 3,628,800 keys for each name the verb is said by."""
+
+UNTAKEN = (
+    "{verb}: the exact lane cannot read it, since its calls said with their values in every "
+    "order would be {ways} lines, past the {most} it takes for one verb, so a line naming it goes "
+    "on to the fast lane or the pilot"
+)
+"""Said once, as the session opens, of each verb past `MAX_KEYS_PER_VERB`."""
 
 _WORD = re.compile(r"[a-z0-9_'.\-]+")
 _WORD_ANY_CASE = re.compile(_WORD.pattern, re.IGNORECASE)
@@ -122,6 +143,9 @@ class ExactLane:
         """A verb's spoken names to it and the string parameter the rest of the line fills."""
         self.names: dict[str, str] = {}
         """Every way a verb is spelled, its aliases included, to its own name."""
+        self.untaken: dict[str, int] = {}
+        """Each verb this lane reads nothing of, to the lines its calls would have been said as,
+        more than `MAX_KEYS_PER_VERB`, for the session to say so (`UNTAKEN`)."""
         for name in self.verbs:
             self.names[_key(words(name))] = name
         for alias, target in ALIASES.items():
@@ -134,6 +158,9 @@ class ExactLane:
                 )
         for spoken, name in self.names.items():
             self._add_verb(spoken, name, self.verbs[name])
+        if self.untaken:
+            # nor read written out, so the lane reads nothing of such a verb, as `UNTAKEN` says
+            self.names = {s: n for s, n in self.names.items() if n not in self.untaken}
 
     @staticmethod
     def _phrasings(preset: str) -> list[str]:
@@ -147,6 +174,11 @@ class ExactLane:
         required = list(inner.get("required") or ())
         properties: Mapping[str, Any] = inner.get("properties") or {}
         calls = discrete_calls({**schema, "name": name}) or []
+        # counted before a key is made, so a verb past the bound costs no more than the count
+        ways = sum(math.factorial(len(call.arguments)) for call in calls)
+        if ways > MAX_KEYS_PER_VERB:
+            self.untaken[name] = ways
+            return
         # The labels themselves, `kick(leg=left)`, are read as calls written out (`_written`),
         # which gives each the same arguments and the same spelling.
         for call in calls:

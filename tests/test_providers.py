@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import base64
+import enum
 import json
 import re
+import sys
 from collections.abc import Callable
 from types import SimpleNamespace as NS
 from typing import Any
@@ -18,6 +20,7 @@ from roboglot.agent.providers.anthropic import (
     FALLBACK_BETA,
     AnthropicProvider,
 )
+from roboglot.agent.providers.anthropic import parse_response as a_parse
 from roboglot.agent.providers.anthropic import render_messages as a_messages
 from roboglot.agent.providers.base import (
     Decision,
@@ -36,8 +39,10 @@ from roboglot.agent.providers.gemini import (
     clean_schema,
     render_contents,
 )
+from roboglot.agent.providers.gemini import parse_response as g_parse
 from roboglot.agent.providers.grok import GrokProvider
 from roboglot.agent.providers.openai import OpenAIProvider, parse_extra_body, parse_responses
+from roboglot.agent.providers.openai import parse_response as o_parse
 from roboglot.agent.providers.openai import render_input as o_input
 from roboglot.agent.providers.openai import render_messages as o_messages
 from roboglot.agent.providers.openrouter import OpenRouterProvider
@@ -965,6 +970,46 @@ async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaul
     }
 
 
+def _refused_nesting() -> int:
+    """The least depth of a closed nesting this interpreter's decoder refuses. 3.11 counts nesting
+    against the recursion limit, 1000; 3.12 against a C limit of its own, 3000 on Windows and
+    10000 on Linux and macOS, so one depth typed here passed on one runner and not on the next."""
+    depth = 1000
+    while depth < 1 << 24:
+        try:
+            json.loads("[" * depth + "]" * depth)
+        except RecursionError:
+            return depth
+        depth *= 2
+    raise AssertionError("this Python's decoder took every nesting up to 16 million deep")
+
+
+REFUSED_NESTING = _refused_nesting()
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"vx": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
+        '{"vx": ' + "[" * REFUSED_NESTING + "]" * REFUSED_NESTING + "}",
+    ],
+    ids=["long-integer", "deep-nesting"],
+)
+async def test_arguments_the_decoder_raises_on_go_to_the_gate_and_do_not_end_the_run(
+    raw: str,
+) -> None:
+    """A native call whose argument string holds an integer past the interpreter's digit limit,
+    or nesting past its recursion limit, made the decoder raise `ValueError` or `RecursionError`,
+    beside which only `JSONDecodeError` was caught, and the run ended on a `ProviderError` over one
+    odd call. Such a string goes the way every argument string that cannot be read goes: to the
+    params gate, which refuses it and tells the pilot, and the run goes on."""
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("walk", raw)))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
+    assert parse_responses(responses_result("walk", raw)).tool_calls[0].arguments == {
+        "_unparsed": raw
+    }
+
+
 @pytest.mark.parametrize("given", [[1, 2], "text", 42])
 async def test_anthropic_and_gemini_take_the_same_road(given: Any) -> None:
     """Their SDKs hand over a parsed `input` and `args`. They say that is an object, and a
@@ -984,6 +1029,69 @@ async def test_anthropic_and_gemini_take_the_same_road(given: Any) -> None:
     assert (await gemini.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {
         "_unparsed": given
     }
+
+
+class GenaiFinishReason(str, enum.Enum):  # noqa: UP042 - the library's own shape, not StrEnum's
+    """google-genai's `FinishReason` as the library shapes it: a str enum, whose `str()` is its
+    class and member name rather than the word the API sent."""
+
+    STOP = "STOP"
+    MAX_TOKENS = "MAX_TOKENS"
+
+
+def test_each_vendor_says_when_the_output_limit_cut_its_answer_off_and_only_then() -> None:
+    """The loop runs no call from an answer the output limit ended (`ProviderTurn.cut_off`), and
+    each vendor says so in its own words: Anthropic's `max_tokens` (and the context window that
+    left no room), Gemini's `MAX_TOKENS` as google-genai's enum or as a plain word, Chat
+    Completions' `length`, and a Responses answer `incomplete` for `max_output_tokens`. Nothing
+    read them, so Anthropic's and Gemini's object arguments reached the loop as a finished call
+    and the verb's defaults filled the rest. Every other ending is no cut-off, a filter that cut
+    an answer short among them, so a finished call runs exactly as it did."""
+    block = NS(type="tool_use", id="toolu_1", name="walk", input={})
+    claude = {
+        stop: a_parse(anthropic_response(block, stop_reason=stop)).cut_off
+        for stop in ("max_tokens", "model_context_window_exceeded", "tool_use", "end_turn")
+    }
+    assert claude == {
+        "max_tokens": True,
+        "model_context_window_exceeded": True,
+        "tool_use": False,
+        "end_turn": False,
+    }
+
+    def gemini(finish: Any) -> bool:
+        part = NS(function_call=NS(name="walk", args=None), thought_signature=None, text=None)
+        answer = NS(
+            candidates=[NS(content=NS(parts=[part]), finish_reason=finish)],
+            usage_metadata=NS(prompt_token_count=1, candidates_token_count=1),
+        )
+        return g_parse(answer).cut_off
+
+    assert gemini(GenaiFinishReason.MAX_TOKENS) and gemini("MAX_TOKENS")
+    assert not gemini(GenaiFinishReason.STOP) and not gemini("STOP") and not gemini(None)
+
+    def chat(finish: str) -> bool:
+        call = NS(id="call_1", function=NS(name="walk", arguments="{}"))
+        answer = NS(
+            choices=[NS(message=NS(content=None, tool_calls=[call]), finish_reason=finish)],
+            usage=NS(prompt_tokens=1, completion_tokens=1),
+        )
+        return o_parse(answer).cut_off
+
+    assert chat("length") and not chat("tool_calls") and not chat("stop")
+
+    def responses(status: str, why: str | None) -> bool:
+        call = NS(type="function_call", call_id="call_1", name="walk", arguments="{}")
+        answer = NS(
+            output=[call],
+            status=status,
+            incomplete_details=NS(reason=why) if why else None,
+            usage=NS(input_tokens=1, output_tokens=1),
+        )
+        return parse_responses(answer).cut_off
+
+    assert responses("incomplete", "max_output_tokens")
+    assert not responses("incomplete", "content_filter") and not responses("completed", None)
 
 
 @pytest.mark.parametrize(("given", "sent"), [([1, 2], {"_unparsed": [1, 2]}), (None, {})])

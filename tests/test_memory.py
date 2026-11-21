@@ -12,7 +12,15 @@ from roboglot.agent.providers.base import ToolCall
 from roboglot.agent.providers.fake import FakeProvider
 from roboglot.agent.transcript import Transcript
 from roboglot.glotfile.schema import GlotFile
-from roboglot.memory import MAX_ENTRIES, RobotMemory, memory_dir, robot_slug
+from roboglot.memory import (
+    MAX_ENTRIES,
+    NOTE_MAX_CHARS,
+    NOTE_MAX_TAGS,
+    TAG_MAX_CHARS,
+    RobotMemory,
+    memory_dir,
+    robot_slug,
+)
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.registry import default_registry
 
@@ -41,6 +49,43 @@ def test_remember_round_trip_and_dedup(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         mem.remember("   ")
     assert "the ball is usually near the left wall" in mem.recall()
+
+
+def test_a_notes_tags_are_bounded_in_number_and_length_and_so_is_a_refresh(
+    tmp_path: Path,
+) -> None:
+    """A note's text was cut to `NOTE_MAX_CHARS`, and its tags were cut nowhere, by number or by
+    length, and a refreshed note kept the union of its old tags and the new, so one call from any
+    pilot, an MCP client or a local server could grow the file every later run reads whole by as
+    much as an answer holds. They are bounded now as the text is, and a refresh is bounded too,
+    the note's own tags kept before the new. A handful of short tags is stored as it was."""
+    mem = RobotMemory("microduck:mock", tmp_path)
+    first = mem.remember(
+        "the ball is by the door", tags=["x" * 100_000, *(f"t{i:04d}" for i in range(5000))]
+    )
+    assert len(first.tags) == NOTE_MAX_TAGS and all(len(t) <= TAG_MAX_CHARS for t in first.tags)
+    again = mem.remember("the ball is by the door", tags=[f"new{i:04d}" for i in range(5000)])
+    assert again.tags == first.tags, "a refresh keeps the note's own tags before any new one"
+    size = mem.path.stat().st_size
+    assert size < NOTE_MAX_CHARS + NOTE_MAX_TAGS * (TAG_MAX_CHARS + 4) + 200, size
+
+    plain = RobotMemory("microduck:mock", tmp_path / "plain")
+    plain.remember("the rug is slippery", tags=["rug", "floor", "kitchen"], now=1.0)
+    plain.remember("the rug is slippery", tags=["hall"], now=2.0)
+    assert plain.path.read_text(encoding="utf-8") == (
+        '{"kind": "note", "text": "the rug is slippery", "ts": 2.0, '
+        '"tags": ["floor", "hall", "kitchen", "rug"]}\n'
+    )
+
+
+def test_one_long_tag_among_a_few_is_cut_as_the_text_is(tmp_path: Path) -> None:
+    """A tag's length is bounded on its own, not only by the count: a note with two tags, one of
+    them a whole answer long, kept that one whole, the count never being reached. It is cut to
+    `TAG_MAX_CHARS` now, and the short one is kept as it was."""
+    mem = RobotMemory("microduck:mock", tmp_path)
+    entry = mem.remember("the door sticks", tags=["door", "y" * 10_000])
+    assert entry.tags == ["door", "y" * TAG_MAX_CHARS]
+    assert mem.notes()[0].tags == ["door", "y" * TAG_MAX_CHARS]
 
 
 def test_episode_and_recall_order(tmp_path: Path) -> None:

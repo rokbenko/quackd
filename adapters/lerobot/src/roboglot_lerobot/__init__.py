@@ -349,6 +349,13 @@ class LeRobotAdapter:
         return str(note) if note else None
 
     @property
+    def close_bound_s(self) -> float | None:
+        """The longest `close()` can take, the transport's own figure (`LeRobotReal.close_bound_s`),
+        or None where it gives none. Proxied for `close_note`'s reason."""
+        bound = getattr(self.transport, "close_bound_s", None)
+        return float(bound) if isinstance(bound, int | float) else None
+
+    @property
     def connect_notes(self) -> tuple[str, ...]:
         """One sentence per connect attempt the backend had to make again, from the last
         `connect()`. Proxied for `close_note`'s reason: the run narrates them into its
@@ -392,6 +399,25 @@ class LeRobotAdapter:
         verb reads this and refuses to say "stopped" over a hold that never got there."""
         error = getattr(self.transport, "stop_error", None)
         return str(error) if error else None
+
+    @property
+    def unsafe_to_drive(self) -> str | None:
+        """What the backend's last reading of the arm rules out another goal for, in the words a
+        policy segment ends on (`LeRobotReal._unsafe_to_drive`): a body joint too hot, or torque
+        off on any motor, or None. `move_joints` reads it each tick, off whatever it was handed,
+        which is this adapter. A property, being plain data, which a dry run hands a verb as it
+        hands `stop_error` (`roboglot.safety._plain`)."""
+        judge = getattr(self.transport, "_unsafe_to_drive", None)
+        said = judge() if callable(judge) else None
+        return str(said) if said else None
+
+    @property
+    def unsafe_to_grip(self) -> str | None:
+        """`unsafe_to_drive` for the gripper's verbs: torque off on the gripper, the one servo
+        they send goals to, or None. Proxied for `unsafe_to_drive`'s reason."""
+        judge = getattr(self.transport, "_unsafe_to_drive", None)
+        said = judge(gripper_only=True) if callable(judge) else None
+        return str(said) if said else None
 
     @property
     def stop_skipped(self) -> tuple[str, ...]:

@@ -32,12 +32,14 @@ from roboglot.transport.base import HeartbeatError, Intent
 from roboglot.verbs.registry import registry_from_manifest
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.arms import SO_HOT_C as HOT_C
-from roboglot_lerobot.mock import LeRobotMock
+from roboglot_lerobot.mock import GRIP_ON_OBJECT, LeRobotMock
 from roboglot_lerobot.policy.loop import (
+    CLIP_SUSTAIN_S,
     EXACT,
     FIRST_CHUNK_S,
     MAX_RATE_HZ,
     MIN_RATE_HZ,
+    PICK_STALL_TICKS,
     REFILL_LATENCIES,
     STALL_S,
     STARVE_S,
@@ -52,12 +54,14 @@ from roboglot_lerobot.policy.loop import (
 )
 from roboglot_lerobot.policy.runner import Chunk, Features, Observation
 from roboglot_lerobot.policy.scripted import ScriptedRunner
-from roboglot_lerobot.real import MAX_STEP_DEG, POLICY_HZ, LeRobotReal
+from roboglot_lerobot.real import HOLD_MIN, MAX_STEP_DEG, POLICY_HZ, LeRobotReal
 from roboglot_lerobot.verbs import (
     GRIPPER_OPEN,
     MANIPULATE_S,
     MANIPULATE_TIMEOUT_S,
+    STALL_DEG,
     TICK_S,
+    TOL_DEG,
     SegmentEnd,
 )
 from tests.test_lerobot_adapter import (
@@ -1765,6 +1769,156 @@ async def test_a_stall_against_something_in_the_way_holds_the_arm_and_is_still_o
     assert ran.ok and ran.data["ended"] == "stall", ran.summary
     last = arm.actions[-1]
     assert _whole_hold(last) and last["elbow_flex.pos"] == pytest.approx(here), last
+    assert not transport.policy_running
+    await adapter.close()
+
+
+@pytest.mark.parametrize("rate", [RATE, MIN_RATE_HZ], ids=["over many ticks", "one tick"])
+async def test_a_pick_pressed_into_something_it_cannot_move_ends_on_the_stall(rate: float) -> None:
+    """Only `manipulate`'s segment ended when the arm stopped moving under a policy still sending,
+    so a `pick` whose policy drove the arm into the desk went on sending goals a step past the
+    reading into joints with no torque cap, until its own time was up. It ends on the stall too,
+    held where it stopped, and is no grasp: a pick ends well only on something held. Where
+    `STALL_S` is fewer than `PICK_STALL_TICKS` ticks at the policy's rate, as at the band's
+    lowest, one tick that did not move cannot be told from a position held, and the pick runs to
+    its time as it always did."""
+    arm = _segment_arm()
+    arm.stuck = {"elbow_flex"}
+    here = arm.positions["elbow_flex"]
+    goal = _inside(arm, "elbow_flex", 0.5)
+    runner = ScriptedRunner(lambda o, s: [{"elbow_flex": goal}], rate_hz=rate)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    max_s = PICK_STALL_TICKS * 5 * STALL_S
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": max_s})
+    assert not picked.ok, picked.summary
+    if STALL_S * rate < PICK_STALL_TICKS:
+        assert picked.data["ended"] == "time", picked.summary
+        assert picked.data["seconds"] == pytest.approx(max_s, abs=2 / rate), picked.data
+    else:
+        assert picked.data["ended"] == "stall", picked.summary
+        assert picked.data["seconds"] == pytest.approx(STALL_S, abs=2 / rate), picked.data
+    last = arm.actions[-1]
+    assert _whole_hold(last) and last["elbow_flex.pos"] == pytest.approx(here), last
+    assert not transport.policy_running
+    await adapter.close()
+
+
+async def test_a_pick_whose_arm_holds_still_while_its_jaws_close_ends_holding() -> None:
+    """The condition the stall rule is let into `pick` on: a grasp, the arm held where the
+    policy took it while the jaws close on the object, at the rate an in-process policy runs at,
+    ends as a pick that holds something and never as a stall. The jaws moving is the arm moving
+    to the stall rule, and once they stop on the object the segment's own read finds them
+    settled, which is judged at the start of a tick, before any stall is."""
+    arm = _segment_arm(object_in_jaws=True)
+    reach = _inside(arm, "shoulder_pan", 0.2)
+
+    def grasp(observation: Observation, _sent: Mapping[str, float]) -> list[dict[str, float]]:
+        if observation.tick < 4:  # the reach, then the arm held there for the rest
+            return [{"shoulder_pan": reach}]
+        return [{"shoulder_pan": reach, "gripper": 0.0}]
+
+    runner = ScriptedRunner(grasp, rate_hz=POLICY_HZ)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": 30})
+    assert picked.ok and picked.data["ended"] == "holding", picked.summary
+    assert arm.positions["gripper"] == pytest.approx(GRIP_ON_OBJECT), arm.positions
+    assert arm.positions["shoulder_pan"] == pytest.approx(reach), arm.positions
+    assert not transport.policy_running
+    await adapter.close()
+
+
+async def test_a_pick_whose_policy_holds_the_arm_where_it_reads_runs_to_its_time() -> None:
+    """A policy may hold the arm where it is, by choice, for longer than a stall's second: its
+    goals are where the arm reads, which is no servo pushing and getting nowhere. Such a pick
+    runs to its time, as it always did, and is never ended as a stall."""
+    arm = _segment_arm()
+
+    def hold(observation: Observation, _sent: Mapping[str, float]) -> list[dict[str, float]]:
+        reading = observation.reading
+        return [{j: float(reading[f"{j}.pos"]) for j in ("shoulder_lift", "elbow_flex")}]
+
+    runner = ScriptedRunner(hold, rate_hz=RATE)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    max_s = PICK_STALL_TICKS * 5 * STALL_S
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": max_s})
+    assert not picked.ok and picked.data["ended"] == "time", picked.summary
+    assert picked.data["seconds"] == pytest.approx(max_s, abs=2 * PERIOD), picked.data
+    assert not transport.policy_running
+    await adapter.close()
+
+
+async def test_a_pick_holding_a_joint_that_sags_short_of_its_goal_runs_to_its_time() -> None:
+    """The arm's controller is P-only, so a loaded joint held still settles short of the goal a
+    policy keeps re-sending, by up to `TOL_DEG`: a healthy hold, not a servo pressed against
+    something. The shoulder here reads short of its goal by more than the stall's bound on
+    moving and less than that tolerance, and the pick runs to its time."""
+    arm = _segment_arm()
+    arm.stuck = {"shoulder_lift"}  # sagging, and settled where it sags
+    here = arm.positions["shoulder_lift"]
+    short = TOL_DEG - STALL_DEG  # past the bound on moving, inside the arm's own tolerance
+    runner = ScriptedRunner(lambda o, s: [{"shoulder_lift": here + short}], rate_hz=RATE)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    max_s = PICK_STALL_TICKS * 5 * STALL_S
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": max_s})
+    assert not picked.ok and picked.data["ended"] == "time", picked.summary
+    assert picked.data["seconds"] == pytest.approx(max_s, abs=2 * PERIOD), picked.data
+    assert arm.positions["shoulder_lift"] == here, "the joint was to stay short of its goal"
+    assert not transport.policy_running
+    await adapter.close()
+
+
+QUARTER_HZ = 4.0
+"""A policy rate whose period, a quarter of a second, is exact in binary, so `STALL_S` and
+`CLIP_SUSTAIN_S`, set against each other below, cannot tie on a rounding; inside the band, and
+spanning more than `PICK_STALL_TICKS` ticks to the second. This test's own number."""
+
+
+@pytest.mark.parametrize(("end", "past"), [(1, 1.0), (0, -1.0)], ids=["upper", "lower"])
+async def test_a_pick_at_its_travel_s_edge_with_a_goal_past_it_ends_on_the_clip_guard(
+    end: int, past: float
+) -> None:
+    """A joint at either edge of its travel whose policy goal lies past that edge is sent the
+    edge, where it already is (`_send` clips it), and presses on nothing. The clip guard is what
+    ends such a pick, saying the policy drove the arm somewhere it cannot go. The press was judged
+    on the goal before the clip, so the stall's second ran out one tick before the guard's and the
+    pick was said to have stalled; it is judged on the goal as it is sent."""
+    assert STALL_S == CLIP_SUSTAIN_S, "the test sets the two seconds against each other"
+    arm = _segment_arm()
+    joint, edge = "wrist_flex", {}
+
+    def past_the_edge(
+        observation: Observation, _sent: Mapping[str, float]
+    ) -> list[dict[str, float]]:
+        if observation.tick < PICK_STALL_TICKS:  # held where it reads, then past the edge
+            return [{joint: float(observation.reading[f"{joint}.pos"])}]
+        return [{joint: edge["at"] + past * 2 * TOL_DEG}]
+
+    runner = ScriptedRunner(past_the_edge, rate_hz=QUARTER_HZ)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    edge["at"] = transport.joint_range_deg[joint][end]
+    arm.positions[joint] = edge["at"]
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": 10 * STALL_S})
+    assert not picked.ok and picked.data["ended"] == "guard", picked.summary
+    assert "stayed past the travel" in picked.summary, picked.summary
+    assert arm.positions[joint] == edge["at"], "the joint never moved off its edge"
+    await adapter.close()
+
+
+async def test_a_pick_whose_jaws_squeeze_short_of_their_goal_is_no_press() -> None:
+    """The press rule leaves the gripper out: jaws squeezing something, short of the goal they
+    are sent, are a grasp, under LeRobot's own caps on the gripper. Here the jaws stop on the
+    object above their goal, by more than any tolerance, with a goal too open for the arm's own
+    `holding` to call it a grasp, and the body still: the pick runs to its time, and no stall
+    ends it on the jaws."""
+    arm = _segment_arm(object_in_jaws=True)
+    squeeze = (HOLD_MIN + GRIP_ON_OBJECT) / 2  # above `holding`'s band, below the object
+    assert GRIP_ON_OBJECT - squeeze > TOL_DEG and squeeze > HOLD_MIN
+    runner = ScriptedRunner(lambda o, s: [{"gripper": squeeze}], rate_hz=RATE)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    max_s = PICK_STALL_TICKS * 5 * STALL_S
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": max_s})
+    assert not picked.ok and picked.data["ended"] == "time", picked.summary
+    assert arm.positions["gripper"] == pytest.approx(GRIP_ON_OBJECT), arm.positions
     assert not transport.policy_running
     await adapter.close()
 

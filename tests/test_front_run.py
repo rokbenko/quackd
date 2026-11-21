@@ -39,9 +39,14 @@ def _spawn_kw() -> dict[str, Any]:
 class _Page:
     """The page's end of one child: its JSON lines read as they come, and its ops sent."""
 
-    def __init__(self, args: list[str], cwd: Path) -> None:
+    def __init__(self, args: list[str], cwd: Path, *, prelude: str | None = None) -> None:
+        """`prelude`, where given, is Python the child runs before the CLI, which it then starts
+        as `python -m roboglot` would, with the same arguments."""
+        start = ["-m", "roboglot"]
+        if prelude is not None:
+            start = ["-c", f"{prelude}\nfrom roboglot.cli import main\nmain()"]
         self.proc = subprocess.Popen(
-            [sys.executable, "-P", "-m", "roboglot", *args, "--front", "jsonl"],
+            [sys.executable, "-P", *start, *args, "--front", "jsonl"],
             cwd=cwd,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -150,6 +155,39 @@ def test_a_run_from_the_page_says_hello_first_end_last_and_nothing_but_json(
     assert start["front"] == "jsonl"
     assert "--front" not in start["command"], "the record names the command to type at a terminal"
     assert "Stop in the page stops the robot." in "".join(page.stderr)
+
+
+def test_a_run_whose_record_refused_a_write_tells_the_page_and_ends_on_its_outcome(
+    tmp_path: Path,
+) -> None:
+    """A run whose record refused a write raised that write at its very end, which the CLI does
+    not catch: the page was never told the run ended, only that the child died. It ends on its
+    own outcome now, the page is told once that the record is incomplete and how many writes it
+    refused, as stderr is, and the end line carries the failing exit code, 4."""
+    prelude = textwrap.dedent(
+        """
+        from roboglot.agent.transcript import Transcript
+
+        def refused(self, summary):
+            raise OSError(28, "No space left on device", "summary.json")
+
+        Transcript.write_summary = refused
+        """
+    )
+    page = _Page(_run_args(tmp_path, "hello-world"), tmp_path, prelude=prelude)
+    end = page.wait_for(lambda line: line["ev"] == "end")
+    assert page.finish() == 4
+    assert page.not_json == [], "stdout carries the protocol's lines and nothing else"
+    assert (end["outcome"], end["exit_code"]) == ("success", 4)
+    said = "the run's record is incomplete: 1 write was refused, the first: OSError:"
+    told = [
+        line
+        for line in page.lines
+        if line["ev"] == "event" and line["kind"] == "note" and said in line["data"]["text"]
+    ]
+    assert len(told) == 1, [line for line in page.lines if line["ev"] == "event"][-5:]
+    assert "".join(page.stderr).count(said) == 1
+    assert "Traceback" not in "".join(page.stderr)
 
 
 @pytest.mark.parametrize("yes", [True, False], ids=["yes", "no"])
