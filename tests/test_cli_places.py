@@ -21,8 +21,9 @@ from typer.testing import CliRunner
 
 import roboglot.cli as cli
 from roboglot.cli import app
-from roboglot.space.places import PlaceStore
+from roboglot.space.places import Place, PlaceStore
 from roboglot.verbs.places import MapParams
+from tests.support import one_line
 from tests.test_mapd import _fakes_on_their_own_loop
 
 runner = CliRunner()
@@ -70,6 +71,23 @@ def test_a_place_marked_where_the_duck_stands_is_listed_with_its_frame_and_forgo
     assert _store(tmp_path).places() == []
 
 
+def test_a_note_already_in_the_file_is_listed_as_printable_text(tmp_path: Path) -> None:
+    """`places list` printed a stored note as it was, and a note kept before notes were held to
+    one printable line can hold an escape sequence that clears the screen. It is listed with its
+    control characters written out, and an ordinary note beside it as it is."""
+    store = _store(tmp_path)
+    store.mark(Place("sofa", 0.0, 0.0, 0.0, "odom:a", "odometry", 1.0, note="\x1b[2Jgone"))
+    store.mark(Place("door", 1.0, 0.0, 0.0, "odom:a", "odometry", 1.0, note="the grey one"))
+    listed = runner.invoke(
+        app,
+        ["places", "list", "--robot", DUCK, *_dirs(tmp_path)],
+        env={"COLUMNS": "200"},
+    )
+    assert listed.exit_code == 0, listed.output
+    assert "\x1b[2J" not in listed.output and "\\x1b[2Jgone" in listed.output, listed.output
+    assert "the grey one" in listed.output
+
+
 def test_listing_a_robot_with_no_places_says_so(tmp_path: Path) -> None:
     listed = runner.invoke(app, ["places", "list", "--robot", DUCK, *_dirs(tmp_path)])
     assert listed.exit_code == 0 and "no places kept yet" in listed.output, listed.output
@@ -95,6 +113,18 @@ def test_a_body_that_says_nowhere_keeps_no_places(tmp_path: Path) -> None:
 def test_a_name_too_long_is_refused_in_one_line(tmp_path: Path, duck: list[str]) -> None:
     long = _add(tmp_path, duck, "x" * 40)
     assert long.exit_code == 1 and long.output.count("\n") <= 3, long.output
+    assert _store(tmp_path).places() == []
+
+
+def test_a_note_that_is_not_one_printable_line_is_refused_by_places_add(
+    tmp_path: Path, duck: list[str]
+) -> None:
+    """`places add --note` takes the verb's parameters, so a note a person pasted with an escape
+    sequence in it is refused in one line, as the verb refuses a pilot's, and nothing is kept."""
+    refused = _add(tmp_path, duck, "sofa", "--note", "grey\x1b[2J")
+    assert refused.exit_code == 1 and "--note:" in refused.output, refused.output
+    assert "no control character" in one_line(refused.output), refused.output
+    assert "\x1b[2J" not in refused.output
     assert _store(tmp_path).places() == []
 
 

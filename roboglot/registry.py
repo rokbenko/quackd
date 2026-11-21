@@ -172,7 +172,9 @@ _TEMP_HEX_BYTES = 8
 
 def _sweep_stale_temporaries(path: Path) -> None:
     """Remove the temporary files `write_json` names for `path` that are older than
-    `STALE_TEMP_S`. One that cannot be removed is said on stderr, and the write goes on."""
+    `STALE_TEMP_S`, the registry's writes and the robot memory's (`memory._write_all`), which
+    names its temporaries the same way. One that cannot be removed is said on stderr, and the
+    write goes on."""
     import time
 
     mine = re.compile(rf"{re.escape(path.name)}\.[0-9a-f]{{{2 * _TEMP_HEX_BYTES}}}\.tmp\Z")

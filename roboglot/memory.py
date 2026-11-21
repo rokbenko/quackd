@@ -18,6 +18,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -120,8 +121,8 @@ class MemoryEntry:
 class RobotMemory:
     """One robot's memory file. Every method re-reads the file, so a `roboglot run` and an
     MCP server pointing at the same robot always see each other's latest writes, and a
-    replaced file is never half-read: each write goes to a temporary file and is renamed
-    over the old one. It is *not* serialised. Two processes writing at the same instant is
+    replaced file is never half-read: each write goes to a temporary file of its own and is
+    renamed over the old one. It is *not* serialised. Two processes writing at the same instant is
     a read-modify-write race and the later rename wins, so one of the two notes is lost.
     That is the accepted cost of a file you can also edit in a text editor, and it is why
     nothing here is a database."""
@@ -153,13 +154,40 @@ class RobotMemory:
         return out
 
     def _write_all(self, entries: list[MemoryEntry]) -> None:
+        """Write the whole file through a temporary file of this write's own, in the same
+        folder, and replace the memory file with it in one step.
+
+        One name shared by every writer let two writers at once share one file: on Windows their
+        bytes interleaved and the file put in place dropped damaged lines, old notes among them;
+        on POSIX the first renamed into place a file the second was still writing, whose own
+        rename then raised for a note that was saved. A name of its own, created exclusively,
+        leaves only the race the class accepts. A write that fails removes its own file and
+        raises, so the caller is told its note was not saved only when it was not.
+
+        A writer killed between its write and its replace leaves its file, which no later write
+        would overwrite, as the one shared name used to be. So each write first removes the
+        files beside the memory file named exactly as its own are and older than
+        `registry.STALE_TEMP_S`, which only a dead writer's can be, and leaves a younger one,
+        which may be a live writer's. The registry's own sweep and name, so the pattern and the
+        age are written once. Imported here rather than at the top because the registry imports
+        this module, and it brings the adapter catalogue that nothing else here needs."""
+        from roboglot.registry import _TEMP_HEX_BYTES, _sweep_stale_temporaries
+
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".jsonl.tmp")
-        tmp.write_text(
-            "".join(json.dumps(e.to_json(), ensure_ascii=False) + "\n" for e in entries),
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        _sweep_stale_temporaries(self.path)
+        tmp = self.path.with_name(f"{self.path.name}.{secrets.token_hex(_TEMP_HEX_BYTES)}.tmp")
+        text = "".join(json.dumps(e.to_json(), ensure_ascii=False) + "\n" for e in entries)
+        # the mode `Path.write_text` created the file with, and its text mode, so the memory
+        # file reads byte for byte as it did, its line ends the platform's
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(tmp, self.path)
+        except BaseException:
+            # this write's own file, never another writer's; the error is the caller's
+            tmp.unlink(missing_ok=True)
+            raise
 
     def _append(self, entry: MemoryEntry) -> None:
         entries = self.entries()

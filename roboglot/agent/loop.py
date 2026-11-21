@@ -569,7 +569,15 @@ class RunConfig:
     """Where the run marks and reads the robot's places, where its caller holds the store: a
     drive session's own, which each goal shares with the commands typed between goals, so a
     place marked in one is there for the next. None is every other run, which keeps its places
-    beside its memory (`_place_store`). Last in the class, for the reason `play` gives."""
+    beside its memory (`_place_store`). After every field older than it, for the reason `play`
+    gives."""
+    wait_for_team: Callable[[asyncio.Event], Awaitable[None]] | None = None
+    """Awaited once, with this run's abort, just after the place where `acknowledge` is asked,
+    whether or not it was. A team holds each member there until every member whose body cannot
+    see a fall has been answered yes, so that no body moves while a question about one is up
+    (`roboglot.team.pilots`), and a member the team stopped meanwhile ends there, before anything
+    moved. None is every run on its own, which waits for nobody. Last in the class, for the reason
+    `play` gives."""
 
 
 @dataclass
@@ -3336,6 +3344,11 @@ class AgentLoop:
                         raise Aborted(
                             "nobody confirmed they were watching a robot that cannot see a fall"
                         )
+            if cfg.wait_for_team is not None:
+                # nothing has moved yet, and a member stopped while it waited ends on the stop
+                await cfg.wait_for_team(self.executor.abort)
+                if self.executor.abort.is_set():
+                    raise Aborted(self._abort_reason())
             # The task file's word on the body's learned policy, made into the verb itself: its
             # listed instructions the only ones `manipulate` takes, its segment the one the
             # verb runs and its timeout covers. Here, between the allowlist becoming final and

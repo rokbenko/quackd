@@ -6731,6 +6731,24 @@ async def test_the_fall_warning_is_the_answer_that_used_to_be_recorded_nowhere(
     assert [(what, answer) for what, _question, answer in refused] == [("acknowledge", False)]
 
 
+def test_the_field_a_team_holds_its_members_with_is_the_last_of_the_run_s_config() -> None:
+    """`RunConfig` keeps its newest fields last, because a caller may fill them by position
+    (`play`, `places`). `wait_for_team` went in between `link` and `nearby`, so a caller that
+    filled the fields by position in the order before it handed its `nearby` to `wait_for_team`,
+    which the run then awaits, and every field after it one along. Each positional value here is
+    a marker of its own, and each must land in the field of its name in that order."""
+    import dataclasses
+
+    names = [f.name for f in dataclasses.fields(RunConfig)]
+    before = [name for name in names if name != "wait_for_team"]
+    markers = [object() for _ in before]
+    cfg = RunConfig(*markers)
+    landed = zip(before, markers, strict=True)
+    moved = [name for name, marker in landed if getattr(cfg, name) is not marker]
+    assert not moved, f"filled by position, these took the value meant for another: {moved}"
+    assert names[-1] == "wait_for_team", names[-3:]
+
+
 def _later(answer: bool) -> Callable[[str], Awaitable[bool]]:
     """A person who answers `answer` from a coroutine, as a drive session's goal asks the person
     driving while the session goes on reading lines."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -210,6 +211,239 @@ def test_a_refreshed_note_becomes_the_newest_note(tmp_path: Path) -> None:
     assert [e.text for e in mem.notes()][-1] == "the sofa is on the left"
     lines = [line for line in mem.recall().splitlines() if line.startswith("- ")]
     assert "the sofa is on the left" in lines[0], f"newest first is broken: {lines}"
+
+
+OLD_NOTES = ["the charger is by the door", "the rug is slippery", "the cat sleeps on the sofa"]
+
+B_NOTE = "B: the door is shut"
+
+CHILD_WITHIN_S = 60.0
+"""How long the test waits on a `WRITER` process, and a held writer on the test. A writer is a
+new Python that imports Roboglot before it writes, and on a loaded machine (the whole suite in
+four workers, a slow CI runner) that start alone can outlast `UNTIL_WITHIN_S`: the import took
+4.2 s here with the suite running. A bound that ends a test whose writer never comes, never a
+measure of speed, since every wait returns as soon as its file is there; three or four of them
+in one test stay inside the suite's per-test timeout."""
+
+WRITER = r"""
+import io, os, sys, time
+from roboglot.memory import RobotMemory
+
+base, note, hold, signals, within, every = sys.argv[1:7]
+
+
+def touch(name):
+    os.close(os.open(os.path.join(signals, name), os.O_CREAT | os.O_WRONLY))
+
+
+def held(name):
+    touch(name + ".held")
+    deadline = time.monotonic() + float(within)
+    while not os.path.exists(os.path.join(signals, name + ".go")):
+        if time.monotonic() > deadline:
+            raise SystemExit(name + " was never let go")
+        time.sleep(float(every))
+
+
+real_open, real_replace = io.open, os.replace
+
+
+class Halved:
+    # The memory file's one write, half of it, a stop, and the rest: the file is open meanwhile.
+    def __init__(self, f):
+        self.f = f
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return self.f.__exit__(*exc)
+
+    def __getattr__(self, name):
+        return getattr(self.f, name)
+
+    def write(self, data):
+        half = len(data) // 2
+        self.f.write(data[:half])
+        self.f.flush()
+        held("mid-write")
+        return half + self.f.write(data[half:])
+
+
+def opened(file, mode="r", *args, **kwargs):
+    f = real_open(file, mode, *args, **kwargs)
+    return Halved(f) if "w" in mode or "x" in mode else f
+
+
+def replace(src, dst, **kwargs):
+    held("before-replace")
+    return real_replace(src, dst, **kwargs)
+
+
+if hold == "mid-write":
+    io.open = opened
+elif hold == "before-replace":
+    os.replace = replace
+try:
+    RobotMemory("duck-01", base).remember(note)
+    print("saved")
+except OSError as e:
+    print("raised " + type(e).__name__)
+"""
+"""One process that remembers one note, held where `hold` says until the test lets it go:
+`mid-write` with the first half of the memory's text written and its file open, which is how a
+write looks to another process at that instant, or `before-replace` with its file written and
+closed. Held through `io.open` and `os.replace`, which every way of writing the file goes
+through, and ordered by files the test writes, never by sleeps."""
+
+
+class _Writer:
+    """One `WRITER` process, started by the test, and what it said."""
+
+    def __init__(self, base: Path, signals: Path, note: str, hold: str) -> None:
+        import subprocess
+        import sys
+
+        from tests.support import UNTIL_EVERY_S
+
+        self.signals = signals
+        self.hold = hold
+        self.proc = subprocess.Popen(
+            [
+                *(sys.executable, "-X", "utf8", "-c", WRITER),
+                *(str(base), note, hold, str(signals), str(CHILD_WITHIN_S), str(UNTIL_EVERY_S)),
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+        )
+
+    def held(self) -> None:
+        from tests.support import until
+
+        where = self.signals / f"{self.hold}.held"
+        until(
+            lambda: where.exists() or self.proc.poll() is not None,
+            within_s=CHILD_WITHIN_S,
+            what=f"held {self.hold}",
+        )
+        assert where.exists(), f"the writer ended before {self.hold}: {self.said()}"
+
+    def go(self) -> None:
+        (self.signals / f"{self.hold}.go").touch()
+
+    def said(self) -> str:
+        out, err = self.proc.communicate(timeout=CHILD_WITHIN_S)
+        assert self.proc.returncode == 0, err
+        return out.strip()
+
+
+def _two_writers_left(tmp_path: Path, said: dict[str, str]) -> None:
+    """What two writers at once may leave, and what they may not: every line readable, every
+    note saved before them still there, each writer's word about its own note true, and no
+    temporary file behind. That one of two new notes can be lost to the later replace is the
+    documented race (`RobotMemory`), and it is why A's note here is one already saved."""
+    mem = RobotMemory("duck-01", tmp_path)
+    lines = [line for line in mem.path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    texts = [e.text for e in mem.entries()]
+    assert len(texts) == len(lines), f"{len(lines) - len(texts)} damaged lines dropped: {texts}"
+    assert [n for n in OLD_NOTES if n not in texts] == [], f"old notes lost: {texts} ({said})"
+    assert (said["B"] == "saved") == (B_NOTE in texts), f"B said {said['B']!r}: {texts}"
+    assert said == {"A": "saved", "B": "saved"}
+    assert list(tmp_path.glob("*.tmp")) == []
+
+
+def test_a_note_written_while_another_writer_is_mid_write_damages_nothing(tmp_path: Path) -> None:
+    """Every writer of one robot's memory wrote through the same temporary name. So a second
+    writer (a run beside the MCP server, or two terminals) that wrote while the first had that
+    file open shared it: on Windows their bytes interleaved and the file the first then put in
+    place dropped damaged lines in silence, old notes among them, while the second was told it
+    could not remember; on POSIX the second's text was truncated under the first's. Two real
+    processes here, the first held halfway through its write while the second writes in full.
+    """
+    signals = tmp_path / "signals"
+    signals.mkdir()
+    base = tmp_path
+    seed = RobotMemory("duck-01", base)
+    for note in OLD_NOTES:
+        seed.remember(note)
+    b = _Writer(base, signals, B_NOTE, "mid-write")
+    try:
+        b.held()
+        said = {"A": _Writer(base, signals, OLD_NOTES[0], "none").said()}
+    finally:
+        b.go()
+    said["B"] = b.said()
+    _two_writers_left(base, said)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="the rename of a file another process holds open")
+def test_a_note_written_after_another_writer_closed_its_file_is_told_the_truth(
+    tmp_path: Path,
+) -> None:
+    """The POSIX half of the shared temporary name. The first writer closed its file and was
+    about to put it in place; the second opened the same name, truncating it, and began to write;
+    the first renamed it into place, so the second went on writing into what was now the memory
+    file, and its own rename then raised: told "could not remember" for a note that was saved,
+    in a file a reader could see half of. On Windows the rename of a file another process holds
+    open is refused, so this order cannot happen there."""
+    signals = tmp_path / "signals"
+    signals.mkdir()
+    base = tmp_path
+    seed = RobotMemory("duck-01", base)
+    for note in OLD_NOTES:
+        seed.remember(note)
+    a = _Writer(base, signals, OLD_NOTES[0], "before-replace")
+    try:
+        a.held()
+        b = _Writer(base, signals, B_NOTE, "mid-write")
+        try:
+            b.held()
+            a.go()
+            said = {"A": a.said()}
+        finally:
+            b.go()
+        said["B"] = b.said()
+    finally:
+        a.go()
+    _two_writers_left(base, said)
+
+
+def test_a_write_removes_a_dead_writers_temporary_file_and_nothing_else(tmp_path: Path) -> None:
+    """With a temporary file of its own for every write, a writer killed between its write and
+    its replace left a file no later write overwrote, where the one shared name was overwritten
+    by the next write. A write now removes those older than the registry's `STALE_TEMP_S`, which
+    only a dead writer's can be, and leaves a younger one, which may be a live writer's about to
+    be renamed, and every file whose name is not exactly its own pattern: the old shared name,
+    another robot's, a name one digit short. Ages are set on the files, so no clock is waited."""
+    import time
+
+    from roboglot import registry
+
+    mem = RobotMemory("duck-01", tmp_path)
+    mem.remember(OLD_NOTES[0])
+    name = mem.path.name
+    hexed = "0123456789abcdef"
+    dead = tmp_path / f"{name}.{hexed}.tmp"
+    young = tmp_path / f"{name}.fedcba9876543210.tmp"
+    others = [
+        tmp_path / f"{name}.tmp",
+        tmp_path / f"{mem.path.stem}.tmp",
+        tmp_path / f"{name}.{hexed[:-1]}.tmp",
+        tmp_path / f"{name}.{hexed}.tmp.bak",
+        tmp_path / f"other-robot.jsonl.{hexed}.tmp",
+    ]
+    old = time.time() - registry.STALE_TEMP_S - 1
+    for left in (dead, young, *others):
+        left.write_text("{}\n", encoding="utf-8")
+        if left is not young:
+            os.utime(left, (old, old))
+    mem.remember(OLD_NOTES[1])
+    assert not dead.exists(), "a dead writer's temporary file is still there"
+    assert young.exists(), "a temporary file young enough to be a live writer's was removed"
+    assert [p.name for p in others if not p.exists()] == []
+    assert [e.text for e in mem.entries()] == OLD_NOTES[:2]
 
 
 # ── the prompt ──────────────────────────────────────────────────────────────────────────

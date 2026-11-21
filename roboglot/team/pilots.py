@@ -13,23 +13,26 @@ Three consequences worth saying out loud, because they are the cost of that:
 - **N mock members are N separate bodies.** Two `microduck:mock` pilots cannot see each
   other.
 
-What this does guarantee: every member ends, every transport closes, and a member that raises
-stops the others with a reason that names it.
+What this does guarantee: every member ends, every transport closes, a member that raises
+stops the others with a reason that names it, and no body moves before every member whose body
+cannot see a fall has been answered yes (`_Together`).
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import inspect
 import time
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
 from roboglot import __version__
-from roboglot.adapters.base import go_to_rest_if_any
+from roboglot.adapters.base import AdapterError, go_to_rest_if_any
 from roboglot.adapters.factory import (
     RobotSpec,
     describe,
@@ -38,14 +41,21 @@ from roboglot.adapters.factory import (
     parse_robot_spec,
 )
 from roboglot.adapters.manifest import RobotManifest
-from roboglot.agent.loop import AgentLoop, Outcome, RunConfig, RunResult, resolve_play
+from roboglot.agent.loop import (
+    LOCOMOTION,
+    AgentLoop,
+    Outcome,
+    RunConfig,
+    RunResult,
+    resolve_play,
+)
 from roboglot.agent.providers.base import LLMProvider, Usage
 from roboglot.agent.transcript import new_run_dir, run_label
 from roboglot.command import command_line
 from roboglot.glotfile.schema import GlotFile, GlotFrontmatter
-from roboglot.log import EventLog, Sink
+from roboglot.log import EventLog, Sink, a_person_was_asked
 from roboglot.memory import RobotMemory
-from roboglot.safety import allow_all, deny_all
+from roboglot.safety import Aborted, allow_all, deny_all
 from roboglot.team.bus import Bus, InProcessBus
 from roboglot.team.messages import TeamMessage
 from roboglot.team.talk import TEAM_SRC, Peer, make_links, notice
@@ -75,13 +85,23 @@ def member_specs(
     file's whole list or none of it, and sent a member the command line did not name to the
     machine's answer. A team is N separate bodies of whatever kind, and the machine's own answer
     to "which robot, then" is `default_spec()`: the one adapter installed if there is one, and
-    otherwise a refusal that says what to install or lists what is here."""
+    otherwise a refusal that says what to install or lists what is here.
+
+    A robot given for a name that is no member is refused, before anything is built. It was
+    passed over, so a slip in a name left the member it was meant for to the machine's answer:
+    on a machine with one adapter, that adapter's mock."""
     given: dict[str, str] = {}
     if isinstance(glot_default, dict):
         given = dict(glot_default)
     elif isinstance(glot_default, str):
         given = dict.fromkeys(members, glot_default)
     given.update(robots or {})
+    stray = [f"{name}={text}" for name, text in given.items() if name not in members]
+    if stray:
+        raise AdapterError(
+            f"{', '.join(stray)} {'names' if len(stray) == 1 else 'name'} no member of this "
+            f"team, whose members are {', '.join(members)}"
+        )
     specs: dict[str, RobotSpec] = {}
     chosen: RobotSpec | None = None
     for name in members:
@@ -118,6 +138,104 @@ def _standing_go(_why: str) -> bool:
 
 _standing_go.answers_as = "a team's standing answer"  # type: ignore[attr-defined]
 """What the record names as having said go (`roboglot.log.who_answered`), and never a person."""
+
+Acknowledge = Callable[[str, str], bool | Awaitable[bool]]
+"""`acknowledge(member, warning)`: whether the person is watching a member whose body cannot see
+a fall (`roboglot.agent.loop.fall_blind_warning`), at once or later from a coroutine, as a solo
+run's `acknowledge` answers."""
+
+
+def _nobody_watching(_member: str, _why: str) -> bool:
+    """The answer about a body that cannot see a fall where nobody is there to ask: nobody said
+    they watch it, so the team ends before anything moves, as a solo run that nobody answers
+    does. Unmarked, so the record names no person."""
+    return False
+
+
+def _can_walk(contract: GlotFrontmatter) -> bool:
+    """Whether this member's part of the task can make its body walk: the half of
+    `fall_blind_warning` that is known before the body connects. The other half, whether the body
+    can see a fall, is in its first reading, so a member this is True of may be asked nothing."""
+    return any(v in LOCOMOTION or canonical(v) in LOCOMOTION for v in contract.verbs.allow)
+
+
+class _Together:
+    """A team's start: no body moves until every member whose part can make it walk has read
+    its body and, where that body cannot see a fall, been answered yes.
+
+    Members connect at once, and only a body's first reading says whether it can see a fall, so
+    every member waits for each one whose part can make it walk, and nobody waits for one whose
+    part cannot. Their questions are put one at a time (`turn`), and after a no, or a question
+    nobody answered, no other is put: that member's end stops the team (`run_pilot_team`), which
+    takes back every question still waiting and lets go of every member waiting here, before
+    anything moved. Asked while the other members moved, a question took the `q` meant to stop
+    them for its answer, and the bodies went on moving until somebody pressed Enter."""
+
+    def __init__(self, walkers: Iterable[str]) -> None:
+        self.turn = asyncio.Lock()
+        """Held by the member whose question is up, so two are never up at once."""
+        self.refused: str | None = None
+        """The member whose question was answered no, or not at all."""
+        self._waiting = set(walkers)
+        self._clear = asyncio.Event()
+        if not self._waiting:
+            self._clear.set()
+
+    async def hold(self, name: str, abort: asyncio.Event) -> None:
+        """`RunConfig.wait_for_team` for `name`, which has read its body and had its answer: the
+        team waits for it no longer, and it waits for the others, or for its own stop."""
+        self._waiting.discard(name)
+        if not self._waiting:
+            self._clear.set()
+        if self._clear.is_set() or abort.is_set():
+            return
+        from roboglot.release import cancel_and_wait
+
+        clear = asyncio.ensure_future(self._clear.wait())
+        stopped = asyncio.ensure_future(abort.wait())
+        try:
+            await asyncio.wait({clear, stopped}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            await cancel_and_wait(clear, stopped)
+
+
+class _Asked:
+    """A member's `acknowledge`: the team's question about its body, put when the team's turn
+    comes to it, with the member's name, and never after a no."""
+
+    def __init__(self, ask: Acknowledge, member: str, together: _Together) -> None:
+        self._ask = ask
+        self.member = member
+        self._together = together
+
+    async def __call__(self, why: str) -> bool:
+        together = self._together
+        async with together.turn:
+            if together.refused is not None:
+                # Never put. The no ends its own member, whose end stops every member still
+                # running, and the stop takes this back (`roboglot.answers.answered`).
+                await asyncio.Event().wait()
+            try:
+                said = self._ask(self.member, why)
+                answer = bool(await said) if inspect.isawaitable(said) else bool(said)
+            except asyncio.CancelledError:
+                raise  # taken back by the stop, which is nobody's answer: the stop says why
+            except BaseException:
+                together.refused = self.member  # nobody answered, which ends it as a no does
+                raise
+            if not answer:
+                together.refused = self.member
+            return answer
+
+    def asks_a_person(self) -> bool:
+        """Whatever the person's own question says, at the moment of asking."""
+        return a_person_was_asked(self._ask)
+
+    @property
+    def channel(self) -> str | None:
+        """Where the person was asked, wherever their question names a channel."""
+        channel = getattr(self._ask, "channel", None)
+        return channel if isinstance(channel, str) else None
 
 
 class RosterEntry(Protocol):
@@ -224,19 +342,24 @@ def trim_contract(fm: GlotFrontmatter, manifest: RobotManifest) -> GlotFrontmatt
     return GlotFrontmatter.model_validate(data)
 
 
-def aggregate_outcome(per_member: Mapping[str, tuple[Outcome, str]]) -> tuple[Outcome, str]:
+def aggregate_outcome(
+    per_member: Mapping[str, tuple[Outcome, str]], *, first: str | None = None
+) -> tuple[Outcome, str]:
     """One outcome for the team, from what each member said about itself.
 
     Success only when everyone declared it: a team in which one member never finished did not
     finish. Otherwise the worst outcome wins and the reason names every member that did not
-    succeed, worst first, so the first thing read is the thing that went most wrong."""
+    succeed, worst first, so the first thing read is the thing that went most wrong. Of members
+    that ended alike, `first`, the member whose own end stopped the team, comes before the
+    members it stopped: a person's no ends its member `aborted`, as every stop it causes ends the
+    others, and the reason opened on whichever of them the roster listed first."""
     if not per_member:
         return "error", "the team had no members"
     failed = {name: pair for name, pair in per_member.items() if pair[0] != "success"}
     if not failed:
         return "success", f"every member declared success: {', '.join(per_member)}"
     worst = next(o for o in WORST_FIRST if any(pair[0] == o for pair in failed.values()))
-    ranked = sorted(failed.items(), key=lambda kv: WORST_FIRST.index(kv[1][0]))
+    ranked = sorted(failed.items(), key=lambda kv: (WORST_FIRST.index(kv[1][0]), kv[0] != first))
     return worst, "; ".join(f"{name} {outcome}: {why}" for name, (outcome, why) in ranked)
 
 
@@ -264,8 +387,17 @@ async def run_pilot_team(
     price: str | None = None,
     before_connect: Callable[[Sequence[RobotSpec]], None] | None = None,
     play: bool | None = None,
+    acknowledge: Acknowledge | None = None,
 ) -> PilotTeamResult:
     """One pilot per member, all at once, until every one of them has ended.
+
+    `acknowledge(member, warning)` is put once for each member whose body cannot see a fall, on
+    a task that can make it walk, as `roboglot run` asks a solo run's question, and no body moves
+    until each such member has been answered yes: one question at a time, and a no, or no answer,
+    ends the team before anything moved. With no `acknowledge` nobody is asked, and such a member
+    is answered as nobody watching, which ends the team the same way. `yes` is the team's
+    standing answer to its confirm gates and its pilots' doubts, and never answers this:
+    `roboglot run --yes` hands in an `acknowledge` that says yes for every member at once.
 
     `before_connect` is handed every member's robot, in roster order, once all of them are
     built. Building is the last thing that can refuse the team before its members connect, and
@@ -339,7 +471,6 @@ async def run_pilot_team(
     def now() -> float:
         return time.perf_counter() - wall0
 
-    transcript = TeamTranscript(run_dir, now)
     talks = {"members": 0, "notices": 0}
 
     def tap(msg: Any) -> None:
@@ -347,82 +478,108 @@ async def run_pilot_team(
         if getattr(msg, "kind", None) == "TALK":
             talks["notices" if msg.src == TEAM_SRC else "members"] += 1
 
+    # built before `team.jsonl` is opened, so a factory that raises leaves nothing open: it
+    # opens nothing itself, and the tap reads the transcript only once a message comes
     bus: Bus = bus_factory(tap) if bus_factory else InProcessBus(tap=tap)
-    if callable(start := getattr(bus, "start", None)):
-        start()  # inside the event loop, so remote deliveries are marshalled onto it
-
-    task_id = uuid.uuid4().hex[:8]
-    peers = {name: Peer(name, roster[name].robot_spec.key, manifests[name]) for name in members}
-    links = make_links(members, peers, bus=bus, task_id=task_id, now=now)
-
-    def member_view(name: str) -> Sink | None:
-        return view(name) if view is not None else None
-
-    # no record: every TALK is already in team.jsonl through the tap, under its own name
-    story = EventLog(observers=[v] if (v := member_view(TEAM_LOG)) is not None else [])
-
+    transcript = TeamTranscript(run_dir, now)
     loops: dict[str, AgentLoop] = {}
-    for name in members:
-        member_dir = run_dir / "robots" / name
-        member_dir.mkdir(parents=True, exist_ok=True)  # `Transcript` opens, it does not mkdir
-        loops[name] = AgentLoop(
-            RunConfig(
-                glot=GlotFile(frontmatter=contracts[name], body=glot.body, path=glot.path),
-                provider=providers[name],
-                transport=adapters[name],
-                run_dir=member_dir,
-                runs_dir=runs_dir,
-                max_steps=max_steps,
-                dry_run=dry_run,
-                # N blocking prompts would starve every other member's heartbeat, so the
-                # answer for all of them is `--yes` or nothing, exactly as it is over MCP
-                confirm=allow_all if yes else deny_all,
-                acknowledge=None,
-                decide=_standing_go if yes else None,
-                memory=(memories or {}).get(name),
-                fov_deg=fov_deg,
-                log=lambda m, who=name: log(f"{who}: {m}"),
-                view=member_view(name),
-                link=links[name],
-                # every member is priced the same way, because `--price` is one rate for the
-                # run rather than one per robot: a team of the same LLM on three bodies
-                # is three bills at one rate
-                price=price,
-                summary_file=False,
-                play=play,
-            )
-        )
+    # From here to `team_start`, `team.jsonl`, the bus and each member's transcript are open
+    # before the `try` whose `finally` closes them: a broker that refused the bus, or a member
+    # that could not be built, left them open, and an MQTT bus's thread running, for the rest
+    # of the process.
+    try:
+        if callable(start := getattr(bus, "start", None)):
+            start()  # inside the event loop, so remote deliveries are marshalled onto it
 
-    played, played_from = resolve_play(glot.frontmatter.play, play)
-    transcript.write(
-        "team_start",
-        glot=glot.name,
-        team=team_name,
-        method="pilots",
-        clock="wall",
-        members=members,
-        robots={name: roster[name].robot_spec.key for name in members},
-        providers={
-            name: {"provider": providers[name].name, "llm_id": providers[name].llm_id}
-            for name in members
-        },
-        contracts={
-            name: {
-                "allow": contracts[name].verbs.allow,
-                "confirm": contracts[name].verbs.confirm,
-                "requires": contracts[name].requires,
-            }
-            for name in members
-        },
-        dry_run=dry_run,
-        contract=glot.frontmatter.model_dump(),
-        # as each member's `run_start` says it, so the team's own record agrees with them
-        # when `--play` or `--no-play` overrode the file
-        play={"on": played, "from": played_from},
-    )
+        task_id = uuid.uuid4().hex[:8]
+        peers = {name: Peer(name, roster[name].robot_spec.key, manifests[name]) for name in members}
+        links = make_links(members, peers, bus=bus, task_id=task_id, now=now)
+
+        def member_view(name: str) -> Sink | None:
+            return view(name) if view is not None else None
+
+        # no record: every TALK is already in team.jsonl through the tap, under its own name
+        story = EventLog(observers=[v] if (v := member_view(TEAM_LOG)) is not None else [])
+
+        # Every member waits, before it moves, for each member whose part can make it walk to
+        # have read its body and had any question about it answered, and where no part can,
+        # nobody waits
+        walkers = [name for name in members if _can_walk(contracts[name])]
+        together = _Together(walkers)
+        for name in members:
+            member_dir = run_dir / "robots" / name
+            member_dir.mkdir(parents=True, exist_ok=True)  # `Transcript` opens, it does not mkdir
+            loops[name] = AgentLoop(
+                RunConfig(
+                    glot=GlotFile(frontmatter=contracts[name], body=glot.body, path=glot.path),
+                    provider=providers[name],
+                    transport=adapters[name],
+                    run_dir=member_dir,
+                    runs_dir=runs_dir,
+                    max_steps=max_steps,
+                    dry_run=dry_run,
+                    # N blocking prompts would starve every other member's heartbeat, so the
+                    # answer for all of them is `--yes` or nothing, exactly as it is over MCP
+                    confirm=allow_all if yes else deny_all,
+                    # except whether anybody watches a body that cannot see a fall, which is
+                    # asked before anything moves, while no heartbeat has started (`_Together`)
+                    acknowledge=_Asked(
+                        acknowledge if acknowledge is not None else _nobody_watching,
+                        name,
+                        together,
+                    ),
+                    wait_for_team=functools.partial(together.hold, name) if walkers else None,
+                    decide=_standing_go if yes else None,
+                    memory=(memories or {}).get(name),
+                    fov_deg=fov_deg,
+                    log=lambda m, who=name: log(f"{who}: {m}"),
+                    view=member_view(name),
+                    link=links[name],
+                    # every member is priced the same way, because `--price` is one rate for
+                    # the run rather than one per robot: a team of the same LLM on three
+                    # bodies is three bills at one rate
+                    price=price,
+                    summary_file=False,
+                    play=play,
+                )
+            )
+
+        played, played_from = resolve_play(glot.frontmatter.play, play)
+        transcript.write(
+            "team_start",
+            glot=glot.name,
+            team=team_name,
+            method="pilots",
+            clock="wall",
+            members=members,
+            robots={name: roster[name].robot_spec.key for name in members},
+            providers={
+                name: {"provider": providers[name].name, "llm_id": providers[name].llm_id}
+                for name in members
+            },
+            contracts={
+                name: {
+                    "allow": contracts[name].verbs.allow,
+                    "confirm": contracts[name].verbs.confirm,
+                    "requires": contracts[name].requires,
+                }
+                for name in members
+            },
+            dry_run=dry_run,
+            contract=glot.frontmatter.model_dump(),
+            # as each member's `run_start` says it, so the team's own record agrees with them
+            # when `--play` or `--no-play` overrode the file
+            play={"on": played, "from": played_from},
+        )
+    except BaseException as failed:
+        for unclosed in _close_unstarted(transcript, bus, loops):
+            failed.add_note(f"and {unclosed} could not be closed")
+        raise
 
     results: dict[str, RunResult] = {}
     ended: set[str] = set()
+    stopped_by: list[str] = []
+    """The member whose own end stopped the team, once one has."""
     master = abort if abort is not None else asyncio.Event()
 
     def fan_out(reason: str | None) -> None:
@@ -474,7 +631,16 @@ async def run_pilot_team(
             results[name] = _ended(name, "aborted", "interrupted")
             raise
         except Exception as e:
-            results[name] = _ended(name, "error", f"{type(e).__name__}: {e}")
+            # A run that ends before its first step raises, and `Aborted` is what it raises, its
+            # own end written first, for a person's no, a question nobody answered, and a stop
+            # that came while it waited to move. The team says so as the member's record does,
+            # rather than call a person's answer a fault. Any other raise is the member's error.
+            stopped = str(e) if isinstance(e, Aborted) else None
+            results[name] = (
+                _ended(name, "aborted", stopped)
+                if stopped is not None
+                else _ended(name, "error", f"{type(e).__name__}: {e}")
+            )
             # `AgentLoop.run` connects before its own try/finally, so a transport that failed
             # to connect, or one whose vocabulary refused the contract, is still open here
             with contextlib.suppress(Exception):
@@ -487,7 +653,12 @@ async def run_pilot_team(
             with contextlib.suppress(Exception):
                 await adapters[name].close()
             if not master.is_set():
-                fan_out(f"stopped by the team: {name} raised {type(e).__name__}: {e}")
+                stopped_by.append(name)
+                fan_out(
+                    f"stopped by the team: {name} ended aborted: {stopped}"
+                    if stopped is not None
+                    else f"stopped by the team: {name} raised {type(e).__name__}: {e}"
+                )
                 master.set()
         finally:
             ended.add(name)
@@ -539,6 +710,7 @@ async def run_pilot_team(
             dry_run=dry_run,
             team_name=team_name,
             run_name=run_name,
+            first=stopped_by[0] if stopped_by else None,
         )
     return result
 
@@ -565,6 +737,28 @@ def union_problems(glot: GlotFile, manifests: Mapping[str, RobotManifest]) -> li
     ]
 
 
+def _close_unstarted(
+    transcript: TeamTranscript, bus: Bus, loops: Mapping[str, AgentLoop]
+) -> list[str]:
+    """What a team that failed before its members started had opened, closed: each member's
+    transcript built so far, the bus, and `team.jsonl`. A close that raises does not stop the
+    others, nor take the place of the failure that brought the team here, which is what the
+    caller is owed: each is handed back in words, for the caller to note on that failure."""
+    unclosed: list[str] = []
+    closes: list[tuple[str, Callable[[], Any]]] = [
+        (f"{name}'s transcript", loop.transcript.close) for name, loop in loops.items()
+    ]
+    if callable(close := getattr(bus, "close", None)):
+        closes.append(("the bus", close))
+    closes.append(("team.jsonl", transcript.close))
+    for what, closing in closes:
+        try:
+            closing()
+        except Exception as e:
+            unclosed.append(f"{what} ({type(e).__name__}: {e})")
+    return unclosed
+
+
 def _finish(
     *,
     glot: GlotFile,
@@ -582,10 +776,12 @@ def _finish(
     dry_run: bool,
     team_name: str | None,
     run_name: str | None = None,
+    first: str | None = None,
 ) -> PilotTeamResult:
-    """The rollup, the summary and the teardown. Runs whatever happened to the members."""
+    """The rollup, the summary and the teardown. Runs whatever happened to the members. `first`
+    is the member whose own end stopped the team, if one did (`aggregate_outcome`)."""
     outcome, reason = aggregate_outcome(
-        {name: (results[name].outcome, results[name].reason) for name in members}
+        {name: (results[name].outcome, results[name].reason) for name in members}, first=first
     )
     per_member = {
         name: {

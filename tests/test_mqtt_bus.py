@@ -132,6 +132,49 @@ def test_every_message_round_trips_and_echo_is_dropped() -> None:
     assert broker.clients == []
 
 
+class ReconnectingClient(FakeClient):
+    """What paho does around a connection that `FakeClient` leaves out: it calls `on_connect`
+    once the broker has accepted the client, and after the broker went away it connects again by
+    itself, on a clean session, which carries no subscription over."""
+
+    on_connect: Any = None
+
+    def connect(self, host: str, port: int = 1883, keepalive: int = 60) -> None:
+        super().connect(host, port, keepalive)
+        self._accepted()
+
+    def broker_restarted(self) -> None:
+        self.subscriptions.clear()
+        self._accepted()
+
+    def _accepted(self) -> None:
+        if self.on_connect is not None:
+            self.on_connect(self, None, {}, 0, None)  # paho's v2 callback, reason code 0: success
+
+
+def test_a_node_still_hears_the_team_after_the_broker_comes_back() -> None:
+    """The bus subscribed once, before paho's thread started. paho connects again by itself after
+    a broker restart or a network drop past the keepalive, but on a clean session the broker
+    keeps no subscription and paho renews none, so the node went on publishing and never heard
+    another message, with nothing said. It subscribes at every connect now, and says when it has
+    connected again."""
+    broker = FakeBroker()
+    logged: list[str] = []
+    client = ReconnectingClient(broker)
+    b = MqttBus("t1", client=client, log=logged.append)
+    heard = b.subscribe("duck-1")
+    b.start()
+    a = node(broker, "duck-0")
+    client.broker_restarted()
+    said = talks("duck-0")[0]
+    a.publish(said)
+    assert heard.drain() == [said], "deaf after the reconnect"
+    assert client.subscriptions == {"roboglot/t1/ctl": QOS_CTL}
+    assert len(logged) == 1 and "reconnected" in logged[0], logged
+    a.close()
+    b.close()
+
+
 def test_control_is_qos1_and_nothing_is_retained() -> None:
     broker = FakeBroker()
     a = node(broker, "duck-0")
