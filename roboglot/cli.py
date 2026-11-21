@@ -8844,11 +8844,11 @@ def onboard_forget(
     home = _onboard_home(directory)
     robot = _onboard_file(home)
     wanted = which.strip()
-    matches = [
+    # a did names its pin exactly, and a name is the other robot's own text, which may be a did
+    matches = [p for p in robot.trust.pins if p.id == wanted] or [
         p
         for p in robot.trust.pins
-        if wanted in (p.id, p.name)
-        or (len(wanted) >= 4 and str(short_id_of(p.id)).startswith(wanted))
+        if wanted == p.name or (len(wanted) >= 4 and str(short_id_of(p.id)).startswith(wanted))
     ]
     if len(matches) != 1:
         _fail(f"{wanted!r} names {len(matches)} pins: give its did or more of its short id")

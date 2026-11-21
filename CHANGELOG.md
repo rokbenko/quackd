@@ -1500,10 +1500,12 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **`roboglot onboard forget` takes out the pin it names, and says so when it cannot.** A pin's
   line in `robot.yaml` was found by the last `id:` on it, and a robot's name is its own text: a
   robot named `id: ` and another key's did was pinned under its own key, could not be forgotten,
-  and forgetting that other key took its pin out instead. `forget` also said `forgot` whatever
-  came back, so a pin written over several lines stayed trusted under that word. A pin's `id`
-  is read as YAML reads its line now, and `forget` says it could not, and exits 1, when the pin
-  is not on one line as `roboglot onboard pin` writes it.
+  and forgetting that other key took its pin out too. A robot named with another's did made
+  `forget` and that did name two pins and refuse. `forget` also said `forgot` whatever came back,
+  so a pin written over several lines stayed trusted under that word. A pin's `id` is read as
+  YAML reads its line now, a did names its own pin whatever another robot is named, and `forget`
+  says it could not, and exits 1, when the pin is not on one line as `roboglot onboard pin`
+  writes it.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

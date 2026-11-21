@@ -1297,6 +1297,24 @@ def test_forget_never_says_forgot_for_a_pin_it_left_trusted(
     assert [pin.id for pin in config.load(yaml).trust.pins] == [other]
 
 
+def test_a_robots_did_forgets_it_whatever_another_pin_is_named(
+    tmp_path: Path, robot_file: Path, secret: Path
+) -> None:
+    """A robot's passport name is its own text, so a stranger pinned with A's did for its name
+    made `forget <A's did>` match two pins and refuse, and the did could no longer forget A. An
+    exact did wins over a name now: A's pin alone goes, and the stranger's stays."""
+    from tests.passport_helpers import INTRUDER, A
+
+    home = tmp_path / "robot"
+    assert onboard(home, robot_file, secret).exit_code == 0
+    yaml = home / "robot.yaml"
+    config.add_pin(yaml, config.Pin(kind="robot", id=A.did, name="g1-edu-02", pinned="2026-11-21"))
+    config.add_pin(yaml, config.Pin(kind="robot", id=INTRUDER.did, name=A.did, pinned="2026-11-21"))
+    forgot = runner.invoke(app, ["onboard", "forget", A.did, "--dir", str(home)])
+    assert forgot.exit_code == 0, forgot.output
+    assert [pin.id for pin in config.load(yaml).trust.pins] == [INTRUDER.did]
+
+
 def test_preflight_reads_the_sim_board_and_the_robot_and_changes_nothing(
     tmp_path: Path, robot_file: Path, secret: Path
 ) -> None:
