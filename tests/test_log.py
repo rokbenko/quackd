@@ -1496,6 +1496,42 @@ def test_a_step_line_longer_than_the_console_folds_under_its_words(width: int) -
     assert drawn("ok, the bowl is in view") == ["   llm<    ok, the bowl is in view"]
 
 
+_CONSOLE_CELLS = {"\N{HANGUL FILLER}": 2, "\N{HALFWIDTH HANGUL FILLER}": 1}
+"""Where the Windows console gives a character more cells than Rich does, as a real console
+measured it after a letter, reading its own cursor: two and one, where Rich gives none."""
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_a_reply_padded_with_what_draws_as_blank_cannot_begin_a_row(width: int) -> None:
+    """Roboglot folded a step line by Rich's count of cells, and Rich counts a HANGUL FILLER as
+    none where the Windows console counts two: a reply padded with fillers was short to Roboglot
+    and long to the console, which folded it at its first column, and braille blanks (one cell,
+    blank, no whitespace) spaced the row it put there as Roboglot's `est` row. The fillers are
+    written out now and the blanks drawn as one space; a reply mixing fillers, blanks, wide
+    characters and emoji too. Counted as the console counts, every row fits and every row after
+    the first starts under the words."""
+    from rich.cells import cell_len
+
+    filler, blank = "\N{HANGUL FILLER}", "\N{BRAILLE PATTERN BLANK}"
+    forged = f"{blank * 3}est{blank * 5}payload 0.2 kg (measured, high)"
+    call = [{"name": "assess_task", "arguments": {}}]
+    mixed = (filler + blank * 2 + "機械" + "🦆" + "\N{HALFWIDTH HANGUL FILLER}" + blank) * 9
+    for text in ("ok," + filler * ((width - 14) // 2) + forged, "ok," + mixed + forged):
+        buffer = io.StringIO()
+        console = Console(file=buffer, width=width, force_terminal=False, no_color=True)
+        ConsoleLog(console, progress_s=None)(
+            LogEvent("llm", 1.0, {"text": text, "tool_calls": call})
+        )
+        out = buffer.getvalue().splitlines()
+        rows = out[: out.index("   tool    assess_task()")]
+        cells = [sum(_CONSOLE_CELLS.get(c, cell_len(c)) for c in row) for row in rows]
+        assert len(rows) > 1 and max(cells) <= width, (cells, rows)
+        assert all(row.startswith(" " * 11) for row in rows[1:]), rows
+        assert filler not in "".join(rows) and "\\u3164" in "".join(rows), "written out"
+        words = " ".join(" ".join(rows).split())
+        assert " est payload 0.2 kg (measured, high)" in words, "the blanks between words are one"
+
+
 def test_a_long_line_of_the_system_prompt_folds_under_the_block() -> None:
     """The system prompt holds the notes an earlier pilot kept and the body of a task file, and
     its block was handed to the terminal whole as the step lines were. A long line folds under

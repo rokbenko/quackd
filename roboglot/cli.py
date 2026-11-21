@@ -1629,7 +1629,7 @@ def _ask(question: str) -> bool | Awaitable[bool]:
         raise RuntimeError("a run driven from the page puts no question to a terminal")
     switch = _SWITCH
     if switch is None:
-        agreed = typer.confirm(_folded(question), default=False)
+        agreed = typer.confirm(_folded(question, ui.console), default=False)
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
     # read through `ask` as before by anything that cannot say it reads a stream
@@ -1644,16 +1644,22 @@ def _ask(question: str) -> bool | Awaitable[bool]:
 _YN = " [y/N]:"
 
 
-def _folded(question: str) -> str:
-    """`question` as the terminal is handed it: folded at the console's width with every row after
-    the first indented (`ui.hang`), room kept on its last row for the `[y/N]` the asker adds.
+def _folded(question: str, target: Any = None) -> str:
+    """`question` as the terminal is handed it: folded at the width of `target`, the console of
+    the stream it is written to (`ui.err_console` unless said), every row after the first behind
+    Roboglot's continuation mark (`Glyphs.carry`), and room kept on its last row for the `[y/N]`
+    the asker adds.
 
     The confirm gate's question holds the pilot's arguments whole, and it is written raw, so Rich
     never folded it: the terminal did, at the first column, where Roboglot's own rows begin, and
     a long argument could begin one there in Roboglot's voice. Its spaces are kept as they are,
-    since a person says yes to exactly what runs. A question on one row is asked as it always
-    was."""
-    said = ui.hang(f"{question}{_YN}", ui.err_console)
+    since a person says yes to exactly what runs, so an argument padded with them could still
+    set a row two columns in that read as a question for another call, `run quack(text='a
+    tune')? [y/N]:`. Behind the mark no row can begin where a question begins. A question on one
+    row is asked as it always was."""
+    console = target if target is not None else ui.err_console
+    mark = f"{ui.glyphs_for(console).carry} "
+    said = ui.hang(f"{question}{_YN}", console, indent=mark)
     return said.removesuffix(_YN) if said.endswith(_YN) else question
 
 
@@ -1662,7 +1668,7 @@ async def _asked_on_a_stream(switch: KillSwitch, question: str) -> bool:
     the question (`KillSwitch.ask_async`), with the status line kept out of its way for as long
     as it waits, and the answer told to the saved terminal as the other branches tell it."""
     with ui.pause_status():
-        answer = await switch.ask_async(f"{_folded(question)} [y/N]: ")
+        answer = await switch.ask_async(f"{_folded(question, ui.console)} [y/N]: ")
     ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 

@@ -1275,9 +1275,11 @@ def test_no_row_of_a_question_or_of_its_reason_begins_where_the_question_does(
     assert cli_mod._ask(question) is False
     (prompt,) = asked
     rows = prompt.split("\n")
+    carry = f"{ui.UNICODE.carry} "
     assert len(rows) > 1 and rows[0].startswith("run quack(text='the bowl"), rows
-    assert all(row.startswith(ui.CONTINUED) and len(row) <= width for row in rows[1:]), rows
-    assert rows[-1].endswith("')? [y/N]: ") and prompt.split() == f"{question} [y/N]:".split()
+    assert all(row.startswith(carry) and len(row) <= width for row in rows[1:]), rows
+    words = [word for word in prompt.split() if word != ui.UNICODE.carry]
+    assert rows[-1].endswith("')? [y/N]: ") and words == f"{question} [y/N]:".split()
     assert cli_mod._folded("run kick(leg='left')?") == "run kick(leg='left')?"
 
     monkeypatch.setattr(cli_mod, "_ask", lambda question: False)
@@ -1295,6 +1297,36 @@ def test_no_row_of_a_question_or_of_its_reason_begins_where_the_question_does(
         shown = f"{said}the bowl is out of frame. {forged} {tail}"
         assert " ".join(rows).split() == shown.split(), "every word once, the padding one space"
         assert not any(row.startswith(forged) for row in rows), rows
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_no_row_of_the_confirm_question_begins_where_a_question_begins(width: int) -> None:
+    """The confirm gate's question keeps its arguments' spaces, so an argument padded with them
+    set a row two columns in that read as a question for another call, `run quack(text='a
+    tune')? [y/N]:`; padded with Hangul fillers, which Rich counts as no cells and the Windows
+    console as two, it began that row at the first column. Every row after the first begins with
+    Roboglot's mark now (`Glyphs.carry`, `|` on a stream that has only ASCII), a character no
+    argument can set there, and a filler is written out, so the question is folded as it is shown.
+    Padded with spaces, braille blanks or fillers, on a UTF-8 stream and on a codepage."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+
+    utf8 = Console(file=io.StringIO(), width=width)
+    codepage = Console(file=io.TextIOWrapper(io.BytesIO(), encoding="cp1252"), width=width)
+    another = "run quack(text='a tune"
+    for console, carry in ((utf8, ui.UNICODE.carry), (codepage, ui.ASCII.carry)):
+        for pad in (" ", "\N{BRAILLE PATTERN BLANK}", "\N{HANGUL FILLER}"):
+            question = confirm_question("quack", {"text": "hi" + pad * width + another})
+            rows = (cli_mod._folded(question, console) + " [y/N]: ").split("\n")
+            assert rows[0].startswith("run ") and len(rows) > 1, rows
+            assert all(row.startswith(f"{carry} ") for row in rows[1:]), (carry, pad, rows)
+            assert all(len(row) <= width for row in rows), rows
+            assert not any(row.startswith(another) for row in rows), rows
+            assert "\N{HANGUL FILLER}" not in "".join(rows), "a filler is written out"
 
 
 def test_the_lines_beside_a_wait_in_drive_and_in_a_warning_fold_under_their_words(

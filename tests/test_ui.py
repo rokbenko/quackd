@@ -271,6 +271,82 @@ def test_a_run_of_spaces_in_outside_text_is_drawn_as_one() -> None:
     assert ui.one_space("one space each") == "one space each"
 
 
+def test_a_run_of_what_draws_as_blank_is_one_space_too() -> None:
+    """`one_space` took whitespace only, so a reply spaced with braille blanks (U+2800), which
+    draw as a blank and are no whitespace, kept every one, and so did a pad with a zero-width space
+    between each two spaces, which made every run one space long. A run of anything that draws as
+    a blank, or as nothing, between two words is one space now; a direction mark in it is kept,
+    and a joiner inside a word, which no blank is near, is left alone."""
+    blank = "\N{BRAILLE PATTERN BLANK}"
+    assert ui.one_space(f"ok,{blank * 40}est{blank * 5}payload") == "ok, est payload"
+    zwsp = "\N{ZERO WIDTH SPACE}"
+    assert ui.one_space(f"ok,{(' ' + zwsp) * 30} est") == "ok, est"
+    full_blank = chr(0x13441)  # EGYPTIAN HIEROGLYPH FULL BLANK, which 3.11's Unicode 14 lacks
+    for odd in ("\N{HANGUL FILLER}", full_blank, "\N{IDEOGRAPHIC SPACE}"):
+        assert ui.one_space(f"a{odd * 3}b") == "a b", repr(odd)
+    rlm = "\N{RIGHT-TO-LEFT MARK}"
+    assert ui.one_space(f"שלום {rlm}   world") == f"שלום {rlm}world", "the mark kept"
+    joined = "می\N{ZERO WIDTH NON-JOINER}خواهم 👩\N{ZERO WIDTH JOINER}🔧"
+    assert ui.one_space(joined) == joined
+    edged = f"{blank * 3}lead and trail{blank * 3}"
+    assert ui.one_space(edged) == edged, "the blanks a line begins or ends with stay"
+
+
+@pytest.mark.parametrize("width", [40, 80])
+def test_what_the_screen_writes_out_is_folded_as_it_is_shown(width: int) -> None:
+    """The screen writes out an escape, or a Hangul filler, as it draws it, after `Hanging` has
+    folded the line, so a row holding them was wider on the screen than the fold had left room for,
+    and the terminal folded it again at its first column: a warning or one of drive's lines, printed
+    with the pilot's words as they came, padded with fillers that Rich counts as no cells and the
+    Windows console as two. `Hanging` folds a line as it is shown now: every row fits the width and
+    every row after the first starts under the words."""
+    from rich.text import Text
+
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for pad in ("\x1b[2K", "\N{HANGUL FILLER}", "\N{HALFWIDTH HANGUL FILLER}"):
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(f"! camera lost:{pad * 40}   est payload 0.2 kg"), "  "))
+        rows = buf.getvalue().splitlines()
+        assert len(rows) > 1 and all(len(row) <= width for row in rows), rows
+        assert all(row.startswith("  ") for row in rows[1:]), rows
+        assert "est payload" in " ".join(rows) and ui.printable(pad) in buf.getvalue()
+
+
+_AFTER_A_LETTER = {
+    "\N{DEVANAGARI VOWEL SIGN AA}": 1,
+    "\N{HANGUL JUNGSEONG A}": 1,
+    "\N{EMOJI MODIFIER FITZPATRICK TYPE-1-2}": 1,
+    "\N{VARIATION SELECTOR-16}": 1,
+}
+"""What the Windows console gives each of these after a letter, read off its own cursor in a real
+console (round seven's sweep of every character): one cell, where Rich counts none."""
+
+
+@pytest.mark.parametrize("width", [40, 80])
+def test_a_line_is_folded_by_a_count_no_terminal_exceeds(width: int) -> None:
+    """Rich counts a spacing mark (a vowel sign of Hindi, Bengali, Tamil and the rest), a Hangul
+    vowel jamo, an emoji skin tone and the selector that asks for emoji as no cells, and the
+    Windows console gives each a cell after a letter: a reply padded with `aा` was half as wide to
+    Roboglot as on the screen, and the console folded it again at its first column. A line is
+    folded by the larger count now: counted as the console counts, every row fits and every row
+    after the first starts under the words, and every character is drawn as given."""
+    from rich.cells import cell_len
+    from rich.text import Text
+
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for mark in _AFTER_A_LETTER:
+        said = f"! said:{('a' + mark) * width} est payload 0.2 kg"
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(said), "  "))
+        rows = buf.getvalue().splitlines()
+        cells = [sum(_AFTER_A_LETTER.get(c, cell_len(c)) for c in row) for row in rows]
+        assert len(rows) > 2 and max(cells) <= width, (repr(mark), cells)
+        assert all(row.startswith("  ") for row in rows[1:]), rows
+        assert "".join([rows[0], *(row[2:] for row in rows[1:])]).split() == said.split()
+
+
 def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -401,6 +477,11 @@ def test_half_a_character_on_a_strict_stream_is_written_out_and_ends_no_print(
         ),
         ("separators \N{LINE SEPARATOR} \N{PARAGRAPH SEPARATOR}", "separators \\u2028 \\u2029"),
         (f"halves {chr(0xD800)} {chr(0xDFFF)}", "halves \\ud800 \\udfff"),  # lone surrogates
+        (
+            "fillers \N{HANGUL FILLER} \N{HALFWIDTH HANGUL FILLER} "
+            "\N{HANGUL CHOSEONG FILLER} \N{HANGUL JUNGSEONG FILLER}",
+            "fillers \\u3164 \\uffa0 \\u115f \\u1160",
+        ),
     ],
     ids=[
         "esc",
@@ -412,6 +493,7 @@ def test_half_a_character_on_a_strict_stream_is_written_out_and_ends_no_print(
         "isolates",
         "separators",
         "surrogates",
+        "hangul-fillers",
     ],
 )
 def test_what_can_act_on_a_terminal_or_reorder_a_line_is_written_out(said: str, shown: str) -> None:
@@ -435,8 +517,22 @@ def test_what_can_act_on_a_terminal_or_reorder_a_line_is_written_out(said: str, 
         "a soft hy\N{SOFT HYPHEN}phen",
         "marks \N{LEFT-TO-RIGHT MARK} \N{RIGHT-TO-LEFT MARK} \N{ARABIC LETTER MARK}",
         "a\ttab",
+        "로봇이 공을 찾았어요 ㅋㅋ ㅠㅠ ㄱㄴㄷ",  # Korean: syllables, and the letters chat uses
+        # and spelled with its conjoining jamo, as a decomposed file name has it: 한국
+        "\N{HANGUL CHOSEONG HIEUH}\N{HANGUL JUNGSEONG A}\N{HANGUL JONGSEONG NIEUN}"
+        "\N{HANGUL CHOSEONG KIYEOK}\N{HANGUL JUNGSEONG U}\N{HANGUL JONGSEONG KIYEOK} 로봇",
     ],
-    ids=["persian-zwnj", "hindi-zwj", "emoji-zwj", "flag-tags", "soft-hyphen", "marks", "tab"],
+    ids=[
+        "persian-zwnj",
+        "hindi-zwj",
+        "emoji-zwj",
+        "flag-tags",
+        "soft-hyphen",
+        "marks",
+        "tab",
+        "korean",
+        "korean-jamo",
+    ],
 )
 def test_what_cannot_act_on_a_terminal_is_drawn_as_it_always_was(said: str) -> None:
     """The filter wrote out every character `str.isprintable` rejects, and that includes the
@@ -444,7 +540,7 @@ def test_what_cannot_act_on_a_terminal_is_drawn_as_it_always_was(said: str) -> N
     hyphen and the direction marks: format characters that cannot move the cursor, change what
     the terminal does or reorder what is shown. A goal, a reply or a robot's name in any of them
     was shown with escapes in the middle of its words. Each is drawn as it was, a tab as the
-    spaces Rich expands it to."""
+    spaces Rich expands it to, and Korean, whose fillers alone are written out, as well."""
     assert ui.printable(said) == said
     console, buf = tee(200, force_terminal=True, color_system=None)
     console.print(said, markup=False)

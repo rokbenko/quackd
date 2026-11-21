@@ -33,8 +33,10 @@ import re
 import sys
 import threading
 import time
+import unicodedata
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import IO, Any
 
@@ -104,6 +106,11 @@ class Glyphs:
     bubble: str
     dot: str
     spinner: str
+    carry: str
+    """The mark at the start of each row after the first of the confirm question, where the
+    question goes on: Roboglot's own cells, so no row of the arguments, however they are padded,
+    can begin where a question begins. A character, not a style, so a pipe with no colour shows
+    it, and one cell wide in every terminal (East Asian Width narrow), so the fold has it right."""
 
     def mark(self, name: str | None) -> str:
         """The glyph for a `LogLine.mark`, or nothing for a line that speaks for itself."""
@@ -123,6 +130,7 @@ UNICODE = Glyphs(
     bubble="\U0001f4ac",
     dot="·",
     spinner="dots",
+    carry="¦",
 )
 ASCII = Glyphs(
     start=">",
@@ -137,6 +145,7 @@ ASCII = Glyphs(
     bubble="",
     dot="-",
     spinner="line",
+    carry="|",
 )
 
 _PLAIN = {
@@ -562,6 +571,7 @@ ACTS = re.compile(
     "\\u202a-\\u202e"  # the bidirectional embeddings and overrides
     "\\u2066-\\u2069"  # the bidirectional isolates
     "\\ud800-\\udfff"  # a lone surrogate, half of a character
+    "\\u115f\\u1160\\u3164\\uffa0"  # the Hangul fillers, blank, of a width terminals disagree on
     "]"
 )
 """The one table of what is written out as its escape wherever Roboglot shows text it did not
@@ -578,6 +588,12 @@ write, read by `printable` and by the consoles' filter (`TeeConsole._write_buffe
 - a lone surrogate, which no stream can encode: a strict UTF-8 one, which stdout is on a pipe,
   refuses it, and the print that held it ends with `UnicodeEncodeError`. A JSON string an LLM or
   a server sends can carry one (`"\\ud800"` decodes to it), and so can a note kept as JSON.
+- the four Hangul fillers (U+115F, U+1160, U+3164, U+FFA0), which draw nothing and which a
+  terminal and Rich count differently: the Windows console gives U+3164 two cells and U+FFA0
+  one, where Rich gives each none, so a reply padded with them is wider on the screen than the
+  fold Roboglot made for it (`Hanging`), and the console folds it again, at its first column.
+  They are the only letters among Unicode's default-ignorable characters, and Korean is written
+  without them: its syllables, and the jamo it is spelled with, are drawn as given.
 
 Everything else is drawn as given. That includes the format characters that cannot move the
 cursor, change what the terminal does or reorder what is shown: the zero-width joiner and
@@ -614,15 +630,127 @@ CONTINUED = "  "
 """What goes in front of each line after the first of an outside text set inside a panel, a
 verdict's reason: an indent the text cannot take away (`Hanging`)."""
 
-_SPACES = re.compile(r"(?<=\S)(?:[^\S\n]{2,}|[^\S\n ])(?=\S)")
+_BLANK_SYMBOLS = (
+    "\\u115f\\u1160\\u3164\\uffa0"  # the Hangul fillers, should one reach here unwritten
+    "\\u2800"  # the braille pattern blank
+    "\\U00013441\\U00013442"  # the Egyptian hieroglyph full and half blanks
+    "\\U0001d159"  # the musical null notehead
+)
+"""The letters and symbols that draw as a blank and are no whitespace: found by reading every
+character whose name says it is blank, a filler or a space, and by the default-ignorable letters."""
+
+_UNSEEN = (
+    "\\u00ad\\u034f\\u061c\\u180e\\u200b-\\u200f\\u2060-\\u2064\\ufe00-\\ufe0f\\ufeff"
+    "\\U000e0000-\\U000e007f"
+)
+"""What draws nothing and takes no cell, or none of its own: the soft hyphen, the joiners and the
+marks, the zero-width spaces, the invisible operators, the variation selectors and the tags. Inside
+a run of blanks each does nothing a reader needs, and a pad that set one between every two spaces
+was no run of whitespace."""
+
+_BLANK_RUN = re.compile(f"(?:[^\\S\\n]|[{_BLANK_SYMBOLS}{_UNSEEN}])+")
+_DRAWS_BLANK = re.compile(f"[^\\S\\n]|[{_BLANK_SYMBOLS}]")
+_DIRECTION_MARKS = re.compile("[\\u061c\\u200e\\u200f]")
 
 
 def one_space(text: str) -> str:
-    """`text` with each run of whitespace between two words on a line drawn as one space, a tab or
-    a no-break space alone included. For a line of outside text: padded with spaces, a reply could
-    put words of its choosing wherever it liked along a row, under a column of Roboglot's own. A
-    line's breaks, and the whitespace that begins or ends it, are left as they are."""
-    return _SPACES.sub(" ", text)
+    """`text` with each run of what draws as a blank between two words on a line drawn as one
+    space: whitespace, a braille blank, a Hangul filler and the other blank symbols, and what draws
+    nothing among them, a tab or a no-break space alone included. For a line of outside text:
+    padded with blanks, a reply could put words of its choosing wherever it liked along a row,
+    under a column of Roboglot's own. A direction mark in the run is kept after the space, since
+    it can change the order a right-to-left line is shown in. A line's breaks, the blanks that
+    begin or end it, and what draws nothing between two letters (a joiner in a word) are left as
+    they are."""
+
+    def one(found: re.Match[str]) -> str:
+        run, start, end = found.group(), found.start(), found.end()
+        inside = start > 0 and end < len(text) and "\n" not in (text[start - 1], text[end])
+        if not inside or not _DRAWS_BLANK.search(run):
+            return run
+        return " " + "".join(_DIRECTION_MARKS.findall(run))
+
+    return _BLANK_RUN.sub(one, text)
+
+
+def _written_out(line: Text) -> Text:
+    """`line`, one line of a `Hanging`, with each character in `ACTS` written out, its styles kept:
+    the screen writes them out as it draws them (`TeeConsole._write_buffer`), which is after the
+    fold, so a row holding an escape, or a Hangul filler, was wider on the screen than the room the
+    fold had left it, and the terminal folded it again at its first column. Folded as it is
+    shown, it fits. A line with none of them is handed back as it is."""
+    plain = line.plain
+    if not ACTS.search(plain):
+        return line
+    pieces: list[str] = []
+    moved = [0] * (len(plain) + 1)  # where each character of `line` begins in what is shown
+    at_shown = 0
+    for at, character in enumerate(plain):
+        moved[at] = at_shown
+        pieces.append(printable(character))
+        at_shown += len(pieces[-1])
+    moved[len(plain)] = at_shown
+    shown = line.blank_copy("".join(pieces))
+    for span in line.spans:  # each span once, where its characters went
+        shown.stylize(span.style, moved[span.start], moved[span.end])
+    return shown
+
+
+_WIDE_STAND_IN = chr(0x4E00)  # two cells in Rich and in every terminal
+_EMOJI_SELECTOR = chr(0xFE0F)  # VARIATION SELECTOR-16
+
+
+@lru_cache(maxsize=4096)
+def _counted_as(character: str) -> str:
+    """`character`, or a stand-in for it as wide as a terminal may draw it, where Rich counts it as
+    fewer cells: never fewer than its East Asian Width gives a character that is no mark and no
+    format character, and one for the variation selector that asks for emoji.
+
+    Rich counts a spacing mark (`Mc`, the vowel signs of Hindi, Bengali, Tamil and the rest), the
+    Hangul vowel and final jamo, the emoji skin tones and that selector as no cells, and the
+    Windows console gives each one cell after a letter (measured in a real console, its own cursor
+    read back, round seven). A line of them is short to Rich and long to the console, which folds
+    it again at its first column. Each is drawn as given; only the count the fold goes by is
+    raised, so a line holding one folds early, never late. Found by reading Rich's count of every
+    character against the East Asian Width and the general category, and by measuring a sample
+    of every kind of character in a real console, which added the selector and nothing else."""
+    rich = cell_len(character)
+    category = unicodedata.category(character)
+    if character == _EMOJI_SELECTOR:
+        most = 1
+    elif category in ("Mn", "Me", "Cf"):
+        most = 0
+    else:
+        most = 2 if unicodedata.east_asian_width(character) in ("W", "F") else 1
+    if most <= rich:
+        return character
+    return "x" if most == 1 else _WIDE_STAND_IN
+
+
+def _counted(plain: str) -> str | None:
+    """`plain` with every character Rich counts as fewer cells than a terminal may draw stood in
+    for (`_counted_as`), one for one, so its offsets are the line's own; None where there is none,
+    which is every line of ASCII."""
+    if plain.isascii():
+        return None
+    counted = "".join(map(_counted_as, plain))
+    return None if counted == plain else counted
+
+
+def _wrapped(line: Text, target: Console, width: int) -> list[Text]:
+    """`line`, one line, folded at `width` as `Text.wrap` folds it, by a count of cells no terminal
+    exceeds (`_counted`): Rich's own fold for a line it counts as a terminal does, and where it
+    counts fewer, the same fold made on the stand-ins (`rich._wrap.divide_line`, which `Text.wrap`
+    folds by, the same in every Rich the project allows) and cut from the line itself."""
+    counted = _counted(line.plain)
+    if counted is None:
+        return list(line.wrap(target, width, overflow="fold"))
+    from rich._wrap import divide_line
+
+    rows = list(line.divide(divide_line(counted, width, fold=True)))
+    for row in rows:
+        row.rstrip_end(width)
+    return rows
 
 
 def _fold(text: Text, target: Console, width: int, indent: Text) -> list[Text]:
@@ -631,22 +759,25 @@ def _fold(text: Text, target: Console, width: int, indent: Text) -> list[Text]:
 
     A tab is spaces before the fold, as many as the console draws it as. Rich expands a tab while
     it folds, so the first row is longer than the text it came from, and the rest of that line,
-    taken off by the row's length, began in the wrong place: words were lost."""
+    taken off by the row's length, began in the wrong place: words were lost. A line is folded as
+    it is shown, its escapes written out (`_written_out`), and by a count of cells no terminal
+    exceeds (`_wrapped`)."""
     narrow = max(1, width - indent.cell_len)
     tab_size = (text.tab_size if text.tab_size is not None else target.tab_size) or 8
     rows: list[Text] = []
     for n, part in enumerate(text.split("\n", allow_blank=True)):
         part.expand_tabs(tab_size)  # `split` hands back copies, so the text itself is not changed
+        part = _written_out(part)
         rest = part
         if n == 0:
-            first = part.wrap(target, width, overflow="fold")
+            first = _wrapped(part, target, width)
             if len(first) <= 1:
                 rows.extend(first or [Text()])
                 continue
             rows.append(first[0])
             rest = part[len(first[0].plain) :]
             rest = rest[len(rest.plain) - len(rest.plain.lstrip(" ")) :]
-        rows.extend(indent + row for row in rest.wrap(target, narrow, overflow="fold") or [Text()])
+        rows.extend(indent + row for row in _wrapped(rest, target, narrow) or [Text()])
     return rows
 
 
@@ -665,9 +796,12 @@ class Hanging:
         self.indent = Text(indent) if isinstance(indent, str) else indent
 
     def __rich_measure__(self, target: Console, options: Any) -> Measurement:
-        """As wide as the text, its indented lines measured with their indent."""
-        measured = Measurement.get(target, options, self.text)
-        first, *rest = self.text.plain.split("\n")
+        """As wide as the text is shown and folded (`_fold`), its indented lines measured with
+        their indent."""
+        shown = printable_lines(self.text.plain)
+        counted = _counted(shown) or shown
+        measured = Measurement.get(target, options, Text(counted))
+        first, *rest = counted.split("\n")
         pad = self.indent.cell_len
         widest = max([cell_len(first)] + [cell_len(line) + pad for line in rest])
         least = min(measured.minimum + pad, widest)
