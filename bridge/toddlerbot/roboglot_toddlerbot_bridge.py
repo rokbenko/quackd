@@ -200,6 +200,10 @@ LOST_TO_A_COMMAND = "another connection's command took the {part} this connectio
 ARRIVED_RAD = 1e-3
 """How near its goal a joint counts as there: the distance a stand has always counted as
 arrived, and now a head or a gripper the deadman brings to rest too."""
+SETTLED_RAD = 1e-2
+"""How near the safe pose the shutdown's settle counts every joint as there, the tolerance it has
+always closed at. A settle its stall ends with a joint further than this from where it can be put
+down (its place in the safe pose, or the nearest its limits allow) is held, not closed."""
 FLOOR_MOTIONS = {
     "crawl": "a crawl goes down to hands and knees, the trunk near level",
     "push_up": "a push-up goes down prone, the trunk near level",
@@ -1290,7 +1294,11 @@ class Daemon:
                 short = float(np.max(left))
                 measures = self._settle_measures(left)
                 down = self.down_by if self.lying else None
-                if short < 1e-2:
+                # where each joint can be put down: its place, or the nearest its limits allow
+                reachable = np.clip(self.command.default_pose, self.lo, self.hi)
+                off = float(np.max(np.abs(self.target - reachable)))
+                waist = float(np.max(np.abs(self.safe.pose[self.waist]), initial=0.0))
+                if short < SETTLED_RAD:
                     log.info("settled")
                     return True
                 if landed and self.fallen:
@@ -1307,13 +1315,27 @@ class Daemon:
                         nearest[name], closer = value, True
                 still = 0 if closer else still + 1
                 if still >= FRAME_DWELL_LIMIT:
-                    log.warning(
-                        "the slew stopped closing on the safe pose: %.3f rad short, nothing "
-                        "nearer for %d ticks%s",
-                        short,
-                        still,
-                        f"; the robot is down after {down}, held where it lies" if down else "",
+                    seen = (
+                        f"the slew stopped closing on the safe pose: {short:.3f} rad short, "
+                        f"nothing nearer for {still} ticks"
                     )
+                    if down:
+                        # on the floor already, where closing drops nothing
+                        log.warning(
+                            "%s; the robot is down after %s, held where it lies", seen, down
+                        )
+                        return False
+                    if waist > WAIST_THRESHOLD or off >= SETTLED_RAD:
+                        # Not where it can be put down: a close would take torque off a robot
+                        # held mid-pose, so this ends as the cap does, left torqued and holding.
+                        self.held_short = seen + (
+                            f", the waist still reads {waist:.2f} rad twisted"
+                            if waist > WAIST_THRESHOLD
+                            else f", a joint {off:.3f} rad from where it can be put down"
+                        )
+                        log.error("%s", self.held_short)
+                        return False
+                    log.warning("%s", seen)  # as near as the limits let it be: closing is right
                     return False
             if now - began >= cap:
                 self.held_short = (

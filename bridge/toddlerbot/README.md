@@ -121,16 +121,20 @@ is handed out a tick at a time. A tick that fails on the bus moves nothing (the 
 the last write that landed carried, so a bus that comes back is handed one step, not a jump) and
 is simply waited through; a robot already at its safe pose is there whether its writes land or
 not. The settle ends once nothing has come nearer for a hundred ticks that landed (while the
-waist untwists, its target or the waist as the daemon reads it; after that, the whole pose): a
-place outside a joint's limits, a robot lying on the floor, which rest holds where it lies, or
-a waist that has stopped moving. Then `close()` follows. One path does not close: a settle
-still short of the safe pose after `SETTLE_MAX_S`
+waist untwists, its target or the waist as the daemon reads it; after that, the whole pose).
+`close()` follows that only where the robot can be put down: a joint held off its place by its
+limits, if every joint is within 0.01 rad of its place or of the nearest its limits allow and
+the waist reads straight, or a robot lying on the floor, which rest holds where it lies. A
+waist that has stopped short of straight, or any joint further than that from where it can be
+put down, is not closed: the robot is left torqued and holding, as at the cap. The cap is the
+other path that does not close: a settle still short of the safe pose after `SETTLE_MAX_S`
 (120 s, which only a loop making under about four ticks a second, or a bus that never answers
 again, reaches) leaves the robot torqued and holding where it is, since closing takes torque off
-and would drop it. The log says the safe pose was not reached, how far is left, the rate the
-loop made and how many of its ticks failed, and ends `the robot is left torqued and holding where
-it is, and the daemon exits with 3: support it before you power it off`; the daemon then exits
-with 3. A bus that hangs cannot keep the process alive either: a settle tick that does not come
+and would drop it. Either way the log says what was seen (the cap's line: the safe pose not
+reached, how far is left, the rate the loop made and how many of its ticks failed; the stall's:
+how far short, for how many ticks nothing came nearer, and the waist's reading if it is still
+twisted) and ends `the robot is left torqued and holding where it is, and the daemon exits with
+3: support it before you power it off`; the daemon then exits with 3. A bus that hangs cannot keep the process alive either: a settle tick that does not come
 back ends it within thirteen seconds, and so does `close()` five seconds in, with or without a
 standard error to write its stacks to.
 

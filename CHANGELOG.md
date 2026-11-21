@@ -656,8 +656,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the safe pose then is left torqued and holding where it is rather than dropped, the log says
   the safe pose was not reached, how far is left, the rate the loop made and how many of its
   ticks failed, and asks for the robot to be supported before it is powered off, and the daemon
-  exits with 3. The hard exit, there for a tick that hangs, moves on as the settle's ticks come
-  back.
+  exits with 3. A settle that stops closing ends the same way unless the robot is where it can
+  be put down (every joint at its place or as near as its limits allow, the waist straight) or
+  lies on the floor already: a jammed waist, which used to end in a close with the robot held
+  mid-pose, now leaves it holding, its line giving the waist's reading. The hard exit, there for a tick that hangs, moves
+  on as the settle's ticks come back.
 - **A ToddlerBot bus that comes back is handed one step, not every step it missed.** The loop
   moved its target on before writing it, so a write that failed moved it all the same: a stand, a
   motion or the shutdown's settle went on as if it had been sent, and the first write to land

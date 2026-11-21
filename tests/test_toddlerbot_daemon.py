@@ -3324,15 +3324,15 @@ class _Trailing(D.FakeSim):  # type: ignore[name-defined,misc]
         self.pos[list(self.stuck)] = was[list(self.stuck)]
 
 
-def _trailing_daemon(lag: float, waist: float, stuck_waist: bool = False) -> Any:
-    """A daemon whose body trails by `lag` on every joint, standing 0.3 rad from home with its
+def _trailing_daemon(lag: float, waist: float, stuck_waist: bool = False, pose: float = 0.3) -> Any:
+    """A daemon whose body trails by `lag` on every joint, standing `pose` rad from home with its
     waist twisted `waist` rad, and that waist jammed if `stuck_waist`."""
     robot = D.FakeRobot()
     sim = _Trailing(robot)
     d = D.Daemon(robot, sim, fake=True)
     sim.home, sim.lag = d.command.default_pose.copy(), lag
     sim.stuck = list(d.waist) if stuck_waist else []
-    start = np.full(robot.nu, 0.3, np.float32)
+    start = np.full(robot.nu, pose, np.float32)
     start[d.waist] = waist
     sim.pos = start
     d.tick()
@@ -3370,6 +3370,53 @@ def test_a_waist_that_never_reads_straight_ends_the_settle_once_its_own_slew_is_
         assert d.settle() is False
     assert float(np.max(np.abs(d.target[d.waist]))) < 1e-2, "given up with the waist still closing"
     assert any("stopped closing" in r.getMessage() for r in caplog.records), caplog.text
+
+
+@pytest.mark.parametrize("stopped", ["with the waist still twisted", "short of the pose"])
+def test_a_stall_short_of_where_the_robot_can_be_put_down_leaves_it_holding(
+    stopped: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stall's ending closed whatever the robot's pose: a jammed waist that never reads
+    straight left every other joint where it was, 0.3 rad from home, and the close took torque
+    off a robot that had never left its pose. A stall with the waist still reading past
+    WAIST_THRESHOLD, or with a joint further than SETTLED_RAD from where it can be put down (its
+    place in the safe pose, or the nearest its limits allow), ends as the cap's does: left
+    torqued and holding, the line saying what was seen, exit 3. "short of the pose" is a hip whose
+    place is in reach, its command held where it is by a stand-in for whatever might hold one: in
+    the settle nothing else does, so this guards the rule rather than a path seen."""
+    monkeypatch.setattr(D, "hard_exit_after", lambda seconds, what: None)
+    held: list[str] = []
+
+    def leave_holding(reason: str) -> None:
+        held.append(reason)
+        raise _Held(reason)
+
+    monkeypatch.setattr(D, "leave_holding", leave_holding)
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    if stopped == "with the waist still twisted":
+        # Every other joint home but one held at its limit, which is where it can be put down and
+        # keeps the settle from arriving: only the waist is not where it can be put down. (With
+        # none held so, the waist's target reaching zero would be taken for arrival: arrival is
+        # judged on the pose sent, not the pose read, which stays as it is.)
+        d = _trailing_daemon(0.0, 1.0, stuck_waist=True, pose=0.0)
+        d.lo[d.robot.motor_ordering.index("joint_0")] = 0.1  # home, 0, is below its limit
+    else:
+        d = _trailing_daemon(0.0, 0.0)
+        hip = d.robot.motor_ordering.index("joint_0")
+        plan = d.plan
+
+        def held_hip(dt: float) -> Any:
+            wanted = np.array(plan(dt), dtype=np.float32, copy=True)
+            wanted[hip] = d.target[hip]  # its place, 0, is within its limits; it stays at 0.3
+            return wanted
+
+        d.plan = held_hip
+    with _suite_watchdog_back(), contextlib.suppress(_Held):
+        d.shutdown()
+    assert held and not d.sim.closed, "the close took torque off a robot short of its pose"
+    assert "stopped closing" in held[0] and f"{D.FRAME_DWELL_LIMIT} ticks" in held[0], held
+    if stopped == "with the waist still twisted":
+        assert "waist still reads 1.00 rad" in held[0], held
 
 
 @pytest.mark.parametrize("held_off_by", ["a joint's limits", "the floor"])
@@ -3520,14 +3567,16 @@ def test_a_waist_that_flickers_across_its_threshold_cannot_keep_the_stall_off(
     of WAIST_THRESHOLD in turn held it off for good, and only the cap ended the settle, leaving the
     robot held. Each stage keeps its own nearest, so a change of stage is no progress: with a joint
     held off its place by its limit, the stall ends the settle once nothing has closed in either
-    stage for FRAME_DWELL_LIMIT ticks, and it closes as for any joint at its limit."""
+    stage for FRAME_DWELL_LIMIT ticks, well before the cap. Whether it then closes or holds is the
+    stall's own rule, by what the waist reads on that tick."""
     clock = _SlowClock(1)
     monkeypatch.setattr(D, "time", clock)
     d = _trailing_daemon(0.0, 1.2)
     d.sim.slow, d.sim.flicker = list(d.waist), (0.6, 0.4, 5)
     d.lo[d.robot.motor_ordering.index("joint_0")] = 0.1  # home, 0, is below its limit
     began = clock.now
-    assert d.settle() is False and d.held_short is None, d.held_short
+    assert d.settle() is False
+    assert d.held_short is None or "stopped closing" in d.held_short, d.held_short
     assert clock.now - began < D.SETTLE_MAX_S / 2, "the stall never ended it"
 
 
@@ -3537,11 +3586,11 @@ def test_a_waist_that_has_all_but_stopped_reads_as_jammed(
     """The waist as read counts as nearer only by ARRIVED_RAD, so one creeping in by less than
     that over FRAME_DWELL_LIMIT ticks (here a few microradians a tick, forty minutes to untwist)
     stalls the settle once its target is at zero, as a jammed one does, rather than holding the
-    stall off with every new last digit until the cap."""
+    stall off with every new last digit until the cap. Twisted still, it is left holding."""
     monkeypatch.setattr(D, "time", _SlowClock(1))
     d = _trailing_daemon(0.0, 1.2)
     d.sim.slow, d.sim.rate = list(d.waist), 5e-6
-    assert d.settle() is False and d.held_short is None, d.held_short
+    assert d.settle() is False and "stopped closing" in str(d.held_short), d.held_short
     assert float(np.max(np.abs(d.target[d.waist]))) < 1e-2, "given up with its target still closing"
 
 
