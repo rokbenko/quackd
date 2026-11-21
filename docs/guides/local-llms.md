@@ -176,13 +176,23 @@ Roboglot asks for exactly one tool call per turn. Frontier LLMs do this reliably
 local LLMs sometimes answer with JSON in plain text instead of a native tool call, or
 call a verb that is not allowed, or add chatter. Three things make that workable:
 
-1. **Text fallback.** If a reply has no native tool call, Roboglot looks for a JSON object
-   like `{"name": "walk_to", "arguments": {"target": "ball"}}` in the text and uses it. Only
-   the answer is read: an inline `<think>...</think>` block is split off first, so a verb the
-   LLM weighed inside its reasoning and dropped is never executed, and a turn that carries
-   the server's own refusal, or that a content filter cut short, is not read at all. The
-   transcript marks a rescued turn with `stop_reason: "text_fallback"` so you can see how
-   often it happened. The system prompt tells local LLMs this shape exists.
+1. **Text fallback.** If a reply has no native tool call, Roboglot reads its text as a call
+   only when the answer is nothing but the call: one JSON object like
+   `{"name": "walk_to", "arguments": {"target": "ball"}}`, optionally inside one code fence,
+   after an optional `<think>...</think>` block, which is split off first so a verb the LLM
+   weighed inside its reasoning and dropped is never executed. Anything else is not a call: a
+   call quoted in a sentence, say to decline it, one of several listed as options, an object
+   with no `arguments`, or text longer than any call needs (16 KiB). None of it runs, and the
+   LLM is told so and asked again, in these words:
+
+   ```text
+   Your last answer was not a call. Text is a call only when it is exactly one JSON object and nothing else, in this shape: {"name": "<verb>", "arguments": {<parameters>}}. You must call exactly one tool. Choose now.
+   ```
+
+   A turn that carries the server's own refusal, that a content filter cut short, or that the
+   output limit cut off (`finish_reason: "length"`) is not read at all. The transcript marks a
+   rescued turn with `stop_reason: "text_fallback"` so you can see how often it happened. The
+   system prompt tells local LLMs this shape exists.
 2. **One retry.** A turn with no usable call is re-prompted once, then counts as a failure.
    Budgets still apply.
 3. **The executor never trusts the LLM.** A disallowed verb or bad parameters come back

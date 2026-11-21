@@ -13,6 +13,7 @@ import dataclasses
 import functools
 import random
 import re
+import sys
 import threading
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
@@ -148,6 +149,15 @@ from roboglot.verdict import (
 Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "error"]
 
 REPROMPT = "You must call exactly one tool. Choose now."
+
+RECORD_REFUSED = "the run's record could not be written: {error}"
+"""Said once on stderr when a write to the record fails on the way out, which no longer stops the
+teardown: the stop, the fold and the close go out as on a disk that works."""
+
+CUT_OFF = "Your last answer was cut off at the output limit, so no call in it was run."
+"""Why an answer the vendor says the output limit ended runs nothing (`ProviderTurn.cut_off`):
+said to the LLM in front of `REPROMPT` when it is asked again, and the reason its record gives.
+A pilot cut off on every turn ends as one that answers twice with no call does."""
 
 ASK_AGAIN_AFTER_S = (5.0, 15.0, 30.0, 60.0)
 """How long the loop waits before it asks the LLM's API the same turn again, try by try, after
@@ -680,6 +690,14 @@ class AgentLoop:
         `executor.abort` for a reason that is neither a person's key nor the body's link: a drive
         session that moves on from a goal to a newer command (`_abort_reason`). None leaves the
         abort's words to the heartbeat, a team's link or the kill switch, as before."""
+        self._state_unanswered = False
+        """Whether a turn's read of the body's state was still out when the abort cut it off
+        (`_observe`), so the teardown does not wait on that link's state again before the close."""
+        self._ending = False
+        """From the run's error branches and its teardown on, a record that cannot be written stops
+        nothing (`_emit`)."""
+        self._unwritten: Exception | None = None
+        """The first write to the record that failed on the way out (`_record_refused`)."""
         self.heartbeat = Heartbeat(
             cfg.transport,
             self.executor.abort,
@@ -804,7 +822,39 @@ class AgentLoop:
     # ── narration ───────────────────────────────────────────────────────────────────
 
     def _emit(self, kind: str, **data: Any) -> None:
-        self.event_log.emit(kind, **data)
+        if not self._ending:
+            self.event_log.emit(kind, **data)
+            return
+        # On the way out a record that cannot be written stops nothing: the rest move narrated
+        # before it moved, so a full disk skipped the fold with nothing said, and a note raising
+        # out of the teardown skipped the close's record and replaced the run's own error.
+        try:
+            self.event_log.emit(kind, **data)
+        except Exception as e:
+            self._record_refused(e)
+            # the record raised before any observer saw the event, and the person at the
+            # console is owed the line all the same, the one saying torque was left on above all
+            record, self.event_log.record = self.event_log.record, None
+            try:
+                self.event_log.emit(kind, **data)
+            finally:
+                self.event_log.record = record
+
+    def _record_refused(self, error: Exception) -> None:
+        """A write to the run's record that failed on the way out. The first is kept, to be raised
+        once the teardown is over on a run with no error of its own, and said once on stderr, the
+        one place left to say it; the rest are the same disk saying the same thing."""
+        if self._unwritten is not None:
+            return
+        self._unwritten = error
+        sys.stderr.write(RECORD_REFUSED.format(error=f"{type(error).__name__}: {error}") + "\n")
+
+    def _final_write(self, write: Callable[..., Any], *args: Any) -> None:
+        """One of the run's last writes, tried whatever the others did (`_record_refused`)."""
+        try:
+            write(*args)
+        except Exception as e:
+            self._record_refused(e)
 
     def _abort_reason(self) -> str:
         """Why the abort flag is set, in the words the run should end with.
@@ -1142,7 +1192,7 @@ class AgentLoop:
         """`log` is a contract (tests and the CLI's --verbose read it); the run's log
         observes it."""
         self.cfg.log(text)
-        self.event_log.emit("note", text=text)
+        self._emit("note", text=text)
 
     # ── frames ──────────────────────────────────────────────────────────────────────
 
@@ -2079,9 +2129,21 @@ class AgentLoop:
         Beside the observation, on a run that shows the decision LLM the camera
         (`decision_frames`), the primary camera's picture this turn and where the copy of what is
         sent of it goes: `frames/NNNN-decision.jpg`, under the number of this step's own PNGs.
-        None on every other run, and on a turn whose primary camera gave nothing."""
-        state = await self.cfg.transport.get_state()
-        frames = await frames_of(self.cfg.transport)
+        None on every other run, and on a turn whose primary camera gave nothing.
+
+        Each read of the body is raced against the abort, as the LLM's calls are
+        (`_unless_stopped`): the state, the frames and the detector. They were awaited with
+        nothing to end them, and every stop but a second Ctrl-C only sets the flag, so a turn
+        waiting on a camera or a link that never answered stayed waiting, and a team or an
+        onboard goal has no second press. A read the abort cut off is cancelled, and a worker
+        thread under it is left to end by itself, which no cancel can make it do."""
+        try:
+            state = await self._unless_stopped(self.cfg.transport.get_state())
+        except Aborted:
+            # not asked again at the close, where it was waited on with no end before the close
+            self._state_unanswered = True
+            raise
+        frames = await self._unless_stopped(frames_of(self.cfg.transport))
         # the body's own list first, because it does not shrink when a lens stalls, and the
         # names of the frames that arrived only when a transport does not publish one
         cameras = camera_names_of(self.cfg.transport) or [f.name for f in frames]
@@ -2093,7 +2155,7 @@ class AgentLoop:
             # the primary camera and only it: the detections line describes one view, and a
             # bearing is only meaningful from the lens --fov-deg measured. Off the loop when
             # the detector waits on a board, so a body's keepalives are not held up by it.
-            detections = await detect_off_loop(self.cfg.detector, img)
+            detections = await self._unless_stopped(detect_off_loop(self.cfg.detector, img))
             error = getattr(self.cfg.detector, "error", None)
             self._detector_said(error if isinstance(error, str) and error else None)
         number: int | None = None
@@ -2675,9 +2737,8 @@ class AgentLoop:
         # latest assistant message is the one exception: its blocks may not be filtered, so on a
         # trim call the API is asked to drop them instead (`drop_block`). Every other provider
         # has a period of 1, which is a trim every call and nothing left out.
-        period = max(1, int(getattr(self.cfg.provider, "frame_trim_period", 1) or 1))
-        cut = max(0, len(history) - n)
-        cut -= cut % period
+        period = self._trim_period()
+        cut = self._image_cut(len(history))
         forget = getattr(self.cfg.provider, "without_thinking", None) if period > 1 else None
         stale = self._last_invalidated(cut, n, period, history) if forget is not None else -1
         latest = max((i for i, ex in enumerate(history) if ex.decision is not None), default=-1)
@@ -2691,6 +2752,33 @@ class AgentLoop:
                 )
             out.append(ex)
         return out
+
+    def _trim_period(self) -> int:
+        """How many calls apart the trim of old pictures moves (`_history_for_provider`)."""
+        return max(1, int(getattr(self.cfg.provider, "frame_trim_period", 1) or 1))
+
+    def _image_cut(self, length: int) -> int:
+        """How many of `length` exchanges, the oldest first, a request sends with no picture. It
+        only grows as the history does, so an exchange behind it is never shown again."""
+        cut = max(0, length - self.cfg.keep_images_for_last_n)
+        return cut - cut % self._trim_period()
+
+    def _drop_unsent_pictures(self) -> None:
+        """The bytes of every picture no request will send again, out of the run's history.
+
+        Every turn's observation kept its cameras' PNGs for the whole run, though only the last
+        `keep_images_for_last_n` exchanges' are ever sent, so a long run on two cameras held every
+        frame it would never send. Each picture keeps its name with no bytes, so an exchange still
+        says it was shown pictures, which is what the trim of a pilot that binds its thinking
+        reads (`_last_invalidated`). The exchange is replaced rather than changed, so a request
+        already built from it is left as it was sent."""
+        for i in range(self._image_cut(len(self.history))):
+            ex = self.history[i]
+            if any(image.png for image in ex.observation.images):
+                kept = [NamedPng(name=image.name, png=b"") for image in ex.observation.images]
+                self.history[i] = ex.model_copy(
+                    update={"observation": ex.observation.model_copy(update={"images": kept})}
+                )
 
     def _last_invalidated(
         self, cut: int, n: int, period: int, history: list[Exchange] | None = None
@@ -3259,6 +3347,9 @@ class AgentLoop:
             await self._park_before_the_run_began()
             self._record_a_run_that_never_began(e, connect_s=connect_s, manifest=manifest)
             raise
+        raising: BaseException | None = None
+        """What the run is ending with, where it ends with an error of its own: then that leaves
+        `run`, and not a write to the record that failed on the way out (`_record_refused`)."""
         try:
             # a run starts from the pose it will end at, so what the pilot improvises from is
             # the same arm every time rather than wherever the last run put it down
@@ -3380,6 +3471,7 @@ class AgentLoop:
                             # pilot's answer is on the record (`_settle_beside`).
                             beside = asyncio.ensure_future(_guarded_ask(ask))
                         history = self._with_cache_point(self._history_for_provider())
+                        self._drop_unsent_pictures()
                         # once per turn, however many tries it takes: the same history every time
                         turn, latency_s, attempt = await self._ask_the_llm(
                             system, history, tools, reprompt=retry_prompted
@@ -3395,21 +3487,27 @@ class AgentLoop:
                         advice = await self._settle_beside(beside, stepper)
                     self.budget.check_time()
 
-                    if not turn.tool_calls:
+                    # An answer the output limit cut off is an answer with no call to run, whatever
+                    # its call looks like: recorded as it came, in the `llm` line above, and asked
+                    # again with why in front of the usual words, and on the record beside them.
+                    # So is text a provider read and found was no call, in that provider's words.
+                    why = CUT_OFF if turn.cut_off else turn.not_a_call
+                    if not turn.tool_calls or why is not None:
                         if not retry_prompted:
                             retry_prompted = True
+                            told = REPROMPT if why is None else f"{why} {REPROMPT}"
                             self.history[-1].decision = None
                             self.history.append(
-                                Exchange(
-                                    observation=Observation(text=REPROMPT, features=obs.features)
-                                )
+                                Exchange(observation=Observation(text=told, features=obs.features))
                             )
                             self._emit(
                                 "enforce",
                                 step=self.budget.steps,
                                 issue="no_tool_call",
                                 action="re-prompt",
-                                text=REPROMPT,
+                                text=told,
+                                # only where there is one, so every other re-prompt reads as it did
+                                **({"reason": why} if why is not None else {}),
                             )
                             continue
                         outcome, reason = (
@@ -3608,6 +3706,7 @@ class AgentLoop:
                 # the budget still ended the run, and the record names the question it cut off
                 what = type(interrupted).__name__
                 reason = f"{reason}; the question about what ran was interrupted ({what})"
+                self._ending, raising = True, interrupted
                 self._emit("note", text=f"run interrupted: {what}")
                 raise
         except Aborted as e:
@@ -3623,6 +3722,8 @@ class AgentLoop:
             # a provider that errored, a transport that died mid-observation, a bug: the run
             # still ends with a stop and a run_end, and run_end says with what
             outcome, reason = "error", f"{type(e).__name__}: {e}"
+            # a full disk is often what ended it, and the note saying so must not take its place
+            self._ending, raising = True, e
             self._emit("note", text=f"run ended with an error: {reason}")
             raise
         except BaseException as e:
@@ -3631,9 +3732,11 @@ class AgentLoop:
             # unexpectedly`. The CLI's second Ctrl-C is *designed* to raise a plain
             # KeyboardInterrupt, which makes this the normal way a person ends a run.
             outcome, reason = "aborted", f"interrupted: {type(e).__name__}"
+            self._ending, raising = True, e
             self._emit("note", text=f"run interrupted: {type(e).__name__}")
             raise
         finally:
+            self._ending = True
             # closed before the rest move and the hand-back, which reach the body without
             # passing the executor's gates
             self.executor.open_to_peers = False
@@ -3680,8 +3783,11 @@ class AgentLoop:
                 # a press, as the read and the close after it are, which it went straight past
                 await self._unbroken(self.executor.see_out_stops())
             final_state: dict[str, Any] = {}
+            # Not over a link whose state read the stop had to cut off: asked again here, it held
+            # the close and `run_end` for as long as it went unanswered, which was for good.
             with contextlib.suppress(*self._what_a_press_cannot_end()):
-                final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()
+                if not self._state_unanswered:
+                    final_state = (await self._unbroken(cfg.transport.get_state())).model_dump()
             with contextlib.suppress(*self._what_a_press_cannot_end()):
                 await self._unbroken(cfg.transport.close())
             if note := getattr(cfg.transport, "close_note", None):
@@ -3694,21 +3800,17 @@ class AgentLoop:
                 manifest=manifest,
                 stepper=stepper,
             )
-            # the only unguarded statements in this teardown used to be these three, so a
-            # disk that filled at `run_end` skipped summary.json, leaked the file handle,
-            # skipped the episode, and replaced the run's real exception with an OSError
             # Kept on the loop as well as returned, because a member that raises never
             # reaches its `return RunResult(...)` and the team would otherwise throw away the
             # wall clock, the LLM seconds and the bill it had already measured.
             self.summary = summary
-            try:
-                self._emit("run_end", **summary)
-            finally:
-                try:
-                    if cfg.summary_file:
-                        self.transcript.write_summary(summary)
-                finally:
-                    self.transcript.close()
+            # Each of the last writes is tried whatever the others did. A disk that filled at
+            # `run_end` skipped summary.json, leaked the file handle, skipped the episode, and
+            # replaced the run's real exception with an OSError.
+            self._emit("run_end", **summary)
+            if cfg.summary_file:
+                self._final_write(self.transcript.write_summary, summary)
+            self._final_write(self.transcript.close)
             if cfg.memory is not None and not cfg.dry_run:
                 with contextlib.suppress(Exception):  # memory must never turn a run into a crash
                     cfg.memory.record_episode(
@@ -3719,6 +3821,10 @@ class AgentLoop:
                         highlights=self.highlights,
                         run_dir=self.run_dir,
                     )
+            if self._unwritten is not None and raising is None:
+                # a run with no error of its own owes its caller the record it could not write,
+                # now that the robot has been stopped, put down and closed
+                raise self._unwritten
         return RunResult(
             outcome=outcome,
             reason=reason,

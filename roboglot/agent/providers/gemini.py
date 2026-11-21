@@ -169,6 +169,8 @@ def parse_response(response: Any) -> ProviderTurn:
             cache_read_tokens=int(getattr(meta, "cached_content_token_count", 0) or 0),
         ),
         stop_reason=str(finish) if finish is not None else None,
+        # google-genai's FinishReason is a str enum, so its value is read rather than its str()
+        cut_off=getattr(finish, "value", finish) == "MAX_TOKENS",
         raw=None,
         thinking="\n\n".join(t for t in thoughts if t) or None,
     )

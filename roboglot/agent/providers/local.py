@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -31,11 +30,24 @@ PRESETS: dict[str, str | None] = {
 }
 LOCAL_NAMES = tuple(PRESETS)
 
+_BARE_CALL = "exactly one JSON object and nothing else"
+"""What text has to be to count as a call: the rule the hint asks for and the fallback holds
+an answer to (`parse_tool_call_from_text`), read by both from here."""
+_CALL_SHAPE = '{"name": "<verb>", "arguments": {<parameters>}}'
+
 TOOL_HINT = (
     "\n## If you cannot call tools natively\n"
-    "Reply with exactly one JSON object and nothing else, in this shape:\n"
-    '{"name": "<verb>", "arguments": {<parameters>}}\n'
+    f"Reply with {_BARE_CALL}, in this shape:\n"
+    f"{_CALL_SHAPE}\n"
 )
+
+NOT_A_BARE_CALL = (
+    f"Your last answer was not a call. Text is a call only when it is {_BARE_CALL}, "
+    f"in this shape: {_CALL_SHAPE}."
+)
+"""What the LLM is told when its text was read and was no call, in front of the loop's own
+re-prompt (`ProviderTurn.not_a_call`): a call quoted in prose, or one of several listed, is not
+one, and an LLM that thought it had answered is told what would have been."""
 
 _LOCAL_NEEDS_A_URL = (
     "--llm local needs the server address: --base-url http://host:port/v1 "
@@ -47,8 +59,19 @@ _A_HOST_MOVES_ONLY_A_PRESET = (
     "preset: --llm ollama, vllm, llamacpp, lmstudio."
 )
 
-_FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.S)
-_THINK_RE = re.compile(r"<think>(.*?)</think>", re.S)
+MAX_CALL_CHARS = 16 * 1024
+"""The most text the fallback reads as a call, its fence and the space around it included.
+
+Chosen from what a call can need: the largest Roboglot offers is `assess_task`, and one written
+out in full, with a reason of several sentences, an estimate for every quantity it names twice
+over, the nine datasheet fields consulted and the nine needs, is about 3.3 kB, or 4.2 kB laid out
+with an indent. This is four times that. Anything longer is no call: a local server is sent no
+output limit, so a repetition loop runs to the end of its context, and none of that is decoded."""
+
+_FENCE = "```"
+_FENCE_LANGUAGE = "json"
+_THINK_OPEN = "<think>"
+_THINK_CLOSE = "</think>"
 _NAME_KEYS = ("name", "tool", "function", "verb")
 _ARGS_KEYS = ("arguments", "parameters", "params", "args", "input")
 
@@ -94,36 +117,49 @@ def split_thinking(text: str) -> tuple[str | None, str]:
     `content`. Left there they would be shown as the answer and replayed to the LLM next
     turn as something it said. An opening tag with no closing one is thinking to the end of
     the reply: a max_tokens cut mid-thought must not turn a half-finished thought into the
-    answer."""
-    thoughts = [m.group(1).strip() for m in _THINK_RE.finditer(text)]
-    rest = _THINK_RE.sub("", text)
-    if (cut := rest.find("<think>")) != -1:
-        thoughts.append(rest[cut + len("<think>") :].strip())
+    answer.
+
+    Found with plain searches in one pass: each opening, then the first closing after it. A lazy
+    pattern looked for a closing from every opening to the end of the reply, so thousands of
+    openings never closed cost the square of their number on the event loop's thread. The first
+    opening with no closing after it ends the pass, since no later one can have one either."""
+    thoughts: list[str] = []
+    kept: list[str] = []
+    at = 0
+    while (opened := _find(text, _THINK_OPEN, at)) != -1:
+        inside = opened + len(_THINK_OPEN)
+        closed = _find(text, _THINK_CLOSE, inside)
+        if closed == -1:
+            break
+        kept.append(text[at:opened])
+        thoughts.append(text[inside:closed].strip())
+        at = closed + len(_THINK_CLOSE)
+    kept.append(text[at:])
+    rest = "".join(kept)
+    if (cut := _find(rest, _THINK_OPEN, 0)) != -1:
+        thoughts.append(rest[cut + len(_THINK_OPEN) :].strip())
         rest = rest[:cut]
     return "\n\n".join(t for t in thoughts if t) or None, rest.strip()
 
 
-def _candidates(text: str) -> list[dict[str, Any]]:
-    """Every JSON object we can find in the text: fenced blocks first, then bare ones."""
-    found: list[dict[str, Any]] = []
-    for m in _FENCE_RE.finditer(text):
-        try:
-            obj = json.loads(m.group(1))
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict):
-            found.append(obj)
-    decoder = json.JSONDecoder()
-    for i, ch in enumerate(text):
-        if ch != "{":
-            continue
-        try:
-            obj, _end = decoder.raw_decode(text, i)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(obj, dict) and obj not in found:
-            found.append(obj)
-    return found
+def _find(text: str, needle: str, start: int) -> int:
+    """`str.find`, the one way `split_thinking` reads the reply, so a test can count what it
+    read rather than time it."""
+    return text.find(needle, start)
+
+
+def _bare(text: str) -> str | None:
+    """The one JSON object an answer is nothing but, as text, or None: the whole answer once
+    trimmed, or the inside of one code fence that is the whole answer, its `json` tag allowed.
+    Whether that is one object and nothing after it is the decode's to say, which takes nothing
+    after the value."""
+    body = text.strip()
+    if body.startswith(_FENCE) and body.endswith(_FENCE) and len(body) >= 2 * len(_FENCE):
+        body = body[len(_FENCE) : -len(_FENCE)]
+        if body.startswith(_FENCE_LANGUAGE):
+            body = body[len(_FENCE_LANGUAGE) :]
+        body = body.strip()
+    return body if body.startswith("{") else None
 
 
 def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
@@ -133,19 +169,40 @@ def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
     name = next((obj[k] for k in _NAME_KEYS if isinstance(obj.get(k), str)), None)
     if name is None or name not in tool_names:
         return None
-    # Not `{}` for what cannot be read: that is a call with its defaults, on nothing the LLM
-    # said.
-    args: Any = next((obj[k] for k in _ARGS_KEYS if k in obj), {})
+    # Not `{}` for what cannot be read, nor for arguments never written: that is a call with its
+    # defaults, on nothing the LLM said. The hint asks for an arguments object, so an object
+    # without one is not the call it describes, and the LLM is asked again.
+    key = next((k for k in _ARGS_KEYS if k in obj), None)
+    if key is None:
+        return None
+    args: Any = obj[key]
     return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
 def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:
-    """A tool call an LLM wrote as JSON text instead of a native tool call, or None."""
-    for obj in _candidates(text or ""):
-        call = _as_call(obj, tool_names)
-        if call is not None:
-            return call
-    return None
+    """A tool call an LLM wrote as JSON text instead of a native tool call, or None.
+
+    Text is a call only when the answer is nothing but the call (`_BARE_CALL`): one JSON object,
+    optionally inside one code fence, after the thinking `_normalise` split off. The first object
+    anywhere in the answer used to be taken, so a call the LLM quoted in order to decline it, or
+    the first of several it listed as options, ran as its choice.
+
+    At most `MAX_CALL_CHARS` is read, and decoded once. Text the decoder raises on is no call,
+    and the LLM is told so (`NOT_A_BARE_CALL`): a `JSONDecodeError`, and the two it raised past
+    the one this caught, `ValueError` for an integer longer than the interpreter converts and
+    `RecursionError` for nesting deeper than it follows. This runs outside the provider's try,
+    so either used to leave it raw and end the run on one odd answer."""
+    if text is None or len(text) > MAX_CALL_CHARS:
+        return None
+    body = _bare(text)
+    if body is None:
+        return None
+    try:
+        obj = json.loads(body)
+        # arguments written as a string are decoded again here (`tool_arguments`)
+        return _as_call(obj, tool_names) if isinstance(obj, dict) else None
+    except (ValueError, RecursionError):
+        return None
 
 
 class LocalProvider(OpenAIProvider):
@@ -296,6 +353,10 @@ class LocalProvider(OpenAIProvider):
     def _fallback(self, turn: ProviderTurn, tools: list[dict[str, Any]]) -> ProviderTurn:
         call = parse_tool_call_from_text(turn.text or "", {t["name"] for t in tools})
         if call is None:
+            # text that was read and was no call: the LLM is told so when it is asked again, and
+            # an answer with no text is asked again in the loop's own words, as it always was
+            if (turn.text or "").strip():
+                return turn.model_copy(update={"not_a_call": NOT_A_BARE_CALL})
             return turn
         self.text_fallbacks += 1
         call = call.model_copy(update={"id": f"text-{self.text_fallbacks}"})
