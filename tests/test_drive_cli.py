@@ -748,6 +748,31 @@ async def test_a_close_still_going_after_its_bound_is_said_and_left_to_end(
     assert not folds.arm.connected and not drive_run._CLOSES_LEFT
 
 
+@pytest.mark.parametrize("figure", ["raises", "none", "not a number", "negative", "a bool"])
+def test_a_close_figure_that_cannot_be_read_is_no_figure(figure: str) -> None:
+    """The close's bound is read off the body before the close begins, outside every guard the
+    close's own steps have, so a figure that raised skipped the transport's close, `run_end` and
+    the summary. A figure that raises, or that is not a finite number of seconds, is no figure:
+    the close is waited for `CLOSE_AFTER_A_PRESS_S`, as for a body that names none."""
+    import roboglot.drive.run as drive_run
+
+    values: dict[str, object] = {
+        "none": None,
+        "not a number": float("nan"),
+        "negative": -1.0,
+        "a bool": True,
+    }
+
+    class Body:
+        @property
+        def close_bound_s(self) -> object:
+            if figure == "raises":
+                raise RuntimeError("a stand-in: the figure's transport is gone")
+            return values[figure]
+
+    assert drive_run._close_bound_s(Body()) == drive_run.CLOSE_AFTER_A_PRESS_S
+
+
 @pytest.mark.parametrize("ends", ["cancelled", "raised"])
 async def test_a_close_cut_short_after_a_press_is_never_said_to_have_ended(
     ends: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

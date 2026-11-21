@@ -217,8 +217,11 @@ def _close_bound_s(transport: Any) -> float:
     `CLOSE_AFTER_A_PRESS_S` for a body that does not say. Counted from the press, which comes after
     the close began, so the close has less than that left by then. A close still going after it is
     said, and waited for no longer: as the session raises, `asyncio.run` cancels it with every
-    other task."""
-    said = getattr(transport, "close_bound_s", None)
+    other task. A figure that cannot be read is no figure: it is read before the close begins,
+    outside every guard the close's own steps have, so what it raises must not skip the close."""
+    said: object = None
+    with contextlib.suppress(Exception):
+        said = getattr(transport, "close_bound_s", None)
     if isinstance(said, int | float) and not isinstance(said, bool) and 0 <= said < math.inf:
         return float(said)
     return CLOSE_AFTER_A_PRESS_S
