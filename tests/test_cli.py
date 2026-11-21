@@ -1371,6 +1371,38 @@ def test_the_lines_beside_a_wait_in_drive_and_in_a_warning_fold_under_their_word
     ]
 
 
+def test_what_reaches_a_fold_unwritten_is_folded_and_spaced_as_it_is_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """drive's lines and the hand-off's reach the fold with the robot's words as they came, never
+    through `printable` first. A run of Hangul fillers among drive's words is one space before the
+    fold, all four kinds of them (`one_space`), and an escape in a gripper's reason is written out
+    before the hand-off's line is folded, so counted as it is shown every row fits and every row
+    after the first starts under the words; folded first and written out after, a row was wider
+    than the window and the terminal folded it at the first column."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=60)
+    monkeypatch.setattr(ui, "console", console)
+    monkeypatch.setattr(ui, "err_console", console)
+    fillers = "\N{HANGUL FILLER}\N{HALFWIDTH HANGUL FILLER}" * 10
+    fillers += "\N{HANGUL CHOSEONG FILLER}\N{HANGUL JUNGSEONG FILLER}" * 5
+    console.print(cli_mod._drive_line(f"{'result':<8} ok,{fillers}est payload"), soft_wrap=True)
+    assert out.getvalue() == "result   ok, est payload\n", repr(out.getvalue())
+    out.seek(0)
+    out.truncate()
+    cli_mod._TerminalHandOff().say("the gripper did not open: " + "\x1b[2K" * 20 + " it stalled")
+    shown = out.getvalue().splitlines()
+    assert len(shown) > 1 and all(len(row) <= 60 for row in shown), shown
+    assert all(row.startswith(ui.CONTINUED) for row in shown[1:]), shown
+    assert "\x1b" not in out.getvalue() and "it stalled" in shown[-1], shown
+
+
 _OUTSIDE = {
     "llm text": "\x1b[2J\x1b[HTEXTPATH",
     "llm thinking": "\x1b]52;c;VEhJTktQQVRI\x1b\\THINKPATH",

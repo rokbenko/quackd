@@ -347,6 +347,38 @@ def test_a_line_is_folded_by_a_count_no_terminal_exceeds(width: int) -> None:
         assert "".join([rows[0], *(row[2:] for row in rows[1:])]).split() == said.split()
 
 
+@pytest.mark.parametrize("width", [24, 40])
+def test_a_fold_never_parts_a_letter_from_what_joins_it(width: int) -> None:
+    """Counted as the console counts them, spacing vowel signs fold a line early, and Myanmar and
+    Khmer, written without spaces, are folded inside a word: the fold fell between KA and its
+    vowel sign, the row above read another syllable and the sign began the next row alone. A row
+    never begins inside a cluster now, its letter and its marks, a decomposed Hangul syllable, an
+    emoji and its skin tone: the fold goes back to the cluster's first character, and every
+    character is drawn once. Latin, Korean syllables and CJK take Rich's own fold, as before."""
+    from rich.text import Text
+
+    clusters = {
+        "myanmar": "\N{MYANMAR LETTER KA}\N{MYANMAR VOWEL SIGN AA}",
+        "khmer": "\N{KHMER LETTER KA}\N{KHMER VOWEL SIGN AA}",
+        "hindi": "\N{DEVANAGARI LETTER KA}\N{DEVANAGARI VOWEL SIGN AA}",
+        "hangul": "\N{HANGUL CHOSEONG HIEUH}\N{HANGUL JUNGSEONG A}\N{HANGUL JONGSEONG NIEUN}",
+        "skin-tone": "👍\N{EMOJI MODIFIER FITZPATRICK TYPE-4}",
+    }
+    console, buf = tee(width, force_terminal=True, color_system=None)
+    for name, cluster in clusters.items():
+        said = cluster * 40
+        buf.seek(0)
+        buf.truncate()
+        console.print(ui.Hanging(Text(said), "  "))
+        rows = buf.getvalue().splitlines()
+        bodies = [rows[0], *(row[2:] for row in rows[1:])]
+        assert len(rows) > 2 and "".join(bodies) == said, (name, rows)
+        for body in bodies:
+            assert body == cluster * (len(body) // len(cluster)), (name, body)
+    for clean in ("the robot found the ball " * 4, "로봇이 공을 찾았어요 " * 6, "機械" * 30):
+        assert ui._counted(clean) is None, "Rich's own fold, as before"
+
+
 def test_whatever_a_roboglot_console_is_handed_reaches_the_screen_with_its_escapes_written_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

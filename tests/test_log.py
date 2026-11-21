@@ -1532,6 +1532,21 @@ def test_a_reply_padded_with_what_draws_as_blank_cannot_begin_a_row(width: int) 
         assert " est payload 0.2 kg (measured, high)" in words, "the blanks between words are one"
 
 
+def test_a_step_line_keeps_the_direction_marks_of_the_blanks_it_draws_as_one() -> None:
+    """A run of blanks in a step line is one space, and a right-to-left or left-to-right mark in
+    the run decides how the words around it are ordered on a line that mixes the two directions,
+    so it stays, after the space; marks between two letters, which no blank is near, stay where
+    they are as well. The pilot's reply as the console draws it."""
+    rlm, lrm = "\N{RIGHT-TO-LEFT MARK}", "\N{LEFT-TO-RIGHT MARK}"
+    said = f"שלום {rlm}   {lrm}  עולם and{lrm}more"
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120, force_terminal=False, no_color=True)
+    ConsoleLog(console, progress_s=None)(
+        LogEvent("llm", 1.0, {"text": said, "tool_calls": [{"name": "stop", "arguments": {}}]})
+    )
+    assert f"   llm<    שלום {rlm}{lrm}עולם and{lrm}more\n" in buffer.getvalue(), buffer.getvalue()
+
+
 def test_a_long_line_of_the_system_prompt_folds_under_the_block() -> None:
     """The system prompt holds the notes an earlier pilot kept and the body of a task file, and
     its block was handed to the terminal whole as the step lines were. A long line folds under

@@ -737,17 +737,65 @@ def _counted(plain: str) -> str | None:
     return None if counted == plain else counted
 
 
+def _is_hangul(character: str) -> bool:
+    """A Hangul jamo or syllable, which a vowel or final jamo after it joins."""
+    point = ord(character)
+    return 0x1100 <= point <= 0x11FF or 0xA960 <= point <= 0xA97F or 0xAC00 <= point <= 0xD7FF
+
+
+def _continues(plain: str, at: int) -> bool:
+    """Whether the character at `at` belongs to the cluster before it, so a row may not begin
+    there: a mark (`Mn`, `Mc`, `Me`, the variation selectors among them), a zero-width joiner or
+    the character after one, a skin tone, a tag (the rest of a flag), and a Hangul vowel or final
+    jamo after another jamo or a syllable."""
+    if at == 0:
+        return False
+    character = plain[at]
+    point = ord(character)
+    if unicodedata.category(character) in ("Mn", "Mc", "Me"):
+        return True
+    if point == 0x200D or ord(plain[at - 1]) == 0x200D:
+        return True
+    if 0x1F3FB <= point <= 0x1F3FF or 0xE0020 <= point <= 0xE007F:
+        return True
+    hangul_follows = 0x1160 <= point <= 0x11FF or 0xD7B0 <= point <= 0xD7FF
+    return hangul_follows and _is_hangul(plain[at - 1])
+
+
 def _wrapped(line: Text, target: Console, width: int) -> list[Text]:
     """`line`, one line, folded at `width` as `Text.wrap` folds it, by a count of cells no terminal
     exceeds (`_counted`): Rich's own fold for a line it counts as a terminal does, and where it
     counts fewer, the same fold made on the stand-ins (`rich._wrap.divide_line`, which `Text.wrap`
-    folds by, the same in every Rich the project allows) and cut from the line itself."""
+    folds by, the same in every Rich the project allows) and cut from the line itself.
+
+    A row never begins inside a character cluster (`_continues`). Myanmar and Khmer are written
+    without spaces, so their lines are folded inside a word, and counted as a terminal counts them
+    the fold could fall between a letter and its spacing vowel sign: the row above read another
+    syllable, and the sign began the next row alone. The fold goes back to the cluster's first
+    character, and a cluster wider than the row is kept whole. Each row is folded from where the
+    last one ended, so a fold moved back never leaves a row wider than `width`."""
     counted = _counted(line.plain)
     if counted is None:
         return list(line.wrap(target, width, overflow="fold"))
     from rich._wrap import divide_line
 
-    rows = list(line.divide(divide_line(counted, width, fold=True)))
+    plain, cuts, start = line.plain, [], 0
+    while True:
+        breaks = divide_line(counted[start:], width, fold=True)
+        if not breaks:
+            break
+        cut = start + breaks[0]
+        while cut > start and _continues(plain, cut):
+            cut -= 1
+        if cut == start:  # one cluster wider than the row: whole, and the row ends after it
+            cut = start + breaks[0]
+            while cut < len(plain) and _continues(plain, cut):
+                cut += 1
+            if cut == len(plain):
+                break
+        cuts.append(cut)
+        start = cut
+    rows = list(line.divide(cuts))
     for row in rows:
         row.rstrip_end(width)
     return rows

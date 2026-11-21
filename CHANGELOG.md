@@ -1026,8 +1026,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   as it did, the joiners Persian, Hindi and emoji need and Korean included; the four Hangul
   fillers, which draw nothing, are written out, and a line is folded by a count of cells no
   terminal exceeds, so a vowel sign of Hindi and the like, which Rich counts as none and the
-  console as one, folds a line early rather than late. `terminal.txt` leaves out every character
-  the screen writes out, the one-character CSI and the bidi overrides among them, which it kept,
+  console as one, folds a line early rather than late, and never between a letter and a mark,
+  a joiner or a skin tone that belongs to it. `terminal.txt` leaves out every character the
+  screen writes out, the one-character CSI and the bidi overrides among them, which it kept,
   and a lone surrogate, which a strict UTF-8 stdout refused, ending the print, is written out too.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said

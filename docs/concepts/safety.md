@@ -112,18 +112,21 @@ shown, its escapes counted, by a count of cells no terminal exceeds (a vowel sig
 Rich counts as none and the Windows console as one, counts one), and never left to the terminal,
 whose fold begins at the first column: the rows after a line's first start under its words, a
 step's under the label column and the reason above a question two columns in, so that none can
-begin where Roboglot's own lines begin. The confirm question folds the same way, and each of its rows after the first begins with
-Roboglot's mark, `¦` (`|` on a stream that has only ASCII), so no row of its arguments can read
-as a question of its own. A run of what draws as a blank inside a line the pilot, a robot or a
-server wrote (spaces, a braille blank and the like, and what draws nothing among them) is drawn
-as one space, so padding cannot set words of theirs along a row either; the confirm question
-keeps its spaces, since it shows what runs. What is written out is the control characters but
-the tab, the line and paragraph separators, the bidirectional embeddings, overrides and isolates,
-a lone surrogate, half of a character that no stream can encode, and the four Hangul fillers,
-which draw nothing and which the console counts as wider than Rich does; the joiners Persian,
-Hindi and emoji need, a flag's tags, the soft hyphen, the direction marks and Korean itself are
-drawn as given. `terminal.txt` leaves out every character the screen writes out, and keeps the
-line breaks.
+begin where Roboglot's own lines begin. The confirm question folds the same way, and each of its
+rows after the first begins with Roboglot's mark, `¦` (`|` on a stream that has only ASCII), so
+no row of its arguments can read as a question of its own. That holds at the width the question
+was drawn at: a terminal whose window is made narrower afterwards folds the rows it already shows
+again, the rest of each at the first column, and no program that prints lines can stop it, so
+read a question at the width it was asked at. A run of what draws as a blank inside a line the
+pilot, a robot or a server wrote (spaces, a braille blank and the like, and what draws nothing
+among them) is drawn as one space, so padding cannot set words of theirs along a row either; the
+confirm question keeps its spaces, since it shows what runs. What is written out is the control
+characters but the tab, the line and paragraph separators, the bidirectional embeddings,
+overrides and isolates, a lone surrogate, half of a character that no stream can encode, and the
+four Hangul fillers, which draw nothing and which the console counts as wider than Rich does; the
+joiners Persian, Hindi and emoji need, a flag's tags, the soft hyphen, the direction marks and
+Korean itself are drawn as given. `terminal.txt` leaves out every character the screen writes
+out, and keeps the line breaks.
 
 That distinction is a safety property and not a nicety. A run directory is what somebody
 reaches for after a robot did something it should not have, and the question they put to it is
