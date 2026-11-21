@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -140,6 +141,17 @@ class _Body(MockTransport):
         stop sends it, as Python 3.11's `wait_for` can lose one, and answers once let go."""
         self.beat_cancelled = asyncio.Event()
         self.beat_release = asyncio.Event()
+        self.stop_out = asyncio.Event()
+        """Set as a stop goes out, before it is answered."""
+        self.stop_error_at_close: str | None = None
+        """Set, every stop from then on does not land and says so in `stop_error`, raising
+        nothing, as most transports say one."""
+        self.takes_cancels = 0
+        """How many cancels the held fold takes and goes on after, as a fold whose wait lost the
+        cancel (Python 3.11's `wait_for`) or a third party's that catches it does."""
+        self.arrives_after_a_cancel = False
+        """Set, a cancel the held fold takes sends it on to its end, as one does whose answer
+        came as the press did."""
 
     async def go_to_rest(self) -> Any:
         from roboglot.adapters.base import RestResult
@@ -150,17 +162,28 @@ class _Body(MockTransport):
         self.fold_started.set()
         if self.in_the_fold is not None:
             raise self.in_the_fold
-        if self.hold:
-            await self.release.wait()
+        while self.hold and not self.release.is_set():
+            try:
+                await self.release.wait()
+            except asyncio.CancelledError:
+                if self.takes_cancels <= 0:
+                    raise
+                self.takes_cancels -= 1
+                self.log.append(f"{self.tag}:rest-took-a-cancel")
+                if self.arrives_after_a_cancel:
+                    break
         await asyncio.sleep(0)
         self.log.append(f"{self.tag}:rest-end")
         return RestResult("arrived", "stand-in: folded")
 
     async def stop(self) -> None:
         self.log.append(f"{self.tag}:stop-begin")
+        self.stop_out.set()
         await asyncio.sleep(0)
         await self.answers.wait()
         await super().stop()
+        if self.stop_error_at_close is not None:
+            self.stop_error = self.stop_error_at_close
         self.log.append(f"{self.tag}:stop")
         if self.on_stop is not None:
             self.on_stop()
@@ -276,18 +299,42 @@ async def test_a_stop_that_is_never_answered_does_not_hold_the_close(caplog: Any
         await asyncio.wait({closing}, timeout=HANG_GUARD_S)
 
 
+class _Said(logging.Handler):
+    """What the `roboglot.mcp` logger says, for a test on a loop of its own, where `caplog` is
+    not at hand."""
+
+    def __init__(self) -> None:
+        super().__init__(logging.WARNING)
+        self.lines: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.lines.append(record.getMessage())
+
+    def __enter__(self) -> list[str]:
+        logging.getLogger("roboglot.mcp").addHandler(self)
+        return self.lines
+
+    def __exit__(self, *_exc: object) -> None:
+        logging.getLogger("roboglot.mcp").removeHandler(self)
+
+
 @pytest.mark.parametrize("press", [KeyboardInterrupt, asyncio.CancelledError])
-def test_a_press_in_the_first_robots_fold_still_stops_folds_and_closes_the_rest(
+def test_a_press_in_the_first_robots_fold_stops_and_closes_every_robot_and_starts_no_fold(
     press: type[BaseException],
 ) -> None:
     """A `KeyboardInterrupt` or a `CancelledError` in one robot's close, a person's second Ctrl-C
     landing in the arm's fold, passed the `suppress(Exception)` in `close_all`, and every robot
-    after it got no stop, no fold and no close, while the arm's own transport was left open. The
-    press ends the fold it lands in and nothing else: the arm is still closed, the base still
-    gets its stop, its fold and its close, and the press is raised once they have run.
+    after it got no stop, no fold and no close, while the arm's own transport was left open. A
+    press means stop: the arm's fold stops where it is and the arm is held there, the base, whose
+    stop went out first, starts no fold of its own after the press and is said to be held, both
+    are closed, and the press is raised once they are. (Until the owner's rule of 2026-11-21 the
+    base still folded after the press, which this test asserted.)
 
     On a loop of its own, run as `serve-mcp`'s is: a `KeyboardInterrupt` raised in a task leaves
     the event loop, which is what it does in the server, and would end the suite's own loop."""
+    from roboglot.agent.loop import AgentLoop
+    from roboglot.release import FOLD_STOPPED
+
     log: list[str] = []
 
     async def a_session_ended_by_its_client() -> None:
@@ -300,11 +347,13 @@ def test_a_press_in_the_first_robots_fold_still_stops_folds_and_closes_the_rest(
         arm.in_the_fold = press()
         await asyncio.wait_for(team.close_all(), HANG_GUARD_S)
 
-    with pytest.raises(press):
+    with _Said() as said, pytest.raises(press):
         asyncio.run(a_session_ended_by_its_client())
     assert log.index("base:stop") < log.index("arm:rest-start"), log
     assert "arm:close" in log, f"the arm's transport was left open: {log}"
-    assert log[-3:] == ["base:rest-start", "base:rest-end", "base:close"], log
+    assert "base:rest-start" not in log, f"the base began to fold after the press: {log}"
+    assert log[-1] == "base:close", log
+    assert f"arm: {FOLD_STOPPED}" in said and f"base: {AgentLoop.HELD_BACK}" in said, said
 
 
 TORQUE_KEPT = "stand-in: the arm is not at rest, so its torque is kept"
@@ -354,16 +403,16 @@ async def test_a_cancel_in_the_closing_fold_holds_the_arm_closes_it_and_says_so(
     assert said[-2:] == [FOLD_STOPPED, TORQUE_KEPT], said
 
 
-@pytest.mark.parametrize("cancelled", ["the closing task", "the halt's own task", "every task"])
+@pytest.mark.parametrize("cancelled", ["the closing task", "every task"])
 def test_a_cancel_while_the_heartbeat_stops_keeps_the_fold_from_starting(cancelled: str) -> None:
     """(b) `Heartbeat.stop` takes a cancel that lands in it, so a cancel of the task closing the
     session while a beat was still answering was swallowed there, and the close went on to stop
     and fold the arm as if nothing had come. The fold does not start now, the arm is held where
     it stands and that is said (`AgentLoop.HELD_BACK`), its transport is closed, and the cancel
-    is raised. Three shapes: the closing task alone; the task the heartbeat's stop runs in
-    alone, where the cancel is the one `Heartbeat.stop` takes; and every task at once, as
-    asyncio's runner cancels them at a second Ctrl-C. On a loop of its own, as the press test
-    above runs."""
+    is raised. Two shapes: the closing task alone, and every task asyncio lists at once, as its
+    runner cancels them at a second Ctrl-C. The heartbeat's stop itself runs in a task the
+    runner does not list, so no cancel reaches it there (until round three a third shape
+    cancelled that task by hand). On a loop of its own, as the press test above runs."""
     import logging
 
     from roboglot.agent.loop import AgentLoop
@@ -388,9 +437,6 @@ def test_a_cancel_while_the_heartbeat_stops_keeps_the_fold_from_starting(cancell
             for task in asyncio.all_tasks():
                 if task is not asyncio.current_task():
                     task.cancel()
-        elif cancelled == "the halt's own task":
-            (halt,) = [t for t in asyncio.all_tasks() if t.get_coro().__qualname__.endswith("halt")]
-            halt.cancel()
         else:
             closing.cancel()
         arm.beat_release.set()
@@ -459,6 +505,218 @@ async def test_a_cancel_in_the_transports_close_does_not_cut_it_short(caplog: An
         await asyncio.wait_for(closing, HANG_GUARD_S)
     assert log[-1] == "arm:close" and arm.connected is False, log
     assert _said(caplog, session)[-1] == TORQUE_KEPT, caplog.messages
+
+
+def _cancel_every_task() -> None:
+    """What asyncio's runner does at a second Ctrl-C, once the `KeyboardInterrupt` has left its
+    loop: cancel every task it still lists (`Runner.close`, `_cancel_all_tasks`). Done by hand,
+    from the task that calls this, which it leaves alone; no signal is sent."""
+    for task in asyncio.all_tasks():
+        if task is not asyncio.current_task():
+            task.cancel()
+
+
+def test_a_second_press_in_the_transports_close_does_not_cut_it_short() -> None:
+    """A1. At a second Ctrl-C the runner cancels every task it lists, and the transport's close
+    ran in one of them: it was cut where it was, on its last read of the arm, and the arm stayed
+    connected and energised with nothing said. The close runs in a task the runner does not list,
+    so it runs to its end, its note is said, and the press is raised after it. On a loop of its
+    own, as asyncio's runner keeps one."""
+    log: list[str] = []
+    held: dict[str, Any] = {}
+
+    async def a_close_pressed_twice() -> None:
+        session, arm = _arm_alone(log)
+        held["arm"] = arm
+        await session.connect()
+        log.clear()
+        arm.close_gate.clear()
+        closing = asyncio.ensure_future(session.close())
+        await asyncio.wait_for(arm.close_started.wait(), HANG_GUARD_S)
+        _cancel_every_task()
+        await asyncio.sleep(0)
+        arm.close_gate.set()  # its read answers
+        await asyncio.wait_for(closing, HANG_GUARD_S)
+
+    with _Said() as said, pytest.raises(asyncio.CancelledError):
+        asyncio.run(a_close_pressed_twice())
+    assert log[-1] == "arm:close" and held["arm"].connected is False, log
+    assert said[-1] == f"robot: {TORQUE_KEPT}", said
+
+
+async def test_a_transports_close_still_going_after_a_press_is_said_to_be(caplog: Any) -> None:
+    """A1's other half. The close is waited for through a press as long as a stop is
+    (`Executor._stop_wait_s`), and no longer: one still going then is said to be, with what to
+    do (`CLOSE_UNFINISHED`), and the press is raised. Its link never answers here until the test
+    is done."""
+    from roboglot.mcp_server import CLOSE_UNFINISHED
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    session, arm = _arm_alone(log)
+    await session.connect()
+    log.clear()
+    arm.close_gate.clear()
+    closing = asyncio.ensure_future(session.close())
+    try:
+        await asyncio.wait_for(arm.close_started.wait(), HANG_GUARD_S)
+        closing.cancel()
+        # waited for rather than cancelled at the guard: the close outlasts a cancel
+        await asyncio.wait({closing}, timeout=HANG_GUARD_S)
+        assert closing.done(), "a transport's close is waited for with no bound after a press"
+        assert closing.cancelled(), "the press is raised"
+        unfinished = CLOSE_UNFINISHED.format(bound=session.executor._stop_wait_s())
+        assert f"robot: {unfinished}" in caplog.messages, caplog.messages
+        assert "arm:close" not in log, log
+    finally:
+        arm.close_gate.set()
+
+
+def test_a_second_press_while_the_stops_are_out_cuts_no_stop_off() -> None:
+    """B1. At a second Ctrl-C the runner cancels every task it lists, and the close's stops ran
+    in such tasks: the base's was cut off on its way, and said to have been cancelled before it
+    went out, so it kept its last twist. The stops run in tasks the runner does not list, and are
+    waited for through the press, each as long as a stop is: the base's lands once its link
+    answers, and every robot is closed."""
+    log: list[str] = []
+
+    async def stops_pressed_twice() -> None:
+        team, _arm, base = _arm_and_base(log, hold=False)
+        await team.connect_all()
+        log.clear()
+        base.answers.clear()
+        closing = asyncio.ensure_future(team.close_all())
+        await asyncio.wait_for(base.stop_out.wait(), HANG_GUARD_S)
+        _cancel_every_task()
+        await asyncio.sleep(0)
+        base.answers.set()  # its link answers
+        await asyncio.wait_for(closing, HANG_GUARD_S)
+
+    with _Said() as said, pytest.raises(asyncio.CancelledError):
+        asyncio.run(stops_pressed_twice())
+    assert "base:stop" in log, f"the base's stop was cut off: {log}"
+    assert not [s for s in said if "cancelled before it went out" in s], said
+    assert log[-2:] == ["arm:close", "base:close"], log
+
+
+@pytest.mark.parametrize("fold", ["stops at the second", "takes both", "ends on its own"])
+async def test_a_fold_that_takes_a_press_is_told_again_and_said_for_what_it_did(
+    fold: str, caplog: Any
+) -> None:
+    """A3. A fold that loses the cancel on its way, in Python 3.11's `wait_for` or in a third
+    party's code, went on to its pose after the press, told once and nothing said. It is told
+    twice now, as a run's teardown tells it (`fold_unless_stopped`): one that takes the first
+    cancel stops at the second, and is said to have stopped (`FOLD_STOPPED`); one that takes both
+    is said to have gone on (`FOLD_WENT_ON`), never to have stopped; and one that takes the press
+    and ends on its own is said to have gone on to its end (`FOLD_WENT_TO_ITS_END`), where
+    `FOLD_STOPPED` would say it stopped. Each time the arm is held, closed and its note said. The
+    second case waits out the fold's bound twice (`release.STOPPED_FOLD_S`)."""
+    from roboglot.mcp_server import FOLD_WENT_TO_ITS_END
+    from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    session, arm = _arm_alone(log)
+    await session.connect()
+    log.clear()
+    arm.closing = True
+    arm.takes_cancels = 2 if fold == "takes both" else 1
+    arm.arrives_after_a_cancel = fold == "ends on its own"
+    expected = {
+        "stops at the second": FOLD_STOPPED,
+        "takes both": FOLD_WENT_ON,
+        "ends on its own": FOLD_WENT_TO_ITS_END.format(reason="stand-in: folded"),
+    }[fold]
+    closing = asyncio.ensure_future(session.close())
+    try:
+        await asyncio.wait_for(arm.fold_started.wait(), HANG_GUARD_S)
+        closing.cancel()
+        # waited for rather than cancelled at the guard: a fold that goes on would take it too
+        await asyncio.wait({closing}, timeout=HANG_GUARD_S)
+        assert closing.done(), f"the close waits on a fold that took the press: {log}"
+        assert closing.cancelled(), "the press is raised"
+        said = _said(caplog, session)
+        assert said[-2:] == [expected, TORQUE_KEPT], said
+        assert ("arm:rest-end" in log) is (fold == "ends on its own"), log
+        assert log[-1] == "arm:close" and log.count("arm:stop") == 2, f"not held: {log}"
+    finally:
+        arm.release.set()
+
+
+async def test_a_press_in_the_opening_fold_holds_the_arm_and_closes_every_robot(
+    caplog: Any,
+) -> None:
+    """A4. A press during an arm's opening fold at start-up cancelled its connect, and
+    `connect_all` closed the robots that had connected, never the one it cut: that arm was left
+    connected and energised where the press stopped it, and nothing said so. Its fold is stopped
+    and said to be (`FOLD_STOPPED`), it is closed with every robot that connected before it, each
+    held and closed with no fold of its own, and the press is raised."""
+    from roboglot.release import FOLD_STOPPED
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    first = _Body("first", log, rest=True)
+    arm = _Body("arm", log, rest=True)
+    arm.note_at_close = TORQUE_KEPT
+    _server, team = build_team_server({"first": first, "arm": arm}, heartbeat_period_s=0.05)
+    arm.closing = True  # its fold at the connect is held
+    connecting = asyncio.ensure_future(team.connect_all())
+    await asyncio.wait_for(arm.fold_started.wait(), HANG_GUARD_S)
+    connecting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(connecting, HANG_GUARD_S)
+    after = log[log.index("arm:rest-start") + 1 :]
+    assert "arm:rest-end" not in after and "first:rest-start" not in after, log
+    assert {"arm:stop", "first:stop", "arm:close", "first:close"} <= set(after), log
+    assert arm.connected is False and first.connected is False
+    said = [m.split(": ", 1) for m in caplog.messages]
+    assert ["arm", FOLD_STOPPED] in said and ["arm", TORQUE_KEPT] in said, caplog.messages
+
+
+def test_a_press_while_a_refused_start_closes_what_connected_still_closes_the_rest() -> None:
+    """P12. A start-up a robot refuses closes the robots that had connected, as a session's end
+    closes them: a press in the first one's fold there does not leave the next one open, no fold
+    starts after it, and the press is raised. The third robot refuses its connect; the first's
+    fold at that close takes a press."""
+    from roboglot.transport.base import TransportError
+
+    log: list[str] = []
+    held: dict[str, Any] = {}
+
+    class Refuses(_Body):
+        async def connect(self) -> None:
+            held["first"].closing = True
+            held["first"].in_the_fold = asyncio.CancelledError()
+            raise TransportError("no robot answered")
+
+    async def a_start_that_is_refused() -> None:
+        first = held["first"] = _Body("first", log, rest=True)
+        second = held["second"] = _Body("second", log, rest=True)
+        robots = {"first": first, "second": second, "third": Refuses("third", log)}
+        _server, team = build_team_server(robots, heartbeat_period_s=0.05)
+        await asyncio.wait_for(team.connect_all(), HANG_GUARD_S)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(a_start_that_is_refused())
+    assert held["first"].connected is False and held["second"].connected is False, log
+    assert "second:rest-start" not in log and log[-1] == "second:close", log
+
+
+async def test_a_close_stop_that_did_not_land_is_said_in_the_transports_words(
+    caplog: Any,
+) -> None:
+    """C3. Most transports say a stop that did not land in `stop_error` and raise nothing, and
+    the close read only whether its stop raised, so such a stop was never said there. It is read
+    for its word now, as every other stop is."""
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    team, _arm, base = _arm_and_base(log, hold=False)
+    await team.connect_all()
+    base.stop_error_at_close = "the zero Twist was not sent: the socket is gone"
+    await asyncio.wait_for(team.close_all(), HANG_GUARD_S)
+    assert (
+        "base: the close's stop: the zero Twist was not sent: the socket is gone" in caplog.messages
+    ), caplog.messages
 
 
 async def test_a_client_dying_mid_session_still_stops_folds_and_closes_every_robot() -> None:
@@ -706,8 +964,6 @@ async def test_a_team_says_which_of_its_bodies_cannot_see_their_fall(caplog: Any
         "cart": make_adapter(RobotSpec("alohamini", "mock", "cart")),
     }
     async with connected(robots) as (client, _team):
-        warned = [m for m in caplog.messages if FALL_BLIND in m]
-        assert [m.split(": ")[0] for m in warned] == ["duck"], caplog.messages
         replies = {
             name: _data(
                 await client.call_tool(
@@ -717,6 +973,8 @@ async def test_a_team_says_which_of_its_bodies_cannot_see_their_fall(caplog: Any
             )
             for name in robots
         }
+    warned = [m for m in caplog.messages if FALL_BLIND in m]
+    assert [m.split(": ")[0] for m in warned] == ["duck"], caplog.messages
     assert FALL_BLIND in replies["duck"]["warning"], replies["duck"]
     assert "warning" not in replies["cart"], replies["cart"]
 

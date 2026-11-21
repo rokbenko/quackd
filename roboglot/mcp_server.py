@@ -20,10 +20,12 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import contextvars
+import functools
 import logging
 import re
 import sys
 import time
+import typing
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -76,12 +78,14 @@ from roboglot.safety import (
 from roboglot.space.places import PlaceStore
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
+    WENT_OUT,
     CameraFrame,
     RobotState,
     RobotTransport,
     TransportError,
     camera_names_of,
 )
+from roboglot.verbs.core import WentOut
 from roboglot.verbs.places import view_record
 from roboglot.verbs.registry import (
     Verb,
@@ -219,8 +223,22 @@ def _without_its_text(e: GlotParseError) -> str:
     client's to read: one steered by text it had read could have the server read any YAML file
     its user can, a line per call. Its kind and where it is say as much to the person fixing a
     task. The parser raises its refusal from the YAML error (`parse_glot_text`), which is kept
-    as the refusal's context."""
+    as the refusal's context.
+
+    A frontmatter that is YAML but not a task is refused by the schema, whose words name every
+    key it does not know and quote the values its checks refuse (a verb's name, a robot's spec):
+    each fault is said by its path, in the format's own words (`_format_words`), and its kind,
+    pydantic's name for it. A key of the file's is not named."""
     cause = e.__context__
+    where_from = e.path or "<text>"
+    if isinstance(cause, ValidationError):
+        words = _format_words()
+        faults = [
+            ".".join(str(p) if isinstance(p, int) or p in words else "?" for p in err["loc"])
+            + f": {err['type']}"
+            for err in cause.errors()
+        ]
+        return f"{where_from}: frontmatter is not a task file's: {'; '.join(faults)}"
     if not isinstance(cause, yaml.YAMLError):
         return str(e)
     mark = getattr(cause, "problem_mark", None)
@@ -229,7 +247,40 @@ def _without_its_text(e: GlotParseError) -> str:
         if mark is not None
         else ""
     )
-    return f"{e.path or '<text>'}: frontmatter is not valid YAML: {type(cause).__name__}{where}"
+    return f"{where_from}: frontmatter is not valid YAML: {type(cause).__name__}{where}"
+
+
+@functools.cache
+def _format_words() -> frozenset[str]:
+    """Every field name and alias in the task format, `GlotFrontmatter` and each schema class it
+    holds: the words a refusal may name a fault's path in, since they are Roboglot's, not the
+    file's."""
+    from pydantic import BaseModel
+
+    words: set[str] = set()
+    seen: set[type] = set()
+
+    def schemas_in(annotation: Any) -> list[type[BaseModel]]:
+        found: list[type[BaseModel]] = []
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
+            found.append(annotation)
+        for arg in typing.get_args(annotation):
+            found += schemas_in(arg)
+        return found
+
+    def walk(schema: type[BaseModel]) -> None:
+        if schema in seen:
+            return
+        seen.add(schema)
+        for name, info in schema.model_fields.items():
+            words.add(name)
+            if info.alias:
+                words.add(info.alias)
+            for inner in schemas_in(info.annotation):
+                walk(inner)
+
+    walk(GlotFrontmatter)
+    return frozenset(words)
 
 
 def _prefixed(emit: Callable[..., None], name: str) -> Callable[[str], None]:
@@ -315,37 +366,52 @@ class RobotSession:
     """The contract `--lock-glotfile` holds this session to, or None, as it is by default, where a
     contract the client loads replaces the one before it."""
     fall_sense: RobotState | None = None
-    """What the body said of itself once it had connected, read only where it can matter: on a
-    body this session may walk that has no `stand_up` (`fall_blind`). None until then."""
+    """What the body said of itself, read only where it can matter: on a body this session may
+    walk that has no `stand_up`, at the first assessment that needs it (`fall_blind`). None until
+    a read has answered."""
     fall_blind_said: bool = False
     """Whether the person at the server's stderr has been told this body needs watching."""
+    fold_stopped: bool = False
+    """Whether a press stopped this body's opening fold (`connect`): the close holds it and
+    starts no fold of its own, as a run's close does a body whose fold a person stopped."""
+    _fold_ended: Any = field(default=None, init=False, repr=False)
+    """What the last fold answered when it ended on its own (`_folded`), or None: one that took a
+    press and went on to its end was not stopped, whatever the press, and is said so."""
 
     async def fall_blind(self) -> str | None:
         """Why somebody must watch this body while it walks, in the core's words, or None.
 
         The body says whether anything on it sees a fall only once it has connected (the Open
         Duck's bridge reads it from its runtime), which is after this server's instructions were
-        written, so they cannot say it: the start-up line on stderr does, and the reply to the
-        assessment. Read once, on the first ask, and only on a body whose task can make it walk
-        and that cannot get up, as `fall_blind_warning` asks; against the task as it is now,
-        since loading one may allow a walk the last did not."""
+        written, so they cannot say it: the reply to the assessment every move waits for does,
+        and stderr at that moment. Read once, at the first assessment that asks, and only on a
+        body whose task can make it walk and that cannot get up, as `fall_blind_warning` asks, so
+        a session reads its body no more often than before until then; against the task as it
+        is now, since loading one may allow a walk the last did not. A read that fails is not a
+        body that sees its fall: it is warned of as one that does not, and read again next time.
+
+        A body that cannot fall by its own sheet is never read for it: only a legged one falls
+        (its manifest's `mobility`), and a wheeled base or an arm on a bench was read once more
+        than before, at the assessment, to learn that nothing could be said of it."""
         from roboglot.agent.loop import LOCOMOTION, fall_blind_warning
 
         allow = self.executor.allowed
         walks = any(self.registry.canonical(n) in LOCOMOTION for n in allow)
         if not walks or "stand_up" in self.registry:
             return None
+        sheet = self.effective_manifest()
+        if sheet is not None and sheet.mobility != "legged":
+            return None
         if self.fall_sense is None:
             try:
                 self.fall_sense = await self.transport.get_state()
-            except Exception as e:  # asked again at the next assessment
-                logger.warning(
-                    "%s: whether anything on this body sees a fall could not be read: %s: %s",
-                    self.name,
-                    type(e).__name__,
-                    e,
+            except Exception as e:
+                unread = RobotState(extras={"fall_detection": False})
+                taken = fall_blind_warning(self.registry, allow, unread)
+                return (
+                    f"whether anything on this robot sees a fall could not be read "
+                    f"({type(e).__name__}: {e}), so take it that nothing does: {taken}"
                 )
-                return None
         return fall_blind_warning(self.registry, allow, self.fall_sense)
 
     def say_fall_blind(self, warning: str) -> None:
@@ -465,7 +531,15 @@ class RobotSession:
         # one put down rather than wherever it was left. A session that cannot get there is
         # refused: the client is about to drive a body nobody has established the pose of.
         if not self.executor.dry_run and getattr(self.transport, "rest_pose", None) is not None:
-            parked = await go_to_rest_if_any(self.transport)
+            try:
+                parked = await self._folded()
+            except BaseException as e:
+                # a press stops the opening fold where it is: said, and the close that follows
+                # holds the arm and starts no fold of its own. A press here used to leave the
+                # arm connected and energised wherever it stopped, and nothing said so.
+                self.fold_stopped = True
+                self._fold_was_stopped(e)
+                raise
             logger.info("%s: %s", self.name, parked.reason)
             if parked.note:
                 # the body's sentence about the pose it parks in; said once, at the start
@@ -516,51 +590,81 @@ class RobotSession:
     async def close(self) -> None:
         """Stop the robot, then put it down and let go of it: `halt`, then `put_down`, the two
         halves a team's close runs for all its robots, every `halt` before any `put_down`
-        (`_close_in_two_passes`). A press or a cancel while the stop is out keeps the fold from
-        starting, and one in the fold or the transport's close ends that step; the transport is
-        closed whatever came, and the press is raised once the close has run."""
+        (`_close_in_two_passes`). A press means stop: one that comes before the fold keeps it
+        from starting, one in the fold stops it and holds the arm, the transport is closed
+        whatever came, and the press is raised once the close has run."""
         if (pressed := await _close_in_two_passes([self])) is not None:
             raise pressed
 
     async def halt(self) -> None:
         """The first half of the close: no more courtesy runs for robots met, the heartbeat
-        stopped, then the stop.
+        stopped, then the stop (`_halted`); a press that came meanwhile is raised once the stop
+        is out of its hands."""
+        if (pressed := await self._halted()) is not None:
+            raise pressed
 
-        The stop goes out in a task of its own and is waited for as long as the executor waits
-        for a stop it owes (`Executor._answer_of`, its `stop` verb's `timeout_s`), so a cancel of
-        this wait never cuts it off half sent, and a link that holds it does not hold the close:
-        it goes on by itself. A cancel of the wait is raised once the stop is out of its hands,
-        and so is one `Heartbeat.stop` took, which it does with any that lands in it: the close
-        went on to stop and fold the arm as if nothing had come."""
-        me = asyncio.current_task()
-        before = me.cancelling() if me is not None else 0
+    async def _halted(self) -> BaseException | None:
+        """`halt`, handing back the first press rather than raising it, since it runs in a task
+        of its own (`_close_in_two_passes`), where a raised `KeyboardInterrupt` leaves the loop.
+
+        That task is one asyncio's runner does not list, and nothing else cancels it, so no press
+        reaches `Heartbeat.stop`, which takes any cancel that lands in it: a press while the
+        heartbeat stops lands on whoever waits for this, and is counted there."""
         # closed before the rest move, which reaches the body without passing the executor
         self.executor.open_to_peers = False
         await self.heartbeat.stop()
-        taken = me is not None and me.cancelling() > before
-        unstopped, cancelled = await self.executor._answer_of(_set_going(self.transport.stop))
-        if unstopped is not None:
-            # a stop that raised was dropped here without a word, and one that never answered
-            # held the close, and every robot after it, for good
+        return await self._stopped()
+
+    async def _stopped(self) -> BaseException | None:
+        """The close's stop: sent, and waited for as long as the executor waits for a stop it owes
+        (its `stop` verb's `timeout_s`, `Executor._stop_wait_s`), however many presses come
+        meanwhile, and said when it did not land. Hands back the first press.
+
+        In a task of its own that asyncio's runner does not list (`_beyond_the_runner`), so the
+        cancel of every task it sends at a second Ctrl-C does not cut the stop off on its way.
+        Read for its word as every stop is (`stop_error`, `stop_unconfirmed`), since most
+        transports say a stop that did not land there and raise nothing. One still out at the
+        bound goes on by itself (`Executor._keep_going`). A stop that raised, or did not land,
+        was dropped here without a word, and one that never answered held the close for good."""
+        bound = self.executor._stop_wait_s()
+        stopping = _beyond_the_runner(_set_going(lambda: _a_stop_and_its_word(self.transport)))
+        pressed = await _outlasted({stopping}, within=bound)
+        if (unstopped := self._what_became_of(stopping, bound)) is not None:
             logger.warning("%s: the close's stop: %s", self.name, unstopped)
-        if cancelled or taken:
-            raise asyncio.CancelledError
+        return pressed
+
+    def _what_became_of(self, stopping: asyncio.Future[Any], bound: float) -> str | None:
+        """Why the close's stop did not land, in the words an owed stop's are said in
+        (`Executor._answer_of`), or None when it did."""
+        if not stopping.done():
+            self.executor._keep_going(stopping, bound)
+            return f"it was not answered within {bound:g} s, and goes on by itself"
+        if stopping.cancelled():
+            return "it was cancelled before it went out"
+        if (error := stopping.exception()) is not None:
+            return f"{type(error).__name__}: {error}"
+        word = stopping.result()
+        if isinstance(word, WentOut):
+            return f"{WENT_OUT}: {word}"
+        return word if isinstance(word, str) else None
 
     async def put_down(self, *, fold: bool = True) -> None:
         """The second half of the close: a pause granted to a robot met waited out, the rest
         move, the transport's close and what the close says of the body. `fold` is False where a
-        press came while the stops were out.
+        press has come during the close, to this robot or another.
 
-        A press or a cancel keeps a fold from starting if it comes first, and stops one where it
-        is: the arm is held there and that is said (`AgentLoop.HELD_BACK`, `FOLD_STOPPED`), where
-        the arm used to go down after a press in the pause's wait. The transport's close then
-        runs to its end through any press, as a run's does (`AgentLoop._unbroken`), its note is
-        said, and the first press is raised after them. A press in the fold used to leave the
-        transport open, with nothing said of its torque, and one in the close to cut it short."""
-        me = asyncio.current_task()
-        before = me.cancelling() if me is not None else 0
+        A press means stop. One that comes before the fold keeps it from starting, and the arm
+        is held where it stands (`AgentLoop.HELD_BACK`); one in the fold stops it, the arm is held
+        there with a stop, and that is said (`FOLD_STOPPED`, or `FOLD_WENT_ON` where the fold was
+        told twice and did not end, `fold_unless_stopped`). The arm used to go down after a press
+        in the pause's wait. The transport's close then runs to its end through any press, as a
+        run's does, and a bounded while after one (`_closed_transport`), its note is said, and
+        the first press is raised after them. A press in the fold used to leave the transport
+        open, with nothing said of its torque, and one in the close to cut it short."""
         interrupted: BaseException | None = None
-        if not fold:
+        if self.fold_stopped:
+            pass  # its opening fold was stopped by a press, and that was said
+        elif not fold:
             self._held_back()
         elif not self.executor.dry_run:
             # a pause granted to a robot met is waited out first, since the rest move is not
@@ -576,15 +680,68 @@ class RobotSession:
                 self._held_back()
             if interrupted is None:
                 try:
-                    with contextlib.suppress(Exception):
-                        await go_to_rest_if_any(self.transport)
+                    await self._folded()
                 except BaseException as e:  # a press stops the fold where it is
                     interrupted = e
-                    await self._held_where_the_fold_stopped()
-        closing = _set_going(self.transport.close)
-        late = await _outlasted({closing})
+                    # held there first, through any press that follows, then said
+                    later = await self._stopped()
+                    self._fold_was_stopped(e)
+                    interrupted = interrupted or later
+        late = await self._closed_transport()
         interrupted = interrupted or late
-        if not closing.cancelled() and (error := closing.exception()) is not None:
+        if note := getattr(self.transport, "close_note", None):
+            logger.warning("%s: %s", self.name, note)
+        if interrupted is not None:
+            raise interrupted
+
+    async def _folded(self) -> Any:
+        """The rest move, raced against nothing but a cancel of the task awaiting it, which is
+        what a Ctrl-C is here: told twice, as a run's teardown tells it (`fold_unless_stopped`),
+        since a fold can lose the first on its way, in Python 3.11's `asyncio.wait_for` or in a
+        third party's code, and went on to its pose after the press. What it answers if it ends on
+        its own is kept (`_fold_ended`), since a fold that ended is taken there as one that
+        stopped, and one that took the press and went on to its end did not."""
+        from roboglot.release import fold_unless_stopped
+
+        self._fold_ended = None
+
+        async def fold() -> Any:
+            ended = await go_to_rest_if_any(self.transport)
+            self._fold_ended = ended
+            return ended
+
+        return await fold_unless_stopped(fold, _no_press)
+
+    def _fold_was_stopped(self, stopped_it: BaseException) -> None:
+        """Said where a press came during a fold: `FOLD_STOPPED`; `FOLD_WENT_ON` where it was told
+        twice and had still not ended (`fold_went_on`), which is never said to have stopped; and
+        `FOLD_WENT_TO_ITS_END` where it took the press and ended on its own, as one does that the
+        press reached as it arrived, or that lost the cancel on its way."""
+        from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON, fold_went_on
+
+        if fold_went_on(stopped_it):
+            said = FOLD_WENT_ON
+        elif self._fold_ended is not None:
+            said = FOLD_WENT_TO_ITS_END.format(reason=getattr(self._fold_ended, "reason", ""))
+        else:
+            said = FOLD_STOPPED
+        logger.warning("%s: %s", self.name, said)
+
+    async def _closed_transport(self) -> BaseException | None:
+        """The transport's close, run to its end through any press, and handed back the first.
+
+        In a task of its own that asyncio's runner does not list (`_beyond_the_runner`): a second
+        Ctrl-C makes the runner cancel every task it lists, and the close's own was cut where it
+        was, on its read of the arm, which left the arm connected and energised with nothing
+        said. It is waited for as long as its own clocks run, and once a press has come, for as
+        long as a stop is (`Executor._stop_wait_s`) and no longer: one still going then is said
+        to be (`CLOSE_UNFINISHED`), and goes on while the loop does."""
+        bound = self.executor._stop_wait_s()
+        closing = _beyond_the_runner(_set_going(self.transport.close))
+        pressed = await _outlasted({closing}, after_a_press=bound)
+        if not closing.done():
+            logger.warning("%s: %s", self.name, CLOSE_UNFINISHED.format(bound=bound))
+        elif not closing.cancelled() and (error := closing.exception()) is not None:
             if isinstance(error, Exception):
                 logger.warning(
                     "%s: the transport's close raised %s: %s",
@@ -593,13 +750,8 @@ class RobotSession:
                     error,
                 )
             else:
-                interrupted = interrupted or error
-        if note := getattr(self.transport, "close_note", None):
-            logger.warning("%s: %s", self.name, note)
-        if interrupted is None and me is not None and me.cancelling() > before:
-            interrupted = asyncio.CancelledError()  # one a step took and did not raise
-        if interrupted is not None:
-            raise interrupted
+                pressed = pressed or error
+        return pressed
 
     def _held_back(self) -> None:
         """Said where a press kept this body's closing fold from starting: an arm with a pose to
@@ -609,16 +761,6 @@ class RobotSession:
         from roboglot.agent.loop import AgentLoop
 
         logger.warning("%s: %s", self.name, AgentLoop.HELD_BACK)
-
-    async def _held_where_the_fold_stopped(self) -> None:
-        """A fold a press stopped, held where it is with a stop, bounded as the close's own is,
-        and said (`FOLD_STOPPED`); whether the arm holds itself up is the close's note to say."""
-        from roboglot.release import FOLD_STOPPED
-
-        unstopped, _cancelled = await self.executor._answer_of(_set_going(self.transport.stop))
-        if unstopped is not None:
-            logger.warning("%s: the close's stop: %s", self.name, unstopped)
-        logger.warning("%s: %s", self.name, FOLD_STOPPED)
 
     async def run(self, name: str, params: dict[str, Any] | None) -> dict[str, Any]:
         """`robot_run_verb`: the verb through the executor, with its log."""
@@ -1030,54 +1172,123 @@ def _set_going(send: Callable[[], Awaitable[Any]]) -> asyncio.Future[Any]:
         return failed
 
 
-async def _outlasted(tasks: set[asyncio.Future[Any]]) -> BaseException | None:
+CLOSE_UNFINISHED = (
+    "the transport's close was still going {bound:g} s after the Ctrl-C, and goes on by itself: "
+    "Roboglot cannot tell whether it let go of the robot, so take it to be powered and holding "
+    "where it stands, keep clear of it, and cut its power"
+)
+"""Said of a transport's close still going a stop's bound after a press (`_closed_transport`): it
+may still be reading the body, and whether torque was kept or released is its note to say."""
+
+FOLD_WENT_TO_ITS_END = (
+    "the fold was told to stop and was not stopped: it went on to its end after the Ctrl-C "
+    "({reason}), and the arm is held where that left it"
+)
+"""Said where a fold took the press and ended on its own (`RobotSession._fold_was_stopped`).
+`fold_unless_stopped` takes a fold that ended as one that stopped, and `FOLD_STOPPED` would say it
+stopped where it was, of an arm that moved on after the press to wherever its fold ended."""
+
+
+async def _no_press() -> None:
+    """What `fold_unless_stopped` races a close's fold against: nothing, since a Ctrl-C reaches a
+    close as a cancel of the task that awaits the fold, and that is answered there."""
+    await asyncio.Event().wait()
+
+
+async def _a_stop_and_its_word(transport: Any) -> str | None:
+    """The transport's stop, and why it did not land, read as it ends, as every stop is
+    (`Executor._stop_and_its_word`): its `stop_error`, a `WentOut` beside `stop_unconfirmed`,
+    or None. Raw, not narrated, so the close's stop is the one line it always was."""
+    await transport.stop()
+    undelivered = getattr(transport, "stop_error", None)
+    if undelivered and getattr(transport, "stop_unconfirmed", False) is True:
+        return WentOut(undelivered)
+    return str(undelivered) if undelivered else None
+
+
+def _beyond_the_runner(task: asyncio.Future[Any]) -> asyncio.Future[Any]:
+    """`task`, taken out of asyncio's own list of tasks, as the executor takes a stop it no longer
+    waits for (`Executor._keep_going`). At a second Ctrl-C asyncio's runner cancels every task it
+    lists, and a close's stop or its transport's close was cut off where it was. Whoever set it
+    going waits for it, through presses, a bounded while, so the loop runs for it meanwhile."""
+    unregister = getattr(asyncio.tasks, "_unregister_task", None)
+    if isinstance(task, asyncio.Task) and callable(unregister):
+        unregister(task)
+    return task
+
+
+async def _outlasted(
+    tasks: set[asyncio.Future[Any]],
+    *,
+    within: float | None = None,
+    after_a_press: float | None = None,
+) -> BaseException | None:
     """Wait until every one of `tasks` has ended, whatever cancel or press the waiting task is
-    sent meanwhile, and return the first it was sent, or None. `asyncio.wait` hands none of
-    them on, so each task ends as it would have. Every task here is bounded by its own clock."""
+    sent meanwhile, and return the first it was sent, or None. `asyncio.wait` hands none of them
+    on, so each task ends as it would have. `within` bounds the whole wait, and `after_a_press`
+    the part of it after the first press; with neither, every task here is bounded by its own
+    clock."""
+    loop = asyncio.get_running_loop()
+    deadline = None if within is None else loop.time() + within
     first: BaseException | None = None
     pending = {t for t in tasks if not t.done()}
     while pending:
+        left = None if deadline is None else deadline - loop.time()
+        if left is not None and left <= 0:
+            break
         try:
-            _done, pending = await asyncio.wait(pending)
+            _done, pending = await asyncio.wait(pending, timeout=left)
         except (asyncio.CancelledError, KeyboardInterrupt) as e:
-            first = first or e
+            if first is None:
+                first = e
+                if after_a_press is not None:
+                    then = loop.time() + after_a_press
+                    deadline = then if deadline is None else min(deadline, then)
             pending = {t for t in pending if not t.done()}
     return first
 
 
-async def _close_in_two_passes(sessions: Sequence[RobotSession]) -> BaseException | None:
-    """End a session's robots: every robot's `halt` at once, then each robot's `put_down`, in
-    order. Returns the first press or cancel that came, for the caller to raise.
+async def _close_in_two_passes(
+    sessions: Sequence[RobotSession], *, pressed: BaseException | None = None
+) -> BaseException | None:
+    """End a session's robots: every robot's halt at once, then each robot's `put_down`, in
+    order. Returns the first press or cancel that came, for the caller to raise; `pressed` is
+    one that came before the close began, as it does when a press cuts the start-up short.
 
     One robot after another, each close waited out a granted pause and folded its arm before the
     next robot was sent its stop, and a stdio client ends a server a fixed grace after it closes
     its stdin (the MCP SDK's own client: two seconds, `PROCESS_TERMINATION_TIMEOUT`), so a robot
     late in the list, driving on its last command, could be left moving. Now every stop has gone
     out, and been answered or left to go on by itself, before any pause is waited out or any fold
-    starts. A press that came while the stops were out keeps every fold from starting. One that
-    lands in a robot's fold or close ends that step and no other: each robot is still put down
-    and closed, and the first press is raised once all of them have been."""
-    halts = {_set_going(session.halt): session for session in sessions}
-    pressed = await _outlasted(set(halts))
+    starts. The halts run in tasks asyncio's runner does not list (`_beyond_the_runner`), so a
+    second Ctrl-C cuts none of them off.
+
+    A press means stop: from the first press on, no fold starts on any robot of the session, and
+    each arm is held where it stands and said to be (`HELD_BACK`), while every robot is still
+    closed and its note said, and the first press is raised once all of them have been. A press
+    in one arm's fold let the next arm begin its fold after it."""
+    halts = {_beyond_the_runner(_set_going(session._halted)): session for session in sessions}
+    pressed = await _outlasted(set(halts)) or pressed
     for halt, session in halts.items():
         if halt.cancelled():
             pressed = pressed or asyncio.CancelledError()
-        elif isinstance(error := halt.exception(), Exception):
+        elif (error := halt.exception()) is not None:
             logger.warning(
                 "%s: the close's stop: %s: %s", session.name, type(error).__name__, error
             )
-        elif error is not None:
-            pressed = pressed or error
-    interrupted: BaseException | None = None
+        elif (handed := halt.result()) is not None:
+            pressed = pressed or handed
     for session in sessions:
         try:
             await session.put_down(fold=pressed is None)
         except BaseException as e:  # handed back, once every robot has been closed
-            interrupted = interrupted or e
-    return pressed or interrupted
+            pressed = pressed or e
+    return pressed
 
 
-async def _closed(sessions: Sequence[RobotSession]) -> None:
+async def _closed(
+    sessions: Sequence[RobotSession], *, pressed: BaseException | None = None
+) -> None:
     """`_close_in_two_passes` under anyio's shield, and the first press raised once it has run.
 
     `serve-mcp` closes its robots in the lifespan's `finally`, inside the task group the MCP SDK
@@ -1098,7 +1309,7 @@ async def _closed(sessions: Sequence[RobotSession]) -> None:
     answer there: every stop goes out first, in the close's first turns of the loop, so a kill
     that comes during a pause or a fold finds every robot already sent its stop."""
     with anyio.CancelScope(shield=True):
-        pressed = await _close_in_two_passes(sessions)
+        pressed = await _close_in_two_passes(sessions, pressed=pressed)
     if pressed is not None:
         raise pressed
 
@@ -1142,10 +1353,17 @@ class ServedTeam:
                 if self.before_connect is not None:
                     self.before_connect(name)
                 await session.connect()
-            except BaseException:
-                # closed as a session's end closes its robots, so a press in one robot's close
-                # does not leave the next one open
+            except Exception:
+                # a refusal: closed as a session's end closes its robots, so a press in one
+                # robot's close does not leave the next one open. The robot that refused closed
+                # itself where it could not reach its pose (`RobotSession.connect`)
                 await _closed(connected)
+                raise
+            except BaseException as pressed:
+                # a press, which may have cut this robot's connect short in its opening fold: it
+                # is closed with the rest, and no fold starts on any of them. It used to be left
+                # connected and energised wherever the press stopped it, and nothing said so
+                await _closed([*connected, session], pressed=pressed)
                 raise
             connected.append(session)
 
@@ -1362,11 +1580,9 @@ def build_team_server(
                 getattr(session.detector, "name", None) if session.detector else None,
             )
         try:
-            for session in team.sessions.values():
-                # under the start-up lines, the first moment it is known, and inside the `try`:
-                # it reads the body, and a cancel there must still close every robot
-                if (warning := await session.fall_blind()) is not None:
-                    session.say_fall_blind(warning)
+            # nothing is read of the bodies here: whether one sees its fall is read at the first
+            # assessment that asks (`RobotSession.fall_blind`), so a start-up reads no more of
+            # them than it did
             yield team
         finally:
             await team.close_all()
