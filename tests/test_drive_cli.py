@@ -1240,7 +1240,9 @@ async def test_a_close_whose_stop_fails_logs_what_the_sessions_close_always_logg
         raise ConnectionError("the link is gone")
 
     monkeypatch.setattr(MicroduckAdapter, "stop", gone)
-    caplog.set_level(logging.DEBUG)
+    # On drive's own logger: the CLI sets the level of the `roboglot` logger, and a test that ran
+    # the CLI before this one on the same worker leaves it there, above DEBUG.
+    caplog.set_level(logging.DEBUG, logger="roboglot.drive")
     args = DriveArgs(robot="microduck:mock", llm="fake", runs_dir=str(tmp_path))
     await run_drive(args, say=lambda _: None, stream=io.StringIO("quit\n"), keyboard=False)
     drive = [r for r in caplog.records if r.name == "roboglot.drive"]
