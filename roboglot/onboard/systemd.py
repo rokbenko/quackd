@@ -75,6 +75,13 @@ def unit_text(
         ("roboglot's own path", roboglot),
     ):
         _refuse_unwritable(what, value)
+    if ".." in directory.parts:
+        # systemd refuses a WorkingDirectory= that is not a normal path, and resolving the
+        # folder here could name another than the one meant, by a link on the way
+        raise UnitError(
+            f"the robot directory {where!r} has '..' parts, which a systemd unit refuses in a "
+            "path: give the folder without '..' parts"
+        )
     # a backslash is part of a name on a Linux robot, and systemd's quoting has to keep it; on
     # Windows, where no unit is ever installed and only the suite writes one, it is what parts
     # the folders of a path, and stays as it is

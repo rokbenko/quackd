@@ -29,6 +29,7 @@ import contextlib
 import json
 import os
 import re
+import secrets
 import stat
 import tempfile
 import unicodedata
@@ -307,12 +308,26 @@ def sync_folder(folder: Path) -> None:
             os.close(fd)
 
 
-def _replace(path: Path, payload: bytes, *, sync: bool = True) -> None:
-    """`payload` as the whole of `path`, through a temporary file of this write's own: `mkstemp`
-    makes it new and exclusive at mode 0600, never through a link, before a byte is in it, and
-    the rename carries it into place. Synced first unless `sync` is False, for the files
-    `control.write_private` writes, which were never synced."""
-    fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+#: The mode `open` makes a new file with before the umask takes bits away: the mode of a file
+#: others are meant to read, the passport above all, which `_replace` keeps for such a file.
+OPEN_MODE = 0o666
+#: The random part of a temporary file's name for such a file, in bytes (16 hexadecimal digits),
+#: as the registry's own: the create is exclusive, so it only keeps two writes from meeting.
+_TEMP_HEX_BYTES = 8
+
+
+def _replace(path: Path, payload: bytes, *, sync: bool = True, mode: int | None = None) -> None:
+    """`payload` as the whole of `path`, through a temporary file of this write's own: made new
+    and exclusive, never through a link, before a byte is in it, and renamed into place. Synced
+    first unless `sync` is False, for the files `control.write_private` writes and the passport,
+    which were never synced. `mkstemp` makes it at mode 0600; with `mode`, for a file others are
+    meant to read, it is made at that mode less the umask, as `open` makes any new file."""
+    if mode is None:
+        fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    else:
+        tmp = str(path.with_name(f".{path.name}.{secrets.token_hex(_TEMP_HEX_BYTES)}.tmp"))
+        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags | getattr(os, "O_BINARY", 0), mode)
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(payload)

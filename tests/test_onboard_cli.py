@@ -1086,6 +1086,122 @@ def test_the_wizard_refuses_root(
     assert not (tmp_path / "robot" / "robot.yaml").exists()
 
 
+@pytest.mark.parametrize(
+    ("refused", "said"),
+    [
+        ("no account for the uid", "no account on this system has uid 1000"),
+        ("roboglot's own path", "roboglot's own path"),
+        ("a folder with .. parts", "without '..' parts"),
+    ],
+)
+def test_what_the_unit_would_refuse_is_refused_before_any_sudo_line_runs(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    named_computer: None,
+    refused: str,
+    said: str,
+) -> None:
+    """The wizard offered BlueZ's address privacy, and ran its sudo lines, bluetoothd's restart
+    among them, before anything the unit checks: a uid with no account, or a folder, user or
+    path no unit can hold, was refused only after those lines had run. It is refused first now,
+    and no command runs at all. The commands go to a stand-in, main.conf is a scratch file, and
+    the platform is Linux's, the one the wizard offers both on."""
+    import shutil
+
+    from roboglot.onboard import wizard
+    from roboglot.radio.bluez import privacy
+    from tests.test_onboard_wizard import runs_as
+
+    main_conf = tmp_path / "main.conf"
+    main_conf.write_text("[General]\n", encoding="utf-8")
+    monkeypatch.setattr(privacy, "MAIN_CONF", str(main_conf))
+    monkeypatch.setattr(privacy, "BACKUP", str(tmp_path / "main.conf.backup"))
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(wizard, "run_command", lambda command: ran.append(command) or 0)
+    monkeypatch.setattr(sys, "platform", "linux")
+    runs_as(monkeypatch, None if refused == "no account for the uid" else "robot")
+    home = tmp_path / "robot"
+    if refused == "a folder with .. parts":
+        (tmp_path / "x").mkdir()
+        home = tmp_path / "x" / ".." / "robot"
+    if refused == "roboglot's own path":
+        which = shutil.which
+        bad = "/usr/bin/roboglot\nExecStartPre=+/bin/true"
+        monkeypatch.setattr(
+            wizard.shutil, "which", lambda name, *a, **k: bad if name == "roboglot" else which(name)
+        )
+    result = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(home),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 1, result.output
+    assert said in flat(result.output)
+    assert ran == [], f"sudo lines ran before the refusal: {ran}"
+
+
+def test_a_wizard_with_nothing_to_refuse_offers_privacy_then_installs_the_unit_as_before(
+    tmp_path: Path,
+    robot_file: Path,
+    secret: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    named_computer: None,
+) -> None:
+    """Checking the unit before the privacy changes nothing for a run it does not refuse: the
+    privacy lines, then the unit's, each as it always was, through the same stand-ins."""
+    from roboglot.onboard import systemd, wizard
+    from roboglot.radio.bluez import privacy
+    from tests.test_onboard_wizard import runs_as
+
+    main_conf = tmp_path / "main.conf"
+    main_conf.write_text("[General]\n", encoding="utf-8")
+    monkeypatch.setattr(privacy, "MAIN_CONF", str(main_conf))
+    monkeypatch.setattr(privacy, "BACKUP", str(tmp_path / "main.conf.backup"))
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    ran: list[list[str]] = []
+    monkeypatch.setattr(wizard, "run_command", lambda command: ran.append(command) or 0)
+    monkeypatch.setattr(sys, "platform", "linux")
+    runs_as(monkeypatch, "robot")
+    result = runner.invoke(
+        app,
+        [
+            "onboard",
+            "--board",
+            "generic",
+            "--dir",
+            str(tmp_path / "robot"),
+            "--file",
+            str(robot_file),
+            "--passphrase-file",
+            str(secret),
+            "--yes",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    assert ran == [
+        *privacy.install_commands(str(staged / "main.conf"), backup_exists=False),
+        *systemd.install_commands(staged / systemd.UNIT_NAME),
+    ]
+    assert "the service is running" in flat(result.output)
+
+
 def test_a_laptop_is_no_robot_and_is_told_how_to_try_it_as_a_simulation(tmp_path: Path) -> None:
     refused = runner.invoke(app, ["onboard", "--dir", str(tmp_path / "robot")])
     if refused.exit_code == 0:  # pragma: no cover - a test machine that is a Jetson

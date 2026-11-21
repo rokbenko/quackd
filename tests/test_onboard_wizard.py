@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path, PurePosixPath
@@ -95,6 +96,37 @@ def test_the_first_signing_makes_both_keys_and_a_passport_its_owner_signed(
     again = sign(home, passphrase_file)
     assert not again.robot_key_made and not again.owner_key_made
     assert document.read_jws(again.token).id == reading.id
+
+
+@pytest.mark.parametrize("left", ["a file", "a link"])
+def test_the_passport_goes_through_a_file_of_its_own_whatever_is_left_at_its_old_temporary_name(
+    home: OnboardDir, passphrase_file: Path, tmp_path: Path, left: str
+) -> None:
+    """Signing wrote passport.jws through the one fixed name passport.jws.tmp, and followed it
+    when it was a link: a file someone left there was taken over and renamed into place, and a
+    link there had the robot's own user write the passport over whatever it pointed at.
+    Whatever is at that name now stays as it was, no temporary file is left, and the passport
+    takes the mode any new file takes in its folder, as before, since others are meant to read
+    it."""
+    old = home.root / "passport.jws.tmp"
+    elsewhere = tmp_path / "elsewhere.txt"
+    elsewhere.write_text("not the passport\n", encoding="utf-8")
+    if left == "a file":
+        old.write_text("not the passport\n", encoding="utf-8")
+    elif os.name == "nt":
+        pytest.skip("Windows makes links only with a privilege")
+    else:
+        old.symlink_to(elsewhere)
+    signed = sign(home, passphrase_file)
+    assert home.passport_jws.read_text(encoding="utf-8") == signed.token + "\n"
+    assert (old.is_symlink(), old.exists()) == (left == "a link", True)
+    assert old.read_text(encoding="utf-8") == elsewhere.read_text(encoding="utf-8")
+    assert elsewhere.read_text(encoding="utf-8") == "not the passport\n"
+    assert [p.name for p in home.root.iterdir() if p.name.endswith(".tmp")] == [old.name]
+    fresh = tmp_path / "fresh.txt"
+    fresh.write_text("", encoding="utf-8")
+    mode = stat.S_IMODE(home.passport_jws.stat().st_mode)
+    assert mode == stat.S_IMODE(fresh.stat().st_mode), oct(mode)
 
 
 def test_signing_again_needs_the_passphrase_the_owner_key_was_sealed_with(
@@ -390,6 +422,23 @@ def test_a_user_name_that_user_would_read_as_another_or_as_root_is_refused(user:
         systemd.unit_text(user=user, directory=PurePosixPath("/srv/robot"), roboglot="/usr/bin/x")
 
 
+@pytest.mark.parametrize("where", ["/home/rok/x/../robot", "/srv/robot/..", "/../srv/robot"])
+def test_a_robot_directory_with_parent_parts_is_refused_and_told_to_give_it_without(
+    where: str,
+) -> None:
+    """systemd refuses a `WorkingDirectory=` that is not a normal path, a `..` part above all, so
+    a `--dir` of ../robot made a unit systemd would not load, once its sudo lines had run. It is
+    refused by name, saying to give the folder without them, and not resolved: a link on the way
+    could make the folder resolved another than the one named. Two dots inside a name are no
+    such part."""
+    with pytest.raises(ValueError, match=r"^the robot directory .* without '\.\.' parts"):
+        systemd.unit_text(user="rok", directory=PurePosixPath(where), roboglot="/usr/bin/x")
+    kept = systemd.unit_text(
+        user="rok", directory=PurePosixPath("/srv/r..2"), roboglot="/usr/bin/x"
+    )
+    assert "\nWorkingDirectory=/srv/r..2\n" in kept
+
+
 def runs_as(monkeypatch: pytest.MonkeyPatch, name: str | None, *, uid: int = 1000) -> None:
     """The wizard runs with effective uid `uid`, which a stand-in for the system's account
     database names `name`, or knows no account for when `name` is None. Windows has no `pwd` and
@@ -435,6 +484,38 @@ def test_a_unit_that_cannot_hold_its_directory_or_program_is_refused_before_anyt
             run=lambda command: ran.append(command) or 0,
         )
     assert (staged, ran, list(tmp_path.iterdir())) == ([], [], [])
+
+
+@pytest.mark.parametrize("source", ["a relative entry in PATH", "a relative argv[0]"])
+def test_a_roboglot_found_by_a_relative_path_goes_into_the_unit_from_where_the_wizard_ran(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    """`shutil.which` gives a relative path for a relative entry in PATH, as `sys.argv[0]` can
+    be, and the unit took it as it was, which systemd refuses, or reads from a folder of its
+    own. It goes in absolute now, from the folder the wizard runs in, which is what it meant."""
+    runs_as(monkeypatch, "robot")
+    monkeypatch.chdir(tmp_path)
+    program = tmp_path / "bin" / "roboglot"
+    program.parent.mkdir()
+    program.write_text("", encoding="utf-8")
+    relative = os.path.join("bin", "roboglot")
+    if source == "a relative entry in PATH":
+        monkeypatch.setattr(wizard.shutil, "which", lambda _name: relative)
+    else:
+        monkeypatch.setattr(wizard.shutil, "which", lambda _name: None)
+        monkeypatch.setattr(wizard.sys, "argv", [relative, "onboard"])
+    staged = tmp_path / "staged"
+    staged.mkdir()
+    monkeypatch.setattr(wizard.tempfile, "mkdtemp", lambda *_args, **_kwargs: str(staged))
+    assert wizard.install_service(
+        SimpleNamespace(root=PurePosixPath("/home/robot/.roboglot/onboard")),
+        say=lambda _line: None,
+        ask=NoQuestions(),
+        run=lambda _command: 0,
+    )
+    unit = (staged / systemd.UNIT_NAME).read_text(encoding="utf-8")
+    word = systemd_reads(unit)["ExecStart"][0]
+    assert os.path.isabs(word) and os.path.samefile(word, program), word
 
 
 @pytest.mark.parametrize(

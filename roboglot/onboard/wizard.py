@@ -79,7 +79,7 @@ def sign(
     """Sign robot.yaml's passport section with the owner key and write passport.jws. A clock
     before any passport Roboglot signs refuses, before a key is made: the signature would carry
     its date for a year."""
-    from roboglot.onboard.keys import read_sealed, unseal
+    from roboglot.onboard.keys import OPEN_MODE, _replace, read_sealed, unseal
     from roboglot.passport import document
 
     moment = (now or datetime.now(UTC)).replace(microsecond=0)
@@ -107,9 +107,9 @@ def sign(
     )
     token = document.sign(doc, owner_key)
     path = home.passport_jws
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(token + "\n", encoding="utf-8", newline="\n")
-    os.replace(tmp, path)
+    # through a file of this write's own, never a link, at the mode any new file takes here,
+    # since others are meant to read it
+    _replace(path, (token + "\n").encode("utf-8"), sync=False, mode=OPEN_MODE)
     return Signed(token, path, robot_made, owner_made)
 
 
@@ -256,22 +256,40 @@ def write_key_file(path: Path, variable: str, value: str) -> None:
     write_secret(path, f"{variable}={value}\n")
 
 
+def check_service(home: Any) -> None:
+    """Refuse all that the service's unit would refuse, before any sudo line runs, the address
+    privacy's included: root, a uid with no account, and a folder, user or path to roboglot no
+    unit can hold. `install_service` checks the same again as it writes the unit."""
+    _unit_text(home, bluetooth_group=True)
+
+
+def _unit_text(home: Any, *, bluetooth_group: bool) -> str:
+    """The unit for the robot directory `home.root`, run as the account running the wizard, or
+    a `WizardError` saying why there is none."""
+    from roboglot.onboard import systemd
+
+    refuse_root()
+    found = shutil.which("roboglot") or sys.argv[0]
+    # a relative entry in PATH, or a relative argv[0], means a path from the folder the wizard
+    # runs in, which systemd would refuse, or read from a folder of its own
+    roboglot = found if os.path.isabs(found) else os.path.abspath(found)
+    user = unit_user()
+    try:
+        return systemd.unit_text(
+            user=user, directory=home.root, roboglot=roboglot, bluetooth_group=bluetooth_group
+        )
+    except systemd.UnitError as e:  # before a file is staged or a command runs
+        raise WizardError(str(e)) from None
+
+
 def install_service(
     home: Any, *, say: Callable[[str], None], ask: Asker, run: Callable[[list[str]], int]
 ) -> bool:
     """Write the unit, show every sudo command, and run them when the person says yes."""
     from roboglot.onboard import systemd
 
-    refuse_root()
-    roboglot = shutil.which("roboglot") or sys.argv[0]
-    user = unit_user()
     with_group = systemd.group_exists(systemd.BLUETOOTH_GROUP)
-    try:
-        text = systemd.unit_text(
-            user=user, directory=home.root, roboglot=roboglot, bluetooth_group=with_group
-        )
-    except systemd.UnitError as e:  # before a file is staged or a command runs
-        raise WizardError(str(e)) from None
+    text = _unit_text(home, bluetooth_group=with_group)
     if not with_group:
         say(f"this system has no {systemd.BLUETOOTH_GROUP} group, so the unit names none")
     staged = Path(tempfile.mkdtemp()) / systemd.UNIT_NAME

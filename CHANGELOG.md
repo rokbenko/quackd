@@ -1458,18 +1458,23 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   run with another folder, or fail to start, while the wizard said it was installed, and a
   newline in the folder, the path or the user began a directive of its own, one that runs a
   command as root among them. Each is written in systemd's own quoting now, every `%` doubled and
-  the pattern's characters escaped, so the service runs where the wizard says. A folder, a user
-  or a path holding a control character, or bytes that are not UTF-8, is refused, naming which
-  one, before the unit is written or a sudo command installs it, and so is a user name `User=`
-  would read as another account or, empty, as root. A unit with none of these is written as it
-  was, byte for byte.
+  the pattern's characters escaped, so the service runs where the wizard says. A `roboglot` found
+  through a relative entry in `PATH` went into the unit relative, which systemd refuses or looks
+  up in folders of its own, and goes in absolute now, from the folder the wizard runs in. A
+  folder, a user or a path holding a control character, or bytes that are not UTF-8, is refused,
+  naming which one, and so is a user name `User=` would read as another account or, empty, as
+  root, and a folder with `..` parts, which systemd refuses in a unit, with the words to give it
+  without them. Each is refused before any sudo line runs, the address privacy's included, where
+  the privacy's lines used to run first. A unit with none of these is written as it was, byte
+  for byte.
 - **The onboard service runs as the account that ran the wizard, and never as root for want of
   a name.** The unit's `User=` came from `USER` or `LOGNAME`, just after the wizard had refused
   to run as root, and fell back to `root`: with neither variable set, in a container or under
   `env -i`, the wizard enabled the networked service as root, and a stale `USER` named another
   account. It is the account whose effective uid runs the wizard now, as the system's account
-  database names it, whatever the variables say. With no account for that uid the wizard
-  installs nothing and says why. A person whose `USER` names them gets the unit they got before.
+  database names it, whatever the variables say. With no account for that uid the wizard says
+  why before any sudo line runs, and installs nothing. A person whose `USER` names them gets the
+  unit they got before.
 - **The onboard control token is written for its owner alone, whatever lies beside its file.**
   The service wrote `control.json`, with the token that steers it, through the one temporary
   name `control.json.tmp`, opened without an exclusive create and following a link: a file
@@ -1479,6 +1484,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and the trimmed `met.jsonl`), now goes through a temporary file of its own, made new and
   readable by its owner alone before a byte is in it, never through a link, and renamed into
   place, as a key is. Whatever lies at the old name is left as it is.
+- **Signing writes the passport to `passport.jws` alone, whatever lies beside it.**
+  `roboglot onboard` and `roboglot onboard sign` wrote the passport through the one temporary
+  name `passport.jws.tmp` and followed it when it was a link: a file someone left at that name
+  was taken over and renamed into place, and a link there had the robot's own user write the
+  passport over whatever file it pointed at. The passport goes through a temporary file of its
+  own now, made new and never through a link, and is renamed into place in one step; whatever
+  lies at the old name is left as it is. It takes the mode a new file takes in its folder, as
+  before, since other robots and people are meant to read it.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

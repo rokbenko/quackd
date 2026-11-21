@@ -8502,6 +8502,7 @@ def onboard(
     on_a_robot = chosen.radio_kind == "bluez" and sys.platform.startswith("linux")
     if on_a_robot and not no_service:
         try:
+            wizard.check_service(home)  # what the unit would refuse, before any sudo line
             wizard.offer_privacy(
                 say=lambda line: ui.console.print(line), ask=ask, run=wizard.run_command
             )

@@ -349,8 +349,9 @@ the robot's folder as the only place it may write. Your user is the account the 
 database names for the uid running the wizard, whatever `USER` says; with no account for it the
 wizard installs nothing and says why. The folder, the path to `roboglot` and the user go into the
 unit in systemd's own quoting, so a folder with a space or a `%` in its name is the one the service
-runs in, and one holding a control character, a newline say, is refused, naming which, before the
-unit is written or installed:
+runs in, and a `roboglot` found through a relative entry in `PATH` goes in absolute. A folder with
+`..` parts, or one holding a control character, a newline say, is refused, naming which, before any
+sudo line runs, the address privacy's included:
 
 | In the unit | Why |
 |---|---|
