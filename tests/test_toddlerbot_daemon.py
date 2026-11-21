@@ -3293,17 +3293,34 @@ def test_a_settle_waits_for_a_failing_bus_and_holds_the_robot_if_it_never_answer
 class _Trailing(D.FakeSim):  # type: ignore[name-defined,misc]
     """The fake body, trailing every target it is sent by `lag` radians on the side away from
     `home`, as a joint that sags under load or lags its command does, and reaching a target that
-    is home. A parameter, not a sleep. The joints in `stuck` never move at all."""
+    is home. A parameter, not a sleep. The joints in `stuck` never move at all. The joints in
+    `slow` cover only `rate` of the way to their command each write, a servo with a long time
+    constant. `flicker`, (high, low, every), makes those joints read high and low in turn, `every`
+    reads each, whatever they do."""
 
     lag = 0.0
     home: Any = None
     stuck: Any = ()
+    slow: Any = ()
+    rate = 1.0
+    flicker: Any = None
+    reads = 0
+
+    def get_observation(self) -> Any:
+        obs = super().get_observation()
+        if self.flicker is not None:
+            high, low, every = self.flicker
+            obs.motor_pos[list(self.slow)] = high if (self.reads // every) % 2 == 0 else low
+            self.reads += 1
+        return obs
 
     def set_motor_target(self, target: Any) -> None:
         was = self.pos.copy()
         super().set_motor_target(target)
         sent = np.asarray(target, np.float32)
         self.pos = (sent + self.lag * np.sign(sent - self.home)).astype(np.float32)
+        slow = list(self.slow)
+        self.pos[slow] = was[slow] + self.rate * (sent[slow] - was[slow])
         self.pos[list(self.stuck)] = was[list(self.stuck)]
 
 
@@ -3326,10 +3343,10 @@ def _trailing_daemon(lag: float, waist: float, stuck_waist: bool = False) -> Any
 def test_the_stall_never_ends_a_settle_still_closing_whatever_the_body_trails_by(
     lag: float, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The stall counted the sum of what every joint had left, which falls on every tick of a slew
-    that is getting there except in the waist's stage: while the waist reads twisted past
-    WAIST_THRESHOLD, `waist_first` holds every other joint at the measured pose, so a body that
-    trails its targets drags them back, the sum rises while only the waist closes, and
+    """The stall counted the sum of what every joint had left, which fell on every tick of a slew
+    that was getting there except in the waist's stage: while the waist read twisted past
+    WAIST_THRESHOLD, `waist_first` held every other joint at the pose measured that tick, so a body
+    that trails its targets dragged them back, the sum rose while only the waist closed, and
     FRAME_DWELL_LIMIT ticks of it ended the settle with the robot on its way. The stall counts what
     the slew's own stage closes on: the waist alone while it untwists, the whole pose after. Here
     the waist starts at 1.2 rad, and the lags run past WAIST_THRESHOLD."""
@@ -3343,9 +3360,10 @@ def test_a_waist_that_never_reads_straight_ends_the_settle_once_its_own_slew_is_
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """A jammed waist never reads straight, so the waist's stage never ends and nothing else may
-    move, while the other joints, trailing their targets, drag them back. The stall ends that
-    settle, but only once the waist's own target has reached zero and nothing has closed for
-    FRAME_DWELL_LIMIT ticks: the sum of every joint stalled it with the waist still closing."""
+    move. The stall ends that settle, but only once the waist's own target has reached zero and
+    nothing has closed for FRAME_DWELL_LIMIT ticks: the sum of every joint, which the trailing
+    joints dragged back while the stage held them at the pose measured each tick, stalled it with
+    the waist still closing."""
     monkeypatch.setattr(D, "time", _SlowClock(1))
     d = _trailing_daemon(0.3, 1.2, stuck_waist=True)
     with caplog.at_level("WARNING"):
@@ -3382,3 +3400,160 @@ def test_the_stall_says_what_it_saw_and_nothing_it_did_not(
     assert "rad short" in line and f"{D.FRAME_DWELL_LIMIT} ticks" in line, line
     assert "limits" not in line, line
     assert ("down after crawl" in line) == (held_off_by == "the floor"), line
+
+
+# ── 19. what the waist's stage holds, waits for and ends on ───────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "caller", ["the shutdown's settle", "the deadman's rest", "a stand from the floor"]
+)
+def test_in_the_waist_stage_the_other_joints_hold_the_pose_last_sent(
+    caller: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """While the waist read twisted past WAIST_THRESHOLD, `waist_first` made every other joint's
+    goal the pose measured that tick, re-read every tick. A joint under load sits a little off
+    where it was sent (a droop of 0.02 rad, about a degree, here), so each tick its target was moved
+    after it, away from home, and the error that would make it hold never built: 0.7 rad off its
+    pose by the time the waist was straight, a crouch on a standing robot. Every other joint now
+    holds the pose last sent for the whole stage, in each of its three callers: the deadman
+    tripping on a motion under way, a stand from the floor, and the shutdown's settle."""
+    clock = _SlowClock(1)
+    monkeypatch.setattr(D, "time", clock)
+    d = _trailing_daemon(0.02, 1.2)
+    h = _handler(d)
+    # the body's own joints: a silent owner's neck and hands are parts of their own, each brought
+    # to rest by its own slew whatever the body does
+    parts = {*d.waist, *d.neck, *(i for joints in d.grippers.values() for i in joints)}
+    others = [i for i in range(d.robot.nu) if i not in parts]
+    stage: list[Any] = []
+    real = d.sim.set_motor_target
+
+    def write(target: Any) -> None:
+        if float(np.max(np.abs(d.safe.pose[d.waist]))) > D.WAIST_THRESHOLD:
+            stage.append((d.command.mode, np.asarray(target, np.float32)[others].copy()))
+        real(target)
+
+    def tick(keepalive: bool) -> None:
+        if keepalive:
+            _send(h, "bot.keepalive")
+        d.tick()
+        clock.sleep(D.CONTROL_DT)
+
+    d.sim.set_motor_target = write  # what each tick sends, and the stage it was sent in
+    if caller == "the deadman's rest":
+        frame = np.full(d.robot.nu, 0.35, np.float32)
+        frame[d.waist] = 1.2
+        d.motion_library = {"kneel": [frame + (k % 2) * 0.05 for k in range(40)]}
+        assert _send(h, "bot.perform", {"motion": "kneel"})["accepted"]
+        for _ in range(3):
+            tick(True)
+        while d.command.mode == D.Command.MOTION:  # its client falls silent mid-motion
+            begun = d.target.copy()
+            tick(False)
+        assert d.command.mode == D.Command.DEADMAN, d.command.mode
+    elif caller == "a stand from the floor":
+        d.lying, d.down_by = True, "crawl"  # this fake body reports no orientation of its own
+        begun = d.target.copy()
+        assert _send(h, "bot.stand")["accepted"]
+    else:
+        begun = d.target.copy()
+    if caller == "the shutdown's settle":
+        d.settle()
+    else:
+        for _ in range(1000):
+            if float(np.max(np.abs(d.safe.pose[d.waist]))) <= D.WAIST_THRESHOLD:
+                break
+            tick(caller == "a stand from the floor")
+    held = [sent for mode, sent in stage if mode in (D.Command.DEADMAN, D.Command.STAND)]
+    assert held, "the waist's stage never ran"
+    moved = max(float(np.max(np.abs(sent - begun[others]))) for sent in held)
+    assert moved == 0.0, f"{caller}: in the waist's stage the other joints moved {moved:.3f} rad"
+    assert float(np.max(np.abs(d.safe.pose[d.waist]))) <= D.WAIST_THRESHOLD, "never untwisted"
+
+
+def test_a_robot_already_at_its_safe_pose_closes_though_its_writes_never_land(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Round eight judged arrival only after a tick that landed, so a robot already within the
+    settle's own 1e-2 of its safe pose, on a bus whose writes never land, waited out the whole cap
+    and was reported short of the pose it was at, a person asked to support it. A failed write
+    moves nothing, so arrival is judged on the pose last sent, landed or not: it closes at once.
+    (0.004 rad, since a reading of all zeros is the dropped-read sentinel.)"""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    monkeypatch.setattr(D, "hard_exit_after", lambda seconds, what: None)
+    held: list[str] = []
+
+    def leave_holding(reason: str) -> None:
+        held.append(reason)
+        raise _Held(reason)
+
+    monkeypatch.setattr(D, "leave_holding", leave_holding)
+    robot = D.FakeRobot()
+    sim = _FailingBus(robot)
+    sim.pos = np.full(robot.nu, 0.004, np.float32)
+    d = D.Daemon(robot, sim, fake=True)
+    d.tick()
+    sim.bad_writes = 10**9
+    with _suite_watchdog_back(), contextlib.suppress(_Held):
+        d.shutdown()
+    assert not held and sim.closed, held
+
+
+def test_a_slow_waist_still_untwisting_is_waited_for(monkeypatch: pytest.MonkeyPatch) -> None:
+    """In the waist's stage the stall counted only the waist's own target, which reaches zero at
+    a slew step a tick whatever the waist does, so a waist that follows slowly (0.3% of the way a
+    tick, a time constant near seven seconds) still read twisted a hundred ticks later and was
+    given up on, still untwisting, and the close dropped the robot. The stall in that stage also
+    counts the waist the daemon reads getting nearer to straight, by at least ARRIVED_RAD."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _trailing_daemon(0.0, 1.2)
+    d.sim.slow, d.sim.rate = list(d.waist), 0.003
+    assert d.settle() is True, "a waist still untwisting was given up on"
+    assert float(np.max(np.abs(d.sim.pos[d.waist]))) <= D.WAIST_THRESHOLD
+
+
+def test_a_waist_that_flickers_across_its_threshold_cannot_keep_the_stall_off(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The stall's count started again at every change of stage, so a waist reading on either side
+    of WAIST_THRESHOLD in turn held it off for good, and only the cap ended the settle, leaving the
+    robot held. Each stage keeps its own nearest, so a change of stage is no progress: with a joint
+    held off its place by its limit, the stall ends the settle once nothing has closed in either
+    stage for FRAME_DWELL_LIMIT ticks, and it closes as for any joint at its limit."""
+    clock = _SlowClock(1)
+    monkeypatch.setattr(D, "time", clock)
+    d = _trailing_daemon(0.0, 1.2)
+    d.sim.slow, d.sim.flicker = list(d.waist), (0.6, 0.4, 5)
+    d.lo[d.robot.motor_ordering.index("joint_0")] = 0.1  # home, 0, is below its limit
+    began = clock.now
+    assert d.settle() is False and d.held_short is None, d.held_short
+    assert clock.now - began < D.SETTLE_MAX_S / 2, "the stall never ended it"
+
+
+def test_a_waist_that_has_all_but_stopped_reads_as_jammed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The waist as read counts as nearer only by ARRIVED_RAD, so one creeping in by less than
+    that over FRAME_DWELL_LIMIT ticks (here a few microradians a tick, forty minutes to untwist)
+    stalls the settle once its target is at zero, as a jammed one does, rather than holding the
+    stall off with every new last digit until the cap."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _trailing_daemon(0.0, 1.2)
+    d.sim.slow, d.sim.rate = list(d.waist), 5e-6
+    assert d.settle() is False and d.held_short is None, d.held_short
+    assert float(np.max(np.abs(d.target[d.waist]))) < 1e-2, "given up with its target still closing"
+
+
+def test_a_settle_on_a_fallen_robot_ends_on_its_first_tick(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rest for a fallen robot is holding where it lies, which its first tick does, so the settle
+    ends there: it does not wait out FRAME_DWELL_LIMIT ticks of a target that cannot move."""
+    monkeypatch.setattr(D, "time", _SlowClock(1))
+    d = _away(_TippableSim)
+    d.tick()
+    d.sim.tilt_deg = D.FALL_TILT_DEG + 30.0
+    d.tick()
+    assert d.fallen
+    before = d.sim.writes
+    assert d.settle() is False
+    assert d.sim.writes - before == 1, f"the settle ran {d.sim.writes - before} ticks"

@@ -296,7 +296,11 @@ RESET_UNTWISTS_THE_WAIST_FIRST = UpstreamRef(
     src(_RESET, 91),
     "if any waist motor is more than half a radian from zero it drives only the waist to zero "
     "while everything else holds, and goes to the default pose afterwards. Roboglot's safe-pose "
-    "slew follows the same two phases.",
+    "slew follows the same two phases. What everything else holds at is Roboglot's own choice: "
+    "the pose it last sent, for the whole of the waist's stage. It used to hold at the pose "
+    "measured each tick, and a joint that sags under load, a little off where it was sent, had "
+    "its target moved after it every tick, away from home, so it was walked off its pose while "
+    "the waist untwisted.",
 )
 CONTROL_DT = UpstreamRef(
     "control_dt",

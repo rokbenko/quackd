@@ -335,16 +335,20 @@ def within_envelope(
     return held[0], held[1], held[2]
 
 
-def waist_first(goal: Any, current: Any, waist: Any) -> Any:
+def waist_first(goal: Any, current: Any, waist: Any, held: Any = None) -> Any:
     """Upstream's own two-phase rule: untwist the waist before anything else moves.
 
-    If any waist joint is more than half a radian from zero, drive only the waist to zero and
-    hold everything where it is; the rest of the pose follows once it is straight."""
+    If any waist joint, as `current` measures it, is more than half a radian from zero, drive
+    only the waist to zero and hold everything else at `held` (where it is, if not given); the
+    rest of the pose follows once it is straight. The daemon passes the pose it last sent: a
+    joint under load sits a little off where it was sent, and holding it at the pose measured
+    each tick moved its target after it, away from home, so the error that would make it hold
+    never built and the joint was walked off its pose for as long as the waist untwisted."""
     if waist is None or len(waist) == 0:
         return goal
     if float(np.max(np.abs(current[waist]))) <= WAIST_THRESHOLD:
         return goal
-    staged = current.copy()
+    staged = (current if held is None else held).copy()
     staged[waist] = 0.0
     return staged
 
@@ -707,8 +711,10 @@ class Daemon:
             # what `tick` does on the first reading and what upstream's own policies do, and
             # `rate_limit` below still bounds every tick to MAX_STEP_RAD. `waist_first` keeps
             # reading the measured pose, because whether the waist is twisted is a question
-            # about the body rather than about the plan.
-            goal = waist_first(cmd.goal, current, self.waist)
+            # about the body rather than about the plan; what the rest holds at while it
+            # untwists is the plan's, the pose last sent, for the same reason as the slew: held
+            # at the measurement, a joint under load was walked off its pose.
+            goal = waist_first(cmd.goal, current, self.waist, self.target)
             nxt = slew(self.target, goal, dt)
             if float(np.max(np.abs(goal - nxt))) < ARRIVED_RAD and cmd.mode == Command.STAND:
                 if self.down_by and self.lying:
@@ -1225,14 +1231,17 @@ class Daemon:
         robot still on its way, which is the fall this method exists to get in front of. So the
         settle goes on for as long as the slew keeps closing on the safe pose, however slowly,
         and returns the moment the pose arrives. It ends short of it when the robot is down,
-        when the slew's own stage has come no nearer for FRAME_DWELL_LIMIT ticks that landed (a
-        place outside a joint's limits, which the clamp holds it from, or a body on the floor,
-        which rest holds where it lies), or at SETTLE_MAX_S (`timeout_s`, if given), so a
-        shutdown always ends; `held_short` says why when that last one ended it.
+        when nothing it watches (`_settle_measures`) has come nearer for FRAME_DWELL_LIMIT ticks
+        that landed (a place outside a joint's limits, which the clamp holds it from, a body on
+        the floor, which rest holds where it lies, or a waist that does not move at all), or at
+        SETTLE_MAX_S (`timeout_s`, if given), so a shutdown always ends; `held_short` says why
+        when that last one ended it.
 
-        A tick that raised moved nothing (`_tick` moves the target only on a write that lands),
-        so it is judged neither as arrival nor as a tick that came no nearer: a bus that fails
-        for a while is waited for, and one that never answers again meets the cap.
+        Arrival is judged on the pose last sent, after every tick: `_tick` moves the target only
+        on a write that lands, so a tick that raised moved nothing, and a robot already at its
+        safe pose is there whether or not its writes land. A tick that raised counts nothing
+        towards the stall: a bus that fails for a while is waited for, and one that never
+        answers again meets the cap.
 
         While shutting down, the hard exit is moved on as ticks come back, so it ends a tick
         that hangs and never a settle that is still closing."""
@@ -1250,8 +1259,8 @@ class Daemon:
             self.command.trip(self.command.default_pose)
         cap = SETTLE_MAX_S if timeout_s is None else timeout_s
         began = armed = time.monotonic()
-        nearest, still, ticks, failed, failing = math.inf, 0, 0, 0, 0
-        stage: str | None = None
+        nearest: dict[str, float] = {}
+        still, ticks, failed, failing = 0, 0, 0, 0
         self.held_short = None
         while True:
             try:
@@ -1279,9 +1288,9 @@ class Daemon:
             with self.lock:
                 left = np.abs(self.command.default_pose - self.target)
                 short = float(np.max(left))
-                now_stage, measure = self._settle_stage(left)
+                measures = self._settle_measures(left)
                 down = self.down_by if self.lying else None
-                if landed and short < 1e-2:
+                if short < 1e-2:
                     log.info("settled")
                     return True
                 if landed and self.fallen:
@@ -1290,9 +1299,13 @@ class Daemon:
                     log.warning("the robot is down, so it holds where it lies rather than settle")
                     return False
             if landed:
-                if now_stage != stage:
-                    stage, nearest, still = now_stage, math.inf, 0
-                nearest, still = (measure, 0) if measure < nearest else (nearest, still + 1)
+                # Each measure keeps its own nearest, so a change of stage is no progress, and a
+                # waist that reads either side of WAIST_THRESHOLD in turn cannot hold this off.
+                closer = False
+                for name, (value, margin) in measures.items():
+                    if value < nearest.get(name, math.inf) - margin:
+                        nearest[name], closer = value, True
+                still = 0 if closer else still + 1
                 if still >= FRAME_DWELL_LIMIT:
                     log.warning(
                         "the slew stopped closing on the safe pose: %.3f rad short, nothing "
@@ -1312,16 +1325,27 @@ class Daemon:
                 return False
             time.sleep(CONTROL_DT)
 
-    def _settle_stage(self, left: Any) -> tuple[str, float]:
-        """The stage the settle's slew is in, and what it has left to close in it, which falls on
-        every tick that lands while the slew is getting there. While the waist reads twisted past
-        WAIST_THRESHOLD, `waist_first` drives the waist alone to zero and holds every other joint
-        at the measured pose, which a body trailing its targets drags back, so the stage's measure
-        is the waist's own distance from zero. After that every joint closes on its place, and
-        the measure is the sum of what is left (`left`). The caller holds `lock`."""
-        if len(self.waist) and float(np.max(np.abs(self.safe.pose[self.waist]))) > WAIST_THRESHOLD:
-            return "the waist", float(np.sum(np.abs(self.target[self.waist])))
-        return "the pose", float(np.sum(left))
+    def _settle_measures(self, left: Any) -> dict[str, tuple[float, float]]:
+        """What the settle watches for progress this tick, each as (how far it has left, how much
+        nearer counts): the settle has come nearer on a tick that brought any of them nearer.
+
+        While the waist reads twisted past WAIST_THRESHOLD, `waist_first` drives the waist alone
+        to zero and holds every other joint at the pose last sent, so two things close: the
+        waist's own target, a slew step a tick until it is zero, and the waist as the daemon
+        reads it, which a slow servo brings in long after its target got there. That reading
+        counts as nearer by ARRIVED_RAD at least, so a waist that has stopped moving stalls
+        however its reading wanders. After that stage every joint closes on its place, and the
+        measure is the sum of what is left (`left`). A target measure cannot rise while the slew
+        is getting there: on every tick that lands each joint it counts moves a slew step
+        towards its goal, or is held there by the clamp. The caller holds `lock`."""
+        if len(self.waist):
+            waist = float(np.max(np.abs(self.safe.pose[self.waist])))
+            if waist > WAIST_THRESHOLD:
+                return {
+                    "the waist's target": (float(np.sum(np.abs(self.target[self.waist]))), 0.0),
+                    "the waist read": (waist, ARRIVED_RAD),
+                }
+        return {"the pose": (float(np.sum(left)), 0.0)}
 
     def shutdown(self) -> None:
         """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`):

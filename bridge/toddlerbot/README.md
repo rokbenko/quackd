@@ -48,7 +48,10 @@ has never been commanded. A connection's keepalive keeps alive only the parts it
 owner goes quiet for half a second, or disconnects, the parts it owns, and only those, are
 brought to rest by the deadman: the body slews to the safe pose, waist first, and the neck and
 each gripper to their place in it, all at upstream's own 0.3 rad/s; a head or a gripper's rest
-ends once it is there. A command for one part never takes another over, so a second client's
+ends once it is there. While a twisted waist untwists, the rest of the body holds the pose it was
+last sent, in the deadman's rest, a stand and the shutdown alike: held at the pose measured each
+tick, a joint that sags a little under load had its target moved after it, away from home, and
+was walked off its pose. A command for one part never takes another over, so a second client's
 look or grip leaves a first client's walk to that client, and the walk ends when its client
 does. A command that takes a part another connection was driving tells that connection, as a
 stop does (below).
@@ -116,10 +119,12 @@ from whatever began it, and a second signal does not cut the settle short. The s
 for as long as it keeps closing on the safe pose, however slowly the loop runs, since its slew
 is handed out a tick at a time. A tick that fails on the bus moves nothing (the target is what
 the last write that landed carried, so a bus that comes back is handed one step, not a jump) and
-is simply waited through. The settle ends once its slew has stopped closing for a hundred ticks
-that landed, the waist alone while it untwists and the whole pose after: a place outside a
-joint's limits, or a robot lying on the floor, which rest holds where it lies. Then `close()`
-follows. One path does not close: a settle still short of the safe pose after `SETTLE_MAX_S`
+is simply waited through; a robot already at its safe pose is there whether its writes land or
+not. The settle ends once nothing has come nearer for a hundred ticks that landed (while the
+waist untwists, its target or the waist as the daemon reads it; after that, the whole pose): a
+place outside a joint's limits, a robot lying on the floor, which rest holds where it lies, or
+a waist that has stopped moving. Then `close()` follows. One path does not close: a settle
+still short of the safe pose after `SETTLE_MAX_S`
 (120 s, which only a loop making under about four ticks a second, or a bus that never answers
 again, reaches) leaves the robot torqued and holding where it is, since closing takes torque off
 and would drop it. The log says the safe pose was not reached, how far is left, the rate the
