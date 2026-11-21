@@ -30,7 +30,7 @@ import typing
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import anyio
 import yaml
@@ -39,7 +39,7 @@ from mcp.server.mcpserver import Image
 from pydantic import ValidationError
 
 from roboglot import __version__
-from roboglot.adapters.base import adapter_name, backend_name, go_to_rest_if_any
+from roboglot.adapters.base import RestResult, adapter_name, backend_name, go_to_rest_if_any
 from roboglot.adapters.manifest import RobotManifest, apply_datasheet_override
 from roboglot.agent.prompts import body_summary, play_joints, play_paragraphs, play_voice
 from roboglot.agent.transcript import png_bytes
@@ -112,6 +112,12 @@ if TYPE_CHECKING:  # the factory is imported inside the functions that build rob
     from roboglot.adapters.factory import RobotSpec
 
 logger = logging.getLogger("roboglot.mcp")
+
+OpeningFold = Literal["stopped", "went on", "ended", "missed"]
+"""What a press did to a body's opening fold, as its connect saw it (`RobotSession.opening_fold`):
+it stopped; it was told to stop twice and had not ended (`release.fold_went_on`); it took the press
+and went on to its end; or it had ended short of its pose with nobody pressing, and the press came
+on the close the connect makes before it refuses the session."""
 
 
 def _either(words: Sequence[str]) -> str:
@@ -373,15 +379,42 @@ class RobotSession:
     a read has answered."""
     fall_blind_said: bool = False
     """Whether the person at the server's stderr has been told this body needs watching."""
-    fold_stopped: bool = False
-    """Whether a press stopped this body's opening fold (`connect`): the close holds it and
-    starts no fold of its own, as a run's close does a body whose fold a person stopped."""
+    opening_fold: OpeningFold | None = None
+    """What a press did to this body's opening fold (`connect`), or None where none reached it.
+    `connect` says none of it: whoever ends the session says it, once and in its own words
+    (`ServedTeam.connect_all` on this server's logger, `roboglot drive` as its page promises).
+    Said by both, a stopped fold was said twice under drive, and a fold that took the press and
+    ended short of its pose was said to have been pressed on the connect's close."""
+    opening_fold_ended: RestResult | None = None
+    """What the opening fold answered, where it ended on its own (`ended`, `missed`, or a fold
+    nobody pressed in), or None."""
     came_up: bool = False
     """Whether the transport's connect has returned (`connect`): a press during the start-up may
     come before it, and nothing of such a body was moved or held."""
-    _fold_ended: Any = field(default=None, init=False, repr=False)
+    _fold_ended: RestResult | None = field(default=None, init=False, repr=False)
     """What the last fold answered when it ended on its own (`_folded`), or None: one that took a
     press and went on to its end was not stopped, whatever the press, and is said so."""
+
+    @property
+    def fold_stopped(self) -> bool:
+        """Whether a press reached this body's opening fold (`opening_fold`): the close holds it
+        and starts no fold of its own, as a run's close does a body whose fold a person stopped."""
+        return self.opening_fold in ("stopped", "went on", "ended")
+
+    def rest_refusal(self) -> str:
+        """The words this session is refused in where its opening fold missed the rest pose
+        (`connect`), from what the fold answered (`opening_fold_ended`)."""
+        reason = self.opening_fold_ended.reason if self.opening_fold_ended is not None else ""
+        return f"{self.name}: the arm did not reach its rest pose: {reason}"
+
+    def said_of_the_opening_fold(self) -> str | None:
+        """What this server says of a press in the opening fold (`opening_fold`), or None where
+        none reached it: `FOLD_STOPPED`, `FOLD_WENT_ON` or `FOLD_WENT_TO_ITS_END`. A press on the
+        connect's close after a fold that missed is said by the close, as any press before a fold
+        is (`_held_back`)."""
+        if self.opening_fold in ("stopped", "went on", "ended"):
+            return self._said_of_the_fold(self.opening_fold, self.opening_fold_ended)
+        return None
 
     async def fall_blind(self) -> str | None:
         """Why somebody must watch this body while it walks, in the core's words, or None.
@@ -541,19 +574,27 @@ class RobotSession:
             try:
                 parked = await self._folded()
             except BaseException as e:
-                # a press stops the opening fold where it is: said, and the close that follows
-                # holds the arm and starts no fold of its own. A press here used to leave the
-                # arm connected and energised wherever it stopped, and nothing said so.
-                self.fold_stopped = True
-                self._fold_was_stopped(e)
+                # a press stops the opening fold where it is, and the close that follows holds
+                # the arm and starts no fold of its own. What it did is kept, and said once by
+                # whoever ends the session (`opening_fold`). A press here used to leave the arm
+                # connected and energised wherever it stopped, and nothing said so.
+                self.opening_fold = self._fold_pressed(e)
+                self.opening_fold_ended = self._fold_ended
                 raise
+            self.opening_fold_ended = parked
             logger.info("%s: %s", self.name, parked.reason)
             if parked.note:
                 # the body's sentence about the pose it parks in; said once, at the start
                 logger.info("%s: %s", self.name, parked.note)
             if not parked.reached:
-                with contextlib.suppress(Exception):
-                    await self.transport.close()
+                try:
+                    with contextlib.suppress(Exception):
+                        await self.transport.close()
+                except BaseException:
+                    # a press on this close, after a fold that ended short with nobody pressing:
+                    # the refusal it was making is kept for whoever ends the session to say
+                    self.opening_fold = "missed"
+                    raise
                 # the close is what decides whether torque dropped, and it leaves its reason
                 # behind. Carried into the refusal rather than logged: this is the one moment
                 # the server refuses to start, nobody is watching the arm, and the client is
@@ -561,10 +602,7 @@ class RobotSession:
                 note = getattr(self.transport, "close_note", None)
                 if note:
                     logger.warning("%s: %s", self.name, note)
-                raise TransportError(
-                    f"{self.name}: the arm did not reach its rest pose: {parked.reason}"
-                    + (f". {note}" if note else "")
-                )
+                raise TransportError(self.rest_refusal() + (f". {note}" if note else ""))
         self.heartbeat.start()
 
     async def _adopt(self, connected: Any) -> None:
@@ -692,7 +730,8 @@ class RobotSession:
                     interrupted = e
                     # held there first, through any press that follows, then said
                     later = await self._stopped()
-                    self._fold_was_stopped(e)
+                    said = self._said_of_the_fold(self._fold_pressed(e), self._fold_ended)
+                    logger.warning("%s: %s", self.name, said)
                     interrupted = interrupted or later
         late = await self._closed_transport()
         interrupted = interrupted or late
@@ -701,7 +740,7 @@ class RobotSession:
         if interrupted is not None:
             raise interrupted
 
-    async def _folded(self) -> Any:
+    async def _folded(self) -> RestResult:
         """The rest move, raced against nothing but a cancel of the task awaiting it, which is
         what a Ctrl-C is here: told twice, as a run's teardown tells it (`fold_unless_stopped`),
         since a fold can lose the first on its way, in Python 3.11's `asyncio.wait_for` or in a
@@ -712,27 +751,36 @@ class RobotSession:
 
         self._fold_ended = None
 
-        async def fold() -> Any:
+        async def fold() -> RestResult:
             ended = await go_to_rest_if_any(self.transport)
             self._fold_ended = ended
             return ended
 
         return await fold_unless_stopped(fold, _no_press)
 
-    def _fold_was_stopped(self, stopped_it: BaseException) -> None:
-        """Said where a press came during a fold: `FOLD_STOPPED`; `FOLD_WENT_ON` where it was told
-        twice and had still not ended (`fold_went_on`), which is never said to have stopped; and
-        `FOLD_WENT_TO_ITS_END` where it took the press and ended on its own, as one does that the
-        press reached as it arrived, or that lost the cancel on its way."""
-        from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON, fold_went_on
+    def _fold_pressed(self, stopped_it: BaseException) -> OpeningFold:
+        """What a press during a fold did to it (`_folded`): `went on` where it was told twice and
+        had still not ended (`fold_went_on`), `ended` where it took the press and ended on its
+        own, as one does that the press reached as it arrived or that lost the cancel on its way,
+        and otherwise `stopped`."""
+        from roboglot.release import fold_went_on
 
         if fold_went_on(stopped_it):
-            said = FOLD_WENT_ON
-        elif self._fold_ended is not None:
-            said = FOLD_WENT_TO_ITS_END.format(reason=getattr(self._fold_ended, "reason", ""))
-        else:
-            said = FOLD_STOPPED
-        logger.warning("%s: %s", self.name, said)
+            return "went on"
+        return "ended" if self._fold_ended is not None else "stopped"
+
+    @staticmethod
+    def _said_of_the_fold(what: str, ended: RestResult | None) -> str:
+        """This server's words for what a press did to a fold (`_fold_pressed`): `FOLD_STOPPED`;
+        `FOLD_WENT_ON`, never said to have stopped; and `FOLD_WENT_TO_ITS_END`, with what the fold
+        answered as it ended."""
+        from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON
+
+        if what == "went on":
+            return FOLD_WENT_ON
+        if what == "ended":
+            return FOLD_WENT_TO_ITS_END.format(reason=ended.reason if ended is not None else "")
+        return FOLD_STOPPED
 
     async def _closed_transport(self) -> BaseException | None:
         """The transport's close, run to its end through any press, and handed back the first.
@@ -1228,7 +1276,7 @@ FOLD_WENT_TO_ITS_END = (
     "the fold was told to stop and was not stopped: it went on to its end after the Ctrl-C "
     "({reason}). " + LIMP_AT_THE_CLOSE
 )
-"""Said where a fold took the press and ended on its own (`RobotSession._fold_was_stopped`).
+"""Said where a fold took the press and ended on its own (`RobotSession._said_of_the_fold`).
 `fold_unless_stopped` takes a fold that ended as one that stopped, and `FOLD_STOPPED` would say it
 stopped where it was, of an arm that moved on after the press to wherever its fold ended. Its
 second sentence is what the close then does (`release.LIMP_AT_THE_CLOSE`): it said the arm was
@@ -1422,9 +1470,12 @@ class ServedTeam:
                 await _closed(connected)
                 raise
             except BaseException as pressed:
-                # a press, which may have cut this robot's connect short in its opening fold: it
-                # is closed with the rest, and no fold starts on any of them. It used to be left
-                # connected and energised wherever the press stopped it, and nothing said so
+                # a press, which may have cut this robot's connect short in its opening fold: what
+                # it did to the fold is said, it is closed with the rest, and no fold starts on any
+                # of them. It used to be left connected and energised wherever the press stopped
+                # it, and nothing said so
+                if (said := session.said_of_the_opening_fold()) is not None:
+                    logger.warning("%s: %s", session.name, said)
                 await _closed([*connected, session], pressed=pressed)
                 raise
             connected.append(session)
