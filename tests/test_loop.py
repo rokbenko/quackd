@@ -3051,6 +3051,22 @@ async def test_a_teardown_stop_that_did_not_land_is_said_when_its_row_cannot_be_
     assert [line for line in err if "did not land" in line and "dropped it" in line], err
 
 
+def test_the_stderr_line_writes_out_what_could_act_on_the_terminal(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The stderr line is the one place left to say what the record could not, and it carries a
+    transport's own words, which are outside text: a stop that did not land is said in the
+    bridge's reason. Written raw, a reason that began with an escape sequence cleared the screen.
+    Every character a terminal could act on is written out, as everywhere else the terminal
+    prints outside text, and the run's own words are left as they are."""
+    loop_like: Any = NS(_raising=None)
+    said = "the stop did not land: \x1b[2J\x1b[Hthe bridge went away"
+    assert AgentLoop._on_stderr(loop_like, said) is None
+    err = capsys.readouterr().err
+    assert "\x1b" not in err, repr(err)
+    assert err == "the stop did not land: \\x1b[2J\\x1b[Hthe bridge went away\n", repr(err)
+
+
 async def test_each_last_write_is_tried_whatever_the_others_did(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

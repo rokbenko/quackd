@@ -898,9 +898,13 @@ class AgentLoop:
         reason for the teardown to stop: it raised out of the rest move's narration once, and the
         fold was skipped again. A stderr that cannot take it either, a file on the disk that
         filled, is said where it can be: on the run's own error, which is what leaves `run`, and
-        handed back for a run that has none."""
+        handed back for a run that has none. `text` can carry a transport's own words, so every
+        character a terminal could act on is written out, as everywhere the terminal prints
+        outside text."""
         try:
-            sys.stderr.write(text + "\n")
+            from roboglot.ui import printable
+
+            sys.stderr.write(printable(text) + "\n")
             sys.stderr.flush()
         except Exception as e:
             refused = f"stderr refused it too: {type(e).__name__}: {e}"
