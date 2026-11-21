@@ -779,7 +779,10 @@ What happens, in order, and the order is the whole of the feature:
 4. **You lift it, load the gripper, close the jaws on whatever it is with your fingers, and
    press Enter.** Lift it clear of the fold first: Roboglot takes hold only with every joint
    inside its travel, so a joint still lying in a fold past the edge of its travel ends the run
-   with the arm limp.
+   with the arm limp. Press it once, after the question: an Enter or a line typed before it is
+   passed by without a word, however late it is read, and one within half a second after it, a
+   bare Enter within 2 seconds of the last one or from a key held down, is passed by, and the
+   first of those says so.
 5. **Roboglot takes hold of what you left.** It writes the position the arm is in as the goal
    *before* it enables torque, writes it again afterwards, waits a tick, reads back, and tells
    you that you can let go. Only if every joint you placed is inside its calibrated travel,

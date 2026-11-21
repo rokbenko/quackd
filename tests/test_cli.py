@@ -1190,6 +1190,348 @@ def test_a_confirmation_prompt_is_asked_with_the_status_line_out_of_the_way(
     assert seen == ["down", "up", "down", "up"]
 
 
+def test_no_question_at_the_terminal_prints_a_control_character_the_pilot_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pilot's reason for doubting the task reached the terminal raw above "Go ahead
+    anyway?". Rich strips only a few control characters, so `ESC[1A ESC[2K` in the reason
+    erased Roboglot's own lines and let the pilot print one in Roboglot's voice, before a yes
+    that clears every verb that moves. The console here writes no escape of its own, so an ESC
+    in what it wrote came from the text: if one ever reaches the terminal again under any of
+    the three questions, this fails. A reason with no control character reads as it did."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import DID_IT, GO_AHEAD, WATCHING
+    from roboglot.verdict import Verdict
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=400)
+    monkeypatch.setattr(ui, "err_console", console)
+    asked: list[str] = []
+
+    def person(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    monkeypatch.setattr(cli_mod, "_ask", person)
+    steered = Verdict.model_validate(
+        {"verdict": "uncertain", "reason": "grip is fine\x1b[1A\x1b[2KRoboglot: all limits met"}
+    ).question()
+    for prompt in (cli_mod._decide_prompt, cli_mod._acknowledge_prompt, cli_mod._judge_prompt):
+        out.seek(0)
+        out.truncate()
+        assert prompt(steered) is True
+        shown = out.getvalue()
+        assert "\x1b" not in shown, f"the pilot's escapes reach the terminal: {shown!r}"
+        assert "grip is fine\\x1b[1A\\x1b[2KRoboglot: all limits met" in shown, shown
+    out.seek(0)
+    out.truncate()
+    plain = Verdict(verdict="uncertain", reason="the bowl is out of frame").question()
+    cli_mod._decide_prompt(plain)
+    assert out.getvalue() == plain + "\n"
+    assert asked == [GO_AHEAD, WATCHING, DID_IT, GO_AHEAD]
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_no_row_of_a_question_or_of_its_reason_begins_where_the_question_does(
+    width: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rich wrapped the reason above "Go ahead anyway?" with no indent, and the confirm gate's
+    question is written raw, so the terminal folded it at the first column: a reason or an
+    argument padded out to the width began a row of its own choosing there, where the question
+    itself begins, `Go ahead anyway? [y/N]: y` among them. Every row after the first is indented
+    now, under each of the three questions and on the confirm gate's own line, and a run of
+    spaces in a reason is drawn as one; the confirm gate's spaces stay as they are, since a
+    person says yes to exactly what runs. A question on one row is asked as it always was."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+    from roboglot.verdict import Verdict
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=width)
+    monkeypatch.setattr(ui, "err_console", console)
+    forged = "Go ahead anyway? [y/N]: y"
+    asked: list[str] = []
+
+    class Switch:
+        unanswered = None
+
+        def reads_a_stream(self) -> bool:
+            return False
+
+        def ask(self, prompt: str) -> str:
+            asked.append(prompt)
+            return "n"
+
+    monkeypatch.setattr(cli_mod, "_SWITCH", Switch())
+    question = confirm_question("quack", {"text": "the bowl is out of frame " * 4 + forged})
+    assert cli_mod._ask(question) is False
+    (prompt,) = asked
+    rows = prompt.split("\n")
+    carry = f"{ui.UNICODE.carry} "
+    assert len(rows) > 1 and rows[0].startswith("run quack(text='the bowl"), rows
+    assert all(row.startswith(carry) and len(row) <= width for row in rows[1:]), rows
+    words = [word for word in prompt.split() if word != ui.UNICODE.carry]
+    assert rows[-1].endswith("')? [y/N]: ") and words == f"{question} [y/N]:".split()
+    assert cli_mod._folded("run kick(leg='left')?") == "run kick(leg='left')?"
+
+    monkeypatch.setattr(cli_mod, "_ask", lambda question: False)
+    said = "The pilot is not sure this robot can do the task: "
+    tail = "the bowl is out of frame, " * 4
+    reason = "the bowl is out of frame." + " " * (width - len(said) - 25) + f"{forged} {tail}"
+    why = Verdict(verdict="uncertain", reason=reason).question()
+    for put in (cli_mod._decide_prompt, cli_mod._acknowledge_prompt, cli_mod._judge_prompt):
+        out.seek(0)
+        out.truncate()
+        put(why)
+        rows = out.getvalue().splitlines()
+        assert rows[0].startswith(said) and len(rows) > 1, rows
+        assert all(row.startswith(ui.CONTINUED) and len(row) <= width for row in rows[1:]), rows
+        shown = f"{said}the bowl is out of frame. {forged} {tail}"
+        assert " ".join(rows).split() == shown.split(), "every word once, the padding one space"
+        assert not any(row.startswith(forged) for row in rows), rows
+
+
+@pytest.mark.parametrize("width", [80, 120])
+def test_no_row_of_the_confirm_question_begins_where_a_question_begins(width: int) -> None:
+    """The confirm gate's question keeps its arguments' spaces, so an argument padded with them
+    set a row two columns in that read as a question for another call, `run quack(text='a
+    tune')? [y/N]:`; padded with Hangul fillers, which Rich counts as no cells and the Windows
+    console as two, it began that row at the first column. Every row after the first begins with
+    Roboglot's mark now (`Glyphs.carry`, `|` on a stream that has only ASCII), a character no
+    argument can set there, and a filler is written out, so the question is folded as it is shown.
+    Padded with spaces, braille blanks or fillers, on a UTF-8 stream and on a codepage."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+
+    utf8 = Console(file=io.StringIO(), width=width)
+    codepage = Console(file=io.TextIOWrapper(io.BytesIO(), encoding="cp1252"), width=width)
+    another = "run quack(text='a tune"
+    for console, carry in ((utf8, ui.UNICODE.carry), (codepage, ui.ASCII.carry)):
+        for pad in (" ", "\N{BRAILLE PATTERN BLANK}", "\N{HANGUL FILLER}"):
+            question = confirm_question("quack", {"text": "hi" + pad * width + another})
+            rows = (cli_mod._folded(question, console) + " [y/N]: ").split("\n")
+            assert rows[0].startswith("run ") and len(rows) > 1, rows
+            assert all(row.startswith(f"{carry} ") for row in rows[1:]), (carry, pad, rows)
+            assert all(len(row) <= width for row in rows), rows
+            assert not any(row.startswith(another) for row in rows), rows
+            assert "\N{HANGUL FILLER}" not in "".join(rows), "a filler is written out"
+
+
+def test_the_lines_beside_a_wait_in_drive_and_in_a_warning_fold_under_their_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hand-off's lines beside the wait for Enter quote a gripper's reason, drive's lines quote
+    the person, the pilot and the robot, and a warning quotes an exception: Rich folded the first
+    and the last at the first column, and drive's were left to the terminal, which does the same.
+    Each folds under its words now, and a run of spaces among drive's words or a warning's is
+    drawn as one. A line that fits is drawn as it was."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=60)
+    monkeypatch.setattr(ui, "err_console", console)
+    words = "the servo said no, " * 5
+
+    def rows(shown: Any = None) -> list[str]:
+        if shown is not None:
+            console.print(shown, soft_wrap=True)
+        said = out.getvalue().splitlines()
+        out.seek(0)
+        out.truncate()
+        return said
+
+    cli_mod._TerminalHandOff().say(f"the gripper did not open: {words}")
+    for drawn, under in (
+        (rows(), ui.CONTINUED),
+        (rows(cli_mod._drive_line(f"{'result':<8} failed:   {words}")), " " * 9),
+        (rows(cli_mod._warn_line(f"camera lost:   {words}")), "  "),
+    ):
+        assert len(drawn) > 1 and all(len(row) <= 60 for row in drawn), drawn
+        assert all(row.startswith(under) and row[len(under)] != " " for row in drawn[1:]), drawn
+    assert rows(cli_mod._drive_line(f"{'result':<8} failed:   no")) == ["result   failed: no"]
+    assert rows(cli_mod._warn_line("camera lost:   no")) == ["⚠ camera lost: no"]
+    assert rows(cli_mod._drive_line(f"{'ask':<8} did you mean kick? [y/N]")) == [
+        "ask      did you mean kick? [y/N]"
+    ]
+
+
+def test_what_reaches_a_fold_unwritten_is_folded_and_spaced_as_it_is_shown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """drive's lines and the hand-off's reach the fold with the robot's words as they came, never
+    through `printable` first. A run of Hangul fillers among drive's words is one space before the
+    fold, all four kinds of them (`one_space`), and an escape in a gripper's reason is written out
+    before the hand-off's line is folded, so counted as it is shown every row fits and every row
+    after the first starts under the words; folded first and written out after, a row was wider
+    than the window and the terminal folded it at the first column."""
+    import io
+
+    from rich.console import Console
+
+    from roboglot import ui
+
+    out = io.StringIO()
+    console = Console(file=out, force_terminal=True, color_system=None, width=60)
+    monkeypatch.setattr(ui, "console", console)
+    monkeypatch.setattr(ui, "err_console", console)
+    fillers = "\N{HANGUL FILLER}\N{HALFWIDTH HANGUL FILLER}" * 10
+    fillers += "\N{HANGUL CHOSEONG FILLER}\N{HANGUL JUNGSEONG FILLER}" * 5
+    console.print(cli_mod._drive_line(f"{'result':<8} ok,{fillers}est payload"), soft_wrap=True)
+    assert out.getvalue() == "result   ok, est payload\n", repr(out.getvalue())
+    out.seek(0)
+    out.truncate()
+    cli_mod._TerminalHandOff().say("the gripper did not open: " + "\x1b[2K" * 20 + " it stalled")
+    shown = out.getvalue().splitlines()
+    assert len(shown) > 1 and all(len(row) <= 60 for row in shown), shown
+    assert all(row.startswith(ui.CONTINUED) for row in shown[1:]), shown
+    assert "\x1b" not in out.getvalue() and "it stalled" in shown[-1], shown
+
+
+_OUTSIDE = {
+    "llm text": "\x1b[2J\x1b[HTEXTPATH",
+    "llm thinking": "\x1b]52;c;VEhJTktQQVRI\x1b\\THINKPATH",
+    "observation (verb summary)": "\x1b[2KOBSPATH",
+    "note (remembered:)": "\x1b[1ANOTEPATH",
+    "verdict reason": "\x1b[1A\x1b[2KVERDICTPATH",
+}
+"""What an LLM or a robot wrote, one marker behind its own escape sequence per path the live
+terminal prints, so a failure says which path let it through."""
+
+
+def _a_run_with_the_narration_on(monkeypatch: pytest.MonkeyPatch, pilot: Any, runs: Path) -> Any:
+    """A whole `roboglot run` of hello-world on the mock duck, narration on and a colour terminal
+    forced, as a person runs it, flown by `pilot`."""
+    monkeypatch.setenv("ROBOGLOT_LOG", "")
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setattr("roboglot.agent.providers.factory.make_provider", lambda name, **kw: pilot)
+    args = ["run", "hello-world", "--llm", "fake", "--robot", "microduck:mock"]
+    args += ["--runs-dir", str(runs)]
+    monkeypatch.setattr(sys, "argv", ["roboglot", *args])
+    return runner.invoke(app, args, env={"COLUMNS": "300"})
+
+
+def test_what_an_llm_or_a_robot_wrote_reaches_the_live_terminal_without_its_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The live terminal printed an LLM's text and its thinking, a robot's words in an
+    observation, a note the pilot asked to keep and the reason it declared as they came, and Rich
+    takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
+    an OSC 52 wrote their clipboard, and the `llm<` line sits just above the questions a run puts.
+    Every such line now goes through `ui.printable`, so an escape shows as `\\x1b`; this fails
+    if any of the five reaches the terminal raw again."""
+    from roboglot.agent.providers.base import ProviderTurn, ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
+
+    class Talker(FakeProvider):
+        async def step(self, system: str, history: list[Any], tools: list[dict[str, Any]]) -> Any:
+            turn: ProviderTurn = await super().step(system, history, tools)
+            return turn.model_copy(
+                update={"text": _OUTSIDE["llm text"], "thinking": _OUTSIDE["llm thinking"]}
+            )
+
+    script = [
+        ToolCall(name="quack", arguments={"text": _OUTSIDE["observation (verb summary)"]}),
+        ToolCall(name="remember", arguments={"text": _OUTSIDE["note (remembered:)"]}),
+        ToolCall(name="declare_success", arguments={"reason": _OUTSIDE["verdict reason"]}),
+    ]
+    pilot = Talker(script=script, llm_id="scripted:outside")
+    result = _a_run_with_the_narration_on(monkeypatch, pilot, tmp_path / "runs")
+    assert result.exit_code == 0, result.output
+    raw = sorted(path for path, said in _OUTSIDE.items() if said in result.output)
+    assert not raw, f"raw on the live terminal: {raw}"
+    for path, said in _OUTSIDE.items():
+        if path != "llm thinking":  # cut to its first characters by the thinking limit
+            assert said.replace("\x1b", "\\x1b") in result.output, path
+
+
+def test_a_servers_error_text_reaches_the_live_terminal_without_its_escapes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A provider's error can carry a server's whole error body, and the run printed it three
+    times as it came: on the `llm<` ERROR line, in the note the run ends with, and in the error
+    line under it (`ui.fail_line`). Each now shows an escape as `\\x1b`."""
+    from roboglot.agent.providers.base import ProviderError
+    from roboglot.agent.providers.fake import FakeProvider
+
+    error = "\x1b[2J\x1b[HERRORPATH"
+
+    class Failing(FakeProvider):
+        async def step(self, *a: Any, **k: Any) -> Any:
+            raise ProviderError(f"server said: {error}")
+
+    pilot = Failing(script=[], llm_id="scripted:fail")
+    result = _a_run_with_the_narration_on(monkeypatch, pilot, tmp_path / "runs")
+    assert result.exit_code != 0, result.output
+    assert result.output.count(error) == 0, result.output
+    assert error.replace("\x1b", "\\x1b") in result.output
+
+
+def test_no_string_a_pilot_sends_reaches_the_live_terminal_raw(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The roads from what a pilot sends to the terminal were filtered one at a time, and each
+    review found one more written raw: the step lines, then the live status line under them.
+    Here every string a pilot can put in a turn carries an escape sequence and a one-character
+    CSI: its text and thinking, a tool's name that is no verb and its argument keys and values,
+    a verb's argument the robot echoes back, a note to keep, the reason it declares, and its
+    own LLM id. A whole `roboglot run`, the narration and the colour on as a person has them;
+    whatever road a string takes to the screen, it must arrive written out, so a road added
+    later that writes one raw fails here."""
+    from roboglot.agent.providers.base import ProviderTurn, ToolCall, Usage
+
+    erase, csi = "\x1b[3A\x1b[J", "\x9b2J"
+    marked = f"{erase}{csi}"
+
+    class Everywhere:
+        name = "fake"
+        supports_vision = False
+        llm_id = f"scripted{marked}"
+
+        def __init__(self) -> None:
+            self.turns = 0
+
+        async def step(self, system: str, history: list[Any], tools: list[dict[str, Any]]) -> Any:
+            self.turns += 1
+            calls = {
+                1: ToolCall(
+                    id="c1", name=f"kick{marked}", arguments={f"leg{marked}": f"l{marked}"}
+                ),
+                2: ToolCall(id="c2", name="quack", arguments={"text": f"hi{marked}"}),
+                3: ToolCall(id="c3", name="remember", arguments={"text": f"note{marked}"}),
+            }
+            done = ToolCall(id="c4", name="declare_success", arguments={"reason": f"ok{marked}"})
+            return ProviderTurn(
+                tool_calls=[calls.get(self.turns, done)],
+                text=f"said{marked}",
+                thinking=f"thought{marked}",
+                usage=Usage(input_tokens=1, output_tokens=1),
+                stop_reason="tool_use",
+            )
+
+    result = _a_run_with_the_narration_on(monkeypatch, Everywhere(), tmp_path / "runs")
+    assert result.exit_code == 0, result.output
+    out = result.output
+    assert erase not in out and csi not in out, out
+    for word in ("said", "thought", "kick", "hi", "note", "ok"):
+        assert f"{word}\\x1b[3A\\x1b[J\\x9b2J" in out, word
+
+
 def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1199,6 +1541,37 @@ def test_a_run_into_a_pipe_adds_no_status_line_to_what_a_script_reads(
     assert "SUCCESS" in out
     for chatter in ("waiting on", "observing", "the LLM chose", "finishing"):
         assert chatter not in out, chatter
+
+
+@pytest.mark.parametrize(
+    ("argv", "who"),
+    [
+        (["run", "hello-world", "--robot", "microduck:mock"], "the robot"),
+        (["run", "team-hello"], "every robot"),
+    ],
+    ids=["run", "pilot-team"],
+)
+def test_the_hint_under_the_run_panel_names_q_only_where_a_key_is_read(
+    argv: list[str], who: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kill switch reads keys only where stdin is a terminal, and the hint under the run
+    panel promised `q` whatever stdin was: with stdin a pipe or a file, `q` stops nothing, and a
+    team run made the same promise for every robot. It names `q` only where a key is read,
+    and at a terminal it reads exactly as it did."""
+
+    def hint(where: str) -> str:
+        runs = tmp_path / where
+        result = runner.invoke(app, [*argv, "--llm", "fake", "--runs-dir", str(runs)])
+        assert result.exit_code == 0, result.output
+        return " ".join(result.output.split())
+
+    piped = hint("pipe")  # a runner's stdin is no terminal
+    assert f"Ctrl-C stops {who}. Ctrl-C twice quits at once." in piped, piped
+    assert "or q" not in piped, piped
+    # whether a key is read, as a person at a terminal answers it (`_can_prompt`); the switch
+    # itself is left to the runner's stdin
+    monkeypatch.setattr(cli_mod, "_q_stops", lambda: True, raising=False)
+    assert f"Ctrl-C or q stops {who}. Ctrl-C twice quits at once." in hint("terminal")
 
 
 def test_an_infeasible_run_exits_3_and_says_what_could(
@@ -4131,6 +4504,122 @@ def test_a_question_and_the_answer_to_it_are_both_kept(
     (prompt,) = [e for e in _events(tmp_path) if e["kind"] == "prompt"]
     assert prompt["what"] == "confirm" and prompt["answer"] is True
     assert prompt["question"] == asked[0].split(" [y/N]")[0]
+
+
+_UR_GOALS = {
+    "shoulder_pan_joint": 0.0,
+    "shoulder_lift_joint": -90.0,
+    "elbow_joint": 90.0,
+    "wrist_1_joint": -90.0,
+    "wrist_2_joint": 90.0,
+    "wrist_3_joint": 0.0,
+}
+_TWO_PART_INSTRUCTION = (
+    "pick up the red block and put it in the bowl on the left, "
+    "then sweep every cup off the table onto the floor"
+)
+
+
+@pytest.mark.parametrize(
+    ("adapter", "verb", "params", "shown"),
+    [
+        (
+            "rosarm",
+            "move_joints",
+            {"positions": _UR_GOALS, "duration_s": 5.0},
+            [f"{joint!r}: {goal!r}" for joint, goal in _UR_GOALS.items()] + ["duration_s=5)"],
+        ),
+        (
+            "lerobot",
+            "move_joints",
+            {
+                "positions": {
+                    "shoulder_pan": 0.0,
+                    "shoulder_lift": -10.0,
+                    "elbow_flex": 20.0,
+                    "wrist_flex": 30.0,
+                    "wrist_roll": 0.0,
+                    "gripper": 100.0,
+                }
+            },
+            ["'gripper': 100.0}"],
+        ),
+        ("lerobot", "manipulate", {"instruction": _TWO_PART_INSTRUCTION}, [_TWO_PART_INSTRUCTION]),
+        (
+            "rosarm",
+            "move_joints",
+            {"positions": {"elbow_joint": 12.5}, "duration_s": 11.25},
+            ["duration_s=11.25)"],
+        ),
+    ],
+)
+async def test_the_confirm_question_shows_every_argument_that_runs(
+    monkeypatch: pytest.MonkeyPatch,
+    adapter: str,
+    verb: str,
+    params: dict[str, Any],
+    shown: list[str],
+) -> None:
+    """The question cut a string at 57 characters and a dict or a list at 117, and printed a
+    float to three figures, while the executor ran the arguments whole. A person approved the
+    UR arm's first four joint goals and not the last two, read `'gripper': 1...` where 100
+    (fully open) ran, read half an instruction a policy was told whole, and read
+    `duration_s=11.2` for 11.25. The pilot chooses the key order, so what it wanted hidden
+    went last.
+
+    Asked through the terminal's own prompt by a real executor with each adapter's own verb,
+    every value that runs must be in the question as it runs, and the record's prompt row must
+    quote the same words, so a cut anywhere on the way fails here."""
+    import dataclasses
+
+    from roboglot.glotfile.parser import parse_glot_text
+    from roboglot.safety import Executor
+    from roboglot.transport.mock import MockTransport
+    from roboglot.verbs.registry import VerbRegistry
+    from roboglot_lerobot.verbs import lerobot_verbs
+    from roboglot_rosarm.verbs import rosarm_verbs
+
+    contract = None
+    if adapter == "rosarm":
+        # the real backend's move_joints, which a person answers every time
+        gated = dataclasses.replace(rosarm_verbs()[verb], no_standing_answer=True)
+    else:
+        gated = lerobot_verbs(policy=verb == "manipulate")[verb]
+        if gated.safety_class != "confirm":
+            # the SO-101's move_joints is gated where a task's `confirm:` names it
+            contract = parse_glot_text(
+                "---\nglot: 0\nname: t\ndescription: d\nverbs:\n"
+                f"  allow: [{verb}]\n  confirm: [{verb}]\nsuccess: [x]\n---\n# Task\nx\n"
+            ).frontmatter
+    asked: list[str] = []
+
+    def person_says_yes(question: str) -> bool:
+        asked.append(question)
+        return True
+
+    monkeypatch.setattr(cli_mod, "_ask", person_says_yes)
+    monkeypatch.setattr(cli_mod, "_can_prompt", lambda: True)
+    rows: list[tuple[str, dict[str, Any]]] = []
+    registry = VerbRegistry()
+    registry.register(gated)
+    ex = Executor(
+        registry,
+        MockTransport(),
+        contract=contract,
+        dry_run=True,
+        confirm=cli_mod._confirm_prompt,
+        event_log=SimpleNamespace(emit=lambda kind, **data: rows.append((kind, data))),  # type: ignore[arg-type]
+    )
+    result = await ex.run_verb(verb, params)
+    assert result.ok, result.summary
+    (started,) = [data for kind, data in rows if kind == "verb_start"]
+    assert started["params"] == params, "the arguments that run are the ones the pilot sent"
+    (question,) = asked
+    for part in shown:
+        assert part in question, f"{part} runs, and the person read: {question}"
+    assert "..." not in question, question
+    (prompt,) = [data for kind, data in rows if kind == "prompt"]
+    assert prompt["question"] == question
 
 
 def test_a_pipe_on_stdin_opens_the_gate_and_is_not_written_down_as_a_person(
