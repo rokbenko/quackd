@@ -970,11 +970,28 @@ async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaul
     }
 
 
+def _refused_nesting() -> int:
+    """The least depth of a closed nesting this interpreter's decoder refuses. 3.11 counts nesting
+    against the recursion limit, 1000; 3.12 against a C limit of its own, 3000 on Windows and
+    10000 on Linux and macOS, so one depth typed here passed on one runner and not on the next."""
+    depth = 1000
+    while depth < 1 << 24:
+        try:
+            json.loads("[" * depth + "]" * depth)
+        except RecursionError:
+            return depth
+        depth *= 2
+    raise AssertionError("this Python's decoder took every nesting up to 16 million deep")
+
+
+REFUSED_NESTING = _refused_nesting()
+
+
 @pytest.mark.parametrize(
     "raw",
     [
         '{"vx": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
-        '{"vx": ' + "[" * (3 * sys.getrecursionlimit()) + "]" * (3 * sys.getrecursionlimit()) + "}",
+        '{"vx": ' + "[" * REFUSED_NESTING + "]" * REFUSED_NESTING + "}",
     ],
     ids=["long-integer", "deep-nesting"],
 )

@@ -722,8 +722,29 @@ class CountingJson:
 
 
 DEEP = 3 * sys.getrecursionlimit()
-"""Nesting the decoder refuses on both Pythons: 3.11 counts against the recursion limit and
-3.12 against its own C limit, which depth 3000 passes on both."""
+"""Nesting for the texts the decoder never finishes, closed or not, which no bound depends on."""
+
+
+def _deep_call(depth: int) -> str:
+    return '{"name": "walk_to", "arguments": {"a":' + "[" * depth + "]" * depth + "}}"
+
+
+def _refused_nesting(within: int) -> int | None:
+    """The least depth of a closed nesting, in a bare call that fits in `within` characters, that
+    this interpreter's decoder refuses, or None where it takes every depth that fits. 3.11 counts
+    nesting against the recursion limit, 1000; 3.12 against a C limit of its own, 3000 on Windows
+    and 10000 on Linux and macOS, which no call within the fallback's bound reaches there."""
+    depth = 1000
+    while len(_deep_call(depth)) <= within:
+        try:
+            json.loads(_deep_call(depth))
+        except RecursionError:
+            return depth
+        depth += 500
+    return None
+
+
+DEEP_CALL = _refused_nesting(MAX_CALL_CHARS)
 
 
 @pytest.mark.parametrize(
@@ -768,11 +789,17 @@ def test_a_call_longer_than_any_call_needs_is_not_read(monkeypatch: pytest.Monke
 @pytest.mark.parametrize(
     "text",
     [
-        '{"a": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
-        '{"name": "walk_to", "arguments": {"a":' + "[" * DEEP + "]" * DEEP + "}}",
-        '{"a":' * DEEP,
+        pytest.param('{"a": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}", id="long-integer"),
+        pytest.param(
+            _deep_call(DEEP_CALL or 1),
+            id="deep-nesting",
+            marks=pytest.mark.skipif(
+                DEEP_CALL is None,
+                reason="this Python's decoder takes every nesting a call within the bound holds",
+            ),
+        ),
+        pytest.param('{"a":' * DEEP, id="deep-unclosed"),
     ],
-    ids=["long-integer", "deep-nesting", "deep-unclosed"],
 )
 async def test_text_the_decoder_raises_on_is_no_call_and_never_leaves_the_provider(
     text: str,
