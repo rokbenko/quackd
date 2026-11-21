@@ -578,9 +578,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **A client that dies mid-call no longer leaves its robots unstopped.** When the client died with
   a call in flight, the task group the MCP SDK runs a stdio server in cancelled the server's close
   again at every turn of the loop, so it was cut at the first robot's stop: no robot after that one
-  was stopped, folded or closed, and nothing was said of an arm's torque. The close runs in a task
-  of its own now, which such a cancel does not reach, so every robot is stopped, put down and
-  closed.
+  was stopped, folded or closed, and nothing was said of an arm's torque. The close is shielded
+  from that cancel now, so every robot is stopped, put down and closed, and a Ctrl-C at a terminal
+  still reaches it.
 - **Two `robot_observe` calls at once each return their own picture.** The pictures came from one
   slot per robot, which each call emptied as it started and every observe overwrote, so a call
   made while another waited on a slow detector, a board's for one, handed the first its own

@@ -389,9 +389,9 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   server's stdin (the MCP Python SDK's own client waits two seconds), and nothing runs in a
   process killed outright,
   which is why the stops go first: a kill during a pause or a fold finds every robot already
-  sent its stop. Run from a terminal, a second Ctrl-C keeps a fold that has not begun from
-  starting and stops one that has, holding the arm where it is and saying so, and every robot's
-  transport is still closed and its line said.
+  sent its stop. Run from a terminal, a Ctrl-C while the server closes keeps a fold that has not
+  begun from starting and stops one that has, holding the arm where it is and saying so, and
+  every robot's transport is still closed and its line said.
 - MOSS's `explore` runs for up to eight minutes, and a client may wait less than that for one
   tool call: ask for fewer minutes than your client waits, and a `stop` from beside it ends it
   at the check it makes every second. It is confirm-gated, so a server reaches it only with `--yes`.

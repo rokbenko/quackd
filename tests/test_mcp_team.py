@@ -506,6 +506,90 @@ async def test_a_client_dying_mid_session_still_stops_folds_and_closes_every_rob
     assert [type(e) for e in raised.exceptions] == [BrokenPipeError], repr(raised)
 
 
+FOLD_HELD_S = 0.05
+"""How long the arm's closing fold is held while the cancels sent to the server's task are
+counted: a window only, the heartbeat period these tests serve at. Nothing is asserted of it."""
+
+
+async def _a_client_dies_while_the_arm_folds(*, press: bool) -> tuple[list[str], int, Any]:
+    """The shape of `test_a_client_dying_mid_session_...`, run in asyncio's own pure Python task
+    with `cancel` counted, which is how anyio delivers each of its cancels to the server's task.
+    The arm's closing fold is held for `FOLD_HELD_S`, and the cancels sent while it is held are
+    counted. With `press`, the task is cancelled once as the fold starts, as asyncio's runner
+    cancels the task a server runs in at a Ctrl-C. Returns what the robots were sent, the count,
+    and what the task group raised."""
+    import anyio
+
+    class Counted(asyncio.tasks._PyTask):  # type: ignore[name-defined,misc]
+        cancels = 0
+
+        def cancel(self, msg: Any = None) -> bool:
+            self.cancels += 1
+            return bool(super().cancel(msg))
+
+    log: list[str] = []
+    arm = _Body("arm", log, rest=True)
+    base = _Body("base", log)
+    server, _team = build_team_server({"arm": arm, "base": base}, heartbeat_period_s=0.05)
+    low = server._lowlevel_server
+    counted: dict[str, int] = {}
+    raised: list[BaseException] = []
+
+    async def stdout_writer() -> None:
+        await asyncio.wait_for(arm.beat.wait(), HANG_GUARD_S)
+        await asyncio.wait_for(base.beat.wait(), HANG_GUARD_S)
+        arm.closing = True  # the fold held is the close's, not the connect's
+        raise OSError(32, "Broken pipe")
+
+    async def a_server_whose_client_dies() -> None:
+        async with create_client_server_memory_streams() as (_client, server_streams):
+            try:
+                async with anyio.create_task_group() as group:
+                    group.start_soon(stdout_writer)
+                    await low.run(
+                        server_streams[0], server_streams[1], low.create_initialization_options()
+                    )
+            except BaseException as e:  # the group's error, read by the caller
+                raised.append(e)
+
+    host = Counted(a_server_whose_client_dies())
+
+    def let_go() -> None:
+        counted["during"] = host.cancels - counted["before"]
+        arm.release.set()
+
+    await asyncio.wait_for(arm.fold_started.wait(), HANG_GUARD_S)
+    counted["before"] = host.cancels
+    if press:
+        host.cancel()
+    asyncio.get_running_loop().call_later(FOLD_HELD_S, let_go)
+    await asyncio.wait({host}, timeout=HANG_GUARD_S)
+    assert host.done(), f"the server never ended: {log}"
+    return log, counted.get("during", -1), raised[0] if raised else None
+
+
+async def test_a_shielded_close_is_sent_no_cancel_while_a_dead_client_is_gone() -> None:
+    """The close outlasted the cancel a dead client leaves behind by catching it, and anyio sends
+    it to the server's task at every turn of the loop until the task ends, so the loop never
+    rested while an arm folded or a pause ran out: a wake-up a turn, for as long as the close
+    took. Under anyio's shield the close is sent none, and every robot is still stopped, put
+    down and closed."""
+    log, during, raised = await _a_client_dies_while_the_arm_folds(press=False)
+    assert during == 0, f"the close was sent {during} cancels while the arm's fold was held"
+    assert log[-4:] == ["arm:rest-start", "arm:rest-end", "arm:close", "base:close"], log
+    assert [type(e) for e in raised.exceptions] == [BrokenPipeError], repr(raised)
+
+
+async def test_a_ctrl_c_still_reaches_a_shielded_close() -> None:
+    """The shield holds off anyio's cancels and no other: a person's Ctrl-C at a terminal is
+    asyncio's own cancel of the task the server runs in, and it still reaches the close. It stops
+    the arm's fold where it is, the arm is held there with a stop, and every robot is closed."""
+    log, _during, _raised = await _a_client_dies_while_the_arm_folds(press=True)
+    folded = log.index("arm:rest-start")
+    assert "arm:rest-end" not in log, f"the fold went on after the press: {log}"
+    assert log[folded + 1 :] == ["arm:stop-begin", "arm:stop", "arm:close", "base:close"], log
+
+
 def test_build_needs_a_robot_and_a_known_default() -> None:
     with pytest.raises(ValueError, match="at least one robot"):
         build_team_server({})

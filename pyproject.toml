@@ -50,6 +50,12 @@ dependencies = [
   "segno>=1.6",
   "python-dotenv>=1.0",
   "mcp>=2.0,<3",
+  # `serve-mcp` shields the close of its robots from the cancel the MCP SDK's stdio task group sends
+  # at every turn of the loop once a client has gone (roboglot/mcp_server.py, `_closed`). mcp is
+  # built on anyio and brings it in; the floors are the ones mcp 2.3.0 itself asks for, on each side
+  # of Python 3.14, and like mcp's they have no upper bound.
+  "anyio>=4.9; python_version < '3.14'",
+  "anyio>=4.10; python_version >= '3.14'",
   # Robot Passport signs and verifies with Ed25519 (roboglot/passport/). mcp already brings it
   # in through pyjwt[crypto], and a module that imports it says so here rather than leaning
   # on somebody else's dependency staying put.

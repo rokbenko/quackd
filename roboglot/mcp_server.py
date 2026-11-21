@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import anyio
 import yaml
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
@@ -1077,30 +1078,29 @@ async def _close_in_two_passes(sessions: Sequence[RobotSession]) -> BaseExceptio
 
 
 async def _closed(sessions: Sequence[RobotSession]) -> None:
-    """`_close_in_two_passes` in a task of its own, waited for whatever this task is sent.
+    """`_close_in_two_passes` under anyio's shield, and the first press raised once it has run.
 
     `serve-mcp` closes its robots in the lifespan's `finally`, inside the task group the MCP SDK
     opens for stdio. When the client dies with a call in flight, the group's `stdout_writer`
     raises on a write nobody reads, and anyio cancels the group's host task again at every turn
     of the loop until it ends. The close ran in that task and was cut at its first wait: no robot
-    after the first one's stop was stopped, folded or closed. A cancel sent here now ends
-    nothing; each step of the close is bounded by its own clock, and the first cancel or press
-    is raised once it has run. A person's Ctrl-C reaches the close itself as asyncio's runner
-    hands it on, cancelling every task at a second press: it keeps a fold from starting, or
-    stops one where it is, and every transport is still closed (`RobotSession.put_down`).
+    after the first one's stop was stopped, folded or closed. Shielded, the close is sent none of
+    those cancels, and the loop rests while it waits on a fold or a pause. Each of its steps is
+    bounded by its own clock.
+
+    The shield holds off anyio's cancels and no other. A person's Ctrl-C at a terminal is asyncio's
+    own cancel of the task the server runs in, which is this one, and every task at a second press:
+    it reaches the step the close is in, keeps a fold from starting or stops one where it is, and
+    every transport is still closed (`RobotSession.put_down`).
 
     A process killed outright, as a stdio client does a fixed grace after it closes stdin, runs
     none of this. Its robots are left as their last command left them, and the order is the
     answer there: every stop goes out first, in the close's first turns of the loop, so a kill
     that comes during a pause or a fold finds every robot already sent its stop."""
-    closing = asyncio.ensure_future(_close_in_two_passes(sessions))
-    sent = await _outlasted({closing})
-    if closing.cancelled():
-        ended: BaseException | None = asyncio.CancelledError()
-    else:
-        ended = closing.exception() or closing.result()
-    if (first := sent or ended) is not None:
-        raise first
+    with anyio.CancelScope(shield=True):
+        pressed = await _close_in_two_passes(sessions)
+    if pressed is not None:
+        raise pressed
 
 
 @dataclass
