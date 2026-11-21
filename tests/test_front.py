@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import contextlib
 import io
 import json
 import os
@@ -228,6 +229,120 @@ def test_every_op_is_taken_and_a_line_that_is_none_is_said_back() -> None:
     assert len(notices) == 2 and all(n.startswith("skipped a line") for n in notices)
 
 
+def test_a_line_in_longer_than_any_op_is_skipped_with_a_word_and_the_next_is_read() -> None:
+    """The reader kept a line of any length, and every chunk copied and scanned all of it
+    again, so one long line with no newline cost more than its length, a GIL held for every
+    copy, and memory without end. A line past `OP_LINE_MAX` is dropped once it is that long,
+    with a notice, and the reader picks up at the next newline. Every line a page or a client
+    really sends fits, a chat line as long as the page lets one be typed included."""
+    from roboglot.front import CHAT_LINE_MAX, OP_LINE_MAX
+
+    widest = json.dumps({"op": "line", "text": "\U0001f986" * CHAT_LINE_MAX})
+    assert len(widest.encode("utf-8")) <= OP_LINE_MAX, "a chat line the page allows is dropped"
+    chunks = [b'{"op": "line", "text": "', b"x" * OP_LINE_MAX, b"x" * OP_LINE_MAX, b'"}\n']
+    chunks += [widest.encode("utf-8") + b"\n", b'{"op": "stop"}\n']
+    out = io.StringIO()
+    channel = Channel(out)
+    taken: list[dict[str, Any]] = []
+    ended = threading.Event()
+    reader = channel.start_reading(
+        lambda op: taken.append(dict(op)), ended.set, take=lambda: chunks.pop(0) if chunks else b""
+    )
+    assert ended.wait(10), "the end of the input was never noticed"
+    reader.join(10)
+    channel.close()
+    assert [op["op"] for op in taken] == ["line", "stop"], "the line after the long one was lost"
+    assert taken[0]["text"] == "\U0001f986" * CHAT_LINE_MAX
+    notices = [line["text"] for line in _lines(out) if line["ev"] == "notice"]
+    assert len(notices) == 1 and str(OP_LINE_MAX) in notices[0], notices
+
+
+def test_a_page_that_stops_reading_with_its_pipe_open_is_a_page_that_went_away(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every line was kept for a page that stopped reading with its pipe still open, so every
+    record of the rest of the run queued behind a write that never finished, and `close` left
+    the writer blocked. Once a write has waited `END_FLUSH_S`, the next line finds the page
+    gone, as a broken pipe is: the channel says so once, as it does when the page goes away,
+    which stops the run and takes back its questions, and nothing more is queued."""
+    import roboglot.front as front_module
+
+    monkeypatch.setattr(front_module, "END_FLUSH_S", 0.3)
+    r, w = os.pipe()
+    out = os.fdopen(w, "w", encoding="utf-8", newline="\n")
+    channel = Channel(out)
+    gone: list[str] = []
+    channel.on_broken(lambda: gone.append("gone"))
+    try:
+        filler = "x" * 4000
+        for n in range(200):  # far past what a pipe holds, so the writer is stuck in a write
+            channel.send("event", n=n, text=filler)
+        time.sleep(0.6)
+        channel.send("ask", id=1, kind="confirm", question="run kick()?")
+        assert channel.broken.is_set(), "a stalled page was waited on"
+        _until(lambda: gone == ["gone"])  # said on a thread of its own, never the sender's
+        queued = len(channel._events)
+        for n in range(100):
+            channel.send("event", n=n, text=filler)
+        assert len(channel._events) <= queued, "lines went on queueing for a page gone"
+        started = time.monotonic()
+        channel.close()
+        assert time.monotonic() - started < 5, "close waited on a page that was gone"
+    finally:
+        os.close(r)  # the stuck write fails, and the writer ends
+        channel._writer.join(10)
+        with contextlib.suppress(OSError):
+            out.close()
+    assert not channel._writer.is_alive(), "the writer was left blocked"
+    assert gone == ["gone"], "said more than once"
+
+
+@pytest.mark.parametrize("when", ["put", "timed out"])
+def test_a_question_put_or_taken_back_on_a_stalled_page_does_not_hang_its_thread(
+    when: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A send that finds the page stalled ran the page's end on the thread that sent, and that
+    end takes the questions' lock, which `Questions` holds while it sends a question or takes
+    one back: the thread waited on itself for ever. For a run's question that thread is the
+    loop's, so the run, its heartbeat and its stop all stopped there. Here the very send that
+    finds the stall is a question put, or one taken back when nobody answered it (the way a
+    page that stopped reading always ends): the thread that asked must come back, with the
+    question taken back, and the end must still reach the run."""
+    monkeypatch.setattr(front_mod, "END_FLUSH_S", 0.2)
+    stuck = threading.Event()
+
+    class StoppedReading:
+        def write(self, _text: str) -> int:
+            stuck.set()
+            threading.Event().wait()  # the page never reads this line
+            return 0
+
+        def flush(self) -> None:
+            pass
+
+    channel = Channel(StoppedReading())
+    front = Front(channel, "run")
+    channel.on_broken(front.on_end)  # as `Front.open` wires it
+    channel.send("hello")
+    assert stuck.wait(5.0)
+    outcome: list[str] = []
+
+    def ask() -> None:
+        try:
+            outcome.append(str(front.questions.ask("confirm", "run kick()?", timeout_s=0.4)))
+        except QuestionWithdrawn as e:
+            outcome.append(f"withdrawn: {e}")
+
+    if when == "put":
+        time.sleep(0.3)  # the write has waited past END_FLUSH_S before the question is put
+    asking = threading.Thread(target=ask, daemon=True)
+    asking.start()
+    asking.join(5.0)
+    assert not asking.is_alive(), "the thread that asked waits on its own lock for ever"
+    assert outcome and outcome[0].startswith("withdrawn"), outcome
+    _until(lambda: front.questions.gone, 5.0)
+
+
 @pytest.mark.skipif(sys.platform != "win32", reason="a pending read holds a pipe on Windows")
 def test_the_reader_never_holds_a_read_open_on_a_windows_pipe() -> None:
     """A read left pending on a pipe makes a question about its handle wait behind it, and a DLL
@@ -370,6 +485,34 @@ def test_each_kind_of_question_is_put_in_the_words_the_terminal_uses() -> None:
     ]
 
 
+def test_a_page_question_says_the_pilots_doubt_on_the_runs_terminal_with_no_escape_in_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A run driven from the page also says each question's detail on its own stderr, for the
+    saved terminal and the terminal it was started from, and said it raw: the pilot's
+    `ESC[1A ESC[2K` reached that terminal as the cursor moves they are. The console here writes
+    no escape of its own, so this fails if one comes through again. The page is sent the
+    pilot's words as they were, and shows them as text."""
+    from rich.console import Console
+
+    from roboglot import ui
+
+    shown = io.StringIO()
+    console = Console(file=shown, force_terminal=True, color_system=None, width=400)
+    monkeypatch.setattr(ui, "err_console", console)
+    doubt = "grip is fine\x1b[1A\x1b[2KRoboglot: all limits met"
+    front, out = _front()
+    answering = _answer_every_question(front, out)
+    try:
+        assert front.decide(doubt) is True
+    finally:
+        answering.set()
+    said = shown.getvalue()
+    assert "\x1b" not in said, f"the pilot's escapes reach stderr: {said!r}"
+    assert "grip is fine\\x1b[1A\\x1b[2KRoboglot: all limits met" in said, said
+    assert [x["detail"] for x in _lines(out) if x["ev"] == "ask"] == [doubt]
+
+
 async def test_a_dangerous_verb_is_cleared_by_a_yes_in_the_page_and_refused_once_it_has_gone(
     registry: VerbRegistry, mock_transport: MockTransport
 ) -> None:
@@ -399,6 +542,74 @@ async def test_a_dangerous_verb_is_cleared_by_a_yes_in_the_page_and_refused_once
         await ex2.run_verb("nuke")
     assert ran == ["nuke"]
     assert gates(seen2) == [("confirm", "refused")]
+
+
+async def test_a_goal_whose_client_answers_with_yes_is_never_taken_for_a_person(
+    registry: VerbRegistry, mock_transport: MockTransport, hello_glot: Any, tmp_path: Any
+) -> None:
+    """`roboglot onboard goal --yes` answers every question in the client, unseen, and the
+    service marked its questions `--yes`, a mark nothing read: an open connection made each
+    one read as put to a person. The record wrote a person's prompt row, the pilot was told a
+    person read its doubt and said go, and the executor's rules for a dangerous verb and for a
+    verb a person answers each time saw a person too. Marked as the service marks them, and
+    answered yes by a client as `--yes` answers, nobody may be named: both rules refuse, the
+    record names `--yes` with no prompt row, and the pilot is told nobody was asked."""
+    from roboglot.agent.loop import RunConfig, run_glot
+    from roboglot.agent.providers.base import ToolCall
+    from roboglot.agent.providers.fake import FakeProvider
+    from roboglot.agent.transcript import Transcript
+    from roboglot.log import a_person_was_asked
+    from roboglot.verbs.registry import NoParams, Verb, VerbContext, VerbResult
+
+    front, out = _front("onboard goal")
+    for asker in (front.confirm, front.decide, front.acknowledge, front.judge):
+        asker.answers_as = "--yes"
+    ran = _dangerous(registry)
+
+    async def grip(_ctx: VerbContext, _p: NoParams) -> VerbResult:
+        ran.append("grip")
+        return VerbResult.success("gripped")
+
+    registry.register(
+        Verb("grip", "a person answers it", grip, safety_class="confirm", no_standing_answer=True)
+    )
+    answering = _answer_every_question(front, out)  # the client, saying yes to every ask
+    try:
+        for asker in (front.confirm, front.decide, front.acknowledge, front.judge):
+            assert not a_person_was_asked(asker) and who_answered(asker) == "--yes"
+        for verb, refusal in (("nuke", "only a person can clear it"), ("grip", "each time")):
+            ex, seen = logged(registry, mock_transport, allow=verb)
+            ex.confirm = front.confirm
+            with pytest.raises(VerbNotAllowed, match=refusal):
+                await ex.run_verb(verb)
+            assert gates(seen) == [("confirm", "refused")]
+        assert ran == []
+        result = await run_glot(
+            RunConfig(
+                glot=hello_glot,
+                provider=FakeProvider(
+                    script=[
+                        ToolCall(
+                            name="assess_task",
+                            arguments={"verdict": "uncertain", "reason": "the door may be shut"},
+                        ),
+                        ToolCall(name="declare_failure", arguments={"reason": "stop here"}),
+                    ]
+                ),
+                transport=mock_transport,
+                runs_dir=tmp_path,
+                decide=front.decide,
+                confirm=front.confirm,
+            )
+        )
+    finally:
+        answering.set()
+    events = Transcript.read(result.run_dir / "transcript.jsonl")
+    (assessed,) = [e for e in events if e["kind"] == "assess"]
+    assert assessed["answered_by"] == "--yes", assessed
+    assert not [e for e in events if e["kind"] == "prompt"], "a prompt row names a person"
+    told = str(assessed.get("summary"))
+    assert "without asking anybody" in told and "a person read that" not in told, told
 
 
 # ── a run's stop ──

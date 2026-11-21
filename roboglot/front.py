@@ -82,6 +82,11 @@ PROTOCOL = 1
 CHANNEL = "web"
 """The channel a page's lines and answers are recorded under, beside the keyboard and a pipe."""
 
+ONBOARD_CHANNEL = "onboard"
+"""The channel an answer given at `roboglot onboard goal` is recorded under: a terminal on the
+onboard service's socket, which puts a goal's questions through the page's own answerers and is
+no page (`roboglot.onboard.service`)."""
+
 QUESTION_TIMEOUT_S = 300.0
 """How long a run waits on a question nobody answers before taking it back. A terminal waits for
 ever, and the person is in the room; a page may be a phone in a pocket, and a run that asks is
@@ -104,6 +109,20 @@ END_FLUSH_S = 60.0
 """How long the last line waits for the page to read the ones before it. A page that has gone
 fails the write at once, so this is only ever waited out on one that is there and slow, and the
 run is over by then: the process exiting sooner would lose its `end` line."""
+
+OP_LINE_MAX = 65_536
+"""The longest line the run takes in, in bytes: the onboard control protocol's `MAX_LINE`, which
+a goal's text already arrives under. An `answer` or a `stop` is under a hundred bytes, and a chat
+line is held to `CHAT_LINE_MAX` at the page, so a longer line is no op anybody sent, and it is
+dropped with a notice rather than kept growing. Never a bound on what the run sends: a frame's
+line is several times this."""
+
+CHAT_LINE_MAX = (OP_LINE_MAX - len(json.dumps({"op": "line", "text": ""}))) // len(
+    json.dumps("\U0001f986")[1:-1]
+)
+"""The most characters a line typed into the page's chat may have: as many of the widest a JSON
+line writes, a character past the BMP as two `\\uXXXX` escapes, as fit in `OP_LINE_MAX` beside
+the op around them."""
 
 PAGE_GONE = "the page went away"
 """The reason a run ends with when the page's input ended, which nobody pressed: unlike the Stop
@@ -234,8 +253,13 @@ class Channel:
         self._last_frame_at = float("-inf")
         self._closing = False
         self._on_broken: Callable[[], None] | None = None
+        self._on_closed: Callable[[], None] | None = None
         self.broken = threading.Event()
-        """A write failed: the page is gone, and nothing more will be read."""
+        """A write failed, or one waited longer than `END_FLUSH_S`: the page is gone, and
+        nothing more will be read."""
+        self._writing_since: float | None = None
+        """When the write under way began, or None between writes. A page that stops reading
+        with its pipe open holds a write here, and every line after it would queue."""
         self._writer = threading.Thread(target=self._pump, name="roboglot-front-out", daemon=True)
         self._writer.start()
 
@@ -260,12 +284,30 @@ class Channel:
     def on_broken(self, callback: Callable[[], None]) -> None:
         self._on_broken = callback
 
+    def on_closed(self, callback: Callable[[], None]) -> None:
+        """Called once `close` has sent its last line, or given up on it: where the other end
+        is a connection of its own, the onboard service hangs it up then."""
+        self._on_closed = callback
+
     def send(self, ev: str, **data: Any) -> None:
+        """Queue a line. Every line is kept for a page that reads, however slowly, and none is
+        dropped without a word: once a write has waited `END_FLUSH_S` for a page that stopped
+        reading with its pipe open, the next line finds the channel broken, as a page that went
+        away breaks it, and the queue stops growing there."""
         with self._cv:
             if self._closing or self.broken.is_set():
                 return
-            self._events.append({"ev": ev, **data})
-            self._cv.notify()
+            began = self._writing_since
+            stalled = began is not None and time.monotonic() - began > END_FLUSH_S
+            if not stalled:
+                self._events.append({"ev": ev, **data})
+                self._cv.notify()
+                return
+        # Whoever sends may hold a lock the page's end takes: `Questions` sends a question, and
+        # takes one back, under its own, and `on_broken` is `Front.on_end`, which takes that
+        # lock first. Run on this thread, the end waited on its own sender for ever, the run's
+        # loop among them. So it runs on a thread of its own, and the sender goes on.
+        self._broke(elsewhere=True)
 
     def frame(self, image: Image.Image, caption: str | None) -> None:
         """Offer the newest frame. Copied here, because the loop may draw over its own, and
@@ -284,7 +326,8 @@ class Channel:
 
     def close(self, last: dict[str, Any] | None = None, *, timeout_s: float = END_FLUSH_S) -> None:
         """Send `last` after every line still queued, drop any frame still waiting, and wait
-        for the writer, so the last line is out before the process exits. Once only."""
+        for the writer, so the last line is out before the process exits. Once only. A channel
+        already broken is not waited on: nothing more reaches its page."""
         with self._cv:
             if self._closing:
                 return
@@ -293,13 +336,50 @@ class Channel:
             self._frame = None
             self._closing = True
             self._cv.notify()
-        self._writer.join(timeout_s)
+        if not self.broken.is_set():
+            self._writer.join(timeout_s)
+        callback = self._on_closed
+        if callback is not None:
+            with contextlib.suppress(Exception):
+                callback()
+
+    def _broke(self, *, elsewhere: bool = False) -> None:
+        """The page is gone: said once, to whoever asked to hear it (`on_broken`), on this
+        thread, which holds no lock, or with `elsewhere` on a thread of its own, for a sender
+        that may hold one."""
+        with self._cv:
+            if self.broken.is_set():
+                return
+            self.broken.set()
+            # nothing queued will reach it, so nothing is held for it either
+            self._events.clear()
+            self._frame = None
+            self._cv.notify()
+        callback = self._on_broken
+        if callback is None:
+            return
+
+        def say_gone() -> None:
+            with contextlib.suppress(Exception):
+                callback()
+
+        if elsewhere:
+            threading.Thread(target=say_gone, name="roboglot-front-gone", daemon=True).start()
+        else:
+            say_gone()
 
     def _pump(self) -> None:
         while True:
             with self._cv:
-                while not self._events and self._frame is None and not self._closing:
+                while (
+                    not self._events
+                    and self._frame is None
+                    and not self._closing
+                    and not self.broken.is_set()
+                ):
                     self._cv.wait()
+                if self.broken.is_set():
+                    return
                 frame = None
                 if self._events:
                     line: dict[str, Any] | None = self._events.popleft()
@@ -323,14 +403,14 @@ class Channel:
                 text = json.dumps(line, ensure_ascii=True, default=str, allow_nan=False)
             except ValueError:
                 text = json.dumps(finite(line), ensure_ascii=True, default=str, allow_nan=False)
-            self._out.write(text + "\n")
-            self._out.flush()
+            self._writing_since = time.monotonic()
+            try:
+                self._out.write(text + "\n")
+                self._out.flush()
+            finally:
+                self._writing_since = None
         except (OSError, ValueError):
-            self.broken.set()
-            callback = self._on_broken
-            if callback is not None:
-                with contextlib.suppress(Exception):
-                    callback()
+            self._broke()
 
     def start_reading(
         self,
@@ -348,7 +428,12 @@ class Channel:
         take_chunk = take or _waiting_reader(fd) or (lambda: os.read(fd, 65536))
 
         def read() -> None:
-            pending = b""
+            # a bytearray, and each newline looked for once, so a line is never copied or
+            # scanned again for every chunk that brings more of it; and never longer than
+            # `OP_LINE_MAX`, past which it is no op anybody sent and is dropped, with a word,
+            # until the next newline
+            pending = bytearray()
+            dropping = False
             while True:
                 try:
                     chunk = take_chunk()
@@ -356,18 +441,34 @@ class Channel:
                     chunk = b""
                 if not chunk:
                     break
+                looked = len(pending)
                 pending += chunk
-                *lines, pending = pending.split(b"\n")
-                for raw in lines:
-                    self._take(raw, on_op)
-            if pending.strip():
-                self._take(pending, on_op)
+                start = 0
+                while (end := pending.find(b"\n", looked)) != -1:
+                    if dropping or end - start > OP_LINE_MAX:
+                        if not dropping:
+                            self._too_long()
+                        dropping = False
+                    else:
+                        self._take(bytes(pending[start:end]), on_op)
+                    start = looked = end + 1
+                del pending[:start]
+                if len(pending) > OP_LINE_MAX:
+                    if not dropping:
+                        self._too_long()
+                    dropping = True
+                    pending.clear()
+            if pending.strip() and not dropping:
+                self._take(bytes(pending), on_op)
             with contextlib.suppress(Exception):
                 on_end()
 
         reader = threading.Thread(target=read, name="roboglot-front-in", daemon=True)
         reader.start()
         return reader
+
+    def _too_long(self) -> None:
+        self.send("notice", text=f"skipped a line longer than {OP_LINE_MAX} bytes")
 
     def _take(self, raw: bytes, on_op: Callable[[Mapping[str, Any]], None]) -> None:
         text = raw.decode("utf-8", errors="replace").strip()
@@ -587,6 +688,10 @@ class Answerer:
     nobody. `channel` names where the answer came from beside that."""
 
     channel = CHANNEL
+    answers_as: str | None = None
+    """Set where the client answers every question itself, unseen (`roboglot onboard goal
+    --yes`): then nobody is asked however long the connection stays open, and the record names
+    this, never a person (`roboglot.log.who_answered`)."""
 
     def __init__(
         self,
@@ -603,6 +708,8 @@ class Answerer:
         return self._front.ask(self._kind, question, detail)
 
     def asks_a_person(self) -> bool:
+        if self.answers_as is not None:
+            return False
         return self._front.questions.someone_there()
 
 
@@ -667,6 +774,10 @@ class Front:
         self.decide = Answerer(self, "decide", lambda why: (GO_AHEAD, why))
         self.acknowledge = Answerer(self, "acknowledge", lambda why: (WATCHING, why))
         self.judge = Answerer(self, "judge", lambda why: (DID_IT, why))
+        if command == "onboard goal":
+            # answered at `roboglot onboard goal`, which is no page, and the record says so
+            for asker in (self.confirm, self.decide, self.acknowledge, self.judge):
+                asker.channel = ONBOARD_CHANNEL
 
     @classmethod
     def open(cls, command: str) -> Front:
@@ -792,7 +903,9 @@ class Front:
             self._stop_on_loop()
             raise QuestionWithdrawn(self._withdrawal())
         if detail:
-            self._say(detail, warn=True)
+            # the pilot's words, on the terminal the run was started from: an escape sequence
+            # left in could erase the lines above it there (`ui.printable`)
+            self._say(ui.printable(detail), warn=True)
         self._say(f"{question} [answered in the page]")
         try:
             answer = self.questions.ask(kind, question, detail)

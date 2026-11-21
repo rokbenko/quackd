@@ -12,6 +12,7 @@ from typing import Any
 
 import streamlit as st
 
+from roboglot.ui import printable_lines
 from roboglot.webui import catalog, jobs, widgets
 from roboglot.webui.screens.setup import _probe
 from roboglot.webui.state import setup
@@ -123,4 +124,5 @@ def _network() -> None:
             if found:
                 st.dataframe(found, hide_index=True, width="stretch")
             else:
-                st.caption((done.stderr or "").strip() or "Nothing answered.")
+                # what the network said: a stranger's words, plain text, never Markdown
+                st.text(printable_lines((done.stderr or "").strip()) or "Nothing answered.")
