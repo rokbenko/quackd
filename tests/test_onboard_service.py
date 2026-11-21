@@ -492,9 +492,9 @@ def test_closing_fits_the_units_stop_timeout_the_run_first_and_says_what_it_left
         # this stand-in keeps no record the service could read, so nothing is known of either
         assert (
             "the goal has not ended though it was told to stop, and a call it handed to a thread "
-            "of its own would hold the process at its exit, so the service ends its process now "
-            "with exit code 70: nothing is known of the stop the body was sent; not known: the "
-            "body's close, the run's end record"
+            "of its own is still running at the end of the budget, so the service ends its "
+            "process now with exit code 70: nothing is known of the stop the body was sent; not "
+            "known: the body's close, the run's end record"
         ) in lines
         assert ended == [onboard_service.LEFT_EXIT] == [70]
         left = [line for line in lines if line.startswith("the service stops before it finished")]
@@ -618,8 +618,8 @@ def test_a_call_an_ended_run_left_behind_ends_the_process_and_says_so(tmp_path: 
         service.close()
         assert ended == [onboard_service.LEFT_EXIT], lines
         assert lines[-1] == (
-            "a call the goal handed to a thread of its own has not ended, and would hold the "
-            "process at its exit: the service ends its process now with exit code 70"
+            "a call the goal handed to a thread of its own is still running at the end of the "
+            "budget: the service ends its process now with exit code 70"
         ), lines
     finally:
         never.set()
@@ -685,8 +685,10 @@ CHILD_BUFFERED_ROW = r"""
 import sys
 from pathlib import Path
 from roboglot.agent.transcript import Transcript
+from roboglot.onboard import service as onboard_service
 from roboglot.onboard.service import _end_process
 
+onboard_service.FLUSH_S = 10.0  # generous: a slow machine's flush of the record ends inside it
 transcript = Transcript(Path(sys.argv[1]))
 transcript.write("verb_start", verb="stop")
 transcript.write("intent", intent="stop", params={}, accepted=True, reason=None)
@@ -718,6 +720,128 @@ def test_whatever_ends_the_process_the_runs_record_is_flushed_first(tmp_path: Pa
     assert child.stdout.split() == ["BUFFERED"], "the row was meant to be in its buffer still"
     on_disk = (tmp_path / "transcript.jsonl").read_text(encoding="utf-8")
     assert '"intent"' in on_disk, f"the record lost the stop's row: {on_disk!r}"
+
+
+#: A process of its own with a run's record and a file whose write is stuck holding its lock
+#: (`BufferedWriter`'s own, real), its raw device a stand-in whose write never comes back, as
+#: the kernel's does on a disk that hung; it flushes as the close's end does, says what was left,
+#: writes one more row, and ends by the real `_end_process`.
+CHILD_STUCK_WRITE = r"""
+import io, sys, threading
+from pathlib import Path
+from roboglot.agent.transcript import Transcript
+from roboglot.onboard import service as onboard_service
+
+onboard_service.FLUSH_S = 10.0  # generous: the record's flush ends inside it; the stuck one never
+where = Path(sys.argv[1])
+transcript = Transcript(where)
+transcript.write("intent", intent="stop", params={}, accepted=True, reason="first")
+real = open(where / "frame.bin", "wb", buffering=0)
+stuck = threading.Event()
+
+
+class Disk(io.RawIOBase):
+    name = str(where / "frame.bin")
+
+    def writable(self):
+        return True
+
+    def fileno(self):
+        return real.fileno()
+
+    def write(self, b):
+        stuck.set()
+        threading.Event().wait()
+        return len(b)
+
+
+frame = io.BufferedWriter(Disk(), buffer_size=8)
+threading.Thread(target=frame.write, args=(b"x" * 64,), daemon=True).start()
+stuck.wait(60)
+print("LEFT: " + "; ".join(onboard_service._flush_everything()), flush=True)
+transcript.write("intent", intent="stop", params={}, accepted=True, reason="second")
+onboard_service._end_process(70)
+"""
+
+
+def test_the_end_comes_whatever_a_flush_meets_and_says_which_file_it_left(tmp_path: Path) -> None:
+    """The flush before `os._exit` took each file's lock, and a write stuck on a disk that hung
+    holds it: the flush waited for good, and the process stayed after its line had said it ends
+    now. Each pass of flushes is bounded now (`FLUSH_S`), all of its files at once: a file that
+    does not flush in time is left and named, the others are flushed, and `os._exit` comes. A
+    later pass does not wait on the stuck file again, and flushes what was written since."""
+    import subprocess
+    import sys
+
+    child = subprocess.Popen(
+        [sys.executable, "-c", CHILD_STUCK_WRITE, str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1],
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        out, _ = child.communicate(timeout=DEADLINE_S)
+    except subprocess.TimeoutExpired:
+        child.kill()
+        out, _ = child.communicate(timeout=DEADLINE_S)
+        pytest.fail(f"the process did not end: its end waited on a flush; {out!r}")
+    assert child.returncode == 70, (child.returncode, out)
+    assert f"{tmp_path / 'frame.bin'} (its flush did not end in 10 s)" in out, out
+    on_disk = (tmp_path / "transcript.jsonl").read_text(encoding="utf-8")
+    assert '"first"' in on_disk and '"second"' in on_disk, f"the record lost a row: {on_disk!r}"
+
+
+def test_the_close_names_in_its_line_a_file_its_flush_left(tmp_path: Path) -> None:
+    """The close's line on the way to `os._exit` said nothing of what its flush could not do. It
+    is said after the flushes now, and names each file left with why. A meeting's call holds the
+    process here, and a file's write is stuck holding its lock until the test ends."""
+    import io
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    now, lines, ended = [0.0], [], []
+    never, going, stuck = threading.Event(), threading.Event(), threading.Event()
+    real = open(tmp_path / "frame.bin", "wb", buffering=0)  # noqa: SIM115 (closed below)
+
+    class Disk(io.RawIOBase):
+        name = str(tmp_path / "frame.bin")
+
+        def writable(self) -> bool:
+            return True
+
+        def fileno(self) -> int:
+            return real.fileno()
+
+        def write(self, b: Any) -> int:
+            stuck.set()
+            never.wait(DEADLINE_S)
+            return len(b)
+
+    frame = io.BufferedWriter(Disk(), buffer_size=8)
+    writer = threading.Thread(target=frame.write, args=(b"x" * 64,), daemon=True)
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    try:
+        assert service.radio_side is not None
+        service.radio_side.pools()[1].submit(lambda: (going.set(), never.wait(DEADLINE_S)))
+        writer.start()
+        assert going.wait(DEADLINE_S) and stuck.wait(DEADLINE_S)
+        service.stop()
+        now[0] = onboard_service.CLOSE_S
+        service.close()
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        assert lines[-1].startswith(
+            "a call on the radio's meetings is still running at the end of the budget: the "
+            "service ends its process now with exit code 70; not flushed: "
+        ), lines
+        assert f"{tmp_path / 'frame.bin'} (its flush did not end in " in lines[-1], lines
+    finally:
+        never.set()
+        writer.join(DEADLINE_S)
+        frame.close()
+        real.close()
 
 
 def closing_service(
@@ -1077,8 +1201,8 @@ def test_a_call_on_the_radios_own_threads_that_would_hold_the_process_is_named(
         service.close()
         assert ended == [onboard_service.LEFT_EXIT], lines
         said = (
-            "a call on the radio's meetings has not ended, and would hold the process at its "
-            "exit: the service ends its process now with exit code 70"
+            "a call on the radio's meetings is still running at the end of the budget: the "
+            "service ends its process now with exit code 70"
         )
         if run == "stuck in an await":
             said += (
@@ -1087,6 +1211,117 @@ def test_a_call_on_the_radios_own_threads_that_would_hold_the_process_is_named(
                 "body's close"
             )
         assert lines[-1] == said, lines
+    finally:
+        never.set()
+
+
+@pytest.mark.parametrize("where", ["the run's pool, budget left", "the radio's links, spent"])
+def test_a_call_that_ends_once_it_is_given_a_moment_is_waited_for_and_never_held(
+    tmp_path: Path, where: str
+) -> None:
+    """With the budget spent, each pool was given nothing (`wait_idle(0)`), so a call that would
+    have ended a moment later, a link's word handled say, ended the process with exit code 70 and
+    the words that it would hold the process. The pools are given the budget's last and part of
+    the exit's margin now (`CALLS_GRACE_S`), and only a call still running after that is held.
+    The call here ends as soon as its pool's wait is given any time at all, which the test reads
+    off the wait itself, never off a clock: with the budget not yet spent, or spent."""
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    now, lines, ended, given = [0.0], [], [], []
+    let_end, going = threading.Event(), threading.Event()
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    try:
+        assert service.slot is not None and service.radio_side is not None
+        if where.startswith("the run's pool"):
+            assert service.slot.goal("Wait by the door.") is None
+            running = service.slot.running
+            # the run's pool is made on the run's own thread as it starts (`RunSlot._run`)
+            assert running is not None and wait_for(lambda: running.aio is not None)
+            pool = service.slot.pools[-1]
+        else:
+            pool = service.radio_side.pools()[2]
+        real_wait = pool.wait_idle
+
+        def watched(timeout: float) -> bool:
+            given.append(timeout)
+            if timeout > 0:
+                let_end.set()  # any time given is enough for this call
+            return real_wait(timeout)
+
+        pool.wait_idle = watched  # type: ignore[method-assign]
+        pool.submit(lambda: (going.set(), let_end.wait(DEADLINE_S)))
+        assert going.wait(DEADLINE_S)
+        service.stop()
+        spent = 0.0 if where.endswith("spent") else onboard_service.AFTER_RUN_S
+        now[0] = onboard_service.CLOSE_S - spent
+        service.close()
+        assert ended == [] and service.exit_code in (None, 0), (ended, given, lines[-1:])
+        assert given and given[-1] > 0, given
+    finally:
+        let_end.set()
+
+
+def test_a_call_on_a_thread_pool_nobody_counts_is_named_and_ends_the_process(
+    tmp_path: Path,
+) -> None:
+    """Thread pools the service does not count, zeroconf's own executor or an SDK's, are joined
+    at the interpreter's exit as its own are, so a call still running on one held the ordinary
+    road after the close had said how the process ends, or with nothing said at all. The close
+    looks at every pool's workers made since the service started, now: one still running a call
+    once the grace is spent is named, and the process is ended as for a call of the service's
+    own. The pool here is a plain `ThreadPoolExecutor` whose call waits until the test ends."""
+    import concurrent.futures
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    now, lines, ended = [0.0], [], []
+    never, going = threading.Event(), threading.Event()
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    pool = concurrent.futures.ThreadPoolExecutor(thread_name_prefix="an-sdk")
+    try:
+        pool.submit(lambda: (going.set(), never.wait(DEADLINE_S)))
+        assert going.wait(DEADLINE_S)
+        service.stop()
+        now[0] = onboard_service.CLOSE_S
+        service.close()
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        assert lines[-1] == (
+            "a call on a thread pool the service does not count (an-sdk_0) is still running at "
+            "the end of the budget: the service ends its process now with exit code 70"
+        ), lines
+    finally:
+        never.set()
+        pool.shutdown(wait=True)
+
+
+def test_a_call_left_on_a_radio_side_talk_turned_off_is_still_looked_at(tmp_path: Path) -> None:
+    """Turning talk off closes its radio side, but a call already running on that side's pools
+    outlives the close, and the service's close looked only at the side in hand: the call held
+    the process at its exit, unsaid. The pools of a side talk turned off are looked at too now.
+    A meeting's call here, on the side turned off, waits until the test ends."""
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    now, lines, ended = [0.0], [], []
+    never, going = threading.Event(), threading.Event()
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    try:
+        side = service.radio_side
+        assert side is not None
+        side.pools()[1].submit(lambda: (going.set(), never.wait(DEADLINE_S)))
+        assert going.wait(DEADLINE_S)
+        service._stop_talk("its own passport does not check out: a test")
+        assert service.radio_side is None, "talk is off, its side closed"
+        service.stop()
+        now[0] = onboard_service.CLOSE_S
+        service.close()
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        assert lines[-1] == (
+            "a call on the radio's meetings is still running at the end of the budget: the "
+            "service ends its process now with exit code 70"
+        ), lines
     finally:
         never.set()
 
@@ -1116,6 +1351,53 @@ def test_a_stop_starts_no_thread_and_only_wakes_the_one_made_before_the_service_
         assert running is not None and wait_for(lambda: running.stop_wanted is not None)
         assert wait_for(service._stop.is_set)
     finally:
+        service.close()
+
+
+def test_a_stop_ends_the_ticks_whatever_telling_the_run_does_and_says_what_failed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The stop's own thread told the run and only then ended the ticks, with nothing between:
+    a telling that raised, the journal's `print` on a stdout whose pipe had gone, ended the
+    thread, the ticks went on, and the stop never reached the close. The ticks end in a `finally`
+    now, and what failed is said in the journal, or on stderr where the journal cannot take it.
+    The journal here raises on the run's stopping line, then on every line."""
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+    from tests.test_onboard_brain import Run
+
+    lines: list[str] = []
+    gone = [False]
+
+    def journal(line: str) -> None:
+        if gone[0] or "is stopping" in line:
+            raise BrokenPipeError(32, "Broken pipe")
+        lines.append(line)
+
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host=""),
+        log=journal,
+        end_process=lambda code: None,
+    )
+    service._make_loop = lambda glot, kind, front: Run(glot, kind)  # type: ignore[method-assign]
+    service.start()
+    try:
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        stopper = service._stopper
+        assert stopper is not None
+        service.stop()
+        stopper.join(DEADLINE_S)
+        assert not stopper.is_alive() and service._stop.is_set(), "the ticks were never ended"
+        said = "the stop could not tell the run in hand: [Errno 32] Broken pipe"
+        assert said in lines, lines
+        gone[0] = True  # and where the journal cannot take a line at all, stderr has it
+        service._say_anywhere(said)
+        assert said in capsys.readouterr().err
+    finally:
+        gone[0] = False
+        service._stop.set()
         service.close()
 
 

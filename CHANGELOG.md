@@ -645,22 +645,24 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   start publishes it again; then the byes go out all at once, beside the passport server's and
   the listener's close, and the radio last. Whatever had not finished is said as `the service
   stops before it finished` and what it was, as in `saying bye to 2 robots met and closing the
-  radio`. A call a run handed to a thread of its own, or one on the radio's own threads, still
-  going at the end of the close held the process at its exit until systemd's kill, or in a
-  terminal until a person ended it, with nothing said: the service says so now in one line, in
-  the journal and on stderr, as in `a call the goal handed to a thread of its own has not ended,
-  and would hold the process at its exit: the service ends its process now with exit code 70`,
-  flushes every file the process has open for writing on disk, the run's record first, and ends
-  its process with exit code 70. A
-  run whose own thread is still going when the time is spent, which holds nothing at exit, is
-  said as it is, as in `the goal has not ended though it was told to stop: the body took the
-  stop it was sent; not done: the run's end record; not known: the body's close; the service
-  ends with exit code 70, and the run's thread, which holds nothing, ends with it`, and the
-  process ends by the ordinary road, with exit code 70, or 0 when the run had ended, its
-  record's end written, and was only still writing its summary or memory, or telling its
-  terminal how. The line speaks only of the stops sent since the service's
-  stop came, the last one winning, in the run's record's own words. Where the run had not ended,
-  the robot is as it left it: an arm keeps its torque on and holds where it stood.
+  radio`. A call a run handed to a thread of its own, or one on the radio's own threads or on a
+  thread pool of zeroconf's or an SDK's, still going at the end of the close held the process at
+  its exit until systemd's kill, or in a terminal until a person ended it, with nothing said.
+  Such a call is given half a second more now, and one still running then is said in one line,
+  in the journal and on stderr, as in `a call the goal handed to a thread of its own is still
+  running at the end of the budget: the service ends its process now with exit code 70`; every
+  file the process has open for writing on disk is flushed, the run's record first, each wait
+  for a flush a fifth of a second at most, the line names any file that did not flush, and the
+  process ends with exit code 70 whatever the flushes met. A run whose own thread is still
+  going when the time is spent, which holds nothing at exit, is said as it is, as in `the goal
+  has not ended though it was told to stop: the body took the stop it was sent; not done: the
+  run's end record; not known: the body's close; the service ends with exit code 70, and the
+  run's thread, which holds nothing, ends with it`, and the process ends by the ordinary road,
+  with exit code 70, or 0 when the run had ended, its record's end written, and was only still
+  writing its summary or memory, or telling its terminal how. The line speaks only of the stops
+  sent since the service's stop came, the last one winning, in the run's record's own words.
+  Where the run had not ended, the robot is as it left it: an arm keeps its torque on and holds
+  where it stood.
 - **`roboglot onboard stop` says the run stopped only once it has.** It printed `stopped the
   run in hand` as soon as the service had passed the stop on, so a run whose stop had not
   landed, or whose teardown was still sending, read as stopped. The service waits now, 5 s at

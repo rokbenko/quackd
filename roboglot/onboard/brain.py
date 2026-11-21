@@ -19,6 +19,7 @@ import concurrent.futures
 import contextlib
 import threading
 import time
+import weakref
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -93,6 +94,7 @@ class CallPool(concurrent.futures.ThreadPoolExecutor):
         self.who = who
         self._busy = 0
         self._calls = threading.Condition()
+        _COUNTED.add(self)
 
     @property
     def busy(self) -> int:
@@ -119,6 +121,16 @@ class CallPool(concurrent.futures.ThreadPoolExecutor):
         """Whether no call is under way, waiting up to `timeout` seconds for the last to end."""
         with self._calls:
             return self._calls.wait_for(lambda: self._busy == 0, max(0.0, timeout))
+
+
+#: Every `CallPool` in the process, whoever made it, so a close can tell the pools that count
+#: their calls from those nobody counts (`counted_workers`).
+_COUNTED: weakref.WeakSet[CallPool] = weakref.WeakSet()
+
+
+def counted_workers() -> set[threading.Thread]:
+    """The worker threads of every `CallPool` in the process."""
+    return {worker for pool in list(_COUNTED) for worker in list(pool._threads)}
 
 
 @dataclass
