@@ -337,6 +337,7 @@ files = [
     "scripts/bodies_docs.py",
     "scripts/example_log.py",
     "scripts/upstream_drift.py",
+    "scripts/changelog_lock.py",
 ]
 ignore_missing_imports = true
 warn_unused_ignores = false
