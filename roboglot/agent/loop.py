@@ -80,6 +80,7 @@ from roboglot.latency import spread
 from roboglot.log import (
     A_PERSON,
     EventLog,
+    LogEvent,
     Sink,
     a_person_was_asked,
     asked_on,
@@ -153,6 +154,10 @@ REPROMPT = "You must call exactly one tool. Choose now."
 RECORD_REFUSED = "the run's record could not be written: {error}"
 """Said once on stderr when a write to the record fails on the way out, which no longer stops the
 teardown: the stop, the fold and the close go out as on a disk that works."""
+
+STOP_UNRECORDED = "a stop did not land, and the record could not say so: {reason}"
+"""Said on stderr for a stop on the way out that did not land, where the record refused its row:
+that row is the only place it is said, and the console is told only after the record."""
 
 CUT_OFF = "Your last answer was cut off at the output limit, so no call in it was run."
 """Why an answer the vendor says the output limit ended runs nothing (`ProviderTurn.cut_off`):
@@ -691,11 +696,15 @@ class AgentLoop:
         session that moves on from a goal to a newer command (`_abort_reason`). None leaves the
         abort's words to the heartbeat, a team's link or the kill switch, as before."""
         self._state_unanswered = False
-        """Whether a turn's read of the body's state was still out when the abort cut it off
-        (`_observe`), so the teardown does not wait on that link's state again before the close."""
+        """Whether a read of the body's state was still out when a stop or a cancel cut it off
+        (`_read_state`), so the teardown does not wait on that link's state again before the
+        close."""
         self._ending = False
-        """From the run's error branches and its teardown on, a record that cannot be written stops
-        nothing (`_emit`)."""
+        """From the run's error branches, its teardown and the park of a run that never began on, a
+        record that cannot be written stops nothing (`_emit`)."""
+        self._stop_rows_kept = False
+        """Whether the record sink keeps a refused stop row from stopping anything
+        (`_keep_stop_rows`)."""
         self._unwritten: Exception | None = None
         """The first write to the record that failed on the way out (`_record_refused`)."""
         self.heartbeat = Heartbeat(
@@ -847,7 +856,48 @@ class AgentLoop:
         if self._unwritten is not None:
             return
         self._unwritten = error
-        sys.stderr.write(RECORD_REFUSED.format(error=f"{type(error).__name__}: {error}") + "\n")
+        self._on_stderr(RECORD_REFUSED.format(error=f"{type(error).__name__}: {error}"))
+
+    def _on_stderr(self, text: str) -> None:
+        """`text` on stderr, the one place left to say what the record could not, and never a
+        reason for the teardown to stop. A stderr that cannot take it either, a file on the disk
+        that filled, is kept as a note on the first write the record refused, which is what leaves
+        the run when the run has no error of its own: it raised out of the rest move's narration,
+        and the fold was skipped again."""
+        try:
+            sys.stderr.write(text + "\n")
+            sys.stderr.flush()
+        except Exception as e:
+            if self._unwritten is not None:
+                self._unwritten.add_note(f"stderr refused it too: {type(e).__name__}: {e}")
+
+    def _keep_stop_rows(self) -> None:
+        """From the way out on, a stop's own row that the record refuses stops nothing either.
+
+        The logged transport writes it after the stop went out, straight to the record, so a
+        refused write raised past the loop's guard (`_emit`) and was lost to the person as well:
+        the console is told only after the record. Now it is kept as the loop's own refusals are
+        (`_record_refused`), the console still shown it, and a stop that did not land said on
+        stderr. Every other row the logged transport writes is left to raise as it did: a send it
+        cannot record is not sent, and the hand-back's gripper holds on that."""
+        record = self.event_log.record
+        if record is None or self._stop_rows_kept:
+            return
+        self._stop_rows_kept = True
+
+        def written(event: LogEvent) -> None:
+            if event.kind != "intent" or event.data.get("intent") != "stop":
+                record(event)
+                return
+            try:
+                record(event)
+            except Exception as e:
+                self._record_refused(e)
+                if event.data.get("accepted") is False:
+                    why = event.data.get("reason") or "no reason was given"
+                    self._on_stderr(STOP_UNRECORDED.format(reason=why))
+
+        self.event_log.record = written
 
     def _final_write(self, write: Callable[..., Any], *args: Any) -> None:
         """One of the run's last writes, tried whatever the others did (`_record_refused`)."""
@@ -2110,6 +2160,53 @@ class AgentLoop:
                 if settled.how == "folded":
                     await self._close_what_the_hand_back_opened(settled.fold, stopped)
 
+    async def _read_state(self) -> RobotState:
+        """The body's state, raced against the abort as the LLM's calls are (`_unless_stopped`).
+
+        Every stop but a second Ctrl-C only sets the flag, so a read of a link gone quiet was
+        waited on for good, a team or an onboard goal having no second press. A read the stop or
+        a cancel cut off is not asked again at the close (`_state_unanswered`), where it held the
+        close and `run_end` for as long as it went unanswered, which was for good. One that
+        answered with an error of its own answered, and the close asks again as it always did."""
+        try:
+            return await self._until_stopped(self.cfg.transport.get_state())
+        except BaseException as e:
+            if isinstance(e, Aborted) or not isinstance(e, Exception):
+                self._state_unanswered = True
+            raise
+
+    async def _until_stopped(self, call: Awaitable[T]) -> T:
+        """`call` awaited in the run's own task, and ended by the abort as `_unless_stopped` ends
+        one, with no task of its own: the abort cancels this task while the call is out, and the
+        cancel is taken back and raised as `Aborted`. A call that answers at once, as a mock's
+        read does, answers with nothing else let run in between, so a run's start and its every
+        turn go as they did before the read was raced; `_unless_stopped`'s tasks gave the loop a
+        step there, and a cancel meant for the run's first turn landed in its start instead. A
+        cancel from outside that comes with the abort's is raised as the cancel it is."""
+        me = asyncio.current_task()
+        stopping = asyncio.ensure_future(self.executor.abort.wait())
+        active, fired = True, False
+
+        def stop(_: asyncio.Future[Any]) -> None:
+            nonlocal fired
+            # a done callback can be scheduled before the call returns and run after it, when
+            # cancelling the run would end something that never asked to be raced
+            if active and me is not None and not stopping.cancelled():
+                fired = True
+                me.cancel()
+
+        stopping.add_done_callback(stop)
+        try:
+            return await call
+        except asyncio.CancelledError:
+            if fired and me is not None and me.uncancel() == 0:
+                raise Aborted(self._abort_reason()) from None
+            raise
+        finally:
+            active = False
+            stopping.remove_done_callback(stop)
+            stopping.cancel()
+
     async def _observe(
         self,
         last_verb: str | None,
@@ -2137,12 +2234,7 @@ class AgentLoop:
         waiting on a camera or a link that never answered stayed waiting, and a team or an
         onboard goal has no second press. A read the abort cut off is cancelled, and a worker
         thread under it is left to end by itself, which no cancel can make it do."""
-        try:
-            state = await self._unless_stopped(self.cfg.transport.get_state())
-        except Aborted:
-            # not asked again at the close, where it was waited on with no end before the close
-            self._state_unanswered = True
-            raise
+        state = await self._read_state()
         frames = await self._unless_stopped(frames_of(self.cfg.transport))
         # the body's own list first, because it does not shrink when a lens stalls, and the
         # names of the frames that arrived only when a transport does not publish one
@@ -3140,8 +3232,17 @@ class AgentLoop:
                 self._note(f"this robot does not have {', '.join(dropped)}; running without")
             # One reading, before the budget starts, for two things the LLM has to be told at the
             # top: whether anything on this robot can see a fall, and what Roboglot is standing in
-            # for on this backend. Both are the robot's own words about itself.
-            first_state = await cfg.transport.get_state()
+            # for on this backend. Both are the robot's own words about itself. Raced against a
+            # stop that comes while it is out, as every turn's read is: a link that went quiet
+            # after the connect held the run here for good, a team's stop and the onboard
+            # service's being the flag and no more. A press made during the connect has its own
+            # road from here, the fold a person can stop and then the run's own end, so a read
+            # begun after it is awaited as it always was.
+            first_state = (
+                await cfg.transport.get_state()
+                if self.executor.abort.is_set()
+                else await self._read_state()
+            )
             if (warning := self._fall_blind_warning(registry, allow, first_state)) is not None:
                 self._note(warning)
                 if cfg.acknowledge is not None:
@@ -3344,6 +3445,10 @@ class AgentLoop:
             self.budget.start()
             self.heartbeat.start()
         except BaseException as e:
+            # the park narrates its fold as the teardown does, so on a disk that refuses the record
+            # it is held to the teardown's rule: a write that fails stops nothing
+            self._ending = True
+            self._keep_stop_rows()
             await self._park_before_the_run_began()
             self._record_a_run_that_never_began(e, connect_s=connect_s, manifest=manifest)
             raise
@@ -3737,6 +3842,7 @@ class AgentLoop:
             raise
         finally:
             self._ending = True
+            self._keep_stop_rows()
             # closed before the rest move and the hand-back, which reach the body without
             # passing the executor's gates
             self.executor.open_to_peers = False

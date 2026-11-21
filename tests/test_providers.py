@@ -6,6 +6,7 @@ import base64
 import enum
 import json
 import re
+import sys
 from collections.abc import Callable
 from types import SimpleNamespace as NS
 from typing import Any
@@ -965,6 +966,29 @@ async def test_a_blank_for_arguments_is_for_the_gate_and_no_call_with_its_defaul
     p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("gripper", raw)))
     assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
     assert parse_responses(responses_result("gripper", raw)).tool_calls[0].arguments == {
+        "_unparsed": raw
+    }
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"vx": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
+        '{"vx": ' + "[" * (3 * sys.getrecursionlimit()) + "]" * (3 * sys.getrecursionlimit()) + "}",
+    ],
+    ids=["long-integer", "deep-nesting"],
+)
+async def test_arguments_the_decoder_raises_on_go_to_the_gate_and_do_not_end_the_run(
+    raw: str,
+) -> None:
+    """A native call whose argument string holds an integer past the interpreter's digit limit,
+    or nesting past its recursion limit, made the decoder raise `ValueError` or `RecursionError`,
+    beside which only `JSONDecodeError` was caught, and the run ended on a `ProviderError` over one
+    odd call. Such a string goes the way every argument string that cannot be read goes: to the
+    params gate, which refuses it and tells the pilot, and the run goes on."""
+    p = OpenAIProvider(llm_id=UNHINTED, client=FakeOpenAI(openai_response("walk", raw)))
+    assert (await p.step("S", history()[:1], TOOLS)).tool_calls[0].arguments == {"_unparsed": raw}
+    assert parse_responses(responses_result("walk", raw)).tool_calls[0].arguments == {
         "_unparsed": raw
     }
 

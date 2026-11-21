@@ -255,7 +255,8 @@ draws or a robot is missing from a box.
    also shown the primary camera's picture beside its state, and nothing else is.
 3. **Enforce.** Zero tool calls → one re-prompt, then failure. Several → the first. An answer
    the vendor says the output limit cut off (`max_tokens`, `MAX_TOKENS`, `length`, or a
-   Responses answer `incomplete` for `max_output_tokens`) counts as zero, whatever call it
+   Responses answer `incomplete` for `max_output_tokens`), or that Anthropic says filled the
+   context window (`model_context_window_exceeded`), counts as zero, whatever call it
    carries: the call is recorded as it came and never run, and the re-prompt says why, `Your
    last answer was cut off at the output limit, so no call in it was run.` in front of its
    usual words. Then

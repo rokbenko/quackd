@@ -12,6 +12,7 @@ import itertools
 import json
 import math
 import re
+import sys
 import threading
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime, timedelta
@@ -721,6 +722,84 @@ async def test_a_stop_ends_a_turn_stuck_reading_the_body_and_the_teardown_still_
         assert not transport.connected, "the teardown's close did not go out"
         events = Transcript.read(result.run_dir / "transcript.jsonl")
         assert [e for e in events if e["kind"] == "run_end"], "no run_end"
+    finally:
+        transport.let_go()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+
+
+async def test_a_stop_ends_a_run_stuck_on_its_first_read_of_the_body(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """The run reads the body once before its first turn, for the fall-blind warning, and that
+    read was awaited with nothing to end it, as a turn's were: a link that went quiet after the
+    connect held the run there for good under a team's stop, the onboard service's or a drive
+    session's newer command, which only set the flag. It is raced against the stop now, and the
+    run ends as one stopped before it began does: put down, closed, its end on the record, and
+    the stop's own reason the error it raises."""
+    transport = _ReadThatNeverAnswers("get_state")
+    transport.stuck = True
+    loop = AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
+            transport=transport,
+            runs_dir=tmp_path,
+        )
+    )
+    running = asyncio.ensure_future(loop.run())
+    try:
+        began = asyncio.ensure_future(
+            asyncio.to_thread(transport.began.wait, STUCK_READ_DEADLINE_S)
+        )
+        await asyncio.wait({began, running}, return_when=asyncio.FIRST_COMPLETED)
+        assert transport.began.is_set() and not running.done(), "the first read never stuck"
+        loop.stop_reason = "a newer command took the robot"
+        loop.executor.abort.set()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+        assert running.done(), "the stop did not end a run stuck on its first read of the body"
+        assert isinstance(running.exception(), Aborted), running.exception()
+        assert str(running.exception()) == "a newer command took the robot"
+        assert transport.stops >= 1 and not transport.connected, "it was not stopped and closed"
+        events = Transcript.read(loop.run_dir / "transcript.jsonl")
+        ends = [e for e in events if e["kind"] == "run_end"]
+        assert [e["outcome"] for e in ends] == ["aborted"], ends
+    finally:
+        transport.let_go()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+
+
+async def test_a_turn_stuck_on_a_state_read_and_ended_by_a_cancel_still_closes(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """A cancel ends a turn stuck on a state read as the flag does, a parent task's cancel or a
+    team's second Ctrl-C, but only the flag's case marked the read unanswered, so the teardown
+    asked the silent link for its state again, with no bound, and the close and `run_end` never
+    came. Whatever cut the read off, the teardown does not ask it again."""
+    transport = _ReadThatNeverAnswers("get_state")
+    loop = AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=_VerdictThenStuck(transport),
+            transport=transport,
+            runs_dir=tmp_path,
+        )
+    )
+    running = asyncio.ensure_future(loop.run())
+    try:
+        began = asyncio.ensure_future(
+            asyncio.to_thread(transport.began.wait, STUCK_READ_DEADLINE_S)
+        )
+        await asyncio.wait({began, running}, return_when=asyncio.FIRST_COMPLETED)
+        assert transport.began.is_set() and not running.done(), "the read never stuck"
+        stops_before = transport.stops
+        running.cancel()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+        assert running.done(), "the cancel did not end a turn stuck on a state read"
+        assert running.cancelled()
+        assert transport.stops > stops_before, "the teardown's stop did not go out"
+        assert not transport.connected, "the teardown's close did not go out"
+        events = Transcript.read(loop.run_dir / "transcript.jsonl")
+        assert [e["outcome"] for e in events if e["kind"] == "run_end"] == ["aborted"]
     finally:
         transport.let_go()
         await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
@@ -2589,19 +2668,60 @@ class _DiskThatFills:
     `Transcript.write` raises, before any observer sees it. What each refused write was rides in
     the error's filename, so the test can tell which write raised what."""
 
-    def __init__(self, real: Any) -> None:
+    def __init__(self, real: Any, *, after: str = "move", once: bool = False) -> None:
         self.real = real
-        self.full = False
+        self.after = after
+        """`move` fills it once the arm's move is on the record, `declare` once the run's
+        declaration is, so the first refused write is the teardown's, and `start` from the first
+        write on, as a disk full before the run is."""
+        self.once = once
+        """Refuse one write only, then take them again."""
+        self.full = after == "start"
         self.refused: list[str] = []
 
     def __call__(self, event: Any) -> None:
         if self.full:
             what = f"{event.kind}: {event.data.get('text', '')}"
             self.refused.append(what)
+            self.full = not self.once
             raise OSError(errno.ENOSPC, "No space left on device", what)
         self.real(event)
-        if event.kind == "verb_end" and event.data.get("name") == "move_joints":
+        moved = event.kind == "verb_end" and event.data.get("name") == "move_joints"
+        if (self.after == "move" and moved) or (self.after == "declare" == event.kind):
             self.full = True
+
+
+class _StderrOnTheFullDisk:
+    """`sys.stderr` sent to a file on the disk that filled: its write raises as the disk's does."""
+
+    def write(self, text: str) -> int:
+        raise OSError(errno.ENOSPC, "No space left on device", "<stderr>")
+
+    def flush(self) -> None:
+        raise OSError(errno.ENOSPC, "No space left on device", "<stderr>")
+
+
+def _arm_run(tmp_path: Path, *, view: Callable[[Any], None] | None = None) -> tuple[Any, Any]:
+    """A loop on the mock arm with a rest pose that moves the arm off it, then declares."""
+    from roboglot.glotfile.parser import parse_glot_text
+
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    script = [
+        ToolCall(name="move_joints", arguments={"positions": {"shoulder_pan": -20.0}}),
+        ToolCall(name="declare_success", arguments={"reason": "moved"}),
+    ]
+    loop = AgentLoop(
+        RunConfig(
+            glot=parse_glot_text(
+                ARM_GLOT.format(version=1, block="").replace("stop]", "stop, move_joints]")
+            ),
+            provider=FakeProvider(script=script),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+            view=view,
+        )
+    )
+    return loop, mock
 
 
 async def test_a_record_that_cannot_be_written_never_stops_the_teardown(
@@ -2650,6 +2770,171 @@ async def test_a_record_that_cannot_be_written_never_stops_the_teardown(
     assert loop.transcript._fh.closed, "the transcript was left open"
     told = [line for line in capsys.readouterr().err.splitlines() if "could not be written" in line]
     assert len(told) == 1 and "No space left on device" in told[0], told
+
+
+@pytest.mark.parametrize("stderr_works", [True, False], ids=["stderr-works", "stderr-full-too"])
+async def test_a_run_that_ended_by_itself_still_folds_when_its_teardown_cannot_be_recorded(
+    stderr_works: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The run declares, and the disk fills right after, so the first refused write is the
+    teardown's own, the rest move's narration, on a run with no error of its own: only the guard
+    set as the teardown begins stands between that note and a skipped fold. And with stderr on the
+    same full disk, a file that cannot take the one line either, that line raised out of the
+    narration and skipped the fold again. Now the fold and the close go out either way, and what
+    leaves `run` at its very end is the first write the record refused, with a note that stderr
+    refused it too where it did."""
+    loop, mock = _arm_run(tmp_path)
+    disk = _DiskThatFills(loop.event_log.record, after="declare")
+    loop.event_log.record = disk
+    if not stderr_works:
+        monkeypatch.setattr(sys, "stderr", _StderrOnTheFullDisk())
+    with pytest.raises(OSError) as raised:
+        await loop.run()
+    assert disk.refused, "the stand-in never filled: the run never declared"
+    assert _folded(mock, ARM_REST), f"the arm was left up: {mock.sequence}"
+    assert mock.sequence[-1] == "close" and mock.torque is False
+    assert raised.value.filename == disk.refused[0], (raised.value, disk.refused)
+    notes = getattr(raised.value, "__notes__", [])
+    if stderr_works:
+        told = [line for line in capsys.readouterr().err.splitlines() if "could not be" in line]
+        assert len(told) == 1 and not notes, (told, notes)
+    else:
+        assert [n.split(":")[0] for n in notes] == ["stderr refused it too"], notes
+
+
+async def test_the_runs_own_error_leaves_when_stderr_is_on_the_full_disk_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The disk fills while the run goes on, so the run's own error is its refused record, and
+    stderr is on the same disk. The error branch's note was refused, the one stderr line raised
+    in that handler, and the stderr's error left `run` in place of the run's own."""
+    loop, mock = _arm_run(tmp_path)
+    disk = _DiskThatFills(loop.event_log.record)
+    loop.event_log.record = disk
+    monkeypatch.setattr(sys, "stderr", _StderrOnTheFullDisk())
+    with pytest.raises(OSError) as raised:
+        await loop.run()
+    assert raised.value.filename == disk.refused[0] == "verb: ", (raised.value, disk.refused)
+    assert _folded(mock, ARM_REST), f"the arm was left up: {mock.sequence}"
+
+
+async def test_a_run_that_never_began_is_put_down_on_a_disk_that_refuses_the_record(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run that fails between the connect and its first step is parked, and the park narrates
+    its fold before it moves, as the teardown did: on a disk that refused the record the note
+    raised, the fold was skipped, the close kept torque on an arm left up, and its note saying so
+    was refused as well, so the console never showed it. The park is held to the teardown's rule
+    now: the arm is put down, the console shows its lines, stderr says once that the record could
+    not be written, and the run's own error is what leaves it."""
+    from roboglot.glotfile.parser import parse_glot_text
+
+    mock = LeRobotMock(rest_pose=ARM_REST)
+    seen: list[str] = []
+    loop = AgentLoop(
+        RunConfig(
+            glot=parse_glot_text(
+                ARM_GLOT.format(version=1, block="requires: [go_to]\n").replace(
+                    "stop]", "stop, go_to]"
+                )
+            ),
+            provider=FakeProvider(script=[]),
+            transport=LeRobotAdapter(mock),
+            runs_dir=tmp_path,
+            view=lambda e: seen.append(str(e.data.get("text", ""))),
+        )
+    )
+    loop.event_log.record = _DiskThatFills(loop.event_log.record, after="start")
+    with pytest.raises(AdapterError, match="requires go_to"):
+        await loop.run()
+    assert _folded(mock, ARM_REST), f"the arm was not put down: {mock.sequence}"
+    assert mock.sequence[-1] == "close" and mock.torque is False
+    assert "moving to the rest pose" in seen, seen
+    told = [line for line in capsys.readouterr().err.splitlines() if "could not be written" in line]
+    assert len(told) == 1, told
+
+
+class _StopThatDoesNotLand(MockTransport):
+    """A link whose stops land until the run declares, and from then on do not: the transport
+    knows and says so (`stop_error`), as one that knows a stop was lost does."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.lose_stops = False
+
+    async def stop(self) -> None:
+        await super().stop()
+        self.stop_error = "the bridge dropped it" if self.lose_stops else None
+
+
+@pytest.mark.parametrize("once", [True, False], ids=["its-row-only", "the-disk-stays-full"])
+async def test_a_teardown_stop_that_did_not_land_is_said_when_its_row_cannot_be_written(
+    once: bool, hello_glot: GlotFile, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The teardown's first write is its own stop's row, which the logged transport writes
+    straight to the record, past the loop's guard: a refused write was swallowed, the console is
+    told only after the record, and that row is the only place a stop that did not land is said.
+    With that row alone refused there was no stderr line at all. Now the console is still shown
+    it, stderr says the stop did not land and, once, that the record could not be written, and the
+    run raises the refused write at its end."""
+    seen: list[Any] = []
+    transport = _StopThatDoesNotLand()
+    loop = AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
+            transport=transport,
+            runs_dir=tmp_path,
+            view=seen.append,
+        )
+    )
+    real = loop.event_log.record
+    disk = _DiskThatFills(real, after="declare", once=once)
+
+    def sink(event: Any) -> None:
+        if event.kind == "declare":
+            transport.lose_stops = True
+        disk(event)
+
+    loop.event_log.record = sink
+    with pytest.raises(OSError):
+        await loop.run()
+    assert disk.refused[0].startswith("intent"), disk.refused
+    assert any(
+        e.kind == "intent" and e.data.get("intent") == "stop" and e.data.get("accepted") is False
+        for e in seen
+    ), "the console was not shown the stop that did not land"
+    err = capsys.readouterr().err.splitlines()
+    assert [line for line in err if "could not be written" in line] != []
+    assert len([line for line in err if "could not be written" in line]) == 1, err
+    assert [line for line in err if "did not land" in line and "dropped it" in line], err
+
+
+async def test_each_last_write_is_tried_whatever_the_others_did(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`run_end`, `summary.json` and the transcript's close are the run's last writes, and a
+    disk that refused the summary left the transcript open, its file handle leaked, and replaced
+    the run's result with that error before the record was closed. Each is tried whatever the
+    others did, the transcript is closed, and the refused write leaves `run` once everything has
+    been tried."""
+    loop, mock = _arm_run(tmp_path)
+
+    def refused(summary: Any) -> Any:
+        raise OSError(errno.ENOSPC, "No space left on device", "summary.json")
+
+    monkeypatch.setattr(loop.transcript, "write_summary", refused)
+    with pytest.raises(OSError) as raised:
+        await loop.run()
+    assert raised.value.filename == "summary.json"
+    assert loop.transcript._fh.closed, "the transcript was left open"
+    events = Transcript.read(loop.run_dir / "transcript.jsonl")
+    assert [e["outcome"] for e in events if e["kind"] == "run_end"] == ["success"]
+    assert _folded(mock, ARM_REST)
+    assert [line for line in capsys.readouterr().err.splitlines() if "summary.json" in line]
 
 
 async def test_a_body_with_no_rest_pose_says_nothing_about_one(
@@ -2928,7 +3213,8 @@ async def test_only_the_last_n_exchanges_keep_their_images(
     """`keep_images_for_last_n` is the only thing bounding what a run costs in pictures: every
     turn adds one per camera, and a run of twenty that sent them all would send forty. N counts
     exchanges rather than images, so a second camera doubles the bill and the bound still
-    holds. The trim is a copy, so the run's own history keeps every picture it was shown."""
+    holds. The trim is a copy, so the run's own history keeps which cameras every exchange was
+    shown; the bytes of those behind the window are dropped from it (`_drop_unsent_pictures`)."""
     hello_glot.frontmatter.budgets = Budgets()
     keep = 3
     provider = SeeingProvider(
@@ -2952,7 +3238,7 @@ async def test_only_the_last_n_exchanges_keep_their_images(
     assert last[-keep:] == [["top", "side"]] * keep, "the newest keep both views"
     assert last[:-keep] == [[], []], "and the older ones carry no picture at all"
     assert all(ex.observation.images for ex in loop.history), (
-        "the run's own history keeps every picture; only the request is trimmed"
+        "the run's own history keeps which pictures each exchange was shown"
     )
 
     events = Transcript.read(result.run_dir / "transcript.jsonl")

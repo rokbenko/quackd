@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace as NS
 from typing import Any
@@ -24,11 +25,13 @@ from roboglot.agent.providers.fake import AUTO_VERDICT
 from roboglot.agent.providers.local import (
     MAX_CALL_CHARS,
     NOT_A_BARE_CALL,
+    NOT_OFFERED,
     PRESETS,
     TOOL_HINT,
     LocalProvider,
     on_host,
     parse_tool_call_from_text,
+    read_call,
     split_thinking,
 )
 from roboglot.agent.providers.openai import OpenAIProvider
@@ -41,6 +44,9 @@ TOOLS = [
     {"name": "kick", "description": "d", "input_schema": {"type": "object", "properties": {}}},
 ]
 NAMES = {"walk_to", "kick"}
+WARM_UP_ENDS_S = 60.0
+"""How long a test that runs the loop waits for the pilot's warm-up thread to end. Generous on
+purpose: it waits for the end it needs, and only a warm-up that never ends uses all of it."""
 
 
 class FakeClient:
@@ -482,6 +488,15 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
         '```json\n{"name": "kick", "arguments": {}}\n```\n```json\n{"name": "walk_to", '
         '"arguments": {}}\n```',
         'I will approach. {"name":"walk_to","args":{"target":"ball"}} Then kick.',
+        'Here is my call: {"name": "kick", "arguments": {}}',
+        '{"name": "kick", "arguments": {}}<think>no, wait: the child is too close</think>',
+        '<think>plan it</think>{"name": "kick", "arguments": {}}<think>no, too close</think>',
+        '<think>first</think><think>second</think>{"name": "kick", "arguments": {}}',
+        '{"name": "kick", "arguments": {}}\n<think>hmm',
+        '<tool_call>{"name": "kick", "arguments": {}}</tool_call>\n'
+        '<tool_call>{"name": "walk_to", "arguments": {}}</tool_call>',
+        'Sure. <tool_call>{"name": "kick", "arguments": {}}</tool_call>',
+        '```json I will kick {"name": "kick", "arguments": {}}```',
     ],
     ids=[
         "declined",
@@ -491,15 +506,129 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
         "fence-then-prose",
         "two-fences",
         "inline",
+        "prose-before-only",
+        "call-then-thinking",
+        "call-between-two-thinkings",
+        "two-thinkings-first",
+        "call-then-cut-thought",
+        "two-tool-call-blocks",
+        "prose-then-tool-call",
+        "words-on-the-fence-line",
     ],
 )
 def test_text_is_a_call_only_when_it_is_nothing_but_the_call(text: str) -> None:
     """The fallback took the first JSON object anywhere in the answer that named an offered tool,
     so a call the LLM quoted in order to decline it, or the first of several it listed, ran as
     its choice. Text is a call only when the answer is nothing but the call: one JSON object,
-    optionally inside one code fence, the thinking split off before. Anything else is no call,
-    and the LLM is told so and asked again."""
+    optionally inside one code fence or one `<tool_call>` block, after an optional thinking block.
+    Anything else is no call, a thought after the call or a second one before it among them, and
+    the LLM is told so and asked again. Prose before the call with nothing after it is a case of
+    its own: the decode refuses whatever follows an object, and only the check on what comes
+    before it refuses this one."""
     assert parse_tool_call_from_text(text, NAMES) is None
+
+
+CALL = '{"name": "walk_to", "arguments": {"target": "ball"}}'
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"```JSON\n{CALL}\n```",
+        f"``` json\n{CALL}\n```",
+        f"```jsonc\n{CALL}\n```",
+        f"```js\n{CALL}\n```",
+        f"```javascript\n{CALL}\n```",
+        f"```json{CALL}```",
+        f"<think>plan it</think>\n{CALL}",
+        'Walk there, since {"name": "kick", "arguments": {}} is too close.\n</think>\n\n' + CALL,
+        f"<tool_call>\n{CALL}\n</tool_call>",
+        f"<think>plan it</think><tool_call>{CALL}</tool_call>",
+        chr(0xFEFF) + CALL,
+        chr(0x200B) + CALL + chr(0x200B) + "\n",
+    ],
+    ids=[
+        "fence-JSON",
+        "fence-space-json",
+        "fence-jsonc",
+        "fence-js",
+        "fence-javascript",
+        "fence-json-on-its-line",
+        "thinking-before",
+        "thinking-the-template-opened",
+        "tool-call-block",
+        "thinking-then-tool-call-block",
+        "byte-order-mark",
+        "zero-width-spaces",
+    ],
+)
+def test_one_call_alone_is_a_call_whatever_it_is_wrapped_in(text: str) -> None:
+    """The rule allows one fence and sets no language, so a fence whose opening line says `JSON`,
+    ` json`, `jsonc` or `js` holds the call as one saying `json` does: only `json` was taken. A
+    template that writes `<think>` itself leaves only the closing tag in the answer, and
+    everything up to it is the thinking block, so the call after it is read, and an object the
+    reasoning quoted is not. Hermes and Qwen templates wrap a call in one `<tool_call>` block when
+    the server's tool parser does not take it, the strongest mark of intent there is, which main
+    took and round one refused. And a byte order mark or a zero-width character round the call is
+    trimmed as whitespace is."""
+    assert parse_tool_call_from_text(text, NAMES) == ToolCall(
+        name="walk_to", arguments={"target": "ball"}
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        CALL + "<think>no: the ball is past the wall</think>",
+        "<think>a</think><think>b</think>" + CALL,
+    ],
+    ids=["thought-after-the-call", "two-thoughts-before-it"],
+)
+async def test_a_call_with_more_thinking_round_it_than_one_block_before_is_not_run(
+    text: str,
+) -> None:
+    """The provider split every thinking block out of the answer, wherever it stood, before the
+    fallback read what was left, so a call with a thought after it, perhaps the thought that
+    rejects it, or with a second thought before it, came back as the bare call and ran. The
+    fallback reads the answer as it came now, and the display still gets its thinking split."""
+    p = LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text)))
+    turn = await p.step("S", history(), TOOLS)
+    assert turn.tool_calls == [] and p.text_fallbacks == 0
+    assert turn.not_a_call == NOT_A_BARE_CALL and turn.thinking
+
+
+async def test_a_verb_that_takes_no_parameters_is_called_with_none_without_arguments() -> None:
+    """`{"name": "stop"}` for a verb whose schema has no parameters leaves nothing for a default
+    to fill in, and main ran it; round one asked it again, as it rightly does a verb that takes
+    some. Through the provider, the tools' own schemas say which is which."""
+    tools = [
+        {
+            "name": "walk_to",
+            "description": "d",
+            "input_schema": {"type": "object", "properties": {"target": {"type": "string"}}},
+        },
+        {"name": "stop", "description": "d", "input_schema": {"type": "object", "properties": {}}},
+    ]
+    stop, walk = [
+        await LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text))).step(
+            "S", history(), tools
+        )
+        for text in ('{"name": "stop"}', '{"name": "walk_to"}')
+    ]
+    assert stop.tool_calls == [ToolCall(id="text-1", name="stop", arguments={})]
+    assert walk.tool_calls == [] and walk.not_a_call == NOT_A_BARE_CALL
+
+
+def test_one_object_naming_a_tool_not_offered_is_told_so_in_its_own_words() -> None:
+    """`{"name": "fly", "arguments": {}}` is one object in the hint's shape, naming nothing the LLM
+    was given. It was told it was not one object in that shape, which it was, so it sent the same
+    object again and the run ended on its second answer. It is told the tool is not one of its
+    own now, and the record keeps those words as the reason."""
+    told = read_call('{"name": "fly", "arguments": {}}', NAMES)
+    assert told == NOT_OFFERED.format(name='"fly"')
+    assert read_call('{"name": "fly\\nlast verb", "arguments": {}}', NAMES) == (
+        NOT_OFFERED.format(name='"fly\\nlast verb"')
+    ), "the name is quoted, so nothing in it starts a line"
 
 
 class CountingJson:
@@ -579,11 +708,8 @@ def test_a_call_longer_than_any_call_needs_is_not_read(monkeypatch: pytest.Monke
         '{"a": ' + "1" * (sys.get_int_max_str_digits() + 1) + "}",
         '{"name": "walk_to", "arguments": {"a":' + "[" * DEEP + "]" * DEEP + "}}",
         '{"a":' * DEEP,
-        '{"name": "walk_to", "arguments": "{\\"a\\": '
-        + "1" * (sys.get_int_max_str_digits() + 1)
-        + '}"}',
     ],
-    ids=["long-integer", "deep-nesting", "deep-unclosed", "long-integer-in-a-string"],
+    ids=["long-integer", "deep-nesting", "deep-unclosed"],
 )
 async def test_text_the_decoder_raises_on_is_no_call_and_never_leaves_the_provider(
     text: str,
@@ -621,13 +747,26 @@ def test_the_thinking_is_split_off_in_one_pass_over_the_answer(
         assert scanned[0] <= 3 * len(text), f"{scanned[0]} characters read for {len(text)}"
     assert split_thinking("<think>" * 3) == ("<think><think>", "")
     assert split_thinking("<think>a</think>b<think>c") == ("a\n\nc", "b")
-    assert split_thinking("x</think>y<think>z</think>") == ("z", "x</think>y")
+    # a closing tag with no opening before it ends a block the chat template opened
+    assert split_thinking("x</think>y<think>z</think>") == ("x\n\nz", "y")
 
 
-@pytest.mark.parametrize("args", ["[1, 2]", '"[1, 2]"', '"{broken"', "7", '"text"', "null"])
+@pytest.mark.parametrize(
+    "args",
+    [
+        "[1, 2]",
+        '"[1, 2]"',
+        '"{broken"',
+        "7",
+        '"text"',
+        "null",
+        '"{\\"a\\": ' + "1" * (sys.get_int_max_str_digits() + 1) + '}"',
+    ],
+)
 def test_arguments_it_cannot_read_are_kept_for_the_gate(args: str) -> None:
     """Not `{}`, which is the call with its defaults, on nothing the LLM said. The gate refuses
-    them and tells the pilot, as for every other vendor."""
+    them and tells the pilot, as for every other vendor. An argument string the decoder raises on,
+    an integer past the interpreter's digit limit, goes the same way (`tool_arguments`)."""
     call = parse_tool_call_from_text(f'{{"name": "walk_to", "arguments": {args}}}', NAMES)
     assert call is not None and list(call.arguments) == ["_unparsed"], call
 
@@ -682,6 +821,13 @@ async def test_a_walk_the_local_llm_quoted_to_decline_it_is_not_run_and_it_is_to
     result = await run_glot(
         RunConfig(glot=hello_glot, provider=provider, transport=transport, runs_dir=tmp_path)
     )
+    # The pilot is warmed in a daemon thread of its own (`loop._Warming`), and on Windows its
+    # platform question is a WMI query: one still running when the interpreter exits crashed it,
+    # after every test had passed. So this test waits for it to end before it returns.
+    for thread in threading.enumerate():
+        if thread.name == "roboglot-pilot-warm":
+            thread.join(timeout=WARM_UP_ENDS_S)
+            assert not thread.is_alive(), "the pilot's warm-up never ended"
     assert not transport.intents_of("move"), "the walk the LLM declined moved the body"
     assert provider.text_fallbacks == 0
     assert result.outcome == "failure" and result.reason == "declined", result.reason

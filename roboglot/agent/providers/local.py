@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Collection
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -32,7 +33,7 @@ LOCAL_NAMES = tuple(PRESETS)
 
 _BARE_CALL = "exactly one JSON object and nothing else"
 """What text has to be to count as a call: the rule the hint asks for and the fallback holds
-an answer to (`parse_tool_call_from_text`), read by both from here."""
+an answer to (`read_call`), read by both from here."""
 _CALL_SHAPE = '{"name": "<verb>", "arguments": {<parameters>}}'
 
 TOOL_HINT = (
@@ -48,6 +49,11 @@ NOT_A_BARE_CALL = (
 """What the LLM is told when its text was read and was no call, in front of the loop's own
 re-prompt (`ProviderTurn.not_a_call`): a call quoted in prose, or one of several listed, is not
 one, and an LLM that thought it had answered is told what would have been."""
+
+NOT_OFFERED = "Your last answer called {name}, which is not one of your tools, so nothing was run."
+"""What the LLM is told of one object in the hint's shape that names no tool it was given: it was
+in the right shape, so being told it was not would have it send the same object again. The name
+is quoted as JSON, so nothing in it can start a line of its own."""
 
 _LOCAL_NEEDS_A_URL = (
     "--llm local needs the server address: --base-url http://host:port/v1 "
@@ -69,9 +75,15 @@ with an indent. This is four times that. Anything longer is no call: a local ser
 output limit, so a repetition loop runs to the end of its context, and none of that is decoded."""
 
 _FENCE = "```"
-_FENCE_LANGUAGE = "json"
 _THINK_OPEN = "<think>"
 _THINK_CLOSE = "</think>"
+_TOOL_CALL_OPEN = "<tool_call>"
+_TOOL_CALL_CLOSE = "</tool_call>"
+"""The tags Hermes and Qwen chat templates wrap a call in, which reach the text whenever the
+server's own tool parser does not take them: one block round one call is that call."""
+_INVISIBLE = "".join(map(chr, (0xFEFF, 0x200B, 0x200C, 0x200D, 0x2060)))
+"""What an answer can carry round its call that shows nothing and that `str.strip` keeps: a byte
+order mark and the zero-width characters. Trimmed as whitespace is (`_trimmed`)."""
 _NAME_KEYS = ("name", "tool", "function", "verb")
 _ARGS_KEYS = ("arguments", "parameters", "params", "args", "input")
 
@@ -122,10 +134,17 @@ def split_thinking(text: str) -> tuple[str | None, str]:
     Found with plain searches in one pass: each opening, then the first closing after it. A lazy
     pattern looked for a closing from every opening to the end of the reply, so thousands of
     openings never closed cost the square of their number on the event loop's thread. The first
-    opening with no closing after it ends the pass, since no later one can have one either."""
+    opening with no closing after it ends the pass, since no later one can have one either.
+
+    A chat template that writes the opening tag itself, at the end of the prompt, gets a reply
+    whose thinking has only its closing tag: everything up to a first `</think>` with no
+    `<think>` before it is that block (`_template_opened`)."""
     thoughts: list[str] = []
     kept: list[str] = []
     at = 0
+    if (lead := _template_opened(text)) is not None:
+        thoughts.append(text[:lead].strip())
+        at = lead + len(_THINK_CLOSE)
     while (opened := _find(text, _THINK_OPEN, at)) != -1:
         inside = opened + len(_THINK_OPEN)
         closed = _find(text, _THINK_CLOSE, inside)
@@ -148,61 +167,136 @@ def _find(text: str, needle: str, start: int) -> int:
     return text.find(needle, start)
 
 
+def _template_opened(text: str) -> int | None:
+    """Where a thinking block whose opening tag the chat template wrote ends: the first
+    `</think>` when no `<think>` comes before it, or None."""
+    closed = _find(text, _THINK_CLOSE, 0)
+    if closed == -1:
+        return None
+    opened = _find(text, _THINK_OPEN, 0)
+    return closed if opened == -1 or opened > closed else None
+
+
+def _trimmed(text: str) -> str:
+    """`text` without whitespace or `_INVISIBLE` characters at either end, read once from each."""
+    start, end = 0, len(text)
+    while start < end and (text[start].isspace() or text[start] in _INVISIBLE):
+        start += 1
+    while end > start and (text[end - 1].isspace() or text[end - 1] in _INVISIBLE):
+        end -= 1
+    return text[start:end]
+
+
+def after_thinking(text: str) -> str | None:
+    """What an answer says after the one thinking block it may open with, or None for an answer
+    that is thinking to its end.
+
+    The block is `<think>...</think>` at the very start, or everything up to a first `</think>`
+    with no `<think>` before it, from a template that wrote the opening itself. What follows is
+    handed back as it is, any further thinking included, so a call with a thought after it, or a
+    second block before it, is not nothing but the call."""
+    if (lead := _template_opened(text)) is not None:
+        return text[lead + len(_THINK_CLOSE) :]
+    opened = _find(text, _THINK_OPEN, 0)
+    if opened == -1 or _trimmed(text[:opened]):
+        return text
+    closed = _find(text, _THINK_CLOSE, opened + len(_THINK_OPEN))
+    return None if closed == -1 else text[closed + len(_THINK_CLOSE) :]
+
+
 def _bare(text: str) -> str | None:
-    """The one JSON object an answer is nothing but, as text, or None: the whole answer once
-    trimmed, or the inside of one code fence that is the whole answer, its `json` tag allowed.
-    Whether that is one object and nothing after it is the decode's to say, which takes nothing
-    after the value."""
-    body = text.strip()
-    if body.startswith(_FENCE) and body.endswith(_FENCE) and len(body) >= 2 * len(_FENCE):
-        body = body[len(_FENCE) : -len(_FENCE)]
-        if body.startswith(_FENCE_LANGUAGE):
-            body = body[len(_FENCE_LANGUAGE) :]
-        body = body.strip()
+    """The one JSON object an answer is nothing but, as text, or None: the whole of it once
+    trimmed, the inside of one code fence that is the whole of it, whatever the fence's opening
+    line says it holds, or the inside of one `<tool_call>` block that is the whole of it. Whether
+    that is one object and nothing after it is the decode's to say, which takes nothing after the
+    value."""
+    body = _trimmed(text)
+    if body.startswith(_TOOL_CALL_OPEN) and body.endswith(_TOOL_CALL_CLOSE):
+        inner = body[len(_TOOL_CALL_OPEN) : -len(_TOOL_CALL_CLOSE)]
+        if _TOOL_CALL_OPEN in inner or _TOOL_CALL_CLOSE in inner:
+            return None  # two blocks, and whatever is between them
+        body = _trimmed(inner)
+    elif body.startswith(_FENCE) and body.endswith(_FENCE) and len(body) >= 2 * len(_FENCE):
+        inner = body[len(_FENCE) : -len(_FENCE)]
+        line, newline, below = inner.partition("\n")
+        at = line.find("{")
+        if at == -1:
+            # the opening line is the fence's info string, whatever it says (`json`, `JSON`,
+            # `jsonc`, `js`, none at all), and it goes with the fence
+            inner = below if newline else ""
+        elif len(line[:at].split()) > 1:
+            return None  # words before the object on the fence's own line
+        else:
+            inner = inner[at:]  # the object on the opening line, after one word or none
+        body = _trimmed(inner)
     return body if body.startswith("{") else None
 
 
-def _as_call(obj: dict[str, Any], tool_names: set[str]) -> ToolCall | None:
+def _as_call(
+    obj: dict[str, Any], tool_names: set[str], no_parameters: Collection[str]
+) -> ToolCall | str:
+    """The call one object is, or the words the LLM is told about why it is none."""
     fn = obj.get("function")
     if isinstance(fn, dict):  # OpenAI style {"function": {"name": .., "arguments": ..}}
         obj = {**obj, **fn}
     name = next((obj[k] for k in _NAME_KEYS if isinstance(obj.get(k), str)), None)
-    if name is None or name not in tool_names:
-        return None
-    # Not `{}` for what cannot be read, nor for arguments never written: that is a call with its
-    # defaults, on nothing the LLM said. The hint asks for an arguments object, so an object
-    # without one is not the call it describes, and the LLM is asked again.
+    if name is None:
+        return NOT_A_BARE_CALL
+    if name not in tool_names:
+        return NOT_OFFERED.format(name=json.dumps(name))
+    # Not `{}` for what cannot be read, nor for arguments never written to a verb that takes
+    # some: that is a call with its defaults, on nothing the LLM said. A verb that takes none
+    # has no defaults to fill in, so it is called with none.
     key = next((k for k in _ARGS_KEYS if k in obj), None)
     if key is None:
-        return None
+        return ToolCall(name=name, arguments={}) if name in no_parameters else NOT_A_BARE_CALL
     args: Any = obj[key]
     return ToolCall(name=name, arguments=tool_arguments("null" if args is None else args))
 
 
-def parse_tool_call_from_text(text: str, tool_names: set[str]) -> ToolCall | None:
-    """A tool call an LLM wrote as JSON text instead of a native tool call, or None.
+def read_call(
+    text: str, tool_names: set[str], *, no_parameters: Collection[str] = ()
+) -> ToolCall | str | None:
+    """The call an answer written as text is nothing but, the words the LLM is told about why it
+    is none, or None for an answer with nothing after its thinking, which is asked again in the
+    loop's own words.
 
     Text is a call only when the answer is nothing but the call (`_BARE_CALL`): one JSON object,
-    optionally inside one code fence, after the thinking `_normalise` split off. The first object
-    anywhere in the answer used to be taken, so a call the LLM quoted in order to decline it, or
-    the first of several it listed as options, ran as its choice.
+    optionally inside one code fence or one `<tool_call>` block, after an optional thinking block
+    (`after_thinking`). The first object anywhere in the answer used to be taken, so a call the
+    LLM quoted in order to decline it, or the first of several it listed as options, ran as its
+    choice. `no_parameters` names the tools that take none, which are called with none when the
+    object has no arguments.
 
-    At most `MAX_CALL_CHARS` is read, and decoded once. Text the decoder raises on is no call,
-    and the LLM is told so (`NOT_A_BARE_CALL`): a `JSONDecodeError`, and the two it raised past
-    the one this caught, `ValueError` for an integer longer than the interpreter converts and
-    `RecursionError` for nesting deeper than it follows. This runs outside the provider's try,
-    so either used to leave it raw and end the run on one odd answer."""
-    if text is None or len(text) > MAX_CALL_CHARS:
+    At most `MAX_CALL_CHARS` after the thinking is read, and decoded once. Text the decoder
+    raises on is no call: a `JSONDecodeError`, `ValueError` for an integer longer than the
+    interpreter converts and `RecursionError` for nesting deeper than it follows. This runs
+    outside the provider's try, so either used to leave it raw and end the run on one odd
+    answer."""
+    said = after_thinking(text or "")
+    if said is None or not _trimmed(said):
         return None
-    body = _bare(text)
+    if len(said) > MAX_CALL_CHARS:
+        return NOT_A_BARE_CALL
+    body = _bare(said)
     if body is None:
-        return None
+        return NOT_A_BARE_CALL
     try:
         obj = json.loads(body)
         # arguments written as a string are decoded again here (`tool_arguments`)
-        return _as_call(obj, tool_names) if isinstance(obj, dict) else None
+        if not isinstance(obj, dict):
+            return NOT_A_BARE_CALL
+        return _as_call(obj, tool_names, no_parameters)
     except (ValueError, RecursionError):
-        return None
+        return NOT_A_BARE_CALL
+
+
+def parse_tool_call_from_text(
+    text: str, tool_names: set[str], *, no_parameters: Collection[str] = ()
+) -> ToolCall | None:
+    """A tool call an LLM wrote as text instead of a native tool call, or None (`read_call`)."""
+    read = read_call(text, tool_names, no_parameters=no_parameters)
+    return read if isinstance(read, ToolCall) else None
 
 
 class LocalProvider(OpenAIProvider):
@@ -272,6 +366,8 @@ class LocalProvider(OpenAIProvider):
             reasoning_effort=reasoning_effort,
         )
         self.text_fallbacks = 0
+        self._answer: str | None = None
+        """The last answer's text as it came, before its thinking was split off (`_normalise`)."""
 
     @staticmethod
     def _address(preset: str | None, base_url: str | None, host: str | None) -> str:
@@ -344,20 +440,29 @@ class LocalProvider(OpenAIProvider):
         `turn.text`: an LLM that weighs a verb in its reasoning and then rejects it
         (`<think>maybe {"name": "kick"} but no</think>I will wait.`) would otherwise have
         that call parsed out of the discarded thought and executed.
+
+        The answer as it came is kept for the fallback (`_answer`), which reads the call from
+        it and not from what is left once every block is split off: a call with a thought after
+        it, or a second thought before it, is not nothing but the call.
         """
-        if turn.thinking is None and turn.text and "<think>" in turn.text:
-            thinking, rest = split_thinking(turn.text)
+        text = turn.text
+        self._answer = text
+        if turn.thinking is None and text and (_THINK_OPEN in text or _THINK_CLOSE in text):
+            thinking, rest = split_thinking(text)
             turn = turn.model_copy(update={"thinking": thinking, "text": rest or None})
         return turn
 
     def _fallback(self, turn: ProviderTurn, tools: list[dict[str, Any]]) -> ProviderTurn:
-        call = parse_tool_call_from_text(turn.text or "", {t["name"] for t in tools})
-        if call is None:
-            # text that was read and was no call: the LLM is told so when it is asked again, and
-            # an answer with no text is asked again in the loop's own words, as it always was
-            if (turn.text or "").strip():
-                return turn.model_copy(update={"not_a_call": NOT_A_BARE_CALL})
+        # a tool whose schema has no parameters is called with none when no arguments were written
+        bare = {t["name"] for t in tools if not (t.get("input_schema") or {}).get("properties")}
+        read = read_call(self._answer or "", {t["name"] for t in tools}, no_parameters=bare)
+        if read is None:
+            # an answer with nothing after its thinking is asked again in the loop's own words
             return turn
+        if isinstance(read, str):
+            # text that was read and was no call: the LLM is told why when it is asked again
+            return turn.model_copy(update={"not_a_call": read})
+        call = read
         self.text_fallbacks += 1
         call = call.model_copy(update={"id": f"text-{self.text_fallbacks}"})
         return turn.model_copy(update={"tool_calls": [call], "stop_reason": "text_fallback"})

@@ -78,6 +78,16 @@ def test_a_notes_tags_are_bounded_in_number_and_length_and_so_is_a_refresh(
     )
 
 
+def test_one_long_tag_among_a_few_is_cut_as_the_text_is(tmp_path: Path) -> None:
+    """A tag's length is bounded on its own, not only by the count: a note with two tags, one of
+    them a whole answer long, kept that one whole, the count never being reached. It is cut to
+    `TAG_MAX_CHARS` now, and the short one is kept as it was."""
+    mem = RobotMemory("microduck:mock", tmp_path)
+    entry = mem.remember("the door sticks", tags=["door", "y" * 10_000])
+    assert entry.tags == ["door", "y" * TAG_MAX_CHARS]
+    assert mem.notes()[0].tags == ["door", "y" * TAG_MAX_CHARS]
+
+
 def test_episode_and_recall_order(tmp_path: Path) -> None:
     mem = RobotMemory("microduck:mock", tmp_path)
     mem.record_episode(task="find-and-kick", outcome="failure", reason="no ball", steps=6, now=1.0)
