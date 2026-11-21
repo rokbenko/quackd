@@ -14,6 +14,7 @@ what a person and a pilot get to see of it.
 
 from __future__ import annotations
 
+import itertools
 import os
 import re
 import threading
@@ -49,6 +50,9 @@ REMEMBERED = 1024
 REMEMBERED_PER_SESSION = 1024
 SIGNED_TYPE = "application/jose"
 PLAIN_TYPE = "application/json"
+#: Why a first hello was answered with the second step: a hello this robot took, where the same
+#: hello again is answered with the same step and taken no further.
+HELLO_ANSWERED = "hello answered"
 
 _VERSION = re.compile(r"^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\Z")
 _TOKEN = re.compile(r"^[A-Za-z0-9_-]{16,64}\Z")
@@ -343,6 +347,9 @@ class Session:
     #: the messages seen in this session, so a repeat is dropped, which no other peer's
     #: messages can push out (`REMEMBERED_PER_SESSION`)
     seen: OrderedDict[str, None] = field(default_factory=OrderedDict)
+    #: when it was last used, as the endpoint counts: the order of its sessions, where `last`
+    #: is a clock that can read the same for two messages (Windows' ticks are 15.6 ms)
+    used: int = 0
 
 
 @dataclass(frozen=True)
@@ -415,6 +422,8 @@ class Endpoint:
         self._started: dict[str, _Started] = {}
         self._answered: dict[str, _Answered] = {}
         self._seen: OrderedDict[tuple[str, str], None] = OrderedDict()
+        #: counts each use of a session, for `Session.used`
+        self._uses = itertools.count(1)
         self._lock = threading.RLock()
 
     # ── what this robot sends ───────────────────────────────────────────────────────────
@@ -485,17 +494,22 @@ class Endpoint:
             session = self.session_with(peer)
             if session is None:
                 raise PassportError("6.3", f"no session with {peer}: say hello first")
-            session.last = self.clock()
+            self._used(session)
             doc = envelope(
                 kind, self.me, body, to=peer, re=re, nonces=session.nonces, msg=self.token()
             )
             return seal(doc, self.key)
 
     def session_with(self, peer: str) -> Session | None:
-        """The live session with `peer`, the most recent if there are two."""
+        """The live session with `peer`, the one used last if there are two. Two robots that
+        dial each other at once hold two, and an answer goes in the one its ask came in."""
         with self._lock:
             live = [s for s in self.sessions.values() if s.peer == peer and not self._quiet(s)]
-            return max(live, key=lambda s: s.last) if live else None
+            return max(live, key=lambda s: s.used) if live else None
+
+    def _used(self, session: Session) -> None:
+        session.last = self.clock()
+        session.used = next(self._uses)
 
     def expire(self) -> list[Session]:
         """End the sessions that went quiet, and forget hellos nobody finished."""
@@ -524,6 +538,33 @@ class Endpoint:
                 del table[msg]
 
     # ── what this robot receives ────────────────────────────────────────────────────────
+
+    def repeat(self, message: Message) -> Reply | None:
+        """What `receive` answers `message`, and does, where that needs nothing of its body: a
+        type this robot ignores, a message it has seen already, and a word that belongs to no
+        session of this robot's; None where it would have to read the body, a hello or a word
+        in a session. A caller that kept nothing of a message but its envelope can ask, and
+        read the message again when the answer is None."""
+        with self._lock:
+            if message.to not in (None, "*", self.me):
+                return None
+            if message.type not in TYPES:
+                return Reply(204, reason=f"a {message.type} is a type this robot ignores")
+            memory, seen, limit = self._memory(message)
+            if seen in memory:
+                return self._repeat(message) or Reply(204, reason="a repeat, dropped")
+            if message.type == "hello":
+                return None
+            session = self.sessions.get(message.nonces) if message.nonces is not None else None
+            if session is not None and session.peer == message.sender:
+                return None
+            # `_spoken` answers it before it reads anything of the body, as `receive` would
+            reply = self._spoken(message)
+            if reply.status < 300:
+                memory[seen] = None
+                while len(memory) > limit:
+                    memory.popitem(last=False)
+            return reply
 
     def receive(self, message: Message, *, from_inbox: bool = False) -> Reply:
         """What `message` comes to. A refusal is a reply with a status, never an exception, so
@@ -619,7 +660,7 @@ class Endpoint:
         self._answered[doc["msg"]] = _Answered(
             m.sender, nonces, passport, m.msg, wire, self.clock(), runtime_of(m.body)
         )
-        return Reply(200, wire, reason="hello answered")
+        return Reply(200, wire, reason=HELLO_ANSWERED)
 
     def _second(self, m: Message) -> Reply:
         started = self._started[str(m.re)]
@@ -654,6 +695,7 @@ class Endpoint:
         session = Session(
             m.sender, m.nonces, started_here, passport, self.clock(), runtime=dict(runtime)
         )
+        self._used(session)
         self.sessions[m.nonces] = session
         return session
 
@@ -685,7 +727,7 @@ class Endpoint:
         if self._quiet(session):
             del self.sessions[m.nonces]
             return Reply(403, reason="that session went quiet and ended")
-        session.last = self.clock()
+        self._used(session)
         if m.type == "say":
             return Reply(204, event=Event("said", session, str(m.body["text"]), m), reason="said")
         if m.type == "bye":

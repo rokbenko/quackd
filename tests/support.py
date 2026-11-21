@@ -110,6 +110,44 @@ def one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def jpeg_claiming(width: int, height: int) -> bytes:
+    """A 16 by 16 baseline JPEG whose frame header (SOF0) says `width` by `height`.
+
+    `Image.open` reads only that header, so this is how a test serves a frame that claims to be
+    enormous without making one: a decoder that went on would find 16 by 16 pixels of data
+    behind a header promising millions, and a picture that size is never allocated by a test.
+    """
+    import io
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (90, 90, 90)).save(buf, format="JPEG", quality=80)
+    data = bytearray(buf.getvalue())
+    at = data.index(b"\xff\xc0")  # SOF0: marker, length (2), precision (1), height, width
+    data[at + 5 : at + 7] = height.to_bytes(2, "big")
+    data[at + 7 : at + 9] = width.to_bytes(2, "big")
+    return bytes(data)
+
+
+def png_claiming(width: int, height: int) -> bytes:
+    """A 16 by 16 PNG whose header chunk (IHDR) says `width` by `height`, its checksum made
+    good, so a reader takes the header as the PNG's own: `jpeg_claiming` for a PNG."""
+    import io
+    import zlib
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (90, 90, 90)).save(buf, format="PNG")
+    data = bytearray(buf.getvalue())
+    # signature (8), then IHDR: length (4), type (4), width (4), height (4), ..., checksum (4)
+    data[16:20] = width.to_bytes(4, "big")
+    data[20:24] = height.to_bytes(4, "big")
+    data[29:33] = zlib.crc32(bytes(data[12:29])).to_bytes(4, "big")
+    return bytes(data)
+
+
 def load_script(path: Path, name: str) -> ModuleType:
     """The Python file at `path`, loaded as the module `name`, without importing it through any
     package: how a daemon, a bridge or a script that lives outside Roboglot is run.

@@ -251,6 +251,36 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   `robot_load_glotfile`. A group of robots is a team: `roboglot team` names one, `--team` runs one,
   a `team:` block shares a task out, `~/.roboglot/teams.json` keeps them, and a team run keeps each
   robot's record under `robots/` ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)).
+- **A team asks about each member whose body cannot see its own fall, and no body moves until
+  every one of them has been answered yes.** A team gave its members nobody to ask, so an Open
+  Duck on its bridge, on a task that can make it walk, walked after a note in its transcript where
+  a solo run on it asks first. Each such member is asked about now, as a solo run is, with its name
+  on the warning and in the question, `Are you watching duck right now? [y/N]:`, one question at a
+  time. Every member waits before it moves until each member whose part can make it walk has read
+  its body and been answered, so nothing moves while a question is up: `q` goes into its answer,
+  as at any question, and with its Enter is a no, and Ctrl-C ends the team. At a console an
+  answer typed within half a second of a question being put is passed by, once with `that answer
+  came too soon after the question to have been meant for it: read the question, then answer
+  it`, and the question is put again, as the questions that take only Enter pass one by, so a
+  `y` meant for one member cannot answer the next. A no, or a question
+  nobody answered, ends the team before any body moved: no other question is put, the member
+  asked ends `aborted` with the answer in its transcript, and the others end on `stopped by the
+  team: duck ended aborted: nobody confirmed they were watching a robot that cannot see a fall`.
+  On a pipe each question ends its line once it has its answer or the end of input, so the next
+  member's warning and the verdict start on lines of their own.
+  A question the team's stop takes back while it waits on a pipe ends its line and says so
+  before the verdict. A team none of whose members can be made to walk runs as before, but for
+  one record, on any team: a member the team's stop ends before its first step, its first
+  reading cut short, was `error`, `Aborted: stopped by the team: ...`, in the team's record while
+  its own said `aborted`, and the team's reason could open on it rather than on the member that
+  stopped the team. The team's record says `aborted` now, as the member's own does.
+- **`--yes` answers a team's questions about a fall as it answers a solo run's, and the team's
+  own `yes` does not.** The `--yes` you type answers every such member's question at once: nobody
+  is asked, and each member's transcript keeps the warning. `run_pilot_team`, called from Python,
+  takes the asker as `acknowledge=`, and its `yes`, the standing answer to its confirm gates and
+  its pilots' doubts, answers nothing about a fall: a call that hands in neither, as the example
+  in `docs/guides/lan.md` does, ends the team before any body moves when a member cannot see a
+  fall, where a solo `AgentLoop` given no `acknowledge` walks after a note.
 - **`roboglot list-models --kind policy` lists the policy types again, and `--kind all` lists all three
   kinds.** These are the rows and the `--json` that `roboglot policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
@@ -798,6 +828,30 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   between arriving and announcing it from half a metre away. The summary ends with the same
   words now and the data carries `calibrated: false`. An arrival through a measured lens reads as
   it did.
+- **A robot given for no member of a team is refused.** An entry in a team task's `robots:`, a
+  name in `--robots` or a registered robot named with `--robot` that matched no member was
+  passed over, and the member it was meant for took whatever this machine had, on a machine with
+  one adapter its mock. So was a `--robot lerobot:mock` on a team task, which names a body and no
+  member: the team ran on the task's own robots, or beside `--robots` on those, without a word.
+  Each is refused now before
+  anything connects, naming what was given and the team's members,
+  `--robot lerobot:mock names no member of this team, whose members are duck, arm`, and the bare
+  one with the way to give it to a member, `--robots duck=lerobot:mock`.
+- **A team's reason names first the member whose own end stopped the team.** Members that ended
+  alike were named in the roster's order, so the reason could open on a member that was only
+  stopped and name the one that stopped it later. Of members that ended alike, the one whose own
+  end stopped the team now comes first.
+- **A team that fails before its members start closes what it had opened.** `team.jsonl` was
+  opened, and the bus started, before the part of the run that closes them, so a team that
+  raised in between, a broker that refused the bus or a member that could not be built, left
+  that file open, with every member's transcript built so far, and an MQTT bus's network thread
+  running for the rest of the process. They are closed now, and the failure still reaches the
+  caller as it was raised, with a note naming anything that could not be closed.
+- **The MQTT team bus hears its team again after the broker comes back.** It subscribed once,
+  before its network thread started, and a reconnect on a clean session carries no
+  subscription over, so after a broker restart, or a network drop past the keepalive, a node
+  went on publishing and never heard another message, with nothing said. It subscribes at every
+  connect now, and its log says `mqtt: reconnected to` the broker each time it does.
 - **A manifest whose limits are not finite, or are negative, is refused.** `limits` took any
   number, and the verbs clamp to them as they stand: a negative `max_vx` turned a `move` asked to
   stand still into the full speed forward, a negative `max_wz` turned the body the other way, and
@@ -1162,6 +1216,57 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   waited for the link's send buffer to drain before its timeout began, so on a link whose peer
   had gone silently the heartbeat and the stop waited until TCP gave up, which is minutes. The
   write, the drain and the answer share the one timeout now.
+- **A board's snapshot, or a `--camera-url` frame, that claims to be enormous is refused before
+  it is decoded.** Neither had a bound but Pillow's, which only warns until twice its limit, so a
+  JPEG of a few hundred bytes whose header claimed 12000 by 12000 pixels was decoded in full, and
+  the colour detector then ran over it on the event loop. A frame whose header claims more than
+  33,177,600 pixels, an 8K UHD frame, the largest a robot's camera sends, is refused, and the
+  camera's error names the size it claimed. Decoding a frame at the bound raised peak memory by
+  254 MiB, measured on Windows with Pillow 13.0.0. A frame within the bound decodes as it did.
+- **A board's `/detect` reply is read for its 300 most confident boxes at most.** Any number up
+  to the 16 MB reply cap was kept, and every box of a class Roboglot names became a clause of
+  each observation's camera line and an entry in the record. Past 300, the most a YOLO
+  prediction returns by default, the least confident are left out and the camera line says how
+  many, as in `3 less confident boxes left out`. A reply within the bound reads as it did.
+- **A look left over from a cancelled verb no longer decides how the next frame reads.** The
+  board's detector kept one `error` that each detection wrote as it ended, and a detection
+  cannot be stopped once it is out, so one from a `go_to` that had ended could finish after the
+  next verb's own frame: a frame the board failed then read as an empty view, and `search_scan`
+  turned on with nothing looked at, or a clean frame read as the board failing. Each frame's
+  outcome now comes back with its detections, and only the verb that waited for the frame
+  takes it.
+- **Two writers of one places file no longer break each other's write.** Every write used one
+  temporary name, so a run and `serve-mcp` on one robot could truncate each other's file before
+  it was renamed: a mark could be lost, and the other write raised, out of an observation too.
+  Each write has a temporary file of its own now, and the later of two writes leaves a whole file.
+- **A places write that Windows refuses no longer comes out of the run.** Windows refuses to
+  replace a file another program holds open, and another process on the robot reads the places
+  file, so a run's observation could end with `PermissionError` when the robot was first seen in
+  a map the file did not know, and so could `mark_place` and `forget_place`. Such a write is
+  tried twice more, a hundredth of a second apart. One still refused is said once in the log on
+  an observation, which goes on with what it read, and the next write carries the change;
+  `mark_place` and `forget_place` fail saying the places file is held open by another program,
+  and nothing is kept or forgotten.
+- **The places file no longer grows by a line a run.** Every observation kept a record of the
+  frame the robot was in, an odometry frame is new on every connection, and none was ever
+  dropped, so the file grew whether or not a place was marked, and each observation read the
+  whole of it once more for every place. A frame is kept now while a place was marked in it, or
+  while it is a map or was wiped, the rest are dropped when the file is next written, and one
+  look at the places reads the file once. Every place, and every frame a place needs, reads as it
+  did.
+- **A place's note is one line, and `places list` cannot be made to act on the terminal by one.**
+  A note was bounded by its length alone, so a pilot could keep an escape sequence in the
+  robot's places file for `roboglot places list` to print in a later session. `mark_place` and
+  `places add --note` refuse a note with a line break or another control character in it, as
+  `watch` refuses such a target, and a note already in the file is listed with its control
+  characters written out, as all text the terminal prints now is. A note of words is kept and
+  listed as it was.
+- **Planning a walk to a place no longer holds up the event loop.** The search for floor the body
+  fits on and the plan ran on the loop's own thread, in pure Python over a map as large as the
+  map service sends, and a few hundred cells a side held the heartbeat, the kill switch's
+  callbacks and MCP for seconds. They run on a planner thread of their own now, never on the
+  workers the board's detector and camera share, and a stop that comes while the plan is out ends
+  the walk at once, with the body stopped, and the plan at the next step of its search.
 - **The Jetson daemon's `/healthz` says when a detection is stuck.** The model runs one call at
   a time with no deadline, and health read only the last call that had finished, so a call that
   never returned left `/healthz` saying ok while every `/detect` behind it was refused as busy.
@@ -1394,9 +1499,73 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   within an age comes off that age before the bound is applied, an age within which it woke more
   than 50 ms late is not judged, and the walk is taken again, five times at most, until more than
   twenty ages are judged.
+- **A LAN record that cannot be registered, or withdrawn, closes the zeroconf it opened.**
+  `roboglot announce` and a robot's service each open a zeroconf instance for their record when
+  given none, and when registering failed, as it does when another host on the network already
+  announces the same name, that instance stayed open with its multicast sockets and threads; so it
+  did when withdrawing the record failed, which python-zeroconf does when its loop is blocked. A
+  robot's service withdraws and announces again at each beacon rotation, every 15 minutes, so it
+  could keep one more each time for as long as it ran, and said nothing of why it was off the
+  LAN. The instance is closed now whenever registering or withdrawing fails, the service's log
+  says `radio: the LAN record was not announced:` and the reason, once until the reason changes,
+  and a record that registers is announced as before.
+- **A Content-Length of a digit outside ASCII, or of thousands of digits, is refused, where it
+  was a traceback.** Headers are read as Latin-1, where a superscript digit passes Python's test
+  for a digit and then fails to convert, and so do ASCII digits past the 4,300 Python converts, so
+  `roboglot passport check` printed a traceback for a host that sent such a length, and a robot's
+  passport server closed the connection on a post that did, where it answers a length that is not
+  one with `400`. Only ASCII digits are a length now, with no zero in front of any but `0`
+  itself, and a length with more digits than any that could be is judged before it is converted:
+  the check refuses the answer, as one whose length is not a number, is padded with zeros, or is
+  more than it sent, and the server answers `400` to a length with a zero in front, however few
+  the zeros, where it read one that fit its limit, and `413` to a length past its limit.
+- **A passport fetch keeps to its five seconds from the name's lookup to the last byte.** The
+  clock was read again only while the answer was read: the name was looked up with no timeout,
+  each address it resolved to got the whole timeout again, and the TLS handshake ran under a
+  timeout set once before it, which a server that sent its part a byte at a time could stretch as
+  far as it liked. One deadline covers the lookup, every address tried and the handshake now, each
+  given only what is left, and a lookup still going when it runs out is left behind. Talk's own
+  posts go to an address over plain HTTP, need no lookup, and are unchanged.
 - **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
   `north-mini-code-1-0`, its changelog entry's address, and it is priced at $0 now that its own
   page says it is free on trial and production keys alike.
+- **OpenRouter's LLM list is read up to a bound on its size, and its reader stops with the
+  refusal.** The list behind `--llm openrouter:` an id Roboglot does not carry was read whole, with
+  no cap on its size. A run waited ten seconds for it and was refused, but the thread reading it
+  was left behind, not stopped, and went on reading a body that did not end into memory for as
+  long as the server kept sending, and a long-lived caller that builds a provider per goal, the
+  onboard service, left one more such thread at every attempt. The read now stops at 8 MiB, room
+  for 2,048 entries of 4 KiB each, more than four times the LLMs the list named when it was first
+  read, with the refusal `sent an LLM list
+  longer than 8,388,608 bytes, so the LLM could not be checked against it`, and at its ten
+  seconds, and either way its thread ends and closes its connection. A list that fits is read and
+  used as before.
+- **Laya, the decision LLM in this process, answers under `roboglot run` once its weights are
+  loaded.** The first turn loaded the weights inside the stepper's one second. The bound cancelled
+  the wait and abandoned the load in its thread, the weights it loaded were never kept, and every
+  later turn started another full load, so the decision LLM never answered a turn of the run. A
+  load the bound overtook now goes on to its end once and is kept, and the first turn after it is
+  answered. And a forward pass slower than the bound used to go on holding its lock while every
+  later turn, in the stepper and in `roboglot drive`'s fast lane, started another thread that
+  waited behind it, could not be cancelled, and held a place in the pool the frame save, the
+  detector and name lookups share. While a load or a pass no turn is still waiting for runs now, a turn starts
+  nothing behind it, goes to the pilot LLM as `gate: error`, and its record says `Busy: the load
+  of the decision LLM's weights was still running` or `Busy: a forward pass an earlier turn
+  started was still running` where it said `TimeoutError: no answer within 1.0 s`. In
+  `roboglot drive`'s fast lane such a line's gate is now `error` where it was `timeout`, because
+  it is refused at once and its second never runs out; the pilot takes the line either way. A
+  decision LLM that answers inside its second is asked and answered as before.
+- **Two writers of one robot's memory at once no longer damage notes already saved.** Every
+  write went through the same temporary file name, so a run beside the MCP server, or two
+  terminals, writing at the same moment shared one file. On Windows their bytes interleaved and
+  the file put in place lost notes saved before, in silence; on POSIX one writer's rename raised,
+  and the pilot was told it could not remember a note that had landed. Each write now has a
+  temporary file of its own beside the memory file and replaces the file with it in one step,
+  removes it on every path, and tells the pilot what happened to its own note. A writer killed
+  between its write and its replace leaves its file, so each write first removes the ones beside
+  the memory file older than a minute, as the registry's writes do, and leaves a younger one,
+  which may be a live writer's. Two writers that each read, change and write the file at the
+  same moment can still lose one of the two new notes, as documented.
 - **Rates and statuses read again on 2026-11-14.** Gemini 4 Carbon and Argon carry the rate their
   page prints from 2026-12-01, since the introductory one ends sixteen days after the read. Eleven
   Qwen rows carry the cached-input rate their own pages now print, OpenAI's Decisions API prices its
@@ -1580,6 +1749,41 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   named file, deleting it for the default one. With no `--token-file`, a missing file at the
   default path is still no token. A token file that is not UTF-8 text refuses with the reason,
   where it ended in a traceback.
+- **A robot's HTTP inbox holds what it reads for senders it does not take to a budget.** Every
+  post to `/robot-passport/inbox` was checked in full, its keys on the curve and its signature,
+  before the robot asked whether its radio had heard the sender, and nothing counted posts by
+  address. A message is marked as seen now the moment it arrives, by the text its signature covers,
+  so whitespace around a copy does not hide it. A copy that comes while the first is still being
+  handled is answered `503`, and one that comes after it, within 10 seconds, is known before any
+  key in it is checked and answered as before, read again only where answering it means reading
+  it, as a hello the radio has heard since does: the robot remembers as many messages it did not
+  take as its budget lets through in 10 seconds, and the last 1,024 it took, a few hundred bytes
+  of each, never the message itself. Every post the robot
+  does not take, into a session or as a first hello it answers, counts against the address it
+  came from once it is read, whatever it is answered: a refusal, a type the robot ignores, an
+  answer to nothing it asked, a copy. An address with 20 of them in 10 seconds, the figures of a
+  Bluetooth link's budget, is answered `429` before anything more it sends is read, until that
+  window moves on. Addresses with no session have a budget each up to 128 of them, and every one
+  past that shares one budget of the same figures. An address a session is talked from keeps a
+  budget of its own, which only its own posts spend, and a post the robot takes counts nothing,
+  so words in a session spend none of it, however many arrive at once. A key the robot found
+  lately to be one somebody could hold is not checked on the curve again.
+- **A LAN record that names only an unspecified or a multicast address is passed over.** Meeting
+  over the LAN posts a signed hello to the address a robot's record names, and a record could
+  name `0.0.0.0`, `::` or a multicast group, where no robot can be. Such an address, written as
+  IPv4 or as an IPv4 address in IPv6, is dropped from a record now, and a record left with no
+  address is no robot found; one that names a real address beside it is reached there. The
+  radio's part of `status.json` says how many records the robot passes over so, as
+  `lan_passed_over`.
+- **An answer to an ask counts only from the robot asked, in its session.** `Talker.ask` took the
+  answer that came back on the response after a look at its type and the ask it named, though the
+  robot had just refused it as outside the session, so an answer signed by any key, or by the
+  robot asked under no session's nonces, was returned as that robot's. An answer that came to the
+  inbox from a robot met in another session was kept for the ask as well. Only an answer the robot
+  takes as the session's, from its peer and under its nonces, counts now: any other on the
+  response makes `ask` raise, saying the answer is not that robot's in this session, and any other
+  at the inbox leaves the ask waiting, `later` when nothing more comes. Nothing in Roboglot calls
+  `ask` itself; it is library API.
 - **The ToddlerBot daemon's token need not travel on its command line, and an empty one is no
   token.** It took its token from `--token`, which every account on the robot can read (`ps`,
   `/proc/<pid>/cmdline`), or from `ROBOGLOT_TODDLERBOT_TOKEN`. `--token-file` reads it from a file,

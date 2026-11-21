@@ -2988,6 +2988,97 @@ def test_a_list_that_trickles_in_is_refused_when_its_time_is_up() -> None:
     assert "did not answer the LLM list within 1 s" in str(e.value)
 
 
+def _endless(piece: bytes, gap_s: float) -> Callable[[Any, Any], None]:
+    """A list reply that never ends: `piece` every `gap_s` until the server stops, with no
+    length, so only a closed connection would end it."""
+
+    def answer(conn: Any, stop: Any) -> None:
+        conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+        )
+        conn.sendall(b'{"data": [')
+        while not stop.wait(gap_s):
+            conn.sendall(piece)
+
+    return answer
+
+
+def _list_readers() -> list[Any]:
+    import threading
+
+    return [t for t in threading.enumerate() if t.name == "openrouter-models"]
+
+
+def test_a_list_that_never_ends_is_refused_and_its_reader_stops() -> None:
+    """The caller's wait was bounded and the reader was not: refused after `timeout_s`, the run
+    went on, and the thread kept reading a body that did not end into memory for as long as the
+    server sent each piece inside the socket's own timeout. A long-lived caller that builds a
+    provider per goal started one more such thread at every attempt. Here the server never stops
+    sending, so the reader thread ends only if the read itself keeps a deadline; the join
+    waits for that end, up to a bound no slow machine comes near."""
+    from roboglot.agent.providers.openrouter import LIST_TIMEOUT_S, fetch_llms
+    from tests.support import UNTIL_WITHIN_S
+
+    timeout_s = LIST_TIMEOUT_S / 20  # scaled down so the test takes half a second
+    with RawServer(_endless(b" " * 1024, timeout_s / 10)) as server:
+        with pytest.raises(ProviderError) as e:
+            fetch_llms(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=timeout_s)
+        readers = _list_readers()
+        for reader in readers:
+            reader.join(UNTIL_WITHIN_S)
+        alive = [t for t in readers if t.is_alive()]
+    assert f"did not answer the LLM list within {timeout_s:g} s" in str(e.value)
+    assert not alive, f"the list's reader still reading {UNTIL_WITHIN_S:g} s after the refusal"
+
+
+def test_a_list_longer_than_its_bound_is_refused_in_the_lists_own_words(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A body past `LIST_MAX_BYTES` is no LLM list: the read stops there, closes its connection
+    and the run is refused saying so, rather than reading on into memory until the time bound.
+    The bound is set small here so that the test sends little; the timeout is one no stand-in on
+    127.0.0.1 comes near, so only the size can end the read."""
+    from roboglot.agent.providers import openrouter
+    from tests.support import UNTIL_WITHIN_S
+
+    monkeypatch.setattr(openrouter, "LIST_MAX_BYTES", 64 * 1024)  # small, so little is sent
+    with RawServer(_endless(b" " * 1024, 0.0)) as server:
+        with pytest.raises(ProviderError) as e:
+            openrouter.fetch_llms(
+                f"http://127.0.0.1:{server.port}/api/v1", timeout_s=UNTIL_WITHIN_S
+            )
+        readers = _list_readers()
+        for reader in readers:
+            reader.join(UNTIL_WITHIN_S)
+    host = f"127.0.0.1:{server.port}"
+    assert str(e.value) == (
+        f"openrouter: {host} sent an LLM list longer than "
+        f"{openrouter.LIST_MAX_BYTES:,} bytes, so the LLM could not be checked against it"
+    )
+    assert not [t for t in readers if t.is_alive()]
+
+
+def test_a_list_that_fits_is_read_whole_however_it_is_sent() -> None:
+    """Read in pieces, a list that fits is still the list: one sent a few bytes at a time,
+    with no length, comes back entry for entry."""
+    from roboglot.agent.providers.openrouter import fetch_llms
+    from tests.support import UNTIL_WITHIN_S
+
+    body = json.dumps({"data": [or_entry("roboglot-stub/one"), or_entry("roboglot-stub/two")]})
+
+    def answer(conn: Any, stop: Any) -> None:
+        conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n"
+        )
+        raw = body.encode()
+        for at in range(0, len(raw), 7):
+            conn.sendall(raw[at : at + 7])
+
+    with RawServer(answer) as server:
+        llms = fetch_llms(f"http://127.0.0.1:{server.port}/api/v1", timeout_s=UNTIL_WITHIN_S)
+    assert llms == json.loads(body)["data"]
+
+
 def test_a_base_url_with_no_scheme_is_refused_not_a_traceback(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -77,10 +77,19 @@ class DnsSdLan:
     (`_robot-passport._tcp`), again after each rotation, and other robots' records found by a
     browser when one is given. Without a browser, robots near are met over a link."""
 
-    def __init__(self, *, instance: str, browser: LanDirectory | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        instance: str,
+        browser: LanDirectory | None = None,
+        log: Callable[[str], None] = lambda _line: None,
+    ) -> None:
         self.instance = instance
         self.browser = browser
+        self.log = log
         self._announced: Any = None
+        #: why the record was last not announced, said once until the reason changes
+        self._why_not: str | None = None
 
     def publish(self, txt: Mapping[str, str], *, host: str, port: int) -> bool:
         from roboglot.lan.passports import announce_passport, passport_record
@@ -96,9 +105,20 @@ class DnsSdLan:
         )
         try:
             self._announced = announce_passport(record)
-        except Exception:  # no zeroconf, or no network yet: the radio still meets robots
+        except Exception as e:  # no zeroconf, no network yet, a name taken: the radio still meets
+            why = f"{type(e).__name__}: {e}"
+            if why != self._why_not:  # once a reason: it is tried again at every rotation
+                self.log(f"radio: the LAN record was not announced: {why}")
+            self._why_not = why
             return False
+        self._why_not = None
         return True
+
+    def passed_over(self) -> int:
+        """How many other robots' LAN records the browse passed over for naming only an address
+        no robot can be at; 0 with no browser."""
+        count = getattr(self.browser, "passed_over", None)
+        return int(count()) if callable(count) else 0
 
     def withdraw(self) -> None:
         # taken in one step: the service's close and the radio's may both withdraw it at once
@@ -483,7 +503,8 @@ class RadioSide:
 
     def status(self) -> dict[str, Any]:
         """The radio's part of status.json (`roboglot.radio.statusview`), taken on its loop, where
-        the tracker lives, and whether this robot has a LAN record."""
+        the tracker lives, whether this robot has a LAN record and, on a LAN that browses, how
+        many other robots' records were passed over for an address no robot can be at."""
         snapshot: dict[str, Any] | None = None
         if self.loop.running:
             with contextlib.suppress(Exception):
@@ -493,6 +514,9 @@ class RadioSide:
                 status=self._as_said(self.radio.status()), now=self.clock(), rotor=self.rotor
             )
         snapshot["on_lan"] = self._on_lan
+        passed_over = getattr(self.lan, "passed_over", None)
+        if callable(passed_over):
+            snapshot["lan_passed_over"] = passed_over()
         return snapshot
 
     def _as_said(self, status: RadioStatus) -> RadioStatus:
@@ -602,7 +626,7 @@ def board_side(
         radio = NoRadio.instead_of(e, kind=radio_kind)
     return RadioSide(
         radio,
-        lan=DnsSdLan(instance=instance, browser=browser),
+        lan=DnsSdLan(instance=instance, browser=browser, log=log),
         server_host="0.0.0.0",
         record_host="",
         policy=policy,

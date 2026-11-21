@@ -75,6 +75,16 @@ and `roboglot passport check HOST:PORT` reads the passport it finds.
 [docs/passport/discovery.md](../passport/discovery.md) has the whole binding, and
 [docs/passport/roboglot.md](../passport/roboglot.md) the commands.
 
+A record that cannot be registered, as when another host on the network already announces the
+same name, is not announced, and the zeroconf instance opened for it is closed again, by
+`roboglot announce` and by a robot's service alike, as it is when withdrawing a record fails. The
+service goes on without a LAN record and tries again at each beacon rotation, so a robot whose
+name is taken does not pile up sockets and threads while it waits; its log says
+`radio: the LAN record was not announced:` and why, once until the reason changes. An
+unspecified or a multicast address in another robot's record, where no robot can be, is dropped
+from it, written as IPv4 or as an IPv4 address in IPv6, and a record left with no address is no
+robot found; `lan_passed_over` in the radio's part of `status.json` counts such records.
+
 **Status.** The `v=2` record is tested on fakes in the suite, and robots on the `sim` board find
 each other through a simulated network on one machine. It has not run between two machines.
 
@@ -107,6 +117,14 @@ result = await run_pilot_team(
     bus_factory=lambda tap: MqttBus("desk-1", host="broker.local", tap=tap),
 )
 ```
+
+That call hands the team nobody to ask. A member whose body cannot see a fall, on a task that
+can make it walk, is then taken as watched by nobody, and the team ends before any body moves,
+every member `aborted`, whatever `yes` says: `yes` is the team's standing answer to its confirm
+gates and its pilots' doubts, and never to that question. `acknowledge=` is who answers it, a
+function of the member's name and the warning that says whether somebody is watching that
+member. `roboglot run` hands in its terminal's question, or under `--yes` an answer of yes for
+every member. A solo `AgentLoop` given no `acknowledge` walks after a note instead.
 
 The runner starts the bus inside its event loop and closes it at the end of the run. There is
 still no `--bus` flag on purpose. A pilot team has no shared clock to distribute, so nothing

@@ -38,6 +38,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from roboglot.agent.decision.base import (
     TIMEOUT_S,
+    Busy,
     DecisionFrame,
     SeeingDecisionLLM,
     UnreadableReply,
@@ -671,7 +672,7 @@ def _failure(error: BaseException, *, ran_out: bool = False) -> str:
     and a 400 a request the API would not take, and what the server said about it is for its
     own logs or a direct call, not for a transcript.
 
-    The two sentences kept are Roboglot's own, and each only where it is true.
+    The sentences kept are Roboglot's own, and each only where it is true.
 
     A turn the stepper's own budget ended says so: `no answer within 1.0 s`, because what a
     reader wants from it is the budget it ran out of, the number they would change. `ran_out` is
@@ -687,7 +688,9 @@ def _failure(error: BaseException, *, ran_out: bool = False) -> str:
 
     And a `base.UnreadableReply` keeps its message, which is Roboglot's own sentence about the shape
     of a reply it could not read, the type of what came back and never what it said, so that a
-    page that was not JSON and an object with no list of answers in it read apart.
+    page that was not JSON and an object with no list of answers in it read apart. So does a
+    `base.Busy`, Roboglot's own sentence that a load or a forward pass an earlier turn started
+    was still running, which is why this turn got no answer.
 
     Nothing here may raise, because it runs inside the handler whose whole job is to keep a
     failed turn from ending the run. A status that cannot be read, a property that raises as it
@@ -699,7 +702,7 @@ def _failure(error: BaseException, *, ran_out: bool = False) -> str:
             return f"{name}: HTTP {status}"
         if ran_out and isinstance(error, TimeoutError):
             return f"{name}: no answer within {TIMEOUT_S:.1f} s"
-        if isinstance(error, UnreadableReply) and (said := str(error)):
+        if isinstance(error, UnreadableReply | Busy) and (said := str(error)):
             return f"{name}: {said}"
     except Exception:
         pass

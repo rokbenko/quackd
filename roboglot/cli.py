@@ -1415,6 +1415,14 @@ _yes_to_go.answers_as = "--yes"  # type: ignore[attr-defined]
 """What the record names as having said go (`roboglot.log.who_answered`), and never a person."""
 
 
+def _yes_watching(_member: str, _why: str) -> bool:
+    """The `--yes` you typed, as a team's answer about each member whose body cannot see a fall:
+    you are watching, as `--yes` says on a solo run, asked of nobody and so in no `prompt` row.
+    The team's own `yes`, its standing answer to its confirm gates, answers nothing about a fall
+    (`roboglot.team.pilots.run_pilot_team`)."""
+    return True
+
+
 class _TerminalHandOff:
     """The person at the robot, as a terminal.
 
@@ -1718,6 +1726,76 @@ def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
         return _ask(WATCHING)
 
 
+def _member_acknowledge_prompt(member: str, why: str) -> bool | Awaitable[bool]:
+    """`_acknowledge_prompt` about one member of a team, with its name on the warning and in the
+    question, since every member shares this terminal. A team puts these one at a time, before
+    any body moves (`roboglot.team.pilots`).
+
+    At a console it keeps the rule the question branch's Enter-only waits keep: an answer typed
+    within `TYPED_AHEAD_S` of the question being put was typed before anybody could have read it,
+    so it is passed by, said once (`ANSWER_TOO_SOON`), and the question is put again in the same
+    words. The next member's question comes up a moment after one is answered, and a `y` meant
+    for the first, typed twice or held, answered the second before its warning could be read."""
+    import time
+
+    from roboglot.safety import TYPED_AHEAD_S
+
+    question = f"Are you watching {ui.printable(member)} right now?"
+    told = False
+    with ui.pause_status():
+        ui.err_console.print(_reason(f"{member}: {why}"))
+        while True:
+            switch = _SWITCH
+            put_at = time.monotonic()
+            asked = _ask(question)
+            # only a line a console gave: a stream's lines were written before any question,
+            # and a press, a key thread gone or a background process is no line anybody typed
+            typed = isinstance(asked, bool) and switch is not None and switch.unanswered is None
+            if not typed or time.monotonic() - put_at >= TYPED_AHEAD_S:
+                break
+            if not told:
+                ui.err_console.print(Text(ANSWER_TOO_SOON, style=ui.STYLES["warn"]))
+                told = True
+    # at a terminal the question holds the loop until it is answered, and on a stream it waits
+    # beside the team, whose stop can take it back
+    return asked if isinstance(asked, bool) else _on_its_own_line(member, asked)
+
+
+TAKEN_BACK = "{member}: that question was taken back: the team stopped before you answered"
+"""Said under a team's question that its stop took back, with the member it was about."""
+
+ANSWER_TOO_SOON = (
+    "that answer came too soon after the question to have been meant for it: read the question, "
+    "then answer it"
+)
+"""Said once a question, at the first answer a console gave a team's question within
+`TYPED_AHEAD_S` of its being put, which is passed by, and the question is put again
+(`_member_acknowledge_prompt`)."""
+
+
+async def _on_its_own_line(member: str, asked: Awaitable[bool]) -> bool:
+    """A team's question on a stdin that is no terminal, which waits while the team goes on. A
+    line read off a pipe is not echoed, so the question's line was left open whatever became of
+    it, and what came next, the next member's warning or the verdict, was printed on its end. The
+    line is ended once the question has its answer, the end of input or the team's stop, and a
+    question the stop took back says so under it."""
+    import asyncio
+
+    taken_back = False
+    try:
+        return await asked
+    except asyncio.CancelledError:
+        taken_back = True
+        raise
+    finally:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        if taken_back:
+            ui.err_console.print(
+                Text(TAKEN_BACK.format(member=ui.printable(member)), style=ui.STYLES["muted"])
+            )
+
+
 def _judge_prompt(why: str) -> bool | Awaitable[bool]:
     """Asked once, after the last segment of a `--controller vla` run: its pilot cannot tell
     whether the task was done, so the person who watched the arm says. `why` quotes the task
@@ -1801,11 +1879,12 @@ def _a_person_is_there() -> bool:
 _confirm_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _decide_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _acknowledge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
+_member_acknowledge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _judge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
-"""These four are the ones that reach a terminal, and `allow_all`, `deny_all`, `_yes_to_go`
+"""These five are the ones that reach a terminal, and `allow_all`, `deny_all`, `_yes_to_go`
 and the team's standing answers are not. The mark is `_can_prompt` rather than `True` because
 reaching a terminal is a thing to check at the moment of asking and not a property of the
-function: these same four run under `yes | roboglot run` and under `roboglot run < answers.txt`,
+function: these same five run under `yes | roboglot run` and under `roboglot run < answers.txt`,
 where `input()` reads the pipe and returns a yes nobody said. The gate still opens, because
 that is what the pipe asked for and it is what Roboglot has always done; what must not happen is
 the record then testifying that a person cleared it. A judgement from a pipe is not even
@@ -2401,6 +2480,26 @@ def _run_impl(
                 soft_wrap=True,
             )
         if roster is None and section is not None:
+            bare = next((s for s in specs if s.name is None), None)
+            if robot is not None and robots:
+                # `--robots` names every member's body, and `--robot` beside it was never read
+                try:
+                    beside = _robot_specs(robot, None, glot, registry_dir=registry_dir)[0].spec
+                except (_AdapterError, TransportError, RegistryError) as e:
+                    _fail(str(e))
+                    return
+                bare = beside if beside.name is None else bare
+            if robot is not None and bare is not None:
+                # A body and no member: the run went on with the task's own robots, or with
+                # `--robots`, and never said the flag had been passed over, as a misnamed
+                # member was passed over.
+                _fail(
+                    f"--robot {bare.key} names no member of this team, whose members are "
+                    f"{', '.join(section.member_names)}",
+                    hint=f"give it to a member by name: --robots "
+                    f"{section.member_names[0]}={bare.key}",
+                )
+                return
             # `team.members` plus `robots:` or `--robots` names the bodies without a
             # registry; a stored team names them with one
             try:
@@ -3045,9 +3144,13 @@ def _run_pilots_impl(
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     async def main() -> Any:
+        global _SWITCH
         master = asyncio.Event()
         ks = KillSwitch(master, log=killed)
         ks.install()
+        # a member's question about a body that cannot see a fall is read through the switch's
+        # own reader, as a solo run's is, and not raced for the keystroke (`_ask`)
+        _SWITCH = ks
         try:
             return await run_pilot_team(
                 glot,
@@ -3071,8 +3174,10 @@ def _run_pilots_impl(
                 # the roster, and for none when the team is refused first
                 before_connect=_deprecated_backends,
                 play=play,
+                acknowledge=_yes_watching if yes else _member_acknowledge_prompt,
             )
         finally:
+            _SWITCH = None
             ks.uninstall(nothing_left_to_stop=True)
 
     try:

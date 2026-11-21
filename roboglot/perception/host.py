@@ -54,7 +54,7 @@ from typing import Any
 from PIL import Image
 
 from roboglot.host import HostClient, HostError, confidence_floor
-from roboglot.perception.base import Detection
+from roboglot.perception.base import Detection, Detections
 from roboglot.perception.yolo import detections_from_boxes, nearest_box_m
 
 logger = logging.getLogger("roboglot.perception")
@@ -182,7 +182,7 @@ class HostDetector:
 
     def detect(self, image: Image.Image) -> list[Detection]:
         """The board's YOLO on this frame, as Roboglot's detections, or none when the board did
-        not answer.
+        not answer: `look`, then `settle` on what it found.
 
         A failure is warned about once per outage rather than once per frame, because `go_to`
         asks ten times a second and a log of the same sentence ten times a second hides the
@@ -193,6 +193,20 @@ class HostDetector:
         image the daemon decoded, which is the frame sent, so a reply that names another size
         describes some other image, and read against this frame its boxes would be bearings
         `go_to` steers at with nothing true about them."""
+        found = self.look(image)
+        self.settle(found)
+        return found
+
+    def look(self, image: Image.Image) -> Detections:
+        """This frame's detections with this frame's own outcome on them (`Detections.error`),
+        and nothing else changed but the cost of the call (`take_timing`).
+
+        What `detect_off_loop` runs in its worker thread, which `asyncio.to_thread` cannot stop:
+        a look whose verb was cancelled runs on, and when it wrote `error` as it ended, the next
+        verb read that slot after its own frame as if it were about that frame, so a frame the
+        board failed read as an empty view, or a clean one as a failure. The outcome now travels
+        back with the detections, and `error` is written by `settle`, which only the caller
+        that waited for this frame runs."""
         started = time.perf_counter()
         buf = io.BytesIO()
         image.convert("RGB").save(buf, format="JPEG", quality=JPEG_QUALITY)
@@ -217,16 +231,15 @@ class HostDetector:
                 tally.timed += 1
                 tally.board_sum_ms += found.ms
                 tally.board_max_ms = max(tally.board_max_ms, found.ms)
-        if self.error is not None:
-            logger.warning("the host detector at %s answers again", self.client.address)
-            self.error = None
-        return detections_from_boxes(
+        detections = detections_from_boxes(
             (box.as_tuple() for box in found.boxes),
             found.w,
             found.h,
             fov_deg=self.fov_deg,
             calibrated=self.calibrated,
         )
+        # with the count of boxes past `MAX_BOXES` the reply carried, for the camera line
+        return Detections(detections, left_out=found.left_out)
 
     def take_timing(self) -> dict[str, Any] | None:
         """What the frames sent to the board since the last call cost, and a fresh count from
@@ -241,18 +254,29 @@ class HostDetector:
             tally, self._tally = self._tally, _Tally()
         return tally.event() if tally.calls else None
 
-    def _failed(self, reason: str) -> list[Detection]:
-        """No detections for this frame, the reason kept in `error`, and one warning for the
-        outage it starts."""
-        with self._timing_lock:
-            self._tally.calls += 1
-            self._tally.failed += 1
+    def settle(self, found: Detections) -> None:
+        """Take what one frame's `look` found as the last known state: `error` set to its
+        outcome, and a warning where that starts or ends an outage.
+
+        Run by the caller that waited for that frame, on its own side, and never by a look whose
+        caller has gone: so `error`, read right after a frame by that caller, is that frame's."""
+        if found.error is None:
+            if self.error is not None:
+                logger.warning("the host detector at %s answers again", self.client.address)
+                self.error = None
+            return
         if self.error is None:
             logger.warning(
                 "the host detector at %s failed, so this frame has no detections and the "
                 "run keeps this detector: %s",
                 self.client.address,
-                reason,
+                found.error,
             )
-        self.error = reason
-        return []
+        self.error = found.error
+
+    def _failed(self, reason: str) -> Detections:
+        """No detections for this frame, with the reason on them for `settle`."""
+        with self._timing_lock:
+            self._tally.calls += 1
+            self._tally.failed += 1
+        return Detections(error=reason)

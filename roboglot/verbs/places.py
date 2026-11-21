@@ -11,11 +11,19 @@ can use core's twist helpers without the two modules importing each other.
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from roboglot.space.places import PLACE_NAME_MAX, Place, PlaceBook, PlaceView, place_listing
+from roboglot.space.places import (
+    PLACE_NAME_MAX,
+    Place,
+    PlaceBook,
+    PlacesFileBusy,
+    PlaceView,
+    place_listing,
+)
 from roboglot.space.pose import Fix, where_record, where_summary
 from roboglot.space.source import SpatialSource
 from roboglot.verbs.registry import Verb, VerbContext, VerbResult
@@ -46,6 +54,17 @@ class MarkPlaceParams(BaseModel):
     note: str | None = Field(
         default=None, max_length=200, description="Optional: what is there, in a few words."
     )
+
+    @field_validator("note")
+    @classmethod
+    def _one_line(cls, value: str | None) -> str | None:
+        """One line of words, as `watch`'s target is. The note is kept in the robot's places
+        file and printed by `roboglot places list` in a later session, so an escape sequence
+        in it would be written to a person's terminal, and a second line is where an
+        instruction to the next pilot would hide."""
+        if value is not None and any(unicodedata.category(c) in ("Cc", "Zl", "Zp") for c in value):
+            raise ValueError("the note is one line of words, with no control character in it")
+        return value
 
 
 class ForgetPlaceParams(BaseModel):
@@ -193,7 +212,10 @@ async def forget_place(ctx: VerbContext, p: ForgetPlaceParams) -> VerbResult:
     book = ctx.places
     if book is None:
         return VerbResult.fail(f"forget_place: {NO_POSE}")
-    old = book.store.forget(p.name)
+    try:
+        old = book.store.forget(p.name)
+    except PlacesFileBusy as e:  # another program holds the file open: said, nothing forgotten
+        return VerbResult.fail(f"forget_place: {e}")
     if old is None:
         known = ", ".join(place.name for place in book.store.places()) or "none"
         return VerbResult.fail(f"forget_place: no place called '{p.name}' (places: {known})")

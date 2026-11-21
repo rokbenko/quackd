@@ -45,9 +45,11 @@ from __future__ import annotations
 import datetime as _dt
 import difflib
 import http.client
+import io
 import json
 import math
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -106,6 +108,20 @@ RESPONSES_HINT = (
 LIST_TIMEOUT_S = 10.0
 """How long the LLM list may take before the run is refused. It is a public GET a few
 hundred kilobytes long; a host that cannot answer it in ten seconds will not answer a turn."""
+
+_LIST_ENTRY_BYTES = 4 * 1024
+"""What one entry of the list can need: an id, a name, a description of a paragraph or two, and
+some thirty short fields (its rates, modalities, limits and the parameters it supports). That is
+well inside 4 KiB, written out the way the list writes it."""
+
+_LIST_ENTRIES = 2048
+"""A generous number of entries: more than four times the LLMs the list named when it was first
+read (the 465 counted above)."""
+
+LIST_MAX_BYTES = _LIST_ENTRY_BYTES * _LIST_ENTRIES
+"""The most of the LLM list that is read before the run is refused: what one entry can need,
+times a generous number of entries, 8 MiB. A body longer than that is no LLM list, and the read
+stops there rather than filling memory with it."""
 
 _LISTINGS: dict[str, list[dict[str, Any]]] = {}
 """The LLM list, read once per process and base URL. A pilot team builds a provider per run,
@@ -172,7 +188,9 @@ def fetch_llms(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[dict
     `timeout_s` bounds the whole of it, not each read. A socket timeout alone lets a server that
     sends one byte a second hold a run before it starts for as long as it likes, so the GET runs
     on a thread of its own and the run is refused once the time is up, whatever that thread is
-    still waiting on.
+    still waiting on. That thread keeps the same bound itself, and `LIST_MAX_BYTES` as well, and
+    ends when either is passed, so a body that never ends is not read on after the refusal, nor
+    once more at every provider a long-lived caller builds.
     """
     url = base_url.rstrip("/") + "/models"
     host = urllib.parse.urlsplit(url).netloc or url
@@ -187,12 +205,17 @@ def fetch_llms(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[dict
     worker = threading.Thread(target=fetch, name="openrouter-models", daemon=True)
     worker.start()
     worker.join(timeout_s)
-    if worker.is_alive():
+    error = got.get("error")
+    if worker.is_alive() or isinstance(error, _ListTooSlow):
         raise ProviderError(
             f"openrouter: {host} did not answer the LLM list within {timeout_s:g} s, so the "
             "LLM could not be checked against it"
         )
-    error = got.get("error")
+    if isinstance(error, _ListTooLong):
+        raise ProviderError(
+            f"openrouter: {host} sent an LLM list longer than {LIST_MAX_BYTES:,} bytes, so the "
+            "LLM could not be checked against it"
+        ) from error
     if isinstance(error, urllib.error.HTTPError):
         raise ProviderError(
             f"openrouter: {host} answered the LLM list with HTTP {error.code}, so the LLM "
@@ -228,8 +251,22 @@ def fetch_llms(base_url: str, *, timeout_s: float = LIST_TIMEOUT_S) -> list[dict
     raise ProviderError(f"openrouter: {url} did not answer with OpenRouter's LLM list: {why}")
 
 
+class _ListTooSlow(Exception):
+    """The reader's own deadline passed before the body ended."""
+
+
+class _ListTooLong(Exception):
+    """The body went past `LIST_MAX_BYTES` before it ended."""
+
+
 def _get(url: str, timeout_s: float) -> bytes:
-    """The bytes of one GET, with Roboglot's own headers and no key."""
+    """The bytes of one GET, with Roboglot's own headers and no key.
+
+    Read a buffer at a time, so that the read itself ends once it passes `timeout_s` from its
+    start or `LIST_MAX_BYTES` in size, and the connection is closed as it ends. A read that is
+    waiting on a silent server when the time is up ends at the socket's own timeout, the same
+    `timeout_s`."""
+    deadline = time.monotonic() + timeout_s
     headers = {"Accept": "application/json", "User-Agent": f"roboglot/{__version__}", **ATTRIBUTION}
     request = urllib.request.Request(url, headers=headers)
     # Proxies from the environment only, which is what the SDK's httpx client honours. urllib's
@@ -238,9 +275,22 @@ def _get(url: str, timeout_s: float) -> bytes:
     opener = urllib.request.build_opener(
         urllib.request.ProxyHandler(urllib.request.getproxies_environment())
     )
+    pieces: list[bytes] = []
+    size = 0
     with opener.open(request, timeout=timeout_s) as response:
-        payload: bytes = response.read()
-    return payload
+        while piece := response.read1(io.DEFAULT_BUFFER_SIZE):
+            size += len(piece)
+            if size > LIST_MAX_BYTES:
+                raise _ListTooLong
+            pieces.append(piece)
+            if time.monotonic() >= deadline:
+                raise _ListTooSlow
+        # `read1` ends quietly where a body stops short of its stated length, which `read`
+        # did not: raise what `read` raised, so a connection cut partway reads as it did.
+        left = getattr(response, "length", None)
+        if isinstance(left, int) and left > 0:
+            raise http.client.IncompleteRead(b"".join(pieces), left)
+    return b"".join(pieces)
 
 
 def listing(base_url: str) -> list[dict[str, Any]]:
