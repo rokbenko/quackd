@@ -22,6 +22,7 @@ import contextlib
 import contextvars
 import functools
 import logging
+import math
 import re
 import sys
 import time
@@ -63,6 +64,7 @@ from roboglot.log import (
 from roboglot.memory import RobotMemory
 from roboglot.perception import detector_for, explicit_detector, lens_of
 from roboglot.perception.base import Detector
+from roboglot.release import LIMP_AT_THE_CLOSE
 from roboglot.safety import (
     Aborted,
     Budget,
@@ -374,6 +376,9 @@ class RobotSession:
     fold_stopped: bool = False
     """Whether a press stopped this body's opening fold (`connect`): the close holds it and
     starts no fold of its own, as a run's close does a body whose fold a person stopped."""
+    came_up: bool = False
+    """Whether the transport's connect has returned (`connect`): a press during the start-up may
+    come before it, and nothing of such a body was moved or held."""
     _fold_ended: Any = field(default=None, init=False, repr=False)
     """What the last fold answered when it ended on its own (`_folded`), or None: one that took a
     press and went on to its end was not stopped, whatever the press, and is said so."""
@@ -521,7 +526,9 @@ class RobotSession:
         return self.executor.manifest or self.manifest
 
     async def connect(self) -> None:
-        await self._adopt(await self.transport.connect())
+        connected = await self.transport.connect()
+        self.came_up = True
+        await self._adopt(connected)
         # The budget's clock is the transport's, which a body may only keep once it has
         # connected. Started again here, on the clock the session is timed by, with the
         # counts a `--glotfile` carried kept: nothing has run to count yet.
@@ -734,13 +741,23 @@ class RobotSession:
         Ctrl-C makes the runner cancel every task it lists, and the close's own was cut where it
         was, on its read of the arm, which left the arm connected and energised with nothing
         said. It is waited for as long as its own clocks run, and once a press has come, for as
-        long as a stop is (`Executor._stop_wait_s`) and no longer: one still going then is said
-        to be (`CLOSE_UNFINISHED`), and goes on while the loop does."""
-        bound = self.executor._stop_wait_s()
+        long as the body says its close can take, as `roboglot drive` waits (`_close_bound_s`),
+        and no longer. One still
+        going then is said to be given up (`CLOSE_UNFINISHED`) and is cancelled, since the server
+        is ending: left to go on, it was still pending as the loop closed, and asyncio reported a
+        destroyed task at exit. Its cancel lands at its next wait, and it is waited for a stop's
+        bound more to end on it (`Executor._stop_wait_s`)."""
+        bound = _close_bound_s(self.transport)
         closing = _beyond_the_runner(_set_going(self.transport.close))
         pressed = await _outlasted({closing}, after_a_press=bound)
         if not closing.done():
             logger.warning("%s: %s", self.name, CLOSE_UNFINISHED.format(bound=bound))
+            closing.cancel()
+            later = await _outlasted({closing}, within=self.executor._stop_wait_s())
+            pressed = pressed or later
+        if not closing.done():
+            # one that takes its cancel too is dropped with the loop; its result is still read
+            closing.add_done_callback(_read_out)
         elif not closing.cancelled() and (error := closing.exception()) is not None:
             if isinstance(error, Exception):
                 logger.warning(
@@ -755,12 +772,15 @@ class RobotSession:
 
     def _held_back(self) -> None:
         """Said where a press kept this body's closing fold from starting: an arm with a pose to
-        fold to, held by the close's stop where it stands."""
+        fold to, held by the close's stop where it stands; or, where the press came before its
+        transport had connected, that nothing of it was ever moved or held (`NEVER_CONNECTED`),
+        since `HELD_BACK` said such an arm was holding."""
         if self.executor.dry_run or getattr(self.transport, "rest_pose", None) is None:
             return
         from roboglot.agent.loop import AgentLoop
 
-        logger.warning("%s: %s", self.name, AgentLoop.HELD_BACK)
+        said = AgentLoop.HELD_BACK if self.came_up else NEVER_CONNECTED
+        logger.warning("%s: %s", self.name, said)
 
     async def run(self, name: str, params: dict[str, Any] | None) -> dict[str, Any]:
         """`robot_run_verb`: the verb through the executor, with its log."""
@@ -1172,21 +1192,54 @@ def _set_going(send: Callable[[], Awaitable[Any]]) -> asyncio.Future[Any]:
         return failed
 
 
+CLOSE_AFTER_A_PRESS_S = 30.0
+"""How long the close of a body that does not say how long its close can take is waited for once
+a press has come (`_close_bound_s`), as `roboglot drive` waits for it. Such a body closes a socket
+or a link, which ends at once; this also outlasts the LeRobot arm's close with one camera, which
+releases it (`roboglot_lerobot.real.CAMERA_CLOSE_S`, 10 s), reads where the arm is, and disconnects,
+keeping or letting go of torque (`DISCONNECT_S`, 15 s), for an arm that gives no figure of its own.
+A stop's bound, which this used to be, gave that close 5 s. A test holds this to those parts."""
+
+
+def _close_bound_s(transport: Any) -> float:
+    """How long a transport's close is waited for once a press has come, the rule `roboglot drive`
+    keeps: as long as the body says its close can take (`close_bound_s`, a number of seconds it
+    publishes, the arm's counted from its cameras, its read and its disconnect), or
+    `CLOSE_AFTER_A_PRESS_S` for a body that says nothing, or nothing that is a figure."""
+    said = getattr(transport, "close_bound_s", None)
+    if isinstance(said, int | float) and not isinstance(said, bool) and 0 <= said < math.inf:
+        return float(said)
+    return CLOSE_AFTER_A_PRESS_S
+
+
 CLOSE_UNFINISHED = (
-    "the transport's close was still going {bound:g} s after the Ctrl-C, and goes on by itself: "
-    "Roboglot cannot tell whether it let go of the robot, so take it to be powered and holding "
-    "where it stands, keep clear of it, and cut its power"
+    "the transport's close was still going {bound:g} s after the Ctrl-C, and is given up as the "
+    "server ends: Roboglot cannot tell whether it let go of the robot, so take it to be powered "
+    "and holding where it stands, keep clear of it, and cut its power"
 )
-"""Said of a transport's close still going a stop's bound after a press (`_closed_transport`): it
-may still be reading the body, and whether torque was kept or released is its note to say."""
+"""Said of a transport's close still going as long after a press as its close can take
+(`_close_bound_s`, `_closed_transport`). It is cancelled then, since the server ends and nothing
+would see it on:
+said to go on by itself, it was left pending at the loop's close, and asyncio reported a destroyed
+task over it at exit. Whether torque was kept or released is its note to say, which it never got
+to."""
 
 FOLD_WENT_TO_ITS_END = (
     "the fold was told to stop and was not stopped: it went on to its end after the Ctrl-C "
-    "({reason}), and the arm is held where that left it"
+    "({reason}). " + LIMP_AT_THE_CLOSE
 )
 """Said where a fold took the press and ended on its own (`RobotSession._fold_was_stopped`).
 `fold_unless_stopped` takes a fold that ended as one that stopped, and `FOLD_STOPPED` would say it
-stopped where it was, of an arm that moved on after the press to wherever its fold ended."""
+stopped where it was, of an arm that moved on after the press to wherever its fold ended. Its
+second sentence is what the close then does (`release.LIMP_AT_THE_CLOSE`): it said the arm was
+held, and the close let go of it at its rest pose with nothing said."""
+
+NEVER_CONNECTED = (
+    "the press came before its connect had finished, so Roboglot never moved or held it; it is "
+    "closed all the same"
+)
+"""Said of a robot a press during the start-up cut off before its transport had connected
+(`RobotSession._held_back`), in place of `HELD_BACK`, which said such an arm was holding."""
 
 
 async def _no_press() -> None:
@@ -1215,6 +1268,15 @@ def _beyond_the_runner(task: asyncio.Future[Any]) -> asyncio.Future[Any]:
     if isinstance(task, asyncio.Task) and callable(unregister):
         unregister(task)
     return task
+
+
+def _read_out(task: asyncio.Future[Any]) -> None:
+    """What a transport's close given up ended with, if it ends while the loop still runs: read,
+    and said where it raised, since nobody waits for it any more (`_closed_transport`)."""
+    if not task.cancelled() and (error := task.exception()) is not None:
+        logger.warning(
+            "a transport's close given up ended later with %s: %s", type(error).__name__, error
+        )
 
 
 async def _outlasted(

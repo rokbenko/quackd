@@ -582,10 +582,12 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   if it still does, and one that goes on to its end after the press is said to have done so,
   never to have stopped. From that press on no fold starts on any robot, and each arm is said to be
   held where it stands, where the arm in a pause's wait, and the next arm, used to go down after
-  it. The close's stops and every transport's close run to their end through a later Ctrl-C,
-  each for as long as a stop is given, and a close still going after that is said to be, with
-  what to do. Such a press used to leave a transport open, with nothing said of its torque, and
-  every robot after it untouched. A Ctrl-C during an arm's fold to its rest pose at start-up
+  it. The close's stops run to their end through a later Ctrl-C, each for as long as a stop is
+  given, and every transport's close for as long as the body says its close can take, or 30 s
+  where it says nothing, as `roboglot drive` waits; a close still going after that is said to be
+  given up as the server ends, with what to do. Such a press used to leave a transport open, with
+  nothing said of its torque, and every robot after it untouched. A Ctrl-C during an arm's fold
+  to its rest pose at start-up
   stops that fold too, and that arm and every robot that had connected are held and closed,
   where the arm was left connected and energised with nothing said.
 - **A client that dies mid-call no longer leaves its robots unstopped.** When the client died with

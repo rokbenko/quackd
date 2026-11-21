@@ -152,6 +152,17 @@ class _Body(MockTransport):
         self.arrives_after_a_cancel = False
         """Set, a cancel the held fold takes sends it on to its end, as one does whose answer
         came as the press did."""
+        self.connect_started = asyncio.Event()
+        self.connect_gate = asyncio.Event()
+        """Cleared, the connect waits on it, as a slow port open does."""
+        self.connect_gate.set()
+        self.close_bound_s: float | None = None
+        """How long its close can take, where it says (`_close_bound_s`); None says nothing."""
+
+    async def connect(self) -> None:
+        self.connect_started.set()
+        await self.connect_gate.wait()
+        await super().connect()
 
     async def go_to_rest(self) -> Any:
         from roboglot.adapters.base import RestResult
@@ -192,7 +203,11 @@ class _Body(MockTransport):
     async def close(self) -> None:
         self.close_started.set()
         await asyncio.sleep(0)
-        await self.close_gate.wait()
+        try:
+            await self.close_gate.wait()
+        except asyncio.CancelledError:
+            self.log.append(f"{self.tag}:close-cancelled")
+            raise
         self.log.append(f"{self.tag}:close")
         self.close_note = self.note_at_close
         await super().close()
@@ -545,15 +560,18 @@ def test_a_second_press_in_the_transports_close_does_not_cut_it_short() -> None:
 
 
 async def test_a_transports_close_still_going_after_a_press_is_said_to_be(caplog: Any) -> None:
-    """A1's other half. The close is waited for through a press as long as a stop is
-    (`Executor._stop_wait_s`), and no longer: one still going then is said to be, with what to
-    do (`CLOSE_UNFINISHED`), and the press is raised. Its link never answers here until the test
-    is done."""
+    """A1's other half. The close is waited for through a press as long as the body says its
+    close can take (`close_bound_s`, as `roboglot drive` reads it), and no longer: one still going
+    then is said to be given up, with what to do (`CLOSE_UNFINISHED`), and is cancelled, so
+    nothing is left pending for asyncio to report at exit (it used to be said to go on by itself,
+    and was left so), and the press is raised. Its link never answers here until the test is
+    done. The stand-in says its close takes a stop's time (`Executor._stop_wait_s`)."""
     from roboglot.mcp_server import CLOSE_UNFINISHED
 
     caplog.set_level(logging.WARNING, logger="roboglot.mcp")
     log: list[str] = []
     session, arm = _arm_alone(log)
+    arm.close_bound_s = session.executor._stop_wait_s()
     await session.connect()
     log.clear()
     arm.close_gate.clear()
@@ -567,7 +585,49 @@ async def test_a_transports_close_still_going_after_a_press_is_said_to_be(caplog
         assert closing.cancelled(), "the press is raised"
         unfinished = CLOSE_UNFINISHED.format(bound=session.executor._stop_wait_s())
         assert f"robot: {unfinished}" in caplog.messages, caplog.messages
-        assert "arm:close" not in log, log
+        assert log[-1] == "arm:close-cancelled", f"the close given up was left pending: {log}"
+    finally:
+        arm.close_gate.set()
+
+
+@pytest.mark.parametrize("figure", ["one it publishes", "none"])
+async def test_a_pressed_close_is_waited_for_as_long_as_the_body_says_its_close_takes(
+    figure: str, caplog: Any, monkeypatch: Any
+) -> None:
+    """B1. After a press the transport's close was waited for only a stop's bound, 5 s, while the
+    LeRobot arm's own close may take its cameras' closes, its read and its disconnect, 26 s with
+    one camera, and `roboglot drive` waits for it as long as the body says (`close_bound_s`), or
+    `CLOSE_AFTER_A_PRESS_S` for a body that says nothing: a healthy arm's close was given up with
+    time of its own left. The same rule here, for a stand-in that publishes a figure and one that
+    does not, each with a close longer than a stop. A stop's bound is set to the session's
+    heartbeat period, a published figure to four of those, and the close answers two after the
+    press: the loop's timers run in the order they fall due, so a close waited only a stop's bound
+    was given up before it answers, whatever the machine's speed. `CLOSE_AFTER_A_PRESS_S` is held
+    to the one-camera arm's parts, the close of an arm that gives no figure on this tree."""
+    import roboglot_lerobot.real as real
+    from roboglot.mcp_server import CLOSE_AFTER_A_PRESS_S
+
+    assert CLOSE_AFTER_A_PRESS_S >= real.CAMERA_CLOSE_S + real.DISCONNECT_S, CLOSE_AFTER_A_PRESS_S
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    session, arm = _arm_alone(log)
+    beat = session.heartbeat.period_s
+    monkeypatch.setattr(session.executor, "_stop_wait_s", lambda: beat)
+    if figure == "one it publishes":
+        arm.close_bound_s = 4 * beat
+    await session.connect()
+    log.clear()
+    arm.close_gate.clear()
+    closing = asyncio.ensure_future(session.close())
+    try:
+        await asyncio.wait_for(arm.close_started.wait(), HANG_GUARD_S)
+        closing.cancel()
+        await asyncio.sleep(2 * beat)
+        arm.close_gate.set()  # its own close answers, after a stop's bound and well inside its own
+        await asyncio.wait({closing}, timeout=HANG_GUARD_S)
+        assert closing.done() and closing.cancelled(), "the press is raised"
+        assert log[-1] == "arm:close", f"a close longer than a stop was given up: {log}"
+        assert not [m for m in caplog.messages if "still going" in m], caplog.messages
     finally:
         arm.close_gate.set()
 
@@ -637,6 +697,11 @@ async def test_a_fold_that_takes_a_press_is_told_again_and_said_for_what_it_did(
         assert closing.cancelled(), "the press is raised"
         said = _said(caplog, session)
         assert said[-2:] == [expected, TORQUE_KEPT], said
+        if fold == "ends on its own":
+            # C1: what the close then does, never that the arm is held, which it may not be
+            from roboglot.release import LIMP_AT_THE_CLOSE
+
+            assert said[-2].endswith(LIMP_AT_THE_CLOSE) and "held" not in said[-2], said
         assert ("arm:rest-end" in log) is (fold == "ends on its own"), log
         assert log[-1] == "arm:close" and log.count("arm:stop") == 2, f"not held: {log}"
     finally:
@@ -671,6 +736,56 @@ async def test_a_press_in_the_opening_fold_holds_the_arm_and_closes_every_robot(
     assert arm.connected is False and first.connected is False
     said = [m.split(": ", 1) for m in caplog.messages]
     assert ["arm", FOLD_STOPPED] in said and ["arm", TORQUE_KEPT] in said, caplog.messages
+
+
+async def test_a_press_while_a_robot_connects_does_not_say_it_is_holding(caplog: Any) -> None:
+    """C4. A press while an arm's transport was still connecting, before any fold, closed it with
+    the rest and said `HELD_BACK` of it, "it is holding where it stopped", of an arm that never
+    connected. What is said of it is what is true (`NEVER_CONNECTED`); the arm that had connected
+    is still said to be held, and both are closed."""
+    from roboglot.agent.loop import AgentLoop
+    from roboglot.mcp_server import NEVER_CONNECTED
+
+    caplog.set_level(logging.WARNING, logger="roboglot.mcp")
+    log: list[str] = []
+    first = _Body("first", log, rest=True)
+    arm = _Body("arm", log, rest=True)
+    _server, team = build_team_server({"first": first, "arm": arm}, heartbeat_period_s=0.05)
+    arm.connect_gate.clear()  # its port opens slowly
+    connecting = asyncio.ensure_future(team.connect_all())
+    await asyncio.wait_for(arm.connect_started.wait(), HANG_GUARD_S)
+    connecting.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(connecting, HANG_GUARD_S)
+    said = [m.split(": ", 1) for m in caplog.messages]
+    assert ["arm", NEVER_CONNECTED] in said, caplog.messages
+    assert ["arm", AgentLoop.HELD_BACK] not in said and ["first", AgentLoop.HELD_BACK] in said, said
+    assert first.connected is False and log[-2:] == ["first:close", "arm:close"], log
+
+
+def test_a_second_press_as_the_close_begins_still_sends_every_stop() -> None:
+    """Q04. The close's halts run in tasks asyncio's runner does not list. Listed, a second
+    Ctrl-C that came as the close set them going cancelled each before its first step, and a halt
+    cancelled so never runs at all: no heartbeat stopped, no stop sent, for any robot. Off the
+    list, every halt runs, and every robot is sent its stop. The press here comes in the same turn
+    of the loop as the close sets the halts going, before any has begun, which is asyncio's own
+    order (a task's first step runs at the turn after it is made), not a matter of time. On a
+    loop of its own, as the press tests run."""
+    log: list[str] = []
+
+    async def a_close_pressed_as_it_begins() -> None:
+        team, _arm, _base = _arm_and_base(log, hold=False)
+        await team.connect_all()
+        log.clear()
+        closing = asyncio.ensure_future(team.close_all())
+        await asyncio.sleep(0)  # the close's first step has set the halts going, none has begun
+        _cancel_every_task()
+        await asyncio.wait_for(closing, HANG_GUARD_S)
+
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(a_close_pressed_as_it_begins())
+    assert {"arm:stop", "base:stop"} <= set(log), f"a robot was sent no stop: {log}"
+    assert log[-2:] == ["arm:close", "base:close"], log
 
 
 def test_a_press_while_a_refused_start_closes_what_connected_still_closes_the_rest() -> None:

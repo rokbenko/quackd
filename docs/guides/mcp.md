@@ -395,9 +395,11 @@ against a real duck: [adapters/open_duck/README.md](../adapters/open_duck/README
   told is told twice, and said to have gone on if it still does, and one that goes on to its end
   after the press is said to have done so. From that press on no fold
   starts on any robot, and each arm is said to be held where it stands. Every robot's transport
-  is still closed and its line said: the stops and the closes run to their end through a later
-  Ctrl-C, each for as long as a stop is given, and a close still going after that is said to be,
-  with what to do. A Ctrl-C during an arm's fold at start-up stops it the same way, and every
+  is still closed and its line said: the stops run to their end through a later Ctrl-C, each for
+  as long as a stop is given, and each close for as long as the body says its close can take, or
+  30 s where it says nothing, as `roboglot drive` waits. A close still going after that is said
+  to be given up as the server ends, with what to do. A Ctrl-C during an arm's fold at start-up
+  stops it the same way, and every
   robot that had connected is closed.
 - MOSS's `explore` runs for up to eight minutes, and a client may wait less than that for one
   tool call: ask for fewer minutes than your client waits, and a `stop` from beside it ends it
