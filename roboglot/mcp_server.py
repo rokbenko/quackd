@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import logging
 import re
 import sys
@@ -28,6 +29,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import yaml
 from mcp.server import MCPServer
 from mcp.server.mcpserver import Image
 from pydantic import ValidationError
@@ -38,7 +40,7 @@ from roboglot.adapters.manifest import RobotManifest, apply_datasheet_override
 from roboglot.agent.prompts import body_summary, play_joints, play_paragraphs, play_voice
 from roboglot.agent.transcript import png_bytes
 from roboglot.glotfile.narrow import narrow_policy_verb
-from roboglot.glotfile.parser import GlotParseError, load_glot
+from roboglot.glotfile.parser import GlotParseError, load_glot, resolve_glot_path
 from roboglot.glotfile.schema import Budgets, GlotFile, GlotFrontmatter
 from roboglot.glotfile.validate import validate_glot
 from roboglot.glotfile.widen import widened_by
@@ -74,6 +76,7 @@ from roboglot.space.places import PlaceStore
 from roboglot.space.pose import where_record
 from roboglot.transport.base import (
     CameraFrame,
+    RobotState,
     RobotTransport,
     TransportError,
     camera_names_of,
@@ -180,6 +183,53 @@ Call robot_run_verb(verb="stop", robot=...) if anything looks wrong."""
 TEAM_MEMORY = """ robot_recall(robot) is what that robot learned in earlier sessions;
 robot_remember(text, robot) keeps one short fact for the next one."""
 
+NOBODY_ASKED = "Nobody is asked here whether they are watching it, so somebody must be"
+"""What this server adds to the core's warning about a body that cannot see its own fall and
+cannot get up (`fall_blind_warning`). `roboglot run` and `roboglot drive` ask whether somebody is
+watching such a body before it walks; a server driven by an MCP client asks nobody, moves the
+body as before, and says so: on stderr to the person who started it, and to the client in the
+reply to the assessment every move waits for (`RobotSession.fall_blind`)."""
+
+GLOT_MAX_BYTES = 64 * 1024
+"""The most `robot_load_glotfile` reads of a task file: a larger one is refused before it is
+opened. A task file is a frontmatter and a body a person writes, and the largest of those
+bundled with Roboglot is about 3 KB; this is twenty times that, so no task written by hand meets
+it, and a client steered by what it read cannot have the server read a file of any size. A test
+holds every bundled task under a tenth of it."""
+
+
+def _load_bounded(path: str) -> GlotFile:
+    """`load_glot`, for a file no larger than `GLOT_MAX_BYTES`, found as `load_glot` finds it."""
+    found = resolve_glot_path(path)
+    size = found.stat().st_size
+    if size > GLOT_MAX_BYTES:
+        raise GlotParseError(
+            f"{size} bytes is larger than the {GLOT_MAX_BYTES} bytes a task file may be here, "
+            "and it was not read",
+            str(found),
+        )
+    return load_glot(str(found))
+
+
+def _without_its_text(e: GlotParseError) -> str:
+    """A refusal to load a task file, in words that quote nothing of the file.
+
+    The YAML parser's own error quotes the line it stopped on, beneath a caret, and this is the
+    client's to read: one steered by text it had read could have the server read any YAML file
+    its user can, a line per call. Its kind and where it is say as much to the person fixing a
+    task. The parser raises its refusal from the YAML error (`parse_glot_text`), which is kept
+    as the refusal's context."""
+    cause = e.__context__
+    if not isinstance(cause, yaml.YAMLError):
+        return str(e)
+    mark = getattr(cause, "problem_mark", None)
+    where = (
+        f" at line {mark.line + 1} of the frontmatter, column {mark.column + 1}"
+        if mark is not None
+        else ""
+    )
+    return f"{e.path or '<text>'}: frontmatter is not valid YAML: {type(cause).__name__}{where}"
+
 
 def _prefixed(emit: Callable[..., None], name: str) -> Callable[[str], None]:
     """Log lines from a team say which robot they are about."""
@@ -207,15 +257,30 @@ def _stderr_view(name: str) -> Sink:
     return unless_capturing(write)
 
 
+_OBSERVED: contextvars.ContextVar[list[CameraFrame] | None] = contextvars.ContextVar(
+    "roboglot_mcp_observed", default=None
+)
+"""The frames the `robot_observe` call this task runs for has captured, or None outside one.
+
+A context variable, as `capturing` keeps a call's events: the SDK runs every call as its own
+task and the verb's task is started from it, so each call reads only what its own `observe`
+captured. One slot on the session, emptied as a call started and written by every observe,
+handed a call made while another waited on its detector the other's picture, under its own
+summary and detections, or words with no picture at all."""
+
+
 def _stash_frames(session: RobotSession) -> Callable[[Sequence[CameraFrame], str], None]:
     """The executor's `on_frames` hook: keep what `observe` captured for `robot_observe`.
 
     Every camera rather than the last one to arrive. The single slot this replaced held one
     picture, so a body with two cameras would have returned whichever was read second and
-    called it the view."""
+    called it the view. The call's own frames go to the call (`_OBSERVED`); the session keeps
+    the last observe's as well, for whoever reads it after."""
 
     def on_frames(frames: Sequence[CameraFrame], _cause: str) -> None:
         session.last_frames = list(frames)
+        if (mine := _OBSERVED.get()) is not None:
+            mine[:] = frames
 
     return on_frames
 
@@ -237,8 +302,8 @@ class RobotSession:
     calls: int = 0
     log_lines: list[str] = field(default_factory=list)
     last_frames: list[CameraFrame] = field(default_factory=list)
-    """What the last `observe` captured, one entry per camera, so `robot_observe` can return
-    them. Empty when nothing was captured: refused, no camera, or a dry run."""
+    """What the last `observe` captured, one entry per camera. Empty when nothing was captured:
+    refused, no camera, or a dry run. `robot_observe` returns each call's own (`_OBSERVED`)."""
     explicit_registry: bool = False
     """A caller-supplied registry is kept as is; otherwise the manifest builds one."""
     memory: RobotMemory | None = None
@@ -248,6 +313,45 @@ class RobotSession:
     locked_to: GlotFrontmatter | None = None
     """The contract `--lock-glotfile` holds this session to, or None, as it is by default, where a
     contract the client loads replaces the one before it."""
+    fall_sense: RobotState | None = None
+    """What the body said of itself once it had connected, read only where it can matter: on a
+    body this session may walk that has no `stand_up` (`fall_blind`). None until then."""
+    fall_blind_said: bool = False
+    """Whether the person at the server's stderr has been told this body needs watching."""
+
+    async def fall_blind(self) -> str | None:
+        """Why somebody must watch this body while it walks, in the core's words, or None.
+
+        The body says whether anything on it sees a fall only once it has connected (the Open
+        Duck's bridge reads it from its runtime), which is after this server's instructions were
+        written, so they cannot say it: the start-up line on stderr does, and the reply to the
+        assessment. Read once, on the first ask, and only on a body whose task can make it walk
+        and that cannot get up, as `fall_blind_warning` asks; against the task as it is now,
+        since loading one may allow a walk the last did not."""
+        from roboglot.agent.loop import LOCOMOTION, fall_blind_warning
+
+        allow = self.executor.allowed
+        walks = any(self.registry.canonical(n) in LOCOMOTION for n in allow)
+        if not walks or "stand_up" in self.registry:
+            return None
+        if self.fall_sense is None:
+            try:
+                self.fall_sense = await self.transport.get_state()
+            except Exception as e:  # asked again at the next assessment
+                logger.warning(
+                    "%s: whether anything on this body sees a fall could not be read: %s: %s",
+                    self.name,
+                    type(e).__name__,
+                    e,
+                )
+                return None
+        return fall_blind_warning(self.registry, allow, self.fall_sense)
+
+    def say_fall_blind(self, warning: str) -> None:
+        """The warning, said once on stderr to the person who started the server."""
+        if not self.fall_blind_said:
+            self.fall_blind_said = True
+            logger.warning("%s: %s %s.", self.name, warning, NOBODY_ASKED)
 
     def _gate(self, name: str, gate: str, reason: str) -> None:
         """A refusal the session makes before the executor sees the call, told the same way."""
@@ -409,12 +513,55 @@ class RobotSession:
         )
 
     async def close(self) -> None:
+        """Stop the robot, then put it down and let go of it: `halt`, then `put_down`, the two
+        halves a team's close runs for all its robots, every `halt` before any `put_down`
+        (`_close_in_two_passes`). A press or a cancel while the stop is out keeps the fold from
+        starting, and one in the fold or the transport's close ends that step; the transport is
+        closed whatever came, and the press is raised once the close has run."""
+        if (pressed := await _close_in_two_passes([self])) is not None:
+            raise pressed
+
+    async def halt(self) -> None:
+        """The first half of the close: no more courtesy runs for robots met, the heartbeat
+        stopped, then the stop.
+
+        The stop goes out in a task of its own and is waited for as long as the executor waits
+        for a stop it owes (`Executor._answer_of`, its `stop` verb's `timeout_s`), so a cancel of
+        this wait never cuts it off half sent, and a link that holds it does not hold the close:
+        it goes on by itself. A cancel of the wait is raised once the stop is out of its hands,
+        and so is one `Heartbeat.stop` took, which it does with any that lands in it: the close
+        went on to stop and fold the arm as if nothing had come."""
+        me = asyncio.current_task()
+        before = me.cancelling() if me is not None else 0
         # closed before the rest move, which reaches the body without passing the executor
         self.executor.open_to_peers = False
         await self.heartbeat.stop()
-        with contextlib.suppress(Exception):
-            await self.transport.stop()
-        if not self.executor.dry_run:
+        taken = me is not None and me.cancelling() > before
+        unstopped, cancelled = await self.executor._answer_of(_set_going(self.transport.stop))
+        if unstopped is not None:
+            # a stop that raised was dropped here without a word, and one that never answered
+            # held the close, and every robot after it, for good
+            logger.warning("%s: the close's stop: %s", self.name, unstopped)
+        if cancelled or taken:
+            raise asyncio.CancelledError
+
+    async def put_down(self, *, fold: bool = True) -> None:
+        """The second half of the close: a pause granted to a robot met waited out, the rest
+        move, the transport's close and what the close says of the body. `fold` is False where a
+        press came while the stops were out.
+
+        A press or a cancel keeps a fold from starting if it comes first, and stops one where it
+        is: the arm is held there and that is said (`AgentLoop.HELD_BACK`, `FOLD_STOPPED`), where
+        the arm used to go down after a press in the pause's wait. The transport's close then
+        runs to its end through any press, as a run's does (`AgentLoop._unbroken`), its note is
+        said, and the first press is raised after them. A press in the fold used to leave the
+        transport open, with nothing said of its torque, and one in the close to cut it short."""
+        me = asyncio.current_task()
+        before = me.cancelling() if me is not None else 0
+        interrupted: BaseException | None = None
+        if not fold:
+            self._held_back()
+        elif not self.executor.dry_run:
             # a pause granted to a robot met is waited out first, since the rest move is not
             # gated; then between the stop and the close, which is the only window where
             # putting the arm down changes whether it falls when torque is released
@@ -423,14 +570,54 @@ class RobotSession:
                 while held > 0:  # until it is over: asyncio may wake a clock tick early
                     await asyncio.sleep(held)
                     held = self.executor.paused_until - time.monotonic()
-            except (asyncio.CancelledError, KeyboardInterrupt):
-                pass  # the arm still goes down, and the transport still closes
-            with contextlib.suppress(Exception):
-                await go_to_rest_if_any(self.transport)
-        with contextlib.suppress(Exception):
-            await self.transport.close()
+            except (asyncio.CancelledError, KeyboardInterrupt) as e:
+                interrupted = e  # a press before the fold: it does not start
+                self._held_back()
+            if interrupted is None:
+                try:
+                    with contextlib.suppress(Exception):
+                        await go_to_rest_if_any(self.transport)
+                except BaseException as e:  # a press stops the fold where it is
+                    interrupted = e
+                    await self._held_where_the_fold_stopped()
+        closing = _set_going(self.transport.close)
+        late = await _outlasted({closing})
+        interrupted = interrupted or late
+        if not closing.cancelled() and (error := closing.exception()) is not None:
+            if isinstance(error, Exception):
+                logger.warning(
+                    "%s: the transport's close raised %s: %s",
+                    self.name,
+                    type(error).__name__,
+                    error,
+                )
+            else:
+                interrupted = interrupted or error
         if note := getattr(self.transport, "close_note", None):
             logger.warning("%s: %s", self.name, note)
+        if interrupted is None and me is not None and me.cancelling() > before:
+            interrupted = asyncio.CancelledError()  # one a step took and did not raise
+        if interrupted is not None:
+            raise interrupted
+
+    def _held_back(self) -> None:
+        """Said where a press kept this body's closing fold from starting: an arm with a pose to
+        fold to, held by the close's stop where it stands."""
+        if self.executor.dry_run or getattr(self.transport, "rest_pose", None) is None:
+            return
+        from roboglot.agent.loop import AgentLoop
+
+        logger.warning("%s: %s", self.name, AgentLoop.HELD_BACK)
+
+    async def _held_where_the_fold_stopped(self) -> None:
+        """A fold a press stopped, held where it is with a stop, bounded as the close's own is,
+        and said (`FOLD_STOPPED`); whether the arm holds itself up is the close's note to say."""
+        from roboglot.release import FOLD_STOPPED
+
+        unstopped, _cancelled = await self.executor._answer_of(_set_going(self.transport.stop))
+        if unstopped is not None:
+            logger.warning("%s: the close's stop: %s", self.name, unstopped)
+        logger.warning("%s: %s", self.name, FOLD_STOPPED)
 
     async def run(self, name: str, params: dict[str, Any] | None) -> dict[str, Any]:
         """`robot_run_verb`: the verb through the executor, with its log."""
@@ -536,6 +723,13 @@ class RobotSession:
             "could": sorted(could),
             "could_datasheets": could,
         }
+        if verdict.verdict != "infeasible" and (warning := await self.fall_blind()) is not None:
+            # in the reply every move waits for, since the instructions could not say it
+            payload["warning"] = (
+                f"{warning} {NOBODY_ASKED}: tell the person you are chatting with before "
+                "anything moves it."
+            )
+            self.say_fall_blind(warning)
         if verdict.verdict == "uncertain":
             # `--yes` answers a confirm gate because there is no terminal to ask on. Here
             # there is a person, reachable through the LLM, which is better than a flag.
@@ -621,14 +815,26 @@ class RobotSession:
 
     async def observe(self) -> list[str | Image]:
         """The `observe` verb through the executor, then the frames it captured, then the
-        log as one text block (this tool returns content, not a dict)."""
+        log as one text block (this tool returns content, not a dict). The frames are this
+        call's own (`_OBSERVED`), whatever another call on this robot captures meanwhile."""
         self.last_frames = []
-        result = await self._call("robot_observe", {}, lambda: self._run("observe", {}))
+        captured: list[CameraFrame] = []
+        mine = _OBSERVED.set(captured)
+        try:
+            result = await self._call("robot_observe", {}, lambda: self._run("observe", {}))
+        finally:
+            _OBSERVED.reset(mine)
+        pngs: list[bytes] = []
+        if result["ok"] and captured:
+            # in a worker, as a run's frames are (`Transcript.save_frames_off_loop`): this loop
+            # runs every robot's heartbeat and every verb still sending, and a full frame per
+            # camera held it for as long as the encodes took
+            pngs = await asyncio.to_thread(lambda: [png_bytes(f.image) for f in captured])
         content: list[str | Image]
-        if not result["ok"] or not self.last_frames:
+        if not pngs:
             # refused, no camera, or a dry run (nothing was captured): words only
             content = [f"{self.name}: {result['summary']}"]
-        elif len(self.last_frames) == 1 and len(camera_names_of(self.transport)) < 2:
+        elif len(captured) == 1 and len(camera_names_of(self.transport)) < 2:
             # the body's cameras rather than this step's frames: a two-camera arm down to one
             # lens takes the named branch below, because an unnamed picture from a body with
             # two views is the one thing the naming exists to prevent
@@ -636,21 +842,21 @@ class RobotSession:
             summary = str(result["summary"]).removeprefix("frame captured; ")
             content = [
                 f"{self.name} camera: {summary}",
-                Image(data=png_bytes(self.last_frames[0].image), format="png"),
+                Image(data=pngs[0], format="png"),
             ]
         else:
             # several cameras: each picture is named, and the summary is the primary's,
             # because the detector reads one view and a bearing from another means nothing
-            self.frames += len(self.last_frames)
+            self.frames += len(captured)
             # the body's camera list, not the frames that arrived. Naming the first picture
             # as the primary is only true when the primary is the one that answered: if it is
             # the lens that died, calling the survivor primary and handing it the detections
             # turns an unnamed picture into a mislabelled one, which is worse than what this
             # branch was written to fix. The detections belong to the primary either way, and
             # when it gave nothing there are none.
-            here = camera_names_of(self.transport) or [f.name for f in self.last_frames]
-            arrived = [f.name for f in self.last_frames]
-            primary = next((f.name for f in self.last_frames if f.primary), None)
+            here = camera_names_of(self.transport) or [f.name for f in captured]
+            arrived = [f.name for f in captured]
+            primary = next((f.name for f in captured if f.primary), None)
             summary = re.sub(r"^frames? captured[^;]*; ", "", str(result["summary"]))
             whose = (
                 f"{primary} is the primary, the detections are its"
@@ -659,9 +865,9 @@ class RobotSession:
                 "so there are no detections"
             )
             content = [f"{self.name} cameras {', '.join(arrived)} ({whose}): {summary}"]
-            for frame in self.last_frames:
+            for frame, png in zip(captured, pngs, strict=True):
                 content.append(f"camera {frame.name}:")
-                content.append(Image(data=png_bytes(frame.image), format="png"))
+                content.append(Image(data=png, format="png"))
         if result.get("log"):
             content.append("log:\n" + "\n".join(result["log"]))
         return content
@@ -718,9 +924,9 @@ class RobotSession:
 
     def load(self, path: str) -> dict[str, Any]:
         try:
-            glot = load_glot(path)
+            glot = _load_bounded(path)
         except GlotParseError as e:
-            return {"ok": False, "error": str(e)}
+            return {"ok": False, "error": _without_its_text(e)}
         if glot.frontmatter.team is not None:
             # same guard as serve(): one MCP pilot must not adopt a many-robot contract
             return {
@@ -812,6 +1018,91 @@ def _result(r: VerbResult) -> dict[str, Any]:
     return {"ok": r.ok, "summary": r.summary, "data": r.data}
 
 
+def _set_going(send: Callable[[], Awaitable[Any]]) -> asyncio.Future[Any]:
+    """`send` in a task of its own, as the executor sets an owed stop going (`_start_stop`): one
+    that raises as it is called is a failed send, as one that raises later is."""
+    try:
+        return asyncio.ensure_future(send())
+    except Exception as e:
+        failed: asyncio.Future[Any] = asyncio.get_running_loop().create_future()
+        failed.set_exception(e)
+        return failed
+
+
+async def _outlasted(tasks: set[asyncio.Future[Any]]) -> BaseException | None:
+    """Wait until every one of `tasks` has ended, whatever cancel or press the waiting task is
+    sent meanwhile, and return the first it was sent, or None. `asyncio.wait` hands none of
+    them on, so each task ends as it would have. Every task here is bounded by its own clock."""
+    first: BaseException | None = None
+    pending = {t for t in tasks if not t.done()}
+    while pending:
+        try:
+            _done, pending = await asyncio.wait(pending)
+        except (asyncio.CancelledError, KeyboardInterrupt) as e:
+            first = first or e
+            pending = {t for t in pending if not t.done()}
+    return first
+
+
+async def _close_in_two_passes(sessions: Sequence[RobotSession]) -> BaseException | None:
+    """End a session's robots: every robot's `halt` at once, then each robot's `put_down`, in
+    order. Returns the first press or cancel that came, for the caller to raise.
+
+    One robot after another, each close waited out a granted pause and folded its arm before the
+    next robot was sent its stop, and a stdio client ends a server a fixed grace after it closes
+    its stdin (the MCP SDK's own client: two seconds, `PROCESS_TERMINATION_TIMEOUT`), so a robot
+    late in the list, driving on its last command, could be left moving. Now every stop has gone
+    out, and been answered or left to go on by itself, before any pause is waited out or any fold
+    starts. A press that came while the stops were out keeps every fold from starting. One that
+    lands in a robot's fold or close ends that step and no other: each robot is still put down
+    and closed, and the first press is raised once all of them have been."""
+    halts = {_set_going(session.halt): session for session in sessions}
+    pressed = await _outlasted(set(halts))
+    for halt, session in halts.items():
+        if halt.cancelled():
+            pressed = pressed or asyncio.CancelledError()
+        elif isinstance(error := halt.exception(), Exception):
+            logger.warning(
+                "%s: the close's stop: %s: %s", session.name, type(error).__name__, error
+            )
+        elif error is not None:
+            pressed = pressed or error
+    interrupted: BaseException | None = None
+    for session in sessions:
+        try:
+            await session.put_down(fold=pressed is None)
+        except BaseException as e:  # handed back, once every robot has been closed
+            interrupted = interrupted or e
+    return pressed or interrupted
+
+
+async def _closed(sessions: Sequence[RobotSession]) -> None:
+    """`_close_in_two_passes` in a task of its own, waited for whatever this task is sent.
+
+    `serve-mcp` closes its robots in the lifespan's `finally`, inside the task group the MCP SDK
+    opens for stdio. When the client dies with a call in flight, the group's `stdout_writer`
+    raises on a write nobody reads, and anyio cancels the group's host task again at every turn
+    of the loop until it ends. The close ran in that task and was cut at its first wait: no robot
+    after the first one's stop was stopped, folded or closed. A cancel sent here now ends
+    nothing; each step of the close is bounded by its own clock, and the first cancel or press
+    is raised once it has run. A person's Ctrl-C reaches the close itself as asyncio's runner
+    hands it on, cancelling every task at a second press: it keeps a fold from starting, or
+    stops one where it is, and every transport is still closed (`RobotSession.put_down`).
+
+    A process killed outright, as a stdio client does a fixed grace after it closes stdin, runs
+    none of this. Its robots are left as their last command left them, and the order is the
+    answer there: every stop goes out first, in the close's first turns of the loop, so a kill
+    that comes during a pause or a fold finds every robot already sent its stop."""
+    closing = asyncio.ensure_future(_close_in_two_passes(sessions))
+    sent = await _outlasted({closing})
+    if closing.cancelled():
+        ended: BaseException | None = asyncio.CancelledError()
+    else:
+        ended = closing.exception() or closing.result()
+    if (first := sent or ended) is not None:
+        raise first
+
+
 @dataclass
 class ServedTeam:
     sessions: dict[str, RobotSession]
@@ -852,16 +1143,16 @@ class ServedTeam:
                     self.before_connect(name)
                 await session.connect()
             except BaseException:
-                for done in connected:
-                    with contextlib.suppress(Exception):
-                        await done.close()
+                # closed as a session's end closes its robots, so a press in one robot's close
+                # does not leave the next one open
+                await _closed(connected)
                 raise
             connected.append(session)
 
     async def close_all(self) -> None:
-        for session in self.sessions.values():
-            with contextlib.suppress(Exception):
-                await session.close()
+        """Every robot stopped, then each one put down and closed, whatever cancel the task
+        that asks for it is sent meanwhile (`_closed`)."""
+        await _closed(list(self.sessions.values()))
 
 
 def _pick_default(robots: Mapping[str, Any]) -> str:
@@ -1071,6 +1362,11 @@ def build_team_server(
                 getattr(session.detector, "name", None) if session.detector else None,
             )
         try:
+            for session in team.sessions.values():
+                # under the start-up lines, the first moment it is known, and inside the `try`:
+                # it reads the body, and a cancel there must still close every robot
+                if (warning := await session.fall_blind()) is not None:
+                    session.say_fall_blind(warning)
             yield team
         finally:
             await team.close_all()
