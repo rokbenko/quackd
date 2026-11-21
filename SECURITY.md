@@ -414,7 +414,11 @@ Also in scope:
 - **The ToddlerBot daemon** (`bridge/toddlerbot/roboglot_toddlerbot_bridge.py`), a TCP
   listener on port 9873 that drives a 3 kg humanoid which cannot get up if it falls. It
   binds loopback by default, compares its token with `hmac.compare_digest`, and requires one
-  only if one is configured. It is a larger surface than the Open Duck's because it owns the
+  only if one is configured, but it refuses to start on any other address with no token
+  unless it is given `--allow-no-token`. It reads a token from `--token-file` and refuses to
+  start on a named file that is missing, unreadable or empty; a token given with `--token` can
+  be read by every account on the robot, and it warns so. The token crosses the network in the
+  clear, because there is no TLS. It is a larger surface than the Open Duck's because it owns the
   50 Hz loop rather than feeding one: anything that lets an unauthenticated peer move the
   robot, defeat the 500 ms deadman, exceed the joint clamps or the per-tick rate limit, or
   reach past the methods the protocol exposes is a security issue. As with the Open Duck,

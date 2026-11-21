@@ -676,8 +676,10 @@ and a read that got the bus just before a write says nothing about what that wri
   a fall ends the run and needs a human. Every moving verb refuses once it is down.
 - **Work through
   [adapters/toddlerbot/hardware-checklist.md](../adapters/toddlerbot/hardware-checklist.md) in
-  order.** It keeps the feet off the ground until step 13, and steps 11 and 12 (pull the network
-  cable mid-move, then send `SIGTERM`) are the two that matter most.
+  order.** It keeps the feet off the ground until step 14, and steps 11 and 12 (pull the network
+  cable mid-move, then send `SIGTERM`) are the two that matter most. An exit code of 3 after
+  `SIGTERM` means the daemon could not reach the safe pose and left the robot torqued and
+  holding: support it before you power it off.
 - **The deadman is a slew, not a stop.** There is no velocity at this hardware boundary:
   the command is an absolute pose. On silence the daemon Roboglot ships slews to the safe
   pose at upstream's own rate, waist first, and holds. It never goes limp, because on
