@@ -29,7 +29,7 @@ from roboglot.agent.providers.base import ToolCall
 from roboglot.agent.providers.fake import FakeProvider
 from roboglot.agent.transcript import Transcript
 from roboglot.glotfile.parser import parse_glot_text
-from roboglot.host import HostClient
+from roboglot.host import MAX_BOXES, HostClient
 from roboglot.perception import detector_for
 from roboglot.perception.base import Detection, detect_off_loop
 from roboglot.perception.host import JPEG_QUALITY, HostDetector
@@ -40,11 +40,14 @@ from roboglot.verbs.core import (
     HOLD_TTL_S,
     GoToParams,
     SearchScanParams,
+    _see,
     _see_holding,
+    detector_failed,
     go_to,
+    observe,
     search_scan,
 )
-from roboglot.verbs.registry import VerbContext
+from roboglot.verbs.registry import NoParams, VerbContext
 from tests.fake_jetson_hostd import (
     BALL_BOX,
     FRAME_SIZE,
@@ -53,6 +56,7 @@ from tests.fake_jetson_hostd import (
     default_detections,
     jpeg_bytes,
 )
+from tests.support import UNTIL_WITHIN_S, until_async
 
 Box = tuple[str, float, float, float, float, float]
 
@@ -194,6 +198,33 @@ def test_names_the_board_has_no_word_for_are_dropped(hostd: FakeHostd) -> None:
     ball = found[0]
     assert ball.bearing_deg == 0.0, "the ball's box is centred in the frame"
     assert ball.calibrated is True
+
+
+async def test_an_observation_says_how_many_boxes_past_the_bound_were_left_out(
+    hostd: FakeHostd,
+) -> None:
+    """Every box of a mapped class in a reply became a detection, a clause of the camera line
+    and an entry in the record, on every step, however many the board sent. Past the bound the
+    least confident are left out, and the observation says in one clause how many, so a pilot
+    is not told a part of the room is the whole of it; a reply within the bound reads as it
+    did."""
+    x1, y1, x2, y2 = BALL_BOX
+    extra = 3
+    sent = MAX_BOXES + extra
+    hostd.detect_reply = _reply(
+        [("sports ball", round(0.3 + 0.6 * i / sent, 4), x1, y1, x2, y2) for i in range(sent)]
+    )
+    detector = HostDetector(HostClient(hostd.address), fov_deg=62.2)
+    ctx = VerbContext(transport=MockTransport(frame_size=FRAME_SIZE), detector=detector)
+    result = await observe(ctx, NoParams())
+    assert result.ok and len(result.data["detections"]) == MAX_BOXES
+    tail = result.summary[-80:]
+    assert result.summary.endswith(f"; {extra} less confident boxes left out"), tail
+
+    hostd.detect_reply = default_detections()
+    plain = await observe(ctx, NoParams())
+    assert plain.ok and len(plain.data["detections"]) == 1
+    assert "left out" not in plain.summary and plain.summary.startswith("frame captured; ball ")
 
 
 # ── a board that stops answering ────────────────────────────────────────────────────────
@@ -494,6 +525,92 @@ async def test_a_head_sweep_stops_on_a_failed_board_too(hostd: FakeHostd) -> Non
     assert result.summary.startswith("search_scan: yolo@host failed, so the sweep stopped: ")
     assert len(body.intents_of("look")) == 1, "one look, not the whole sweep"
     assert len(hostd.requests_to("/detect")) == 1
+
+
+class _TwoCalls:
+    """Stands in for `HostClient`: call 1 waits until it is released, as a slow board answers a
+    frame whose verb is already over (`asyncio.to_thread` cannot stop the thread), and call 2
+    answers at once. One of the two fails, as the real client fails, with a `HostError`."""
+
+    address = "127.0.0.1:1"
+    reason = "127.0.0.1:1 answered 503: detection is not available"
+
+    def __init__(self, *, first_fails: bool) -> None:
+        self.first_fails = first_fails
+        self.calls = 0
+        self.release = threading.Event()
+
+    def detect(self, jpeg: bytes, *, conf: float | None = None) -> host_module.HostDetections:
+        self.calls += 1
+        first = self.calls == 1
+        if first and not self.release.wait(UNTIL_WITHIN_S):
+            raise AssertionError("call 1 was never released")
+        if first == self.first_fails:
+            raise host_module.HostError(self.reason)
+        return host_module.HostDetections(*FRAME_SIZE, (), "yolov8n.pt", "cuda", 5.0)
+
+
+@pytest.mark.parametrize(
+    "first_fails", [False, True], ids=["failed-frame-not-empty", "clean-frame-not-failed"]
+)
+async def test_a_look_left_over_from_a_cancelled_verb_says_nothing_about_the_next_frame(
+    monkeypatch: pytest.MonkeyPatch, first_fails: bool
+) -> None:
+    """`error` was one slot that every detect thread wrote as it ended, and `detector_failed`
+    read it after its own frame as if it were about that frame. A look cancelled with its verb
+    runs on in its thread, so when it ended after the next verb's look and before that verb
+    read the slot, a frame the board failed read as an empty view (`search_scan` turned on) or a
+    clean one as a board failure. The order is forced by events: the left-over call is released
+    only once the next look is back, and its thread is joined before the slot is read."""
+    threads: list[threading.Thread] = []
+
+    async def to_thread(func: Any, /, *args: Any, **kwargs: Any) -> Any:
+        # `asyncio.to_thread` on a thread of its own, so the test can join the left-over one
+        loop = asyncio.get_running_loop()
+        done: asyncio.Future[Any] = loop.create_future()
+
+        def settle(result: Any, error: BaseException | None) -> None:
+            if done.cancelled():
+                return
+            if error is None:
+                done.set_result(result)
+            else:
+                done.set_exception(error)
+
+        def run() -> None:
+            try:
+                result = func(*args, **kwargs)
+            except BaseException as e:  # handed to the awaiting task, which raises it
+                loop.call_soon_threadsafe(settle, None, e)
+            else:
+                loop.call_soon_threadsafe(settle, result, None)
+
+        threads.append(threading.Thread(target=run, daemon=True))
+        threads[-1].start()
+        return await done
+
+    monkeypatch.setattr(asyncio, "to_thread", to_thread)
+    board = _TwoCalls(first_fails=first_fails)
+    detector = HostDetector(board, fov_deg=62.2)  # type: ignore[arg-type]
+    left_over = asyncio.ensure_future(detect_off_loop(detector, _frame()))
+    await until_async(lambda: board.calls == 1, what="call 1 reaching the board")
+    left_over.cancel()  # as `_see_holding` cancels its frame when its verb ends
+    await asyncio.wait({left_over})
+
+    ctx = VerbContext(transport=MockTransport(frame_size=FRAME_SIZE), detector=detector)
+    await _see(ctx, "ball", "search_scan")
+    board.release.set()
+    threads[0].join(UNTIL_WITHIN_S)
+    assert not threads[0].is_alive() and board.calls == 2
+    verdict = await detector_failed(ctx, "search_scan", "the scan stopped")
+    if first_fails:
+        assert verdict is None, f"a clean frame read as a failure: {verdict}"
+        assert detector.error is None
+    else:
+        assert verdict is not None, (
+            f"a failed frame read as an empty view (error {detector.error!r})"
+        )
+        assert board.reason in verdict.summary and detector.error == board.reason
 
 
 async def test_it_never_swaps_itself_for_the_colour_detector(

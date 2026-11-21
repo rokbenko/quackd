@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import base64
 import io
+import warnings
 from collections.abc import Awaitable, Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,7 +24,8 @@ from PIL import Image, ImageFile
 
 from roboglot.agent.images import FORMATS, TaskImageError, load_task_images
 from roboglot.host import HostClient, HostError
-from roboglot.transport.base import camera_url_frame
+from roboglot.transport.base import MAX_FRAME_PIXELS, camera_url_frame, check_frame_pixels
+from tests.support import jpeg_claiming, png_claiming
 
 REPO = Path(__file__).resolve().parent.parent
 SIZE = (16, 16)
@@ -272,6 +274,37 @@ async def test_a_frame_claiming_to_be_enormous_is_a_refusal_and_not_an_exception
 def test_a_camera_url_that_serves_anything_else_is_told_what_to_serve() -> None:
     with pytest.raises(ValueError, match="a JPEG or a PNG"):
         camera_url_frame(_picture("BMP"))
+
+
+@pytest.mark.parametrize("claiming", [jpeg_claiming, png_claiming], ids=["jpeg", "png"])
+@pytest.mark.parametrize("size", [(7681, 4320), (12000, 12000)], ids=["past-8k", "past-pillow"])
+def test_a_camera_url_frame_claiming_more_pixels_than_a_frame_may_have_is_refused_undecoded(
+    monkeypatch: pytest.MonkeyPatch,
+    claiming: Callable[[int, int], bytes],
+    size: tuple[int, int],
+) -> None:
+    """Every `--camera-url` frame went from `Image.open` straight to `convert("RGB")`, so a
+    header of a few hundred bytes claiming 12000 by 12000, inside Pillow's own error line,
+    decoded to hundreds of megabytes with a warning and nothing else. The bound is the largest
+    frame a robot's camera sends, 8K UHD, which still passes. Any decode is recorded and stopped
+    here, so no frame is allocated: the refusal comes first, names the size it claims, and comes
+    before Pillow's own check, whose warning would reach the terminal as a raw line."""
+    decoded: list[tuple[int, int]] = []
+
+    def no_decode(picture: ImageFile.ImageFile) -> Any:
+        decoded.append(picture.size)
+        raise OSError("decoded")
+
+    monkeypatch.setattr(ImageFile.ImageFile, "load", no_decode)
+    check_frame_pixels(7680, 4320)  # an 8K UHD frame is a camera's, and passes
+    assert MAX_FRAME_PIXELS <= Image.MAX_IMAGE_PIXELS, "past Pillow's warning, a frame warns"
+    width, height = size
+    said = f"the camera sent a frame that claims {width}x{height} pixels"
+    with warnings.catch_warnings(record=True) as warned:
+        warnings.simplefilter("always")
+        with pytest.raises(ValueError, match=said):
+            camera_url_frame(claiming(width, height))
+    assert decoded == [] and [w.category.__name__ for w in warned] == []
 
 
 async def test_the_refusal_is_what_a_person_reads_in_camera_error(
