@@ -7,16 +7,35 @@ Thanks for taking a toy duck seriously. Two kinds of contribution matter most: *
 
 ```bash
 git clone https://github.com/rokbenko/quackd && cd Roboglot
-uv sync --extra dev            # the core and all ten robots, editable, no robot SDKs
+uv sync                        # the core and all ten robots, editable, no robot SDKs, on Python 3.12
 uv tool install pre-commit     # the hooks' runner, in an environment of its own, not in the lock
 pre-commit install
-uv run pytest -n auto          # the whole suite on every core, about ten minutes, no network, no keys
-uv lock --check && uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run roboglot validate tasks/*.glot
 ```
 
 Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real provider.
 
-`pre-commit` is not in the `dev` extra: it brings `virtualenv`, and the lock cannot take a
+A bare `uv sync` is the whole setup: uv installs the `dev` dependency group by default, and builds
+`.venv` on the Python `.python-version` names. The group is never published, so no user is
+offered `roboglot[dev]`.
+
+Before a push, run what CI's test job runs, in its order:
+
+```bash
+uv lock --check
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest -n auto -m "not serial"
+uv run pytest -m serial
+uv run roboglot validate tasks/*.glot
+```
+
+CI runs them on Python 3.11 and 3.12, on Linux, macOS and Windows, and one Python on your own
+machine is enough before a push. The two pytest lines are the whole suite, about ten minutes on
+every core with no network and no keys, and the second runs the tests that hold a margin on a
+wall clock on their own, after the rest.
+
+`pre-commit` is not in the `dev` group: it brings `virtualenv`, and the lock cannot take a
 `virtualenv` with its security fixes while LeRobot caps `packaging`. A hook installed by the older
 `uv run pre-commit install` stops every commit with `No module named pre_commit`, so run
 `pre-commit install` again.
@@ -24,7 +43,7 @@ Add `--extra anthropic`, `--extra openai` or `--extra gemini` if you want a real
 This repository is a uv workspace: `roboglot` is one distribution and each robot under
 `adapters/` is another (`roboglot-microduck`, `roboglot-lerobot`, `roboglot-rosbridge`,
 `roboglot-open-duck`, `roboglot-xlerobot`, `roboglot-alohamini`, `roboglot-toddlerbot`,
-`roboglot-huebot`, `roboglot-moss`, `roboglot-rosarm`). The dev extra installs the core and all ten
+`roboglot-huebot`, `roboglot-moss`, `roboglot-rosarm`). The dev group installs the core and all ten
 of them editable, so an edit anywhere is live in the next test run with nothing to reinstall.
 None of the robot SDKs come with them, and none is needed: the suite drives every adapter
 against a mock or a fake.
@@ -57,7 +76,11 @@ it is cut in.
 `uv run mypy` checks with whatever interpreter your venv has. CI runs it twice,
 under 3.11 and 3.12, and `[tool.mypy]` pins no `python_version` on purpose (pinning 3.11
 made mypy reject numpy's stubs under 3.12), so a clean local run is half of that gate.
-`uv sync --python 3.12 --extra dev` and run it again for the other half.
+For the other half, `UV_PROJECT_ENVIRONMENT=.venv311 uv sync --python 3.11` keeps a 3.11
+environment beside `.venv`, and `UV_PROJECT_ENVIRONMENT=.venv311 UV_PYTHON=3.11 uv run mypy`
+checks in it. Name 3.11 on every `uv run` there, with `UV_PYTHON` or `--python 3.11`: one that
+does not reads `.python-version` and rebuilds that environment on 3.12. The same two variables
+run any other gate on 3.11.
 
 Windows, macOS and Linux are all first-class. Tests must never touch the network.
 

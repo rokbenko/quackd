@@ -450,10 +450,13 @@ def _pyproject() -> dict[str, Any]:
 
 
 def test_the_default_install_has_no_opencv_and_yolo_keeps_a_headless_one() -> None:
-    project = _pyproject()["project"]
+    pyproject = _pyproject()
+    project = pyproject["project"]
     assert not [d for d in project["dependencies"] if "opencv" in d]
     extras = project["optional-dependencies"]
     assert any(d.startswith("opencv-python-headless") for d in extras["yolo"]), (
         "ultralytics brings the opencv wanting a display's libraries, which headless Linux lacks"
     )
-    assert any(d.startswith("opencv-python-headless") for d in extras["dev"]), "the oracle here"
+    # the contributor's environment, which a bare `uv sync` installs, and never a published extra
+    dev = pyproject["dependency-groups"]["dev"]
+    assert any(d.startswith("opencv-python-headless") for d in dev), "the oracle here"

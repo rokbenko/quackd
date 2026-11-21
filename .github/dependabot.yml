@@ -98,7 +98,7 @@ updates:
       # and lerobot's numpy>=2.0.0,<2.3.0 leaves it nothing there.
       - dependency-name: "dm-tree"
         versions: [">=0.1.10"]
-      # hatchling is the build backend, pinned under [build-system] and in the dev extra, and
+      # hatchling is the build backend, pinned under [build-system] and in the dev group, and
       # Dependabot's uv updater cannot move it: it stops on every hatchling update with No
       # files have changed! before it runs uv. It did on 1.32.4 from 2026-09-25 and on 1.32.3
       # once that one was ignored on 2026-09-29, so every version is ignored and a person moves
