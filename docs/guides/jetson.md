@@ -400,9 +400,10 @@ time the board says it spent in the model
 
 What comes back from the board is bounded, because the daemon is reached over plain HTTP and
 anything answering on its port is read as the board. A snapshot whose header claims more than
-89,478,485 pixels, the bound a task's `--image` is held to, is refused before it is decoded, and
-the board camera's error names the size it claimed; every `--camera-url` frame is held to the
-same bound. One `/detect` reply is read for its 300 most confident boxes at most, the most a
+33,177,600 pixels, an 8K UHD frame, the largest a robot's camera sends, is refused before it is
+decoded, and the board camera's error names the size it claimed; every `--camera-url` frame is
+held to the same bound. Decoding a frame at the bound raised the laptop's peak memory by
+254 MiB, measured on Windows with Pillow 13.0.0. One `/detect` reply is read for its 300 most confident boxes at most, the most a
 YOLO prediction returns by default, and the camera line then ends with a clause such as
 `3 less confident boxes left out`. A reply within the bound reads as it always did.
 

@@ -130,6 +130,24 @@ def jpeg_claiming(width: int, height: int) -> bytes:
     return bytes(data)
 
 
+def png_claiming(width: int, height: int) -> bytes:
+    """A 16 by 16 PNG whose header chunk (IHDR) says `width` by `height`, its checksum made
+    good, so a reader takes the header as the PNG's own: `jpeg_claiming` for a PNG."""
+    import io
+    import zlib
+
+    from PIL import Image
+
+    buf = io.BytesIO()
+    Image.new("RGB", (16, 16), (90, 90, 90)).save(buf, format="PNG")
+    data = bytearray(buf.getvalue())
+    # signature (8), then IHDR: length (4), type (4), width (4), height (4), ..., checksum (4)
+    data[16:20] = width.to_bytes(4, "big")
+    data[20:24] = height.to_bytes(4, "big")
+    data[29:33] = zlib.crc32(bytes(data[12:29])).to_bytes(4, "big")
+    return bytes(data)
+
+
 def load_script(path: Path, name: str) -> ModuleType:
     """The Python file at `path`, loaded as the module `name`, without importing it through any
     package: how a daemon, a bridge or a script that lives outside Roboglot is run.

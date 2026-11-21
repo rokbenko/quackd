@@ -827,10 +827,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   write, the drain and the answer share the one timeout now.
 - **A board's snapshot, or a `--camera-url` frame, that claims to be enormous is refused before
   it is decoded.** Neither had a bound but Pillow's, which only warns until twice its limit, so a
-  JPEG of two megabytes whose header claimed 12000 by 12000 pixels decoded to 432 MB, and the
-  colour detector then ran over it on the event loop. A frame whose header claims more than
-  89,478,485 pixels, the bound a task's `--image` is held to, is refused, and the camera's error
-  names the size it claimed. A frame within the bound decodes as it did.
+  JPEG of a few hundred bytes whose header claimed 12000 by 12000 pixels was decoded in full, and
+  the colour detector then ran over it on the event loop. A frame whose header claims more than
+  33,177,600 pixels, an 8K UHD frame, the largest a robot's camera sends, is refused, and the
+  camera's error names the size it claimed. Decoding a frame at the bound raised peak memory by
+  254 MiB, measured on Windows with Pillow 13.0.0. A frame within the bound decodes as it did.
 - **A board's `/detect` reply is read for its 300 most confident boxes at most.** Any number up
   to the 16 MB reply cap was kept, and every box of a class Roboglot names became a clause of
   each observation's camera line and an entry in the record. Past 300, the most a YOLO
@@ -847,6 +848,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   temporary name, so a run and `serve-mcp` on one robot could truncate each other's file before
   it was renamed: a mark could be lost, and the other write raised, out of an observation too.
   Each write has a temporary file of its own now, and the later of two writes leaves a whole file.
+- **A places write that Windows refuses no longer comes out of the run.** Windows refuses to
+  replace a file another program holds open, and another process on the robot reads the places
+  file, so a run's observation could end with `PermissionError` when the robot was first seen in
+  a map the file did not know, and so could `mark_place` and `forget_place`. Such a write is
+  tried twice more, a hundredth of a second apart. One still refused is said once in the log on
+  an observation, which goes on with what it read, and the next write carries the change;
+  `mark_place` and `forget_place` fail saying the places file is held open by another program,
+  and nothing is kept or forgotten.
 - **The places file no longer grows by a line a run.** Every observation kept a record of the
   frame the robot was in, an odometry frame is new on every connection, and none was ever
   dropped, so the file grew whether or not a place was marked, and each observation read the
@@ -864,8 +873,9 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **Planning a walk to a place no longer holds up the event loop.** The search for floor the body
   fits on and the plan ran on the loop's own thread, in pure Python over a map as large as the
   map service sends, and a few hundred cells a side held the heartbeat, the kill switch's
-  callbacks and MCP for seconds. They run in a worker thread now, and a stop that comes while the
-  plan is out ends the walk at once, with the body stopped.
+  callbacks and MCP for seconds. They run on a planner thread of their own now, never on the
+  workers the board's detector and camera share, and a stop that comes while the plan is out ends
+  the walk at once, with the body stopped, and the plan at the next step of its search.
 - **The Jetson daemon's `/healthz` says when a detection is stuck.** The model runs one call at
   a time with no deadline, and health read only the last call that had finished, so a call that
   never returned left `/healthz` saying ok while every `/detect` behind it was refused as busy.

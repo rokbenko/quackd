@@ -9,6 +9,7 @@ import asyncio
 import math
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from typing import Any
 
@@ -16,7 +17,7 @@ import numpy as np
 import pytest
 
 from roboglot.safety import Aborted
-from roboglot.space.grid import FREE, OCCUPIED, OccupancyGrid
+from roboglot.space.grid import FREE, OCCUPIED, OccupancyGrid, PlanStopped
 from roboglot.space.places import Place, PlaceBook, PlaceStore
 from roboglot.space.pose import Fix, FrameRef, Pose2D
 from roboglot.space.source import SpatialSource, SpatialSourceBase
@@ -860,6 +861,48 @@ async def test_the_way_is_planned_off_the_event_loop_and_a_stop_meanwhile_does_n
         assert [i for i in mock.intents if i.kind == "move"] == []
     finally:
         release.set()
+
+
+async def test_a_walk_stopped_while_it_plans_ends_its_plan_and_holds_no_shared_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A walk stopped while its plan ran left the plan running to its end in a worker of the
+    loop's default executor, which the board's detector, its camera and the Open Duck's camera
+    share: twelve walks started and stopped on a large map held every worker, and the next look
+    waited behind plans nobody would read. The plan runs on a thread of its own, never one of the
+    shared workers, and the walk's stop is the plan's stop: the stand-in plan below does what
+    the search does, give up once its stop is set, and is never let go by the test otherwise."""
+    loop = asyncio.get_running_loop()
+    shared = ThreadPoolExecutor(thread_name_prefix="shared-default")
+    loop.set_default_executor(shared)
+    names: list[str] = []
+    stops: list[threading.Event | None] = []
+    entered, ended = threading.Event(), threading.Event()
+
+    def plan(self: OccupancyGrid, *args: Any, **kw: Any) -> Any:
+        names.append(threading.current_thread().name)
+        stop = kw.get("stop")
+        stops.append(stop)
+        entered.set()
+        try:
+            if stop is None or not stop.wait(UNTIL_WITHIN_S):
+                raise AssertionError("the plan's stop was never set")
+            raise PlanStopped
+        finally:
+            ended.set()
+
+    monkeypatch.setattr(OccupancyGrid, "plan", plan)
+    mock, ctx = await _still_duck(OccupancyGrid(0.05, (-1.0, -1.0), np.zeros((40, 40), np.uint8)))
+    _mark(ctx, "away", 0.5, 0.0)
+    walking = asyncio.create_task(_go(ctx, "away", face=False))
+    await until_async(entered.is_set, what="the walk starting its plan")
+    assert not names[0].startswith("shared-default"), f"planned on a shared worker: {names}"
+    walking.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await walking
+    await until_async(ended.is_set, what="the plan ending once its walk was stopped")
+    assert stops[0] is not None and stops[0].is_set()
+    assert mock.intents[-1].kind == "stop" and [i for i in mock.intents if i.kind == "move"] == []
 
 
 async def test_a_way_too_narrow_says_how_much_room_it_needed() -> None:

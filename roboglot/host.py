@@ -955,9 +955,12 @@ class HostClient:
         from roboglot.transport.base import FrameTooLarge, check_frame_pixels, frame_header_guard
 
         try:
-            with frame_header_guard(), Image.open(io.BytesIO(raw), formats=["JPEG"]) as picture:
-                # the header alone is read so far: a JPEG of a few megabytes can claim a frame
-                # of hundreds, and the board is reached over plain HTTP
+            with (
+                frame_header_guard(raw),
+                Image.open(io.BytesIO(raw), formats=["JPEG"]) as picture,
+            ):
+                # the header alone is read so far: a JPEG of a few hundred bytes can claim a
+                # frame of hundreds of megabytes, and the board is reached over plain HTTP
                 check_frame_pixels(*picture.size)
                 image = picture.convert("RGB")
         except FrameTooLarge as e:

@@ -41,11 +41,13 @@ from __future__ import annotations
 import asyncio
 import itertools
 import math
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from roboglot.safety import SafetyStop
-from roboglot.space.grid import OCCUPIED, UNKNOWN, OccupancyGrid, Plan
+from roboglot.space.grid import OCCUPIED, UNKNOWN, OccupancyGrid, Plan, PlanStopped
 from roboglot.space.pose import Fix, Pose2D, wrap_angle
 from roboglot.space.source import SpatialError, SpatialSource
 from roboglot.transport.base import Intent, TransportError
@@ -459,10 +461,24 @@ class _Walk:
         # over a grid as large as the map service sends, and a few hundred cells a side held the
         # loop for seconds, with the heartbeat, the kill switch's callbacks and MCP waiting
         # behind them. They read only the grid handed to them. A stop that comes meanwhile
-        # cancels this wait at once, and the thread's answer, when it comes, is dropped.
-        goal, found = await asyncio.to_thread(
-            _route, grid, (pose.x, pose.y), self.goal, footprint, within, radius
-        )
+        # cancels this wait at once, and sets `stop`, which the search reads at every step, so
+        # the plan ends soon after its walk does. They run on the planner's own thread
+        # (`_planner`), never on the workers the board's detector and camera share.
+        stop = threading.Event()
+        try:
+            goal, found = await asyncio.get_running_loop().run_in_executor(
+                _planner(),
+                _route,
+                grid,
+                (pose.x, pose.y),
+                self.goal,
+                footprint,
+                within,
+                radius,
+                stop,
+            )
+        finally:
+            stop.set()
         if goal is None:
             raise _End(
                 self.walked(
@@ -670,24 +686,53 @@ def _route(
     body_m: float,
     within: float,
     radius_m: float,
+    stop: threading.Event | None = None,
 ) -> tuple[tuple[float, float] | None, Plan | None]:
     """Where a body of radius `body_m` fits at `goal` or within `within` of it (`_standable`),
     and the way there from `start` keeping `radius_m` clear (`OccupancyGrid.plan`): None for
     the first when it fits nowhere, and None for the second when there is no way. What
-    `_Walk.plan` runs in a worker thread: it reads `grid` and nothing else."""
-    standable = _standable(grid, goal, body_m, within)
+    `_Walk.plan` runs on the planner's thread: it reads `grid` and nothing else, and gives up
+    with `PlanStopped` soon after `stop` is set."""
+    standable = _standable(grid, goal, body_m, within, stop)
     if standable is None:
         return None, None
-    return standable, grid.plan(start, standable, radius_m=radius_m)
+    return standable, grid.plan(start, standable, radius_m=radius_m, stop=stop)
+
+
+PLAN_WORKERS = 1
+"""How many plans run at once in a process: one, on the planner's own thread. A walk plans only
+while its body stands, and a plan whose walk has ended gives up at its search's next step, so a
+plan waiting for this thread waits at most for one other plan, and no plan ever waits on, or
+holds up, the loop's shared workers, where the board's detector and camera run."""
+
+_planner_lock = threading.Lock()
+_planner_pool: ThreadPoolExecutor | None = None
+
+
+def _planner() -> ThreadPoolExecutor:
+    """The planner's executor, made the first time a walk plans, so a process that never walks
+    to a place starts no thread for it."""
+    global _planner_pool
+    with _planner_lock:
+        if _planner_pool is None:
+            _planner_pool = ThreadPoolExecutor(
+                max_workers=PLAN_WORKERS, thread_name_prefix="roboglot-plan"
+            )
+        return _planner_pool
 
 
 def _standable(
-    grid: OccupancyGrid, goal: tuple[float, float], body_m: float, within: float
+    grid: OccupancyGrid,
+    goal: tuple[float, float],
+    body_m: float,
+    within: float,
+    stop: threading.Event | None = None,
 ) -> tuple[float, float] | None:
     """`goal` when a body of radius `body_m` fits there on what the map has seen to be solid, or
     else the nearest cell centre within `within` of it where one does, or None. A body fits where
     no solid cell's centre is nearer than the radius and half a cell, the most a cell marked
-    solid can hold its solid short of its centre."""
+    solid can hold its solid short of its centre. `stop`, once set, ends it with `PlanStopped`
+    at the next cell it tries, as it ends `OccupancyGrid.plan`."""
     need = body_m + grid.res_m / 2
     reach = math.ceil(need / grid.res_m) + 1
     solid = grid.cells == OCCUPIED
@@ -714,6 +759,8 @@ def _standable(
     for d, cell in nearby:
         if d > within:
             break
+        if stop is not None and stop.is_set():
+            raise PlanStopped
         if grid.inside(cell) and grid.cells[cell[1], cell[0]] != OCCUPIED:
             centre = grid.center_of(cell)
             if fits(*centre):

@@ -4,7 +4,9 @@ place is worth in the frame the robot is in now."""
 from __future__ import annotations
 
 import json
+import logging
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -145,6 +147,63 @@ def test_two_writers_of_one_places_file_never_break_each_others_write(
     lines = a.path.read_text(encoding="utf-8").splitlines()
     assert [json.loads(line)["name"] for line in lines] == ["sofa"], lines
     assert sorted(p.name for p in tmp_path.iterdir()) == [a.path.name]
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the refusal is Windows' own")
+def test_an_observation_that_writes_while_another_process_reads_the_file_raises_nothing(
+    tmp_path: Path,
+) -> None:
+    """On Windows a rename over a file another program holds open is refused, and another
+    process on the robot (`places list`, `serve-mcp`, `places add`) reads the places file. An
+    observation's `views()` writes when the robot is first seen in a map the file does not know,
+    so that refusal came out of the observation as PermissionError. A second process mid-read is
+    stood in for by an open handle of this one, which Python opens without sharing deletion,
+    as `Path.read_text` in another process does. The look goes on, and no file is left."""
+    store = PlaceStore("r", tmp_path)
+    PlaceBook(store, Source(at(0.0, 0.0))).mark("sofa")
+    book = PlaceBook(store, Source(at(0.0, 0.0, frame=FrameRef("map", "map:new", True))))
+    with open(store.path, encoding="utf-8") as reader:
+        reader.readline()
+        views = book.views()
+    assert [v.status for v in views] == ["orphaned"]
+    assert sorted(p.name for p in tmp_path.iterdir()) == [store.path.name]
+
+
+def test_a_write_refused_now_is_tried_again_and_one_still_refused_is_said_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The refusal of the test above, on every platform: a rename that fails as Windows fails
+    it while the file is held open. One refused once is made on the next try, within the store's
+    short bound. One refused throughout is said once, however many looks meet it, the looks go
+    on with what they read, and the next write the refusal lets through carries the change."""
+    store = PlaceStore("r", tmp_path)
+    PlaceBook(store, Source(at(0.0, 0.0))).mark("sofa")
+    real = os.replace
+    refuse = {"once": True, "always": False}
+
+    def replace(src: Any, dst: Any) -> None:
+        if refuse["always"] or refuse["once"]:
+            refuse["once"] = False
+            raise PermissionError(13, "Access is denied")
+        real(src, dst)
+
+    monkeypatch.setattr(os, "replace", replace)
+    PlaceBook(store, Source(at(0.0, 0.0, frame=FrameRef("map", "map:once", True)))).views()
+    assert "map:once" in {f.id for f in store.frames()}, "refused once, made on the next try"
+
+    refuse["always"] = True
+    held = PlaceBook(store, Source(at(0.0, 0.0, frame=FrameRef("map", "map:held", True))))
+    with caplog.at_level(logging.WARNING, logger="roboglot.places"):
+        for _ in range(3):
+            assert [v.status for v in held.views()] == ["orphaned"]
+    said = [r.getMessage() for r in caplog.records if r.name == "roboglot.places"]
+    assert len(said) == 1 and "held open by another program" in said[0], said
+    assert "map:held" not in {f.id for f in store.frames()}
+    assert sorted(p.name for p in tmp_path.iterdir()) == [store.path.name]
+
+    refuse["always"] = False
+    held.views()
+    assert "map:held" in {f.id for f in store.frames()}, "the next write carries the change"
 
 
 def test_a_place_in_the_frame_the_robot_is_in_is_here_with_where_it_is(tmp_path: Path) -> None:

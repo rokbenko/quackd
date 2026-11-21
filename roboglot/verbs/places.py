@@ -16,7 +16,14 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from roboglot.space.places import PLACE_NAME_MAX, Place, PlaceBook, PlaceView, place_listing
+from roboglot.space.places import (
+    PLACE_NAME_MAX,
+    Place,
+    PlaceBook,
+    PlacesFileBusy,
+    PlaceView,
+    place_listing,
+)
 from roboglot.space.pose import Fix, where_record, where_summary
 from roboglot.space.source import SpatialSource
 from roboglot.verbs.registry import Verb, VerbContext, VerbResult
@@ -205,7 +212,10 @@ async def forget_place(ctx: VerbContext, p: ForgetPlaceParams) -> VerbResult:
     book = ctx.places
     if book is None:
         return VerbResult.fail(f"forget_place: {NO_POSE}")
-    old = book.store.forget(p.name)
+    try:
+        old = book.store.forget(p.name)
+    except PlacesFileBusy as e:  # another program holds the file open: said, nothing forgotten
+        return VerbResult.fail(f"forget_place: {e}")
     if old is None:
         known = ", ".join(place.name for place in book.store.places()) or "none"
         return VerbResult.fail(f"forget_place: no place called '{p.name}' (places: {known})")

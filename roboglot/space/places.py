@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import math
 import os
 import re
@@ -29,8 +30,25 @@ from roboglot.memory import memory_dir, robot_slug
 from roboglot.space.pose import Fix, FrameRef, LocalizationKind, wrap_angle
 from roboglot.space.source import SpatialSource
 
+logger = logging.getLogger("roboglot.places")
+
 PLACE_NAME_MAX = 32
 MAX_PLACES = 100
+
+WRITE_TRIES = 3
+WRITE_RETRY_S = 0.01
+"""How a write whose rename Windows refuses, while another program holds the file open, is tried
+again: three tries, a hundredth of a second apart. A reader holds the file only while it reads a
+few kilobytes (a hundred places and their frames at most), which takes well under a millisecond,
+so a reader that was mid-read has long finished by the second try. The waits are on the thread
+that writes, the event loop's on an observation, and their 20 ms together are a fifth of the
+tenth of a second at which a walking body's twist is re-sent."""
+
+
+class PlacesFileBusy(ValueError):
+    """A write the places file would not take within `WRITE_TRIES`: another program holds it
+    open. A ValueError, which the place verbs already turn into a failed result that says why."""
+
 
 _NAME = re.compile(r"\w[\w '\-]*")
 
@@ -172,6 +190,8 @@ class PlaceStore:
         self.path = memory_dir(base_dir) / f"{robot_slug(robot_key)}.places.jsonl"
         self.persist = persist
         self._held: list[Record] = []
+        # whether a write the file would not take has been said, since the last one it took
+        self._unwritten_said = False
 
     # ── storage ─────────────────────────────────────────────────────────────────────
 
@@ -216,11 +236,40 @@ class PlaceStore:
                 out.write(
                     "".join(json.dumps(r.to_json(), ensure_ascii=False) + "\n" for r in records)
                 )
-            os.replace(tmp, self.path)
+            self._replace(tmp)
         except BaseException:
             # a write that failed leaves no file of its own behind, and the error is the caller's
             tmp.unlink(missing_ok=True)
             raise
+        self._unwritten_said = False
+
+    def _replace(self, tmp: Path) -> None:
+        """Rename `tmp` over the file, tried `WRITE_TRIES` times while Windows refuses it, then a
+        `PlacesFileBusy`. Windows refuses a rename over a file another program holds open, and
+        another process on the robot reads this one: a run, `serve-mcp`, `places list`."""
+        for tried in range(1, WRITE_TRIES + 1):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError as e:
+                if tried == WRITE_TRIES:
+                    raise PlacesFileBusy(
+                        f"the places file {self.path.name} is held open by another program, so "
+                        "this change was not kept: ask again in a moment"
+                    ) from e
+                time.sleep(WRITE_RETRY_S)
+
+    def _write_or_say(self, records: list[Record]) -> None:
+        """`_write`, for bookkeeping no caller asked for (a frame noted, a map marked wiped): a
+        write the file will not take is said once, until a write is made again, and the caller
+        goes on with what it read. The next write that is made carries the change, since the
+        file it is made from is read again then."""
+        try:
+            self._write(records)
+        except PlacesFileBusy as e:
+            if not self._unwritten_said:
+                logger.warning("%s; the robot's places are read as they stand", e)
+                self._unwritten_said = True
 
     def held_copy(self) -> PlaceStore:
         """These places as they stand, in a store of their own that writes nothing: what a drive
@@ -399,7 +448,8 @@ class PlaceBook:
                 else:
                     unkept = record
         if changed:
-            self.store._write(records)
+            # on every observation's path: a write the file will not take now raises nothing
+            self.store._write_or_say(records)
         return frame, records, unkept
 
     def view(

@@ -8,17 +8,19 @@ says, what urllib does with a redirect. What none of it proves is anything about
 from __future__ import annotations
 
 import dataclasses
+import io
 import json
 import math
 import socket
 import threading
 import time
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
 
 import pytest
-from PIL import ImageFile
+from PIL import Image, ImageFile
 
 from roboglot import host as host_module
 from roboglot.host import (
@@ -57,7 +59,7 @@ from tests.fake_jetson_hostd import (
     dead_address,
     jpeg_bytes,
 )
-from tests.support import jpeg_claiming
+from tests.support import UNTIL_WITHIN_S, jpeg_claiming
 
 TOKEN = "63d92f8974c051832d52dd04c78f314b01ef7436cc00e4a3805b9711e5318421"
 """Shaped like `openssl rand -hex 32`, the token bridge/jetson/README.md tells people to make,
@@ -617,18 +619,18 @@ def test_a_snapshot_that_is_not_an_image_is_a_host_error(hostd: FakeHostd) -> No
 
 
 @pytest.mark.parametrize(
-    ("side", "said"),
-    [(12000, "12000x12000 pixels"), (20000, "400000000 pixels")],
-    ids=["past-the-bound", "past-pillows-own-error-line"],
+    "side", [7681, 12000, 20000], ids=["past-8k", "past-pillows-warning", "past-pillows-error"]
 )
 def test_a_snapshot_claiming_more_pixels_than_a_frame_may_have_is_refused_before_decoding(
-    hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch, side: int, said: str
+    hostd: FakeHostd, monkeypatch: pytest.MonkeyPatch, side: int
 ) -> None:
     """A snapshot was opened and converted to RGB with no bound but Pillow's: a warning past
-    about 89 M pixels and an error only past twice that, so a 2 MB JPEG whose header claimed
-    12000 by 12000 decoded to 432 MB on the board path. The header alone is served here, and
-    any decode is recorded and stopped, so the test never allocates the frame either way: the
-    refusal must come before a decode, name the size, and reach the camera's error line."""
+    about 89 M pixels and an error only past twice that, so a JPEG of a few hundred bytes whose
+    header claimed 12000 by 12000 decoded to hundreds of megabytes on the board path. The header
+    alone is served here, and any decode is recorded and stopped, so the test never allocates
+    the frame either way: the refusal must come before a decode, name the size, reach the
+    camera's error line, and come before Pillow's own check, whose warning would land in the
+    terminal as a raw line."""
     decoded: list[tuple[int, int]] = []
 
     def no_decode(picture: ImageFile.ImageFile) -> Any:
@@ -638,10 +640,66 @@ def test_a_snapshot_claiming_more_pixels_than_a_frame_may_have_is_refused_before
     monkeypatch.setattr(ImageFile.ImageFile, "load", no_decode)
     hostd.snapshot_jpeg = jpeg_claiming(side, side)
     client = HostClient(hostd.address)
-    error = _raises(client.snapshot)
+    with warnings.catch_warnings(record=True) as warned:
+        warnings.simplefilter("always")
+        error = _raises(client.snapshot)
     assert decoded == []
-    assert said in str(error) and hostd.address in str(error)
+    assert f"{side}x{side} pixels" in str(error) and hostd.address in str(error), error
     assert client.camera_error == str(error)
+    assert [w.category.__name__ for w in warned] == []
+
+
+def test_two_snapshots_at_once_leave_the_process_warning_filters_as_they_found_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pixel guard wrapped each snapshot's decode in `warnings.catch_warnings()`, which saves
+    the process's one filter list on the way in and puts that copy back on the way out, and a
+    snapshot runs in a worker thread (`host_camera`, `asyncio.to_thread`). Two at once, one per
+    camera or per robot in one MCP process, interleaved as here left a filter hiding Pillow's
+    warning on the whole process, and could drop a filter set in between. The interleaving is
+    forced by a stand-in `Image.open` that waits on events, then opens as Pillow does."""
+    buf = io.BytesIO()
+    Image.new("RGB", (64, 48), (90, 90, 90)).save(buf, format="JPEG", quality=80)
+    data = buf.getvalue()
+    client = HostClient("127.0.0.1:9")  # nothing is sent: the exchange below stands in for it
+    monkeypatch.setattr(client, "_exchange", lambda *a, **kw: (200, {}, data))
+    before = list(warnings.filters)
+    real_open = Image.open
+    a_in, b_in, a_done = threading.Event(), threading.Event(), threading.Event()
+    errors: list[BaseException] = []
+
+    def gated_open(*args: Any, **kw: Any) -> Any:
+        if threading.current_thread().name == "A":
+            a_in.set()
+            assert b_in.wait(UNTIL_WITHIN_S), "B never opened its frame"
+        else:
+            assert a_in.wait(UNTIL_WITHIN_S), "A never opened its frame"
+            b_in.set()
+            assert a_done.wait(UNTIL_WITHIN_S), "A never finished"
+        return real_open(*args, **kw)
+
+    monkeypatch.setattr(Image, "open", gated_open)
+
+    def snap() -> None:
+        try:
+            image, _age = client.snapshot()
+            assert image.size == (64, 48)
+        except BaseException as e:  # handed to the test below, which fails on it
+            errors.append(e)
+
+    a = threading.Thread(target=snap, name="A")
+    b = threading.Thread(target=snap, name="B")
+    a.start()
+    b.start()
+    a.join(UNTIL_WITHIN_S)
+    a_done.set()
+    b.join(UNTIL_WITHIN_S)
+    monkeypatch.undo()
+    after = list(warnings.filters)
+    warnings.filters[:] = before  # the next test gets the list back, whatever happened here
+    assert not errors, errors
+    left = [f for f in after if f not in before]
+    assert after == before, f"two snapshots at once left these filters on the process: {left}"
 
 
 @pytest.mark.parametrize("stamp", ["soon", "nan", "-1.0", "inf"])
