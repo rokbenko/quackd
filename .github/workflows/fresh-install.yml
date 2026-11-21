@@ -45,7 +45,7 @@ jobs:
           editable=(-e .)
           for adapter in adapters/*/; do editable+=(-e "$adapter"); done
           uv pip install --python "$(python_in)" "${editable[@]}" \
-            pytest pytest-asyncio pytest-xdist hatchling pyzmq opencv-python-headless
+            pytest pytest-asyncio pytest-timeout pytest-xdist hatchling pyzmq opencv-python-headless
       - name: Which versions this run is about
         shell: bash
         run: uv pip freeze --python "$PY" | grep -iE '^(numpy|pillow|pydantic|mcp|rich|typer|cryptography|segno)=='

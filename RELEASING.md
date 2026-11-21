@@ -225,22 +225,34 @@ v=0.16.1 last=0.16.0 out="$(mktemp -d)"
    ships, so a release that is held is dated again. At the foot, `[Unreleased]:` compares
    `vX.Y.Z...HEAD`, and a new `[X.Y.Z]:` line compares the last tag with `vX.Y.Z` the way every
    line below it does. A minor opens with a few paragraphs on what the release is, and a patch
-   with a sentence or two.
+   with a sentence or two. Once the note reads as it will ship, lock the new section:
+
+   ```bash
+   uv run --no-sync python scripts/changelog_lock.py add $v
+   ```
+
+   It writes the section's hash into `tests/golden/changelog_released.json`, and it takes only
+   the newest released section, once. From the dated heading until then
+   `tests/test_changelog_lock.py` fails and names this command, which is the step. A sentence
+   corrected in step 5 changes the bytes again: run `update` as step 5 says, or put the
+   correction in before the `add`.
 5. **Read the note against the code.** Every release so far has found claims that went stale
    between writing and tagging, and a correction made during the read is the likeliest sentence
    in the file to be wrong, so read those again after. Sweep every `used to`, `no longer` and
    `now` against the last tag and not the commit before: a note written commit by commit
    compares each fix with a state no user ever installed. `git show v$last:<path>` is what users
    had, and `git log -S'<text>' v$last..HEAD` says when it changed. Then check that every
-   shipped section is byte for byte what the last tag holds:
+   released section is byte for byte what its lock holds:
 
    ```bash
-   shipped() { awk -v h="## [$last]" 'index($0, h) == 1 {f = 1} /^\[Unreleased\]:/ {f = 0} f'; }
-   diff <(git show "v$last:CHANGELOG.md" | shipped) <(shipped < CHANGELOG.md) && echo "as shipped"
+   uv run --no-sync python scripts/changelog_lock.py
    ```
 
-   No test compares the history's text. `tests/test_docs.py` reads its headings and its links,
-   and the guards over the living documents skip it on purpose.
+   It prints how many released sections are as locked, or names each one whose bytes moved and
+   exits 1; `tests/test_changelog_lock.py` makes the same check in every gate. A released
+   section changes only on purpose, and then with a reason, which the lock keeps beside the old
+   and the new hash: `uv run --no-sync python scripts/changelog_lock.py update --accept "<why>"`.
+   The lock reads CRLF as LF and leaves `[Unreleased]` and the links at the foot alone.
 
    PLAN.md's open items are read against the release the same way. An item that lists what
    each release still owes the hardware, as the SO-101's does, names this release too when it

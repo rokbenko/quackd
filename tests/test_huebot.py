@@ -16,6 +16,7 @@ import asyncio
 import functools
 import itertools
 import time
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -58,6 +59,7 @@ from tests.fake_robotd import (
     FakeShim,
     on_its_own_loop,
 )
+from tests.support import executor_for
 
 Shim = functools.partial(JsonRpcUnixTransport, body=HUEBOT)
 """The family's transport, on Huebot's body, as `make` builds it."""
@@ -84,12 +86,7 @@ async def _connected(fake: FakeShim, **kwargs: Any) -> HuebotAdapter:
     return adapter
 
 
-def _executor(adapter: HuebotAdapter, **kwargs: Any) -> Executor:
-    assert adapter.manifest is not None
-    registry = registry_from_manifest(adapter.manifest, adapter)
-    return Executor(
-        registry, adapter, contract=EVERYTHING.frontmatter, manifest=adapter.manifest, **kwargs
-    )
+_executor = partial(executor_for, contract=EVERYTHING.frontmatter, with_manifest=True)
 
 
 async def _landed(t: JsonRpcUnixTransport) -> None:

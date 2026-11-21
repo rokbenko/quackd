@@ -14,6 +14,7 @@ from roboglot.passport import fetch
 from roboglot.passport.errors import PassportError
 from roboglot.radio.links import LinkDown
 from roboglot.radio.transport import Transports, http_post
+from tests.support import unused_port
 
 
 class Inbox(BaseHTTPRequestHandler):
@@ -39,12 +40,6 @@ def inbox() -> Iterator[str]:
     yield f"http://127.0.0.1:{server.server_address[1]}"
     server.shutdown()
     server.server_close()
-
-
-def closed_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 class Link:
@@ -84,7 +79,7 @@ def test_a_message_goes_to_an_http_inbox_labelled_as_what_it_is(inbox: str) -> N
 
 def test_a_host_that_never_answers_is_unreachable_and_one_that_says_no_is_not(inbox: str) -> None:
     with pytest.raises(fetch.Unreachable, match="could not be reached") as nobody:
-        http_post(f"http://127.0.0.1:{closed_port()}/robot-passport/inbox", "h.p.s")
+        http_post(f"http://127.0.0.1:{unused_port()}/robot-passport/inbox", "h.p.s")
     assert nobody.value.rule == "5.7"
     # a host that takes the connection and then says nothing at all
     silent = socket.socket()

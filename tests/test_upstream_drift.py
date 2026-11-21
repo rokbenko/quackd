@@ -20,6 +20,7 @@ import types
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -28,6 +29,7 @@ import pytest
 import yaml
 
 from roboglot.upstream import Status, UpstreamRef
+from tests.support import load_script
 from tests.test_upstream_api import UPSTREAMS as SUITE_ROWS
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -44,16 +46,10 @@ PINNED = b"import os\ndef read():\n\n    return 1\nclass Bus:\n"
 CHANGED = PINNED.replace(b"def read():", b"def read(self):")
 
 
-def _script() -> ModuleType:
-    """The script loaded by path, as `tests/test_docs.py` loads `scripts/models_docs.py`, and
-    registered under its name first: its dataclasses carry string annotations, which the
-    standard library resolves through `sys.modules` and cannot for a module that is not there."""
-    spec = importlib.util.spec_from_file_location("upstream_drift", SCRIPT)
-    assert spec and spec.loader, f"{SCRIPT} could not be loaded as a module"
-    module = importlib.util.module_from_spec(spec)
-    sys.modules["upstream_drift"] = module
-    spec.loader.exec_module(module)
-    return module
+# The script loaded by path, as `tests/test_docs.py` loads `scripts/models_docs.py`, and
+# registered under its name first: its dataclasses carry string annotations, which the
+# standard library resolves through `sys.modules` and cannot for a module that is not there.
+_script = partial(load_script, SCRIPT, "upstream_drift")
 
 
 def _ref(name: str, path: str, line: int | None = None, *, repo: str = GITHUB) -> UpstreamRef:
