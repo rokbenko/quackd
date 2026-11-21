@@ -77,10 +77,24 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   task under `glot` and `member_end` names the member under `robot`, where both said `duck`. No
   reader keeps the old key, so `roboglot log` given a team's record from an earlier release shows
   each member's end without the member's name, as `success after 0 steps`.
+- **A bare `uv sync` is a contributor's whole setup, and `roboglot[dev]` is no longer an extra.**
+  The test, lint and type tools, all ten adapters from the workspace, `pyzmq` and the headless
+  OpenCV a contributor works with were the `dev` extra, published with the wheel, so a `uv sync`
+  without `--extra dev` took them all away again. They are the `dev` dependency group now
+  (PEP 735), which uv installs by default and no wheel carries, entry for entry what the extra held:
+  `uv sync` installs the packages `uv sync --extra dev` did, at the same versions, and `uv.lock`
+  moves none. `.python-version` names 3.12, the Python CI's test job runs beside 3.11, so a bare
+  `uv sync` builds `.venv` on it. For 3.11, `UV_PROJECT_ENVIRONMENT=.venv311 uv sync --python 3.11`
+  keeps an environment beside it, and each `uv run` there names 3.11 too, with `UV_PYTHON=3.11` or
+  `--python 3.11`, or uv rebuilds it on 3.12. CI's jobs and `tests/rosarm_contract/run.sh` sync
+  without `--extra dev`, and CI's 3.11 cells set `UV_PYTHON`, so they still run on 3.11.
+  CONTRIBUTING.md, the pull request template, the README and RELEASING.md show the commands of
+  CI's test job as one block in CI's order, which a test reads off `ci.yml`. For a user,
+  `roboglot[dev]` is no longer an extra: it was never meant to be installed.
 - **The page `roboglot ui` serves forgets its saved choice of a bundled task file once.** The choice
   is kept in `ui-setup.json` under a new name, so one saved before is not read, and the Task file
   picker starts on `hello-world` until another is chosen.
-- **`uv.lock` moves 37 packages inside the ranges Roboglot already asks for, and `roboglot[dev]`
+- **`uv.lock` moves 37 packages inside the ranges Roboglot already asks for, and the `dev` group
   brings `pytest-cov` and `pytest-timeout`.** A refresh of the lock changes no requirement a user
   installs against, so what it moves is a checkout and CI: `openai` 3.46.0 to 3.51.0, `laya` 0.4.26
   to 0.4.35, `bleak` 3.0.2 to 3.1.0, `zeroconf` 0.153.0 to 0.154.0, `packaging` 25.0 to 26.3,
@@ -91,11 +105,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   GHSA-vvf4-9x63-8xvv. CI installs no provider SDK, so its checks say the lock resolves, and the
   rest was checked by hand: the three OpenAI wire test files pass on 3.51.0, whose client and base
   client are 3.46.0's unchanged, and laya's `Router` and `predict` take the same arguments they
-  did. `roboglot[dev]` asks for `pytest-cov>=7.1` and `pytest-timeout>=2.4`, the current releases,
+  did. The `dev` group asks for `pytest-cov>=7.1` and `pytest-timeout>=2.4`, the current releases,
   and nothing configures either yet. The pre-commit hooks run `ruff check` and `ruff format`
   through `uv run --no-sync`, so they are the `ruff` the lock holds where they were 0.6.9, and
   pre-commit-hooks moves to v6.0.0, whose hooks do on this tree what v5.0.0's did. What changes
-  for a contributor: `uv sync --extra dev` again.
+  for a contributor: `uv sync` again.
 - **The ToddlerBot daemon refuses to start on a wide address with no token.** Started with a
   `--host` that is not loopback and no token, it served anything that could reach the address and
   said only where it was listening. It refuses now, and names the two ways out: a token, with
@@ -303,6 +317,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and its line in `roboglot doctor` are gone. What changes for you: `--decision-llm von` is refused as
   an unknown name, and a Von server you still run is reached as
   `--decision-llm local --decision-url http://127.0.0.1:8000`.
+
+- **`roboglot[dev]` is no longer an extra.** It held a contributor's tools and was never meant to
+  be installed by a user. What it held is the `dev` dependency group of a checkout now, which a
+  bare `uv sync` installs (see Changed, above). `pip install "roboglot[dev]"` installs the core
+  alone, and the installer warns that the extra is unknown.
 
 ### Fixed
 

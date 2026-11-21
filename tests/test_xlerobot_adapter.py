@@ -418,7 +418,7 @@ def test_the_factory_builds_every_backend(backend: str) -> None:
 async def test_the_zmq_backend_without_the_extra_names_it(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`pyzmq` is in the dev extra so the loopback test can run, so this cannot be a skipif on
+    """`pyzmq` is in the dev group so the loopback test can run, so this cannot be a skipif on
     its absence the way the other adapters' are: it has to make the absence happen."""
     monkeypatch.setitem(sys.modules, "zmq", None)
     adapter = make_adapter("xlerobot:zmq", address="tcp://robot.local:5555")

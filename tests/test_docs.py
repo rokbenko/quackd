@@ -4412,6 +4412,81 @@ def test_releasing_md_checks_that_its_first_mypy_runs_under_3_11() -> None:
     ), f"RELEASING.md's step 7 runs its first mypy without checking it is 3.11, after {check!r}"
 
 
+#: The four pages that tell a contributor what to run before a push.
+_GATE_PAGES = ("CONTRIBUTING.md", ".github/PULL_REQUEST_TEMPLATE.md", "README.md", "RELEASING.md")
+
+#: What a release runs beside CI's gates on the owner's machine (RELEASING.md, step 7), with its
+#: `--no-sync` taken out: the check that `.venv` is 3.11, mypy again in `.venv312`, and the two
+#: pytest stages again as GitHub's runners see them.
+_RELEASE_ONLY_GATES = (
+    "uv run python -c 'import sys; assert sys.version_info[:2] == (3, 11), sys.version'",
+    "UV_PROJECT_ENVIRONMENT=.venv312 uv run mypy",
+    'GITHUB_ACTIONS=true uv run pytest -n auto -m "not serial"',
+    "GITHUB_ACTIONS=true uv run pytest -m serial",
+)
+
+#: The word a page uses for each runner image ci.yml's test matrix names.
+_RUNNER_WORDS = {"ubuntu": "Linux", "macos": "macOS", "windows": "Windows"}
+
+
+def _ci_gates() -> tuple[list[str], list[str]]:
+    """The commands CI's test job runs, as a person pastes them, and the Pythons and platforms
+    its matrix runs them on. The sync is the setup and no gate, the job's last step only
+    reports, and the JUnit file each pytest step writes is that report's input."""
+    import yaml
+
+    ci = yaml.safe_load((REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    job = ci["jobs"]["test"]
+    gates = []
+    for step in job["steps"]:
+        run = step.get("run", "").strip()
+        if not run or run.startswith("uv sync ") or "scripts/ci_failed_tests.py" in run:
+            continue
+        gates.append(re.sub(r' --junitxml="[^"]*"', "", run))
+    matrix = job["strategy"]["matrix"]
+    platforms = [_RUNNER_WORDS[image.split("-")[0]] for image in matrix["os"]]
+    return gates, [*matrix["python"], *platforms]
+
+
+def _bash_blocks(text: str) -> list[tuple[list[str], str]]:
+    """Each fenced bash block in `text`, a list item's indented ones too: its commands, and the
+    paragraphs just before and just after it as one line."""
+    blocks = []
+    for match in re.finditer(r"^( *)```bash\n(.*?)^\1```$", text, flags=re.S | re.M):
+        commands = [line.strip() for line in match.group(2).splitlines() if line.strip()]
+        before = text[: match.start()].rstrip().rsplit("\n\n", 1)[-1]
+        after = text[match.end() :].lstrip("\n").split("\n\n", 1)[0]
+        blocks.append((commands, " ".join(f"{before} {after}".split())))
+    return blocks
+
+
+def test_every_page_that_says_what_to_run_before_a_push_names_each_gate_ci_runs() -> None:
+    """CONTRIBUTING.md, the pull request template, the README's Contributing and RELEASING.md each
+    tell a contributor what to run before a push, and three of them disagreed with ci.yml:
+    CONTRIBUTING ran the suite in one stage with the serial tests among the workers and chained
+    the other gates on one line after it, the template left out the lock check and ran pytest in
+    one stage, and the README named `uv run pytest` alone. Each page now shows the commands of
+    CI's test job as one fenced block, a line apiece in CI's order, which a person pastes whole,
+    and this reads them off ci.yml, so a gate CI gains fails here until every page names it.
+    RELEASING.md runs the same block with `--no-sync`, because a running MCP server holds
+    `.venv`'s `roboglot.exe` open on the release machine, among lines of its own that
+    `_RELEASE_ONLY_GATES` names. CI runs the block on two Pythons and three platforms, which a
+    contributor need not, so the paragraph beside each block names every one of them."""
+    gates, matrix = _ci_gates()
+    assert gates[0] == "uv lock --check" and "uv run mypy" in gates, gates
+    for name in _GATE_PAGES:
+        found = []
+        for commands, beside in _bash_blocks((REPO / name).read_text(encoding="utf-8")):
+            if name == "RELEASING.md":
+                commands = [c.replace("uv run --no-sync ", "uv run ") for c in commands]
+                commands = [c for c in commands if c not in _RELEASE_ONLY_GATES]
+            if commands == gates:
+                found.append(beside)
+        assert len(found) == 1, f"{name} shows CI's gates in {len(found)} blocks, not 1: {gates}"
+        missing = [word for word in matrix if word not in found[0]]
+        assert not missing, f"{name} does not say that CI runs its gates on {missing} too"
+
+
 def test_releasing_md_runs_no_line_past_its_wrap() -> None:
     """RELEASING.md is read as source with a release in progress, and wraps at about 96
     columns. A prose line past 100 is one a sentence was spliced into and nobody reflowed,
