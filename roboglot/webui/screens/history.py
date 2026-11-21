@@ -12,6 +12,7 @@ from typing import Any
 
 import streamlit as st
 
+from roboglot.ui import printable, printable_lines
 from roboglot.webui import launch, widgets
 from roboglot.webui.state import setup
 
@@ -89,9 +90,11 @@ def _show(run: Path) -> None:
     from roboglot.agent.transcript import Transcript
     from roboglot.log import LineLog, LogEvent
 
+    # a stored run's words (its reason is the pilot's or a robot's as often as Roboglot's, its
+    # frames are named after a robot's cameras): plain text here, never Markdown
     summary = _summary(run)
     if summary:
-        st.caption(_caption(summary))
+        st.text(printable_lines(_caption(summary)))
     shown = st.toggle(
         "Show the system prompt", value=False, help="As roboglot log --prompt shows it."
     )
@@ -102,12 +105,14 @@ def _show(run: Path) -> None:
         renderer(LogEvent(kind=str(record.get("kind")), t=float(record.get("t") or 0), data=data))
     renderer.flush()
     with st.container(height=480):
-        st.code("\n".join(made), language=None, wrap_lines=True)
+        st.code("\n".join(printable_lines(line) for line in made), language=None, wrap_lines=True)
     frames = sorted((run / "frames").glob("*.png"))[-8:] if (run / "frames").is_dir() else []
     if frames:
-        st.image([str(f) for f in frames], caption=[f.stem for f in frames], width=160)
+        st.image([str(f) for f in frames], width=160)
+        st.text(" · ".join(printable(f.stem) for f in frames))
     terminal = run / "terminal.txt"
     if terminal.is_file():
         with st.expander("What its terminal showed"):
-            st.code(terminal.read_text(encoding="utf-8", errors="replace"), language=None)
+            said = terminal.read_text(encoding="utf-8", errors="replace")
+            st.code(printable_lines(said), language=None)
     st.caption(f"Folder: {run}")

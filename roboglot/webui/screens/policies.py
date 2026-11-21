@@ -13,6 +13,7 @@ import json
 
 import streamlit as st
 
+from roboglot.ui import printable_lines
 from roboglot.webui import catalog, jobs, launch, widgets
 from roboglot.webui.options import DECISION_OPTIONS, LLM_OPTIONS
 
@@ -125,7 +126,8 @@ def _endpoints() -> None:
                 _listed.clear()
                 st.code((done.stdout + done.stderr).strip(), language=None)
     else:
-        st.caption((stdout + stderr).strip() or "No endpoint is recorded here.")
+        # what Hugging Face said of the endpoints: a server's words, plain text, never Markdown
+        st.text(printable_lines((stdout + stderr).strip()) or "No endpoint is recorded here.")
     with st.expander("Start one (paid)"):
         name = st.text_input("Name", key="ep:name")
         policy = st.text_input("Policy, REPO@REVISION", key="ep:policy")

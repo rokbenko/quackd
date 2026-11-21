@@ -198,6 +198,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and what older entries below say about files in the home directory, the keys 0.23 to 0.28 left
   there among them, means the renamed one. A robot on an earlier release does not discover one on
   this release.
+- **The Enter that starts a `--by-hand` run is pressed on purpose.** It takes hold of the arm
+  where you put it and starts the run, and it was the one such question that took any Enter: one
+  typed before the question was printed, or the next repeat of an Enter held down from the
+  question before, answered it before anybody had read it. One that comes too soon is passed by
+  now, as at the question at the end of the run: an Enter or a line typed before the question was
+  put, however late it is read, without a word, and one within half a second after it, a bare
+  Enter within 2 seconds of the last one or from a key held down, the first of which
+  says `that Enter answered nothing, because it came too soon after the question or too close to
+  another: take your finger off it, wait 2 s and press it once`. A line typed after the question
+  starts the run whatever is typed on it, as it always did.
 - **A task file is a `.glot` file, and a group of robots is a team.** A task file ends in `.glot`,
   and `.task` and `.brief` are read the same way. Its first key, the version of the format, is
   `glot:`, the bundled tasks live in `tasks/`, and the MCP tool that loads one is
@@ -583,6 +593,48 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a head to look with: refused, the verb ends before anything moves, rather than steering on
   bearings taken through a head pointing wherever it was left. A body with no head, which
   refuses a look as a matter of course, goes on as before.
+- **The confirm question shows every argument that runs, whole.** It cut a string at 57
+  characters and a list or a dict at 117, and wrote a number to three figures, while the verb
+  ran with all of it: a person said yes to the first four of a UR arm's six joint goals, to
+  `'gripper': 1...` where 100 opened the jaws, or to half of a policy's instruction, and the
+  pilot chooses the order of the keys. The question, and the `prompt` event that quotes it, now
+  show every argument whole, and a number as one that reads back as the value that runs, as in
+  `duration_s=11.25` where it read `duration_s=11.2`. A question that hid nothing reads as it did,
+  `duration_s=5` included. A step line and the run's panels keep the short form.
+- **`roboglot onboard goal --yes` is recorded as `--yes`, never as a person.** The client answers
+  every question of such a goal itself, unseen, while the service took each one for a person's
+  for as long as the connection was open: the record wrote a person's `prompt` row, and the pilot
+  was told `a person read that and said go`. The record now names `--yes` and writes no `prompt`
+  row, the pilot hears that the run was started to go ahead without asking anybody, and a verb
+  only a person may clear, or one its backend has a person answer each time, is refused.
+- **An answer given at `roboglot onboard goal` is recorded as given there.** Its `prompt` row said
+  `channel: web`, the page `roboglot ui` serves, which nobody had open. It says
+  `channel: onboard` now; a run's questions answered in the page still say `web`.
+- **A question on a piped stdin no longer holds the run.** With stdin a pipe or a file, each
+  question was read on the run's own thread, so while it waited the heartbeat did not beat,
+  nothing else ran, and on Windows a Ctrl-C was not seen until a line or the end of input came.
+  The run now goes on while the question waits, and a Ctrl-C or a failing heartbeat takes the
+  question back. Lines a pipe does deliver are read as before, one for each question in order,
+  the end of input included, and a question still waits on a quiet pipe as one at a terminal
+  waits. A read still waiting when the run ends does not hold the process.
+- **A page that stops reading is a page that went away.** A run driven from the page kept every
+  line for a page that stopped reading with its pipe still open, so the rest of the run's record
+  queued in memory behind a write that never finished. Once a write has waited 60 seconds, the run
+  treats the page as gone, as it does when the page closes: its questions are taken back and the
+  run stops. A line in longer than 65536 bytes, which no page or client sends, is skipped with a
+  notice rather than kept growing, and the page's chat holds a line to 5459 characters, which
+  always fits. A goal's connection to the onboard service is closed when the goal ends, so its
+  socket and the threads that served it no longer outlast it.
+- **`roboglot onboard goal` shows why it asks.** It printed only a question's last words, so a
+  person was asked `Go ahead anyway?` without the pilot's doubt, and `Are you watching the robot
+  right now?` without the warning that nothing on it detects a fall, while the record said they
+  had read both. The doubt or the warning is printed above the question.
+- **The line under the run panel names `q` only where `q` is read.** It said `Ctrl-C or q stops the
+  robot` whatever stdin was, and a team run made the same promise for every robot, while keys are
+  read only at a terminal. With stdin a pipe or a file it says `Ctrl-C stops the robot. Ctrl-C
+  twice quits at once.`, and `Ctrl-C stops every robot.` for a team. The note a run says before
+  it waits to ask the LLM's API again ends `and Ctrl-C ends the run instead` there, where it
+  ended `Ctrl-C or q ends the run instead`. At a terminal both read as they did.
 - **A body whose manifest has no blurb is introduced to the pilot as a robot.** The system prompt
   opens with `You are the brain of` and the manifest's `blurb`, and for a manifest that left the
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
@@ -891,6 +943,45 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   and what is allowed there is as it was, the lift on upstream's own host among it. A field that
   is there vouches only as JSON `true`: `false`, `0` and `null` are not calibrated and refused,
   as before, and so is any string, and the arms' torque is on only for `true`.
+- **`roboglot doctor --robot` says what the close did with the torque when a read fails after
+  the connect.** A health check, a camera frame or the fold that raised ended the probe with one
+  fail line built from the error alone, though the arm was closed and its close had written what
+  became of the torque: held where it stood away from its rest pose, or let go, and how to put it
+  down. An error of a kind other than the link's, a backend's own bug, left doctor with no report
+  at all. The error now carries that note in the close's own words, named by its kind when it is
+  not the link's, and over an arm doctor would have asked whether to drop it into your hands (a
+  real arm with no rest pose, at a terminal) it says that doctor asked nothing, since that
+  question comes only after a probe that succeeds. A probe that succeeds reads as before.
+- **A probe whose connect failed answers even when the close after it never ends.** `roboglot
+  robot list --probe` and the page's check bounded a robot's connect, its health and the close
+  of a probe that answered by the probe's deadline, and closed a robot whose connect had timed
+  out or failed with no deadline at all, so a close waiting on a peer that never answered held
+  the command for ever. That close is bounded the same way now, and a close that runs out says
+  so on the robot's line: `timed out after 5 s, and its close timed out after 5 s`. The close of
+  a probe that answered said nothing when it ran out, and reads `ok, and its close timed out
+  after 5 s` now.
+- **`roboglot doctor` no longer waits for ever on an LLM server that keeps its reply going.** The
+  probes of `/v1/models` and of Ollama's `/api/ps` read the whole reply, and the 1.5 s timeout
+  bounded each wait for a byte, not the reply, so a server that sent a byte at a time held doctor
+  for as long as it sent, and one whose body never ended held it for ever while its reply filled
+  memory. Each probe now reads at most 1 MiB, and its reply's body for at most 1.5 s, and says
+  `did not finish its /models reply in 1.5 s` or `answered /models with more than 1 MiB`. The
+  probes together, Ollama's `/api/ps` among them, are given up on 6 s after they start, and one
+  still asking then reads `did not finish answering in 6 s`. A server that answers as servers do
+  reads as before.
+- **`roboglot doctor` waits less on local LLM servers that are not running.** It asked
+  `localhost` one address after the other, `::1` and then `127.0.0.1`, with the whole 1.5 s
+  timeout each, and a closed loopback port on Windows takes all of it to say so. And it asked only
+  after importing the core packages and each provider SDK in turn to read their versions. Every
+  address is asked at once now, the probes start before the packages are checked, and the
+  provider SDKs and the extras that are Python alone have their versions read from what the
+  installer recorded, without an import. What doctor prints is as before.
+- **`roboglot.doctor.run_doctor` warns, counts down and arms the kill switch as `roboglot doctor`
+  does.** Called with an arm and an address, it connected the arm with no warning to support it,
+  folded it with no countdown for the hands to come away and no kill switch to stop the fold, and
+  never asked whether to drop an arm whose close keeps its torque, since it passed none of the
+  hooks the command passes. It goes through the same ones now, prints the warning on the console
+  it renders to, and puts back the Ctrl-C handler its caller had when it returns or raises.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for
@@ -956,6 +1047,48 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 
 ### Security
 
+- **The pilot's words beside a question can no longer act on the terminal or hide on the page.**
+  The pilot's reason for doubting a task reached the terminal raw above `Go ahead anyway?`, and
+  Rich takes out only a few control characters, so an escape sequence in it could erase
+  Roboglot's own lines and print others in its voice before a yes that lets every verb move the
+  body. The same held for a goal's doubt in `roboglot drive`, for the run's own terminal line
+  when the page asks, for the text beside the watching and the judging questions, for a fold's
+  reason quoted inside the questions over an arm whose fold missed, and for every line
+  `roboglot onboard goal` prints from the service, its status and its outcome among them. Every
+  character that could act on a terminal is now written out as its escape, as in `\x1b[2K`, and
+  the page shows a question, the pilot's doubt, the status line above them, the run's steps and
+  the frame's caption beside them, a chat's earlier lines, the reason a run ended on, a saved
+  run's summary and frames, and what a robot or a server answered a check with, as plain text
+  rather than Markdown, where a strike-through or a hidden formula could hide part of them. Text
+  with no such character reads as it did.
+- **What an LLM, a robot or a server wrote can no longer act on the live terminal.** A run
+  printed an LLM's reply and its thinking, a verb's result, a note the pilot asked to keep, a
+  refusal, a detection, the reason the run ended on and a server's error body as they came, and
+  Rich takes out only a few control characters: `ESC[2J` cleared the screen a person was reading,
+  an OSC 52 sequence wrote their clipboard, and the `llm<` line is printed just above the
+  questions a run puts, with the live status line under it naming the call the LLM chose. Every
+  line Roboglot's terminal output carries, these and the rest, on a terminal and on a pipe
+  alike, now writes each character a terminal could act on, or that reorders the text around
+  it, as its escape, as in `\x1b[2J`, and keeps its own line breaks; an error or a verdict's
+  reason that runs over several lines, by its breaks or by its length, has every line after the
+  first indented, so none can pass for one of Roboglot's own, such as a `✓ SUCCESS` under a
+  server's error. A line too long for the console is folded by Roboglot at the console's width,
+  as it is shown, every row after the first indented, never left to the terminal, whose fold
+  began at the first column: a reply padded with spaces to the width put a row that read as
+  Roboglot's own estimate just above `Go ahead anyway?`, and so did one padded with Hangul
+  fillers, which the Windows console counts as two cells and Rich as none. That holds for a
+  step's line, the reason above a question, the confirm question itself, whose every row after
+  the first now begins with Roboglot's mark `¦` (`|` where the stream has only ASCII), a warning,
+  drive's lines and the hand-off's. A run of what draws as a blank inside a line of the pilot's,
+  a robot's or a server's, spaces, braille blanks and the like, is drawn as one space, except in
+  the confirm question, which shows what runs. A line that fits and has no such character prints
+  as it did, the joiners Persian, Hindi and emoji need and Korean included; the four Hangul
+  fillers, which draw nothing, are written out, and a line is folded by a count of cells no
+  terminal exceeds, so a vowel sign of Hindi and the like, which Rich counts as none and the
+  console as one, folds a line early rather than late, and never between a letter and a mark,
+  a joiner or a skin tone that belongs to it. `terminal.txt` leaves out every character the
+  screen writes out, the one-character CSI and the bidi overrides among them, which it kept,
+  and a lone surrogate, which a strict UTF-8 stdout refused, ending the print, is written out too.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any
@@ -982,6 +1115,40 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   `api.github.com` itself now, and never on to where a redirect leads. Neither script ever
   fetched such an address: each builds every URL it asks from its own constants and GitHub's
   answers.
+- **`roboglot doctor --robot` prints no password or token from the robot's address or a camera
+  URL.** The progress line, the probe table's title, each camera's url row, the error a failed
+  read gives and `--json` carried `--address` and every `--camera-url`, typed or registered,
+  exactly as given, though doctor already replaced the credentials in `ROBOGLOT_BASE_URL`
+  because its output is what people paste into issues. Every URL the probe shows or writes now
+  keeps its scheme, host, port, path and username and has its password and any query parameter
+  named like a credential replaced with `***`, as the run's record has them. An address with no
+  credentials in it reads as before.
+- **A robot name that would share another robot's memory and places is refused.** Those files
+  are named with each run of hyphens folded into one and the hyphens at the ends taken off, and a
+  name may hold both, so `arm-01`, `arm--01` and `arm-01-` registered as three robots that read
+  and wrote one memory file and one places file: a note one kept was in another's prompt, and a
+  place one saved was where another went. `microduck-mock-` passed the check that refuses
+  `microduck-mock`, which compared the name exactly, and shared the memory of every bare `--robot
+  microduck:mock` run. `roboglot robot add` refuses such a name now and says whose files they
+  are, as in `'arm--01' would share its memory and places files (arm-01) with 'arm-01', which is
+  registered: pick another name`. Robots already in a `robots.json` read and run as they did.
+- **The registry's files are written through a temporary file of their own, and a token file the
+  filesystem will not make owner-only is said.** Every writer of `robots.json`, the endpoint
+  record and the page's saved settings wrote through one fixed temporary name, opened with no
+  exclusive create, so a file or a link planted there in a registry directory somebody else can
+  write received the tokens, and a second command writing at the same moment truncated the
+  first's file before it was renamed: a half-written `robots.json` could be published, and the
+  first command ended in a traceback after its change was written, or on Windows deleted the
+  other command's file before it was renamed. The owner-only mode was set inside a check that
+  swallowed its failure, so on a filesystem that refuses it (vfat with its default mask, some
+  network mounts) the tokens were written readable by every user with nothing said. Each write
+  now has a temporary file of its own, created exclusively, never through a link, and owner-only
+  from its creation when it holds a token; a command whose rename is refused removes only its own
+  file and ends with one line; a write that fails removes its own file; a write removes the
+  temporary files a killed writer left beside the file once they are a minute old, and leaves a
+  younger one, which can be a live writer's; and a file the filesystem leaves readable by others
+  is written, with a warning on stderr naming it. A write that meets no other writer gives the
+  same file as before.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,

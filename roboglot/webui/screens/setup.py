@@ -15,6 +15,7 @@ import streamlit as st
 
 from roboglot import dotenv_names
 from roboglot.command import command_text
+from roboglot.ui import printable_lines
 from roboglot.webui import catalog, jobs, launch, widgets
 from roboglot.webui.options import DECISION_OPTIONS, LLM_OPTIONS, SECRET_ENV, argv_for, by_panel
 from roboglot.webui.state import FIRST_ROBOT, setup
@@ -90,8 +91,10 @@ def _robot() -> None:
         names = [r["name"] for r in registered]
         name = widgets.pick("_registered", "Registered robot", names)
         entry = next(r for r in registered if r["name"] == name)
-        st.caption(
-            " · ".join(f"{k} {entry[k]}" for k in ("spec", "address", "note") if entry.get(k))
+        st.text(  # a stored record's words, the note somebody wrote among them: never Markdown
+            printable_lines(
+                " · ".join(f"{k} {entry[k]}" for k in ("spec", "address", "note") if entry.get(k))
+            )
         )
         widgets.write("robot", name)
         backend = str(entry.get("spec", "")).split(":")[-1]
@@ -217,14 +220,21 @@ def _probe_answer() -> None:
         try:
             found = json.loads(said.strip().splitlines()[-1])
         except (ValueError, IndexError):
-            st.error(said or f"the check said nothing within {PROBE_WAIT_S:g} seconds")
+            if said:
+                st.error("The check failed")
+                st.text(printable_lines(said))
+            else:
+                st.error(f"the check said nothing within {PROBE_WAIT_S:g} seconds")
             return
+        # the detail is the robot's or its server's own words: plain text under the box,
+        # never the box's Markdown
         if found.get("reachable") is True:
-            st.success(f"It answered: {found.get('detail')}")
+            st.success("It answered")
         elif found.get("reachable") is None:
-            st.info(str(found.get("detail")))
+            st.info("It could not be told")
         else:
-            st.error(f"It did not answer: {found.get('detail')}")
+            st.error("It did not answer")
+        st.text(printable_lines(str(found.get("detail"))))
 
     answer()
 
