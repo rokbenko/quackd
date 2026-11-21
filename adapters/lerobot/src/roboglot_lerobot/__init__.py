@@ -394,6 +394,25 @@ class LeRobotAdapter:
         return str(error) if error else None
 
     @property
+    def unsafe_to_drive(self) -> str | None:
+        """What the backend's last reading of the arm rules out another goal for, in the words a
+        policy segment ends on (`LeRobotReal._unsafe_to_drive`): a body joint too hot, or torque
+        off on any motor, or None. `move_joints` reads it each tick, off whatever it was handed,
+        which is this adapter. A property, being plain data, which a dry run hands a verb as it
+        hands `stop_error` (`roboglot.safety._plain`)."""
+        judge = getattr(self.transport, "_unsafe_to_drive", None)
+        said = judge() if callable(judge) else None
+        return str(said) if said else None
+
+    @property
+    def unsafe_to_grip(self) -> str | None:
+        """`unsafe_to_drive` for the gripper's verbs: torque off on the gripper, the one servo
+        they send goals to, or None. Proxied for `unsafe_to_drive`'s reason."""
+        judge = getattr(self.transport, "_unsafe_to_drive", None)
+        said = judge(gripper_only=True) if callable(judge) else None
+        return str(said) if said else None
+
+    @property
     def stop_skipped(self) -> tuple[str, ...]:
         """The body joints the last stop wrote no goal for, because each read past its travel.
         Proxied for `stop_error`'s reason: the core `stop` verb reads it off whatever it was

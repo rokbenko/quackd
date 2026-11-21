@@ -1361,9 +1361,9 @@ async def probe_entry(
                 result = replace(result, detail=detail)
     if (note := getattr(adapter, "close_note", None)) and "torque" not in result.detail:
         # the note's own words, shortened, rather than a fixed sentence. There is more than
-        # one of them: one says the arm is being held up and will not fall, and one says
-        # Roboglot could not keep it powered and it was released where it stood. Printing the
-        # first for the second tells somebody an arm is safe at the moment it is not.
+        # one of them: one says torque was left on and the arm is holding its pose, and one
+        # says Roboglot could not keep it powered and it was released where it stood. Printing
+        # the first for the second tells somebody an arm is held up at the moment it is not.
         return replace(result, detail=f"{result.detail}, {_torque_phrase(str(note))}")
     return result
 

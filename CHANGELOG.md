@@ -252,6 +252,19 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   OpenRouter id the catalogue does not carry is. What changes for you: `roboglot list-models` and
   TAB completion no longer offer it, and a run on it asks for its call with `auto` rather than
   insisting on one with `required`.
+- **An arm's move still moving when its time runs out goes on.** `move_joints`, `gripper` and
+  `place` gave a move the time its ramp and the step cap said it needed, plus a settle, and at the
+  end of it failed the move `when the time ran out`, with the joint still on its way: the cap is a
+  ceiling on speed and not a speed the servo keeps, and one under load is slower than it. A move
+  still moving then goes on now, up to the verb's overall limit inside the executor's timeout, 18 s
+  for `move_joints`, where still moving means still getting nearer its goal: every joint that has
+  not arrived has closed on its goal over the last 5 ticks by at least its tolerance, 5 degrees,
+  or by a fifth of what the step cap lets it cover in them where that is less, 1 degree under the
+  run sheet's slow step of 1 degree a send. Judged over those ticks rather than one, a slow servo
+  that moves on one tick and not the next is waited for. A joint a hand pushes back, one bouncing
+  on something that gives, or one that has stopped is not on its way, and the move ends as it
+  did: within its time on the stall rule, and past it as the budget ended it, saying the time ran
+  out. What changes for you: a slow arm arrives where it used to fail.
 - **`find-and-kick` tells the pilot to check a kick with a fresh frame or a person's word.** Its
   strategy said the kick's result tells you whether the ball moved and by how much, which only a
   simulator's ever did. It says now that the result says the kick was sent, not whether the ball
@@ -457,6 +470,69 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   disk full already, Enter at the first question folded nothing and said nothing. The second fold
   and the release go on now, the person is told what they did, and the log says the record could
   not be written.
+- **An arm's move ends on the tick a servo loses its torque or runs hot.** `move_joints`, `gripper`
+  and `place` read the arm's torque and temperature on every tick and judged only its joints, so a
+  servo whose own protection dropped its torque during a move, or a joint that crossed the heat
+  limit, was sent goals for the rest of the move, and the result said the joint had stopped moving,
+  or even that it moved. A move ends on the tick that reads it now, holds the arm, and says which
+  joint and which of the two, in the words a policy segment ends on. `move_joints` judges the
+  whole arm, as its preconditions do. The gripper's verbs judge the gripper's own torque and never
+  heat, so a hot or tripped arm can still open its jaws.
+- **An arm's verb whose stop did not reach the arm says so.** A move that stalled, ran out of
+  time or was ended holds the arm, and a hold the bus lost was kept by the arm's backend and read
+  by nobody: `move_joints`, `gripper`, `place`, `pick`, and `manipulate` on every ending but its
+  stall, said only how they ended, while a servo went on pushing toward its last goal, a step past
+  what stopped it. Each reads it now, as the core verbs read their stop, and fails saying that its
+  stop could not be delivered and why, in the arm's words, and that a servo may still be pushing
+  toward the last goal it was sent. A fold that stalls says the same of its hold, inside the line
+  that asks you to clear the arm's way. And a hold that fails says why it failed, where it used to
+  keep the reason an earlier stop had failed for, unless a call still out on the bus has given one.
+- **An arm left holding is told what holding does, and no longer that it will not fall.** A close
+  away from the rest pose keeps torque on, and said the arm `will not fall as it stands`, with no
+  word of time, while from the close on nothing reads its servos: holding a pose heats them, and
+  a servo that reaches its cut-off goes slack without announcing it. The line says now that the arm
+  is holding its pose, that holding heats the servos and a servo at its cut-off goes slack without
+  announcing it, so not to leave it holding, and then the ways to put it down as before. After a
+  release you asked for and the arm refused, it says the arm is holding its pose, and to hold it
+  and cut its power. What changes for you: the close's line reads `the arm is not at its rest pose
+  (...), so torque was left on and it is holding its pose. Holding heats the servos, ...`.
+- **A refused connect says that torque came off where the arm stood.** A connect Roboglot refuses
+  once LeRobot has energised the arm, one not calibrated, with no calibration file or with no motors
+  bus, takes torque off every motor wherever the arm stands, as ADR-0036 decided, and said only
+  the reason. An arm a close had left holding, connected again under a calibration that is not its
+  own, dropped with nothing said of torque, and a torque-off LeRobot could not confirm on a joint
+  went unsaid, that joint still holding. The refusal says now that torque was taken off every motor
+  where the arm stood, and to hold it and put it down. It names a joint whose torque-off LeRobot
+  could not confirm, in LeRobot's words, says so where which motors hold is not known, and says the
+  arm keeps its torque where the request for the release did not take.
+- **Loading a policy leaves no temporary file behind.** LeRobot writes each policy config it loads
+  out again to a temporary JSON file it never deletes, so every checkpoint `roboglot policy serve`
+  loaded left one in the machine's temporary directory. The load gets a temporary directory of its
+  own now, and only the files and directories the load itself made through `tempfile` are
+  removed, then its directory: a file another thread or process makes meanwhile is left alone.
+  What cannot be removed, a file held open on Windows, is said once in the log with its path, and
+  never refuses a load: the server serves a config that loaded, and a config that did not is
+  refused in its own words.
+- **An arm's camera whose open outlasts its bound is let go of once it opens, and not opened
+  again.** A webcam whose connect outlasted its bound, or was cancelled while the camera opened,
+  was left to open in its worker, the close then disconnected the same camera from a second
+  thread while its connect still ran, and a later connect in the same process, the MCP server's or
+  the onboard service's, called connect on it again. It is no longer the arm's once abandoned, it
+  is let go of on a worker once its connect comes back, and a later connect builds a camera of its
+  own.
+- **A `pick` pressed against something it cannot move ends on a stall.** Only `manipulate`'s
+  segment ended when the arm stopped moving under a policy still sending, so a `pick` whose policy
+  drove the arm into the desk went on sending goals a step past the reading, into joints with no
+  torque cap, until its own time was up. It ends now, with the arm held, as a pick that held
+  nothing, when for 1 s of goals over at least 2 of the policy's ticks every joint stays within
+  0.5 degrees of where it was while a body joint's goal, as it is sent, clipped into its travel,
+  stays more than 5 degrees from where it reads, the arm's own tolerance for a loaded joint
+  settling short: a servo pushing and getting nowhere. A policy that holds the arm where it
+  reads, or a joint that sags short of the goal it is held at by less than that, is no stall,
+  however long it holds, and a joint at the edge of its travel sent a goal past it is the clip
+  guard's to end, as before. At the band's lowest rate, 1 Hz, where 1 s is one tick, a pick runs
+  to its time as before. A grasp ends as holding, as it did: the jaws closing are the arm moving,
+  and the gripper's goal never counts as pressing.
 - **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome
