@@ -9,14 +9,22 @@ TXT record itself is `roboglot.passport.beacon`'s, which has no network library 
 
 from __future__ import annotations
 
+import ipaddress
 import socket
 import threading
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from typing import Any
 from urllib.parse import urlsplit
 
 from roboglot.lan import require_zeroconf
-from roboglot.lan.announce import Announcement, ServiceRecord, _service_info, local_ip
+from roboglot.lan.announce import (
+    Announcement,
+    ServiceRecord,
+    _register,
+    _service_info,
+    local_ip,
+)
 from roboglot.lan.discover import Browse, _browse_zeroconf
 from roboglot.lan.lookup import LanDirectory, LanRecord
 from roboglot.passport.beacon import (
@@ -79,7 +87,7 @@ def announce_passport(
         if zc is None:
             raise ValueError("info_factory needs a registrar: pass zc=")
         info = info_factory(record)
-    zc.register_service(info)
+    _register(zc, info, owns=owns)
     return Announcement(record=record, info=info, zc=zc, owns_zc=owns)
 
 
@@ -200,12 +208,25 @@ def record_from_info(info: Any) -> LanRecord | None:
     beacon = beacon_from_info(info)
     if beacon is None or not beacon.beacon_id or not beacon.short_id:
         return None
-    host = urlsplit(beacon.url()).hostname
-    if not host:
+    # an unspecified or a multicast address is no robot's, and the hello is posted to the
+    # address a record names: such an address is dropped, and a record left with none with it
+    kept = tuple(a for a in beacon.addresses if not _nowhere(a))
+    if beacon.addresses and not kept:
         return None
-    return LanRecord(
-        host, beacon.port, beacon.short_id, beacon.beacon_id, (host, *beacon.addresses)
-    )
+    host = urlsplit(replace(beacon, addresses=kept).url()).hostname
+    if not host or _nowhere(host):
+        return None
+    return LanRecord(host, beacon.port, beacon.short_id, beacon.beacon_id, (host, *kept))
+
+
+def _nowhere(address: str) -> bool:
+    """Whether `address` is one no robot can be at: unspecified or multicast. A name, or
+    anything else that is not an address, is left to the hello to bear out, as before."""
+    try:
+        ip = ipaddress.ip_address(address.split("%", 1)[0])
+    except ValueError:
+        return False
+    return ip.is_unspecified or ip.is_multicast
 
 
 __all__ = [

@@ -61,6 +61,12 @@ the robot's DNS-SD record names, and reads the reply in the response:
 | `413` | too large |
 | `429` | a budget is spent |
 
+Roboglot's inbox answers `429` to an address whose posts it refused 20 times in the last 10
+seconds, the figures of a Bluetooth link's budget, and reads nothing more that address sends until
+the window moves on. A post counts while it is being read too, and is given back once it is taken,
+so words in a session spend none of it. Past the 128 addresses it counts one by one, every other
+address shares one budget of the same figures.
+
 **A Bluetooth link.** The same message goes as one request over the link, in frames, and the reply
 comes back over the link with the same status. Either robot can send, whichever dialled.
 
@@ -174,6 +180,11 @@ A peer never calls `stop`, and nothing it asks can outlast the robot's own stop.
 within the five seconds the specification allows, `later` when the executor has not finished in
 four. A brain hears of an `ask` as information only: a stranger's in the words a courtesy is asked
 in and no others, never its `why`, and a known robot's as it was sent, JSON-quoted.
+
+When Roboglot is the one asking, an `answer` counts only when it comes from the robot it asked,
+under the nonces of the session the `ask` went in. Any other answer, on the response or at the
+inbox, is no answer: one that rides back on the response is refused as not that robot's, and one
+that never comes is `later`.
 
 ## share
 

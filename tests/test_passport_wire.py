@@ -16,6 +16,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 from typer.testing import CliRunner
@@ -24,6 +25,7 @@ from roboglot.cli import app
 from roboglot.passport import PassportError, document, fetch, serve, strict
 from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
 from tests.passport_helpers import OWNER, A, doc
+from tests.support import UNTIL_WITHIN_S, unused_port
 
 runner = CliRunner()
 PASSPORT = strict.dumps(doc(A, OWNER, "duck-01"))
@@ -82,6 +84,82 @@ def test_a_host_that_drips_is_cut_off_at_the_deadline_for_the_whole_exchange() -
     assert time.monotonic() - started < 2.5
 
 
+def test_a_tls_handshake_sent_a_byte_at_a_time_is_cut_off_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The handshake ran under a timeout set once before it, which each of its reads got whole
+    again, so a server that sent its part a byte at a time held the reader as long as it liked.
+    The reader's clock moves a second with every byte, and never with the machine's."""
+    now = [0.0]
+    monkeypatch.setattr(fetch, "_now", lambda: now[0])
+    # the head of a TLS record of the largest size, then its body a byte at a time: far fewer
+    # bytes than it needs, so the handshake can only wait for more
+    record = b"\x16\x03\x03\x40\x00" + b"\x00" * 59
+
+    def drip(conn: socket.socket) -> None:
+        for byte in record:
+            now[0] += 1.0
+            conn.sendall(bytes([byte]))
+        conn.recv(1)  # held open until the reader goes
+
+    with (
+        host(drip) as url,
+        pytest.raises(PassportError, match="took more than the 5 s a reader waits"),
+    ):
+        fetch.fetch(url.replace("http://", "https://"), timeout=5.0)
+
+
+def test_a_name_whose_lookup_never_answers_is_given_up_at_the_deadline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The name was looked up with no timeout at all, before the reader's clock was read again,
+    so a resolver that never answered held the reader for as long as it did. The lookup is a
+    stand-in that answers only once the reader has given up, or when a guard runs out."""
+    released = threading.Event()
+
+    def lookup(name: str, *args: Any, **kwargs: Any) -> list[Any]:
+        released.wait(UNTIL_WITHIN_S)
+        return []
+
+    monkeypatch.setattr(socket, "getaddrinfo", lookup)
+    try:
+        with pytest.raises(PassportError, match=r"took more than the 0\.5 s a reader waits"):
+            fetch.fetch("http://robot.invalid/robot-passport.json", timeout=0.5)
+    finally:
+        released.set()
+
+
+def test_every_address_a_name_has_shares_the_one_deadline(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each address a name resolved to was given the whole timeout again, so a name with many
+    addresses that each took their time held the reader that many times over. A connect is a
+    stand-in that spends three of the reader's five seconds and fails."""
+    now = [0.0]
+    monkeypatch.setattr(fetch, "_now", lambda: now[0])
+    # nothing listens on these, so a connect that reached them would be refused at once
+    addresses = [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", unused_port()))] * 3
+    monkeypatch.setattr(socket, "getaddrinfo", lambda *args, **kwargs: addresses)
+    given: list[float] = []
+
+    class Slow:
+        def __init__(self, *args: Any) -> None:
+            pass
+
+        def settimeout(self, seconds: float) -> None:
+            given.append(seconds)
+
+        def connect(self, address: Any) -> None:
+            now[0] += 3.0
+            raise TimeoutError("timed out")
+
+        def close(self) -> None:
+            pass
+
+    monkeypatch.setattr(fetch, "_new_socket", Slow)
+    with pytest.raises(PassportError, match="took more than the 5 s a reader waits"):
+        fetch.fetch("http://robot.invalid/robot-passport.json", timeout=5.0)
+    assert given == [5.0, 2.0], "the second gets what the first left, and the third nothing"
+
+
 @pytest.mark.parametrize("kind", ["headers", "interim answers"])
 def test_endless_headers_or_interim_answers_are_refused_by_size_long_before_the_deadline(
     kind: str,
@@ -111,6 +189,23 @@ def test_an_answer_that_is_not_http_is_a_refusal_and_not_a_traceback() -> None:
     assert met.exit_code == 1
     assert met.exception is None or isinstance(met.exception, SystemExit), met.exception
     assert "did not answer in HTTP" in " ".join(met.output.split())
+
+
+@pytest.mark.parametrize("digit", [b"\xb2", b"\xb9"])  # superscript two and one, in Latin-1
+def test_a_content_length_of_a_digit_outside_ascii_is_a_refusal_and_not_a_traceback(
+    digit: bytes,
+) -> None:
+    """Headers are read as Latin-1, where a superscript digit passes `str.isdigit` and `int()`
+    then raises `ValueError`, which is no `PassportError`: `roboglot passport check` printed a
+    traceback for a host that sent one."""
+    answer = b"HTTP/1.0 200 OK\r\nContent-Length: " + digit + b"\r\n\r\nx"
+    with pytest.raises(PassportError, match="Content-Length that is not a number"):
+        fetch._parse(answer, "http://127.0.0.1/")
+    with host(lambda conn: conn.sendall(answer)) as url:
+        met = runner.invoke(app, ["passport", "check", url])
+    assert met.exit_code == 1
+    assert met.exception is None or isinstance(met.exception, SystemExit), met.exception
+    assert "Content-Length that is not a number" in " ".join(met.output.split())
 
 
 def test_a_body_in_chunks_is_read_whole() -> None:
@@ -188,6 +283,17 @@ def test_a_post_must_say_how_long_it_is_and_cannot_say_less_than_nothing(
     assert _exchange(with_inbox.port, head + b"Content-Length: 2\r\n\r\n{}").startswith(
         b"HTTP/1.0 204"
     )
+
+
+def test_a_post_whose_length_is_a_digit_outside_ascii_is_answered_400(
+    with_inbox: PassportServer,
+) -> None:
+    """A superscript digit passes `str.isdigit` and `int()` then raised in the handler, so the
+    client got a closed connection where the server's answer to a length that is not one is a
+    400."""
+    head = f"POST {INBOX_PATH} HTTP/1.0\r\nContent-Type: application/json\r\n".encode()
+    answer = _exchange(with_inbox.port, head + b"Content-Length: \xb2\r\n\r\n{}")
+    assert answer.startswith(b"HTTP/1.0 400") and b"not a length" in answer
 
 
 def test_the_server_names_itself_and_not_the_python_under_it(with_inbox: PassportServer) -> None:

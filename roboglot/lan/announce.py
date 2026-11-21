@@ -75,6 +75,18 @@ def _service_info(zeroconf: Any, record: ServiceRecord) -> Any:
     )
 
 
+def _register(zc: Any, info: Any, *, owns: bool) -> None:
+    """`zc.register_service(info)`, closing `zc` when that fails and the announcing call made it.
+    A name another host on the LAN already holds is enough to fail, and an instance left open
+    keeps its multicast sockets and threads for as long as the process runs."""
+    try:
+        zc.register_service(info)
+    except BaseException:
+        if owns:
+            zc.close()
+        raise
+
+
 @dataclass
 class Announcement:
     record: ServiceRecord
@@ -118,7 +130,7 @@ def announce(
         if zc is None:
             raise ValueError("info_factory needs a registrar: pass zc=")
         info = info_factory(record)
-    zc.register_service(info)
+    _register(zc, info, owns=owns)
     return Announcement(record=record, info=info, zc=zc, owns_zc=owns)
 
 

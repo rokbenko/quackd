@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -128,6 +129,32 @@ def test_announce_registers_a_record_and_close_withdraws_it() -> None:
     assert ann.record.properties == txt_record(DUCK, adapter="microduck")
     ann.close()
     assert zc.registered == [] and zc.closed is False  # we did not own the registrar
+
+
+def test_an_announce_that_cannot_register_closes_the_zeroconf_it_made(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`announce` makes and owns a Zeroconf when it is given none. When `register_service`
+    raised (another host on the LAN holding the name is enough) that instance was left open
+    with its sockets and threads. A stand-in module counts the instances made and closed."""
+    made: list[FakeZeroconf] = []
+
+    class Refusing(FakeZeroconf):
+        def __init__(self) -> None:
+            super().__init__()
+            made.append(self)
+
+        def register_service(self, info: Any) -> None:
+            raise RuntimeError(f"{info.name} is taken")
+
+    module = SimpleNamespace(
+        Zeroconf=Refusing, ServiceInfo=lambda kind, name, **kw: SimpleNamespace(name=name)
+    )
+    monkeypatch.setattr(lan_announce, "require_zeroconf", lambda _what: module)
+    monkeypatch.setattr(lan_announce, "local_ip", lambda: "10.0.0.7")
+    with pytest.raises(RuntimeError, match="taken"):
+        announce(DUCK, adapter="microduck")
+    assert len(made) == 1 and made[0].closed
 
 
 def test_discover_reads_back_what_was_announced_sorted_by_name() -> None:

@@ -5,6 +5,7 @@ because the standard library has none and the alphabet is all there is to it."""
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 
@@ -70,9 +71,21 @@ def public_from_did(did: str) -> bytes:
     public = raw[2:]
     if did_from_public(public) != did:
         raise PassportError("rule 7", f"{did!r} is not the canonical spelling of its key")
-    if not holdable(public):
+    if not _holdable_once(public):
         raise PassportError("rule 7", f"{did!r} holds no key anybody could sign with")
     return public
+
+
+#: Keys whose `holdable` answer is kept: a robot and its owner's key for every robot talk can
+#: hold a session or a half-finished hello with at once (64 of each, `roboglot.passport.talk`).
+HOLDABLE_REMEMBERED = 2 * (64 + 64)
+
+
+@functools.lru_cache(maxsize=HOLDABLE_REMEMBERED)
+def _holdable_once(public: bytes) -> bool:
+    """`holdable`, worked out once for a key: every message a peer sends names its key again,
+    and the curve arithmetic is pure Python big integers, the costly part of reading one."""
+    return holdable(public)
 
 
 #: Ed25519's field and curve (RFC 8032 5.1), to check that 32 bytes are a key somebody could

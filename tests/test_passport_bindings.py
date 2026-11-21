@@ -10,6 +10,7 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 from dataclasses import replace
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -212,6 +213,56 @@ def test_a_passport_is_announced_and_discovered_with_the_beacon_id_its_radio_sen
     ]
     announcement.close()
     assert registrar.registered == []
+
+
+class NonUniqueNameException(Exception):
+    """python-zeroconf's refusal of a name another host on the LAN already announces."""
+
+
+def test_a_record_that_cannot_be_registered_closes_the_zeroconf_the_call_made(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A second robot with the same name on the LAN is enough for `register_service` to raise.
+    The instance `announce_passport` made for itself was left open with its sockets and threads,
+    and the service publishes again on every beacon rotation, so one leaked every 15 minutes.
+    The zeroconf module is a stand-in that counts the instances made and closed."""
+    from roboglot.lan import passports
+
+    made: list[Any] = []
+
+    class Zeroconf:
+        def __init__(self) -> None:
+            self.closed = False
+            made.append(self)
+
+        def register_service(self, info: Any) -> None:
+            raise NonUniqueNameException(f"{info.name} is taken")
+
+        def close(self) -> None:
+            self.closed = True
+
+    module = SimpleNamespace(
+        Zeroconf=Zeroconf, ServiceInfo=lambda kind, name, **kw: SimpleNamespace(name=name)
+    )
+    monkeypatch.setattr(passports, "require_zeroconf", lambda _what: module)
+    record = passport_record(
+        instance="jetson-01",
+        port=8790,
+        short_id=A.short_id,
+        digest="ef" * 32,
+        beacon=BEACON,
+        host="jetson-01",
+        addresses=("192.0.2.10",),
+    )
+    for _ in range(3):  # the start, then two rotations
+        with pytest.raises(NonUniqueNameException):
+            announce_passport(record)
+    assert len(made) == 3 and all(z.closed for z in made)
+    # one the caller passed in is the caller's to close
+    theirs = Zeroconf()
+    with pytest.raises(NonUniqueNameException):
+        announce_passport(record, zc=theirs)
+    assert not theirs.closed
 
 
 def test_discovery_skips_a_record_of_the_version_before_owners_signed_passports() -> None:

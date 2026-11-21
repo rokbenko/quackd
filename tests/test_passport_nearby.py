@@ -19,6 +19,7 @@ from typing import Any
 
 import pytest
 
+from roboglot import passport_talk
 from roboglot.passport import PassportError, SigningKey, document, strict
 from roboglot.passport.document import MAX_VALIDITY_S
 from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
@@ -30,8 +31,17 @@ from roboglot.passport.talk import (
     read_message,
     seal,
 )
-from roboglot.passport_talk import HEADING, Heard, Send, Talker
+from roboglot.passport_talk import (
+    HEADING,
+    INBOX_ADDRESSES,
+    INBOX_RATE,
+    INBOX_RATE_S,
+    Heard,
+    Send,
+    Talker,
+)
 from roboglot.passport_trust import Judgement, Pin, judge
+from roboglot.radio.links import LinkPolicy
 from tests.passport_helpers import INTRUDER, OWNER, OWNER_B, RUNTIME, A, B, passport
 
 DUCK, CART = A, B
@@ -350,6 +360,64 @@ def test_a_robot_told_its_session_is_gone_ends_its_side_and_can_meet_again(words
     assert cart.meet(Link.ROUTE) == DUCK.did, "and a new hello starts another"
 
 
+def test_an_answer_to_an_ask_counts_only_from_the_peer_under_the_sessions_nonces() -> None:
+    """The answer that rode back on an ask's response was taken after a look at its type and
+    `re` alone, though the robot had just refused it as outside the session (spec 6.3), so an
+    answer signed by any key, or by the peer under no nonces, was returned as the peer's."""
+    link = Link()
+    _duck, _duck_heard = on_link(link, DUCK, OWNER, "duck-01")
+    cart, _cart_heard = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    # the duck's own answer, from its session, counts as it always did
+    assert cart.ask(DUCK.did, "identify") == (
+        "no",
+        "this robot is running nothing that could grant a courtesy",
+    )
+    session = cart.endpoint.session_with(DUCK.did)
+    assert session is not None
+    real = cart._send
+    forgeries: list[tuple[SigningKey, tuple[str, str] | None]] = [
+        (INTRUDER, None),  # any key at all
+        (DUCK, None),  # the peer's key, under no session
+        (INTRUDER, session.nonces),  # the session's nonces, under another key
+    ]
+    for signer, nonces in forgeries:
+
+        def forged(
+            route: str,
+            wire: str,
+            signer: SigningKey = signer,
+            nonces: tuple[str, str] | None = nonces,
+        ) -> tuple[int, str | None]:
+            asked = read_message(wire)
+            real(route, wire)  # the duck has it, and its own answer is lost on the way
+            body = {"result": "ok", "reason": "go ahead"}
+            doc = envelope("answer", signer.did, body, to=CART.did, re=asked.msg, nonces=nonces)
+            return 200, seal(doc, signer)
+
+        cart._send = forged
+        with pytest.raises(PassportError, match=r"is not .*'s in this session"):
+            cart.ask(DUCK.did, "pause", {"seconds": 3})
+        assert cart._answers == {} and cart._asking == set()
+    # nor does an answer that comes to the inbox from a robot met in another session
+    other = Link()
+    other.ROUTE = "ble://link-2"
+    van, _van_heard = on_link(other, INTRUDER, OWNER_B, "van-07")
+    other.ends[CART.did] = cart
+    assert van.meet(other.ROUTE) == CART.did
+
+    def answered_elsewhere(route: str, wire: str) -> tuple[int, str | None]:
+        van_says = van.endpoint.answer(CART.did, read_message(wire).msg, "ok", "go ahead")
+        cart.inbox(van_says, other.ROUTE)
+        return 204, None  # the duck took the ask and will answer later
+
+    cart._send = answered_elsewhere
+    assert cart.ask(DUCK.did, "pause", {"seconds": 3}, timeout=0) == (
+        "later",
+        "no answer came in time",
+    )
+
+
 def test_a_link_that_closes_ends_the_sessions_it_carried_at_both_ends() -> None:
     """They read as met while every word failed, with neither robot dialling until they idled."""
     link = Link()
@@ -421,6 +489,108 @@ def test_the_inbox_takes_a_hello_for_this_robot_or_anyone_and_refuses_the_rest()
     assert status == 400 and reason is not None and b"unsigned" in reason
     garbage = duck.inbox_http(b"{", "application/json", "127.0.0.1")
     assert garbage[0] == 400 and garbage[1] is not None and b"6.1" in garbage[1]
+
+
+def test_an_address_past_the_inbox_budget_is_answered_429_before_anything_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP inbox read every post in full, its keys and its signature, before it asked
+    whether the radio heard the sender, and counted nothing per address, so one signed hello
+    posted in a loop cost the robot a full check each time. Reads are counted through the
+    inbox's `read_message`, and the budget runs on a clock the test moves. Words in a session
+    spend none of it: `test_what_reaches_a_pilot_is_held_to_its_budget_oldest_words_first`
+    says thirty in a row from one address."""
+    read = [0]
+    real = passport_talk.read_message
+
+    def counted(raw: bytes) -> Any:
+        read[0] += 1
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", counted)
+    now = [1000.0]
+    duck = alone(clock=lambda: now[0], heard=lambda _beacon, _origin: False)
+    visitor = Endpoint(
+        CART.did, passport(CART, OWNER_B, "cart-01"), CART, runtime={"beacon": CART_BEACON}
+    )
+    hello = visitor.hello().encode()  # signed once, posted again and again
+
+    def post(address: str) -> int:
+        return duck.inbox_http(hello, "application/jose", address)[0]
+
+    statuses = [post("10.0.0.9") for _ in range(2 * INBOX_RATE + 1)]
+    assert statuses == [403] * INBOX_RATE + [429] * (INBOX_RATE + 1)
+    assert read[0] == INBOX_RATE, "a post past the budget is refused unread"
+    assert post("10.0.0.10") == 403, "another address has a budget of its own"
+    now[0] += 2 * INBOX_RATE_S  # the window has moved on: the address is answered again
+    assert post("10.0.0.9") == 403
+    # the Bluetooth link's own figures, not new ones
+    link = LinkPolicy()
+    assert (link.rate, link.rate_s) == (INBOX_RATE, INBOX_RATE_S)
+
+
+def _refused_hellos(
+    monkeypatch: pytest.MonkeyPatch, *, during_read: Callable[[], None] | None = None
+) -> tuple[Callable[[str], int], list[int]]:
+    """A duck whose radio heard nobody, and a way to post it one signed hello from an address:
+    every post read is refused 403. Reads are counted through the inbox's `read_message`, and
+    `during_read` runs inside the first read, while that post's key work is under way."""
+    read = [0]
+    real = passport_talk.read_message
+
+    def counted(raw: bytes) -> Any:
+        read[0] += 1
+        if read[0] == 1 and during_read is not None:
+            during_read()
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", counted)
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    visitor = Endpoint(
+        CART.did, passport(CART, OWNER_B, "cart-01"), CART, runtime={"beacon": CART_BEACON}
+    )
+    hello = visitor.hello().encode()
+
+    def post(address: str) -> int:
+        return duck.inbox_http(hello, "application/jose", address)[0]
+
+    return post, read
+
+
+def test_senders_past_the_table_of_addresses_share_one_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The table that counts each address forgot the one that posted least lately once it was
+    full, so a sender that moved through more addresses than it holds, which IPv6 makes easy,
+    came back each time with a budget never spent. Every sender that does not fit is held to one
+    budget now, shared, and an address in the table keeps its own."""
+    post, read = _refused_hellos(monkeypatch)
+    held = [f"10.1.{i // 256}.{i % 256}" for i in range(INBOX_ADDRESSES)]
+    assert {post(address) for address in held} == {403}  # the table is full
+    read[0] = 0
+    crowd = [post(f"10.2.0.{i}") for i in range(2 * INBOX_RATE + 1)]
+    assert crowd == [403] * INBOX_RATE + [429] * (INBOX_RATE + 1)
+    assert read[0] == INBOX_RATE
+    assert post(held[0]) == 403, "an address in the table has a budget of its own"
+
+
+def test_posts_in_flight_from_one_address_cannot_all_pass_the_budget_together(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal was counted only once its post had been read, so every post that arrived while
+    others were still being checked passed the budget together: as many as the server holds
+    connections. A post counts from the moment its key work starts now, and is given back once it
+    turns out to be taken. More posts arrive while the first one is read, in order, with no
+    thread and no clock."""
+    during: list[int] = []
+
+    def more_arrive() -> None:
+        during.extend(post("10.0.0.9") for _ in range(INBOX_RATE))
+
+    post, read = _refused_hellos(monkeypatch, during_read=more_arrive)
+    assert post("10.0.0.9") == 403
+    assert during == [403] * (INBOX_RATE - 1) + [429]
+    assert read[0] == INBOX_RATE, "the first post's own count stood while it was read"
 
 
 @pytest.mark.parametrize("version", ["0.1", "7.0"])

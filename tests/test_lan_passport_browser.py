@@ -173,6 +173,30 @@ def test_record_from_info_needs_the_version_two_fields() -> None:
     assert record_from_info(old) is None
 
 
+@pytest.mark.parametrize("nowhere", ["0.0.0.0", "::", "224.0.0.251", "ff02::fb"])
+def test_a_record_naming_only_an_address_no_robot_can_be_at_is_no_robot_found(
+    nowhere: str,
+) -> None:
+    """An unspecified or a multicast address is no robot's, and a record naming one aimed the
+    signed hello wherever such a post goes. A record that names a real address beside one is
+    read at the real one."""
+
+    def record(*addresses: str) -> Any:
+        return passport_record(
+            instance="x",
+            port=1,
+            short_id=SHORT_ID,
+            digest="ab" * 8,
+            beacon=new_beacon_id(),
+            addresses=list(addresses),
+        )
+
+    assert record_from_info(record(nowhere)) is None
+    found = record_from_info(record(nowhere, "10.0.0.9"))
+    assert found is not None and found.host == "10.0.0.9"
+    assert nowhere not in found.addresses
+
+
 def test_without_zeroconf_installed_the_browser_names_the_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

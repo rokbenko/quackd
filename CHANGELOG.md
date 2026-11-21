@@ -922,6 +922,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   within an age comes off that age before the bound is applied, an age within which it woke more
   than 50 ms late is not judged, and the walk is taken again, five times at most, until more than
   twenty ages are judged.
+- **A LAN record that cannot be registered closes the zeroconf it opened.** `roboglot announce`
+  and a robot's service each open a zeroconf instance for their record when given none, and when
+  registering failed, as it does when another host on the network already announces the same
+  name, that instance stayed open with its multicast sockets and threads. A robot's service tries
+  again at each beacon rotation, every 15 minutes, so it kept one more each time for as long as it
+  ran. The instance is closed now whenever registering fails, and a record that registers is
+  announced as before.
+- **A Content-Length of a digit outside ASCII is refused, where it was a traceback.** Headers are
+  read as Latin-1, where a superscript digit passes Python's test for a digit and then fails to
+  convert, so `roboglot passport check` printed a traceback for a host that sent one, and a
+  robot's passport server closed the connection on a post that did, where it answers a length
+  that is not one with `400`. Only ASCII digits are a length now: the check refuses such an answer
+  as one with a Content-Length that is not a number, and the server answers `400`.
+- **A passport fetch keeps to its five seconds from the name's lookup to the last byte.** The
+  clock was read again only while the answer was read: the name was looked up with no timeout,
+  each address it resolved to got the whole timeout again, and the TLS handshake ran under a
+  timeout set once before it, which a server that sent its part a byte at a time could stretch as
+  far as it liked. One deadline covers the lookup, every address tried and the handshake now, each
+  given only what is left, and a lookup still going when it runs out is left behind. Talk's own
+  posts go to an address over plain HTTP, need no lookup, and are unchanged.
 - **`--llm cohere:north-mini-code-1.0` is the id Cohere's API takes.** The catalogue spelled it
   `north-mini-code-1-0`, its changelog entry's address, and it is priced at $0 now that its own
   page says it is free on trial and production keys alike.
@@ -969,6 +989,31 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   named file, deleting it for the default one. With no `--token-file`, a missing file at the
   default path is still no token. A token file that is not UTF-8 text refuses with the reason,
   where it ended in a traceback.
+- **A robot's HTTP inbox answers a flood of refused posts with `429` before it reads them.** Every
+  post to `/robot-passport/inbox` was checked in full, its keys on the curve and its signature,
+  before the robot asked whether its radio had heard the sender, and nothing counted posts by
+  address, so one signed message posted in a loop by a host on the LAN cost the robot a full check
+  each time. An address whose posts were refused 20 times in 10 seconds, the figures of a Bluetooth
+  link's budget, is answered `429` now, and nothing more it sends is read until that window moves
+  on. A post counts from the moment its keys are checked and is given back once it is taken, so
+  posts that arrive together cannot all pass at once, and the addresses past the 128 the robot
+  counts one by one share one budget of the same figures, so moving from address to address buys
+  none. Words in a session spend none of it, so robots that meet are answered as they were. A key
+  already found to be one somebody could hold is not checked on the curve again.
+- **A LAN record that names only an unspecified or a multicast address is passed over.** Meeting
+  over the LAN posts a signed hello to the address a robot's record names, and a record could
+  name `0.0.0.0`, `::` or a multicast group, where no robot can be. Such an address is dropped
+  from a record now, and a record left with no address is no robot found; one that names a real
+  address beside it is reached there.
+- **An answer to an ask counts only from the robot asked, in its session.** `Talker.ask` took the
+  answer that came back on the response after a look at its type and the ask it named, though the
+  robot had just refused it as outside the session, so an answer signed by any key, or by the
+  robot asked under no session's nonces, was returned as that robot's. An answer that came to the
+  inbox from a robot met in another session was kept for the ask as well. Only an answer the robot
+  takes as the session's, from its peer and under its nonces, counts now: any other on the
+  response makes `ask` raise, saying the answer is not that robot's in this session, and any other
+  at the inbox leaves the ask waiting, `later` when nothing more comes. Nothing in Roboglot calls
+  `ask` itself; it is library API.
 - **The ToddlerBot daemon's token need not travel on its command line, and an empty one is no
   token.** It took its token from `--token`, which every account on the robot can read (`ps`,
   `/proc/<pid>/cmdline`), or from `ROBOGLOT_TODDLERBOT_TOKEN`. `--token-file` reads it from a file,

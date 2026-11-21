@@ -155,7 +155,10 @@ class PassportServer:
                 if said is None:
                     self._send(411, b"a message says how long it is\n")
                     return
-                if not said.strip().isdigit():
+                said = said.strip()
+                # headers are read as Latin-1, where a superscript digit passes `isdigit` and
+                # not `int`
+                if not (said.isascii() and said.isdigit()):
                     self._send(400, b"a Content-Length that is not a length\n")
                     return
                 length = int(said)
