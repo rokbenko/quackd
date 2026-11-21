@@ -801,11 +801,14 @@ every slow move. The price is that a joint blocked partway is found when the ram
 than when it stopped, pushing meanwhile against a goal one step ahead of it, as it always did.
 The verb then fails naming the joint, where it stopped and its goal, and holds the arm. It
 gives the move the time asked for, or the time the cap needs if that is longer, plus 2.5
-seconds to settle. The cap is a ceiling and not a speed the servo keeps, so a joint still moving
-when that time is up goes on, one tick at a time, until a tick finds nothing moving more than
-the stall rule's half degree, or until 18 seconds: the executor's own timeout for `move_joints`
-is 20, and the verb ends first so that the reason names the joint that fell short. The gripper's
-verbs go on the same way, inside their own timeout.
+seconds to settle. The cap is a ceiling and not a speed the servo keeps, so a move still moving
+when that time is up goes on, up to 18 seconds: the executor's own timeout for `move_joints` is
+20, and the verb ends first so that the reason names the joint that fell short. Still moving
+means still getting nearer its goal: every joint that has not arrived has closed on its goal by
+at least its 5 degree tolerance over the last 5 ticks, half a second. Judged over those ticks
+and not one, a slow servo that moves on one tick and not the next is waited for, and a joint a
+hand pushes back, or one bouncing on something that gives, is not on its way, so the move ends
+as soon as its time is up. The gripper's verbs go on the same way, inside their own timeout.
 
 Its datasheet, which the pilot is shown and told to judge a task against before anything moves ([reference/manifest-spec.md](../../reference/manifest-spec.md)):
 
@@ -1220,14 +1223,18 @@ verb that sends a goal meanwhile is refused, as on the arm.
   arm where it stopped, because what stopped it may be in its way, and the policy's last goal
   would leave the servo pushing on. A `pick` ends on a stall only pressed against something: for
   1 s of goals over at least 2 of its policy's ticks, every joint within 0.5 degrees of where it
-  was while a body joint's goal stays more than 5 degrees from where it reads, a servo pushing
-  and getting nowhere. Five is the arm's own tolerance for a loaded joint settling short of its
-  goal, so a hold that sags that much is not a press. It ends then as a pick that held nothing. A
-  policy that holds the arm where it reads, for as long as it likes, is no stall, and at the
-  band's lowest rate, 1 Hz, where
-  1 s is one tick, a pick runs to its time. A grasp is not cut short by it: the jaws closing are
-  the arm moving, the gripper's goal never counts as pressing, and jaws settled on something end
-  the pick as holding before any stall is judged.
+  was while a body joint's goal, as it is sent, clipped into its travel, stays more than 5
+  degrees from where it reads, a servo pushing and getting nowhere. It ends then as a pick that
+  held nothing. Five is the arm's own tolerance for a loaded joint settling short of its goal, so
+  a hold that sags that much is not a press, and a joint at the edge of its travel sent a goal
+  past it pushes on nothing: the clip guard ends that pick. A policy that holds the arm where it
+  reads, for as long as it likes, is no stall, and at the band's lowest rate, 1 Hz, where 1 s is
+  one tick, a pick runs to its time. A grasp is not cut short by it: the jaws closing are the arm
+  moving, the gripper's goal never counts as pressing, and jaws settled on something end the
+  pick as holding before any stall is judged. A known limit: one tick whose goals all come back
+  within 5 degrees of where the arm reads, or on which the jaws move, starts that second again,
+  so a pick pressing while its jaws open and close, or whose goal dips inside the tolerance now
+  and then, runs to its time as it always did.
   The verb then holds it again, as it does after every ending that held, since a bus can lose
   a hold's packet, and a stall whose last hold did not reach the arm is a failure that says
   so. Otherwise those three are a segment that ran, and the verb is ok on them and on nothing
@@ -2995,7 +3002,7 @@ And once it is running:
 |---|---|---|
 | `move_joints: shoulder_pan=170.0 is outside this arm's calibrated range -100.0..100.0` | the goal is outside the travel in your calibration file | aim inside it, or recalibrate if the file does not match the arm's real travel. Nothing was sent. On `wrist_roll` this refusal will never fire, because upstream records a full turn for that joint rather than a sweep |
 | `cannot move_joints: elbow_flex reads 61°C: let the arm cool before moving it ...` | the heat gate, below the servo's own 70 °C cut-off | let it cool. A joint that trips its own protection goes slack without announcing it |
-| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint fell short when its time was up, the time asked for, or the time the step cap needs if that is longer, plus 2.5 s: it had stopped moving then, or it went on moving until a tick found it still, or until the verb's limit of 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
+| `move_joints: elbow_flex is at 12 with a goal of 45, and it has stopped moving` | a stall: five ticks of 0.1 s in which no watched joint moved more than half a degree (or half the step cap, where that is lower), counted once the move's ramp has handed the servo the goal itself | something is in the way, a mechanical limit the calibration does not know about, or a tripped servo. The arm is held first. A joint blocked partway through a long `duration_s` is only called stalled when that time is up. The same sentence ending `when the time ran out` means the joint fell short when its time was up, the time asked for, or the time the step cap needs if that is longer, plus 2.5 s: it was no longer getting nearer its goal then, or it went on getting nearer until 5 ticks gained less than its tolerance, or until the verb's limit of 18 s. A lowered `ROBOGLOT_LEROBOT_MAX_STEP_DEG` on a long move gets there, and so does a joint creeping under a load |
 | `move_joints: elbow_flex is at 40 with a goal of -90, and the move was ended there because torque reads off on elbow_flex, so a goal would reach a limp servo, and a servo that trips its own overload protection reads this way` | a tick of the move read torque off on a joint, or a body joint at or above the heat gate, in the words a policy segment ends on, and the move was ended there with the arm held. `move_joints` judges the whole arm, as its preconditions do. `gripper` and `place` end the same way on the gripper's own torque, and never on heat | a tripped servo or the supply, as for the torque refusal below. A hot joint: let it cool |
 | `... But move_joints's stop could not be delivered, so the body may still be moving: the hold did not reach the arm: ... A servo may still be pushing toward the last goal it was sent` | the hold the move ended with was lost on the bus, so a servo still has its last goal, a step past where it reads. Any of the arm's verbs that ends on a stop says so, under its own name | send `stop`, and look at the arm before the next step |
 | `the camera gave no frame: TimeoutError: ... too old` | the webcam stalled or was unplugged | only `observe` is affected, and a `pick` in flight. The arm carries on, and `report_state` starts saying `CAMERA DOWN:` with the reason, so a run that cannot call `observe` still records it |

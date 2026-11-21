@@ -112,6 +112,7 @@ from roboglot_lerobot.verbs import (
     NO_INSTRUCTION,
     PICK_POLL_S,
     PICK_SETTLE_S,
+    PROGRESS_TICKS,
     RAMP_DECIMALS,
     RAMP_RESOLUTION,
     REST_MAX_S,
@@ -1361,6 +1362,66 @@ async def test_a_policy_verb_whose_own_stop_did_not_reach_the_arm_says_so(
     await adapter.close()
 
 
+@pytest.mark.parametrize("ends", ["time out", "guard", "interrupted", "refused"])
+async def test_a_move_ended_any_way_whose_own_stop_did_not_reach_the_arm_says_so(
+    ends: str,
+) -> None:
+    """`_drive` stops the arm on every way a move ends short, and reads that stop on each: run
+    out of time, ended by a guard, told to end from beside it (a run's minutes spent), and a goal
+    the arm refused. Each says its stop could not be delivered, as a stall does."""
+    step = 0.4 if ends == "time out" else MAX_STEP_DEG  # too low a cap to get there in time
+    arm = _HoldLost(step=step)
+    _adapter, ex, clock = await _paced(arm, step=step)
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    goal = round(_share_of(travel, -0.86 if ends == "time out" else 0.6), 1)
+    sends = arm.send_action
+
+    def faults(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        if ends == "guard":
+            arm.torque = False
+        elif ends == "refused":
+            arm.send_fails = True  # the next goal is refused, and the hold after it lost
+        return sent
+
+    arm.send_action = faults  # type: ignore[method-assign]
+    if ends == "interrupted":
+        ex.budget = Budget(Budgets(max_minutes=0.01), now=clock.now)
+        ex.budget.start()
+    duration = MOVE_MAX_S if ends == "time out" else 5.0
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": duration})
+    said = {
+        "time out": "when the time ran out",
+        "guard": "the move was ended there because torque reads off",
+        "interrupted": "max_minutes",
+        "refused": "joint failed: ConnectionError",
+    }[ends]
+    assert said in moved.summary, moved.summary
+    _said_unheld(moved, "move_joints")
+    arm.send_fails = False
+
+
+async def test_a_move_that_arrives_on_the_tick_its_servo_trips_ends_on_the_guard() -> None:
+    """The guard is judged before arrival: a move that reads its joint arrived on the same tick
+    it reads the arm's torque off says so, held, and never `moved`, which would leave the pilot
+    sure of an arm that has gone limp."""
+    arm = FakeArm(step=MAX_STEP_DEG)
+    _adapter, ex, _clock = await _paced(arm)
+    joint = "shoulder_pan"
+    goal = arm.positions[joint] + RAMP_RESOLUTION / 2  # sent whole, judged on the first tick
+    sends = arm.send_action
+
+    def trips(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        arm.torque = False
+        return sent
+
+    arm.send_action = trips  # type: ignore[method-assign]
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": 1.0})
+    assert not moved.ok, moved.summary
+    assert "the move was ended there because torque reads off" in moved.summary, moved.summary
+
+
 @pytest.mark.parametrize(
     ("past", "goals"),
     [
@@ -1687,10 +1748,11 @@ async def test_a_move_still_moving_when_its_time_runs_out_goes_on_until_it_stops
 ) -> None:
     """The move's timer is the time its ramp and the step cap say it needs, plus a settle, and an
     arm slower than the cap, still moving toward its goal, was failed for running out of time
-    while it went (the run sheet's E114). It goes on while the joint still moves, up to the
-    overall limit that keeps the verb inside the executor's timeout, and arrives. A move that has
-    stopped moving ends as it did: within its time on the stall rule, and past it on the first
-    tick that does not move, saying the time ran out."""
+    while it went (the run sheet's E114). It goes on while the joint still gets nearer its goal,
+    up to the overall limit that keeps the verb inside the executor's timeout, and arrives. A
+    move that has stopped ends as it did: within its time on the stall rule, and past it once
+    its last `PROGRESS_TICKS` ticks no longer gained its tolerance on the goal, saying the time
+    ran out."""
     arm = _Slow(step=MAX_STEP_DEG)
     joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
     arm.positions[joint] = round(_share_of(travel, -0.8), 1)
@@ -1712,11 +1774,100 @@ async def test_a_move_still_moving_when_its_time_runs_out_goes_on_until_it_stops
     at = round(_share_of(travel, wall), 1)
     assert arm.positions[joint] == pytest.approx(at), arm.positions
     assert budget < clock.t < limit, (budget, clock.t)
-    # past its time, the first tick that did not move ended it, without the stall rule's ticks:
-    # one goal after the send that reached the wall, and then the stop's hold
+    # past its time, it ended within the window once its gain over the window fell short: fewer
+    # goals after the send that reached the wall than the window has ticks, then the stop's hold
     there = next(i for i, where in enumerate(arm.trail) if where[joint] == pytest.approx(at))
     goals = [a for a in arm.actions[there + 1 :] if set(a) == {f"{joint}.pos"}]
-    assert len(goals) == 1, arm.actions[there:]
+    assert 1 <= len(goals) < PROGRESS_TICKS, arm.actions[there:]
+
+
+PUSH_DEG = 2 * STALL_DEG
+"""How far a hand back-driving a joint moves it per send, away from its goal: twice the stall
+rule's bound on a tick, so the joint reads as moving on every tick. This test's own number."""
+
+
+class _PushedBack(_Slow):
+    """`_Slow`'s servo, a hand on its pan pushing it back by `PUSH_DEG` a send once `from_s` has
+    passed on `clock`, however it is driven: moving on every tick, and the wrong way."""
+
+    clock: Any = None
+    from_s = math.inf
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        before = self.positions["shoulder_pan"]
+        sent = super().send_action(action)
+        if self.clock is not None and self.clock.t >= self.from_s:
+            self.positions["shoulder_pan"] = before - PUSH_DEG
+            self.trail[-1] = dict(self.positions)
+        return sent
+
+
+class _Jerky(FakeArm):
+    """A slow servo that sticks and slips: on every other send it covers twice `SLOW_PACE` of a
+    step, and on the rest it does not move, as slow on average as `_Slow` and never still for the
+    stall rule's ticks in a row."""
+
+    sends = 0
+
+    def send_action(self, action: dict[str, float]) -> dict[str, float]:
+        before = dict(self.positions)
+        sent = super().send_action(action)
+        self.sends += 1
+        reach = self.step * 2 * SLOW_PACE if self.sends % 2 else 0.0
+        for key in action:
+            joint = key.removesuffix(".pos")
+            gone = self.positions[joint] - before[joint]
+            self.positions[joint] = before[joint] + max(-reach, min(reach, gone))
+        self.trail[-1] = dict(self.positions)
+        return sent
+
+
+@pytest.mark.parametrize("arm_kind", ["pushed back", "in jerks"])
+async def test_past_its_time_a_move_goes_on_only_while_it_gains_on_its_goal(arm_kind: str) -> None:
+    """Still moving is still getting nearer the goal: a slow servo a hand starts pushing back
+    once the move's time is up moves on every tick, the wrong way, and the move ends as the
+    budget always ended it, rather than drive the servo into the hand to the overall limit. A
+    servo that moves on one tick and not the next, as slow as `_Slow` on average, is judged on
+    what it gained over the window, and arrives."""
+    arm: FakeArm = (
+        _PushedBack(step=MAX_STEP_DEG) if arm_kind == "pushed back" else _Jerky(step=MAX_STEP_DEG)
+    )
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.8), 1)
+    goal = round(_share_of(travel, 0.8), 1)
+    _adapter, ex, clock = await _paced(arm)
+    budget = move_budget_s(abs(goal - arm.positions[joint]), MOVE_MIN_S, MAX_STEP_DEG)
+    if isinstance(arm, _PushedBack):
+        arm.clock, arm.from_s = clock, budget - PROGRESS_TICKS * TICK_S
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    if arm_kind == "in jerks":
+        assert moved.ok and budget < clock.t, (moved.summary, budget, clock.t)
+        return
+    assert not moved.ok and moved.summary.endswith("when the time ran out"), moved.summary
+    assert clock.t <= budget + 2 * TICK_S, f"pushed back for {clock.t - budget:.1f} s past its time"
+
+
+async def test_a_servo_that_trips_on_a_slow_move_past_its_time_ends_it_on_the_guard() -> None:
+    """S4-02 in the extension: a slow move still gaining on its goal past its time, whose servo
+    trips then, ends on the tick that reads it, held, in the guard's words."""
+    arm = _Slow(step=MAX_STEP_DEG)
+    joint, travel = "shoulder_pan", arm.travel("shoulder_pan")
+    arm.positions[joint] = round(_share_of(travel, -0.8), 1)
+    goal = round(_share_of(travel, 0.8), 1)
+    _adapter, ex, clock = await _paced(arm)
+    budget = move_budget_s(abs(goal - arm.positions[joint]), MOVE_MIN_S, MAX_STEP_DEG)
+    sends = arm.send_action
+
+    def trips(action: dict[str, float]) -> dict[str, float]:
+        sent = sends(action)
+        if clock.t >= budget + PROGRESS_TICKS * TICK_S:
+            arm.torque = False
+        return sent
+
+    arm.send_action = trips  # type: ignore[method-assign]
+    moved = await ex.run_verb("move_joints", {"positions": {joint: goal}, "duration_s": MOVE_MIN_S})
+    assert not moved.ok and "the move was ended there because torque reads off" in moved.summary
+    assert budget + PROGRESS_TICKS * TICK_S <= clock.t, (budget, clock.t)
 
 
 async def test_the_gripper_verb_sends_its_yes_or_no_and_is_never_ramped() -> None:
@@ -3244,12 +3395,14 @@ class _OpensLate(FakeCamera):
 
     def __init__(self) -> None:
         super().__init__()
+        self.inside = threading.Event()
         self.let_through = threading.Event()
         self.returned = threading.Event()
         self.closed_mid_open: list[bool] = []
 
     def connect(self, warmup: bool = True) -> None:
         self.calls.append("connect")
+        self.inside.set()
         # a generous bound of the wall's, only so a test that fails cannot hang the suite
         self.let_through.wait(30.0)
         self.connected = True
@@ -3288,6 +3441,27 @@ async def test_a_camera_open_past_its_bound_is_let_go_of_after_it_returns_not_re
     named = (transport.camera_specs[0].name,)
     assert fresh.calls == ["connect"] and transport.camera_keys == named, fresh.calls
     await transport.close()
+
+
+async def test_a_camera_whose_connect_is_cancelled_is_let_go_of_after_its_open_returns() -> None:
+    """The same road for a connect cancelled while the camera opens, a press or an abort as the
+    arm connects: the camera's open goes on in its worker, and the close that follows used to
+    disconnect the same object from a second thread while that open ran. It is abandoned as one
+    that ran out of time is, and let go of once its open has come back."""
+    late = _OpensLate()
+    transport = LeRobotReal(
+        "COM5", robot=FakeArm(), camera=parse_camera_url("opencv://3"), camera_object=late
+    )
+    connecting = asyncio.create_task(LeRobotAdapter(transport).connect())
+    await _until(late.inside.is_set)
+    connecting.cancel()
+    await asyncio.wait({connecting})
+    assert connecting.cancelled()
+    await transport.close()
+    assert late.closed_mid_open == [], f"disconnected while its open still ran: {late.calls}"
+    late.let_through.set()
+    await _until(lambda: late.closed_mid_open)
+    assert late.closed_mid_open == [False] and not late.connected, late.calls
 
 
 async def test_an_arm_that_refuses_after_the_camera_opened_lets_the_camera_go() -> None:

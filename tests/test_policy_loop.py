@@ -34,6 +34,7 @@ from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.arms import SO_HOT_C as HOT_C
 from roboglot_lerobot.mock import GRIP_ON_OBJECT, LeRobotMock
 from roboglot_lerobot.policy.loop import (
+    CLIP_SUSTAIN_S,
     EXACT,
     FIRST_CHUNK_S,
     MAX_RATE_HZ,
@@ -53,7 +54,7 @@ from roboglot_lerobot.policy.loop import (
 )
 from roboglot_lerobot.policy.runner import Chunk, Features, Observation
 from roboglot_lerobot.policy.scripted import ScriptedRunner
-from roboglot_lerobot.real import MAX_STEP_DEG, POLICY_HZ, LeRobotReal
+from roboglot_lerobot.real import HOLD_MIN, MAX_STEP_DEG, POLICY_HZ, LeRobotReal
 from roboglot_lerobot.verbs import (
     GRIPPER_OPEN,
     MANIPULATE_S,
@@ -1862,6 +1863,59 @@ async def test_a_pick_holding_a_joint_that_sags_short_of_its_goal_runs_to_its_ti
     assert not picked.ok and picked.data["ended"] == "time", picked.summary
     assert picked.data["seconds"] == pytest.approx(max_s, abs=2 * PERIOD), picked.data
     assert arm.positions["shoulder_lift"] == here, "the joint was to stay short of its goal"
+    assert not transport.policy_running
+    await adapter.close()
+
+
+QUARTER_HZ = 4.0
+"""A policy rate whose period, a quarter of a second, is exact in binary, so `STALL_S` and
+`CLIP_SUSTAIN_S`, set against each other below, cannot tie on a rounding; inside the band, and
+spanning more than `PICK_STALL_TICKS` ticks to the second. This test's own number."""
+
+
+async def test_a_pick_at_its_travel_s_edge_with_a_goal_past_it_ends_on_the_clip_guard() -> None:
+    """A joint at the edge of its travel whose policy goal lies past the edge is sent the edge,
+    where it already is (`_send` clips it), and presses on nothing. The clip guard is what ends
+    such a pick, saying the policy drove the arm somewhere it cannot go. The press was judged on
+    the goal before the clip, so the stall's second ran out one tick before the guard's and the
+    pick was said to have stalled; it is judged on the goal as it is sent."""
+    assert STALL_S == CLIP_SUSTAIN_S, "the test sets the two seconds against each other"
+    arm = _segment_arm()
+    joint, edge = "wrist_flex", {}
+
+    def past_the_edge(
+        observation: Observation, _sent: Mapping[str, float]
+    ) -> list[dict[str, float]]:
+        if observation.tick < PICK_STALL_TICKS:  # held where it reads, then past the edge
+            return [{joint: float(observation.reading[f"{joint}.pos"])}]
+        return [{joint: edge["hi"] + 2 * TOL_DEG}]
+
+    runner = ScriptedRunner(past_the_edge, rate_hz=QUARTER_HZ)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    edge["hi"] = transport.joint_range_deg[joint][1]
+    arm.positions[joint] = edge["hi"]
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": 10 * STALL_S})
+    assert not picked.ok and picked.data["ended"] == "guard", picked.summary
+    assert "stayed past the travel" in picked.summary, picked.summary
+    assert arm.positions[joint] == edge["hi"], "the joint never moved off its edge"
+    await adapter.close()
+
+
+async def test_a_pick_whose_jaws_squeeze_short_of_their_goal_is_no_press() -> None:
+    """The press rule leaves the gripper out: jaws squeezing something, short of the goal they
+    are sent, are a grasp, under LeRobot's own caps on the gripper. Here the jaws stop on the
+    object above their goal, by more than any tolerance, with a goal too open for the arm's own
+    `holding` to call it a grasp, and the body still: the pick runs to its time, and no stall
+    ends it on the jaws."""
+    arm = _segment_arm(object_in_jaws=True)
+    squeeze = (HOLD_MIN + GRIP_ON_OBJECT) / 2  # above `holding`'s band, below the object
+    assert GRIP_ON_OBJECT - squeeze > TOL_DEG and squeeze > HOLD_MIN
+    runner = ScriptedRunner(lambda o, s: [{"gripper": squeeze}], rate_hz=RATE)
+    _, transport, adapter, ex = await _backend(runner, arm=arm)
+    max_s = PICK_STALL_TICKS * 5 * STALL_S
+    picked = await ex.run_verb("pick", {"target": "cup", "max_s": max_s})
+    assert not picked.ok and picked.data["ended"] == "time", picked.summary
+    assert arm.positions["gripper"] == pytest.approx(GRIP_ON_OBJECT), arm.positions
     assert not transport.policy_running
     await adapter.close()
 

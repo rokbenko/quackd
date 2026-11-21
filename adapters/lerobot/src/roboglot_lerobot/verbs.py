@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from collections import deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Literal
@@ -65,6 +66,14 @@ GRIPPER_TOL = 5.0
 STALL_TICKS = 5
 STALL_DEG = 0.5
 """No joint moved this far for this many ticks, and it is not going to."""
+PROGRESS_TICKS = STALL_TICKS
+"""How many ticks back a move past its time is judged over, for whether it is still on its way
+(`_closing`): the stall rule's own count of ticks for a joint that has stopped. Over a window and
+not one tick, so a slow servo that sticks and slips, moving on one tick and not the next, is
+judged on what it gained over the window, never on the one tick it happened not to move. The
+least gain that counts is each joint's own arrival tolerance (`TOL_DEG`, `GRIPPER_TOL`): a
+joint pushed back by a hand, bouncing on something that gives, or swinging about its goal gains
+less than that on it, or loses."""
 GRIPPER_S = 6.0
 """The least time to give the gripper. The step cap applies to its 0..100 range too, so a full
 open takes 100 divided by the step, times the tick, and a lowered cap needs longer than this
@@ -511,6 +520,21 @@ def _unsafe(ctx: VerbContext, *, gripper_only: bool) -> str | None:
     return str(said) if said else None
 
 
+def _closing(gaps: deque[dict[str, float]], tolerance: Callable[[str], float]) -> bool:
+    """Whether a move past its time is still on its way: `gaps` holds each joint's distance from
+    its goal on the last `PROGRESS_TICKS` ticks and the one before them, oldest first, and every
+    joint not yet within its tolerance of its goal has closed on it over that window by at least
+    that tolerance. False until the window is full, and for a joint that read on the last tick
+    and not on the first, which is no gain anybody saw."""
+    if len(gaps) <= PROGRESS_TICKS:
+        return False
+    then, now = gaps[0], gaps[-1]
+    behind = [joint for joint, gap in now.items() if gap > tolerance(joint)]
+    return bool(behind) and all(
+        joint in then and then[joint] - now[joint] >= tolerance(joint) for joint in behind
+    )
+
+
 async def _drive(
     ctx: VerbContext,
     goal: dict[str, float],
@@ -542,14 +566,16 @@ async def _drive(
     allows, the same as it always was.
 
     The time is `budget_s`, what the ramp and the step cap say the move needs and a settle, and
-    a move still moving when it runs out goes on, tick by tick, while each tick finds a joint
-    moving by more than the stall rule's threshold, up to `limit_s`, the verb's overall limit
-    inside the executor's timeout. The cap is a ceiling on speed and never a promise of it, and a
-    servo slower than it, still on its way, was failed for running out of time as it went. The
-    first tick past the budget that finds nothing moving ends it as the budget always did, said
-    as the time running out, and a joint that stops within the budget is a stall as before. The
-    budget is on the transport's clock, the wall's on the arm, and the stall rule counts ticks:
-    past the budget it is the ticks that say whether the move goes on.
+    a move still on its way when it runs out goes on, up to `limit_s`, the verb's overall limit
+    inside the executor's timeout. On its way means still getting nearer its goal: every joint
+    that has not arrived has closed on its goal by at least its own tolerance over the last
+    `PROGRESS_TICKS` ticks (`_closing`). The cap is a ceiling on speed and never a promise of it,
+    and a servo slower than it, still on its way, was failed for running out of time as it went.
+    A joint pushed back by a hand, bouncing on something that gives or swinging about its goal is
+    moving and not on its way, and past the budget the move ends on it as the budget always
+    ended a move, said as the time running out; a joint that stops within the budget is a stall
+    as before. The budget is on the transport's clock, the wall's on the arm, and the window
+    counts ticks: past the budget it is the ticks that say whether the move goes on.
 
     It also ends when it is told to from beside it (`VerbContext.interrupted`), a `stop` from
     a second MCP call or a run's minutes running out, and it looks before every send. Each tick
@@ -575,8 +601,9 @@ async def _drive(
     previous: dict[str, float] = {}
     state: RobotState | None = None
     still = 0
-    moving = False
-    while (elapsed := ctx.transport.now() - started) < budget_s or (moving and elapsed < limit_s):
+    gaps: deque[dict[str, float]] = deque(maxlen=PROGRESS_TICKS + 1)
+    closing = False
+    while (elapsed := ctx.transport.now() - started) < budget_s or (closing and elapsed < limit_s):
         if (told := ctx.interrupted()) is not None:
             missed = await _stop(ctx)
             return joints, state, "ended", told, missed
@@ -600,7 +627,8 @@ async def _drive(
         if error and all(gap <= tolerance(joint) for joint, gap in error.items()):
             return joints, state, "arrived", None, None
         still = still + 1 if moved and max(moved) <= stall else 0
-        moving = bool(moved) and max(moved) > stall
+        gaps.append(error)
+        closing = _closing(gaps, tolerance)
         if still >= STALL_TICKS:
             missed = await _stop(ctx)
             why = f"{shortfall(goal, joints)}, and it has stopped moving"

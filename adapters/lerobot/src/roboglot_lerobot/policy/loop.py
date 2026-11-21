@@ -222,7 +222,11 @@ class Segment:
         return self.verb == "pick" and ticks >= PICK_STALL_TICKS - EXACT
 
 
-def pressing(goals: Mapping[str, float], joints: Mapping[str, float]) -> bool:
+def pressing(
+    goals: Mapping[str, float],
+    joints: Mapping[str, float],
+    travel: Mapping[str, tuple[float, float]],
+) -> bool:
     """Whether a tick's goals press the arm against something: a body joint sent a goal further
     from where it reads than `TOL_DEG`, the shortfall the arm already allows a body joint. The
     controller is P-only, so a loaded joint held still settles short of the goal a policy keeps
@@ -231,12 +235,22 @@ def pressing(goals: Mapping[str, float], joints: Mapping[str, float]) -> bool:
     further off is a servo pushing and getting nowhere, which is what a `pick` stalls on
     (`Segment.stalls_at`). The gripper is left out: squeezing what it holds is what a grasp is,
     and LeRobot caps its torque and current, where the body joints have no cap
-    (`upstream_api.SO_BODY_HAS_NO_TORQUE_CAP`)."""
+    (`upstream_api.SO_BODY_HAS_NO_TORQUE_CAP`).
+
+    Each goal is judged as it is sent, clipped into its joint's `travel` as `_send` clips it. A
+    joint at the edge of its travel whose goal lies past the edge is sent the edge, where it
+    already is, and pushes on nothing: that is the clip guard's to end (`clipped_too_long`), and
+    judged before the clip it was taken for a press and ended a tick before that guard did."""
     return any(
-        abs(float(goal) - joints[joint]) > TOL_DEG
+        abs(_sent_as(goal, travel.get(joint)) - joints[joint]) > TOL_DEG
         for joint, goal in goals.items()
         if joint != "gripper" and joint in joints
     )
+
+
+def _sent_as(goal: float, span: tuple[float, float] | None) -> float:
+    """`goal` clipped into `span`, as `LeRobotReal._clip` sends it, with nothing counted."""
+    return float(goal) if span is None else min(float(span[1]), max(float(span[0]), float(goal)))
 
 
 @dataclass(frozen=True)
@@ -988,7 +1002,9 @@ class PolicyLoop:
         if segment.stalls_at(period_s):
             # `manipulate` stalls on the arm not moving; a `pick` only on that pressed
             # against something, every tick of the second (`pressing`)
-            pushed = None if segment.ends_on_stall else pressing(goals, arm._joints)
+            pushed = (
+                None if segment.ends_on_stall else pressing(goals, arm._joints, arm.joint_range_deg)
+            )
             return await self._stall(arm, run, now, pressing=pushed)
         return None
 

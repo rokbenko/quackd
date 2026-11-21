@@ -1608,6 +1608,136 @@ def test_a_config_load_leaves_no_temporary_file_and_touches_no_other(
     assert tempfile.tempdir == str(shared), "the shared directory was not given back"
 
 
+DEADLINE_S = 10.0
+"""How long a thread in the config load tests below waits on another's event before the test
+fails: a bound on a wait for something that happens at once, never what a test measures."""
+
+
+def _config_stand_in(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, from_pretrained: Any) -> Path:
+    """LeRobot's config class with `from_pretrained` as given, and a shared temporary directory
+    of the test's own as `tempfile`'s, which is returned."""
+    shared = tmp_path / "temp"
+    shared.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(shared))
+    stand_in = type("PreTrainedConfig", (), {"from_pretrained": classmethod(from_pretrained)})
+    policies = types.ModuleType("lerobot.configs.policies")
+    policies.PreTrainedConfig = stand_in  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "lerobot", types.ModuleType("lerobot"))
+    monkeypatch.setitem(sys.modules, "lerobot.configs", types.ModuleType("lerobot.configs"))
+    monkeypatch.setitem(sys.modules, "lerobot.configs.policies", policies)
+    return shared
+
+
+@pytest.mark.parametrize("fails", [False, True], ids=["loads", "fails"])
+def test_a_config_load_whose_file_cannot_be_removed_says_so_and_raises_only_its_own_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, fails: bool
+) -> None:
+    """A file the load made that cannot be removed, as a file still open on Windows cannot, used
+    to raise out of the clean-up: a config that loaded was refused, so the policy server would
+    not start, and a config that failed was refused in the clean-up's words instead of its own.
+    The load's result, or its own error, comes back, and what was left is said once in the log,
+    with its path."""
+    made: list[str] = []
+
+    def from_pretrained(cls: Any, where: str) -> dict[str, str]:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+            made.append(f.name)
+        if fails:
+            raise ValueError("a config this test refuses")
+        return {"read": where}
+
+    _config_stand_in(monkeypatch, tmp_path, from_pretrained)
+    remove = os.remove
+
+    def held_open(path: Any) -> None:
+        if str(path) in made:
+            raise PermissionError(13, "the file is held open", str(path))
+        remove(path)
+
+    monkeypatch.setattr(os, "remove", held_open)
+    with caplog.at_level("WARNING", logger="roboglot.policy"):
+        if fails:
+            with pytest.raises(ValueError, match="refuses"):
+                P.load_config("the checkpoint")
+        else:
+            assert P.load_config("the checkpoint") == {"read": "the checkpoint"}
+    said = [r.getMessage() for r in caplog.records if r.name == "roboglot.policy"]
+    assert len(said) == 1 and made[0] in said[0] and "held open" in said[0], said
+
+
+def test_a_file_another_thread_makes_while_a_config_loads_is_left_alone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`tempfile`'s directory is the whole process's, so a file another thread makes through it
+    while a config loads lands in the load's directory, and was removed with it. Only what the
+    load's own thread made is removed now, and the other thread's file stays where it was made."""
+    inside, made_theirs = threading.Event(), threading.Event()
+    ours: list[str] = []
+    theirs: list[str] = []
+
+    def from_pretrained(cls: Any, where: str) -> dict[str, str]:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+            ours.append(f.name)
+        inside.set()
+        assert made_theirs.wait(DEADLINE_S), "the other thread made no file"
+        return {"read": where}
+
+    def another_thread() -> None:
+        assert inside.wait(DEADLINE_S), "the load never began"
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".log") as f:
+            theirs.append(f.name)
+        made_theirs.set()
+
+    _config_stand_in(monkeypatch, tmp_path, from_pretrained)
+    other = threading.Thread(target=another_thread)
+    other.start()
+    try:
+        assert P.load_config("the checkpoint") == {"read": "the checkpoint"}
+    finally:
+        made_theirs.set()
+        other.join(DEADLINE_S)
+    assert ours and not Path(ours[0]).exists(), ours
+    assert theirs and Path(theirs[0]).exists(), f"another thread's file was removed: {theirs}"
+
+
+def test_two_config_loads_at_once_each_get_a_directory_of_their_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`tempfile`'s directory is set for a load and given back after it, and two loads at once
+    in one process would give each other's back in the wrong order, the second load's file then
+    made where the first's was. The lock keeps them apart: each load writes in a directory of its
+    own, each file goes, and the shared directory is `tempfile`'s again after both."""
+    made: list[Path] = []
+    first_inside, release = threading.Event(), threading.Event()
+
+    def from_pretrained(cls: Any, where: str) -> dict[str, str]:
+        with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+            made.append(Path(f.name))
+        if where == "first":
+            first_inside.set()
+            assert release.wait(DEADLINE_S), "the test never let the first load go"
+        return {"read": where}
+
+    shared = _config_stand_in(monkeypatch, tmp_path, from_pretrained)
+    answers: dict[str, Any] = {}
+
+    def load(where: str) -> None:
+        answers[where] = P.load_config(where)
+
+    one = threading.Thread(target=load, args=("first",))
+    one.start()
+    assert first_inside.wait(DEADLINE_S), "the first load never began"
+    two = threading.Thread(target=load, args=("second",))
+    two.start()
+    release.set()
+    one.join(DEADLINE_S)
+    two.join(DEADLINE_S)
+    assert answers == {"first": {"read": "first"}, "second": {"read": "second"}}
+    assert len({path.parent for path in made}) == 2, f"the two loads shared a directory: {made}"
+    assert not any(path.exists() for path in made), made
+    assert list(shared.iterdir()) == [] and tempfile.tempdir == str(shared)
+
+
 class _TrainConfigOfAnotherCommit(FakeHub):
     """The stand-in Hub with a checkpoint's `train_config.json` landing in another directory
     than the rest of it, as a tag moved between two reads leaves it."""

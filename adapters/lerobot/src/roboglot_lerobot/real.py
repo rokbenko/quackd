@@ -2111,14 +2111,21 @@ class LeRobotReal:
         seconds (routine on Windows) would have refused the arm's own disconnect and left
         torque on. A camera that hangs here is simply abandoned, and says so. `abandon` is
         called as it is, and what it gives back runs on a worker once the abandoned call has
-        come back (`_abandon_camera`)."""
+        come back (`_abandon_camera`).
+
+        A call whose awaiting task is cancelled, by a press or an abort as the arm connects, is
+        left running in its worker just as one that ran out of time is, and takes the same road:
+        it was left in `_cameras`, and the close that came after disconnected the same camera
+        from a second thread while its open still ran. The cancel goes on up as it came."""
         call = _THREADS.submit(fn, *args)
         try:
             return await asyncio.wait_for(asyncio.wrap_future(call), timeout_s)
-        except TimeoutError:
+        except (TimeoutError, asyncio.CancelledError) as cut_short:
             if abandon is not None:
                 then = abandon()
                 call.add_done_callback(lambda _came_back: _THREADS.submit(then))
+            if isinstance(cut_short, asyncio.CancelledError):
+                raise
             raise TimeoutError(
                 f"{getattr(fn, '__name__', 'the call')}() did not return within {timeout_s:g} s"
             ) from None
