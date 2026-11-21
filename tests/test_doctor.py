@@ -1598,7 +1598,9 @@ def test_an_error_after_the_connect_still_says_what_the_close_did_with_the_torqu
     only the path that succeeds reaches. The person at the arm was told neither that it was
     still holding itself up nor how to let it down. This catches it by failing the probe after
     the connect at each of two points and reading the report for the close's own words, and
-    for a line saying no such question was asked."""
+    for a line saying no such question was asked. The hook is the command's own, set as it is
+    over a real arm with no rest pose at a terminal: the one body it asks about."""
+    from roboglot import cli
     from roboglot.transport.base import TransportError
 
     arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
@@ -1610,27 +1612,138 @@ def test_an_error_after_the_connect_still_says_what_the_close_did_with_the_torqu
     if fails == "health":
         monkeypatch.setattr(adapter, "health", fail)
     monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
-    asked: list[Any] = []
-
-    async def before_close(body: Any) -> None:
-        asked.append(body)
-
+    hands = cli._DoctorHands("arm", prompting=True, unposed=True)
     report = doctor.collect(
         "lerobot:mock",
         address="mock://arm",
         rest_pose=dict(AWAY_FROM_REST),
         park=fail if fails == "fold" else None,
-        before_close=before_close,
+        before_close=hands.before_close,
     )
     assert report.robot is not None and report.robot.probe is not None
     probe = report.robot.probe
     assert probe.error is not None and "servo 3 did not answer a read" in probe.error
     note = arm.close_note
     assert note and arm.torque is True, "control: the close kept torque on and said so"
-    assert asked == [], "the question belongs to the path that succeeds, which was not reached"
     assert probe.advisories[0] == note, probe.advisories
     assert probe.advisories[1:] == [doctor.NO_DROP_QUESTION], probe.advisories
     assert " ".join(note.split()) in " ".join(_rendered(report).split())
+    assert report.ok is False
+
+
+@pytest.mark.parametrize(
+    "hook",
+    ["an arm with a rest pose", "no terminal to ask at", "a hook of the library's own"],
+)
+def test_a_body_doctor_would_never_have_asked_about_is_not_told_it_was_not_asked(
+    monkeypatch: pytest.MonkeyPatch, hook: str
+) -> None:
+    """The line saying no question was asked was added whenever a `before_close` hook was given
+    and not reached, and the command always gives one at a terminal, though its hook asks only
+    over an arm handed to people whose close keeps its torque, at a terminal. So an arm with a
+    rest pose, or one probed with no terminal, was told about a question it would never have
+    been asked. This catches it with the command's own hook set for each, and a plain hook over
+    an arm with a rest pose: the close's note is said, and nothing about a question."""
+    from roboglot import cli
+    from roboglot.transport.base import TransportError
+
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    adapter = LeRobotAdapter(arm)
+
+    async def fail() -> Any:
+        raise TransportError("servo 3 did not answer a read")
+
+    async def plain(_body: Any) -> None:
+        return None
+
+    monkeypatch.setattr(adapter, "health", fail)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    before_close = {
+        "an arm with a rest pose": cli._DoctorHands("arm", prompting=True, unposed=False),
+        "no terminal to ask at": cli._DoctorHands("arm", prompting=False, unposed=True),
+    }.get(hook)
+    report = doctor.collect(
+        "lerobot:mock",
+        address="mock://arm",
+        rest_pose=dict(AWAY_FROM_REST),
+        before_close=before_close.before_close if before_close is not None else plain,
+    )
+    assert report.robot is not None and report.robot.probe is not None
+    assert arm.close_note, "control: the close wrote its note"
+    assert report.robot.probe.advisories == [arm.close_note], report.robot.probe.advisories
+
+
+def test_a_close_that_failed_after_the_question_was_asked_is_not_said_to_have_skipped_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The question is asked just before the close. A close that then fails ends the probe on
+    its exception path too, and the report must not say that no question was asked when it was.
+    This catches it with the command's own hook over the one body it asks about, and a
+    disconnect that fails once and then closes the arm: the note is said, the line is not."""
+    from roboglot import cli
+    from roboglot.adapters.base import RestResult
+    from roboglot.transport.base import TransportError
+
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    adapter = LeRobotAdapter(arm)
+    real_disconnect = adapter.disconnect
+    tries: list[int] = []
+    asked: list[Any] = []
+
+    class Recording(cli._DoctorHands):
+        """The command's hook, noting that it was reached."""
+
+        async def before_close(self, adapter: Any) -> None:
+            asked.append(adapter)
+            await super().before_close(adapter)
+
+    async def fails_once() -> None:
+        tries.append(1)
+        if len(tries) == 1:
+            raise TransportError("the bus went away during the close")
+        await real_disconnect()
+
+    async def stays(_body: Any) -> RestResult:
+        return RestResult.none()
+
+    monkeypatch.setattr(adapter, "disconnect", fails_once)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    hands = Recording("arm", prompting=True, unposed=True)
+    report = doctor.collect(
+        "lerobot:mock",
+        address="mock://arm",
+        rest_pose=dict(AWAY_FROM_REST),
+        park=stays,
+        before_close=hands.before_close,
+    )
+    assert report.robot is not None and report.robot.probe is not None
+    probe = report.robot.probe
+    assert asked and len(tries) == 2, "control: asked, then a close that failed and one that ran"
+    assert probe.error is not None and "the bus went away" in probe.error
+    assert arm.close_note and probe.advisories == [arm.close_note], probe.advisories
+
+
+def test_an_error_of_any_kind_after_the_connect_still_says_what_the_close_did(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only a TransportError, an OSError or a HostError became a report: any other exception
+    after the connect, a backend's own bug in a camera frame say, left `collect` as a raise, and
+    the close note that says the arm is still holding itself up was shown nowhere. This catches
+    it with a health check that raises a ValueError: a report, the error named by its kind, and
+    the close's note."""
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    adapter = LeRobotAdapter(arm)
+
+    async def fail() -> Any:
+        raise ValueError("a frame with no width")
+
+    monkeypatch.setattr(adapter, "health", fail)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    report = doctor.collect("lerobot:mock", address="mock://arm", rest_pose=dict(AWAY_FROM_REST))
+    assert report.robot is not None and report.robot.probe is not None
+    probe = report.robot.probe
+    assert probe.error == "lerobot:mock at mock://arm: ValueError: a frame with no width"
+    assert arm.close_note and arm.close_note in probe.advisories, probe.advisories
     assert report.ok is False
 
 
@@ -1675,6 +1788,68 @@ def test_run_doctor_warns_counts_down_and_arms_the_kill_switch_as_the_command_do
     assert "switch out" in events, events
     assert "rest" in arm.sequence, "the fold the countdown was for"
     assert ok is True
+
+
+def test_run_doctor_leaves_its_callers_ctrl_c_as_it_found_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The kill switch, taken down, leaves `safety.AfterTheClose` on Ctrl-C for the rest of the
+    process, which is right for the command, whose process ends next. Through `run_doctor` it
+    stayed there for the library's caller: a press swallowed for seconds, then the process ended
+    under it with `os._exit`. This catches it by reading the handler back after a run that
+    raised, and after one that went through."""
+    import signal
+
+    from roboglot import cli
+
+    async def hands_away() -> None:
+        return None
+
+    monkeypatch.setattr(cli, "_hands_away", hands_away)
+    before = signal.getsignal(signal.SIGINT)
+    arm = LeRobotMock(rest_pose=dict(AWAY_FROM_REST))
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(arm)
+    )
+    doctor.run_doctor(Console(file=io.StringIO(), width=200), "lerobot:mock", address="mock://arm")
+    assert signal.getsignal(signal.SIGINT) is before
+
+    def raises(*_a: Any, **_k: Any) -> Any:
+        raise RuntimeError("a library's own failure")
+
+    real_collect = doctor.collect
+
+    def collect_then_raise(*a: Any, **k: Any) -> Any:
+        real_collect(*a, **k)
+        raises()
+
+    monkeypatch.setattr(doctor, "collect", collect_then_raise)
+    with pytest.raises(RuntimeError, match="a library's own failure"):
+        doctor.run_doctor(
+            Console(file=io.StringIO(), width=200), "lerobot:mock", address="mock://arm"
+        )
+    assert signal.getsignal(signal.SIGINT) is before
+
+
+def test_run_doctor_asks_the_commands_question_before_it_lets_go(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The command asks, over a real arm whose close will keep its torque, whether to drop it
+    into the person's hands instead (`_DoctorHands.before_close`), and `run_doctor` passed no
+    such hook. This catches it by noting each time the command's hook is reached."""
+    from roboglot import cli
+
+    reached: list[Any] = []
+
+    async def noted(self: Any, adapter: Any) -> None:
+        reached.append(adapter)
+
+    monkeypatch.setattr(cli._DoctorHands, "before_close", noted)
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(LeRobotMock())
+    )
+    doctor.run_doctor(Console(file=io.StringIO(), width=200), "lerobot:mock", address="mock://arm")
+    assert len(reached) == 1, reached
 
 
 class _ConnectedOnRetry(LeRobotMock):
@@ -1886,6 +2061,96 @@ def test_doctor_shows_and_serialises_no_password_from_an_address_or_a_camera_url
     assert _row(ok, "  url").value == "rtsp://admin:***@192.168.1.20/stream1"
     assert failed.robot is not None and failed.robot.probe is not None
     assert failed.robot.probe.error == f"lerobot:mock at {shown}: no answer from {shown}"
+
+
+@pytest.mark.parametrize(
+    ("address", "camera"),
+    [
+        pytest.param(
+            f"ws://roboglot:{PASSWORD}@[::1]",
+            f"rtsp://admin:{PASSWORD}@[fe80::1]",
+            id="an IPv6 host with nothing after its bracket",
+        ),
+        pytest.param(
+            f"ws://roboglot:ab***{PASSWORD}@robot.local:9090",
+            "opencv://0",
+            id="a password holding three stars",
+        ),
+        pytest.param(
+            f"ws://roboglot:***@robot.local:9090/?token={PASSWORD}",
+            "opencv://0",
+            id="a token beside a password already written as stars",
+        ),
+        pytest.param(
+            f"ws://roboglot:{PASSWORD}'x y@robot.local:9090",
+            "opencv://0",
+            id="a password holding a quote and a space",
+        ),
+    ],
+)
+def test_every_form_of_address_doctor_shows_goes_through_the_one_rule_for_credentials(
+    monkeypatch: pytest.MonkeyPatch, address: str, camera: str
+) -> None:
+    """doctor ran the address and the camera URLs through its scanner for URLs in a sentence,
+    which is weaker than `redacted_url`, the one rule Roboglot has: it took an IPv6 host's
+    closing bracket for punctuation and gave the address back as typed, skipped a URL that
+    already held `***`, and stopped at a quote or a space. This catches it with each of those
+    forms on the progress line, the screen and `--json`, through a probe that answers and one
+    whose transport error quotes the address, and checks `redacted_url` hides each first."""
+    from roboglot.command import redacted_url
+    from roboglot.transport.base import TransportError
+
+    assert PASSWORD not in redacted_url(address) and PASSWORD not in redacted_url(camera)
+    progress: list[str] = []
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter", lambda *_a, **_k: LeRobotAdapter(LeRobotMock())
+    )
+    ok = doctor.collect(
+        "lerobot:mock", address=address, camera_url=[camera], progress=progress.append
+    )
+    adapter = LeRobotAdapter(LeRobotMock())
+
+    async def health() -> Any:
+        raise TransportError(f"no answer from [{address}]")
+
+    monkeypatch.setattr(adapter, "health", health)
+    monkeypatch.setattr("roboglot.adapters.factory.make_adapter", lambda *_a, **_k: adapter)
+    failed = doctor.collect("lerobot:mock", address=address, camera_url=[camera])
+    places = {
+        "progress": "\n".join(progress),
+        "screen": _rendered(ok) + _rendered(failed),
+        "--json": json.dumps(ok.to_dict()) + json.dumps(failed.to_dict()),
+    }
+    leaked = [where for where, text in places.items() if PASSWORD in text]
+    assert not leaked, f"the password reached {leaked}"
+    assert _probe_of(ok).address == redacted_url(address)
+
+
+def test_a_note_or_a_warning_that_quotes_the_address_shows_no_password(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The advisories are the body's own sentences, a retried connect's among them, and a body
+    can write its address into one, or another URL the probe was never given. This catches it
+    with a connect retried in words that quote the address, an IPv6 address in brackets of the
+    sentence's own, and one whose password holds three stars: each advisory keeps its words and
+    its punctuation, and each password is replaced."""
+    address = f"ws://roboglot:{PASSWORD}@robot.local:9090"
+    said = [
+        f"the first connect to {address} timed out, and connect ran again",
+        f"the bridge named its camera [rtsp://cam:{PASSWORD}@[fe80::2]].",
+        f"and a relay at ws://relay:ab***{PASSWORD}@relay.local, which answered",
+    ]
+    monkeypatch.setattr(
+        "roboglot.adapters.factory.make_adapter",
+        lambda *_a, **_k: LeRobotAdapter(_ConnectedOnRetry(said, rest_pose=dict(REST))),
+    )
+    report = doctor.collect("lerobot:mock", address=address, rest_pose=dict(REST))
+    assert _probe_of(report).advisories[:3] == [
+        "the first connect to ws://roboglot:***@robot.local:9090 timed out, and connect ran again",
+        "the bridge named its camera [rtsp://cam:***@[fe80::2]].",
+        "and a relay at ws://relay:***@relay.local, which answered",
+    ]
+    assert PASSWORD not in json.dumps(report.to_dict())
 
 
 def test_the_assumptions_table_folds_a_long_what_rather_than_cutting_it() -> None:

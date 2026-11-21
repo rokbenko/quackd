@@ -177,6 +177,122 @@ def test_a_private_file_the_filesystem_will_not_make_owner_only_is_said_on_stder
     assert capsys.readouterr().err == "", "a file that holds no token is not asked about"
 
 
+def test_a_write_that_fails_leaves_no_file_of_its_own_behind(tmp_path: Path) -> None:
+    """A write whose bytes could not be made, or written, left its temporary file where it was,
+    and with a name of its own no later write would ever overwrite it. This catches it with a
+    payload JSON cannot carry: the error is the caller's, and nothing is left beside the file."""
+    import roboglot.registry as registry
+
+    with pytest.raises(TypeError):
+        registry.write_json(tmp_path / "robots.json", {"robots": {"a": object()}}, private=True)
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("private", [True, False])
+def test_each_temporary_file_is_created_exclusively_and_owner_only_when_private(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, private: bool
+) -> None:
+    """The mode a private file takes is the one it is created with, before a byte of the token
+    is in it, and the create is exclusive, so a file or a link already at that name is never
+    written through. Windows keeps no such mode on disk to read back, so this reads what the
+    create asked for, on every platform: `O_EXCL`, never `O_TRUNC`, and 0o600 for a private
+    file, where an ordinary one asks for what `Path.write_text` asked for, 0o666 under the
+    umask."""
+    import os
+
+    import roboglot.registry as registry
+
+    asked: list[tuple[int, int]] = []
+    real_open = os.open
+
+    def recorded(path: Any, flags: int, mode: int = 0o777, **kwargs: Any) -> int:
+        if str(path).endswith(".tmp"):
+            asked.append((flags, mode))
+        return real_open(path, flags, mode, **kwargs)
+
+    monkeypatch.setattr(os, "open", recorded)
+    registry.write_json(tmp_path / "robots.json", {"robots": {}}, private=private)
+    assert len(asked) == 1, asked
+    flags, mode = asked[0]
+    assert flags & os.O_CREAT and flags & os.O_EXCL and not flags & os.O_TRUNC, flags
+    assert mode == (0o600 if private else 0o666), oct(mode)
+
+
+_PAUSED_WRITER = """
+import os, pathlib, sys, time
+from roboglot import registry
+path, written, go = (pathlib.Path(a) for a in sys.argv[1:4])
+how = sys.argv[4]
+real_replace = os.replace
+def at_the_rename(src, dst):
+    part = written.with_name(written.name + ".part")
+    part.write_text(str(src), encoding="utf-8")
+    real_replace(part, written)
+    if how == "dies":
+        os._exit(9)
+    deadline = time.monotonic() + 60
+    while not go.exists():
+        if time.monotonic() > deadline:
+            os._exit(3)
+        time.sleep(0.02)
+    real_replace(src, dst)
+os.replace = at_the_rename
+token = "the-" + how + "-writers-token"
+registry.write_json(path, {"robots": {"a": {"token": token}}}, private=True)
+"""
+"""A writer in a process of its own, stopped at its rename: it writes down which temporary file
+it made, then dies there (`dies`), as a kill or a power cut would leave it, or waits until the
+test lets it rename (`waits`), as a writer the machine is slow with does."""
+
+
+def test_a_later_write_removes_a_dead_writers_temporary_file_and_never_a_live_ones(
+    tmp_path: Path,
+) -> None:
+    """Every write has a temporary file of its own, so one killed between its write and its
+    rename left a copy of the tokens no later write cleared, where the one fixed name was
+    overwritten by the next write. A write now removes the ones older than `STALE_TEMP_S`, which
+    only a dead writer's can be. This catches both halves with two processes: one dies at its
+    rename and its file is made older than the bound, the other waits at its rename with a file
+    just written. A write from this process removes the first and leaves the second, which then
+    renames whole."""
+    import os
+    import subprocess
+    import time
+
+    import roboglot.registry as registry
+
+    path = tmp_path / "robots.json"
+
+    def writer(how: str) -> tuple[subprocess.Popen[bytes], Path, Path]:
+        written, go = tmp_path / f"{how}.written", tmp_path / f"{how}.go"
+        argv = [sys.executable, "-X", "utf8", "-c", _PAUSED_WRITER, str(path), str(written)]
+        return subprocess.Popen([*argv, str(go), how]), written, go
+
+    dead, dead_said, _ = writer("dies")
+    assert dead.wait(120) == 9, "control: the first writer died at its rename"
+    dead_file = Path(dead_said.read_text(encoding="utf-8"))
+    assert "the-dies-writers-token" in dead_file.read_text(encoding="utf-8")
+    old = time.time() - registry.STALE_TEMP_S - 1
+    os.utime(dead_file, (old, old))
+
+    live, live_said, live_go = writer("waits")
+    try:
+        deadline = time.monotonic() + 120
+        while not live_said.exists():
+            assert live.poll() is None, "the second writer ended before its rename"
+            assert time.monotonic() < deadline, "the second writer never reached its rename"
+            time.sleep(0.02)
+        live_file = Path(live_said.read_text(encoding="utf-8"))
+        registry.write_json(path, {"robots": {}}, private=True)
+        assert not dead_file.exists(), "the dead writer's copy of the tokens is still there"
+        assert live_file.exists(), "a live writer's file was removed under it"
+    finally:
+        live_go.write_text("go", encoding="utf-8")
+    assert live.wait(120) == 0, "the second writer's rename failed"
+    assert "the-waits-writers-token" in path.read_text(encoding="utf-8")
+    assert not list(tmp_path.glob("robots.json.*.tmp"))
+
+
 def test_the_directory_is_the_flag_then_the_env_then_the_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1144,6 +1260,36 @@ async def test_a_probe_whose_connect_failed_answers_whatever_the_close_after_it_
     assert result.reachable is False
     first = "the robot refused the connection" if connect == "raises" else "timed out after 0.05 s"
     assert result.detail == f"{first}, and its close timed out after 0.05 s", result.detail
+
+
+async def test_a_probe_that_answered_says_when_its_close_timed_out() -> None:
+    """The close of a probe that answered was bounded, and its timeout swallowed, so a robot
+    whose close never finished read `ok` with nothing said, where the same close after a failed
+    connect says it timed out. This catches it with a connect and a health that answer at once
+    and a close that waits on an event nobody sets, the answer awaited within a deadline far
+    past the probe's own."""
+    import asyncio
+
+    from roboglot.adapters.base import Health
+
+    class HeldClose:
+        async def connect(self) -> None:
+            return None
+
+        async def health(self) -> Health:
+            return Health(ok=True)
+
+        async def close(self) -> None:
+            await asyncio.Event().wait()
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr("roboglot.adapters.factory.make_adapter", lambda *a, **k: HeldClose())
+    try:
+        result = await asyncio.wait_for(probe_entry(_entry(), timeout_s=0.05), PROBE_TIMEOUT_S * 4)
+    finally:
+        mp.undo()
+    assert result.reachable is True
+    assert result.detail == "ok, and its close timed out after 0.05 s", result.detail
 
 
 def test_probe_all_answers_for_every_robot_at_once() -> None:

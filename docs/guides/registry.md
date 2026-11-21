@@ -527,7 +527,9 @@ exfat with its default mask, or some network mounts, the file is written all the
 command says on stderr that it is readable by more than its owner. On Windows a file takes the
 permissions of the folder it sits in. Every write goes to a temporary file of its own beside the
 file and is renamed over it, so two commands writing at once each leave a whole file, and the
-later one is what the file holds.
+later one is what the file holds. A command killed between its write and its rename leaves its
+temporary file, `robots.json.<16 hexadecimal digits>.tmp`, and the first write a minute or more
+after that removes it.
 
 ```jsonc
 {

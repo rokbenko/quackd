@@ -84,6 +84,86 @@ def test_a_name_with_two_addresses_is_asked_at_both_at_once(
     assert reached.closed is False
 
 
+def test_an_address_that_connects_after_another_has_its_socket_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every address is asked at once, so a second can connect after the first was taken, and
+    its socket was then nobody's: left open, one per probe, for the life of the process. This
+    catches it with a second address whose connect the test lets through only once the first
+    has been returned: its socket is closed as it connects."""
+    ipv6 = (doctor.socket.AF_INET6, doctor.socket.SOCK_STREAM, 6, "", ("::1", 8000, 0, 0))
+    ipv4 = (doctor.socket.AF_INET, doctor.socket.SOCK_STREAM, 6, "", ("127.0.0.1", 8000))
+    late_may_connect, late_closed = threading.Event(), threading.Event()
+
+    class Socket:
+        def __init__(self, on_close: threading.Event | None = None) -> None:
+            self.on_close = on_close
+
+        def close(self) -> None:
+            if self.on_close is not None:
+                self.on_close.set()
+
+    first = Socket()
+
+    def connect_one(info: tuple[object, ...], timeout: float | None) -> object:
+        if info is ipv6:
+            return first
+        assert late_may_connect.wait(20), "the first address was never returned"
+        return Socket(on_close=late_closed)
+
+    monkeypatch.setattr(doctor, "_addresses", lambda host, port: [ipv6, ipv4])
+    monkeypatch.setattr(doctor, "_connect_one", connect_one)
+    try:
+        assert doctor._connection_to(("localhost", 8000), 1.5) is first
+    finally:
+        late_may_connect.set()
+    assert late_closed.wait(20), "the socket that connected second was left open"
+
+
+def test_ollamas_placement_probe_ends_by_the_deadline_the_other_probes_keep(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ollama's `/api/ps` is asked once its `/v1/models` has answered, and it was given a
+    deadline of its own, so an Ollama that answered and then held `/api/ps` kept doctor two
+    deadlines under titles that name a 1.5 s timeout. This catches it on a clock the test moves:
+    Ollama's `/v1/models` answers five seconds in, the other servers at once, and once the
+    placement probe is waiting, on an event the test sets at the end, each reading of the clock
+    moves it half a second. Every probe is done or given up on within one `PROBES_DEADLINE_S`."""
+    monkeypatch.delenv("ROBOGLOT_BASE_URL", raising=False)
+    now = [0.0]
+    readings: list[float] = []
+    placing = threading.Event()
+
+    def clock() -> float:
+        if placing.is_set():
+            now[0] += 0.5
+        readings.append(now[0])
+        return now[0]
+
+    def answers(url: str, timeout_s: float = 1.5) -> tuple[str, str]:
+        if url == doctor.PRESETS["ollama"]:
+            now[0] += 5.0
+        return "up", "llama3"
+
+    release = threading.Event()
+
+    def held(root: str, timeout_s: float = 1.5) -> tuple[list[doctor.PlacementRow], str]:
+        placing.set()
+        release.wait(60)
+        return [], "too late to be read"
+
+    monkeypatch.setattr(doctor, "_clock", clock)
+    monkeypatch.setattr(doctor, "_probe_llms", answers)
+    monkeypatch.setattr(doctor, "_probe_placement", held)
+    try:
+        report = doctor.collect()
+    finally:
+        release.set()
+    ollama = next(s for s in report.servers if s.preset == "ollama")
+    assert ollama.placement_note == "GET /api/ps did not finish answering within the probes' 6 s"
+    assert readings[-1] - readings[0] <= doctor.PROBES_DEADLINE_S, readings
+
+
 def test_the_servers_are_asked_before_any_package_is_imported(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

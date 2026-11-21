@@ -118,9 +118,16 @@ def write_json(path: Path, payload: Mapping[str, Any], *, private: bool) -> None
     writer truncate the first's file before it was renamed, and a file or a link planted at that
     name receive the tokens. A filesystem that will not keep the owner-only mode (vfat with its
     default mask, some network mounts) is said on stderr, and the file is written all the same:
-    refusing would leave the robot unregistered and the person no better off."""
+    refusing would leave the robot unregistered and the person no better off.
+
+    A writer killed between its write and its rename leaves its temporary file, tokens and all,
+    and with every write's name its own no later write would ever overwrite it, as the one fixed
+    name used to be. So each write first removes the temporary files beside `path` that are older
+    than `STALE_TEMP_S`, which only a dead writer's can be, and leaves a younger one, which may be
+    a live writer's about to be renamed."""
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{secrets.token_hex(8)}.tmp")
+    _sweep_stale_temporaries(path)
+    tmp = path.with_name(f"{path.name}.{secrets.token_hex(_TEMP_HEX_BYTES)}.tmp")
     flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(tmp, flags, 0o600 if private else 0o666)
     try:
@@ -138,16 +145,58 @@ def write_json(path: Path, payload: Mapping[str, Any], *, private: bool) -> None
         # this write's own file, never another writer's
         tmp.unlink(missing_ok=True)
         raise RegistryError(f"could not replace {path}: another program has it open") from e
+    except FileNotFoundError as e:
+        # only a write that took longer than `STALE_TEMP_S` between its create and its rename,
+        # whose file another write then removed as a dead writer's: nothing half-written is
+        # published, and the command says its change was not written
+        raise RegistryError(
+            f"could not replace {path}: its temporary file was removed before it was renamed"
+        ) from e
     except BaseException:
         # a write that failed leaves no file of its own behind, and the error is the caller's
         tmp.unlink(missing_ok=True)
         raise
 
 
+STALE_TEMP_S = 60.0
+"""How old a temporary file beside a registry file must be before a write takes it for a dead
+writer's and removes it. A live write holds its file only for the time it takes to write a few
+kilobytes and rename them, which is far under a second on any disk; a minute is past that even
+for a network mount that stalls, and a write slower than that ends with a `RegistryError`
+rather than publish anything. A dead writer's copy of the tokens lasts until the first write
+after this, where the one fixed name lasted until the next write."""
+
+_TEMP_HEX_BYTES = 8
+"""The random part of a temporary file's name, in bytes (16 hexadecimal digits)."""
+
+
+def _sweep_stale_temporaries(path: Path) -> None:
+    """Remove the temporary files `write_json` names for `path` that are older than
+    `STALE_TEMP_S`. One that cannot be removed is said on stderr, and the write goes on."""
+    import time
+
+    mine = re.compile(rf"{re.escape(path.name)}\.[0-9a-f]{{{2 * _TEMP_HEX_BYTES}}}\.tmp\Z")
+    now = time.time()
+    for left in path.parent.iterdir():
+        if not mine.match(left.name):
+            continue
+        try:
+            if now - left.stat().st_mtime > STALE_TEMP_S:
+                left.unlink()
+        except FileNotFoundError:
+            continue  # another write removed it first, or its writer renamed it
+        except OSError as e:
+            _say_on_stderr(f"warning: could not remove {left}, a write that did not finish: {e}")
+
+
 def _not_owner_only(fd: int) -> str | None:
     """Why the file open on `fd` is not readable by its owner alone, or None when it is. None on
-    Windows, where a file has no such mode (`write_json`)."""
+    Windows, where a file has no such mode (`write_json`). A file created owner-only is not
+    asked to be made so again, so a filesystem that creates files 0600 and refuses a chmod is
+    not reported as one that leaves them open."""
     if sys.platform == "win32":
+        return None
+    if os.fstat(fd).st_mode & 0o077 == 0:
         return None
     try:
         os.fchmod(fd, 0o600)
@@ -1278,7 +1327,12 @@ async def probe_entry(
         # line that says it answered. A probe reads and lets go: it never drives the arm to
         # its rest pose, so an arm away from that pose keeps torque and is named.
         with contextlib.suppress(Exception):
-            await asyncio.wait_for(adapter.close(), timeout=timeout_s)
+            # a close that ran out reads as it does after a failed connect: it may still hold
+            # its peer, and `ok` alone said nothing of it
+            try:
+                await asyncio.wait_for(adapter.close(), timeout=timeout_s)
+            except TimeoutError:
+                detail = f"{detail}, and its close timed out after {timeout_s:g} s"
         closed = True
         result = ProbeResult(bool(health.ok), detail, elapsed())
     except TimeoutError:

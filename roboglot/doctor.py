@@ -155,7 +155,26 @@ NO_DROP_QUESTION = (
     "hands: the line before this one is what its close did with the torque"
 )
 """Said after the close note on a probe that failed after the connect, where the CLI's one
-question whether to drop the arm (`before_close`) is never reached."""
+question whether to drop the arm (`before_close`) is never reached, and only over a body that
+question would have been put to (`_would_have_asked`)."""
+
+
+def _would_have_asked(before_close: Callable[[Any], Awaitable[None]] | None, body: Any) -> bool:
+    """Whether `before_close` would have asked about dropping `body`, had the probe reached it.
+
+    The CLI's hook (`cli._DoctorHands.before_close`) asks only over a body handed to people whose
+    close keeps its torque (`unposed`), at a terminal (`prompting`), and not after a press of the
+    kill switch, so a wheeled base, an arm with a rest pose, or a run under `--json` is never
+    asked, and is not told it was not. A hook that says none of that about itself is taken to
+    ask over a body handed to people that has no rest pose to fold to."""
+    if before_close is None or not getattr(body, "supports_hand_off", False):
+        return False
+    owner = getattr(before_close, "__self__", None)
+    prompting, unposed = getattr(owner, "prompting", None), getattr(owner, "unposed", None)
+    if isinstance(prompting, bool) and isinstance(unposed, bool):
+        pressed = getattr(owner, "pressed", None)
+        return prompting and unposed and not (callable(pressed) and pressed())
+    return getattr(body, "rest_pose", None) is None
 
 
 _DISTRIBUTION_OF = {
@@ -724,12 +743,12 @@ def _connection_to(
     lock = threading.Lock()
     done = threading.Event()
     won: list[Any] = []
-    failed: list[OSError] = []
+    failed: list[BaseException] = []
 
     def attempt(info: Any) -> None:
         try:
             sock = _connect_one(info, timeout)
-        except OSError as e:
+        except BaseException as e:  # raised below if no address connects, whatever its kind
             with lock:
                 failed.append(e)
                 if len(failed) == len(infos):
@@ -879,9 +898,14 @@ _V = TypeVar("_V")
 
 class _Asking(Generic[_K, _V]):
     """Each of `jobs` on a daemon thread of its own, started at once, so the caller can do
-    something else while they ask, and their answers by `PROBES_DEADLINE_S` from the start."""
+    something else while they ask, and their answers by `PROBES_DEADLINE_S` from the start, or
+    by the `deadline` of the probes asked before them: Ollama's `/api/ps` is asked once its
+    `/v1/models` has answered, and on the same deadline, so every probe doctor makes ends by
+    one."""
 
-    def __init__(self, jobs: Mapping[_K, Callable[[], _V]]) -> None:
+    def __init__(
+        self, jobs: Mapping[_K, Callable[[], _V]], *, deadline: float | None = None
+    ) -> None:
         self._answers: dict[_K, _V] = {}
         self._raised: list[BaseException] = []
         self._threads = {
@@ -890,7 +914,7 @@ class _Asking(Generic[_K, _V]):
             )
             for key, job in jobs.items()
         }
-        self._deadline = _clock() + PROBES_DEADLINE_S
+        self.deadline = _clock() + PROBES_DEADLINE_S if deadline is None else deadline
         for thread in self._threads.values():
             thread.start()
 
@@ -904,7 +928,7 @@ class _Asking(Generic[_K, _V]):
         """Every job's answer, in the order the jobs were given; one still running at the
         deadline answers `late`. What a job raised is raised here, from the first that did."""
         for thread in self._threads.values():
-            while thread.is_alive() and _clock() < self._deadline:
+            while thread.is_alive() and _clock() < self.deadline:
                 thread.join(0.05)
         if self._raised:
             raise self._raised[0]
@@ -984,43 +1008,76 @@ def _probe_placement(
     return [], "nothing loaded yet: Ollama loads an LLM on its first request"
 
 
-def _urls(camera_url: str | Sequence[str] | None) -> str:
-    """`--camera-url` as written: one address, or several joined by commas."""
-    if camera_url is None or isinstance(camera_url, str):
-        return camera_url or ""
-    return ", ".join(str(url) for url in camera_url)
-
-
 _URL_IN_TEXT = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://[^\s'\"<>]+")
 """A URL inside a sentence, up to the first space, quote or angle bracket. Not up to a comma,
 which a password can hold: a comma that ends a URL stays in its path, which keeps it."""
 
 
-def _hidden(text: str) -> str:
-    """`text` with the credentials in every URL in it replaced as the run's record replaces them
-    (`redacted_url`), because doctor's output is what people paste into issues. A URL that
-    carries none is left exactly as it was written, rather than as `urlunsplit` would rebuild it."""
+def _shown_url(url: str) -> str:
+    """An address or a camera URL, whole, as doctor shows and writes it: `redacted_url`'s, the
+    one rule Roboglot has for credentials, because doctor's output is what people paste into
+    issues. A URL it hides nothing in is left exactly as it was written, rather than as
+    `urlunsplit` would rebuild it."""
+    shown = redacted_url(url)
+    return shown if HIDDEN in shown else url
+
+
+def _url_list(camera_url: str | Sequence[str] | None) -> list[str]:
+    """`--camera-url` as the list of addresses it is."""
+    if camera_url is None:
+        return []
+    return [camera_url] if isinstance(camera_url, str) else [str(url) for url in camera_url]
+
+
+def _shown_urls(camera_url: str | Sequence[str] | None) -> str:
+    """`--camera-url` as written, one address or several joined by commas, each through
+    `_shown_url`: a list, as `--camera-url` given twice arrives, is never printed as a Python
+    list (`url ['opencv://0']`)."""
+    return ", ".join(_shown_url(url) for url in _url_list(camera_url))
+
+
+def _sentence_end(url: str) -> str:
+    """The punctuation that ends a sentence or a clause after a URL in it, which is the
+    sentence's and not the URL's: a secret query value would otherwise take it along when it is
+    replaced. A bracket the URL opened is its own, as an IPv6 host's `]` is."""
+    end = len(url)
+    while end and url[end - 1] in ".,:;)]":
+        closing = url[end - 1]
+        opening = "[" if closing == "]" else "(" if closing == ")" else ""
+        if opening and url[:end].count(opening) >= url[:end].count(closing):
+            break
+        end -= 1
+    return url[end:]
+
+
+def _hidden(text: str, known: Sequence[str] = ()) -> str:
+    """Free text, an error or a note, with no credential from a URL left in it. Each of `known`,
+    the addresses and camera URLs this probe was given or read, is replaced wherever it appears
+    whole by its `_shown_url`, so a password holding a quote or a space goes too; then any other
+    URL in the text goes through `_shown_url` as well."""
+    for url in sorted({u for u in known if u}, key=len, reverse=True):
+        if (shown := _shown_url(url)) != url:
+            text = text.replace(url, shown)
 
     def one(found: re.Match[str]) -> str:
-        # the punctuation that ends a sentence or a clause is the sentence's, not the URL's: a
-        # secret query value would otherwise take it with it when it is replaced
-        url = found.group().rstrip(".,:;)]")
-        tail = found.group()[len(url) :]
-        shown = redacted_url(url)
-        return (shown if HIDDEN in shown and HIDDEN not in url else url) + tail
+        whole = found.group()
+        tail = _sentence_end(whole)
+        url = whole[: len(whole) - len(tail)]
+        return _shown_url(url) + tail
 
     return _URL_IN_TEXT.sub(one, text)
 
 
-def _without_credentials(report: ProbeReport) -> ProbeReport:
+def _without_credentials(report: ProbeReport, known: Sequence[str]) -> ProbeReport:
     """The probe's report with no credential from an address or a camera URL left in it: the
     table's title, every row (a camera's address comes from its backend as it was given), the
-    error, which a transport can write its address into, and the advisories."""
-    report.address = _hidden(report.address)
-    report.error = _hidden(report.error) if report.error is not None else None
+    error, which a transport can write its address into, and the advisories. `known` is every
+    address and camera URL the probe was given or read."""
+    report.address = _shown_url(report.address)
+    report.error = _hidden(report.error, known) if report.error is not None else None
     for row in report.rows:
-        row.value = _hidden(row.value)
-    report.advisories = [_hidden(a) for a in report.advisories]
+        row.value = _hidden(row.value, known)
+    report.advisories = [_hidden(a, known) for a in report.advisories]
     return report
 
 
@@ -1081,6 +1138,11 @@ def probe(
     # to put it down, so an error after the connect has to carry it as the path that succeeds does.
     error_note: str | None = None
     asked = False
+    connected = False
+    would_ask = False
+    # every address and camera URL this probe was given or read, which no line it writes shows
+    # with a credential in it
+    known = [address, map_address or "", *_url_list(camera_url)]
 
     async def go() -> tuple[
         Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
@@ -1094,7 +1156,7 @@ def probe(
     async def probed() -> tuple[
         Any, Any, dict[str, Any] | None, dict[str, Any], RestResult, str | None, list[str]
     ]:
-        nonlocal error_note, asked
+        nonlocal error_note, asked, connected, would_ask
         parsed = parse_robot_spec(spec)
         adapter = make_adapter(
             RobotSpec(parsed.adapter, parsed.backend, name or None, robot_type=robot_type),
@@ -1108,6 +1170,7 @@ def probe(
         if before_connect is not None:
             before_connect(adapter)
         live = await adapter.connect()
+        connected = True
         hosted = isinstance(adapter, HostCameraAdapter)
         # the connect attempts a body had to make again, read here and not after the close:
         # the list belongs to the connect that just happened
@@ -1190,19 +1253,32 @@ def probe(
             return live, health, camera, told, parked, note, retried
         finally:
             if not closed:
+                would_ask = not asked and _would_have_asked(before_close, adapter)
                 await adapter.disconnect()
                 error_note = getattr(transport, "close_note", None)
+
+    def failed(e: BaseException, *, kind: bool) -> ProbeReport:
+        where = f" at {address}" if address else ""
+        said = f"{type(e).__name__}: {e}" if kind else str(e)
+        report = ProbeReport(address=address, ok=False, error=f"{spec}{where}: {said}")
+        if error_note:
+            report.advisories.append(error_note)
+            if would_ask:
+                report.advisories.append(NO_DROP_QUESTION)
+        return _without_credentials(report, known)
 
     try:
         live, health, camera, told, parked, note, retried = asyncio.run(go())
     except (TransportError, OSError, HostError) as e:
-        where = f" at {address}" if address else ""
-        failed = ProbeReport(address=address, ok=False, error=f"{spec}{where}: {e}")
-        if error_note:
-            failed.advisories.append(error_note)
-            if before_close is not None and not asked:
-                failed.advisories.append(NO_DROP_QUESTION)
-        return _without_credentials(failed)
+        return failed(e, kind=False)
+    except Exception as e:
+        # anything else after the connect, a backend's own bug among it, takes the same road:
+        # the body was closed, and its close note is the one place that says what became of its
+        # torque. Named by its kind, since it is no failure of the link. Before the connect it
+        # is raised as it always was.
+        if not connected:
+            raise
+        return failed(e, kind=True)
 
     report = ProbeReport(address=address, ok=True)
     add = report.rows.append
@@ -1283,7 +1359,10 @@ def probe(
             # the configured address when the camera names none of its own: a list of
             # them, as `--camera-url` can be given twice, is written out, never as a
             # Python list (`url ['opencv://0']`)
-            add(ProbeRow("  url", str(cam.get("url") or _urls(camera_url))))
+            url = cam.get("url")
+            if url:
+                known.append(str(url))
+            add(ProbeRow("  url", _shown_url(str(url)) if url else _shown_urls(camera_url)))
             if cam.get("error"):
                 add(ProbeRow("  error", str(cam["error"]), "fail"))
     rest_ok = parked.reached or not parked.recorded
@@ -1383,7 +1462,7 @@ def probe(
     if isinstance(mapd, dict):
         report.rows.append(ProbeRow("mapd", mapd_words(mapd), _mapd_state(mapd)))
     report.ok = bool(health.ok) and camera_ok and rest_ok and not note and mapd_ok
-    return _without_credentials(report)
+    return _without_credentials(report, known)
 
 
 def mapd_words(mapd: dict[str, Any]) -> str:
@@ -1829,12 +1908,15 @@ def collect(
         if preset == "ollama" and state == "up":
             root = _ollama_root(url)
             say(f"asking ollama at {redacted_url(root)} where its LLMs are")
-            # by the deadline the probes above keep, for the reason they keep one
+            # on the deadline the probes above keep, not a second one after it: a server that
+            # answered /v1/models and then held /api/ps kept doctor two deadlines
+            within = f"within the probes' {PROBES_DEADLINE_S:g} s"
             late: tuple[list[PlacementRow], str] = (
                 [],
-                f"GET /api/ps did not finish answering in {PROBES_DEADLINE_S:g} s",
+                f"GET /api/ps did not finish answering {within}",
             )
-            placed = _Asking({root: functools.partial(_ask_placement, root)}).answers(late)
+            jobs = {root: functools.partial(_ask_placement, root)}
+            placed = _Asking(jobs, deadline=asking.deadline).answers(late)
             row.placement, row.placement_note = placed[root]
         report.servers.append(row)
         if board is not None and on_board:
@@ -1869,7 +1951,7 @@ def collect(
             if address:
                 shown = f"{robot_name} ({robot})" if robot_name else robot
                 # the address as the probe's report shows it, with no credential in it
-                say(f"connecting to {shown}" + (f" at {_hidden(address)}" if address else ""))
+                say(f"connecting to {shown}" + (f" at {_shown_url(address)}" if address else ""))
                 # the board's camera joins the body as it would a run's, but only a board that
                 # answered: one that did not has already failed this report with a row of its
                 # own, and asking it again from inside the probe would only say so twice
@@ -2580,7 +2662,6 @@ def run_doctor(
     from roboglot.adapters.factory import needs_rest_pose
     from roboglot.cli import _can_prompt, _deprecated_backends, _doctor_warning, _DoctorHands
     from roboglot.cli import _warn_line as warn_line
-    from roboglot.safety import AfterTheClose
 
     # as the CLI's doctor builds them, for a robot with no rest pose recorded: this function has
     # never taken one
@@ -2603,6 +2684,14 @@ def run_doctor(
             console.print(warn_line(line))
         hands.start(adapter)
 
+    import signal
+
+    # The switch, taken down, leaves `safety.AfterTheClose` on Ctrl-C for the rest of the process,
+    # which is right for the command, whose process ends next, and wrong for a library's caller:
+    # a press swallowed for a while, and then the process ended under it. So the caller gets back
+    # the handler it had, on every way out of here. `AfterTheClose.not_stuck_yet`, which the
+    # command calls before its table, is for that handler, so there is nothing here for it to do.
+    found = signal.getsignal(signal.SIGINT)
     try:
         report = collect(
             robot,
@@ -2619,6 +2708,8 @@ def run_doctor(
         )
     finally:
         hands.finish()
-    AfterTheClose.not_stuck_yet()
+        on_main = threading.current_thread() is threading.main_thread()
+        if found is not None and on_main and signal.getsignal(signal.SIGINT) is not found:
+            signal.signal(signal.SIGINT, found)
     render(console, report)
     return report.ok

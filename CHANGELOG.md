@@ -895,23 +895,28 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the connect.** A health check, a camera frame or the fold that raised ended the probe with one
   fail line built from the error alone, though the arm was closed and its close had written what
   became of the torque: held where it stood away from its rest pose, or let go, and how to put it
-  down. The error now carries that note in the close's own words, and says that doctor asked
-  nothing about dropping the arm into your hands, since that question comes only after a probe
-  that succeeds. A probe that succeeds reads as before.
+  down. An error of a kind other than the link's, a backend's own bug, left doctor with no report
+  at all. The error now carries that note in the close's own words, named by its kind when it is
+  not the link's, and over an arm doctor would have asked whether to drop it into your hands (a
+  real arm with no rest pose, at a terminal) it says that doctor asked nothing, since that
+  question comes only after a probe that succeeds. A probe that succeeds reads as before.
 - **A probe whose connect failed answers even when the close after it never ends.** `roboglot
   robot list --probe` and the page's check bounded a robot's connect, its health and the close
   of a probe that answered by the probe's deadline, and closed a robot whose connect had timed
   out or failed with no deadline at all, so a close waiting on a peer that never answered held
   the command for ever. That close is bounded the same way now, and a close that runs out says
-  so on the robot's line: `timed out after 5 s, and its close timed out after 5 s`.
+  so on the robot's line: `timed out after 5 s, and its close timed out after 5 s`. The close of
+  a probe that answered said nothing when it ran out, and reads `ok, and its close timed out
+  after 5 s` now.
 - **`roboglot doctor` no longer waits for ever on an LLM server that keeps its reply going.** The
   probes of `/v1/models` and of Ollama's `/api/ps` read the whole reply, and the 1.5 s timeout
   bounded each wait for a byte, not the reply, so a server that sent a byte at a time held doctor
   for as long as it sent, and one whose body never ended held it for ever while its reply filled
   memory. Each probe now reads at most 1 MiB, and its reply's body for at most 1.5 s, and says
   `did not finish its /models reply in 1.5 s` or `answered /models with more than 1 MiB`. The
-  probes together are given up on after 6 s, and one still asking then reads `did not finish
-  answering in 6 s`. A server that answers as servers do reads as before.
+  probes together, Ollama's `/api/ps` among them, are given up on 6 s after they start, and one
+  still asking then reads `did not finish answering in 6 s`. A server that answers as servers do
+  reads as before.
 - **`roboglot doctor` waits less on local LLM servers that are not running.** It asked
   `localhost` one address after the other, `::1` and then `127.0.0.1`, with the whole 1.5 s
   timeout each, and a closed loopback port on Windows takes all of it to say so. And it asked only
@@ -923,8 +928,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   does.** Called with an arm and an address, it connected the arm with no warning to support it,
   folded it with no countdown for the hands to come away and no kill switch to stop the fold, and
   never asked whether to drop an arm whose close keeps its torque, since it passed none of the
-  hooks the command passes. It goes through the same ones now, and prints the warning on the
-  console it renders to.
+  hooks the command passes. It goes through the same ones now, prints the warning on the console
+  it renders to, and puts back the Ctrl-C handler its caller had when it returns or raises.
 - **Three tests that failed on CI by timing no longer depend on it.** No behaviour of Roboglot
   changed. `test_a_new_advert_waits_for_the_rate_limit_then_goes_on_the_air` read a sim radio's
   file once, 0.6 s after the radio started, and on a Windows runner found none there. It waits for
@@ -1020,13 +1025,16 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   write received the tokens, and a second command writing at the same moment truncated the
   first's file before it was renamed: a half-written `robots.json` could be published, and the
   first command ended in a traceback after its change was written, or on Windows deleted the
-  other command's file before it was renamed. The owner-only mode was set inside a check that swallowed its failure, so on a
-  filesystem that refuses it (vfat with its default mask, some network mounts) the tokens were
-  written readable by every user with nothing said. Each write now has a temporary file of its
-  own, created exclusively, never through a link, and owner-only from its creation when it holds
-  a token; a command whose rename is refused removes only its own file and ends with one line;
-  and a file the filesystem leaves readable by others is written, with a warning on stderr
-  naming it. A write that meets no other writer gives the same file as before.
+  other command's file before it was renamed. The owner-only mode was set inside a check that
+  swallowed its failure, so on a filesystem that refuses it (vfat with its default mask, some
+  network mounts) the tokens were written readable by every user with nothing said. Each write
+  now has a temporary file of its own, created exclusively, never through a link, and owner-only
+  from its creation when it holds a token; a command whose rename is refused removes only its own
+  file and ends with one line; a write that fails removes its own file; a write removes the
+  temporary files a killed writer left beside the file once they are a minute old, and leaves a
+  younger one, which can be a live writer's; and a file the filesystem leaves readable by others
+  is written, with a warning on stderr naming it. A write that meets no other writer gives the
+  same file as before.
 - **An Open Duck bridge whose named token file is missing, or whose token file is empty, refuses
   to start.** A named file that was missing was no token, silently, and an empty one was no token
   with a warning, so either started a bridge that admitted any client. Both refuse to start now,
