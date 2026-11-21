@@ -61,9 +61,9 @@ file, so none of it was ever machine-verified by anyone.
 | A failed bulk read returns an all-zeros buffer, indistinguishable from every joint at zero. Believing it commands a full-scale move to zero. | Detects it, refuses it, and holds the last verified-good pose. |
 | A controller fault surfaces as a bare `KeyError`, because the C++ swallows it and inserts an empty map. | Catches it and treats it as a hardware fault, not a transient. |
 | No `reset` anywhere in the sim package: no home, no safe pose. | Builds one: upstream's default pose at upstream's own 0.3 rad/s, waist first. |
-| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. |
-| No Python signal handler, and the C `atexit` does not run on `SIGTERM`. | Installs handlers that settle before anything may exit. |
-| `close()` is bound without releasing the GIL and retries torque-off forever on a dead bus, so a stuck shutdown freezes every thread. | Arms a hard-exit timer before calling it. |
+| No watchdog, no timeout, no e-stop. Silence means hold forever. | Its own deadman, which slews to the safe pose and holds. It never goes limp. It watches each part (the body, the neck, each gripper) for the connection whose command that part is executing, and brings only a silent owner's parts to rest. A part nobody owns, holding after a stop or never commanded, it never moves, and on a fallen robot rest is holding where it lies. |
+| No Python signal handler, and the C `atexit` does not run on `SIGTERM`. | Installs handlers that settle before anything may exit, and refuses every command that moves the robot while it settles. A settle that cannot reach the safe pose in two minutes, or whose waist stops short of straight, does not take torque off: it exits with 3, its log ending `the robot is left torqued and holding where it is, and the daemon exits with 3: support it before you power it off`. |
+| `close()` is bound without releasing the GIL and retries torque-off forever on a dead bus, so a stuck shutdown freezes every thread. | Arms a hard exit that needs no GIL before the settle and again before `close()`, so a hung bus cannot keep the process alive. |
 | The constructor busy-waits forever on a silent IMU, with the motors already live. | Runs construction in a thread it is willing to abandon. |
 | `set_motor_kps` raises `NotImplementedError` on hardware. | Never calls it, so no shutdown path depends on softening gains first. |
 | Upstream tells hardware from sim with `"real" in sim.name`. | Dispatches on type. |
@@ -122,7 +122,15 @@ The core verbs come from the registry. These four are the robot's own.
 | `look` | the two joint neck. Which motor is yaw is inferred from the motor names (`NECK_AXES` below) |
 | `move`, `go_to`, `approach_and` | present only when the daemon reports a walk checkpoint staged, which a fresh install has not got |
 
-A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has.
+A `stop` from beside any of these ends it, and the robot holds where it is, as its stop always has,
+the head and the grippers included. A stop the daemon did not answer, or refused, is reported as
+not delivered rather than as a stop, with words that point at the deadman and away from the
+power switch, which on this robot is a fall. Roboglot then stops keeping the robot alive: the
+daemon's deadman trips within half a second and brings what this session was driving to rest,
+the heartbeat fails saying why, and the next command the daemon accepts, or the stop's own late
+answer, starts the keepalive again. The daemon accepts a stop in every state; while it shuts down
+or after its loop has given up, the robot is already being brought to rest, and the stop's note
+says so.
 
 ## The motions, and which ones Roboglot offers
 
@@ -162,8 +170,55 @@ daemon reports is a verb Roboglot will offer, so the daemon reports only what it
 camera that will not open means `observe` never appears.
 
 The daemon also reads the loaded checkpoint's own `command_range` at startup and reports the
-velocity envelope it was really trained on, which is what Roboglot's `limits` narrow to. An
-envelope with nothing left on any axis is treated as no locomotion at all.
+velocity envelope it was really trained on, which is what Roboglot's `limits` narrow to, and it
+holds every walk command to that envelope whoever sends it. An envelope with nothing left on any
+axis is treated as no locomotion at all. Roboglot takes from the handshake only what it can
+repeat safely: a motion it does not offer is left out of `perform`, which offers only the motions
+the daemon loaded, and a robot name, motor count or envelope of the wrong kind refuses the
+connect.
+
+**Who may drive it.** The daemon binds `127.0.0.1` by default and is reached through an ssh
+tunnel. On any other `--host` it refuses to start without a token, unless it is given
+`--allow-no-token`; `--token-file` is the way to give it one. The token crosses the network in
+the clear, because there is no TLS. When a robot reached over an address that is not loopback
+checks no token, Roboglot warns, and `roboglot doctor` shows the warning. The daemon's README
+has the details and the exact messages.
+
+**Each part has its own owner.** The body (a walk, a stand or a motion), the neck and each
+gripper are owned by the connection whose command each is executing, and by nobody while
+holding: after a stop, after a stand or a motion has played to its end, or when never
+commanded. A connection's keepalive keeps alive only its own parts, and when it goes quiet or
+away the deadman brings those parts, and only those, to rest. So a second client's look or grip
+never takes over a first client's walk, and the walk ends with its client. A command that takes
+a part another connection was driving tells that connection. A motion moves the head and the
+hands too, so it takes them with the body, except what its own client holds by a look or a grip,
+which stays held through it (a hand closed on something stays closed, and the answer lists it as
+kept); a look or a grip its client makes during the motion stays that client's when the motion
+ends, as one made outside a motion does. It is refused, with the reason, while another
+connection drives one of them or one is still coming to rest, which a stop ends at once. A stop is honoured from anyone,
+stops every part and leaves every part owned by nobody: it arms nothing, so a `roboglot doctor`
+check, which sends a stop as it disconnects, moves nothing on a robot nobody is driving. Against
+a run in flight it stops the run's motion and the robot holds; the run is told at its next
+keepalive or command, and its heartbeat fails with the reason. Run doctor checks between runs.
+
+**Motions that go to the floor.** `crawl` and `push_up` lie the robot down on purpose, face down
+and past the fall threshold, so they play to their end and the robot lying face down after one is
+not read as fallen. Its posture reads `unknown`, never `standing`, a walk or an upright motion
+waits, and `stand` brings it back up. A stand from the floor is done only once the trunk reads
+upright. One that cannot lift the robot by its deadline stops pushing: it holds the robot where
+it lies, as after a fall, health says it did not get up, and another `stand` may try again. A lean
+any other way, on its side or its back, during the motion, after it or standing back up, is a
+fall. Which motions those are is a table in the daemon (`FLOOR_MOTIONS`), by what each is named
+for, because the keyframes carry no orientation of the trunk to read it from. Which way is face
+down in the orientation it reads (`FACE_DOWN`, below) is an assumption no robot has checked yet,
+and step 13 of the hardware checklist is the reading that checks it.
+
+**After the loop gives up.** Ten failing ticks in a row and the daemon takes no more orders: it
+settles the robot to its safe pose while the bus answers, and only a restart of the daemon lets
+it take orders again. Until then every command that moves the robot is refused with the reason
+(`the control loop gave up after 10 failing ticks in a row: ... Restart the daemon`), a stop is
+accepted with that reason as its note, since the robot is already being brought to rest, and the
+heartbeat fails on the daemon's health, which says the same or names the fault.
 
 **The board it runs on can lend Roboglot its GPU, and Roboglot stays on the laptop.** This robot
 carries a Jetson, which is a computer rather than a body. Beside the daemon it can hold an LLM
@@ -235,7 +290,7 @@ this body a starved loop is a fall.
 | The walk step | `WalkPolicy.step` | takes the observation and the sim, returns a pair |
 | The envelope | `command_range` | rows 5, 6 and 7 are the walk velocities |
 | All three or none | `control_inputs` | a partial dict raises mid-tick |
-| Never clipped upstream | `walk_x` | out-of-envelope goes straight to the network, so Roboglot clamps to the envelope before sending |
+| Never clipped upstream | `walk_x` | out-of-envelope goes straight to the network, so Roboglot clamps to the envelope before sending, and the daemon holds any client to it again |
 
 ## UNVERIFIED, and what Roboglot does about it
 
@@ -244,6 +299,7 @@ this body a starved loop is a fall.
 | `DAEMON_PROTOCOL` | the wire is Roboglot's own at both ends | there is no upstream to verify it against, so citing one would be a false citation. What is cited instead is every assumption the daemon makes |
 | `SAFE_POSE` | upstream's default pose is safe to slew to | true from standing; from a crawling or prone start it is untested and must be tried on a stand |
 | `FALL_DETECTION` | a tilt past 50 degrees is a fall | there is no fall detection upstream at all; the threshold is a guess until somebody tips a real robot |
+| `FACE_DOWN` | face down, the world's up leans along -x in the body's frame | it follows from upstream's orientation being the body's in the world and the IMU's axes being the torso's, neither of which anything read shows. One reading on the stand settles it (step 13 of the checklist): tipped nose down, the x of `up_in_body` reads below zero, in the JSON `report_state` returns over MCP (its one-line summary does not show it). On a robot where the sign is the other way round, `crawl` and `push_up` are cut halfway and read as a fall, a fall onto its back during them goes unseen, and nothing outside the two floor motions is affected |
 | `GRIPPER_AXES` | which end of a gripper's travel is closed | upstream states it nowhere, so the daemon takes the MJCF range's low end as closed and finds the motors by name. The capability is reported only when a gripper motor is actually found, never because the flag was passed |
 | `NECK_AXES` | which neck motor is yaw | inferred from the motor names rather than stated anywhere |
 | `ZERO_LATCHING` | a calibrated zero survives `initialize` | reading did not settle whether the configured zero is re-latched at every startup; the daemon refuses to actuate without the file either way |
@@ -255,8 +311,8 @@ this body a starved loop is a fall.
 If you have built a ToddlerBot, **put it on its safety stand first**, and work through
 [adapters/toddlerbot/hardware-checklist.md](hardware-checklist.md) in order: it is
 written so that each step can only fail in a way you can recover from, and it keeps the
-feet off the ground until step 13. Then run Roboglot's daemon,
+feet off the ground until step 14. Then run Roboglot's daemon,
 point `toddlerbot-lookout` at it, and say what happened: that task's allowlist moves no leg, no
 arm and no waist. What most needs a real robot: whether the safe-pose slew is actually safe
-from a crawl, what tilt angle really means fallen, whether the neck axes are what the motor
-names imply, and whether a calibrated zero survives a restart.
+from a crawl, what tilt angle really means fallen, which way face down reads, whether the neck
+axes are what the motor names imply, and whether a calibrated zero survives a restart.

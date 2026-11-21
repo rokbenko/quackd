@@ -356,6 +356,13 @@ class ToddlerBotAdapter:
     async def stop(self) -> None:
         await self.transport.stop()
 
+    @property
+    def stop_error(self) -> str | None:
+        """Forwarded from the transport, because the core `stop` verb and the executor's brake
+        read it off whatever they were handed, and what they are handed is this adapter. Without
+        it a stop that never reached the daemon was recorded as one that held the robot."""
+        return getattr(self.transport, "stop_error", None)
+
     async def go_to_rest(self) -> RestResult:
         """Nothing records a rest pose for this body: the only pose it goes to on its own is
         the daemon's safe pose on a deadman, and Roboglot never asks for that one."""
@@ -374,7 +381,12 @@ class ToddlerBotAdapter:
         return toddlerbot_conditions()
 
     def implementations(self) -> dict[str, Verb]:
-        return toddlerbot_verbs(neck=True, gripper=True)
+        # The registry takes `perform`'s enum and description from here, not from the
+        # manifest, so once connected they name what the daemon loaded, as the manifest does:
+        # all five named a motion the robot would refuse. Before a connect there is no answer
+        # yet, and the static manifest lists all five.
+        motions = _reported_motions(self.transport) if self.manifest is not None else MOTIONS
+        return toddlerbot_verbs(neck=True, gripper=True, motions=motions)
 
     @property
     def mobility(self) -> str:

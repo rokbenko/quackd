@@ -25,8 +25,9 @@ So this daemon carries ten things upstream has not got:
 
 1. signal handlers that reach a safe pose before anything is allowed to exit, and excepthooks
    for the same reason: upstream's C level atexit disables torque on any interpreter exit;
-2. a hard-exit timer around `close()`, which is bound without releasing the GIL and can block
-   forever on an unresponsive bus, freezing every thread that might have supervised it;
+2. a hard-exit deadline that needs no GIL, around the settle and around `close()`, which is
+   bound without releasing the GIL and can block forever on an unresponsive bus, freezing
+   every thread that might have supervised it;
 3. a safe-pose slew, since no reset exists: upstream's own default pose at upstream's own
    0.3 rad/s, waist first, because a position command here is a full-torque snap;
 4. no command at all until it has read the robot once, because before that the target is a
@@ -60,7 +61,9 @@ import argparse
 import base64
 import collections
 import contextlib
+import faulthandler
 import hmac
+import ipaddress
 import json
 import logging
 import math
@@ -81,6 +84,11 @@ except ImportError:  # pragma: no cover - the daemon cannot run without it
     np = None  # type: ignore[assignment]
 
 VERSION = "1"
+DESCRIPTION = (
+    "Roboglot's ToddlerBot daemon: the fifty hertz loop, and everything upstream does not do."
+)
+"""The first line of this file's docstring, written out: under `python -OO` the docstring is
+None, and a parser built from it raised before it read a flag."""
 PROTOCOL = "roboglot-toddlerbot-bridge"
 PROTOCOL_VERSION = 1
 JSONRPC_VERSION = "2.0"
@@ -114,9 +122,17 @@ It is handed out one `CONTROL_DT` tick at a time, and every one of those ticks c
 round trip on top of its sleep: about 1.8x on an idle machine, and over 6x on a loaded CI
 runner. `settle()` is a deadline for a body that is stuck, so it is sized well past both."""
 SETTLE_FLOOR_S = 8.0
-"""The shortest settle deadline, for a body already at the safe pose."""
+"""The shortest settle deadline, for a body already at the safe pose; and, while shutting down,
+how long one tick of the settle may take before the hard exit ends the process: one tick is less
+work than any slew."""
 SETTLE_MAX_S = 120.0
-"""The longest, so a jammed joint is not waited on forever."""
+"""The longest anything waits on a slew in seconds. A settle, which counts its own progress,
+stops here even while it still closes, so a shutdown always ends: the full-scale slew, 1.5 rad
+with the waist first, is 500 ticks, so only a loop making under 4.2 of its fifty ticks a second
+reaches it. A robot still on its way then is left holding (`leave_holding`)."""
+HELD_EXIT = 3
+"""The exit code of a shutdown that left the robot torqued and holding short of the safe pose,
+because closing would have dropped it. The hard exit's is 1, and a start-up that failed is 2."""
 WAIST_THRESHOLD = 0.5
 """Untwist the waist first if it is further than this from zero, as upstream's reset does."""
 MAX_STEP_RAD = RESET_VEL * CONTROL_DT * 4.0
@@ -139,6 +155,9 @@ Catching up means running the backlog with no sleep between ticks, and each of t
 ticks is allowed a full MAX_STEP_RAD. Twelve ticks in a millisecond is not a rate limit,
 it is a jump, so a loop that fell behind starts again from now instead."""
 CAMERA_PERIOD_S = 0.1
+CAMERA_JOIN_S = 2.0
+"""How long closing the camera waits for its thread, which a USB read that never returns
+wedges. It is the wait this file has always given it; past it the device is closed anyway."""
 CAMERA_STALE_S = 2.0
 """How old the newest frame may be before it is no frame at all. A wedged USB camera
 would otherwise serve its last good picture forever, and a pilot would navigate by a
@@ -160,6 +179,61 @@ returned by now, leave hard: a torqued robot beats a frozen supervisor that cann
 CONSTRUCT_TIMEOUT_S = 30.0
 FALL_TILT_DEG = 50.0
 """Untested against a real robot, and named as an assumption in the adapter's docs."""
+TICK_STALE_S = DEADMAN_S
+"""How long after the last tick ended the loop counts as stalled rather than slow. The deadman
+lives inside the tick, so past DEADMAN_S it can no longer fire on time either, and that is when
+health has to stop answering ok."""
+BUS_GONE_LIMIT = 2 * FAULT_LIMIT
+"""Consecutive failing ticks before the loop stops ticking at all. The first FAULT_LIMIT end the
+orders it takes and turn it to the safe pose; as many again with the bus still failing mean
+there is no bus to reach the safe pose with, and failing fifty times a second forever helps
+nobody."""
+GAVE_UP = (
+    f"the control loop gave up after {FAULT_LIMIT} failing ticks in a row: it takes no orders, "
+    "and it settles the robot to its safe pose for as long as the bus answers. Restart the daemon"
+)
+SHUTTING_DOWN = "the daemon is shutting down and settling the robot to its safe pose"
+LOST_TO_A_STOP = (
+    "another connection's stop held the robot, so what this connection had it doing has ended"
+)
+LOST_TO_A_COMMAND = "another connection's command took the {part} this connection was driving"
+ARRIVED_RAD = 1e-3
+"""How near its goal a joint counts as there: the distance a stand has always counted as
+arrived, and now a head or a gripper the deadman brings to rest too."""
+SETTLED_RAD = 1e-2
+"""How near the safe pose the shutdown's settle counts every joint as there, the tolerance it has
+always closed at. A settle its stall ends with a joint further than this from where it can be put
+down (its place in the safe pose, or the nearest its limits allow) is held, not closed."""
+FLOOR_MOTIONS = {
+    "crawl": "a crawl goes down to hands and knees, the trunk near level",
+    "push_up": "a push-up goes down prone, the trunk near level",
+}
+"""The motions Roboglot offers that take the robot to the floor on purpose, and why each is here.
+
+THIS IS A TABLE, not a measurement. A tilt past FALL_TILT_DEG during one of these, or after it,
+is the motion and not a fall. The daemon cannot read that from the keyframes: the files it loads
+carry motor targets alone (`upstream_api.MOTION_ACTION_ARRAY`), with no orientation of the
+trunk to compare against the threshold. So the table goes by what each motion is named for, which
+this repository's own pages call "crawling or prone". `hold`, `kneel` and `cuddle` are taken as
+upright, which is as unmeasured as this table until a robot plays them."""
+FACE_DOWN = (-1.0, 0.0)
+"""Which way the world's up leans, read in the body's own frame as `observe` reads it, when the
+robot is face down, its front (+x) towards the floor. Both FLOOR_MOTIONS go down this way, by
+their own reasons in that table: hands and knees, and prone. UNVERIFIED, like FALL_TILT_DEG: it
+follows from upstream's orientation being the body's in the world, so `apply(..., inverse=True)`
+reads the world in the body's frame, and from +x being the body's front. Neither the IMU's
+mounting nor this sign has met a robot."""
+FLOOR_HEADING_DEG = 45.0
+"""How far a lean may turn from FACE_DOWN and still be the floor motion's own. Half the way to a
+robot on its side, which is 90 degrees round from face down (on its back is 180), so a lean
+nearer face down than on its side is the motion, and any other is a fall."""
+BODY = "body"
+"""The part a walk, a stand, a motion and the deadman's slew drive. The neck and each gripper
+are parts of their own, each owned by the connection whose command it is executing."""
+NECK = "neck"
+FALLEN_REFUSES = frozenset({"bot.stand", "bot.perform", "bot.command"})
+"""The moving methods a fallen robot refuses: the ones that drive the legs and the trunk. A stop,
+a look and a grip stay open, as they always were."""
 
 ERR_BAD_TOKEN = 2
 ERR_REFUSED = 3
@@ -181,6 +255,9 @@ COMMAND_METHODS = frozenset(
 Questions (state, health, frame) do not, and neither does anything the daemon has never
 heard of: a client built against a newer protocol would otherwise hold the deadman off
 with calls this daemon is refusing, which is exactly the version-skew case it is for."""
+MOVING_METHODS = COMMAND_METHODS - {"bot.keepalive"}
+"""The methods that change what the robot does. Every one of them goes through
+`Daemon.obey`, the one place that decides whether the robot may move now."""
 
 log = logging.getLogger("roboglot-toddlerbot")
 
@@ -225,21 +302,57 @@ def tilt_degrees(gravity_z: float) -> float:
     return math.degrees(math.acos(max(-1.0, min(1.0, gravity_z))))
 
 
+def leans_face_down(up_x: float, up_y: float) -> bool:
+    """Whether the world's up, read in the body's frame, leans within FLOOR_HEADING_DEG of
+    FACE_DOWN: the robot going down the way a floor motion goes, and not on its side or back."""
+    fx, fy = FACE_DOWN
+    turned = math.degrees(math.atan2(fx * up_y - fy * up_x, fx * up_x + fy * up_y))
+    return abs(turned) <= FLOOR_HEADING_DEG
+
+
 def slew(current: Any, goal: Any, dt: float, vel: float = RESET_VEL) -> Any:
     """One step of a bounded-rate move towards a goal."""
     return rate_limit(goal, current, max_step=vel * dt)
 
 
-def waist_first(goal: Any, current: Any, waist: Any) -> Any:
+WALK_KEYS = ("walk_x", "walk_y", "walk_turn")
+"""The walk policy's three inputs, which it indexes unconditionally."""
+ENVELOPE_KEYS = ("max_vx", "max_vy", "max_wz")
+"""The envelope's bound for each of WALK_KEYS, in the same order, as `build_walk_policy` reads
+them off the checkpoint and the hello reports them."""
+
+
+def within_envelope(
+    walk: tuple[float, float, float], envelope: dict[str, float] | None
+) -> tuple[float, float, float]:
+    """A walk command held to the envelope its checkpoint was trained on, each axis on both
+    sides, as the client reads the envelope. With no envelope there is nothing to hold it to.
+
+    Upstream never clips these on the way into the network, so a client other than Roboglot
+    could otherwise drive the gait with inputs it was never trained on."""
+    if envelope is None:
+        return walk
+    held = []
+    for value, key in zip(walk, ENVELOPE_KEYS, strict=True):
+        bound = abs(float(envelope[key]))
+        held.append(max(-bound, min(bound, value)))
+    return held[0], held[1], held[2]
+
+
+def waist_first(goal: Any, current: Any, waist: Any, held: Any = None) -> Any:
     """Upstream's own two-phase rule: untwist the waist before anything else moves.
 
-    If any waist joint is more than half a radian from zero, drive only the waist to zero and
-    hold everything where it is; the rest of the pose follows once it is straight."""
+    If any waist joint, as `current` measures it, is more than half a radian from zero, drive
+    only the waist to zero and hold everything else at `held` (where it is, if not given); the
+    rest of the pose follows once it is straight. The daemon passes the pose it last sent: a
+    joint under load sits a little off where it was sent, and holding it at the pose measured
+    each tick moved its target after it, away from home, so the error that would make it hold
+    never built and the joint was walked off its pose for as long as the waist untwisted."""
     if waist is None or len(waist) == 0:
         return goal
     if float(np.max(np.abs(current[waist]))) <= WAIST_THRESHOLD:
         return goal
-    staged = current.copy()
+    staged = (current if held is None else held).copy()
     staged[waist] = 0.0
     return staged
 
@@ -345,6 +458,41 @@ def settle_budget(travel: float) -> float:
     return min(SETTLE_MAX_S, SETTLE_FLOOR_S + SETTLE_OVERHEAD * travel / RESET_VEL)
 
 
+def hard_exit_after(seconds: float, what: str) -> None:
+    """End the process with code 1 in `seconds`, whatever it is doing by then, unless the
+    deadline is moved by another call or cancelled (`faulthandler.cancel_dump_traceback_later`).
+
+    faulthandler's watchdog is a thread written in C that needs no GIL, so it fires through a
+    `close()` that holds the GIL and retries torque-off forever on a dead bus. The Python timer
+    this replaced needed the GIL to run, so it could not fire in exactly the case it was for.
+    It writes every thread's stack before it exits, which is the log of where it hung."""
+    log.info("%s; if that has not finished in %.1fs the process exits hard", what, seconds)
+    # The stream the process started with, which is the journal under a service manager. A
+    # process started with it closed has none, and faulthandler will not arm without a file, so
+    # the stacks go nowhere then and the exit still comes; faulthandler keeps the file open.
+    stream = sys.__stderr__ or sys.stderr or open(os.devnull, "w")  # noqa: SIM115
+    try:
+        faulthandler.dump_traceback_later(seconds, exit=True, file=stream)
+    except Exception:
+        log.exception("could not arm the hard exit for %s; going on without it", what)
+
+
+def leave_holding(reason: str) -> None:
+    """End the process now with HELD_EXIT, every motor still torqued and holding its last target,
+    as the hard exit leaves them. `close()` takes torque off, which drops a robot still on its way
+    to the safe pose, and so does the exit handler upstream registers (`dynamixel_cleanup_handler`,
+    which a normal exit runs); `os._exit` runs neither."""
+    log.critical(
+        "%s. Closing would take torque off and drop it, so the robot is left torqued and holding "
+        "where it is, and the daemon exits with %d: support it before you power it off",
+        reason,
+        HELD_EXIT,
+    )
+    for handler in logging.getLogger().handlers:
+        handler.flush()
+    os._exit(HELD_EXIT)
+
+
 class Daemon:
     """Owns the robot, the loop and the safe pose. Everything else asks it politely."""
 
@@ -359,15 +507,50 @@ class Daemon:
         self.lock = threading.Lock()
         self.running = False
         self.loop_hz = 0.0
+        #: Whether the trunk reads past FALL_TILT_DEG, and whether that is a fall: it is not
+        #: while the robot is down on purpose, after a motion in FLOOR_MOTIONS (`down_by`)
+        #: and until it is upright again.
+        self.lying = False
         self.fallen = False
+        self.down_by: str | None = None
+        #: A stand from the floor counts as done only once the trunk reads upright: by when it
+        #: must (`stand`), and, if it did not, what health says until the robot is up.
+        self.rise_deadline: float | None = None
+        self.rise_failed: str | None = None
+        #: For each part at rest, the nearest it has come to its goal and the ticks since it
+        #: came any nearer, so a rest that cannot arrive ends (`_with_neck`).
+        self._rest_progress: dict[str, tuple[float, int]] = {}
+        #: The parts the motion now playing took, released when it ends.
+        self.motion_parts: list[str] = []
         self.tilt_deg = 0.0
-        self.deadman_tripped = False
+        #: The world's up read in the body's frame, as `observe` last read it, or None before any
+        #: orientation: the reading that settles FACE_DOWN's sign, so `state` reports it.
+        self.up_in_body: tuple[float, float, float] | None = None
+        #: Why the last settle stopped at SETTLE_MAX_S with the robot still on its way to the
+        #: safe pose, which `shutdown` then leaves holding rather than close; None otherwise.
+        self.held_short: str | None = None
+        #: When the last tick ended, however it ended, or None before the first. `bot.health`
+        #: reads it without `lock`, because a tick blocked on the bus holds the lock and leaves
+        #: everything else the loop writes frozen at its last good value.
+        self.tick_ended: float | None = None
+        #: When `run` began, so a first tick that never ends counts as a stall from then.
+        self.loop_started: float | None = None
         self.fault: str | None = None
         self.dropped = 0
         self.neck_goal: Any = None
         self.grip_goal: dict[int, float] = {}
         self.faults = 0
+        #: Set once FAULT_LIMIT ticks have failed in a row, and never cleared: from then the
+        #: loop takes no orders (`refusal`) and only settles the robot to its safe pose.
+        self.gave_up = False
         self._shut = False
+        #: Shutdown is entered once, with no lock a signal could catch half taken: the one
+        #: caller that pops `_first_shutdown` (a `list.pop`, which is atomic) does it, `_inside`
+        #: marks each thread already in `shutdown`, and `_shut_done` is set when it has closed,
+        #: for a caller on another thread to wait on.
+        self._first_shutdown = [True]
+        self._inside = threading.local()
+        self._shut_done = threading.Event()
         self.calibrated = bool(getattr(robot, "roboglot_calibrated", False))
         self.motion_library: dict[str, list[Any]] = {}
         self.walk_policy: Any = None
@@ -426,7 +609,27 @@ class Daemon:
         default = np.array([angles[k] for k in order], np.float32)
         self.safe = SafeState(default)
         self.command = Command(default)
-        self.command.last_client = time.monotonic()
+        #: The parts this robot has: the body, and a neck and each gripper where it has them.
+        self.parts = (
+            [BODY]
+            + ([NECK] if self.neck else [])
+            + [f"{side}_gripper" for side, motors in self.grippers.items() if motors]
+        )
+        #: Who owns each part: the connection whose command that part is executing. A part
+        #: holding after a stop, or never commanded, has no owner and no deadman: a daemon
+        #: nobody has commanded holds where the robot is, and so does one a stop left holding.
+        #: One owner for the whole robot let a second client's look adopt a walk it never asked
+        #: for and keep it going after the walking client died. None is a caller inside this
+        #: process, which `--once` and tests are.
+        self.owners: dict[str, Any] = {}
+        #: When each connection was last heard from: its own clock, which its keepalive
+        #: restarts and which keeps alive only the parts it owns. The in-process caller's
+        #: clock is `command.last_client`.
+        self.heard_at: dict[Any, float] = {}
+        #: The parts the deadman is bringing to rest, until one is commanded or stopped.
+        self.resting: set[str] = set()
+        #: What a connection that lost a part to someone else has yet to be told, and why.
+        self.lost: dict[Any, str] = {}
         self.target = default.copy()
         #: Whether the first real reading has arrived. Until it has, `target` is a guess
         #: (the home pose), and writing a guess to a servo bus is a full-scale jump from
@@ -459,8 +662,22 @@ class Daemon:
         if getattr(obs, "rot", None) is not None:
             try:
                 gravity = obs.rot.apply([0.0, 0.0, 1.0], inverse=True)
+                self.up_in_body = (float(gravity[0]), float(gravity[1]), float(gravity[2]))
                 self.tilt_deg = tilt_degrees(float(gravity[2]))
-                self.fallen = self.tilt_deg > FALL_TILT_DEG
+                self.lying = self.tilt_deg > FALL_TILT_DEG
+                face_down = leans_face_down(float(gravity[0]), float(gravity[1]))
+                if self.down_by and self.lying and not face_down:
+                    # Down on purpose is face down and no other way. A robot on its side or
+                    # its back during a floor motion, lying after one, or standing back up
+                    # has fallen, and it stays fallen until a person rights it.
+                    log.warning("the robot went down another way than %s: a fall", self.down_by)
+                    self.down_by = None
+                playing = self.command.mode == Command.MOTION and self.command.motion
+                if self.down_by and not self.lying and playing not in FLOOR_MOTIONS:
+                    self.down_by = None  # upright again, so a tilt is a fall again
+                if self.down_by is None:
+                    self.rise_failed = None
+                self.fallen = self.lying and self.down_by is None
             except Exception:  # orientation is advisory, never fatal
                 pass
         return obs
@@ -469,6 +686,24 @@ class Daemon:
         """What this tick's target is, before any clamping."""
         cmd = self.command
         current = self.safe.pose
+        fell = self.fallen and cmd.mode != Command.HOLD
+        if fell or (self.lying and cmd.mode == Command.DEADMAN):
+            # A body on the floor is driven by nothing: a stand, a motion, a walk or the
+            # deadman's slew to the standing pose would each drive the legs and the trunk against
+            # the floor, which is why `FALLEN_REFUSES` will not start them. So whatever was in
+            # flight ends on the tick that reads the fall, and the robot holds where it lies.
+            # Upstream detects no fall and prescribes nothing (`upstream_api.FALL_DETECTION`).
+            # A floor motion lying the robot down on purpose is no fall and plays on, but the
+            # deadman's rest of a body lying down, either way, is the same hold.
+            log.warning(
+                "the robot is down; ending %s and holding where it lies", cmd.motion or cmd.mode
+            )
+            cmd.hold(current)
+            # every part a motion took is let go with the body, so its client is not told later
+            # that it lost a part it was no longer driving
+            self._finished([*self.motion_parts, BODY])
+            self.resting.discard(BODY)
+            return current
         if cmd.mode in (Command.STAND, Command.DEADMAN):
             # The trajectory advances from the last thing commanded, not from the last thing
             # measured. These motors are position controlled, so the torque they make is
@@ -480,15 +715,37 @@ class Daemon:
             # what `tick` does on the first reading and what upstream's own policies do, and
             # `rate_limit` below still bounds every tick to MAX_STEP_RAD. `waist_first` keeps
             # reading the measured pose, because whether the waist is twisted is a question
-            # about the body rather than about the plan.
-            goal = waist_first(cmd.goal, current, self.waist)
+            # about the body rather than about the plan; what the rest holds at while it
+            # untwists is the plan's, the pose last sent, for the same reason as the slew: held
+            # at the measurement, a joint under load was walked off its pose.
+            goal = waist_first(cmd.goal, current, self.waist, self.target)
             nxt = slew(self.target, goal, dt)
-            if float(np.max(np.abs(goal - nxt))) < 1e-3 and cmd.mode == Command.STAND:
+            if float(np.max(np.abs(goal - nxt))) < ARRIVED_RAD and cmd.mode == Command.STAND:
+                if self.down_by and self.lying:
+                    # From the floor the commanded pose arrives whatever the body does, so the
+                    # stand is done only once the trunk reads upright (`observe` then clears
+                    # `down_by`), and past its deadline it ends as not having got up.
+                    if self.rise_deadline is not None and time.monotonic() < self.rise_deadline:
+                        return nxt
+                    self.rise_failed = (
+                        "the stand did not get the robot up from the floor: its trunk still "
+                        f"reads {self.tilt_deg:.0f} degrees from upright"
+                    )
+                    log.warning("%s; holding where it lies", self.rise_failed)
+                    # Holding the standing pose would push every joint towards standing against
+                    # the floor for as long as nothing else is commanded. Rest on the floor is
+                    # where the robot lies, as after a fall: the legs are commanded to the pose
+                    # measured now, until the next command, which may be another stand.
+                    cmd.hold(current)
+                    self._finished([BODY])
+                    return current
                 cmd.hold(goal)
+                self._finished([BODY])
             return nxt
         if cmd.mode == Command.MOTION:
             if cmd.frame_index >= len(cmd.frames):
                 cmd.hold(current)
+                self._finished(self.motion_parts)
                 return current
             frame = np.asarray(cmd.frames[cmd.frame_index], dtype=np.float32)
             # Advance only once the body has actually reached this frame, or after waiting
@@ -499,8 +756,11 @@ class Daemon:
             # Advancing regardless means the robot traces a smoothed shortcut through the
             # keyframes and still reports the motion complete. Playing it slower is a
             # different motion; playing it truncated is a different motion AND a wrong claim
-            # about which one ran.
-            away = float(np.max(np.abs(frame - self.target)))
+            # about which one ran. A joint an overlay holds (a head another connection turned
+            # since the motion began) is not the motion's to reach, so it is not waited for.
+            driven = np.ones(len(self.order), dtype=bool)
+            driven[self._overlaid()] = False
+            away = float(np.max(np.abs(frame - self.target)[driven], initial=0.0))
             if away <= MAX_STEP_RAD or cmd.dwell >= FRAME_DWELL_LIMIT:
                 if away > MAX_STEP_RAD:
                     log.warning(
@@ -528,7 +788,22 @@ class Daemon:
         return cmd.goal
 
     def tick(self, dt: float = CONTROL_DT) -> Any:
-        """One control step: read, decide, clamp, write. Never raises for a bad reading."""
+        """One control step: read, decide, clamp, write. Never raises for a bad reading.
+
+        Its end is stamped whether it returned or raised, the settle's ticks too, so `bot.health`
+        can see a tick that has not ended at all."""
+        try:
+            return self._tick(dt)
+        finally:
+            self.tick_ended = time.monotonic()
+
+    def tick_age_s(self) -> float | None:
+        """How long since the last tick ended, or since the loop began if none has yet: a first
+        tick that never ends is a stall like any other. None before the loop or a tick."""
+        ended = self.tick_ended if self.tick_ended is not None else self.loop_started
+        return None if ended is None else time.monotonic() - ended
+
+    def _tick(self, dt: float) -> Any:
         with self.lock:
             obs = self.observe()
             if obs is not None:
@@ -555,16 +830,7 @@ class Daemon:
                 self.dropped += 1
                 if self.dropped > DROP_LIMIT:
                     self.last_obs = None
-            if time.monotonic() - self.command.last_client > DEADMAN_S:
-                if not self.deadman_tripped:
-                    log.warning("Roboglot went quiet; slewing to the safe pose and holding")
-                    self.deadman_tripped = True
-                    # The safe pose is the whole body, including the head and the hands.
-                    self.neck_goal = None
-                    self.grip_goal.clear()
-                    self.command.trip(self.command.default_pose)
-            else:
-                self.deadman_tripped = False
+            self._deadman()
             if not self.seeded:
                 # No reading yet, so no idea where the robot is, so nothing is commanded.
                 return self.target
@@ -577,8 +843,13 @@ class Daemon:
                 log.error("a non-finite target reached the loop; holding the last good pose")
                 wanted = self.target
             wanted = clamp_to_limits(wanted, self.lo, self.hi)
-            self.target = rate_limit(wanted, self.target)
-            self.sim.set_motor_target(self.target)
+            sent = rate_limit(wanted, self.target)
+            # The target is what the bus was last told. A write that raises told it nothing, so
+            # the target stays where the last write that landed left it: nothing is judged
+            # reached that was never sent, and a bus that comes back is handed one step from
+            # there, not every step it missed in one write, which is a snap.
+            self.sim.set_motor_target(sent)
+            self.target = sent
             self.sim.step()
             return self.target
 
@@ -589,8 +860,39 @@ class Daemon:
         still answered accepted. The neck is independent of the gait on a real body, so it is
         an overlay here too: the policy owns the other twenty-eight joints and the head goes
         where it was last told.
-        """
-        if self.neck_goal is None and not self.grip_goal:
+
+        A head or gripper the deadman is bringing to rest (`resting`) slews to its place in the
+        safe pose at RESET_VEL, as the body's own rest does, whatever drives the body, and on
+        a robot lying down holds where it is, as the body does. Its rest ends once it is there,
+        so it is a part nobody owns, holding, which a motion may move again; a rest that stayed
+        for ever stalled every later motion on a head nobody held."""
+        home = self.target if self.lying else self.command.default_pose
+        for part in sorted(self.resting - {BODY}):
+            joints = self._joints(part)
+            away = float(np.max(np.abs(home[joints] - self.target[joints]), initial=0.0))
+            best, still = self._rest_progress.get(part, (math.inf, 0))
+            best, still = (away, 0) if away < best else (best, still + 1)
+            self._rest_progress[part] = (best, still)
+            # A rest that has stopped closing on its goal (a place in the safe pose outside the
+            # joint's limits, which the clamp holds it from) ends after as many ticks as a
+            # keyframe that cannot be reached is given, rather than refuse every motion for good.
+            if away < ARRIVED_RAD or still >= FRAME_DWELL_LIMIT:
+                if away >= ARRIVED_RAD:
+                    log.warning(
+                        "the %s's rest stopped closing on its place in the safe pose %.3f rad "
+                        "short, outside its joint's limits by the look of it; it ends here and "
+                        "the %s holds where it is",
+                        part,
+                        away,
+                        part,
+                    )
+                self.resting.discard(part)
+                self._rest_progress.pop(part, None)
+                if self.command.mode == Command.HOLD:
+                    # held where it arrived, not sent back to where the body's hold had it
+                    self.command.goal[joints] = self.target[joints]
+        rest = [i for part in self.resting - {BODY} for i in self._joints(part)]
+        if self.neck_goal is None and not self.grip_goal and not rest:
             return wanted
         out = np.array(wanted, dtype=np.float32, copy=True)
         if self.neck_goal is not None and self.neck:
@@ -601,7 +903,44 @@ class Daemon:
                 out[self.neck_pitch] = pitch
         for index, value in self.grip_goal.items():
             out[index] = value
+        if rest:
+            out[rest] = slew(self.target[rest], home[rest], CONTROL_DT)
         return out
+
+    def _overlaid(self) -> list[int]:
+        """The joints an overlay holds this tick: an aimed head, a gripper goal, a part at rest."""
+        held = list(self.grip_goal)
+        if self.neck_goal is not None:
+            held += self.neck
+        return held + [i for part in self.resting - {BODY} for i in self._joints(part)]
+
+    def _finished(self, parts: Any) -> None:
+        """A stand or a motion has played to its end and the robot holds: the parts it drove are
+        owned by nobody now, as after a stop, so its client's leaving moves nothing. A finished
+        kneel kept its owner, and that client's death minutes later stood the robot up.
+
+        Except a head or a hand its client has aimed or gripped since the motion took it: that
+        look or grip is still holding it, so it stays that client's, as one made outside a motion
+        does, and its client's going brings it to rest. Let go of, it held for good."""
+        owner = self.owners.get(BODY)
+        for part in parts:
+            if part in self.owners and self.owners[part] is owner and not self._holds(part):
+                del self.owners[part]
+        self.motion_parts = []
+
+    def _tell(self, client: Any, reason: str) -> None:
+        """Owe `client` a notice that it lost a part, if it is still there to be told: a notice
+        for a connection that has closed would be kept for the life of the daemon."""
+        if client is not None and client in self.heard_at:
+            self.lost[client] = reason
+
+    def _joints(self, part: str) -> list[int]:
+        """The motor indexes a part moves: the whole body, the neck, or one side's gripper."""
+        if part == BODY:
+            return list(range(len(self.order)))
+        if part == NECK:
+            return list(self.neck)
+        return list(self.grippers.get(part.removesuffix("_gripper"), []))
 
     def release_grip(self) -> None:
         """Stop holding the gripper goal.
@@ -613,7 +952,7 @@ class Daemon:
         with self.lock:
             self.grip_goal.clear()
 
-    def set_grip(self, side: str, close: bool) -> list[str]:
+    def set_grip(self, side: str, close: bool, client: Any = None) -> list[str]:
         """Command the gripper motors, and say which ones moved.
 
         Returning the names matters: `bot.grip` used to answer accepted and command nothing
@@ -623,24 +962,203 @@ class Daemon:
         an assumption (`upstream_api.GRIPPER_AXES`) and it is written down as one.
         """
         sides = ["left", "right"] if side == "both" else [side]
-        moved: list[str] = []
-        with self.lock:
-            for one in sides:
-                for index in self.grippers.get(one, []):
-                    low, high = float(self.lo[index]), float(self.hi[index])
-                    self.grip_goal[index] = low if close else high
-                    moved.append(self.order[index])
-        return moved
+        indexes = [index for one in sides for index in self.grippers.get(one, [])]
+        if not indexes:
+            return []
 
-    def aim_neck(self, yaw_rad: float, pitch_rad: float) -> None:
-        """Where the head should point. It does not change what the body is doing."""
+        def grip() -> None:
+            for index in indexes:
+                low, high = float(self.lo[index]), float(self.hi[index])
+                self.grip_goal[index] = low if close else high
+
+        sided = [one for one in sides if self.grippers.get(one)]
+        self.obey("bot.grip", grip, client, [f"{one}_gripper" for one in sided])
+        return [self.order[index] for index in indexes]
+
+    def halt(self) -> list[str]:
+        """Hold every part where it was last measured, leave every part owned by nobody, and
+        say what that stopped.
+
+        The caller holds `lock`. The neck and gripper goals are overlays on whatever drives the
+        body, so a stop that held only the body left a closing gripper closing on to its joint
+        limit and the head slewing on to its last aim. The hold's pose is the measured one, head
+        and hands included, so clearing the overlays is what holds them too. A part holding after
+        a stop has no owner, so nothing a stop leaves can be moved by the deadman later: a stop
+        arms nothing, the client's closing stop above all."""
+        stopped: list[str] = []
+        if self.command.mode != Command.HOLD:
+            stopped.append(self.command.motion or self.command.mode)
+        if self.neck_goal is not None:
+            stopped.append("neck")
+        stopped += [self.order[index] for index in sorted(self.grip_goal)]
+        self.command.hold(self.safe.pose)
+        if not self.seeded:
+            # Before the first good reading `safe.pose` is the home pose, a guess, so holding it
+            # would send the robot there; left ungiven, seeding holds where the robot really is.
+            self.command.given = False
+        self.neck_goal = None
+        self.grip_goal.clear()
+        self.owners.clear()
+        self.resting.clear()
+        self.motion_parts = []
+        return stopped
+
+    def play(self, name: str, frames: list[Any], client: Any = None) -> list[str]:
+        """Start the motion `name`, as `client`'s change through `obey`: the caller holds `lock`.
+        Answers the parts it kept as `client` holds them.
+
+        A motion's keyframes move every joint, the head and the hands too, so it takes the neck
+        and the grippers with the body from nobody. A head or hand `client` itself holds by a look
+        or a grip stays held through the motion, which plays on the rest and does not wait for it:
+        taking it would open a closed hand and drop what it held. A part another connection holds
+        refuses the motion, with the reason, rather than play round a head it cannot reach, which
+        stalled every frame; so does one the deadman is still bringing to rest, which it soon is
+        not. While the robot is down after a floor motion, only another floor motion plays: an
+        upright one waits for a stand."""
+        if self.down_by and name not in FLOOR_MOTIONS:
+            raise NotNow(f"the robot is down after {self.down_by}: stand it up first")
+        others = [
+            part.replace("_", " ")
+            for part in self.parts
+            if part != BODY and self.owners.get(part) not in (None, client) and self._holds(part)
+        ]
+        if others:
+            raise NotNow(
+                f"another connection is driving the {' and the '.join(others)}, which this "
+                "motion moves too: a stop frees every part"
+            )
+        resting = sorted(part.replace("_", " ") for part in self.resting - {BODY})
+        if resting:
+            raise NotNow(
+                f"the {' and the '.join(resting)} is still being brought to rest, which takes a "
+                "moment, and a stop ends it at once; this motion moves it too"
+            )
+        self._end_motion()
+        kept = [
+            part
+            for part in self.parts
+            if part != BODY and self.owners.get(part) is client and self._holds(part)
+        ]
+        for part in self.parts:
+            if part != BODY and part not in kept:
+                self._let_go(part)
+        self.command.play(name, frames)
+        self.motion_parts = [part for part in self.parts if part not in kept]
+        if name in FLOOR_MOTIONS:
+            self.down_by = name
+        return kept
+
+    def stand(self) -> dict[str, Any]:
+        """Stand, as `obey`'s change: the caller holds `lock`. Answers what the reply adds.
+
+        From the floor, after a floor motion, the commanded pose arrives whatever the body does,
+        so the stand is done only once the trunk reads upright, by the settle's own deadline for
+        a body to reach the safe pose from that far; past it, it ends as not having got up."""
+        self._end_motion()
+        self.command.stand()
+        self.rise_failed = None
+        self.rise_deadline = None
+        if not (self.down_by and self.lying):
+            return {}
+        travel = float(np.max(np.abs(self.command.default_pose - self.target)))
+        self.rise_deadline = time.monotonic() + settle_budget(travel)
+        return {"note": "from the floor: done once the trunk reads upright, and said if it is not"}
+
+    def drive(self, walk_x: float, walk_y: float, walk_turn: float) -> None:
+        """Walk, as `obey`'s change: the caller holds `lock`."""
+        self._end_motion()
+        self.command.drive(walk_x, walk_y, walk_turn)
+
+    def _end_motion(self) -> None:
+        """A new command for the body ends a motion that is playing: the head and the hands it
+        took go back to nobody, so its client is not told later that it lost a part it was no
+        longer driving, and nobody's motion is refused on its account. The body stays with the
+        motion's client for the new command to take, and that is what tells it."""
+        if self.command.mode == Command.MOTION:
+            self._finished([part for part in self.motion_parts if part != BODY])
+
+    def _holds(self, part: str) -> bool:
+        """Whether a look or a grip is holding `part` this tick."""
+        if part == BODY:
+            return False
+        if part == NECK:
+            return self.neck_goal is not None
+        return any(index in self.grip_goal for index in self._joints(part))
+
+    def _let_go(self, part: str) -> None:
+        """Drop the look or grip on `part`, if there is one."""
+        if part == NECK:
+            self.neck_goal = None
+        elif part != BODY:
+            for index in self._joints(part):
+                self.grip_goal.pop(index, None)
+
+    def stop(self, client: Any = None) -> dict[str, Any]:
+        """A stop from any connection, answered truthfully whatever the daemon is doing.
+
+        It is accepted in every state, because a stop that is refused is recorded as one that
+        never arrived, and the advice for that, the power switch, is a fall on this robot. While
+        a shutdown settles the robot, or after the loop has given up and settles it, the robot is
+        already being brought to rest: the stop changes nothing and its note says which. Every
+        other time it holds every part (`halt`), and each connection that owned one is told."""
         with self.lock:
+            if self._shut:
+                return {"accepted": True, "stopped": [], "note": SHUTTING_DOWN}
+            if self.gave_up:
+                return {"accepted": True, "stopped": [], "note": GAVE_UP}
+            for owner in set(self.owners.values()):
+                if owner is not client:
+                    self._tell(owner, LOST_TO_A_STOP)
+            return {"accepted": True, "stopped": self.halt()}
+
+    def refusal(self, method: str) -> str | None:
+        """Why `method` may not move the robot now, or None if it may. The caller holds `lock`.
+
+        The one place that decides it, so no moving method can forget a reason another one
+        checks. A stop is not judged here: it moves nothing, and `stop` answers it."""
+        if self._shut:
+            # The settle trips to the safe pose once and then ticks towards it. A command that
+            # landed after that trip (a walk, a look putting the neck goal back) kept it from
+            # ever arriving, and close() then turned torque off wherever the robot stood.
+            return SHUTTING_DOWN
+        if self.gave_up:
+            # Accepting a move the loop will not carry out is a wrong answer, not a cautious one.
+            return GAVE_UP
+        if self.fallen and method in FALLEN_REFUSES:
+            return "the robot has fallen"
+        if self.down_by and method == "bot.command":
+            # Lying down on purpose is no fall, and no stance to walk from either.
+            return f"the robot is down after {self.down_by}: stand it up first"
+        return None
+
+    def obey(self, method: str, change: Any, client: Any = None, parts: Any = None) -> Any:
+        """Make `client`'s change to `parts` of the robot, if it may move now, and answer what
+        `change` returns; raise `NotNow` with the reason otherwise. `client` then owns `parts`,
+        and only those (`touch`): a look never takes over a walk.
+
+        The check and the change happen under one hold of `lock`, so nothing that stops the
+        robot (a shutdown, the loop giving up) can come between them."""
+        with self.lock:
+            reason = self.refusal(method)
+            if reason is not None:
+                raise NotNow(reason)
+            result = change()
+            self.touch(client, parts)
+            return result
+
+    def aim_neck(self, yaw_rad: float, pitch_rad: float, client: Any = None) -> None:
+        """Where the head should point. It does not change what the body is doing."""
+
+        def aim() -> None:
             self.neck_goal = (float(yaw_rad), float(pitch_rad))
+
+        self.obey("bot.look", aim, client, [NECK])
 
     def run(self) -> None:
         """The absolute schedule upstream uses, so a slow tick does not accumulate error."""
         self.running = True
         start = time.monotonic()
+        self.loop_started = start
         step = 0
         recent: Any = collections.deque(maxlen=256)
         while self.running:
@@ -651,14 +1169,26 @@ class Daemon:
                 # healthy while nothing drives the robot. Upstream surfaces a controller fault
                 # as a bare KeyError, so this is a live path rather than a theoretical one.
                 # Record it, force the deadman so the next good tick slews to safety, and stop
-                # claiming health. If the bus never comes back, settle and give up.
+                # claiming health. After FAULT_LIMIT in a row it takes no more orders and only
+                # settles, which needs ticks: so it goes on ticking, and stops only once the bus
+                # has failed BUS_GONE_LIMIT in a row and there is nothing to settle with.
                 self.faults += 1
                 self.fault = f"{type(e).__name__}: {e}"
                 log.exception("tick failed (%d in a row)", self.faults)
                 with self.lock:
                     self.command.trip(self.command.default_pose)
-                if self.faults >= FAULT_LIMIT:
-                    log.error("%d ticks failed in a row; settling and stopping", self.faults)
+                    if self.faults >= FAULT_LIMIT and not self.gave_up:
+                        log.error(
+                            "%d ticks failed in a row; taking no more orders and settling to "
+                            "the safe pose",
+                            self.faults,
+                        )
+                        self.gave_up = True
+                        # the safe pose is the whole body, head and hands included
+                        self.neck_goal = None
+                        self.grip_goal.clear()
+                if self.faults >= BUS_GONE_LIMIT:
+                    log.error("%d ticks failed in a row; the bus is gone, stopping", self.faults)
                     self.running = False
             else:
                 self.faults = 0
@@ -699,69 +1229,211 @@ class Daemon:
         Nothing upstream does this: its own shutdown disables torque with no lowering and no
         ramp, which on a standing humanoid is a fall.
 
-        Left to itself this gives the slew a deadline sized to the distance it has to cover.
-        A fixed 8s used to be less than a full-scale slew needs -- 1.5 rad at RESET_VEL is 5s
-        of slew and closer to 9s of wall time -- so a shutdown from a wide pose gave up partway
-        and torqued off a robot that was still moving, which is the fall this method exists to
-        get in front of. The deadline is a ceiling for a body that is stuck, not a schedule:
-        this returns the moment the pose arrives."""
+        The slew is handed out one tick at a time, so the seconds it takes are its ticks over the
+        rate the loop really makes, which a slow or busy machine lowers. A deadline in seconds
+        sized to the distance (`settle_budget`) gave up partway on such a loop and torqued off a
+        robot still on its way, which is the fall this method exists to get in front of. So the
+        settle goes on for as long as the slew keeps closing on the safe pose, however slowly,
+        and returns the moment the pose arrives. It ends short of it when the robot is down,
+        when nothing it watches (`_settle_measures`) has come nearer for FRAME_DWELL_LIMIT ticks
+        that landed (a place outside a joint's limits, which the clamp holds it from, a body on
+        the floor, which rest holds where it lies, or a waist that does not move at all), or at
+        SETTLE_MAX_S (`timeout_s`, if given), so a shutdown always ends; `held_short` says why
+        when that last one ended it.
+
+        Arrival is judged on the pose last sent, after every tick: `_tick` moves the target only
+        on a write that lands, so a tick that raised moved nothing, and a robot already at its
+        safe pose is there whether or not its writes land. A tick that raised counts nothing
+        towards the stall: a bus that fails for a while is waited for, and one that never
+        answers again meets the cap.
+
+        While shutting down, the hard exit is moved on as ticks come back, so it ends a tick
+        that hangs and never a settle that is still closing."""
         log.info("settling to the safe pose before shutdown")
         # The overlays are goals Roboglot asked for, and the safe pose is the whole body.
         self.release_grip()
         with self.lock:
             self.neck_goal = None
-            travel = float(np.max(np.abs(self.command.default_pose - self.target)))
+            # The settle owns every part from here: no deadman of a client's is left to run, and
+            # every client that owned a part is told why it no longer does.
+            for owner in set(self.owners.values()):
+                self._tell(owner, SHUTTING_DOWN)
+            self.owners.clear()
+            self.resting.clear()
             self.command.trip(self.command.default_pose)
-        if timeout_s is None:
-            timeout_s = settle_budget(travel)
-        deadline = time.monotonic() + timeout_s
-        while time.monotonic() < deadline:
+        cap = SETTLE_MAX_S if timeout_s is None else timeout_s
+        began = armed = time.monotonic()
+        nearest: dict[str, float] = {}
+        still, ticks, failed, failing = 0, 0, 0, 0
+        self.held_short = None
+        while True:
             try:
                 self.tick()
             except Exception:
-                # `tick()` swallows a bad read; a bad WRITE still propagates. Letting it out
-                # of here would abandon the slew halfway and go straight to close(), which is
-                # the torque-off this whole method exists to get in front of. Keep trying: the
-                # deadline is what ends this, not the first fault.
-                log.exception("a tick failed while settling; continuing to the deadline")
-                time.sleep(CONTROL_DT)
-                continue
+                # `tick()` swallows a dropped read; a write, or a read that fails another way,
+                # still raises. Letting it out of here would abandon the slew and go straight to
+                # close(), the torque-off this method exists to get in front of. It moved
+                # nothing, so it is judged neither way below, and once a run, not every tick.
+                if not failing:
+                    log.exception("a tick failed while settling; waiting for the bus")
+                failed += 1
+                failing += 1
+            else:
+                if failing:
+                    log.warning("the bus answered again after %d failed ticks", failing)
+                failing = 0
+            ticks += 1
+            now = time.monotonic()
+            if self._shut and now - armed >= SETTLE_FLOOR_S / 2:
+                # a tick came back, so the hard exit, there for one that does not, moves on
+                hard_exit_after(SETTLE_FLOOR_S + CLOSE_TIMEOUT_S, "settling, still closing")
+                armed = now
+            landed = not failing
             with self.lock:
-                if float(np.max(np.abs(self.command.default_pose - self.target))) < 1e-2:
+                left = np.abs(self.command.default_pose - self.target)
+                short = float(np.max(left))
+                measures = self._settle_measures(left)
+                down = self.down_by if self.lying else None
+                # where each joint can be put down: its place, or the nearest its limits allow
+                reachable = np.clip(self.command.default_pose, self.lo, self.hi)
+                off = float(np.max(np.abs(self.target - reachable)))
+                waist = float(np.max(np.abs(self.safe.pose[self.waist]), initial=0.0))
+                if short < SETTLED_RAD:
                     log.info("settled")
                     return True
+                if landed and self.fallen:
+                    # Rest for a body on the floor is holding where it lies (`plan`), which this
+                    # tick has done: waiting longer would change nothing.
+                    log.warning("the robot is down, so it holds where it lies rather than settle")
+                    return False
+            if landed:
+                # Each measure keeps its own nearest, so a change of stage is no progress, and a
+                # waist that reads either side of WAIST_THRESHOLD in turn cannot hold this off.
+                closer = False
+                for name, (value, margin) in measures.items():
+                    if value < nearest.get(name, math.inf) - margin:
+                        nearest[name], closer = value, True
+                still = 0 if closer else still + 1
+                if still >= FRAME_DWELL_LIMIT:
+                    seen = (
+                        f"the slew stopped closing on the safe pose: {short:.3f} rad short, "
+                        f"nothing nearer for {still} ticks"
+                    )
+                    if down:
+                        # on the floor already, where closing drops nothing
+                        log.warning(
+                            "%s; the robot is down after %s, held where it lies", seen, down
+                        )
+                        return False
+                    if waist > WAIST_THRESHOLD or off >= SETTLED_RAD:
+                        # Not where it can be put down: a close would take torque off a robot
+                        # held mid-pose, so this ends as the cap does, left torqued and holding.
+                        self.held_short = seen + (
+                            f", the waist still reads {waist:.2f} rad twisted"
+                            if waist > WAIST_THRESHOLD
+                            else f", a joint {off:.3f} rad from where it can be put down"
+                        )
+                        log.error("%s", self.held_short)
+                        return False
+                    log.warning("%s", seen)  # as near as the limits let it be: closing is right
+                    return False
+            if now - began >= cap:
+                self.held_short = (
+                    f"the safe pose was not reached in {cap:.0f} s: {short:.3f} rad still to go, "
+                    f"the loop making {ticks / (now - began):.1f} of its {CONTROL_HZ:.0f} ticks a "
+                    f"second, {failed} of its {ticks} ticks failed"
+                )
+                log.error("%s", self.held_short)
+                return False
             time.sleep(CONTROL_DT)
-        log.warning("did not settle within %.0fs; leaving it where it is", timeout_s)
-        return False
+
+    def _settle_measures(self, left: Any) -> dict[str, tuple[float, float]]:
+        """What the settle watches for progress this tick, each as (how far it has left, how much
+        nearer counts): the settle has come nearer on a tick that brought any of them nearer.
+
+        While the waist reads twisted past WAIST_THRESHOLD, `waist_first` drives the waist alone
+        to zero and holds every other joint at the pose last sent, so two things close: the
+        waist's own target, a slew step a tick until it is zero, and the waist as the daemon
+        reads it, which a slow servo brings in long after its target got there. That reading
+        counts as nearer by ARRIVED_RAD at least, so a waist that has stopped moving stalls
+        however its reading wanders. After that stage every joint closes on its place, and the
+        measure is the sum of what is left (`left`). A target measure cannot rise while the slew
+        is getting there: on every tick that lands each joint it counts moves a slew step
+        towards its goal, or is held there by the clamp. The caller holds `lock`."""
+        if len(self.waist):
+            waist = float(np.max(np.abs(self.safe.pose[self.waist])))
+            if waist > WAIST_THRESHOLD:
+                return {
+                    "the waist's target": (float(np.sum(np.abs(self.target[self.waist]))), 0.0),
+                    "the waist read": (waist, ARRIVED_RAD),
+                }
+        return {"the pose": (float(np.sum(left)), 0.0)}
 
     def shutdown(self) -> None:
-        """Settle, then close under a hard deadline.
+        """Settle, then close, each under a hard deadline that needs no GIL (`hard_exit_after`):
+        for the settle, one tick's, moved on as its ticks come back, so a slow loop is waited
+        for and a hung tick is not.
 
         `close()` is bound without releasing the GIL and retries torque-off forever on an
-        unresponsive bus, so a stuck shutdown freezes every thread including this one. A
-        torqued robot and a dead process beats a frozen process nobody can signal."""
-        if self._shut:
+        unresponsive bus, and a settle tick on a dead bus can block for good, so a stuck
+        shutdown freezes every thread including this one. A torqued robot and a dead process
+        beats a frozen process nobody can signal, and for the same reason a settle that its
+        cap stopped with the robot still on its way leaves it holding rather than closes
+        (`leave_holding`).
+
+        The settle starts as soon as the loop is told to stop, so the body is never left
+        uncommanded in between: closing the camera, which can wait seconds on a wedged USB
+        read, comes after it.
+
+        Entered once, from whatever started it. A caller on another thread (the control
+        thread's excepthook while a signal's shutdown settles, say) waits until that one has
+        closed, so it cannot leave while the robot is still being settled; the hard exit bounds
+        the wait. The thread already in here, reached again from a signal handler that CPython
+        runs between any two of its lines, returns at once, and what it interrupted goes on.
+        No lock is taken on the way in: a signal landing while one was held by its own thread
+        waited on it for ever, before the hard exit was armed."""
+        if self.shutdown_here():
             return
+        self._inside.here = True
+        try:
+            first = self._first_shutdown.pop()  # `list.pop` is atomic: one caller gets True
+        except IndexError:
+            first = False
+        if not first:
+            self._shut_done.wait()
+            return
+        # From here every moving method is refused (`refusal`), so a connected client cannot
+        # keep the settle from the safe pose.
         self._shut = True
-        self.running = False
-        if self.camera is not None:
-            self.camera.close()
+        # Armed before anything here waits on the lock or on the bus, where a tick blocked on the
+        # bus may hold it: one tick's bound, which the settle moves on as its ticks come back.
+        hard_exit_after(SETTLE_FLOOR_S + CLOSE_TIMEOUT_S, "settling to the safe pose")
         try:
-            self.settle()
-        except Exception:  # never let settling stop the close
-            log.exception("settling failed; closing anyway")
-
-        def bail() -> None:
-            log.error("close() did not return in %.0fs; exiting hard", CLOSE_TIMEOUT_S)
-            os._exit(1)
-
-        timer = threading.Timer(CLOSE_TIMEOUT_S, bail)
-        timer.daemon = True
-        timer.start()
-        try:
+            self.running = False
+            try:
+                self.settle()
+            except Exception:  # never let settling stop the close
+                log.exception("settling failed; closing anyway")
+            if self.held_short is not None:
+                # Still on its way to the safe pose when the settle's cap came: closing takes
+                # torque off, which drops it, so it is left torqued and holding where it is.
+                leave_holding(self.held_short)
+            if self.camera is not None:
+                hard_exit_after(CAMERA_JOIN_S + CLOSE_TIMEOUT_S, "closing the camera")
+                try:
+                    self.camera.close()
+                except Exception:  # never let the camera stop the close
+                    log.exception("closing the camera failed; closing the bus anyway")
+            hard_exit_after(CLOSE_TIMEOUT_S, "closing the bus")
             self.sim.close()
         finally:
-            timer.cancel()
+            faulthandler.cancel_dump_traceback_later()
+            self._shut_done.set()
+
+    def shutdown_here(self) -> bool:
+        """Whether this very thread is already in `shutdown`: a signal handler that CPython runs
+        inside it finds it is. Per thread, and with no lock, so a handler never waits on one."""
+        return bool(getattr(self._inside, "here", False))
 
     # -- what the socket asks it ----------------------------------------------------
 
@@ -770,9 +1442,20 @@ class Daemon:
             return {
                 "t": round(time.monotonic(), 3),
                 "policy": self.command.motion or self.command.mode,
-                "posture": "fallen" if self.fallen else "standing",
+                # The client's posture words are a closed set (standing, sitting, fallen,
+                # unknown), and a client from before refuses any other. A trunk past the
+                # threshold that is no fall (down after a floor motion, or a stand from the floor
+                # that did not get it up) is none of the first three, so it is `unknown`, never
+                # `standing`; `down` says why.
+                "posture": "fallen" if self.fallen else "unknown" if self.lying else "standing",
+                "down": self.down_by,
                 "fallen": self.fallen,
                 "tilt_deg": round(self.tilt_deg, 1),
+                # The world's up in the body's frame (x, y, z), to the joints' own precision: a
+                # person tipping the robot nose down on its stand reads FACE_DOWN's sign in x.
+                "up_in_body": None
+                if self.up_in_body is None
+                else [round(v, 3) for v in self.up_in_body],
                 "joints": {
                     k: round(float(v), 3) for k, v in zip(self.order, self.target, strict=True)
                 },
@@ -797,8 +1480,71 @@ class Daemon:
                 "rejected_reads": self.safe.rejected,
             }
 
-    def touch(self) -> None:
-        self.command.last_client = time.monotonic()
+    def touch(self, client: Any = None, parts: Any = None) -> None:
+        """`client` commanded `parts` (every part, for a caller inside this process that names
+        none): it owns them from now on, they are no longer at rest, and its clock restarts. A
+        connection that was driving one of them is told another connection took it, as a stop
+        tells it; the caller inside this process is no connection, and tells nobody."""
+        self.heard(client)
+        for part in self.parts if parts is None else parts:
+            previous = self.owners.get(part)
+            if client is not None and previous is not client:
+                self._tell(previous, LOST_TO_A_COMMAND.format(part=part.replace("_", " ")))
+            self.owners[part] = client
+            self.resting.discard(part)
+
+    def heard(self, client: Any) -> None:
+        """`client` is there: its clock restarts, which keeps alive the parts it owns and no
+        other. Another connection's keepalive says nothing about the one driving a part.
+
+        Without `lock`, as `touch` always was: a tick blocked on the bus holds the lock, and a
+        keepalive must not stall the connection behind it, or its health question goes
+        unanswered too."""
+        if client is None:
+            self.command.last_client = time.monotonic()
+        else:
+            self.heard_at[client] = time.monotonic()
+
+    def left(self, client: Any) -> None:
+        """`client`'s connection has closed: its clock goes, so the next tick brings what it
+        owned to rest, and nothing is kept for it. Under `lock`, which every notice is written
+        under (`_tell`), so none can be written between its check and this."""
+        with self.lock:
+            self.heard_at.pop(client, None)
+            self.lost.pop(client, None)
+
+    def _silent(self, client: Any) -> bool:
+        last = self.command.last_client if client is None else self.heard_at.get(client)
+        return last is None or time.monotonic() - last > DEADMAN_S
+
+    def _deadman(self) -> None:
+        """Bring to rest each part whose owner has said nothing for DEADMAN_S, or has gone, and
+        only those. The caller holds `lock`.
+
+        Rest is the safe pose, reached at RESET_VEL: the body's by the deadman's trajectory,
+        waist first, a head's or a gripper's by its own (`_with_neck`); on a fallen robot every
+        part holds where it lies instead (`plan`). A part with no owner, holding after a stop or
+        never commanded, is never moved by it."""
+        silent = [part for part, owner in self.owners.items() if self._silent(owner)]
+        if not silent:
+            return
+        log.warning("the client driving %s went quiet; bringing it to rest", ", ".join(silent))
+        for part in silent:
+            del self.owners[part]
+            self.resting.add(part)
+            self._rest_progress.pop(part, None)
+            if part == BODY:
+                self.command.trip(self.command.default_pose)
+            elif part == NECK:
+                self.neck_goal = None
+            else:
+                for index in self._joints(part):
+                    self.grip_goal.pop(index, None)
+
+    @property
+    def deadman_tripped(self) -> bool:
+        """Whether the deadman is bringing any part to rest."""
+        return bool(self.resting)
 
 
 # ── the socket ──────────────────────────────────────────────────────────────────────────
@@ -812,7 +1558,14 @@ class Handler(socketserver.StreamRequestHandler):
     motors: int
 
     def handle(self) -> None:
-        authed = self.token is None
+        try:
+            self._converse()
+        finally:
+            # Its clock goes with it, so what it owned is brought to rest at the next tick.
+            self.daemon_ref.left(self)
+
+    def _converse(self) -> None:
+        authed = not self.token
         spoken = False
         while raw := self.rfile.readline(MAX_LINE + 1):
             if len(raw) > MAX_LINE:
@@ -852,14 +1605,19 @@ class Handler(socketserver.StreamRequestHandler):
                 continue
             if req_id is not None:
                 self._reply(req_id, result)
+            elif method == "bot.keepalive" and (notice := self.daemon_ref.lost.pop(self, None)):
+                # A keepalive has no answer, so a connection that lost a part to someone else
+                # is told by a notification of its own, once, at its next keepalive.
+                self._notify("bot.lost", {"reason": notice})
 
     def _dispatch(
         self, method: str | None, params: dict[str, Any], authed: bool
     ) -> tuple[Any, bool]:
         d = self.daemon_ref
         if method == "bot.hello":
-            # as bytes: compare_digest raises on a str that is not ASCII
-            if self.token is not None and not hmac.compare_digest(
+            # As bytes: compare_digest raises on a str that is not ASCII. An empty token is no
+            # token, as `main` reads one: comparing against "" admitted a hello that sent none.
+            if self.token and not hmac.compare_digest(
                 str(params.get("token") or "").encode("utf-8", "surrogatepass"),
                 self.token.encode("utf-8", "surrogatepass"),
             ):
@@ -871,87 +1629,114 @@ class Handler(socketserver.StreamRequestHandler):
                 "robot": self.robot_name,
                 "motors": self.motors,
                 "capabilities": dict(self.capabilities),
+                # Whether a token was checked, which a client that sent one cannot otherwise
+                # tell from a daemon that took it and checked nothing.
+                "auth": "token" if self.token else "none",
             }, True
         if not authed:
             raise _Refused(ERR_BAD_TOKEN, "say bot.hello with a token first")
-        # Only a method that drives the robot feeds the deadman. Reading state, health or a
+        # Only a method that drives the robot feeds the deadman: the keepalive here, and every
+        # moving method once `Daemon.obey` has carried it out. Reading state, health or a
         # frame is a question, not driving: a client whose LLM stalled mid-verb, or which
         # polls while it thinks, would otherwise hold the deadman off for as long as it kept
         # asking. WALK is latched, so the robot would go on walking with nobody steering it,
         # which is the exact failure the deadman exists for.
-        if method in COMMAND_METHODS:
-            d.touch()
+        if method == "bot.keepalive":
+            # A notification, and the only thing a client has to send to say it is still
+            # there. It keeps alive the parts this connection owns, and no other (`heard`).
+            d.heard(self)
+            return None, authed
+        if method in MOVING_METHODS:
+            try:
+                answer = self._move(d, str(method), params)
+            except NotNow as e:
+                return {"accepted": False, "reason": str(e)}, authed
+            # A connection that lost a part to someone else learns it at its next command too.
+            if answer.get("accepted") and (notice := d.lost.pop(self, None)):
+                answer["lost"] = notice
+            return answer, authed
         if method == "bot.state":
             return d.state(), authed
         if method == "bot.health":
+            # Nothing here takes `lock`: a tick blocked on the bus holds it, and the loop's own
+            # numbers stay at their last good values while it does. The age of the last tick's
+            # end is the one thing that keeps moving.
+            age = d.tick_age_s()
             reason = None
             if d.fault is not None:
                 reason = f"the control loop faulted: {d.fault}"
+            elif age is not None and age > TICK_STALE_S:
+                reason = (
+                    f"no control tick has ended for {age:.2f}s: the loop is stalled, and the "
+                    "deadman inside it cannot fire"
+                )
+            elif d._shut:
+                reason = SHUTTING_DOWN
+            elif d.gave_up:
+                reason = GAVE_UP
             elif d.fallen:
                 reason = "the robot has fallen"
+            elif d.rise_failed is not None:
+                reason = d.rise_failed
             return {
                 "ok": reason is None,
                 "reason": reason,
                 "loop_hz": round(d.loop_hz, 1),
+                "tick_age_ms": None if age is None else round(age * 1000.0, 1),
             }, authed
+        if method == "bot.frame":
+            return {"jpeg": d.camera.latest() if d.camera is not None else None}, authed
+        raise _Refused(ERR_UNKNOWN, f"unknown method {method!r}")
+
+    def _move(self, d: Daemon, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        """One of MOVING_METHODS. Each checks what it was asked for, and its change reaches the
+        loop only through `Daemon.obey`, which raises `NotNow` when the robot may not move.
+        This connection then owns the part it commanded, and only that part. A stop is
+        `Daemon.stop`: from anyone, in every state, owning nothing."""
         if method == "bot.stop":
-            with d.lock:
-                d.command.hold(d.safe.pose)
-            return {"accepted": True}, authed
+            return d.stop(self)
         if method == "bot.stand":
-            if d.fallen:
-                return {"accepted": False, "reason": "the robot has fallen"}, authed
-            with d.lock:
-                d.command.stand()
-            return {"accepted": True}, authed
+            return {"accepted": True, **d.obey(method, d.stand, self, [BODY])}
         if method == "bot.perform":
             name = str(params.get("motion", ""))
             frames = d.motion_library.get(name)
             if not frames:
-                return {"accepted": False, "reason": f"no motion named {name!r}"}, authed
-            if d.fallen:
-                return {"accepted": False, "reason": "the robot has fallen"}, authed
-            with d.lock:
-                d.command.play(name, frames)
-            return {"accepted": True}, authed
+                return {"accepted": False, "reason": f"no motion named {name!r}"}
+            kept = d.obey(method, lambda: d.play(name, frames, self), self, d.parts)
+            # what this connection's own look or grip still holds through the motion
+            return {"accepted": True, "kept": kept} if kept else {"accepted": True}
         if method == "bot.look":
             if not self.capabilities.get("neck"):
-                return {"accepted": False, "reason": "this build has no neck"}, authed
+                return {"accepted": False, "reason": "this build has no neck"}
             d.aim_neck(
                 math.radians(_number(params, "yaw_deg")),
                 math.radians(_number(params, "pitch_deg")),
+                self,
             )
-            return {"accepted": True}, authed
+            return {"accepted": True}
         if method == "bot.command":
             if not self.capabilities.get("walk"):
-                return {"accepted": False, "reason": "no walk policy is staged"}, authed
-            with d.lock:
-                d.command.drive(
-                    _number(params, "walk_x"),
-                    _number(params, "walk_y"),
-                    _number(params, "walk_turn"),
-                )
-            return {"accepted": True}, authed
-        if method == "bot.grip":
-            if not self.capabilities.get("gripper"):
-                return {"accepted": False, "reason": "this build has no grippers"}, authed
-            side = str(params.get("side", "right"))
-            if side not in ("left", "right", "both"):
-                raise _Refused(ERR_REFUSED, f"unknown side {side!r}")
-            moved = d.set_grip(side, bool(params.get("close", True)))
-            if not moved:
-                return {
-                    "accepted": False,
-                    "reason": f"this robot has no gripper motor on the {side}",
-                }, authed
-            return {"accepted": True, "motors": moved}, authed
-        if method == "bot.keepalive":
-            # A notification, and the only thing a client has to send to say it is
-            # still there. `d.touch()` above already did the work.
-            return None, authed
-        if method == "bot.frame":
-            return {"jpeg": d.camera.latest() if d.camera is not None else None}, authed
-        raise _Refused(ERR_UNKNOWN, f"unknown method {method!r}")
+                return {"accepted": False, "reason": "no walk policy is staged"}
+            asked = (
+                _number(params, "walk_x"),
+                _number(params, "walk_y"),
+                _number(params, "walk_turn"),
+            )
+            walk = within_envelope(asked, d.walk_envelope)
+            d.obey(method, lambda: d.drive(*walk), self, [BODY])
+            if walk == asked:
+                return {"accepted": True}
+            return {"accepted": True, "clamped_to": dict(zip(WALK_KEYS, walk, strict=True))}
+        # bot.grip, the last of MOVING_METHODS
+        if not self.capabilities.get("gripper"):
+            return {"accepted": False, "reason": "this build has no grippers"}
+        side = str(params.get("side", "right"))
+        if side not in ("left", "right", "both"):
+            raise _Refused(ERR_REFUSED, f"unknown side {side!r}")
+        moved = d.set_grip(side, bool(params.get("close", True)), self)
+        if not moved:
+            return {"accepted": False, "reason": f"this robot has no gripper motor on the {side}"}
+        return {"accepted": True, "motors": moved}
 
     def _reply(self, req_id: Any, result: Any) -> None:
         self.wfile.write(
@@ -959,6 +1744,11 @@ class Handler(socketserver.StreamRequestHandler):
                 json.dumps({"jsonrpc": JSONRPC_VERSION, "id": req_id, "result": result}) + "\n"
             ).encode()
         )
+
+    def _notify(self, method: str, params: dict[str, Any]) -> None:
+        """A message to this client that answers nothing it asked."""
+        payload = {"jsonrpc": JSONRPC_VERSION, "method": method, "params": params}
+        self.wfile.write((json.dumps(payload) + "\n").encode())
 
     def _error(self, req_id: Any, code: int, message: str) -> None:
         if req_id is None:
@@ -991,6 +1781,11 @@ class _Refused(Exception):
     def __init__(self, code: int, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+class NotNow(Exception):
+    """Why the robot may not move at the moment. A client hears it as a refusal with this
+    reason, the way it hears "the robot has fallen", and not as a protocol error."""
 
 
 class Server(socketserver.ThreadingTCPServer):
@@ -1159,7 +1954,7 @@ class CameraFeed:
 
     def close(self) -> None:
         self.running = False
-        self.thread.join(timeout=2.0)
+        self.thread.join(timeout=CAMERA_JOIN_S)
         # upstream's own close, which the device needs and which nothing else calls
         with contextlib.suppress(Exception):
             self.camera.close()
@@ -1257,13 +2052,114 @@ def build_real(robot_name: str, root: str) -> tuple[Any, Any]:
     return robot, sim
 
 
+# ── who may drive it ────────────────────────────────────────────────────────────────────
+
+
+class TokenFileError(RuntimeError):
+    """A token file that was named and is missing, unreadable, or holds no token."""
+
+
+def read_token(path: str) -> str:
+    """The token in `path`. The Jetson and MOSS daemons' rules: the flag has no default, so a
+    file that is named is a token asked for, and a missing, unreadable or empty one refuses to
+    start rather than starting with nobody checked, which no client could tell from a daemon
+    that had checked it."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            token = fh.read().strip()
+    except UnicodeDecodeError:
+        # Not the decoder's own words: they name the byte it stopped at, which is a byte of
+        # the token, and this refusal goes to the journal.
+        raise TokenFileError(
+            f"the token file {path} is not UTF-8 text. Refusing to start without it."
+        ) from None
+    except OSError as e:
+        raise TokenFileError(
+            f"cannot read the token file {path}: {e}. Refusing to start without it."
+        ) from e
+    if not token:
+        raise TokenFileError(f"the token file {path} is empty. Refusing to start without a token.")
+    return token
+
+
+def resolve_token(args: argparse.Namespace) -> str | None:
+    """`--token-file`, else `--token`, else the environment. An empty token, from the flag or
+    the environment, is no token: kept as "", it admitted a hello that carried none."""
+    if args.token_file:
+        return read_token(args.token_file)
+    if args.token is not None:
+        if not args.token.strip():
+            return None
+        log.warning(
+            "a token given with --token can be read by every account on this machine (ps, "
+            "/proc/<pid>/cmdline); prefer --token-file or %s",
+            TOKEN_ENV,
+        )
+        return str(args.token)
+    value = os.environ.get(TOKEN_ENV, "")
+    return value if value.strip() else None
+
+
+def is_loopback(host: str) -> bool:
+    """Whether `host` is reachable from this machine alone: `localhost`, or an address in
+    127.0.0.0/8 or ::1. Any other name can resolve to anything, so it counts as wide."""
+    name = host.strip().lower()
+    if name == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
+def open_address_refusal(host: str, token: str | None, *, allow: bool) -> str | None:
+    """Why the daemon will not start on `host` with `token`, or None if it may. It logs a
+    warning when it lets an open start through on purpose.
+
+    Off loopback with no token, anything that can reach the address could drive the robot, so
+    that start needs saying twice. Loopback with no token is what it always was: the docs reach
+    it through an ssh tunnel."""
+    if token or is_loopback(host):
+        return None
+    if allow:
+        log.warning(
+            "listening on %s with no token, on purpose (--allow-no-token): anything that can "
+            "reach this address can drive the robot",
+            host,
+        )
+        return None
+    return (
+        f"refusing to listen on {host} with no token: anything that can reach that address "
+        f"could drive this robot. Give it a token with --token-file (or {TOKEN_ENV}), or pass "
+        "--allow-no-token to serve anyone who can reach it, on purpose."
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=DESCRIPTION)
     parser.add_argument("--robot", default="toddlerbot_2xc")
     parser.add_argument("--toddlerbot", default=os.environ.get("TODDLERBOT_ROOT", "."))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
-    parser.add_argument("--token", default=os.environ.get(TOKEN_ENV))
+    tokens = parser.add_mutually_exclusive_group()
+    tokens.add_argument(
+        "--token",
+        default=None,
+        help=f"The token clients must send (default: ${TOKEN_ENV}). Every account on this "
+        "machine can read a command line, so prefer --token-file.",
+    )
+    tokens.add_argument(
+        "--token-file",
+        default=None,
+        help="Read the token from this file. Refuses to start if it is missing, unreadable "
+        "or empty.",
+    )
+    parser.add_argument(
+        "--allow-no-token",
+        action="store_true",
+        help="Serve anyone who can reach a --host that is not loopback, with no token, on "
+        "purpose. Without it that start is refused.",
+    )
     parser.add_argument("--fake", action="store_true", help="Run with a fake body, no robot.")
     parser.add_argument(
         "--camera",
@@ -1284,6 +2180,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if np is None:
         sys.stderr.write("Roboglot's ToddlerBot daemon needs numpy\n")
+        return 2
+
+    # Who may drive the robot is settled before the robot is touched, so a start refused here
+    # has energised nothing.
+    try:
+        token = resolve_token(args)
+    except TokenFileError as e:
+        log.error("%s", e)
+        sys.stderr.write(f"{e}\n")
+        return 2
+    refused = open_address_refusal(args.host, token, allow=args.allow_no_token)
+    if refused is not None:
+        log.error("%s", refused)
+        sys.stderr.write(refused + "\n")
         return 2
 
     # Resolved once, before anything changes directory. build_real chdirs into the checkout,
@@ -1362,18 +2272,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # Nothing upstream installs a signal handler, and its C level atexit does not run on
     # SIGTERM at all, so a systemd stop would leave a torqued robot holding its last target.
-    leaving = threading.Event()
-
     def on_signal(signum: int, _frame: Any) -> None:
         # The settle takes seconds and prints nothing while it runs, so an operator's reflex
-        # is a second Ctrl-C. That used to re-enter here and raise straight through the slew,
-        # leaving the robot wherever it had got to and skipping the close entirely.
-        if leaving.is_set():
+        # is a second Ctrl-C. A signal that lands inside a settle on this thread, whichever
+        # thing began the shutdown (a first signal, or main's `finally` after the server died),
+        # returns and lets it finish: raising here went straight through the slew, skipped the
+        # close, and the interpreter's exit then turned torque off wherever the robot stood.
+        if daemon.shutdown_here():
             log.warning("signal %s: already settling, and it will not be hurried", signum)
             return
-        leaving.set()
         log.warning("signal %s: settling before exit", signum)
-        daemon.shutdown()
+        daemon.shutdown()  # on another thread already? This waits for it to have closed.
         raise SystemExit(0)
 
     for sig in (signal.SIGINT, getattr(signal, "SIGTERM", signal.SIGINT)):
@@ -1423,7 +2332,7 @@ def main(argv: list[str] | None = None) -> int:
     loop.start()
 
     Handler.daemon_ref = daemon
-    Handler.token = args.token
+    Handler.token = token
     Handler.capabilities = capabilities
     Handler.robot_name = args.robot
     Handler.motors = int(robot.nu)
