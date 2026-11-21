@@ -230,9 +230,11 @@ def test_a_content_length_of_more_digits_than_int_reads_is_a_refusal_and_not_a_t
             met = runner.invoke(app, ["passport", "check", url])
         assert met.exit_code == 1
         assert met.exception is None or isinstance(met.exception, SystemExit), met.exception
-    # a zero in front of a length that still fits is read as before
+    # a zero in front is refused however few the digits, and a length of nothing is one
     padded = b"HTTP/1.0 200 OK\r\nContent-Length: 01\r\n\r\nx"
-    assert fetch._parse(padded, "http://127.0.0.1/")[3] == b"x"
+    with pytest.raises(PassportError, match="padded with zeros"):
+        fetch._parse(padded, "http://127.0.0.1/")
+    assert fetch._parse(b"HTTP/1.0 200 OK\r\nContent-Length: 0\r\n\r\nx", "u")[3] == b""
 
 
 def test_a_body_in_chunks_is_read_whole() -> None:
@@ -336,6 +338,21 @@ def test_a_post_whose_length_has_more_digits_than_any_the_inbox_takes_is_answere
     nines = b"9" * len(TOO_MANY_DIGITS)
     answer = _exchange(with_inbox.port, head + b"Content-Length: " + nines + b"\r\n\r\n")
     assert answer.startswith(b"HTTP/1.0 413")
+
+
+def test_a_post_whose_length_is_padded_with_zeros_is_answered_400_however_few_they_are(
+    with_inbox: PassportServer,
+) -> None:
+    """Zeros in front of a length were answered 400 only once they took it past the digits of
+    the inbox's limit, so `0002` was read and `000002` refused: one rule now, whatever their
+    number. A length of nothing, `0`, is still a length."""
+    head = f"POST {INBOX_PATH} HTTP/1.0\r\nContent-Type: application/json\r\n".encode()
+    for padded in (b"02", b"0002", b"000002"):
+        answer = _exchange(with_inbox.port, head + b"Content-Length: " + padded + b"\r\n\r\n{}")
+        assert answer.startswith(b"HTTP/1.0 400") and b"not a length" in answer, padded
+    assert _exchange(with_inbox.port, head + b"Content-Length: 0\r\n\r\n").startswith(
+        b"HTTP/1.0 204"
+    )
 
 
 def test_the_server_names_itself_and_not_the_python_under_it(with_inbox: PassportServer) -> None:

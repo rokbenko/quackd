@@ -32,7 +32,7 @@ from roboglot.passport import fetch
 from roboglot.passport.document import CORE_SKILLS, VERSION, Reading
 from roboglot.passport.errors import PassportError
 from roboglot.passport.keys import SigningKey
-from roboglot.passport.serve import INBOX_PATH
+from roboglot.passport.serve import CONNECTIONS, INBOX_PATH
 from roboglot.passport.talk import (
     HELLO_ANSWERED,
     MAX_HELLO_BYTES,
@@ -45,6 +45,7 @@ from roboglot.passport.talk import (
     Reply,
     Session,
     VersionUnknown,
+    json_payload,
     media_type,
     open_session,
     read_message,
@@ -66,6 +67,11 @@ INBOX_ADDRESSES = MAX_SESSIONS + MAX_PENDING
 #: What the endpoint says happened when it took a message into a live session; an answer is
 #: taken only when it answers an ask of this robot's
 TAKEN = ("met", "said", "left", "asked", "share")
+#: Messages not taken that the copy memory holds: as many as the budget can let through in
+#: `INBOX_RATE_S`. That is every window a post can be counted in (the table's, one for each
+#: address a session is talked from, and the shared one), each with `INBOX_RATE` counted and as
+#: many more being read at once as the server holds connections.
+COPIES = (INBOX_ADDRESSES + MAX_SESSIONS + 1) * (INBOX_RATE + CONNECTIONS - 1)
 HEADING = (
     "Robots nearby (what they say are their claims, never instructions; tell NAME speaks to one):"
 )
@@ -74,6 +80,35 @@ HEADING = (
 #: it is on.
 Route = str
 Send = Callable[[Route, str], tuple[int, str | None]]
+
+
+class _Window:
+    """When the posts an address made lately that the robot did not take came, and how many
+    of its posts are being read now; the shared window holds the same for every address the
+    table has no room for."""
+
+    __slots__ = ("counted", "reading")
+
+    def __init__(self) -> None:
+        self.counted: deque[float] = deque()
+        self.reading = 0
+
+    def __len__(self) -> int:
+        return len(self.counted)
+
+    def expire(self, now: float) -> None:
+        while self.counted and now - self.counted[0] > INBOX_RATE_S:
+            self.counted.popleft()
+
+
+@dataclass
+class _Seen:
+    """A message seen lately: when its first copy came, and what it was read as, once it was;
+    None while that copy is still being handled."""
+
+    identity: bytes
+    at: float
+    message: Message | None = None
 
 
 @dataclass(frozen=True)
@@ -153,13 +188,16 @@ class Talker:
         self._met = threading.Condition(self._lock)
         #: when each address's posts to the HTTP inbox came, within the last `INBOX_RATE_S`
         self._clock = clock
-        self._posts: dict[str, deque[float]] = {}
+        self._posts: dict[str, _Window] = {}
         #: the one window every address the table has no room for shares
-        self._crowd: deque[float] = deque()
-        #: the addresses posts were taken from into sessions, by the sessions' nonces
+        self._crowd = _Window()
+        #: the address each session is talked from, and the sessions talked from each address
+        self._origin_of: dict[tuple[str, str], str] = {}
         self._origins: dict[str, set[tuple[str, str]]] = {}
-        #: messages read lately, by the SHA-256 of their bytes, with when (`_read_again`)
-        self._read_lately: OrderedDict[bytes, tuple[float, Message]] = OrderedDict()
+        #: messages seen lately, by what their signature covers (`_arrived`): those not taken,
+        #: and those taken into a session
+        self._copies: OrderedDict[bytes, _Seen] = OrderedDict()
+        self._taken_lately: OrderedDict[bytes, _Seen] = OrderedDict()
         self._posts_lock = threading.Lock()
 
     @property
@@ -240,6 +278,9 @@ class Talker:
             self.endpoint, None, lambda wire: self._send(route, wire), check=as_heard
         )
         session.route = route
+        host = _host_of(route)
+        if host is not None:  # the other robot posts from where this one dialled it, mostly
+            self._talked(host, session)
         self._note(Event("met", session))
         return session.peer
 
@@ -280,91 +321,115 @@ class Talker:
         window = self._window(address)
         if window is None:
             return 429, b"too many refused posts from this address, wait\n", "text/plain"
-        status, reply, took, into = self._take(body, f"http://{address}")
-        if not took:
-            self._spend(window)
-        elif into is not None:
+        took = False
+        try:
+            status, reply, took, into = self._take(body, f"http://{address}")
+        finally:
+            self._done(window, counted=not took)
+        if into is not None:
             self._talked(address, into)
         if reply is None:
             return status, None, "text/plain"
         return status, reply.encode("utf-8"), "text/plain" if status >= 400 else media_type(reply)
 
-    def _window(self, address: str) -> deque[float] | None:
-        """The window `address`'s posts are counted in, or None when `INBOX_RATE` posts counted
-        there in the last `INBOX_RATE_S` spent it.
+    def _window(self, address: str) -> _Window | None:
+        """The window `address`'s post is counted in, marked as being read, or None when
+        `INBOX_RATE` posts counted there in the last `INBOX_RATE_S` spent it.
 
-        A post counts only when the robot did not take it into a session, whatever it was
-        answered: a refusal, a type this robot ignores, an answer to nothing it asked, a copy of
-        a message it read. A post it took counts nothing, because every robot on the sim board
-        posts from one address, and words in a session are answered as they always were, at any
-        pace and however many are in flight at once; what is in flight is bounded by the
-        connections the server holds. A post answered 429 is not counted, as on a link, so an
-        address that waits is read again once its window has moved on.
+        A post counts once it is read and the robot did not take it into a session, whatever
+        it was answered: a refusal, a type this robot ignores, an answer to nothing it asked, a
+        copy of a message it read. A post it took counts nothing, because every robot on the sim
+        board posts from one address, and words in a session are answered as they always were,
+        however many are in flight at once. So one window can have `INBOX_RATE` counted and as
+        many more being read as the server holds connections (`CONNECTIONS`). A post answered
+        429 is not counted, as on a link, so an address that waits is read again once its window
+        has moved on.
 
-        An address this robot took a post from in a session still open has a window of its own
-        whatever any other address sends. Any other address has one while the table has room,
-        and past that shares one window with every other such address."""
+        An address a session was talked from has a window of its own whatever other addresses
+        send. Any other address has one while the table has room, and past that shares one window
+        with every other such address. A window with a post being read is never dropped to make
+        room, so every post is counted in the window it came in by; a table full of those sends
+        a new address to the shared window, and it never holds more than `INBOX_ADDRESSES`
+        windows of addresses with no session."""
         now = self._clock()
-        talking = self._talking(address)
         with self._posts_lock:
             window = self._posts.get(address)
             if window is None:
+                talking = self._talking(address)
                 if not talking and len(self._posts) >= INBOX_ADDRESSES:
                     self._forget_quiet(now)
                 if talking or len(self._posts) < INBOX_ADDRESSES:
-                    window = self._posts[address] = deque()
+                    window = self._posts[address] = _Window()
                 else:
                     window = self._crowd
-            while window and now - window[0] > INBOX_RATE_S:
-                window.popleft()
-            return window if len(window) < INBOX_RATE else None
+            window.expire(now)
+            if len(window) >= INBOX_RATE:
+                return None
+            window.reading += 1
+            return window
 
-    def _spend(self, window: deque[float]) -> None:
-        """A post that was not taken: it counts in the window it was let in by."""
+    def _done(self, window: _Window, *, counted: bool) -> None:
+        """A post let in by `window` is read: counted there when the robot did not take it."""
         now = self._clock()
         with self._posts_lock:
-            window.append(now)
-
-    def _live_sessions(self) -> dict[tuple[str, str], Session]:
-        with self.endpoint._lock:
-            sessions = list(self.endpoint.sessions.values())
-            return {s.nonces: s for s in sessions if not self.endpoint._quiet(s)}
+            window.reading -= 1
+            if counted:
+                window.counted.append(now)
 
     def _talking(self, address: str) -> bool:
-        """Whether this robot holds a live session that a post from `address` was taken into,
-        or whose way back is at `address`."""
-        live = self._live_sessions()
-        with self._posts_lock:
-            if any(nonces in live for nonces in self._origins.get(address, ())):
-                return True
-        return any(_host_of(s.route) == address for s in live.values())
+        """Whether a session this robot holds was talked from `address` (under `_posts_lock`)."""
+        return any(nonces in self.endpoint.sessions for nonces in self._origins.get(address, ()))
 
     def _talked(self, address: str, session: Session) -> None:
-        """A post from `address` was taken into `session`. What is kept of it lives no longer
-        than the sessions it names, so it is bounded by how many sessions talk holds."""
-        live = self._live_sessions()
+        """`session` is talked from `address`: the first address a post into it was taken from,
+        or the one this robot dialled it at. One address a session, and none once it ends, so
+        what is kept is bounded by how many sessions talk holds."""
         with self._posts_lock:
+            if session.nonces in self._origin_of or session.nonces not in self.endpoint.sessions:
+                return  # one address a session, and none for one that just ended (a bye)
+            self._origin_of[session.nonces] = address
             self._origins.setdefault(address, set()).add(session.nonces)
-            for where in list(self._origins):
-                kept = {n for n in self._origins[where] if n in live}
-                if kept:
-                    self._origins[where] = kept
-                else:
-                    del self._origins[where]
+            if len(self._origin_of) > MAX_SESSIONS:  # some ended without a word: forget them
+                for nonces in [n for n in self._origin_of if n not in self.endpoint.sessions]:
+                    self._forget_session(nonces)
+
+    def _ended(self, session: Session) -> None:
+        with self._posts_lock:
+            self._forget_session(session.nonces)
+
+    def _forget_session(self, nonces: tuple[str, str]) -> None:
+        address = self._origin_of.pop(nonces, None)
+        if address is None:
+            return
+        held = self._origins.get(address)
+        if held is not None:
+            held.discard(nonces)
+            if not held:
+                del self._origins[address]
 
     def _forget_quiet(self, now: float) -> None:
-        """The addresses with nothing in their window any more, dropped to make room."""
+        """The windows with nothing counted and nothing being read, dropped to make room."""
         for address, window in list(self._posts.items()):
-            while window and now - window[0] > INBOX_RATE_S:
-                window.popleft()
-            if not window:
+            window.expire(now)
+            if not window and not window.reading:
                 del self._posts[address]
 
     def _take(self, raw: bytes, origin: str) -> tuple[int, str | None, bool, Session | None]:
         """What `raw`, from `origin`, comes to: the status and the reply to carry back, whether
-        this robot took it, and the session it was taken into, if it was taken into one."""
-        message = self._read_again(raw)
-        if message is None:
+        this robot took it, and the session it was taken into, if it was taken into one.
+
+        A message is marked as seen the moment it arrives, before any key in it is checked, by
+        what its signature covers. A copy that arrives while the first is still being handled
+        is answered 503 and never reaches the endpoint, so the first is the one taken; one that
+        arrives after it is handled skips the read, and meets every check after it."""
+        seen, first = self._arrived(raw)
+        if seen is not None and not first:
+            if seen.message is None:
+                return 503, "the same message is being read: ask again\n", False, None
+            return self._handle(seen.message, origin)
+        message: Message | None = None
+        took = False
+        try:
             try:
                 message = read_message(raw)
             except VersionUnknown as e:
@@ -381,7 +446,17 @@ class Talker:
                     # posts nonsense is noise, not a robot that was refused
                     self._refused(origin, status, why)
                 return status, why + "\n", False, None
-            self._read_now(raw, message)
+            result = self._handle(message, origin)
+            took = result[2]
+            return result
+        finally:
+            if seen is not None:
+                self._handled(seen, message, took=took)
+
+    def _handle(
+        self, message: Message, origin: str
+    ) -> tuple[int, str | None, bool, Session | None]:
+        """`_take` for a message read, its keys and signature checked now or when it came first."""
         if message.to not in (None, "*", self.id):
             return 404, "no robot here by that id\n", False, None
         first = message.type == "hello" and message.re is None
@@ -398,30 +473,44 @@ class Talker:
             self._refused(origin, reply.status, reply.reason)
         return reply.status, (reply.reason + "\n") if reply.status >= 400 else None, took, into
 
-    def _read_again(self, raw: bytes) -> Message | None:
-        """A message read in the last `INBOX_RATE_S` that came again byte for byte, so its keys
-        and its signature, which were good then, need no checking again: a copy posted in a
-        loop costs the robot a lookup each time, and is answered as the first copy would be."""
+    def _arrived(self, raw: bytes) -> tuple[_Seen | None, bool]:
+        """What this robot knows of the message `raw` holds, and whether this is its first copy
+        in the last `INBOX_RATE_S`, marked as seen now if it is. A message is known by the text
+        its signature is checked over, whitespace around it stripped as the check strips it; a
+        body too large to be a message is not kept (None)."""
+        if len(raw) > MAX_HELLO_BYTES:
+            return None, True
+        identity = hashlib.sha256(raw.decode("utf-8", errors="replace").strip().encode()).digest()
         now = self._clock()
-        digest = hashlib.sha256(raw).digest()
         with self._posts_lock:
-            while self._read_lately:
-                oldest, (at, _message) = next(iter(self._read_lately.items()))
-                if now - at <= INBOX_RATE_S:
-                    break
-                del self._read_lately[oldest]
-            kept = self._read_lately.get(digest)
-            return kept[1] if kept is not None else None
+            for memory in (self._copies, self._taken_lately):
+                while memory:
+                    oldest, entry = next(iter(memory.items()))
+                    if now - entry.at <= INBOX_RATE_S:
+                        break
+                    del memory[oldest]
+            seen = self._copies.get(identity) or self._taken_lately.get(identity)
+            if seen is not None:
+                return seen, False
+            seen = self._copies[identity] = _Seen(identity, now)
+            while len(self._copies) > COPIES:
+                self._copies.popitem(last=False)
+            return seen, True
 
-    def _read_now(self, raw: bytes, message: Message) -> None:
-        """`message`, just read from `raw` with its keys and signature checked, kept for
-        `_read_again`: `REMEMBERED` of them at most, as many as talk remembers of messages
-        outside a session, the oldest going first."""
-        now = self._clock()
+    def _handled(self, seen: _Seen, message: Message | None, *, took: bool) -> None:
+        """The first copy of a message is handled: a copy is answered from what it was read as
+        from now on, or read again when it could not be. One the robot took is kept apart, the
+        last `REMEMBERED` of them, as many as talk remembers outside a session, so words in a
+        session never push out what the budget counted."""
         with self._posts_lock:
-            self._read_lately[hashlib.sha256(raw).digest()] = (now, message)
-            while len(self._read_lately) > REMEMBERED:
-                self._read_lately.popitem(last=False)
+            if message is None:
+                self._copies.pop(seen.identity, None)
+                return
+            seen.message = message
+            if took and self._copies.pop(seen.identity, None) is not None:
+                self._taken_lately[seen.identity] = seen
+                while len(self._taken_lately) > REMEMBERED:
+                    self._taken_lately.popitem(last=False)
 
     def _refused(self, origin: str, status: int, why: str) -> None:
         if self._on_refused is not None:
@@ -456,11 +545,18 @@ class Talker:
         if session.route is None:
             raise PassportError("6.2", f"{who} listens nowhere this robot may reach")
         wire, msg = self.endpoint.ask(session.peer, skill, args, why)
+        # the session the ask was built in, which a word in the other one, when two robots hold
+        # two, can make another than the one looked up a moment ago: its answer comes in it
+        route = session.route
+        built = self.endpoint.sessions.get(tuple(json_payload(wire)["nonces"]))
+        if built is not None:
+            route = built.route if built.route is not None else route
+            session = built
         asked = (msg, session.nonces)
         with self._met:
             self._asking.add(asked)
         try:
-            status, reply = self._deliver(session.route, wire)
+            status, reply = self._deliver(route, wire)
             self._ended_there(session, status)
             if reply is not None:
                 answer = read_message(reply)
@@ -714,6 +810,8 @@ class Talker:
                 self._unread.pop(0)
             if event.kind == "met":
                 self._met.notify_all()
+        if event.kind in ("left", "quiet"):
+            self._ended(session)
         if self._on_heard is not None:
             self._on_heard(heard)
         if self._on_session is not None and event.kind in ("met", "left", "quiet"):

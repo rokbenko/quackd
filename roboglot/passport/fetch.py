@@ -275,13 +275,12 @@ def _parse(data: bytes, url: str) -> tuple[int, str, dict[str, str], bytes]:
         # headers are read as Latin-1, where a superscript digit passes `isdigit` and not `int`
         if not (length.isascii() and length.isdigit()):
             raise PassportError("5.7", f"{url} sent a Content-Length that is not a number")
-        # past a few thousand digits `int` raises, and no body is longer than the whole answer:
-        # a length with more digits than that has is more than was sent, read or not, or zeros
-        # in front of a number, which is no length anybody sends
-        most = len(str(len(data)))
-        if len(length) > most and len(length.lstrip("0")) <= most:
+        # a zero in front of a number is no length anybody sends; and past a few thousand
+        # digits `int` raises, while no body is longer than the whole answer, so a length with
+        # more digits than that has is more than was sent, read or not
+        if len(length) > 1 and length[0] == "0":
             raise PassportError("5.7", f"{url} sent a Content-Length padded with zeros")
-        if len(length) > most or len(body) < int(length):
+        if len(length) > len(str(len(data))) or len(body) < int(length):
             raise PassportError("5.7", f"{url} closed before it sent all it said it would")
         body = body[: int(length)]
     return int(match.group(1)), (match.group(2) or b"").decode("latin-1"), headers, body

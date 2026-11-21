@@ -1026,10 +1026,11 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   for a digit and then fails to convert, and so do ASCII digits past the 4,300 Python converts, so
   `roboglot passport check` printed a traceback for a host that sent such a length, and a robot's
   passport server closed the connection on a post that did, where it answers a length that is not
-  one with `400`. Only ASCII digits are a length now, and a length with more digits than any that
-  could be is judged before it is converted: the check refuses the answer, as one whose length is
-  not a number, more than it sent, or padded with zeros, and the server answers `413` to a length
-  past its limit and `400` to a number padded with zeros.
+  one with `400`. Only ASCII digits are a length now, with no zero in front of any but `0`
+  itself, and a length with more digits than any that could be is judged before it is converted:
+  the check refuses the answer, as one whose length is not a number, is padded with zeros, or is
+  more than it sent, and the server answers `400` to a length with a zero in front, however few
+  the zeros, where it read one that fit its limit, and `413` to a length past its limit.
 - **A passport fetch keeps to its five seconds from the name's lookup to the last byte.** The
   clock was read again only while the answer was read: the name was looked up with no timeout,
   each address it resolved to got the whole timeout again, and the TLS handshake ran under a
@@ -1163,17 +1164,20 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **A robot's HTTP inbox holds what it reads for senders it does not take to a budget.** Every
   post to `/robot-passport/inbox` was checked in full, its keys on the curve and its signature,
   before the robot asked whether its radio had heard the sender, and nothing counted posts by
-  address. A message the robot read in the last 10 seconds that comes again byte for byte is known
-  for a copy now before any key in it is checked, and answered as before. Every post the robot
-  does not take into a session counts against its address, whatever it is answered: a refusal, a
-  type the robot ignores, an answer to nothing it asked, a copy. An address with 20 of them in 10
-  seconds, the figures of a Bluetooth link's budget, is answered `429` before anything more it
-  sends is read, until that window moves on. Addresses with no session have a budget each up to
-  128 of them, and every one past that shares one budget of the same figures. An address the
-  robot holds a session with keeps a budget of its own whatever other addresses send, and a post
-  the robot takes counts nothing, so words in a session spend none of it, however many arrive at
-  once. A key the robot found lately to be one somebody could hold is not checked
-  on the curve again.
+  address. A message is marked as seen now the moment it arrives, by the text its signature covers,
+  so whitespace around a copy does not hide it. A copy that comes while the first is still being
+  handled is answered `503`, and one that comes after it, within 10 seconds, is known before any
+  key in it is checked and answered as before: the robot remembers as many messages it did not
+  take as its budget lets through in 10 seconds, and the last 1,024 it took. Every post the robot
+  does not take, into a session or as a first hello it answers, counts against the address it
+  came from once it is read, whatever it is answered: a refusal, a type the robot ignores, an
+  answer to nothing it asked, a copy. An address with 20 of them in 10 seconds, the figures of a
+  Bluetooth link's budget, is answered `429` before anything more it sends is read, until that
+  window moves on. Addresses with no session have a budget each up to 128 of them, and every one
+  past that shares one budget of the same figures. An address a session is talked from keeps a
+  budget of its own, which only its own posts spend, and a post the robot takes counts nothing,
+  so words in a session spend none of it, however many arrive at once. A key the robot found
+  lately to be one somebody could hold is not checked on the curve again.
 - **A LAN record that names only an unspecified or a multicast address is passed over.** Meeting
   over the LAN posts a signed hello to the address a robot's record names, and a record could
   name `0.0.0.0`, `::` or a multicast group, where no robot can be. Such an address, written as

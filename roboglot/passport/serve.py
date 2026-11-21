@@ -157,16 +157,13 @@ class PassportServer:
                     return
                 said = said.strip()
                 # headers are read as Latin-1, where a superscript digit passes `isdigit` and
-                # not `int`, and past a few thousand digits `int` raises: a length with more
-                # digits than the limit has is too large unread, or zeros in front of a number,
-                # which is no length anybody sends
-                most = len(str(server._inbox_limit))
-                if not (said.isascii() and said.isdigit()) or (
-                    len(said) > most and len(said.lstrip("0")) <= most
-                ):
+                # not `int`; a zero in front of a number is no length anybody sends; and past a
+                # few thousand digits `int` raises, so a length with more digits than the limit
+                # has is too large unread
+                if not (said.isascii() and said.isdigit()) or (len(said) > 1 and said[0] == "0"):
                     self._send(400, b"a Content-Length that is not a length\n")
                     return
-                if len(said) > most or int(said) > server._inbox_limit:
+                if len(said) > len(str(server._inbox_limit)) or int(said) > server._inbox_limit:
                     self._send(413, b"too large\n")
                     return
                 body = self.rfile.read(int(said))
