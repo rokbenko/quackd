@@ -36,6 +36,7 @@ from roboglot.passport.serve import CONNECTIONS, INBOX_PATH
 from roboglot.passport.talk import (
     HELLO_ANSWERED,
     MAX_HELLO_BYTES,
+    MAX_MESSAGE_BYTES,
     MAX_PENDING,
     MAX_SESSIONS,
     REMEMBERED,
@@ -480,7 +481,10 @@ class Talker:
         if seen is not None and not first:
             if not seen.done:
                 return 503, "the same message is being read: ask again\n", False, None
-            return self._copy(seen.kept, raw, origin)
+            answered = self._copy(seen.kept, raw, origin)
+            if answered is not None:
+                return answered
+            seen = None  # read in full below, as any post is; the first copy stays as kept
         message: Message | None = None
         took = False
         try:
@@ -521,13 +525,18 @@ class Talker:
 
     def _copy(
         self, kept: bytes | None, raw: bytes, origin: str
-    ) -> tuple[int, str | None, bool, Session | None]:
-        """A copy of a message read in full lately, answered as that message would be now: from
+    ) -> tuple[int, str | None, bool, Session | None] | None:
+        """A copy of a message read in full lately, answered as its own full read would be: from
         what was kept of it where the endpoint answers it unread (a type it ignores, a message
-        it has seen), and read again otherwise. A hello the radio has heard since, or one the
-        endpoint refused, holds a passport the endpoint has to read, and none of that is kept."""
+        it has seen), and None, to be read in full as any post is, otherwise. A hello the radio
+        has heard since, or one the endpoint refused, holds a passport the endpoint has to read,
+        and none of that is kept; and whitespace around a copy keeps what it is but counts
+        toward its size, so a copy larger than its type may be is read, and refused as its own
+        bytes are."""
         if kept is not None:
             here, message = _unkept(kept)
+            if message.type != "hello" and len(raw) > MAX_MESSAGE_BYTES:
+                return None
             if not here:
                 return 404, "no robot here by that id\n", False, None
             refused = self._unheard(message, origin)
@@ -538,7 +547,7 @@ class Talker:
             reply = self.endpoint.repeat(message)
             if reply is not None:
                 return self._answered(message, origin, reply, False)
-        return self._handle(read_message(raw), origin)
+        return None
 
     def _unheard(
         self, message: Message, origin: str

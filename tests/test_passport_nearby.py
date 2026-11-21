@@ -25,6 +25,7 @@ from roboglot.passport.document import MAX_VALIDITY_S
 from roboglot.passport.serve import CONNECTIONS, INBOX_PATH, PassportServer, Served
 from roboglot.passport.talk import (
     MAX_HELLO_BYTES,
+    MAX_MESSAGE_BYTES,
     MAX_SESSIONS,
     REMEMBERED,
     Endpoint,
@@ -833,6 +834,32 @@ def test_a_copy_with_whitespace_around_it_is_known_before_any_key_check(
     for spaced in (b" " + wire, wire + b"\n", b"\t" + wire + b"\r\n"):
         assert duck.inbox_http(spaced, "application/jose", "10.0.0.9")[0] == 204
     assert verified[0] == 0
+
+
+def test_a_copy_padded_past_the_size_of_its_type_is_answered_as_its_full_read() -> None:
+    """Whitespace around a copy keeps what it is, but it counts toward the 4,096 bytes any
+    message but a hello may be, so a padded copy of a word seen was "a repeat, dropped" where
+    its own bytes are refused 413, and one that had to be read again raised out of the inbox,
+    and the server closed the connection with no answer. Each is answered as its full read now.
+    The second word came before its session was open on the duck, so the duck has not seen it."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    post = _poster(duck, "10.0.0.7")
+    cart = _visitor()
+    status, answer = post(cart.hello(DUCK.did))
+    assert status == 200 and answer is not None
+    third = cart.receive(read_message(answer))
+    assert third.wire is not None
+    early = cart.say(DUCK.did, "early")
+    assert post(early)[0] == 403  # its session is not open on the duck yet
+    assert post(third.wire)[0] == 204
+    seen = cart.say(DUCK.did, "seen")
+    assert post(seen) == (204, None)
+    too_large = (413, f"6.1: {MAX_MESSAGE_BYTES + 1} bytes, over the {MAX_MESSAGE_BYTES} any "
+                 "message but a hello may be\n")  # fmt: skip
+    for word in (seen, early):
+        padded = b" " * (MAX_MESSAGE_BYTES + 1 - len(word)) + word.encode()
+        status, reply, _kind = duck.inbox_http(padded, "application/jose", "10.0.0.7")
+        assert (status, reply.decode() if reply else None) == too_large
 
 
 def test_a_copy_read_in_the_last_10_s_is_known_however_many_messages_came_since(
