@@ -23,12 +23,12 @@ import json
 import logging
 import math
 import re
-import socket
 import sys
 import threading
 import time
 import urllib.error
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ from roboglot.transport.base import (
 )
 from roboglot.transport.mock import MockTransport
 from roboglot.verbs.core import MOVE_RESEND_S, TICK_S, TURN_RATE, SearchScanParams, scan_steps
-from roboglot.verbs.registry import STOP_ENDED, VerbRegistry, registry_from_manifest
+from roboglot.verbs.registry import STOP_ENDED, VerbRegistry
 from roboglot_microduck import MicroduckAdapter
 from roboglot_microduck import upstream_api as up
 from roboglot_microduck.transports import jsonrpc_unix
@@ -86,6 +86,7 @@ from tests.fake_robotd import (
     Member,
     on_its_own_loop,
 )
+from tests.support import executor_for, until_async, unused_port
 
 GLOT = parse_glot_text(
     "---\nglot: 0\nname: t\ndescription: d\nverbs:\n  allow: [walk, kick, quack, gaze]\n"
@@ -128,14 +129,9 @@ def _transport(adapter: MicroduckAdapter) -> JsonRpcUnixTransport:
     return adapter.transport
 
 
-def _executor(adapter: MicroduckAdapter, **kwargs: Any) -> Executor:
-    """The verbs a connected body offers, through an executor that allows every one that moves
-    it, as a run's is."""
-    assert adapter.manifest is not None
-    registry = registry_from_manifest(adapter.manifest, adapter)
-    return Executor(
-        registry, adapter, contract=MOVERS.frontmatter, manifest=adapter.manifest, **kwargs
-    )
+# The verbs a connected body offers, through an executor that allows every one that moves
+# it, as a run's is.
+_executor = partial(executor_for, contract=MOVERS.frontmatter, with_manifest=True)
 
 
 async def _until(t: JsonRpcUnixTransport, check: Callable[[dict[str, Any]], bool]) -> None:
@@ -698,7 +694,11 @@ async def test_nothing_roboglot_sends_is_a_member_robotd_does_not_know(
     ):
         result = await ex.run_verb(verb, params)
         assert result.ok, (verb, result.summary)
-    await _eventually(lambda: _heads(robotd) > 0, "the gaze going out again as robot.head")
+    await until_async(
+        lambda: _heads(robotd) > 0,
+        30.0,
+        what="the gaze going out again as robot.head did not happen",
+    )
     assert (await t.send_intent(Intent(kind="pose", params={"z": 0.0, "pitch": 0.1}))).accepted
     await t.stop()
     await _landed(t)
@@ -1509,7 +1509,7 @@ class _NothingThere:
 
 async def _ended(task: asyncio.Task[Any], what: str) -> Any:
     """`task`'s result once it has ended, which a test waits for rather than sleeps for."""
-    await _eventually(task.done, what)
+    await until_async(task.done, 30.0, what=f"{what} did not happen")
     return task.result()
 
 
@@ -1538,7 +1538,7 @@ async def test_a_duck_picked_up_during_go_to_does_not_walk_off_when_it_is_put_do
     try:
         # after its look go_to waits for robotd to let go of any glance (`head_fade_s`), and the
         # gaze hold may send robot.head meanwhile, so it is steering once three moves are out
-        await _eventually(lambda: _moves(robotd) >= 3, "go_to steering", wait_s=10.0)
+        await until_async(lambda: _moves(robotd) >= 3, 10.0, what="go_to steering did not happen")
 
         asked = len(robotd.requests)
         robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
@@ -1601,16 +1601,17 @@ async def test_a_stop_from_another_call_does_not_set_a_held_go_to_walking(
     going = asyncio.create_task(ex.run_verb("go_to", {"target": "ball", "timeout_s": 30}))
     walking: asyncio.Task[Any] | None = None
     try:
-        await _eventually(lambda: _moves(robotd) >= 3, "go_to steering", wait_s=10.0)
+        await until_async(lambda: _moves(robotd) >= 3, 10.0, what="go_to steering did not happen")
         if other == "walk":  # a second call, walking beside go_to
             walking = asyncio.create_task(ex.run_verb("walk", {"vx": 0.1, "duration_s": 10.0}))
         mark = len(robotd.notifications)
         seeing.clear()
         # go_to re-sends its twist for one deadman window while it waits, then zeroes it once
         zero = {"vx": 0.0, "vy": 0.0, "vyaw": 0.0}
-        await _eventually(
+        await until_async(
             lambda: any(n["params"] == zero for n in robotd.notifications[mark:]),
-            "go_to's last re-send, a zero twist",
+            30.0,
+            what="go_to's last re-send, a zero twist did not happen",
         )
 
         asked = len(robotd.requests)
@@ -1689,7 +1690,9 @@ async def test_a_duck_picked_up_while_a_scan_looks_between_turns_ends_the_scan(
     params = {"target": "ball", "step_deg": 45, "max_steps": 4}
     scanning = asyncio.create_task(ex.run_verb("search_scan", params))
     try:
-        await _eventually(lambda: not looking.is_set(), "the look after the first turn")
+        await until_async(
+            lambda: not looking.is_set(), 30.0, what="the look after the first turn did not happen"
+        )
         turned = _moves(robotd)
         robotd.picked_up, robotd.policy = True, "held"  # somebody picks the duck up
         await _until(t, lambda s: s["safety"].get("picked_up") is True)
@@ -1708,17 +1711,6 @@ async def test_a_duck_picked_up_while_a_scan_looks_between_turns_ends_the_scan(
 
 
 # ── a robotd Roboglot has not read ─────────────────────────────────────────────────────────
-
-
-async def _eventually(check: Callable[[], bool], what: str, wait_s: float = 30.0) -> None:
-    """Return once `check` holds. Waited for rather than slept, so a loaded machine that is slow
-    to deliver frames is slow here too rather than wrong; `wait_s` only ends a test whose
-    `check` never comes true."""
-    deadline = time.monotonic() + wait_s
-    while not check():
-        if time.monotonic() > deadline:
-            raise AssertionError(f"{what} did not happen within {wait_s:g} s")
-        await asyncio.sleep(0.01)
 
 
 def _drop_by_switch(fake: FakeRobotd) -> None:
@@ -1747,7 +1739,9 @@ async def test_a_move_robotd_did_not_take_holds_every_move_until_its_verb_ends(
     await t.connect()
     walk = _Verb(t)
     assert (await walk.send(Intent.move(0.1, 0.0, 0.0))).accepted  # nothing to judge yet
-    await _eventually(lambda: t.safety["move_hold"] is not None, "the echo's verdict")
+    await until_async(
+        lambda: t.safety["move_hold"] is not None, 30.0, what="the echo's verdict did not happen"
+    )
     asked = [r["method"] for r in robotd.requests]
     assert up.ROBOT_HEALTH.name in asked, "robotd was asked whether it had read the twist"
     ack = await walk.send(Intent.move(0.1, 0.0, 0.0))
@@ -1819,7 +1813,7 @@ async def test_a_frame_read_late_is_not_taken_for_robotds_answer(robotd: FakeRob
         assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
     assert sent.heard is None, "nothing robotd answered says it has read the twist"
     robotd.link.set()  # robotd reads everything it was sent, answers, and takes no twist
-    await _eventually(lambda: sent.heard is not None, "robotd's answer")
+    await until_async(lambda: sent.heard is not None, 30.0, what="robotd's answer did not happen")
     for _ in range(MOVE_ECHO_FRAMES - 1):
         t._took_state(stale)
         assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
@@ -1886,7 +1880,9 @@ async def test_a_walk_asks_robotd_once_as_it_starts(robotd: FakeRobotd) -> None:
 
     for _ in range(MOVE_ECHO_FRAMES + 1):  # sent at once, so no window closes on any of them
         assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
-    await _eventually(lambda: bool(asked()), "robotd being asked as the walk started")
+    await until_async(
+        lambda: bool(asked()), 30.0, what="robotd being asked as the walk started did not happen"
+    )
     await t.stop()
     assert len(asked()) == 1, "asked once a walk, not once a twist"
     await t.close()
@@ -1903,7 +1899,9 @@ async def test_a_robotd_that_does_not_answer_cannot_be_said_to_take_a_walk(
     t.request_timeout_s = move_echo_after_s(t.state_hz)  # short, and set past the handshake
     robotd.link.clear()
     assert (await t.send_intent(Intent.move(0.1, 0.0, 0.0))).accepted
-    await _eventually(lambda: t.safety["move_hold"] is not None, "the echo's verdict")
+    await until_async(
+        lambda: t.safety["move_hold"] is not None, 30.0, what="the echo's verdict did not happen"
+    )
     ack = await t.send_intent(Intent.move(0.1, 0.0, 0.0))
     reason = ack.reason or ""
     assert not ack.accepted and reason.startswith("robotd has not taken robot.move"), reason
@@ -2377,7 +2375,11 @@ async def test_a_verbs_walks_are_judged_together_on_the_frames_before_each_stop(
         assert (await verb.send(Intent.move(0.0, 0.0, 1.0))).accepted
         first = t._unshown[0]
         first.at -= 10 * move_echo_after_s(t.state_hz)  # long enough ago that time has closed it
-        await _eventually(lambda: first.heard is not None, "robotd's answer to the walk's question")
+        await until_async(
+            lambda: first.heard is not None,
+            30.0,
+            what="robotd's answer to the walk's question did not happen",
+        )
         for _ in range(MOVE_ECHO_FRAMES - 1):  # one frame short of a verdict on one walk
             t._took_state(fake.frame()["params"])
         await verb.stop()
@@ -2387,7 +2389,11 @@ async def test_a_verbs_walks_are_judged_together_on_the_frames_before_each_stop(
 
         assert (await verb.send(Intent.move(0.0, 0.0, 1.0))).accepted  # the verb's next walk
         second = t._unshown[-1]
-        await _eventually(lambda: second.heard is not None, "robotd's answer to the next walk's")
+        await until_async(
+            lambda: second.heard is not None,
+            30.0,
+            what="robotd's answer to the next walk's did not happen",
+        )
         for _ in range(MOVE_ECHO_FRAMES - 1):
             t._took_state(fake.frame()["params"])
         ack = await verb.send(Intent.move(0.0, 0.0, 1.0))
@@ -2418,7 +2424,11 @@ async def test_a_stop_robotd_never_answered_leaves_the_walk_before_it_unjudged()
         assert (await verb.send(Intent.move(0.1, 0.0, 0.0))).accepted
         sent = t._unshown[0]
         sent.at -= 10 * move_echo_after_s(t.state_hz)
-        await _eventually(lambda: sent.heard is not None, "robotd's answer to the walk's question")
+        await until_async(
+            lambda: sent.heard is not None,
+            30.0,
+            what="robotd's answer to the walk's question did not happen",
+        )
         assert fake.twist == [0.1, 0.0, 0.0], "robotd took the twist, though no frame has shown it"
         fake.unanswered.add(up.ROBOT_STOP.name)
         t.request_timeout_s = move_echo_after_s(t.state_hz)  # short, and set past the handshake
@@ -2543,7 +2553,11 @@ async def test_a_robotd_that_hung_up_is_said_to_have_at_once(robotd: FakeRobotd)
     t = JsonRpcUnixTransport(f"tcp://127.0.0.1:{robotd.port}", request_timeout_s=60.0)
     await t.connect()
     robotd.hang_up()
-    await _eventually(lambda: t._pump is not None and t._pump.done(), "the reader seeing it")
+    await until_async(
+        lambda: t._pump is not None and t._pump.done(),
+        30.0,
+        what="the reader seeing it did not happen",
+    )
     async with asyncio.timeout(t.request_timeout_s / 2):
         await t.stop()
     assert t.stop_error is not None and "robotd closed the connection" in t.stop_error
@@ -2618,9 +2632,10 @@ async def test_a_state_frame_longer_than_asyncios_default_line_is_read(
     count = (READER_LIMIT // 2) // len(json.dumps(pose))
     robotd.extra_state = {"skeleton": [pose] * count}
     assert ASYNCIO_DEFAULT_LIMIT < len(json.dumps(robotd.frame())) < READER_LIMIT
-    await _eventually(
+    await until_async(
         lambda: len((t._last_state or {}).get("skeleton") or ()) == count,
-        "a state frame longer than asyncio's default line reaching Roboglot",
+        30.0,
+        what="a state frame longer than asyncio's default line reaching Roboglot did not happen",
     )
     assert (await t.get_state()).posture == "standing"
     await t.close()
@@ -2633,13 +2648,16 @@ async def test_a_line_over_the_limit_is_skipped_and_the_link_lives(robotd: FakeR
     await t.connect()
     sent = robotd.frames_sent
     robotd.extra_state = {"skeleton": "x" * (2 * READER_LIMIT)}
-    await _eventually(lambda: robotd.frames_sent >= sent + 2, "two long lines going out")
+    await until_async(
+        lambda: robotd.frames_sent >= sent + 2, 30.0, what="two long lines going out did not happen"
+    )
     robotd.extra_state = {}
     after = time.monotonic()
     await t.heartbeat()  # answered, so the pump read past both long lines
-    await _eventually(
+    await until_async(
         lambda: t._last_state_at is not None and t._last_state_at > after,
-        "a state frame after the long lines",
+        30.0,
+        what="a state frame after the long lines did not happen",
     )
     assert t._pump is not None and not t._pump.done()
     assert (await t.get_state()).posture == "standing"
@@ -2770,7 +2788,9 @@ async def _looked(fake: FakeRobotd, bearing_deg: float = 30.0) -> JsonRpcUnixTra
     rad = math.radians(bearing_deg)
     assert (await t.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))).accepted
     sent = _heads(fake)
-    await _eventually(lambda: _heads(fake) > sent, "the held gaze going out again")
+    await until_async(
+        lambda: _heads(fake) > sent, 30.0, what="the held gaze going out again did not happen"
+    )
     return t
 
 
@@ -2800,7 +2820,9 @@ async def test_a_gaze_is_sent_again_until_something_ends_it(
     )
     assert result.ok, result.summary
     answered = dict(zip(HEAD, robotd.head, strict=True))
-    await _eventually(lambda: _heads(robotd) >= 3, "the gaze going out three more times")
+    await until_async(
+        lambda: _heads(robotd) >= 3, 30.0, what="the gaze going out three more times did not happen"
+    )
     sent = [n["params"] for n in robotd.notifications if n["method"] == up.ROBOT_HEAD.name]
     assert all(params == answered for params in sent), sent
     state = await t.get_state()
@@ -2825,7 +2847,9 @@ async def test_a_later_look_replaces_the_held_gaze(robotd: FakeRobotd) -> None:
         heads = robotd.notifications[at:]
         return [n["params"] for n in heads if n["method"] == up.ROBOT_HEAD.name]
 
-    await _eventually(lambda: len(later()) >= 3, "the new gaze going out three times")
+    await until_async(
+        lambda: len(later()) >= 3, 30.0, what="the new gaze going out three times did not happen"
+    )
     assert all(params == after for params in later()), later()
     await t.close()
 
@@ -2874,7 +2898,9 @@ async def test_two_looks_at_once_leave_one_hold_and_a_stop_ends_it(robotd: FakeR
     acks = await asyncio.gather(*(t.send_intent(look) for look in looks))
     assert all(ack.accepted for ack in acks), acks
     newest = dict(zip(HEAD, robotd.head, strict=True))  # robotd took the second look last
-    await _eventually(lambda: _heads(robotd) >= 3, "the held gaze going out three times")
+    await until_async(
+        lambda: _heads(robotd) >= 3, 30.0, what="the held gaze going out three times did not happen"
+    )
     sent = [n["params"] for n in robotd.notifications if n["method"] == up.ROBOT_HEAD.name]
     assert all(params == newest for params in sent), sent
     assert len(_gaze_tasks()) == 1
@@ -2899,10 +2925,14 @@ async def test_a_look_still_waiting_on_its_answer_when_a_stop_comes_holds_nothin
     t.head_fade_s = 0.0
     robotd.link.clear()  # robotd reads nothing more for now, so the look waits on its answer
     look = asyncio.create_task(t.send_intent(Intent.look(1.0, 0.5, 0.0)))
-    await _eventually(lambda: len(t._pending) == 1, "the look on the wire")
+    await until_async(
+        lambda: len(t._pending) == 1, 30.0, what="the look on the wire did not happen"
+    )
     stopping = t.stop() if how == "stop()" else t.send_intent(Intent.stop())
     stop = asyncio.ensure_future(stopping)
-    await _eventually(lambda: len(t._pending) == 2, "the stop on the wire behind it")
+    await until_async(
+        lambda: len(t._pending) == 2, 30.0, what="the stop on the wire behind it did not happen"
+    )
     robotd.link.set()  # robotd takes both in the order sent, and answers the look first
     assert (await look).accepted
     await stop
@@ -2927,7 +2957,9 @@ async def test_a_look_answered_while_the_connection_closes_holds_nothing(
     t.head_fade_s = 0.0
     robotd.link.clear()
     look = asyncio.create_task(t.send_intent(Intent.look(1.0, 0.5, 0.0)))
-    await _eventually(lambda: len(t._pending) == 1, "the look on the wire")
+    await until_async(
+        lambda: len(t._pending) == 1, 30.0, what="the look on the wire did not happen"
+    )
 
     async def camera() -> None:
         # a camera that takes until the look has its answer to shut down, so that the answer
@@ -2984,15 +3016,23 @@ async def test_a_held_gaze_waits_while_the_duck_is_not_standing_or_sitting(
     head goes out again once the duck stands."""
     t = await _looked(robotd)
     change(robotd, True)
-    await _eventually(lambda: t._read().posture not in ("standing", "sitting"), "the change")
+    await until_async(
+        lambda: t._read().posture not in ("standing", "sitting"),
+        30.0,
+        what="the change did not happen",
+    )
     await _nothing_more_goes_out(t, robotd)
     hold = (await t.get_state()).extras["gaze_hold"]
     assert hold is not None and said in (hold["paused"] or ""), hold
 
     change(robotd, False)
-    await _eventually(lambda: t._read().posture == "standing", "the duck standing again")
+    await until_async(
+        lambda: t._read().posture == "standing", 30.0, what="the duck standing again did not happen"
+    )
     sent = _heads(robotd)
-    await _eventually(lambda: _heads(robotd) > sent, "the held gaze going out again")
+    await until_async(
+        lambda: _heads(robotd) > sent, 30.0, what="the held gaze going out again did not happen"
+    )
     assert (await t.get_state()).extras["gaze_hold"]["paused"] is None
     await t.close()
 
@@ -3006,7 +3046,7 @@ async def test_a_head_somebody_else_steers_is_let_go_of(robotd: FakeRobotd) -> N
     robotd.head_alpha = 0.5
     t = await _looked(robotd, 30.0)
     robotd.steering = [0.0, 0.0, math.radians(-40.0), 0.0]  # a pad turns the head the other way
-    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    await until_async(lambda: t._gaze is None, 30.0, what="the hold letting go did not happen")
     extras = (await t.get_state()).extras
     assert extras["gaze_hold"] is None
     released = extras["gaze_released"] or ""
@@ -3027,7 +3067,7 @@ async def test_a_gaze_an_emotion_may_have_taken_says_so_where_one_can_play(
     robotd.head_alpha = 0.5
     t = await _looked(robotd, 30.0)
     robotd.steering = [0.0, 0.0, math.radians(-40.0), 0.0]
-    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    await until_async(lambda: t._gaze is None, 30.0, what="the hold letting go did not happen")
     released = (await t.get_state()).extras["gaze_released"] or ""
     assert "another client is steering the head" in released
     assert ("an emotion is playing" in released) is named, released
@@ -3054,7 +3094,7 @@ async def test_a_head_held_still_off_the_gaze_is_somebody_elses(robotd: FakeRobo
     rad = math.radians(30.0)
     assert (await t.send_intent(Intent.look(math.cos(rad), math.sin(rad), 0.0))).accepted
     robotd.steering = [0.0, 0.0, math.radians(-20.0), 0.0]  # a pad holds the head to the right
-    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    await until_async(lambda: t._gaze is None, 30.0, what="the hold letting go did not happen")
     extras = (await t.get_state()).extras
     assert extras["gaze_hold"] is None
     released = extras["gaze_released"] or ""
@@ -3070,9 +3110,11 @@ async def _waiting(t: JsonRpcUnixTransport, fake: FakeRobotd, change: Any) -> An
     gaze = t._gaze
     assert gaze is not None
     judged = gaze.since + t.head_fade_s + 3 * t.gaze_hold_s
-    await _eventually(lambda: time.monotonic() > judged, "the hold judging the head")
+    await until_async(
+        lambda: time.monotonic() > judged, 30.0, what="the hold judging the head did not happen"
+    )
     change(fake, True)
-    await _eventually(lambda: gaze.paused is not None, "the hold waiting")
+    await until_async(lambda: gaze.paused is not None, 30.0, what="the hold waiting did not happen")
     return gaze
 
 
@@ -3081,7 +3123,11 @@ async def _past_robotds_wait() -> None:
     that since the hold last sent the head shows no glance only if the frames the hold read in
     between say so."""
     waited = time.monotonic()
-    await _eventually(lambda: time.monotonic() > waited + 2 * up.IDLE_AFTER_S, "robotd's wait")
+    await until_async(
+        lambda: time.monotonic() > waited + 2 * up.IDLE_AFTER_S,
+        30.0,
+        what="robotd's wait did not happen",
+    )
 
 
 @pytest.mark.parametrize("change", [_pick_up, _go_limp, _kick], ids=["held", "limp", "kicking"])
@@ -3109,7 +3155,7 @@ async def test_a_head_turned_while_the_hold_waits_is_not_taken_back(
     robotd.head = [0.0, 0.0, 0.0, 0.0]  # one robot.head from another client: the head centred
     await _until(t, lambda s: abs(s["head"][HEAD.index("head_yaw")]) < math.radians(1.0))
     change(robotd, False)
-    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    await until_async(lambda: t._gaze is None, 30.0, what="the hold letting go did not happen")
     assert _heads(robotd) == sent, "the held head went out over the other client's"
     released = t.gaze_released or ""
     assert released.startswith("overridden: robot.state.head"), released
@@ -3133,7 +3179,7 @@ async def test_a_head_turned_while_the_duck_is_briefly_down_is_not_taken_back(
     await _waiting(t, robotd, _fall)
     sent = _heads(robotd)
     robotd.head = [0.0, 0.0, 0.0, 0.0]  # one robot.head from another client: the head centred
-    await _eventually(lambda: t._gaze is None, "the hold letting go")
+    await until_async(lambda: t._gaze is None, 30.0, what="the hold letting go did not happen")
     assert _heads(robotd) == sent, "the held head went out over the other client's"
     released = t.gaze_released or ""
     assert released.startswith("overridden: robot.state.head"), released
@@ -3171,9 +3217,13 @@ async def test_a_pause_robotd_may_have_glanced_in_is_not_judged_as_it_ends(
     robotd.head = [0.0, 0.0, 0.0, 0.0]  # off the held head, as a glance puts it
     await _until(t, lambda s: abs(s["head"][HEAD.index("head_yaw")]) < math.radians(1.0))
     change(robotd, False)
-    await _eventually(lambda: _heads(robotd) > sent, "the held gaze going out again")
+    await until_async(
+        lambda: _heads(robotd) > sent, 30.0, what="the held gaze going out again did not happen"
+    )
     reads = t._frames_read
-    await _eventually(lambda: t._frames_read >= reads + 5, "five more state frames")
+    await until_async(
+        lambda: t._frames_read >= reads + 5, 30.0, what="five more state frames did not happen"
+    )
     assert t._gaze is gaze and t.gaze_released is None, t.gaze_released
     await t.close()
 
@@ -3191,11 +3241,19 @@ async def test_a_head_still_closing_on_the_held_one_is_not_somebody_elses(
     if pause:
         gaze = await _waiting(t, robotd, _pick_up)
         reads = t._frames_read
-        await _eventually(lambda: t._frames_read >= reads + 3, "three frames while it waits")
+        await until_async(
+            lambda: t._frames_read >= reads + 3,
+            30.0,
+            what="three frames while it waits did not happen",
+        )
         _pick_up(robotd, False)
-        await _eventually(lambda: gaze.paused is None, "the hold taking up again")
+        await until_async(
+            lambda: gaze.paused is None, 30.0, what="the hold taking up again did not happen"
+        )
     reads = t._frames_read
-    await _eventually(lambda: t._frames_read >= reads + 10, "ten more state frames")
+    await until_async(
+        lambda: t._frames_read >= reads + 10, 30.0, what="ten more state frames did not happen"
+    )
     held = dict(zip(HEAD, robotd.head, strict=True))
     assert robotd.shown != robotd.head, "the fake's head reached the held one, proving nothing"
     assert t._gaze is not None and t.gaze_released is None, t.gaze_released
@@ -3223,7 +3281,7 @@ async def test_a_link_that_fails_under_the_hold_ends_it_quietly(
         raise failure
 
     t.notify = broken  # type: ignore[method-assign]
-    await _eventually(task.done, "the hold ending")
+    await until_async(task.done, 30.0, what="the hold ending did not happen")
     assert not task.cancelled() and task.exception() is None
     extras = (await t.get_state()).extras
     assert extras["gaze_hold"] is None
@@ -3439,22 +3497,33 @@ async def test_a_glance_fading_out_is_not_somebody_elses_head(
         # robotd's wait, robotd glances at it, and the duck is righted while the glance is still
         # under way
         looked = gaze.since
-        await _eventually(lambda: time.monotonic() > looked + fade + 2 * HOLD_S, "the window")
+        await until_async(
+            lambda: time.monotonic() > looked + fade + 2 * HOLD_S,
+            30.0,
+            what="the window did not happen",
+        )
         _fall(robotd, True)
-        await _eventually(lambda: gaze.paused is not None, "the hold pausing")
+        await until_async(
+            lambda: gaze.paused is not None, 30.0, what="the hold pausing did not happen"
+        )
         await _past_robotds_wait()
         robotd.glance = [0.05 * k for k in range(1, 11)]
-        await _eventually(lambda: len(robotd.glance) < 8, "the glance under way")
+        await until_async(
+            lambda: len(robotd.glance) < 8, 30.0, what="the glance under way did not happen"
+        )
         _fall(robotd, False)
-        await _eventually(lambda: gaze.paused is None, "the hold taking up again")
+        await until_async(
+            lambda: gaze.paused is None, 30.0, what="the hold taking up again did not happen"
+        )
     else:
         robotd.glance = [0.05, 0.1, 0.15]  # swinging away from the held head, frame by frame
     sent = time.monotonic()  # the head was sent its target a moment ago, by the look or a re-send
-    await _eventually(lambda: not robotd.glance, "the glance going by")
+    await until_async(lambda: not robotd.glance, 30.0, what="the glance going by did not happen")
     reads = t._frames_read
-    await _eventually(
+    await until_async(
         lambda: t._frames_read >= reads + 3 and time.monotonic() > sent + fade + 5 * HOLD_S,
-        "the frames after the glance, and five hold periods past the fade",
+        30.0,
+        what="the frames after the glance, and five hold periods past the fade did not happen",
     )
     assert t._gaze is gaze and t.gaze_released is None, t.gaze_released
     await t.close()
@@ -3477,13 +3546,6 @@ def _png(width: int, height: int) -> bytes:
     picture = io.BytesIO()
     Image.new("RGB", (width, height), (40, 80, 120)).save(picture, "PNG")
     return picture.getvalue()
-
-
-def _closed_port() -> int:
-    """A loopback port nothing listens on, so a connection to it is refused."""
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])
 
 
 class SnapshotServer:
@@ -3610,7 +3672,7 @@ async def test_a_url_with_nothing_behind_it_is_given_up_on_at_once(
     up, and waiting out the rest of the wait for it would only put off saying so."""
     wait = 60.0
     with SnapshotServer((404, b"Not Found\n")) as camera:
-        url = camera.url() if answer == "404" else f"http://127.0.0.1:{_closed_port()}/frame"
+        url = camera.url() if answer == "404" else f"http://127.0.0.1:{unused_port()}/frame"
         t = JsonRpcUnixTransport(
             f"tcp://127.0.0.1:{robotd.port}", camera_url=url, camera_wait_s=wait
         )
@@ -3757,8 +3819,10 @@ async def test_the_lens_is_the_first_frames_and_stays(
     try:
         lens = t.camera_fov_deg
         assert lens is not None
-        await _eventually(
-            lambda: t._frame is not None and t._frame.size == then, "a frame of the other shape"
+        await until_async(
+            lambda: t._frame is not None and t._frame.size == then,
+            30.0,
+            what="a frame of the other shape did not happen",
         )
         assert t.camera_fov_deg == lens
         listed = (await t.get_state()).extras["assumptions"]
@@ -3781,7 +3845,11 @@ async def test_a_frame_is_as_old_as_its_request_and_not_its_download(robotd: Fak
         await t.connect()
         try:
             first = t._frame
-            await _eventually(lambda: t._frame is not first, "a frame that took a while to come")
+            await until_async(
+                lambda: t._frame is not first,
+                30.0,
+                what="a frame that took a while to come did not happen",
+            )
             age, taken = t.frame_age_s(), t.frame_taken_at()
             # both ends of the wait are read off a clock that may tick only every few milliseconds
             tick = time.get_clock_info("monotonic").resolution
@@ -3807,7 +3875,9 @@ async def test_a_frame_slower_to_come_than_the_window_is_never_handed_out(
         await t.connect()
         try:
             first = t._frame
-            await _eventually(lambda: t._frame is not first, "the slow frame")
+            await until_async(
+                lambda: t._frame is not first, 30.0, what="the slow frame did not happen"
+            )
             assert await t.get_frame() is None
             assert t.frame_taken_at() is None
             assert t.camera_error is not None and f"older than the {window:g} s" in t.camera_error
@@ -3869,7 +3939,11 @@ async def test_mediads_frame_says_how_long_one_frame_takes_to_follow_the_last(
             assert t.frame_fetch_s is not None
             assert t.frame_period_s == max(1 / MEDIAD_FRAME_FPS, t.frame_fetch_s)
             first = t._frame
-            await _eventually(lambda: t._frame is not first, "a frame that took a while to come")
+            await until_async(
+                lambda: t._frame is not first,
+                30.0,
+                what="a frame that took a while to come did not happen",
+            )
             tick = time.get_clock_info("monotonic").resolution
             assert t.frame_period_s is not None and t.frame_period_s >= slow - tick
             assert MicroduckAdapter(t).frame_period_s == t.frame_period_s
@@ -3952,9 +4026,10 @@ async def test_a_verb_that_finds_no_frame_says_why(
         await adapter.connect()
         try:
             assert t.camera_working, "a frame came, and then the camera stopped answering"
-            await _eventually(
+            await until_async(
                 lambda: t.frame_age_s() is None and t._frame_error is not None,
-                "the frame going stale behind 503s",
+                30.0,
+                what="the frame going stale behind 503s did not happen",
             )
             ex = Executor(registry, adapter, contract=SEES.frontmatter, detector=_BallAhead(1.0))
             for verb, params in (("observe", {}), ("go_to", {"target": "ball", "timeout_s": 20})):
@@ -4010,7 +4085,9 @@ async def test_robotds_odometry_is_a_pose_in_extras_and_never_in_x_y_theta(
     own frame, said as such under `where`, and not a frame anything else shares."""
     t = await _connected(robotd)
     robotd.odom = {"position": [0.4, -0.2, 0.06], "yaw": 0.5}
-    await _eventually(lambda: _x_of(t) == 0.4, "the duck's odometry reaching Roboglot")
+    await until_async(
+        lambda: _x_of(t) == 0.4, 30.0, what="the duck's odometry reaching Roboglot did not happen"
+    )
     state = await t.get_state()
     where = state.extras["where"]
     assert where["kind"] == "odometry" and where["frame"].startswith("odom:")
@@ -4044,15 +4121,19 @@ async def test_a_pick_up_orphans_every_place_marked_before_it(
     t = await _connected(robotd)
     source = t.spatial
     assert source is not None
-    await _eventually(lambda: source.fix().localized, "a first pose", wait_s=5)
+    await until_async(lambda: source.fix().localized, 5, what="a first pose did not happen")
     book = PlaceBook(PlaceStore("microduck:jsonrpc", tmp_path), source)
     book.mark("sofa")
     if walking:
         robotd.twist = [0.1, 0.0, 0.0]
     robotd.picked_up = True
-    await _eventually(lambda: source.fix().lost == "picked up", "the pick-up", wait_s=5)
+    await until_async(
+        lambda: source.fix().lost == "picked up", 5, what="the pick-up did not happen"
+    )
     robotd.picked_up, robotd.twist = False, [0.0, 0.0, 0.0]
-    await _eventually(lambda: source.fix().localized, "the duck back on its feet", wait_s=5)
+    await until_async(
+        lambda: source.fix().localized, 5, what="the duck back on its feet did not happen"
+    )
     (view,) = book.views()
     assert view.status == "orphaned"
     assert view.reason == "it was marked on odometry that has started again since"
@@ -4070,13 +4151,17 @@ async def test_a_frozen_robot_clock_walks_nowhere_and_one_that_goes_back_begins_
     assert source is not None
     robotd.extra_state = {"t_ns": 5_000_000_000}
     robotd.odom = {"position": [0.05, 0.0, 0.06], "yaw": 0.0}
-    await _eventually(lambda: source.fix().t == 5.0 and _x_of(t) == 0.05, "a frozen clock")
+    await until_async(
+        lambda: source.fix().t == 5.0 and _x_of(t) == 0.05,
+        30.0,
+        what="a frozen clock did not happen",
+    )
     walked, before = source.fix().walked_m, source.fix().frame
     robotd.odom = {"position": [0.1, 0.0, 0.06], "yaw": 0.0}
-    await _eventually(lambda: _x_of(t) == 0.1, "a step on the frozen clock", wait_s=5)
+    await until_async(lambda: _x_of(t) == 0.1, 5, what="a step on the frozen clock did not happen")
     assert source.fix().walked_m == walked, "a step counted with no time passing"
     robotd.extra_state = {"t_ns": 1_000_000_000}
-    await _eventually(lambda: source.fix().t == 1.0, "the clock going back", wait_s=5)
+    await until_async(lambda: source.fix().t == 1.0, 5, what="the clock going back did not happen")
     after = source.fix().frame
     assert before is not None and after is not None and after.epoch == before.epoch + 1
     await t.close()
@@ -4091,7 +4176,9 @@ async def test_odometry_that_stays_at_zero_through_a_walk_is_no_odometry(
     source = t.spatial
     assert source is not None
     robotd.twist = [0.2, 0.0, 0.0]
-    await _eventually(lambda: "stayed at zero" in (source.fix().lost or ""), "zeros", wait_s=10)
+    await until_async(
+        lambda: "stayed at zero" in (source.fix().lost or ""), 10, what="zeros did not happen"
+    )
     assert source.fix().pose is None
     await t.close()
 
@@ -4102,7 +4189,7 @@ async def test_odometry_with_no_fresh_state_frame_is_no_pose(
     t = await _connected(robotd)
     source = t.spatial
     assert source is not None
-    await _eventually(lambda: source.fix().localized, "a first pose", wait_s=5)
+    await until_async(lambda: source.fix().localized, 5, what="a first pose did not happen")
     monkeypatch.setattr(t, "state_age_s", lambda: 9.0)
     assert source.fix().lost == "the newest robot.state frame is 9.0 s old"
     await t.close()

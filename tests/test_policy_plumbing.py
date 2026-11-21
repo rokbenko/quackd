@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 from collections.abc import Iterator
 from pathlib import Path
@@ -45,9 +44,9 @@ from roboglot.glotfile.validate import validate_glot
 from roboglot.registry import Registry, RobotEntry
 from roboglot_lerobot.mock import REST
 from roboglot_lerobot.policy import protocol as wire
-from roboglot_lerobot.policy import server as S
 from roboglot_lerobot.policy.client import RemoteRunner, policy_address
 from roboglot_lerobot.verbs import JOINTS, MANIPULATE_S
+from tests.conftest import plain_text
 from tests.test_lerobot_adapter import _segment_arm, built_arm
 from tests.test_policy_contract import (
     TOKEN,
@@ -55,7 +54,7 @@ from tests.test_policy_contract import (
     _arm_on,
     _as_checkpoint,
     _quantiles,
-    _serving,
+    serving,
 )
 
 runner = CliRunner()
@@ -97,19 +96,8 @@ def registered_arm(_registry_in_tmp: None) -> str:
 def held() -> Iterator[Serving]:
     """`roboglot policy serve --policy scripted:hold`, on loopback, with a token: a `manipulate`
     of it ends on a stall, which is a segment that ran and is ok."""
-    serving = _serving(S.ServeOptions(policy="scripted:hold"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
-
-
-def _flat(text: str) -> str:
-    """Output on one line, with no colour: under `GITHUB_ACTIONS` Typer colours its usage
-    errors, and a code inside a flag's name would hide it from a plain `in`."""
-    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).split())
+    with serving("scripted:hold") as s:
+        yield s
 
 
 # ── the flags ───────────────────────────────────────────────────────────────────────────
@@ -142,10 +130,10 @@ def test_an_address_redaction_cannot_read_is_refused_without_being_quoted(
             build(typed)
         assert "hunter2" not in str(refused.value)
     result = _run(tmp_path, "--robot", "lerobot:real", "--policy-url", typed)
-    assert result.exit_code == 1 and "--policy-url is not a URL" in _flat(result.output)
+    assert result.exit_code == 1 and "--policy-url is not a URL" in plain_text(result.output)
     assert "hunter2" not in result.output
     checked = runner.invoke(app, ["policy", "check", "--policy-url", typed])
-    assert checked.exit_code == 1 and "--policy-url is not a URL" in _flat(checked.output)
+    assert checked.exit_code == 1 and "--policy-url is not a URL" in plain_text(checked.output)
     assert "hunter2" not in checked.output
 
 
@@ -324,14 +312,14 @@ def test_the_executor_section_is_there_only_with_manipulate() -> None:
     with_camera = executor_section(["observe", "manipulate", "stop"])
     blind = executor_section(["report_state", "manipulate", "stop"])
     for text in (with_camera, blind):
-        flat = _flat(text)
+        flat = plain_text(text)
         assert text.lstrip().startswith("## Your executor")
         assert "one short subtask per call" in flat and "never declare success" in flat
-    assert "`observe`" in with_camera and "fresh frame" in _flat(with_camera)
-    assert "`report_state`" in blind and "fresh reading" in _flat(blind)
+    assert "`observe`" in with_camera and "fresh frame" in plain_text(with_camera)
+    assert "`report_state`" in blind and "fresh reading" in plain_text(blind)
     # frames with every observation beat a verb that asks for one
     framed = executor_section(["observe", "report_state", "manipulate", "stop"], frames=True)
-    assert "the fresh frame your next observation brings" in _flat(framed)
+    assert "the fresh frame your next observation brings" in plain_text(framed)
     assert "`observe`" not in framed and "`report_state`" not in framed
     assert "`" not in executor_section(["manipulate", "stop"]).replace("`manipulate`", "")
 
@@ -369,7 +357,7 @@ def test_a_pilot_that_sees_the_arms_camera_judges_the_frame_after_each_segment()
     def executor(camera: bool, sees: bool) -> str:
         manifest = lerobot_manifest("real", camera=camera)
         prompt = build_system_prompt(glot, verbs, manifest, sees=sees)
-        return _flat(prompt.split("## Your executor")[1].split("\n## ")[0])
+        return plain_text(prompt.split("## Your executor")[1].split("\n## ")[0])
 
     assert "the fresh frame your next observation brings" in executor(camera=True, sees=True)
     for camera, sees in ((True, False), (False, True)):
@@ -415,7 +403,7 @@ def test_a_run_tells_the_prompt_whether_its_pilot_sees_the_frames(
             for line in (run_dir / "transcript.jsonl").read_text(encoding="utf-8").splitlines()
         ]
         (start,) = [r for r in records if r["kind"] == "run_start"]
-        executor = _flat(start["system_prompt"].split("## Your executor")[1].split("\n## ")[0])
+        executor = plain_text(start["system_prompt"].split("## Your executor")[1].split("\n## ")[0])
         assert said in executor, (flag, result.output, executor)
 
 
@@ -553,7 +541,7 @@ def test_a_run_refuses_a_policy_it_cannot_use_before_anything_connects(
     tmp_path: Path, registered_arm: str, argv: list[str], needle: str
 ) -> None:
     result = _run(tmp_path, *argv)
-    assert result.exit_code == 1 and needle in _flat(result.output), result.output
+    assert result.exit_code == 1 and needle in plain_text(result.output), result.output
     assert not (tmp_path / "runs").exists() or not any((tmp_path / "runs").iterdir())
 
 
@@ -581,11 +569,11 @@ def test_a_task_that_needs_a_policy_on_the_arm_says_how_to_give_it_one(
             *("--runs-dir", str(tmp_path / "runs")),
         ],
     )
-    out = _flat(ran.output)
+    out = plain_text(ran.output)
     assert ran.exit_code == 1 and "manipulate is not provided by" in out, ran.output
     assert said in out and "give roboglot run its address with --policy-url" in out, out
     checked = runner.invoke(app, ["validate", str(glot), "--robot", "lerobot:real"])
-    assert checked.exit_code == 1 and said in _flat(checked.output), checked.output
+    assert checked.exit_code == 1 and said in plain_text(checked.output), checked.output
     with pytest.raises(SystemExit, match="give roboglot serve-mcp its address with --policy-url"):
         team_from_flags(robot=registered_arm, glotfile=str(glot))
     # a verb no policy gives, and a body that runs no policy, are refused as they always were
@@ -599,7 +587,7 @@ def test_a_server_that_is_not_there_says_where_to_look(tmp_path: Path, registere
     result = _run(
         tmp_path, "--robot", registered_arm, "--policy-url", DEAD, "--policy-token", TOKEN
     )
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1 and UNANSWERED in out, result.output
     assert f"roboglot policy check --policy-url {DEAD} asks it what it serves" in out
 
@@ -623,7 +611,7 @@ def test_serve_mcp_takes_a_policy_for_one_arm_and_refuses_it_for_a_team(
     served = plan.adapters[name].policy_served
     assert served["server"] == held.url and served["policy"] == "scripted:hold"
     refused = runner.invoke(app, ["serve-mcp", "--robot", registered_arm, "--controller", "vla"])
-    assert refused.exit_code != 0 and "--controller" in _flat(refused.output)
+    assert refused.exit_code != 0 and "--controller" in plain_text(refused.output)
 
 
 def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
@@ -657,7 +645,7 @@ def test_serve_mcp_says_a_policy_the_arm_refuses_in_its_sentence_and_exits_1(
     finally:
         serving.http.shutdown()
         serving.http.server_close()
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1, result.output
     assert "Traceback" not in result.output and "ExceptionGroup" not in result.output, out
     assert "calibrated travel: shoulder_lift" in out and "--accept-other-frame" in out, out
@@ -682,7 +670,7 @@ def test_accept_other_frame_goes_with_a_policy_server_and_is_on_the_record(
     ]
     for refused in refusals:
         assert refused.exit_code != 0, refused.output
-        assert "--accept-other-frame goes with --policy-url" in _flat(refused.output)
+        assert "--accept-other-frame goes with --policy-url" in plain_text(refused.output)
     choice = PolicyChoice(held.url, TOKEN, accept_other_frame=True)
     adapter = make_adapter("lerobot:real", address="COM5", policy=choice)
     client = adapter.transport.policy_loop.runner  # type: ignore[attr-defined]
@@ -718,9 +706,11 @@ def test_no_async_chunks_goes_with_a_policy_server_and_is_on_the_record(
     ]
     for refused in refusals:
         assert refused.exit_code != 0, refused.output
-        assert "--no-async-chunks goes with --policy-url" in _flat(refused.output)
+        assert "--no-async-chunks goes with --policy-url" in plain_text(refused.output)
     check = runner.invoke(app, ["policy", "check", "--policy-url", held.url, "--no-async-chunks"])
-    assert check.exit_code != 0 and "--no-async-chunks goes with --bench" in _flat(check.output)
+    assert check.exit_code != 0 and "--no-async-chunks goes with --bench" in plain_text(
+        check.output
+    )
     choice = PolicyChoice(held.url, TOKEN, async_chunks=False)
     adapter = make_adapter("lerobot:real", address="COM5", policy=choice)
     assert adapter.transport.policy_loop.async_chunks is False  # type: ignore[attr-defined]
@@ -771,7 +761,7 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
         "--accept-other-frame",
         "--yes",
     )
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 0, result.output
     assert f"policy {held.url} scripted:hold" in out, "the header names the server and checkpoint"
     (run_dir,) = (tmp_path / "runs").iterdir()
@@ -803,7 +793,7 @@ def test_a_goal_run_hands_the_arm_to_the_server_and_records_what_the_policy_did(
     # and a replay opens with the same row and ends with the same counter
     replay = runner.invoke(app, ["log", str(run_dir)], env={"COLUMNS": "200"})
     assert replay.exit_code == 0, replay.output
-    shown = _flat(replay.output)
+    shown = plain_text(replay.output)
     assert f"policy {held.url} scripted:hold" in shown and "policy 1 segment" in shown, shown
 
 
@@ -909,7 +899,7 @@ def test_a_run_reads_hf_name_from_no_registry_a_dotenv_names(
     monkeypatch.delenv("ROBOGLOT_REGISTRY_DIR")
     monkeypatch.setenv("HF_TOKEN", HF_TOKEN)
     result = _run(tmp_path, "--robot", ARM_NAME, "--policy-url", "hf:arm")
-    said = _flat(result.output)
+    said = plain_text(result.output)
     assert result.exit_code == 1 and "ROBOGLOT_REGISTRY_DIR comes from a .env file here" in said, (
         said
     )
@@ -937,4 +927,4 @@ def test_hf_name_with_no_record_or_no_account_token_refuses_the_arm_before_it_co
         "--registry-dir",
         str(tmp_path),
     )
-    assert result.exit_code == 1 and needle in _flat(result.output), result.output
+    assert result.exit_code == 1 and needle in plain_text(result.output), result.output

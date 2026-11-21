@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import contextlib
 import http.client
-import importlib.util
 import json
 import logging
 import math
@@ -27,10 +26,10 @@ import socket
 import sys
 import threading
 import time
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 
 import numpy as np
@@ -79,6 +78,7 @@ from roboglot_lerobot.real import (
     parse_camera_url,
 )
 from roboglot_lerobot.verbs import JOINTS, MANIPULATE_S
+from tests.support import load_script, until
 from tests.test_lerobot_adapter import FakeArm, FakeCamera, SteppedClock, _segment_arm
 from tests.test_policy_loop import STEP, AnsweredClock, LockstepClock, _segment_end
 
@@ -140,16 +140,24 @@ def _serving(options: S.ServeOptions, runner: Any = None, token: str = TOKEN) ->
     return Serving(app_, S.serve(app_, "127.0.0.1", 0))
 
 
+@contextlib.contextmanager
+def serving(policy: str) -> Iterator[Serving]:
+    """`roboglot policy serve --policy POLICY`, on loopback, with a token, shut down after: what
+    each fixture that serves one policy holds around its tests."""
+    server = _serving(S.ServeOptions(policy=policy))
+    try:
+        yield server
+    finally:
+        server.http.shutdown()
+        server.http.server_close()
+        server.app.close()
+
+
 @pytest.fixture
 def served() -> Iterator[Serving]:
     """`roboglot policy serve --policy scripted:sweep`, on loopback, with a token."""
-    serving = _serving(S.ServeOptions(policy="scripted:sweep"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
+    with serving("scripted:sweep") as s:
+        yield s
 
 
 def _reading(value: float = 0.0, **frames: Any) -> dict[str, Any]:
@@ -175,13 +183,7 @@ async def _arm_on(
     return transport, adapter, ex
 
 
-def _hostd() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("roboglot_jetson_hostd_policy", HOSTD)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+_hostd = partial(load_script, HOSTD, "roboglot_jetson_hostd_policy")
 
 
 # ── what the two sides agree on ─────────────────────────────────────────────────────────
@@ -390,11 +392,7 @@ def test_a_client_that_closes_ends_its_session_so_another_starts_at_once(
     first.close()  # a client with no session sends nothing, and ending one twice is no error
 
 
-def _until(done: Callable[[], bool], within: float = 5.0) -> None:
-    end = time.monotonic() + within
-    while not done():
-        assert time.monotonic() < end, "it did not happen in time"
-        time.sleep(0.02)
+_until = partial(until, within_s=5.0, every_s=0.02, what="it did not happen")
 
 
 def test_a_reset_whose_reply_was_lost_leaves_its_client_the_session_it_made() -> None:
@@ -615,7 +613,7 @@ def test_a_step_nobody_waits_for_any_more_keeps_no_new_client_out(
         said = str(busy.value)
         assert busy.value.status == 409 and "a step of its inferring for" in said, said
         assert f"Try again in {math.ceil(patience)} s" in said and said.endswith("--port"), said
-        _until(lambda: let_in(second), within=patience + 5.0)
+        _until(lambda: let_in(second), within_s=patience + 5.0)
         assert not gate.is_set(), "let in while the step it outlived was still inferring"
         gate.set()
         orphan.join(5)

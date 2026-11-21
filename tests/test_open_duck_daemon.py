@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import importlib.util
 import json
 import logging
 import os
@@ -18,6 +17,7 @@ import subprocess
 import sys
 import threading
 import time
+from functools import partial
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -30,6 +30,7 @@ from roboglot.safety import Executor, allow_all
 from roboglot.verbs.registry import registry_from_manifest
 from roboglot_open_duck import OpenDuckAdapter
 from roboglot_open_duck.bridge import PROTOCOL, PROTOCOL_VERSION, OpenDuckBridge
+from tests.support import load_script
 
 REPO = Path(__file__).resolve().parents[1]
 DAEMON = REPO / "bridge" / "open_duck" / "roboglot_duck_bridge.py"
@@ -41,14 +42,8 @@ GLOT = parse_glot_text(
 )
 
 
-def load_daemon() -> ModuleType:
-    """It lives outside the package on purpose: Roboglot's core must never import it."""
-    spec = importlib.util.spec_from_file_location("roboglot_duck_bridge", DAEMON)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclasses resolves annotations through sys.modules
-    spec.loader.exec_module(module)
-    return module
+# It lives outside the package on purpose: Roboglot's core must never import it.
+load_daemon = partial(load_script, DAEMON, "roboglot_duck_bridge")
 
 
 @pytest.fixture(scope="module")

@@ -10,27 +10,21 @@ tests drive its two pure functions with fakes, and prove it imports with Roboglo
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 import subprocess
 import sys
-from types import ModuleType
+from functools import partial
 
 import pytest
 
 from tests.conftest import REPO
+from tests.support import load_script
 
 WRAPPER = REPO / "bridge" / "alohamini" / "roboglot_alohamini_host.py"
 
 
-def load_wrapper() -> ModuleType:
-    """It lives outside the package on purpose: Roboglot's core must never import it."""
-    spec = importlib.util.spec_from_file_location("roboglot_alohamini_host", WRAPPER)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
+# It lives outside the package on purpose: Roboglot's core must never import it.
+load_wrapper = partial(load_script, WRAPPER, "roboglot_alohamini_host")
 
 
 class _FakeBus:

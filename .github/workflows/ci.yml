@@ -232,6 +232,11 @@ jobs:
     # and carrying a central's link frames, on a private bus that dbus-run-session starts and
     # stops. bleak's scanner and client never run here: they talk to a real bluetoothd.
     #
+    # It is also the one job with the openai SDK installed (the onboard extra brings it for the
+    # robot's brain) and, with the lan extra, paho-mqtt. So the three files that hold Roboglot's
+    # requests to the real SDK on a local fake server run here, and so does the MQTT bus's test of
+    # the real paho client: every other job skips them, as their own skips say.
+    #
     # A matrix of two, as `test` is on Linux, because dbus-fast has a wheel per Python and a
     # Jetson's JetPack 6 runs 3.10 or a uv-managed 3.12, and 3.11 is the floor Roboglot keeps.
     timeout-minutes: 15
@@ -257,14 +262,14 @@ jobs:
         with:
           version: "0.12.21"
           enable-cache: true # zizmor: ignore[cache-poisoning] no run here publishes what it builds
-      - name: Sync (dev + the onboard extra, which on Linux brings bleak and dbus-fast)
-        run: uv sync --python ${{ matrix.python }} --extra onboard
+      - name: Sync (dev, the onboard extra, which on Linux brings bleak and dbus-fast, and lan for paho-mqtt)
+        run: uv sync --python ${{ matrix.python }} --extra onboard --extra lan
       - name: Prove the imports before blaming the radio
-        run: uv run python -c "import bleak, dbus_fast, zeroconf; print('bleak and dbus-fast import')"
+        run: uv run python -c "import bleak, dbus_fast, zeroconf, openai, paho.mqtt.client; print('bleak, dbus-fast, openai and paho-mqtt import')"
       - name: Types, with bleak's and dbus-fast's own present
         run: uv run mypy
-      - name: The radio with the extra installed, the BlueZ half against a fake BlueZ, and the LAN browse on loopback
-        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py --junitxml="${{ runner.temp }}/junit/onboard.xml"
+      - name: The radio with the extra installed, the BlueZ half against a fake BlueZ, the LAN browse on loopback, the openai SDK's requests and the real paho client
+        run: dbus-run-session -- uv run pytest tests/test_radio.py tests/test_extras_absent.py tests/test_radio_bluez_core.py tests/test_radio_bluez_privacy.py tests/test_radio_bluez_objects.py tests/test_radio_bluez_bus.py tests/test_lan_passport_browser.py tests/test_decisions_api_wire.py tests/test_openai_headers_wire.py tests/test_openrouter_wire.py tests/test_mqtt_bus.py --junitxml="${{ runner.temp }}/junit/onboard.xml"
       - name: Failed tests, in the job's summary
         if: ${{ !cancelled() }}
         run: uv run --no-project python scripts/ci_failed_tests.py "${{ runner.temp }}/junit/onboard.xml"

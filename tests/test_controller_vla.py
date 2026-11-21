@@ -48,10 +48,10 @@ from roboglot.registry import Registry, RobotEntry
 from roboglot.safety import Budget, BudgetExceeded, allow_all
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import REST, LeRobotMock
-from roboglot_lerobot.policy import server as S
+from tests.conftest import plain_text
 from tests.test_glot_policy import INSTRUCTIONS, SEGMENT_S, _v3
 from tests.test_lerobot_adapter import _segment_arm, built_arm
-from tests.test_policy_contract import TOKEN, Serving, _serving
+from tests.test_policy_contract import TOKEN, Serving, serving
 
 runner = CliRunner()
 
@@ -598,11 +598,6 @@ def test_a_pilot_built_from_python_is_held_to_the_rule_for_an_instruction() -> N
 # ── the command ─────────────────────────────────────────────────────────────────────────
 
 
-def _flat(text: str) -> str:
-    """Output on one line, with no colour, as `tests/test_policy_plumbing.py` reads it."""
-    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).split())
-
-
 def _no_run(tmp_path: Path) -> bool:
     runs = tmp_path / "runs"
     return not runs.exists() or not any(runs.iterdir())
@@ -687,7 +682,7 @@ def test_a_vla_run_is_refused_before_anything_connects(
 ) -> None:
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     result = _cli(tmp_path, *argv, "--controller", "vla")
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1 and needle in out, result.output
     assert out.count("--controller vla") >= 1, "the refusal names the flag it refuses"
     assert _no_run(tmp_path)
@@ -700,7 +695,7 @@ def test_a_vla_run_with_nobody_at_a_terminal_is_refused(
     monkeypatch.setattr(cli, "_can_prompt", lambda: False)
     result = _cli(tmp_path, *GOAL, *ARM, "--controller", "vla")
     assert result.exit_code == 1, result.output
-    assert "there is no terminal to ask on" in _flat(result.output)
+    assert "there is no terminal to ask on" in plain_text(result.output)
     assert _no_run(tmp_path)
 
 
@@ -710,9 +705,9 @@ def test_a_decision_llm_in_the_environment_is_refused_by_its_own_name(
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     monkeypatch.setenv("ROBOGLOT_DECISION_LLM", "jev")
     result = _cli(tmp_path, *GOAL, *ARM, "--controller", "vla")
-    assert result.exit_code == 1 and "ROBOGLOT_DECISION_LLM names one" in _flat(result.output)
+    assert result.exit_code == 1 and "ROBOGLOT_DECISION_LLM names one" in plain_text(result.output)
     off = _cli(tmp_path, *GOAL, *ARM, "--controller", "vla", "--decision-llm", "off")
-    assert "decision LLM" not in _flat(off.output), "--decision-llm off opts this run out"
+    assert "decision LLM" not in plain_text(off.output), "--decision-llm off opts this run out"
 
 
 def test_a_task_file_that_lists_no_instruction_is_refused(
@@ -727,7 +722,7 @@ def test_a_task_file_that_lists_no_instruction_is_refused(
         encoding="utf-8",
     )
     result = _cli(tmp_path, str(glot), *ARM, "--controller", "vla")
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1 and "and hand-off lists none" in out, result.output
     assert "policy.instructions in a task file at glot: 3 or later" in out and _no_run(tmp_path)
 
@@ -758,7 +753,7 @@ def test_a_task_file_that_plays_is_refused(
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     glot = _crane(tmp_path, instructions=instructions)
     result = _cli(tmp_path, str(glot), *ARM, "--controller", "vla")
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1, result.output
     assert "crane gives its pilot a part to play, and --controller vla flies the arm" in out
     hint = (
@@ -781,7 +776,7 @@ def test_no_play_with_no_part_to_turn_off_is_let_through(
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     what = GOAL if task == "goal" else (str(_crane(tmp_path, played=False)),)
     result = _cli(tmp_path, *what, *ARM, "--controller", "vla", "--no-play")
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert "would do nothing" not in out and "a part to play" not in out, result.output
     assert _reached(DEAD, out), "it got as far as the policy server"
 
@@ -793,7 +788,7 @@ def test_no_play_lets_a_played_file_fly_its_instructions(
     fly: neither play refusal stands. The run then goes as far as the dead policy server."""
     monkeypatch.setattr(cli, "_can_prompt", lambda: True)
     result = _cli(tmp_path, str(_crane(tmp_path)), *ARM, "--controller", "vla", "--no-play")
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert "gives its pilot a part to play" not in out, result.output
     assert "would do nothing" not in out, result.output
     assert _reached(DEAD, out), "it got as far as the policy server"
@@ -801,7 +796,9 @@ def test_no_play_lets_a_played_file_fly_its_instructions(
 
 def test_a_controller_nobody_defined_is_refused(tmp_path: Path) -> None:
     result = _cli(tmp_path, *GOAL, "--controller", "gpt")
-    assert result.exit_code == 1 and "--controller is llm or vla, not 'gpt'" in _flat(result.output)
+    assert result.exit_code == 1 and "--controller is llm or vla, not 'gpt'" in plain_text(
+        result.output
+    )
     assert _no_run(tmp_path)
 
 
@@ -814,15 +811,18 @@ def test_a_blank_controller_is_the_default_as_a_blank_detector_is(
     nowhere = ("--robot", "no-such-robot")
     unset = _cli(tmp_path / "unset", *GOAL, *nowhere)
     given = _cli(tmp_path / "given", *GOAL, *nowhere, "--controller", blank)
-    assert "no-such-robot" in _flat(unset.output), unset.output
-    assert (given.exit_code, _flat(given.output)) == (unset.exit_code, _flat(unset.output))
+    assert "no-such-robot" in plain_text(unset.output), unset.output
+    assert (given.exit_code, plain_text(given.output)) == (
+        unset.exit_code,
+        plain_text(unset.output),
+    )
 
 
 def test_serve_mcp_refuses_a_controller_in_words() -> None:
     """Over MCP the client is the pilot: there is nothing to choose, and nobody at a terminal
     for a vla run to ask."""
     result = runner.invoke(cli.app, ["serve-mcp", "--robot", ARM_NAME, "--controller", "vla"])
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 1 and "over MCP the client flies" in out, result.output
     assert "roboglot run --controller vla" in out
 
@@ -840,13 +840,8 @@ def test_the_judge_prompt_is_marked_as_reaching_a_person_only_at_a_terminal(
 def held() -> Iterator[Serving]:
     """`roboglot policy serve --policy scripted:hold`: a `manipulate` of it ends on a stall,
     which is a segment that ran and is ok."""
-    serving = _serving(S.ServeOptions(policy="scripted:hold"))
-    try:
-        yield serving
-    finally:
-        serving.http.shutdown()
-        serving.http.server_close()
-        serving.app.close()
+    with serving("scripted:hold") as s:
+        yield s
 
 
 @pytest.mark.parametrize("said", [True, False], ids=["yes", "no"])
@@ -884,7 +879,7 @@ def test_a_vla_run_on_the_arm_ends_on_what_the_person_said(
         "run manipulate(instruction='hold still')?",
         "Did the arm do it?",
     ]
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert "provider vla (scripted:goal)" in out, "the header names the pilot"
     assert ("SUCCESS" if said else "FAILURE") in out
     (run_dir,) = (tmp_path / "runs").iterdir()
@@ -922,7 +917,7 @@ def test_a_played_file_flown_with_no_play_says_its_part_was_off(
         "--no-play",
     )
     assert result.exit_code == 0, result.output
-    assert "play off, from --no-play" in _flat(result.output)
+    assert "play off, from --no-play" in plain_text(result.output)
     (run_dir,) = (tmp_path / "runs").iterdir()
     events = Transcript.read(run_dir / "transcript.jsonl")
     start = next(e for e in events if e["kind"] == "run_start")

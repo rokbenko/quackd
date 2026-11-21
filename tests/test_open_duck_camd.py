@@ -7,11 +7,9 @@ chain. That is what turns `observe` from a promise into a picture.
 
 from __future__ import annotations
 
-import importlib.util
 import io
 import json
 import logging
-import sys
 import threading
 import time
 import urllib.request
@@ -23,29 +21,21 @@ from PIL import Image
 
 from roboglot_open_duck import OpenDuckAdapter
 from roboglot_open_duck.bridge import OpenDuckBridge
+from tests.support import load_script, until
 
 REPO = Path(__file__).resolve().parents[1]
 CAMD = REPO / "bridge" / "open_duck" / "roboglot_duck_camd.py"
 DAEMON = REPO / "bridge" / "open_duck" / "roboglot_duck_bridge.py"
 
 
-def _load(path: Path, name: str) -> ModuleType:
-    spec = importlib.util.spec_from_file_location(name, path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
 @pytest.fixture(scope="module")
 def camd() -> ModuleType:
-    return _load(CAMD, "roboglot_duck_camd")
+    return load_script(CAMD, "roboglot_duck_camd")
 
 
 @pytest.fixture(scope="module")
 def daemon() -> ModuleType:
-    return _load(DAEMON, "roboglot_duck_bridge")
+    return load_script(DAEMON, "roboglot_duck_bridge")
 
 
 def get(url: str, timeout: float = 3.0) -> tuple[int, bytes, str]:
@@ -54,15 +44,6 @@ def get(url: str, timeout: float = 3.0) -> tuple[int, bytes, str]:
             return r.status, r.read(), r.headers.get("Content-Type", "")
     except urllib.error.HTTPError as e:
         return e.code, e.read(), e.headers.get("Content-Type", "")
-
-
-def wait_for_frame(store, timeout: float = 5.0) -> None:
-    end = time.monotonic() + timeout
-    while time.monotonic() < end:
-        if store.get()[0] is not None:
-            return
-        time.sleep(0.02)
-    raise AssertionError("no frame was captured in time")
 
 
 # ── the store ───────────────────────────────────────────────────────────────────────────
@@ -117,7 +98,7 @@ def test_it_serves_a_jpeg_and_a_health_page(camd: ModuleType) -> None:
     ).start()
     server = camd.serve(store, "127.0.0.1", 0)
     try:
-        wait_for_frame(store)
+        until(lambda: store.get()[0] is not None, 5.0, every_s=0.02, what="no frame was captured")
         port = server.server_address[1]
         code, body, ctype = get(f"http://127.0.0.1:{port}/snapshot.jpg")
         assert code == 200 and ctype == "image/jpeg"
@@ -200,7 +181,7 @@ async def test_roboglot_sees_through_the_camera_server(
     ).start()
     cam_server = camd.serve(store, "127.0.0.1", 0)
     cam_port = cam_server.server_address[1]
-    wait_for_frame(store)
+    until(lambda: store.get()[0] is not None, 5.0, every_s=0.02, what="no frame was captured")
 
     core = daemon.BridgeCore(
         capabilities={"camera": True, "speaker": True, "antennas": False, "microphone": False},

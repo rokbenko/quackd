@@ -44,6 +44,7 @@ from roboglot_rosarm.fake import description_urdf
 from roboglot_rosarm.transport import DEFAULT_BRIDGE_NODE, RosArmWs, trajectory_goal
 from roboglot_rosarm.upstream_api import GOAL_THREAD_PARAM, NO_ACTION_SERVER
 from roboglot_rosarm.verbs import TOL_DEG
+from tests.support import unused_port
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("ROBOGLOT_ROSARM_CONTRACT") != "1",
@@ -57,12 +58,6 @@ READY_S = 60.0
 """How long a cell may take to come up: the bridge's port, and the action among rosapi's list."""
 DOMAINS = itertools.count(11)
 """A ROS graph of its own for each cell, so nothing one case started is seen by the next."""
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
 
 
 def _ros_env(domain: int) -> dict[str, str]:
@@ -140,7 +135,7 @@ class Cell:
     ) -> None:
         self.body = body
         self.new_thread = new_thread
-        self.port = _free_port()
+        self.port = unused_port()
         self.address = f"ws://127.0.0.1:{self.port}"
         env = _ros_env(next(DOMAINS))
         node = body.description_param.split(":", 1)[0]
