@@ -28,9 +28,12 @@ import asyncio
 import base64
 import binascii
 import contextlib
+import ipaddress
 import json
 import logging
+import math
 import os
+import re
 import time
 from collections.abc import AsyncIterator
 from io import BytesIO
@@ -39,7 +42,7 @@ from typing import Any
 from PIL import Image, UnidentifiedImageError
 
 from roboglot.transport.base import Ack, HeartbeatError, Intent, RobotState, TransportError
-from roboglot_toddlerbot.verbs import look_degrees
+from roboglot_toddlerbot.verbs import MOTIONS, look_degrees
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +68,11 @@ PERFORM = "bot.perform"
 GRIP = "bot.grip"
 FRAME = "bot.frame"
 KEEPALIVE = "bot.keepalive"
+LOST = "bot.lost"  # from the daemon: a part this connection drove was taken, and why
+UNDELIVERED_STOP_ADVICE = (
+    "Roboglot has stopped keeping this robot alive, so its daemon's deadman brings what this "
+    "session was driving to rest. Do not cut its power: on this robot that is a fall"
+)
 
 KEEPALIVE_S = 0.15
 """How often the client says it is still there.
@@ -92,6 +100,77 @@ A frame comes as one line of base64 (`bot.frame`), so the default stopped at a J
 out its timeout on a socket nobody read, while the keepalive went on telling the daemon all was
 well. 4 MiB holds a 1080p frame of pure noise at that quality, and `_read_loop` skips a line
 longer still instead of ending the link on it."""
+
+
+def is_loopback(host: str) -> bool:
+    """Whether `host` names this machine alone: `localhost`, or an address in 127.0.0.0/8 or
+    ::1. Any other name can resolve to anything, so it counts as the network."""
+    name = host.strip().lower()
+    if name == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(name).is_loopback
+    except ValueError:
+        return False
+
+
+NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+"""A build name as a manifest writes its ids (the slug rule in `roboglot.adapters.manifest`),
+which every build upstream ships fits: `toddlerbot_2xm_gripper` is twenty-two characters."""
+VERSION = re.compile(r"[0-9A-Za-z.+!_-]{1,64}")
+"""A version as PEP 440 writes one, no longer than a name."""
+COMMIT = re.compile(r"[0-9a-f]{7,40}")
+"""A git commit: its forty hex digits, or git's shortest abbreviation of seven."""
+ENVELOPE_KEYS = ("max_vx", "max_vy", "max_wz")
+
+
+def _number(value: Any) -> bool:
+    """A real number off the wire: a bool is an int to Python, and is not one here."""
+    return isinstance(value, int | float) and not isinstance(value, bool)
+
+
+def _unfit_hello(hello: dict[str, Any]) -> str | None:
+    """What makes a daemon's hello unfit to repeat to the pilot, or None. Each field is checked
+    only for being the kind of thing it is: absent stays absent, as it always was."""
+    remote = hello.get("protocol_version")
+    if remote is not None and not (_number(remote) and float(remote).is_integer()):
+        return "reported a protocol version that is not a number"
+    robot = hello.get("robot")
+    if robot and not (isinstance(robot, str) and NAME.fullmatch(robot)):
+        return "reported a robot that is not a build name"
+    motors = hello.get("motors")
+    if motors and not (_number(motors) and float(motors).is_integer() and motors > 0):
+        return "reported a motor count that is not a whole number"
+    caps = hello.get("capabilities")
+    if caps is not None and not isinstance(caps, dict):
+        return "reported its capabilities as something other than a table"
+    envelope = (caps or {}).get("walk_envelope")
+    if envelope is not None and not (
+        isinstance(envelope, dict)
+        and all(
+            _number(envelope.get(k)) and math.isfinite(envelope[k]) and envelope[k] >= 0
+            for k in ENVELOPE_KEYS
+            if k in envelope
+        )
+    ):
+        return "reported a walk envelope that is not numbers of zero or more"
+    return None
+
+
+def _offered_motions(reported: Any) -> tuple[str, ...]:
+    """The motions a daemon reported that Roboglot offers, in the daemon's order, once each.
+
+    The names become the `perform` tool the pilot reads, so only Roboglot's own may: a name it
+    does not know, or anything that is not a name at all, is left out and counted in the log."""
+    if not isinstance(reported, list | tuple):
+        return ()
+    offered = tuple(dict.fromkeys(m for m in reported if isinstance(m, str) and m in MOTIONS))
+    if len(offered) != len(reported):
+        log.warning(
+            "the bridge reported %d motion(s) Roboglot does not offer; leaving them out",
+            len(reported) - len(offered),
+        )
+    return offered
 
 
 def parse_address(address: str) -> tuple[str, int]:
@@ -125,9 +204,8 @@ class ToddlerBotBridge:
         request_timeout_s: float = 3.0,
     ) -> None:
         self.address = address or f"tcp://toddlerbot.local:{DEFAULT_PORT}"
-        # The installer writes a token onto the robot, so a robot set up by the book refuses
-        # an unauthenticated client. It travels in the handshake and never in the address,
-        # because addresses are printed and land in transcripts.
+        # Whatever token the daemon was started with. It travels in the handshake and never in
+        # the address, because addresses are printed and land in transcripts.
         self.token = token or os.environ.get(TOKEN_ENV) or None
         self.request_timeout_s = request_timeout_s
         self._reader: asyncio.StreamReader | None = None
@@ -157,6 +235,26 @@ class ToddlerBotBridge:
         self.motors = 30
         self.daemon_version: str | None = None
         self.upstream_commit: str | None = None
+        #: Why the last `stop` did not reach the daemon, or None if it did. The stop is what the
+        #: pilot is told to reach for when something is wrong, and it is asked for most often
+        #: when the link is what is wrong, so a stop that never landed must not be recorded as
+        #: one that did. The core `stop` verb and the executor's brake both read this.
+        self.stop_error: str | None = None
+        #: Set when a daemon reached over an address that is not loopback says it checks no
+        #: token, which the connect cannot otherwise tell from one that checked it.
+        #: `roboglot doctor` prints it.
+        self.auth_warning: str | None = None
+        #: Why the keepalive is not being sent, or None while it is. A stop that did not land
+        #: leaves the robot doing whatever the stop was meant to end, and the keepalive would
+        #: then be the only thing keeping it at it. So it goes quiet: the daemon's own deadman
+        #: takes the robot to its safe pose within its window, the heartbeat says why, and the
+        #: next command the daemon accepts starts the keepalive again.
+        self.keepalive_withheld: str | None = None
+        #: Why a part this connection was driving was taken from it (another connection's stop,
+        #: the daemon shutting down), until the heartbeat has said so once.
+        self.lost_reason: str | None = None
+        #: The ids of stops that timed out, whose answers may still arrive.
+        self._late_stops: set[int] = set()
 
     # ── wire ────────────────────────────────────────────────────────────────────────
 
@@ -181,12 +279,22 @@ class ToddlerBotBridge:
             await self.close()
             if "2:" in str(e) and not self.token:
                 raise TransportError(
-                    f"the bridge at {self.address} wants a token and none was given. Its "
-                    f"installer writes one on the robot; pass it with --token or "
-                    f"{TOKEN_ENV}. Original answer: {e}"
+                    f"the bridge at {self.address} wants a token and none was given. Pass the "
+                    f"one its daemon was started with, with --token or {TOKEN_ENV}. Original "
+                    f"answer: {e}"
                 ) from e
             raise
         self.hello = result if isinstance(result, dict) else {}
+        # What the daemon says about itself reaches the pilot in Roboglot's own voice: the robot
+        # name opens the body summary, and the motions become the `perform` tool. So nothing is
+        # repeated as it came. A value of the wrong kind refuses the connect, without quoting
+        # it, and a motion Roboglot does not offer is left out (`_offered_motions`).
+        unfit = _unfit_hello(self.hello)
+        if unfit is not None:
+            await self.close()
+            raise TransportError(
+                f"the bridge at {self.address} {unfit}; refusing rather than repeating it"
+            )
         remote = self.hello.get("protocol_version")
         if remote is not None and int(remote) != PROTOCOL_VERSION:
             await self.close()
@@ -201,23 +309,45 @@ class ToddlerBotBridge:
         # No walk checkpoint means no locomotion at all: it is an ONNX artifact upstream does
         # not publish, so the adapter drops move, go_to and approach_and rather than gate them.
         self.walk_available = bool(caps.get("walk", False))
-        self.motions = tuple(caps.get("motions") or ())
+        self.motions = _offered_motions(caps.get("motions"))
         envelope = caps.get("walk_envelope")
+        # Only the keys `_unfit_hello` checked: another key, a note a newer daemon might add, is
+        # not Roboglot's to read, and converting it raised out of the connect with the link open.
         self.walk_envelope = (
-            {k: float(v) for k, v in envelope.items()} if isinstance(envelope, dict) else None
+            {k: float(envelope[k]) for k in ENVELOPE_KEYS if k in envelope}
+            if isinstance(envelope, dict)
+            else None
         )
         self.deadman = bool(caps.get("deadman", False))
         self.robot_name = str(self.hello.get("robot") or self.robot_name)
         self.motors = int(self.hello.get("motors") or self.motors)
-        self.daemon_version = self.hello.get("daemon_version")
+        version = self.hello.get("daemon_version")
+        self.daemon_version = (
+            version if isinstance(version, str) and VERSION.fullmatch(version) else None
+        )
         self._alive = asyncio.create_task(self._keepalive(), name="roboglot-toddlerbot-keepalive")
-        self.upstream_commit = (self.hello.get("upstream") or {}).get("commit")
+        upstream = self.hello.get("upstream")
+        commit = upstream.get("commit") if isinstance(upstream, dict) else None
+        self.upstream_commit = (
+            commit if isinstance(commit, str) and COMMIT.fullmatch(commit) else None
+        )
+        # Loopback is where the ssh tunnel the docs recommend ends; anything else is a network,
+        # and a daemon on one that checks no token can be driven by anything that reaches it.
+        if self.hello.get("auth") == "none" and not is_loopback(host):
+            self.auth_warning = (
+                f"the robot's daemon at {self.address} asks for no token, so anything that "
+                "can reach that address can drive the robot. Start it with --token-file, or "
+                "keep it on 127.0.0.1 and reach it through an ssh tunnel."
+            )
+            log.warning("%s", self.auth_warning)
 
     async def _keepalive(self) -> None:
-        """Say we are here, often enough that the deadman does not fire on a verb."""
+        """Say we are here, often enough that the deadman does not fire on a verb, except while
+        a stop is unconfirmed (`keepalive_withheld`)."""
         while self._writer is not None and not self._writer.is_closing():
-            with contextlib.suppress(Exception):
-                await self.notify(KEEPALIVE, {})
+            if self.keepalive_withheld is None:
+                with contextlib.suppress(Exception):
+                    await self.notify(KEEPALIVE, {})
             await asyncio.sleep(KEEPALIVE_S)
 
     async def close(self) -> None:
@@ -282,6 +412,9 @@ class ToddlerBotBridge:
             return
         if "id" in msg and msg["id"] is not None and ("result" in msg or "error" in msg):
             pending = self._pending.pop(int(msg["id"]), None)
+            if pending is None and int(msg["id"]) in self._late_stops:
+                self._late_stops.discard(int(msg["id"]))
+                self._stop_answered_late(msg.get("result"))
             if pending is not None and not pending.done():
                 if "error" in msg:
                     err = msg["error"]
@@ -293,6 +426,10 @@ class ToddlerBotBridge:
         elif "method" in msg:
             if msg["method"] == STATE:
                 self._last_state = msg.get("params") or {}
+            if msg["method"] == LOST:
+                # Another connection's stop, or the daemon's shutdown, took a part this
+                # connection was driving: the heartbeat says so next (`heartbeat`).
+                self.lost_reason = str((msg.get("params") or {}).get("reason") or LOST)
             with contextlib.suppress(asyncio.QueueFull):
                 self._notifications.put_nowait(msg)
 
@@ -309,19 +446,34 @@ class ToddlerBotBridge:
         msg: dict[str, Any] = {"jsonrpc": JSONRPC_VERSION, "id": req_id, "method": method}
         if params is not None:
             msg["params"] = params
-        self._write(msg)
-        assert self._writer is not None
-        await self._writer.drain()
+        # The write, the drain and the answer under one deadline. A drain awaited before the
+        # timeout began waited with no deadline at all on a send buffer a silent peer had let
+        # fill, and the heartbeat's question and the stop waited in it with everything else.
         try:
-            return await asyncio.wait_for(fut, timeout=self.request_timeout_s)
+            async with asyncio.timeout(self.request_timeout_s):
+                self._write(msg)
+                assert self._writer is not None
+                await self._writer.drain()
+                return await fut
         except TimeoutError as e:
-            self._pending.pop(req_id, None)
+            if method == STOP:
+                # Its answer may yet come, and a stop that landed late landed (`_take_line`).
+                self._late_stops.add(req_id)
             raise TransportError(f"{method}: no answer within {self.request_timeout_s:g}s") from e
+        finally:
+            self._pending.pop(req_id, None)
 
     async def notify(self, method: str, params: dict[str, Any]) -> None:
-        self._write({"jsonrpc": JSONRPC_VERSION, "method": method, "params": params})
-        assert self._writer is not None
-        await self._writer.drain()
+        """A message with no answer, its drain under the same deadline a request has."""
+        try:
+            async with asyncio.timeout(self.request_timeout_s):
+                self._write({"jsonrpc": JSONRPC_VERSION, "method": method, "params": params})
+                assert self._writer is not None
+                await self._writer.drain()
+        except TimeoutError as e:
+            raise TransportError(
+                f"{method}: the link took nothing within {self.request_timeout_s:g}s"
+            ) from e
 
     # ── protocol ────────────────────────────────────────────────────────────────────
 
@@ -375,6 +527,9 @@ class ToddlerBotBridge:
             "stale_ms": round(float(state.get("age_ms") or 0.0), 1),
             "stale_limit_ms": STALE_LIMIT_MS,
             "tilt_deg": state.get("tilt_deg"),
+            # the world's up in the body's frame, as the daemon reads it: the hardware
+            # checklist's reading of which way is face down. None from a daemon from before.
+            "up_in_body": state.get("up_in_body"),
         }
         return RobotState(
             t=float(state.get("t") or 0.0),
@@ -402,7 +557,7 @@ class ToddlerBotBridge:
                             reason="this robot has no walk policy staged, so it cannot walk",
                         )
                     # all three keys or none: the walk policy indexes them unconditionally
-                    return _ack(
+                    return self._answered(
                         await self.request(
                             COMMAND,
                             {
@@ -413,11 +568,14 @@ class ToddlerBotBridge:
                         )
                     )
                 case "stop":
-                    return _ack(await self.request(STOP))
+                    ack = self._answered(await self.request(STOP))
+                    if not ack.accepted:
+                        self.keepalive_withheld = ack.reason or "the daemon refused the stop"
+                    return ack
                 case "look":
                     if not self.neck_available:
                         return Ack(accepted=False, reason="this build has no neck")
-                    return _ack(
+                    return self._answered(
                         await self.request(
                             LOOK,
                             {
@@ -431,7 +589,7 @@ class ToddlerBotBridge:
                 case "gripper":
                     if not self.gripper_available:
                         return Ack(accepted=False, reason="this build has no grippers")
-                    return _ack(
+                    return self._answered(
                         await self.request(
                             GRIP,
                             {"side": str(p.get("side", "right")), "close": not p.get("open", True)},
@@ -440,10 +598,10 @@ class ToddlerBotBridge:
                 case "do":
                     skill = str(p.get("skill", ""))
                     if skill == "stand":
-                        return _ack(await self.request(STAND))
+                        return self._answered(await self.request(STAND))
                     kind, _, name = skill.partition(":")
                     if kind == "motion" and name:
-                        return _ack(await self.request(PERFORM, {"motion": name}))
+                        return self._answered(await self.request(PERFORM, {"motion": name}))
                     return Ack(accepted=False, reason=f"unknown skill {skill!r}")
                 case "enable":
                     if not p.get("on", True):
@@ -454,7 +612,30 @@ class ToddlerBotBridge:
                 case _:
                     return Ack(accepted=False, reason=f"a ToddlerBot cannot {intent.kind}")
         except TransportError as e:
+            if intent.kind == "stop":
+                self.keepalive_withheld = str(e)
             return Ack(accepted=False, reason=str(e))
+
+    def _answered(self, result: Any) -> Ack:
+        """The daemon's answer to a command, as an Ack. A command it accepted is one it is
+        carrying out for this connection, so the keepalive starts again if an unconfirmed stop
+        had held it back."""
+        ack = _ack(result)
+        if ack.accepted:
+            self.keepalive_withheld = None
+        if isinstance(result, dict) and result.get("lost"):
+            # what this connection had the robot doing was taken since its last command
+            self.lost_reason = str(result["lost"])
+        return ack
+
+    def _stop_answered_late(self, result: Any) -> None:
+        """A stop that timed out has been answered after all. If the daemon took it, it landed,
+        so it is no longer recorded as one that did not, and the keepalive held back for it goes
+        on: a stop leaves the robot holding with nobody's deadman to feed or to trip."""
+        if isinstance(result, dict) and result.get("accepted") is not False:
+            log.info("the stop that timed out was answered after all, and it landed")
+            self.stop_error = None
+            self.keepalive_withheld = None
 
     async def subscribe(self, topic: str) -> AsyncIterator[dict[str, Any]]:  # type: ignore[override]
         while self._writer is not None:
@@ -462,6 +643,15 @@ class ToddlerBotBridge:
             yield {"topic": topic, **(msg.get("params") or {})}
 
     async def heartbeat(self) -> None:
+        if self.keepalive_withheld is not None:
+            raise HeartbeatError(
+                f"the last stop did not land ({self.keepalive_withheld}), so Roboglot has "
+                "stopped keeping the robot alive and the daemon's deadman takes it to its safe "
+                "pose"
+            )
+        if self.lost_reason is not None:
+            reason, self.lost_reason = self.lost_reason, None
+            raise HeartbeatError(reason)
         try:
             result = await self.request(HEALTH)
         except TransportError as e:
@@ -482,9 +672,29 @@ class ToddlerBotBridge:
 
         There is no zero velocity on this body and torque-off is a fall, so the daemon holds
         the last verified-good measured pose. Safe to call when the link has already gone: the
-        daemon's own deadman is what is holding the robot at that point."""
-        with contextlib.suppress(Exception):
-            await self.request(STOP)
+        daemon's own deadman is what is holding the robot at that point.
+
+        A stop that got no answer, or that the daemon refused, is recorded in `stop_error`
+        rather than raised, because a stop must never itself take a run down. It also holds the
+        keepalive back (`keepalive_withheld`), so the daemon's deadman, not this client, decides
+        what the robot does next; a stop that landed lets it go on."""
+        why: str | None
+        try:
+            result = await self.request(STOP)
+        except Exception as e:
+            why = str(e) or type(e).__name__
+        else:
+            if isinstance(result, dict) and result.get("accepted") is False:
+                why = f"the daemon refused it: {result.get('reason') or 'no reason given'}"
+            else:
+                why = None
+                if isinstance(result, dict) and result.get("note"):
+                    # accepted while the daemon was already bringing the robot to rest
+                    log.info("the stop landed: %s", result["note"])
+        # The record of a stop that did not land says what brings the robot to rest instead,
+        # and never points at the power switch, which on this robot is a fall.
+        self.stop_error = None if why is None else f"{why}. {UNDELIVERED_STOP_ADVICE}"
+        self.keepalive_withheld = why
 
     def now(self) -> float:
         return time.monotonic() - self._t0
