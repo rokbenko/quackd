@@ -180,12 +180,15 @@ things make that workable:
 1. **Text fallback.** If a reply has no native tool call, Roboglot reads its text as a call
    only when the answer is nothing but the call, after an optional thinking block at its
    start: one JSON object like `{"name": "walk_to", "arguments": {"target": "ball"}}`, or one
-   inside one code fence whatever its opening line names (`json`, `JSON`, `js` or nothing), or
-   one inside one `<tool_call>...</tool_call>` block, the wrapper Hermes and Qwen chat templates
-   write when the server's tool parser does not take it. The thinking block is
-   `<think>...</think>`, or everything up to a first `</think>` where the chat template wrote
-   the opening tag itself, and a verb the LLM weighed inside it and dropped is never executed.
-   Whitespace, a byte order mark and zero-width characters round the call are ignored.
+   inside one code fence of three or more backticks or tildes whatever its opening line names
+   (`json`, `JSON`, `js`, `{.json}` or nothing), or one inside one `<tool_call>...</tool_call>`
+   block, the wrapper Hermes and Qwen chat templates write when the server's tool parser does
+   not take it; a fence or a block left open at the very end of the answer counts as closed
+   there. The thinking block is `<think>...</think>`, or everything up to a first `</think>`
+   where the chat template wrote the opening tag itself, read for only once the whole answer has
+   been read as a call and was none, so a call whose own string holds the tag is still a call.
+   A verb the LLM weighed inside the block and dropped is never executed. Whitespace, a byte
+   order mark and zero-width characters round the call are ignored.
    Anything else is not a call: a call quoted in a sentence, say to decline it, one of several
    listed as options, a call with a thought after it or a second thought before it, two
    `<tool_call>` blocks, or text after the thinking longer than any call needs (16 KiB). An

@@ -74,7 +74,8 @@ over, the nine datasheet fields consulted and the nine needs, is about 3.3 kB, o
 with an indent. This is four times that. Anything longer is no call: a local server is sent no
 output limit, so a repetition loop runs to the end of its context, and none of that is decoded."""
 
-_FENCE = "```"
+_FENCE_MIN = 3
+"""The fewest backticks or tildes that open a code fence, as CommonMark has it."""
 _THINK_OPEN = "<think>"
 _THINK_CLOSE = "</think>"
 _TOOL_CALL_OPEN = "<tool_call>"
@@ -138,11 +139,12 @@ def split_thinking(text: str) -> tuple[str | None, str]:
 
     A chat template that writes the opening tag itself, at the end of the prompt, gets a reply
     whose thinking has only its closing tag: everything up to a first `</think>` with no
-    `<think>` before it is that block (`_template_opened`)."""
+    `<think>` before it is that block (`_template_opened`), unless the reply opens as a call
+    does, whose own strings may hold the tag (`_opens_as_a_call`)."""
     thoughts: list[str] = []
     kept: list[str] = []
     at = 0
-    if (lead := _template_opened(text)) is not None:
+    if not _opens_as_a_call(text) and (lead := _template_opened(text)) is not None:
         thoughts.append(text[:lead].strip())
         at = lead + len(_THINK_CLOSE)
     while (opened := _find(text, _THINK_OPEN, at)) != -1:
@@ -187,43 +189,54 @@ def _trimmed(text: str) -> str:
     return text[start:end]
 
 
-def after_thinking(text: str) -> str | None:
-    """What an answer says after the one thinking block it may open with, or None for an answer
-    that is thinking to its end.
+def _opens_as_a_call(text: str) -> bool:
+    """Whether an answer begins as a call does: an object, a fence or a `<tool_call>` block.
+    Such an answer is no thinking, whatever its strings hold."""
+    return _trimmed(text).startswith(("{", "`" * _FENCE_MIN, "~" * _FENCE_MIN, _TOOL_CALL_OPEN))
 
-    The block is `<think>...</think>` at the very start, or everything up to a first `</think>`
-    with no `<think>` before it, from a template that wrote the opening itself. What follows is
-    handed back as it is, any further thinking included, so a call with a thought after it, or a
-    second block before it, is not nothing but the call."""
-    if (lead := _template_opened(text)) is not None:
-        return text[lead + len(_THINK_CLOSE) :]
-    opened = _find(text, _THINK_OPEN, 0)
-    if opened == -1 or _trimmed(text[:opened]):
-        return text
-    closed = _find(text, _THINK_CLOSE, opened + len(_THINK_OPEN))
-    return None if closed == -1 else text[closed + len(_THINK_CLOSE) :]
+
+def _fenced(body: str) -> str | None:
+    """The inside of the one code fence `body` opens with, or None where it opens with none.
+
+    A fence is a run of at least `_FENCE_MIN` backticks or tildes, as Markdown has it, closed at
+    the very end by a run of the same at least as long, or left open there, as an answer the
+    server cut at its own stop word is. What it holds is still the decode's to judge, which takes
+    nothing after the object, so an open fence with prose after its call is no call."""
+    char = body[:1]
+    if char not in ("`", "~"):
+        return None
+    run = len(body) - len(body.lstrip(char))
+    if run < _FENCE_MIN:
+        return None
+    inner = body[run:]
+    closing = len(inner) - len(inner.rstrip(char))
+    return inner[:-closing] if closing >= run else inner
 
 
 def _bare(text: str) -> str | None:
     """The one JSON object an answer is nothing but, as text, or None: the whole of it once
-    trimmed, the inside of one code fence that is the whole of it, whatever the fence's opening
-    line says it holds, or the inside of one `<tool_call>` block that is the whole of it. Whether
-    that is one object and nothing after it is the decode's to say, which takes nothing after the
-    value."""
+    trimmed, the inside of one code fence that is the whole of it (`_fenced`), whatever the
+    fence's opening line says it holds, or the inside of one `<tool_call>` block that is the whole
+    of it, closed at the end or left open there. Whether that is one object and nothing after it
+    is the decode's to say, which takes nothing after the value."""
     body = _trimmed(text)
-    if body.startswith(_TOOL_CALL_OPEN) and body.endswith(_TOOL_CALL_CLOSE):
-        inner = body[len(_TOOL_CALL_OPEN) : -len(_TOOL_CALL_CLOSE)]
+    if body.startswith(_TOOL_CALL_OPEN):
+        inner = body[len(_TOOL_CALL_OPEN) :]
+        if inner.endswith(_TOOL_CALL_CLOSE):
+            inner = inner[: -len(_TOOL_CALL_CLOSE)]
         if _TOOL_CALL_OPEN in inner or _TOOL_CALL_CLOSE in inner:
             return None  # two blocks, and whatever is between them
         body = _trimmed(inner)
-    elif body.startswith(_FENCE) and body.endswith(_FENCE) and len(body) >= 2 * len(_FENCE):
-        inner = body[len(_FENCE) : -len(_FENCE)]
+    elif (fenced := _fenced(body)) is not None:
+        inner = fenced
         line, newline, below = inner.partition("\n")
         at = line.find("{")
-        if at == -1:
+        if newline and _trimmed(below).startswith("{"):
             # the opening line is the fence's info string, whatever it says (`json`, `JSON`,
-            # `jsonc`, `js`, none at all), and it goes with the fence
-            inner = below if newline else ""
+            # `jsonc`, `js`, a pandoc `{.json}`, none at all), and it goes with the fence
+            inner = below
+        elif at == -1:
+            inner = ""
         elif len(line[:at].split()) > 1:
             return None  # words before the object on the fence's own line
         else:
@@ -262,19 +275,40 @@ def read_call(
     loop's own words.
 
     Text is a call only when the answer is nothing but the call (`_BARE_CALL`): one JSON object,
-    optionally inside one code fence or one `<tool_call>` block, after an optional thinking block
-    (`after_thinking`). The first object anywhere in the answer used to be taken, so a call the
-    LLM quoted in order to decline it, or the first of several it listed as options, ran as its
-    choice. `no_parameters` names the tools that take none, which are called with none when the
-    object has no arguments.
+    optionally inside one code fence or one `<tool_call>` block, after an optional thinking block.
+    The block is `<think>...</think>` at the very start, or everything up to a first `</think>`
+    with no `<think>` before it, from a template that wrote the opening itself; the whole answer
+    is read as a call before that second reading is tried, since a call's own string may hold the
+    tag. What follows a block is read as it is, any further thinking included, so a call with a
+    thought after it, or a second block before it, is not nothing but the call. The first object
+    anywhere in the answer used to be taken, so a call the LLM quoted in order to decline it, or
+    the first of several it listed as options, ran as its choice. `no_parameters` names the
+    tools that take none, which are called with none when the object has no arguments.
 
-    At most `MAX_CALL_CHARS` after the thinking is read, and decoded once. Text the decoder
-    raises on is no call: a `JSONDecodeError`, `ValueError` for an integer longer than the
-    interpreter converts and `RecursionError` for nesting deeper than it follows. This runs
-    outside the provider's try, so either used to leave it raw and end the run on one odd
-    answer."""
-    said = after_thinking(text or "")
-    if said is None or not _trimmed(said):
+    At most `MAX_CALL_CHARS` of each reading is read, and each is decoded once, so an answer is
+    decoded twice at most. Text the decoder raises on is no call: a `JSONDecodeError`,
+    `ValueError` for an integer longer than the interpreter converts and `RecursionError` for
+    nesting deeper than it follows. This runs outside the provider's try, so either used to leave
+    it raw and end the run on one odd answer."""
+    text = text or ""
+    opened = _find(text, _THINK_OPEN, 0)
+    if opened != -1 and not _trimmed(text[:opened]):
+        closed = _find(text, _THINK_CLOSE, opened + len(_THINK_OPEN))
+        if closed == -1:
+            return None  # thinking to the end
+        return _read_one(text[closed + len(_THINK_CLOSE) :], tool_names, no_parameters)
+    whole = _read_one(text, tool_names, no_parameters)
+    if whole != NOT_A_BARE_CALL or (lead := _template_opened(text)) is None:
+        return whole
+    return _read_one(text[lead + len(_THINK_CLOSE) :], tool_names, no_parameters)
+
+
+def _read_one(
+    said: str, tool_names: set[str], no_parameters: Collection[str]
+) -> ToolCall | str | None:
+    """One reading of an answer as a call (`read_call`): the call, the words, or None for one
+    with nothing in it."""
+    if not _trimmed(said):
         return None
     if len(said) > MAX_CALL_CHARS:
         return NOT_A_BARE_CALL

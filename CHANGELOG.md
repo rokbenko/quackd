@@ -191,12 +191,15 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the first JSON object anywhere in an answer that named an offered tool, so a call the LLM
   quoted in order to decline it, or the first of several it listed as options, ran as its
   choice. Now text counts as a call only when the answer is nothing but the call, after an
-  optional thinking block at its start: one JSON object, or one inside one code fence whatever
-  its opening line names (`json`, `JSON`, `js` or nothing), or one inside one
-  `<tool_call>...</tool_call>` block, the wrapper Hermes and Qwen chat templates write. The
-  thinking block is `<think>...</think>`, or everything up to a first `</think>` where the chat
-  template wrote the opening tag itself. Whitespace, a byte order mark and zero-width characters
-  round the call are ignored. A call with any other text round it, a thought after it or a
+  optional thinking block at its start: one JSON object, or one inside one code fence of three
+  or more backticks or tildes whatever its opening line names (`json`, `JSON`, `js`, `{.json}`
+  or nothing), or one inside one `<tool_call>...</tool_call>` block, the wrapper Hermes and Qwen
+  chat templates write; a fence or a block the server left open at the very end of the answer
+  counts as closed there. The thinking block is `<think>...</think>`, or everything up to a first
+  `</think>` where the chat template wrote the opening tag itself, which is read for only once
+  the whole answer has been read as a call and was none, so a call whose own string holds the tag
+  is still a call. Whitespace, a byte order mark and zero-width characters round the call are
+  ignored. A call with any other text round it, a thought after it or a
   second thought before it, two calls, two `<tool_call>` blocks, or text after the thinking
   longer than any call needs (16 KiB), runs nothing. An object with no `arguments`, which ran
   the verb with its defaults, is no call for a verb that takes parameters; one that takes none
@@ -595,7 +598,8 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   the three errors Python's decoder raises, so an integer of more than 4300 digits, or nesting
   deeper than the interpreter follows, left the provider raw and ended the run in an error. Now
   the thinking is found with plain searches, each reading the answer once, an answer is decoded
-  once at most and never more than 16 KiB of what follows its thinking, and text the decoder
+  twice at most, as a whole and past a thinking block, never more than 16 KiB at a time, and
+  text the decoder
   raises on is no call: the LLM is asked again. A native call whose argument string the decoder
   raises on, which ended the run the same way, is refused at the params gate as an argument
   string that is not JSON is, and the pilot is told.
@@ -606,10 +610,13 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   command, the onboard service's stop and a team's. So a run waiting on a camera or a link that
   never answered stayed waiting, and a team or an onboard goal has no second press. The reads
   are raced against the stop now, as the LLM's calls are: the run ends `aborted` on the stop's
-  own reason, and the teardown stops and closes the robot; a run stopped on its read before the
-  first turn ends as one stopped before it began, put down and closed. Where a state read was
-  cut off, by the stop or by a cancel, it is not asked again before the close, and
-  `final_state` in `summary.json` is empty.
+  own reason, and the teardown stops and closes the robot; a read that takes the first cancel
+  and waits on is told again, each time waited for no longer than a stopped fold is, and then
+  left, so the turn ends on the stop whatever the read does. A run stopped while its read before
+  the first turn is out ends as one stopped before it began, put down and closed; a stop already
+  set when that read begins leaves it to answer, as before. Where a state read was cut off, by
+  the stop or by a cancel, it is not asked again before the close, and `final_state` in
+  `summary.json` is empty.
 - **A record that cannot be written no longer leaves an arm up and energised.** The rest move at
   the end of a run said `moving to the rest pose` before it moved, so once the transcript could
   not be written, on a full disk say, that note raised, the fold was skipped with nothing said,
@@ -620,13 +627,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   fails on the way out, or in the park of a run that never began, stops nothing: the stop, the
   fold, the gripper the hand-back opened and the close go out as on a disk that works, `run_end`,
   the summary and the transcript's close are each tried, and the lines still reach the console.
-  stderr says once `the run's record could not be written: ...`, and a stderr on the same full
-  disk that cannot take it stops nothing either. The teardown's stop row, which the record
-  refused out of reach of that rule, is shown on the console all the same, and a stop that did
-  not land is said on stderr, `a stop did not land, and the record could not say so: ...`. The
-  error that leaves the run is its own, or, on a run with no error of its own, the first write
-  the record refused, raised once all of that has gone out. A gripper send that cannot be
-  recorded is still not sent. On a disk that works nothing changes.
+  The teardown's stop row, which the record refused out of reach of that rule, is shown on the
+  console all the same, and a stop that did not land is said on stderr, `a stop did not land,
+  and the record could not say so: ...`. The run ends on its own outcome, or with its own error,
+  and as it ends says once on stderr `the run's record is incomplete: 2 writes were refused, the
+  first: ...`; a stderr on the same full disk that cannot take it stops nothing either, and is
+  noted on the run's own error where there is one. `roboglot run` prints its verdict as always,
+  tells the page over `--front` the same line, and exits 4 for a run that otherwise succeeded. A
+  gripper send that cannot be recorded is still not sent. On a disk that works nothing changes.
 - **A long run no longer holds every picture it was shown.** Each turn's camera pictures stayed
   in the run's history to its end, though only the last `keep_images_for_last_n` exchanges'
   (two unless set otherwise, and up to seven more for a pilot whose old pictures are trimmed in

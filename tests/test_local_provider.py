@@ -497,6 +497,8 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
         '<tool_call>{"name": "walk_to", "arguments": {}}</tool_call>',
         'Sure. <tool_call>{"name": "kick", "arguments": {}}</tool_call>',
         '```json I will kick {"name": "kick", "arguments": {}}```',
+        '```json\n{"name": "kick", "arguments": {}}\nThen I will look again.',
+        '<tool_call>{"name": "kick", "arguments": {}}\nThen I will look again.',
     ],
     ids=[
         "declined",
@@ -514,6 +516,8 @@ def test_parse_tool_call_from_text_rejects(text: str) -> None:
         "two-tool-call-blocks",
         "prose-then-tool-call",
         "words-on-the-fence-line",
+        "open-fence-then-prose",
+        "open-tool-call-then-prose",
     ],
 )
 def test_text_is_a_call_only_when_it_is_nothing_but_the_call(text: str) -> None:
@@ -574,6 +578,65 @@ def test_one_call_alone_is_a_call_whatever_it_is_wrapped_in(text: str) -> None:
     assert parse_tool_call_from_text(text, NAMES) == ToolCall(
         name="walk_to", arguments={"target": "ball"}
     )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        f"````json\n{CALL}\n````",
+        f"~~~\n{CALL}\n~~~",
+        f"```{{.json}}\n{CALL}\n```",
+        f"```json\n{CALL}",
+        f"<tool_call>\n{CALL}",
+    ],
+    ids=["four-backticks", "tildes", "pandoc-info-string", "open-fence", "open-tool-call-block"],
+)
+def test_a_rare_wrapping_of_one_call_alone_is_a_call(text: str) -> None:
+    """Forms main ran that both rounds refused, rare ones: a fence of four backticks or of
+    tildes, which Markdown allows, an opening line in pandoc's attribute form, and a fence or a
+    `<tool_call>` block a server left open at the very end of the answer, cut at its stop word.
+    Each is still nothing but the call, and the decode still refuses anything after the object."""
+    assert parse_tool_call_from_text(text, NAMES) == ToolCall(
+        name="walk_to", arguments={"target": "ball"}
+    )
+
+
+@pytest.mark.parametrize(
+    "said", ["the tag is </think>, then the answer", "</think>"], ids=["in-a-sentence", "alone"]
+)
+async def test_a_bare_call_whose_string_holds_a_closing_think_tag_is_a_call_shown_whole(
+    said: str,
+) -> None:
+    """A template-opened thinking block is everything up to a first `</think>` with no `<think>`
+    before it, and that rule cut a bare call in two where one of its strings held the tag, a pilot
+    asked to say what the tags are, and refused it: main and round one ran it. The whole answer is
+    read as a call first now, and only an answer that is not one is read past such a tag. The
+    display leaves it whole too: an answer that opens as a call is no thinking."""
+    text = '{"name": "say", "arguments": {"text": "' + said + '"}}'
+    tools = [
+        {
+            "name": "say",
+            "description": "d",
+            "input_schema": {"type": "object", "properties": {"text": {"type": "string"}}},
+        }
+    ]
+    p = LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text)))
+    turn = await p.step("S", history(), tools)
+    assert turn.tool_calls == [ToolCall(id="text-1", name="say", arguments={"text": said})]
+    assert turn.text == text and turn.thinking is None
+
+
+async def test_a_thinking_block_the_template_opened_is_split_off_the_answer() -> None:
+    """An answer whose thinking the chat template opened has only the closing tag. Split there,
+    the reasoning goes to `thinking` and the call stays as the answer; left in the text it is
+    recorded as what the LLM said and handed back to it as its own words next turn, which is the
+    thing the split exists to stop."""
+    text = "The ball is ahead, so walk to it.\n</think>\n\n" + CALL
+    p = LocalProvider("m", preset="llamacpp", client=FakeClient(reply(text=text)))
+    turn = await p.step("S", history(), TOOLS)
+    assert turn.thinking == "The ball is ahead, so walk to it."
+    assert turn.text == CALL
+    assert turn.tool_calls == [ToolCall(id="text-1", name="walk_to", arguments={"target": "ball"})]
 
 
 @pytest.mark.parametrize(

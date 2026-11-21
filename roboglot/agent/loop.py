@@ -151,9 +151,10 @@ Outcome = Literal["success", "failure", "infeasible", "budget", "aborted", "erro
 
 REPROMPT = "You must call exactly one tool. Choose now."
 
-RECORD_REFUSED = "the run's record could not be written: {error}"
-"""Said once on stderr when a write to the record fails on the way out, which no longer stops the
-teardown: the stop, the fold and the close go out as on a disk that works."""
+RECORD_INCOMPLETE = "the run's record is incomplete: {count} {writes} refused, the first: {error}"
+"""Said once on stderr as a run ends whose record refused a write on the way out, which stops
+nothing: the stop, the fold and the close go out as on a disk that works, and the run ends on its
+own outcome (`RunResult.record_incomplete`)."""
 
 STOP_UNRECORDED = "a stop did not land, and the record could not say so: {reason}"
 """Said on stderr for a stop on the way out that did not land, where the record refused its row:
@@ -586,6 +587,11 @@ class RunResult:
     Carried back whole rather than unpacked into a field apiece, because the CLI prints the
     same counters from a finished run and from a replayed transcript, and those two used to be
     two hand-kept lists that drifted. One shape, one printer (`cli.run_counters`)."""
+    record_incomplete: str | None = None
+    """The line said on stderr where the run's record refused a write on the way out: how many
+    and the first. None for a record that is whole, which is every run on a disk that works. The
+    CLI tells the page over `--front` and exits `EXIT_RECORD_INCOMPLETE` on a run that otherwise
+    succeeded."""
 
     @property
     def ok(self) -> bool:
@@ -707,6 +713,14 @@ class AgentLoop:
         (`_keep_stop_rows`)."""
         self._unwritten: Exception | None = None
         """The first write to the record that failed on the way out (`_record_refused`)."""
+        self._refused_writes = 0
+        """How many writes to the record failed on the way out (`_record_refused`)."""
+        self._raising: BaseException | None = None
+        """The run's own error, where it ends with one: what leaves `run`, and so where a stderr
+        that refused its line is said (`_on_stderr`)."""
+        self.record_incomplete: str | None = None
+        """The line said on stderr as the run ended, where its record refused a write, or None
+        for a record that is whole (`_say_the_record_is_incomplete`)."""
         self.heartbeat = Heartbeat(
             cfg.transport,
             self.executor.abort,
@@ -850,26 +864,46 @@ class AgentLoop:
                 self.event_log.record = record
 
     def _record_refused(self, error: Exception) -> None:
-        """A write to the run's record that failed on the way out. The first is kept, to be raised
-        once the teardown is over on a run with no error of its own, and said once on stderr, the
-        one place left to say it; the rest are the same disk saying the same thing."""
-        if self._unwritten is not None:
-            return
-        self._unwritten = error
-        self._on_stderr(RECORD_REFUSED.format(error=f"{type(error).__name__}: {error}"))
+        """A write to the run's record that failed on the way out: counted, and the first kept,
+        for the one line that says so once the teardown is over
+        (`_say_the_record_is_incomplete`)."""
+        self._refused_writes += 1
+        if self._unwritten is None:
+            self._unwritten = error
 
-    def _on_stderr(self, text: str) -> None:
+    def _say_the_record_is_incomplete(self) -> None:
+        """Once, as the run ends: that its record is incomplete, how many writes it refused and
+        the first of them, on stderr and on the result (`RunResult.record_incomplete`), which the
+        CLI hands the page over `--front` and turns into a failing exit code. A run whose record
+        refused a write used to raise that write at its very end, so a run whose arm did its job
+        read as a crash, with no verdict and a traceback, and the page was never told it ended."""
+        if not self._refused_writes or self.record_incomplete is not None:
+            return
+        error = self._unwritten
+        line = RECORD_INCOMPLETE.format(
+            count=self._refused_writes,
+            writes="write was" if self._refused_writes == 1 else "writes were",
+            error=f"{type(error).__name__}: {error}",
+        )
+        self.record_incomplete = line
+        if (refused := self._on_stderr(line)) is not None:
+            self.record_incomplete = f"{line} ({refused})"
+
+    def _on_stderr(self, text: str) -> str | None:
         """`text` on stderr, the one place left to say what the record could not, and never a
-        reason for the teardown to stop. A stderr that cannot take it either, a file on the disk
-        that filled, is kept as a note on the first write the record refused, which is what leaves
-        the run when the run has no error of its own: it raised out of the rest move's narration,
-        and the fold was skipped again."""
+        reason for the teardown to stop: it raised out of the rest move's narration once, and the
+        fold was skipped again. A stderr that cannot take it either, a file on the disk that
+        filled, is said where it can be: on the run's own error, which is what leaves `run`, and
+        handed back for a run that has none."""
         try:
             sys.stderr.write(text + "\n")
             sys.stderr.flush()
         except Exception as e:
-            if self._unwritten is not None:
-                self._unwritten.add_note(f"stderr refused it too: {type(e).__name__}: {e}")
+            refused = f"stderr refused it too: {type(e).__name__}: {e}"
+            if self._raising is not None:
+                self._raising.add_note(refused)
+            return refused
+        return None
 
     def _keep_stop_rows(self) -> None:
         """From the way out on, a stop's own row that the record refuses stops nothing either.
@@ -1151,7 +1185,11 @@ class AgentLoop:
         if timing is not None and timing.done() and not stopping.done():
             await cancel_and_wait(calling, stopping)
             raise BudgetExceeded(timing.result())
-        await cancel_and_wait(*(racing - {stopping}))
+        # Told twice, each time waited for no longer than `cancel_and_wait` waits, and then left:
+        # a call that takes the first cancel and waits on, as one whose own `wait_for` lost it on
+        # Python 3.11 can, gets a second, and the turn ends on the stop whatever the call does.
+        if not await cancel_and_wait(*(racing - {stopping})):
+            await cancel_and_wait(*(racing - {stopping}))
         raise Aborted(self._abort_reason())
 
     async def _minutes_spent(self) -> str:
@@ -2160,16 +2198,25 @@ class AgentLoop:
                 if settled.how == "folded":
                     await self._close_what_the_hand_back_opened(settled.fold, stopped)
 
-    async def _read_state(self) -> RobotState:
+    async def _read_state(self, *, first: bool = False) -> RobotState:
         """The body's state, raced against the abort as the LLM's calls are (`_unless_stopped`).
 
         Every stop but a second Ctrl-C only sets the flag, so a read of a link gone quiet was
         waited on for good, a team or an onboard goal having no second press. A read the stop or
         a cancel cut off is not asked again at the close (`_state_unanswered`), where it held the
         close and `run_end` for as long as it went unanswered, which was for good. One that
-        answered with an error of its own answered, and the close asks again as it always did."""
+        answered with an error of its own answered, and the close asks again as it always did.
+
+        A turn's read runs in a task of its own, which is told twice and then left, so the turn
+        ends on the stop whatever the read does. The `first`, before the run's first turn, is
+        awaited in the run's own task (`_until_stopped`), so the start of a run on a body that
+        answers at once goes as it did: a task there gave the loop a step, and a cancel meant for
+        the run's first turn landed in its start instead."""
         try:
-            return await self._until_stopped(self.cfg.transport.get_state())
+            reading = self.cfg.transport.get_state()
+            if first:
+                return await self._until_stopped(reading)
+            return await self._unless_stopped(reading)
         except BaseException as e:
             if isinstance(e, Aborted) or not isinstance(e, Exception):
                 self._state_unanswered = True
@@ -3241,7 +3288,7 @@ class AgentLoop:
             first_state = (
                 await cfg.transport.get_state()
                 if self.executor.abort.is_set()
-                else await self._read_state()
+                else await self._read_state(first=True)
             )
             if (warning := self._fall_blind_warning(registry, allow, first_state)) is not None:
                 self._note(warning)
@@ -3447,14 +3494,12 @@ class AgentLoop:
         except BaseException as e:
             # the park narrates its fold as the teardown does, so on a disk that refuses the record
             # it is held to the teardown's rule: a write that fails stops nothing
-            self._ending = True
+            self._ending, self._raising = True, e
             self._keep_stop_rows()
             await self._park_before_the_run_began()
             self._record_a_run_that_never_began(e, connect_s=connect_s, manifest=manifest)
+            self._say_the_record_is_incomplete()
             raise
-        raising: BaseException | None = None
-        """What the run is ending with, where it ends with an error of its own: then that leaves
-        `run`, and not a write to the record that failed on the way out (`_record_refused`)."""
         try:
             # a run starts from the pose it will end at, so what the pilot improvises from is
             # the same arm every time rather than wherever the last run put it down
@@ -3811,7 +3856,7 @@ class AgentLoop:
                 # the budget still ended the run, and the record names the question it cut off
                 what = type(interrupted).__name__
                 reason = f"{reason}; the question about what ran was interrupted ({what})"
-                self._ending, raising = True, interrupted
+                self._ending, self._raising = True, interrupted
                 self._emit("note", text=f"run interrupted: {what}")
                 raise
         except Aborted as e:
@@ -3828,7 +3873,7 @@ class AgentLoop:
             # still ends with a stop and a run_end, and run_end says with what
             outcome, reason = "error", f"{type(e).__name__}: {e}"
             # a full disk is often what ended it, and the note saying so must not take its place
-            self._ending, raising = True, e
+            self._ending, self._raising = True, e
             self._emit("note", text=f"run ended with an error: {reason}")
             raise
         except BaseException as e:
@@ -3837,7 +3882,7 @@ class AgentLoop:
             # unexpectedly`. The CLI's second Ctrl-C is *designed* to raise a plain
             # KeyboardInterrupt, which makes this the normal way a person ends a run.
             outcome, reason = "aborted", f"interrupted: {type(e).__name__}"
-            self._ending, raising = True, e
+            self._ending, self._raising = True, e
             self._emit("note", text=f"run interrupted: {type(e).__name__}")
             raise
         finally:
@@ -3927,10 +3972,9 @@ class AgentLoop:
                         highlights=self.highlights,
                         run_dir=self.run_dir,
                     )
-            if self._unwritten is not None and raising is None:
-                # a run with no error of its own owes its caller the record it could not write,
-                # now that the robot has been stopped, put down and closed
-                raise self._unwritten
+            # the run ends on its own outcome, or its own error, and says once that its record is
+            # incomplete, now that the robot has been stopped, put down and closed
+            self._say_the_record_is_incomplete()
         return RunResult(
             outcome=outcome,
             reason=reason,
@@ -3942,6 +3986,7 @@ class AgentLoop:
             log_dropped=self.event_log.dropped,
             decision_calls=self.budget.stepper_calls,
             summary=summary,
+            record_incomplete=self.record_incomplete,
         )
 
 

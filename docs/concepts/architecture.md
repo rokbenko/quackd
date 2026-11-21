@@ -293,7 +293,8 @@ and on Ctrl-C. A dry run does neither, because it moves nothing ([concepts/safet
 Outcomes: `success` / `failure` (the LLM's claim via the meta tools), `infeasible` (the
 pilot judged the task beyond this body before anything moved, and `roboglot run` exits 3),
 `budget`, `aborted` (heartbeat, kill switch, `abort_when`) and `error`, which nobody chose:
-a provider that failed, a transport that died mid-observation, a bug.
+a provider that failed, a transport that died mid-observation, a bug. A run that succeeded but
+whose record refused a write on the way out says so on stderr, and `roboglot run` exits 4.
 
 ## Transcript format
 

@@ -805,6 +805,135 @@ async def test_a_turn_stuck_on_a_state_read_and_ended_by_a_cancel_still_closes(
         await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
 
 
+class _ReadThatTakesOneCancel(MockTransport):
+    """A state read that answers its first cancel by waiting on, as one does whose own
+    `asyncio.wait_for` lost the cancel on Python 3.11 (it can, as the cancel lands while the inner
+    call returns) and whose retry then waits again. It takes the second."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.stuck = False
+        self.began = threading.Event()
+        self.never = asyncio.Event()
+        self.cancels = 0
+
+    async def get_state(self) -> RobotState:
+        if self.stuck:
+            self.began.set()
+            while not self.never.is_set():
+                try:
+                    await self.never.wait()
+                except asyncio.CancelledError:
+                    self.cancels += 1
+                    if self.cancels > 1:
+                        raise
+        return await super().get_state()
+
+
+async def test_a_stop_ends_a_turn_whose_read_takes_its_first_cancel_and_waits_on(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """A turn's read was cancelled once, in the run's own task, and then waited on with no bound,
+    so a read that took that cancel and waited on was never ended by the stop. It runs in a task
+    of its own again, told twice, each time waited for no longer than a stopped fold is, and then
+    left: the turn ends on the stop whatever the read does."""
+    transport = _ReadThatTakesOneCancel()
+    loop = AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=_VerdictThenStuck(transport),  # type: ignore[arg-type]
+            transport=transport,
+            runs_dir=tmp_path,
+        )
+    )
+    running = asyncio.ensure_future(loop.run())
+    try:
+        began = asyncio.ensure_future(
+            asyncio.to_thread(transport.began.wait, STUCK_READ_DEADLINE_S)
+        )
+        await asyncio.wait({began, running}, return_when=asyncio.FIRST_COMPLETED)
+        assert transport.began.is_set() and not running.done(), "the read never stuck"
+        loop.stop_reason = "a newer command took the robot"
+        loop.executor.abort.set()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+        assert running.done(), f"the stop did not end a read that took {transport.cancels} cancel"
+        result = running.result()
+        assert (result.outcome, result.reason) == ("aborted", "a newer command took the robot")
+        assert transport.cancels == 2 and not transport.connected
+    finally:
+        transport.never.set()
+        await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+
+
+def _a_loop(hello_glot: GlotFile, tmp_path: Path) -> AgentLoop:
+    return AgentLoop(
+        RunConfig(
+            glot=hello_glot,
+            provider=FakeProvider.for_glot("hello-world"),
+            transport=MockTransport(),
+            runs_dir=tmp_path,
+        )
+    )
+
+
+async def test_a_stop_set_as_the_first_read_answers_does_not_cancel_the_run_after_it(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """The stop cancels the run's own task while the first read is out (`_until_stopped`), from a
+    callback on the stop's waiter. A stop set in the same step as the read's answer has that
+    callback run after the read has returned, which cancelled the run at its next await, so it
+    ended on `interrupted: CancelledError` rather than the stop. It does nothing once the read is
+    over (`active`)."""
+    loop = _a_loop(hello_glot, tmp_path)
+    answered = asyncio.Event()
+
+    async def read() -> str:
+        await answered.wait()
+        return "the state"
+
+    async def turn() -> str:
+        state = await loop._until_stopped(read())
+        await asyncio.sleep(0)  # the next await, where a stray cancel of the run would land
+        await asyncio.sleep(0)
+        return state
+
+    running = asyncio.ensure_future(turn())
+    await asyncio.sleep(0)
+    loop.executor.abort.set()  # the stop's waiter wakes first, and its callback is queued...
+    answered.set()  # ...behind the read's answer, so it runs once the read has returned
+    await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+    assert running.done() and not running.cancelled(), "the run was cancelled after its read"
+    assert running.result() == "the state"
+
+
+async def test_a_cancel_from_outside_that_comes_with_the_stop_is_raised_as_the_cancel(
+    hello_glot: GlotFile, tmp_path: Path
+) -> None:
+    """The stop's cancel of the run's task is taken back and raised as `Aborted`. A parent's
+    cancel that comes with it, a team's second Ctrl-C, is one more cancel the task was asked
+    for, and is raised as the cancel it is, or the parent's cancel would be swallowed and the run
+    would go on into its teardown as merely aborted."""
+    loop = _a_loop(hello_glot, tmp_path)
+    never = asyncio.Event()
+
+    async def read() -> None:
+        await never.wait()
+
+    running = asyncio.ensure_future(loop._until_stopped(read()))
+    await asyncio.sleep(0)
+    here = asyncio.get_running_loop()
+    loop.executor.abort.set()
+    # queued so the parent's cancel lands after the stop's callback has cancelled the task and
+    # before the task takes either: the stop's waiter, then this, then the callback, then this
+    here.call_soon(lambda: here.call_soon(running.cancel))
+    await asyncio.wait({running}, timeout=STUCK_READ_DEADLINE_S)
+    assert running.done() and running.cancelled(), (
+        "the parent's cancel was swallowed"
+        if running.done() and not running.cancelled()
+        else "the read never ended"
+    )
+
+
 async def test_dry_run_touches_nothing(hello_glot: GlotFile, tmp_path: Path) -> None:
     transport = MockTransport()
     result = await run_glot(
@@ -982,7 +1111,9 @@ async def test_a_record_that_fails_at_run_end_still_gets_its_summary_and_is_clos
     hello_glot: GlotFile, tmp_path: Path
 ) -> None:
     """A disk that fills at the last line used to skip summary.json, leak the handle and
-    replace the run's own outcome with an OSError."""
+    replace the run's own outcome with an OSError. Then it kept the outcome but raised the
+    refused write at the very end, so a run that did its job read as a crash. Now the run ends on
+    its own outcome, and says once that its record is incomplete."""
     from roboglot.agent.loop import AgentLoop
 
     run_dir = tmp_path / "full"
@@ -1004,8 +1135,9 @@ async def test_a_record_that_fails_at_run_end_still_gets_its_summary_and_is_clos
         good(event)
 
     loop.event_log.record = record
-    with pytest.raises(OSError, match="disk full"):
-        await loop.run()
+    result = await loop.run()
+    assert result.outcome == "success", result.reason
+    assert result.record_incomplete is not None and "disk full" in result.record_incomplete
     assert (run_dir / "summary.json").exists()
     assert loop.transcript._fh.closed
 
@@ -2768,8 +2900,9 @@ async def test_a_record_that_cannot_be_written_never_stops_the_teardown(
     assert "run_end" in refused, "run_end was not tried"
     assert loop.summary is not None and (loop.run_dir / "summary.json").exists()
     assert loop.transcript._fh.closed, "the transcript was left open"
-    told = [line for line in capsys.readouterr().err.splitlines() if "could not be written" in line]
+    told = [line for line in capsys.readouterr().err.splitlines() if "is incomplete" in line]
     assert len(told) == 1 and "No space left on device" in told[0], told
+    assert loop.record_incomplete == told[0]
 
 
 @pytest.mark.parametrize("stderr_works", [True, False], ids=["stderr-works", "stderr-full-too"])
@@ -2783,26 +2916,28 @@ async def test_a_run_that_ended_by_itself_still_folds_when_its_teardown_cannot_b
     teardown's own, the rest move's narration, on a run with no error of its own: only the guard
     set as the teardown begins stands between that note and a skipped fold. And with stderr on the
     same full disk, a file that cannot take the one line either, that line raised out of the
-    narration and skipped the fold again. Now the fold and the close go out either way, and what
-    leaves `run` at its very end is the first write the record refused, with a note that stderr
-    refused it too where it did."""
+    narration and skipped the fold again. Now the fold and the close go out either way, and the
+    run ends on its own outcome, as on a disk that works, with the one line that its record is
+    incomplete, how many writes it refused and the first, on stderr and on the result. Where
+    stderr refused that line too, the result says so, which is all that is left to say it."""
     loop, mock = _arm_run(tmp_path)
     disk = _DiskThatFills(loop.event_log.record, after="declare")
     loop.event_log.record = disk
     if not stderr_works:
         monkeypatch.setattr(sys, "stderr", _StderrOnTheFullDisk())
-    with pytest.raises(OSError) as raised:
-        await loop.run()
+    result = await loop.run()
     assert disk.refused, "the stand-in never filled: the run never declared"
+    assert (result.outcome, result.reason) == ("success", "moved")
     assert _folded(mock, ARM_REST), f"the arm was left up: {mock.sequence}"
     assert mock.sequence[-1] == "close" and mock.torque is False
-    assert raised.value.filename == disk.refused[0], (raised.value, disk.refused)
-    notes = getattr(raised.value, "__notes__", [])
+    line = result.record_incomplete
+    assert line is not None and f"{len(disk.refused)} writes were refused" in line, line
+    assert disk.refused[0] in line, (line, disk.refused)
     if stderr_works:
-        told = [line for line in capsys.readouterr().err.splitlines() if "could not be" in line]
-        assert len(told) == 1 and not notes, (told, notes)
+        told = [line for line in capsys.readouterr().err.splitlines() if "is incomplete" in line]
+        assert told == [line], told
     else:
-        assert [n.split(":")[0] for n in notes] == ["stderr refused it too"], notes
+        assert line.endswith(")") and "(stderr refused it too: OSError" in line, line
 
 
 async def test_the_runs_own_error_leaves_when_stderr_is_on_the_full_disk_too(
@@ -2810,7 +2945,9 @@ async def test_the_runs_own_error_leaves_when_stderr_is_on_the_full_disk_too(
 ) -> None:
     """The disk fills while the run goes on, so the run's own error is its refused record, and
     stderr is on the same disk. The error branch's note was refused, the one stderr line raised
-    in that handler, and the stderr's error left `run` in place of the run's own."""
+    in that handler, and the stderr's error left `run` in place of the run's own. After that the
+    note that stderr refused the line was kept on a later refused write, which does not leave, so
+    nothing said the record failed. It rides on the run's own error now, which is what leaves."""
     loop, mock = _arm_run(tmp_path)
     disk = _DiskThatFills(loop.event_log.record)
     loop.event_log.record = disk
@@ -2819,6 +2956,8 @@ async def test_the_runs_own_error_leaves_when_stderr_is_on_the_full_disk_too(
         await loop.run()
     assert raised.value.filename == disk.refused[0] == "verb: ", (raised.value, disk.refused)
     assert _folded(mock, ARM_REST), f"the arm was left up: {mock.sequence}"
+    notes = getattr(raised.value, "__notes__", [])
+    assert [n.split(":")[0] for n in notes] == ["stderr refused it too"], notes
 
 
 async def test_a_run_that_never_began_is_put_down_on_a_disk_that_refuses_the_record(
@@ -2853,7 +2992,7 @@ async def test_a_run_that_never_began_is_put_down_on_a_disk_that_refuses_the_rec
     assert _folded(mock, ARM_REST), f"the arm was not put down: {mock.sequence}"
     assert mock.sequence[-1] == "close" and mock.torque is False
     assert "moving to the rest pose" in seen, seen
-    told = [line for line in capsys.readouterr().err.splitlines() if "could not be written" in line]
+    told = [line for line in capsys.readouterr().err.splitlines() if "is incomplete" in line]
     assert len(told) == 1, told
 
 
@@ -2878,8 +3017,8 @@ async def test_a_teardown_stop_that_did_not_land_is_said_when_its_row_cannot_be_
     straight to the record, past the loop's guard: a refused write was swallowed, the console is
     told only after the record, and that row is the only place a stop that did not land is said.
     With that row alone refused there was no stderr line at all. Now the console is still shown
-    it, stderr says the stop did not land and, once, that the record could not be written, and the
-    run raises the refused write at its end."""
+    it, stderr says the stop did not land and, once, that the record is incomplete, and the run
+    ends on its own outcome."""
     seen: list[Any] = []
     transport = _StopThatDoesNotLand()
     loop = AgentLoop(
@@ -2900,16 +3039,15 @@ async def test_a_teardown_stop_that_did_not_land_is_said_when_its_row_cannot_be_
         disk(event)
 
     loop.event_log.record = sink
-    with pytest.raises(OSError):
-        await loop.run()
+    result = await loop.run()
+    assert result.outcome == "success", result.reason
     assert disk.refused[0].startswith("intent"), disk.refused
     assert any(
         e.kind == "intent" and e.data.get("intent") == "stop" and e.data.get("accepted") is False
         for e in seen
     ), "the console was not shown the stop that did not land"
     err = capsys.readouterr().err.splitlines()
-    assert [line for line in err if "could not be written" in line] != []
-    assert len([line for line in err if "could not be written" in line]) == 1, err
+    assert [line for line in err if "is incomplete" in line] == [result.record_incomplete], err
     assert [line for line in err if "did not land" in line and "dropped it" in line], err
 
 
@@ -2919,17 +3057,17 @@ async def test_each_last_write_is_tried_whatever_the_others_did(
     """`run_end`, `summary.json` and the transcript's close are the run's last writes, and a
     disk that refused the summary left the transcript open, its file handle leaked, and replaced
     the run's result with that error before the record was closed. Each is tried whatever the
-    others did, the transcript is closed, and the refused write leaves `run` once everything has
-    been tried."""
+    others did, the transcript is closed, and the run ends on its own outcome, saying once that
+    its record is incomplete."""
     loop, mock = _arm_run(tmp_path)
 
     def refused(summary: Any) -> Any:
         raise OSError(errno.ENOSPC, "No space left on device", "summary.json")
 
     monkeypatch.setattr(loop.transcript, "write_summary", refused)
-    with pytest.raises(OSError) as raised:
-        await loop.run()
-    assert raised.value.filename == "summary.json"
+    result = await loop.run()
+    assert result.outcome == "success", result.reason
+    assert result.record_incomplete is not None and "summary.json" in result.record_incomplete
     assert loop.transcript._fh.closed, "the transcript was left open"
     events = Transcript.read(loop.run_dir / "transcript.jsonl")
     assert [e["outcome"] for e in events if e["kind"] == "run_end"] == ["success"]

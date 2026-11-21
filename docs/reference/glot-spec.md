@@ -165,7 +165,8 @@ is refused at runtime and the LLM is told so.
   pilot judged the task beyond this body, so nothing moved and `roboglot run` exits 3),
   `budget`, `aborted` (heartbeat, kill switch, enforced `abort_when`), or `error` (a provider
   or transport that failed, or a bug). The robot is stopped in every case and its adapter
-  closed.
+  closed. A run that succeeded but whose record refused a write on the way out says so on
+  stderr, and `roboglot run` exits 4.
 - `--max-steps` on the CLI overrides `budgets.max_steps` for one run.
 - `--play` and `--no-play` override `play` for one run, on `run`.
 - `--dry-run` executes the verbs their adapter declared `read_only` (`observe`, alias
