@@ -4226,6 +4226,7 @@ wheels = [
 name = "roboglot"
 source = { editable = "." }
 dependencies = [
+    { name = "anyio" },
     { name = "cryptography" },
     { name = "mcp" },
     { name = "numpy" },
@@ -4383,6 +4384,8 @@ dev = [
 requires-dist = [
     { name = "anthropic", marker = "extra == 'all'", specifier = ">=1.0,<2" },
     { name = "anthropic", marker = "extra == 'anthropic'", specifier = ">=1.0,<2" },
+    { name = "anyio", marker = "python_full_version < '3.14'", specifier = ">=4.9" },
+    { name = "anyio", marker = "python_full_version >= '3.14'", specifier = ">=4.10" },
     { name = "bleak", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=3.0.2,<4" },
     { name = "cryptography", specifier = ">=42" },
     { name = "dbus-fast", marker = "sys_platform == 'linux' and extra == 'onboard'", specifier = ">=5.2,<6" },
