@@ -969,6 +969,14 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   field empty it borrowed the Microduck's, so an adapter of your own with no blurb had its arm or
   its rover told it is `a small biped duck robot (25 cm, 800 g)`. It is told it is `a robot` now.
   Every body Roboglot ships has a blurb of its own, so none of them was affected.
+- **A robot or an owner whose name holds an emoji can be pinned.** `roboglot onboard pin` wrote
+  the name a robot's passport gives, or with `--owner` its owner's label, with JSON's escapes,
+  which write a character past the Basic Multilingual Plane, an emoji among them, as two UTF-16
+  halves; YAML reads each half alone, so `robot.yaml` refused its own pin and the command failed
+  with `Input should be a valid string, unable to parse raw data as a unicode string`. A name
+  is written so that it reads back as the same name now: each character a person sees as itself,
+  an emoji included, and, as before, each control character, each one that does not show and
+  each one that ends a line as an escape. A name in plain ASCII is written as it was.
 - **A ToddlerBot daemon moves nothing nobody is driving.** Its deadman was armed when it started,
   so with nobody connected it slewed the robot from wherever it stood to the home pose half a
   second in. A stop armed it too, the one Roboglot's client sends as it disconnects included, so a
@@ -1442,6 +1450,35 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   a joiner or a skin tone that belongs to it. `terminal.txt` leaves out every character the
   screen writes out, the one-character CSI and the bidi overrides among them, which it kept,
   and a lone surrogate, which a strict UTF-8 stdout refused, ending the print, is written out too.
+- **The onboard service runs in the folder the wizard names, and no name adds a line to its
+  unit.** `roboglot onboard` wrote the robot's folder, the path to `roboglot` and the user into the
+  systemd unit it installs with sudo as they were, and systemd splits `Environment=`,
+  `ReadWritePaths=` and `ExecStart=` at a space, takes quotes and backslashes away, expands a `%`
+  in every line and reads `EnvironmentFile=` as a pattern: a folder with a space had the service
+  run with another folder, or fail to start, while the wizard said it was installed, and a
+  newline in the folder, the path or the user began a directive of its own, one that runs a
+  command as root among them. Each is written in systemd's own quoting now, every `%` doubled and
+  the pattern's characters escaped, so the service runs where the wizard says. A folder, a user
+  or a path holding a control character, or bytes that are not UTF-8, is refused, naming which
+  one, before the unit is written or a sudo command installs it, and so is a user name `User=`
+  would read as another account or, empty, as root. A unit with none of these is written as it
+  was, byte for byte.
+- **The onboard service runs as the account that ran the wizard, and never as root for want of
+  a name.** The unit's `User=` came from `USER` or `LOGNAME`, just after the wizard had refused
+  to run as root, and fell back to `root`: with neither variable set, in a container or under
+  `env -i`, the wizard enabled the networked service as root, and a stale `USER` named another
+  account. It is the account whose effective uid runs the wizard now, as the system's account
+  database names it, whatever the variables say. With no account for that uid the wizard
+  installs nothing and says why. A person whose `USER` names them gets the unit they got before.
+- **The onboard control token is written for its owner alone, whatever lies beside its file.**
+  The service wrote `control.json`, with the token that steers it, through the one temporary
+  name `control.json.tmp`, opened without an exclusive create and following a link: a file
+  someone left at that name kept its own mode and owner and was renamed into place holding the
+  token, and a link there sent the token wherever it pointed. That file, and every other one the
+  service and the wizard write for the robot's user alone (`status.json`, `robot.yaml`, `board`
+  and the trimmed `met.jsonl`), now goes through a temporary file of its own, made new and
+  readable by its owner alone before a byte is in it, never through a link, and renamed into
+  place, as a key is. Whatever lies at the old name is left as it is.
 - **The Open Duck installer's `TOKEN_FILE` reaches the bridge, and the installer changes no
   directory it did not make.** `TOKEN_FILE=... bash install.sh` wrote the token where it said
   and never told the unit, so the bridge read its default path, found no file and admitted any

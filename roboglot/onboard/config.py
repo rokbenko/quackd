@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, Literal
@@ -266,9 +267,38 @@ def _said(error: Any) -> str:
 # ── pins, edited as text ────────────────────────────────────────────────────────────────
 
 
+#: What a pin's name keeps escaped in robot.yaml past ASCII, by Unicode general category: the
+#: controls; the format characters, which do not show, the overrides that make a line show other
+#: than it reads among them; the line and paragraph separators, at which `str.splitlines` ends a
+#: line, so `add_pin` would cut the pin in two; and the surrogates, which no text file holds.
+_ESCAPED_KINDS = frozenset({"Cc", "Cf", "Zl", "Zp", "Cs"})
+#: The two noncharacters a YAML file may not hold (YAML 1.1, "Character Set"), which PyYAML
+#: refuses the whole file for.
+_NOT_IN_YAML = frozenset({chr(0xFFFE), chr(0xFFFF)})
+
+
+def _quoted(text: str) -> str:
+    """`text` as a YAML double-quoted scalar that reads back as `text`. JSON's string is YAML's
+    double-quoted one for every escape JSON writes, so each ASCII character is written as
+    `json.dumps` writes it, and a name in ASCII as it always was. Past ASCII a character is
+    written as itself, an emoji too, unless `_ESCAPED_KINDS` or `_NOT_IN_YAML` names it: then
+    as `\\u` and four digits, or past the Basic Multilingual Plane as YAML's own `\\U` and eight,
+    since JSON writes such a character as two UTF-16 halves, which YAML reads one at a time."""
+    parts = []
+    for char in text:
+        if char.isascii():
+            parts.append(json.dumps(char)[1:-1])
+        elif unicodedata.category(char) in _ESCAPED_KINDS or char in _NOT_IN_YAML:
+            point = ord(char)
+            parts.append(f"\\u{point:04x}" if point <= 0xFFFF else f"\\U{point:08x}")
+        else:
+            parts.append(char)
+    return '"' + "".join(parts) + '"'
+
+
 def pin_line(pin: Pin, indent: str = "    ") -> str:
-    # JSON's string is YAML's double-quoted one, every backslash and control character escaped
-    name = json.dumps(pin.name)
+    # a name is a stranger's text, written to read back as itself (`_quoted`)
+    name = _quoted(pin.name)
     owner = f', owner: "{pin.owner}"' if pin.owner else ""
     return (
         f'{indent}- {{kind: {pin.kind}, id: "{pin.id}", name: {name}, '

@@ -307,13 +307,18 @@ def sync_folder(folder: Path) -> None:
             os.close(fd)
 
 
-def _replace(path: Path, payload: bytes) -> None:
+def _replace(path: Path, payload: bytes, *, sync: bool = True) -> None:
+    """`payload` as the whole of `path`, through a temporary file of this write's own: `mkstemp`
+    makes it new and exclusive at mode 0600, never through a link, before a byte is in it, and
+    the rename carries it into place. Synced first unless `sync` is False, for the files
+    `control.write_private` writes, which were never synced."""
     fd, tmp = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as out:
             out.write(payload)
-            out.flush()
-            os.fsync(out.fileno())
+            if sync:
+                out.flush()
+                os.fsync(out.fileno())
         os.replace(tmp, path)
     except BaseException:  # Ctrl-C too: a temporary file holding a secret is never left behind
         with contextlib.suppress(OSError):

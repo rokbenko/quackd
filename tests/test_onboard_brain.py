@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import os
 import threading
 import time
 from pathlib import Path
@@ -306,6 +307,41 @@ def test_only_a_client_with_the_token_is_answered(tmp_path: Path) -> None:
         with pytest.raises(control.ControlError, match="token"):
             control.request(forged, {"op": "status"})
         assert [op["op"] for op in seen] == ["status"]
+    finally:
+        server.close()
+
+
+@pytest.mark.parametrize("left", ["a file", "a link"])
+def test_the_token_goes_through_a_file_of_its_own_whatever_is_left_at_its_old_temporary_name(
+    tmp_path: Path, left: str
+) -> None:
+    """The token went to control.json through the one fixed name control.json.tmp, opened
+    without an exclusive create and following a link: a file someone left there kept its own
+    mode and owner and was renamed into place holding the token, and a link sent the token
+    wherever it pointed. Whatever is at that name now stays as it was, the token's file is its
+    owner's alone, and no temporary file is left beside it."""
+    where = tmp_path / "control.json"
+    old = tmp_path / "control.json.tmp"
+    elsewhere = tmp_path / "elsewhere.json"
+    elsewhere.write_text("not the token\n", encoding="utf-8")
+    if left == "a file":
+        old.write_text("not the token\n", encoding="utf-8")
+        if os.name != "nt":
+            old.chmod(0o644)
+    elif os.name == "nt":
+        pytest.skip("Windows makes links only with a privilege")
+    else:
+        old.symlink_to(elsewhere)
+    server = control.ControlServer(lambda op, conn: {"ev": "ok"}, hello={}).start(where)
+    try:
+        assert json.loads(where.read_text(encoding="utf-8"))["token"] == server.token
+        assert (old.is_symlink(), old.exists()) == (left == "a link", True)
+        assert old.read_text(encoding="utf-8") == elsewhere.read_text(encoding="utf-8")
+        assert elsewhere.read_text(encoding="utf-8") == "not the token\n"
+        if os.name != "nt":
+            assert where.stat().st_mode & 0o077 == 0, oct(where.stat().st_mode)
+        names = sorted(path.name for path in tmp_path.iterdir())
+        assert names == sorted({where.name, old.name, elsewhere.name})
     finally:
         server.close()
 

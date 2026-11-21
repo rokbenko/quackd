@@ -12,6 +12,7 @@ file given with `--file` answers all of them.
 
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 import subprocess
@@ -221,6 +222,31 @@ def refuse_root() -> None:
         raise WizardError("run roboglot onboard as the robot's own user, not as root")
 
 
+def unit_user() -> str:
+    """The account the unit runs as: the one whose effective uid runs the wizard, as the system's
+    account database names it. Never `USER` or `LOGNAME`, which a shell, `sudo` or `env` can
+    leave naming another account or none at all, and never root for want of a name: with no
+    account to name, the service has nobody to run as and is not installed."""
+    euid = getattr(os, "geteuid", None)  # POSIX only, as `pwd` is
+    try:
+        accounts = importlib.import_module("pwd")
+    except ImportError:
+        accounts = None
+    if euid is None or accounts is None:
+        raise WizardError(
+            "the service has no user to run as: this system has no account database to name "
+            "the one running roboglot onboard; run roboglot onboard serve in a terminal instead"
+        )
+    uid = euid()
+    try:
+        return str(accounts.getpwuid(uid).pw_name)
+    except KeyError:
+        raise WizardError(
+            f"the service has no user to run as: no account on this system has uid {uid}, which "
+            "runs roboglot onboard; run roboglot onboard serve in a terminal instead"
+        ) from None
+
+
 def write_key_file(path: Path, variable: str, value: str) -> None:
     """The brain's key, as the one line of robot.env, readable by this user alone."""
     from roboglot.onboard.keys import write_secret
@@ -238,13 +264,16 @@ def install_service(
 
     refuse_root()
     roboglot = shutil.which("roboglot") or sys.argv[0]
-    user = os.environ.get("USER") or os.environ.get("LOGNAME") or "root"
+    user = unit_user()
     with_group = systemd.group_exists(systemd.BLUETOOTH_GROUP)
+    try:
+        text = systemd.unit_text(
+            user=user, directory=home.root, roboglot=roboglot, bluetooth_group=with_group
+        )
+    except systemd.UnitError as e:  # before a file is staged or a command runs
+        raise WizardError(str(e)) from None
     if not with_group:
         say(f"this system has no {systemd.BLUETOOTH_GROUP} group, so the unit names none")
-    text = systemd.unit_text(
-        user=user, directory=home.root, roboglot=roboglot, bluetooth_group=with_group
-    )
     staged = Path(tempfile.mkdtemp()) / systemd.UNIT_NAME
     staged.write_text(text, encoding="utf-8", newline="\n")
     commands = systemd.install_commands(staged)
