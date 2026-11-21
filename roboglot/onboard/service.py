@@ -25,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import queue
 import signal
 import socket
 import sys
@@ -84,17 +85,28 @@ REFUSALS_PER_MINUTE = 30
 CLOSE_S = STOP_TIMEOUT_S * 0.9
 AFTER_RUN_S = FETCH_TIMEOUT_S
 #: The tenth the close keeps for the process's own exit, before systemd's kill, and its shares:
-#: - `CALLS_GRACE_S`, a quarter of it: a call still running when the budget is spent is given
+#: - `CALLS_GRACE_S`, a fifth of it: a call still running when the budget is spent is given
 #:   this long to end before the close ends the process for it, so one that ends a moment late
 #:   is not held against the service;
-#: - `FLUSH_S`, a tenth of it: how long each bounded wait on the way to `os._exit` lasts, each
-#:   for all of its files at once. There are at most five: the run's record, every other file,
-#:   the line, a last pass for what was written since, the streams. So the end comes inside the
-#:   margin, a quarter of it to spare, whatever a flush meets (a write stuck on a disk that hung
-#:   holds its file's lock).
+#: - `LINE_S`, a twentieth: how long a line to the journal or stderr is waited for (`_Lines`);
+#:   once one has not been written in that time, no line after it is waited for at all;
+#: - `FLUSH_S`, a twentieth: how long each bounded flush waits, for all of its files at once;
+#: - `WALK_S`, an eighth: how long a walk over the collector's objects for the files open for
+#:   writing is waited for, which on a heap of millions takes seconds: what it found by then is
+#:   flushed, and what it had not reached is said.
+#: After the budget the way to `os._exit` waits on at most these, in turn: the grace; the
+#: close's line of what it left unfinished; the run's record; the last line, said before any
+#: walk; one walk; its flush; a second line naming what that left; a last flush of what was
+#: written since (the walk found once is used again); the streams. That is 0.4, then seven
+#: waits of 0.1 and one of 0.25: 1.35 s of the margin's 2, so the end comes inside it, whatever
+#: a flush or a line meets (a write stuck on a disk that hung, or on a journal that stopped
+#: draining, holds its file's lock). The collector's own walk is one call no other thread can
+#: interrupt, a tenth of a second or so for each million objects, and is in the 0.65 s left.
 EXIT_MARGIN_S = STOP_TIMEOUT_S - CLOSE_S
-CALLS_GRACE_S = EXIT_MARGIN_S / 4
-FLUSH_S = EXIT_MARGIN_S / 10
+CALLS_GRACE_S = EXIT_MARGIN_S / 5
+LINE_S = EXIT_MARGIN_S / 20
+FLUSH_S = EXIT_MARGIN_S / 20
+WALK_S = EXIT_MARGIN_S / 8
 #: How often the close looks again at thread-pool workers it does not count, while a call on one
 #: is still running, inside `CALLS_GRACE_S`.
 STRAY_LOOK_S = 0.05
@@ -158,8 +170,11 @@ HELD_STRAY = (
 )
 #: What a held line adds of a run whose own thread is still going too.
 AND_RUN = "; and the {kind} has not ended though it was told to stop: {stop}; {left}"
-#: What a last line adds of the files a bounded flush left, each with why.
+#: What a last line adds of the run's record, where its bounded flush left it, with why.
 NOT_FLUSHED = "; not flushed: {files}"
+#: The line after it, on the way to `os._exit`, of the other files the bounded walk and flush
+#: left, each with why: said after the last line, which never waits on a walk.
+NOT_FLUSHED_AFTER = "the service ends its process without having flushed: {files}"
 RUN_LEFT = (
     "the {kind} has not ended though it was told to stop: {stop}; {left}; the service ends with "
     "exit code {code}, and the run's thread, which holds nothing, ends with it"
@@ -175,6 +190,71 @@ RUN_FINISHING = (
 )
 #: What the line says the body was sent since the service's stop came, the last stop winning.
 TOOK = "the body took the stop it was sent"
+
+
+class _Lines:
+    """Writes for one stream, the journal or stderr, on the stop's and the close's way, each
+    done in turn on a daemon thread of their own and waited for up to a bound: a stream whose
+    pipe has stopped draining holds that thread, never the way to the end. Once a write has not
+    been done in its time, none after it is waited for: each goes on the same thread, behind
+    it, and is done if the pipe drains again."""
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._queue: queue.SimpleQueue[tuple[Callable[[], None], threading.Event]] = (
+            queue.SimpleQueue()
+        )
+        self._writer: threading.Thread | None = None
+        #: the last write waited for: while it is not done, the stream is held
+        self._last: threading.Event | None = None
+        #: held for a thread's start and never across a write
+        self._starting = threading.Lock()
+
+    @property
+    def stuck(self) -> bool:
+        """Whether a write waited for was not done in its time, and still is not."""
+        last = self._last
+        return last is not None and not last.is_set()
+
+    def put(self, work: Callable[[], None]) -> threading.Event | None:
+        """`work` handed to the writer: what is set once it is done, or None where it is not to
+        be waited for, a write before it still not done, or no thread to be had."""
+        held = self.stuck
+        done = threading.Event()
+        self._queue.put((work, done))
+        if not self._running() or held:
+            return None
+        self._last = done
+        return done
+
+    def say(self, work: Callable[[], None], within: float) -> bool:
+        """`work` handed to the writer and waited for up to `within` seconds: whether it was
+        done in that time."""
+        done = self.put(work)
+        return done is not None and done.wait(within)
+
+    def _running(self) -> bool:
+        with self._starting:
+            if self._writer is not None and self._writer.is_alive():
+                return True
+            writer = threading.Thread(target=self._write, name=self._name, daemon=True)
+            try:
+                writer.start()
+            except RuntimeError:  # no thread to be had: the write is not done, nor waited for
+                return False
+            self._writer = writer
+            return True
+
+    def _write(self) -> None:
+        while True:
+            work, done = self._queue.get()
+            try:
+                work()
+            except Exception as e:  # each work says its own failure: this one did not
+                with contextlib.suppress(Exception):  # stderr has gone: nowhere is left
+                    sys.stderr.write(f"onboard: a line could not be written: {e}\n")
+            finally:
+                done.set()
 
 
 class _StopsHeard:
@@ -408,6 +488,11 @@ class Service:
         self._earlier_pools: list[CallPool] = []
         #: the thread-pool workers there were before the service started, none of them its own
         self._workers_before: set[int] = set()
+        #: the stop's and the close's lines to the journal and to stderr, each bounded
+        self._journal = _Lines("onboard-journal")
+        self._stderr = _Lines("onboard-stderr")
+        #: the close has ended the process itself (`_end_process`), a test's stand-in returning
+        self._ended = False
         #: what the run in hand's record says, by the run (`_make_loop`)
         self._stops_heard: dict[int, _StopsHeard] = {}
         #: the exit code a close that left a run says the process ends with, by the ordinary
@@ -426,7 +511,7 @@ class Service:
     # ── up and down ─────────────────────────────────────────────────────────────────────
 
     def start(self) -> Service:
-        self._workers_before = {worker.ident or 0 for worker in _pool_workers()}
+        self._workers_before = {worker.ident or 0 for worker in _pool_workers() or []}
         self.home.ensure()
         self.log(f"onboard {self.file.passport.name}: {self.check.why}")
         self.slot = RunSlot(
@@ -698,36 +783,55 @@ class Service:
         except OSError as e:  # the pipe went: the close tells the run instead
             self._say_anywhere(f"the stop's thread could not wait for a stop: {e}")
             return
+        # first, with no write and no lock but the halt's own: the run told, the ticks ended
+        halted, failed = None, None
         try:
-            self._tell_run()
-        except Exception as e:  # said where it can be; the ticks end all the same, below
-            self._say_anywhere(f"the stop could not tell the run in hand: {e}")
+            halted = self._tell_run()
+        except Exception as e:  # said below, with the rest; the ticks end all the same
+            failed = e
         finally:
-            # whatever the telling did, the ticks end and the close comes
             self._stop.set()
+        # then the writes, each bounded
+        if failed is not None:
+            self._say_anywhere(f"the stop could not tell the run in hand: {failed}")
+        self._finish_telling(halted)
 
     def _say_anywhere(self, line: str) -> None:
         """`line` in the journal, or on stderr where the journal raises (a stdout whose pipe has
-        gone), or nowhere, where neither can be written: a thread's last word, which must not
-        end it before it has done its work."""
-        try:
-            self.log(line)
-        except Exception:  # the journal has gone: stderr, below, has the line
-            with contextlib.suppress(Exception):  # stderr has gone too: there is nowhere left
-                sys.stderr.write(line + "\n")
-                sys.stderr.flush()
+        gone), or nowhere, where neither can be written; bounded (`_Lines`)."""
 
-    def _tell_run(self) -> None:
+        def say() -> None:
+            try:
+                self.log(line)
+            except Exception:  # the journal has gone: stderr, below, has the line
+                with contextlib.suppress(Exception):  # stderr has gone too: nowhere is left
+                    sys.stderr.write(line + "\n")
+                    sys.stderr.flush()
+
+        self._journal.say(say, LINE_S)
+
+    def _tell_run(self) -> tuple[str, Callable[[], None] | None] | None:
         """The run in hand told to stop, once, and its record told so: only the stops it sends
-        from now on speak for the service's stop. The slot closes with it."""
+        from now on speak for the service's stop. The slot is halted with it, taking no lock and
+        writing nothing (`RunSlot.halt`); what is left to do, which writes, comes back."""
         slot = self.slot
         if slot is None:
-            return
+            return None
         running = slot.running
         heard = self._stops_heard.get(id(running.agent)) if running is not None else None
         if heard is not None:
             heard.told()
-        slot.close(STOPPING)
+        return slot.halt(STOPPING)
+
+    def _finish_telling(self, halted: tuple[str, Callable[[], None] | None] | None) -> None:
+        """The rest of a halt's telling, each part bounded: the question the run waits on taken
+        back (a write to its terminal), and the line said."""
+        if halted is None:
+            return
+        line, take_back = halted
+        if take_back is not None:
+            _within([take_back], LINE_S)
+        self._say_anywhere(line)
 
     def close(self) -> None:
         """Down in the reverse order, `CLOSE_S` in all, so systemd never kills it partway: the
@@ -737,14 +841,19 @@ class Service:
         # from the stop, as systemd's timeout runs: the look in hand when it came is over first
         asked = self._stop_asked
         deadline = (asked if asked is not None else self._clock()) + CLOSE_S
-        with self._talk:
-            # talk is not turned on again: a start under way notes what it made, sees this and
-            # closes it, and a radio still starting is cut short when the radio closes below
-            self._shutting = True
-        # closed first, if the stop has not closed it already: a goal or a meeting asked for
-        # from here on, over the control port, by a robot coming near or by an op a control
-        # thread read already, is refused
-        self._tell_run()
+        # closed first, if the stop has not closed it already, with no lock and no write: a goal
+        # or a meeting asked for from here on, over the control port, by a robot coming near or
+        # by an op a control thread read already, is refused, and the run in hand is told
+        halted = self._tell_run()
+        # talk is not turned on again: a start under way notes what it made, sees this and
+        # closes it, and a radio still starting is cut short when the radio closes below. Under
+        # talk's lock where it can be had in time; a reload reading a file on a disk that hung
+        # holds it, and then the mark is set without it, which a start reads under the lock
+        got = self._talk.acquire(timeout=LINE_S)
+        self._shutting = True
+        if got:
+            self._talk.release()
+        self._finish_telling(halted)
         # then, beside the run's stop, the LAN record other robots find this one by: a robot
         # that meets nobody more is not to be found, and the record needs nothing of the radio
         side = self.radio_side
@@ -795,7 +904,7 @@ class Service:
             if thread.is_alive():
                 unfinished.append(name)
         if unfinished:
-            self.log(f"the service stops before it finished {' and '.join(unfinished)}")
+            self._say_anywhere(f"the service stops before it finished {' and '.join(unfinished)}")
         with contextlib.suppress(OSError):
             self.home.control_json.unlink()
         self._release_stopper(left_s())
@@ -817,6 +926,12 @@ class Service:
         alive = run_thread is not None and run_thread.is_alive()
         if held or strays or alive:
             self._end_with(running, held, strays, alive)
+        if not self._ended and (self._journal.stuck or self._stderr.stuck):
+            # a line still waits on a journal or a stderr that stopped draining, holding its
+            # stream's lock: the interpreter's exit would wait on that lock to flush the stream,
+            # and then stop the process with an error of its own, not the code the close chose
+            self._ended = True
+            self._end_process(self.exit_code or 0)
 
     def _strays_within(self, within: float) -> list[str]:
         """The workers still running a call, after up to `within` seconds, of the thread pools
@@ -863,12 +978,17 @@ class Service:
                         stop=self._stop_said(running.agent),
                         left=self._left_said(heard),
                     )
-            # the record first, then every other file, each pass bounded; what did not flush
-            # is named, and the end comes whatever the flushes met
-            left = list(dict.fromkeys(self._flush_record(heard) + _flush_everything()))
+            # the record first, then the line, before any walk; then every other file, the walk
+            # and the flush each bounded, what they left said in a second line; and the end
+            # comes whatever they met
+            left = self._flush_record(heard)
             if left:
                 said += NOT_FLUSHED.format(files="; ".join(left))
-            _within([self._say_both(said)], FLUSH_S)
+            self._say_both(said)
+            others = [name for name in _flush_everything(fresh=True) if name not in left]
+            if others:
+                self._say_both(NOT_FLUSHED_AFTER.format(files="; ".join(others)))
+            self._ended = True
             self._end_process(LEFT_EXIT)
             return
         if ended and (heard is None or heard.ended):
@@ -888,7 +1008,7 @@ class Service:
         left = self._flush_record(heard)
         if left:
             said += NOT_FLUSHED.format(files="; ".join(left))
-        self._say_both(said)()
+        self._say_both(said)
 
     def _flush_record(self, heard: _StopsHeard | None) -> list[str]:
         """The run's record flushed, bounded as every flush on the way to the end is
@@ -896,19 +1016,25 @@ class Service:
         record = getattr(getattr(heard, "transcript", None), "_fh", None)
         return _flush_within([record], FLUSH_S) if record is not None else []
 
-    def _say_both(self, said: str) -> Callable[[], None]:
-        """Saying `said` in the journal and on stderr, each whether or not the other can be
-        written, as a call to make: inline on the ordinary road, bounded on the way to
-        `os._exit`, where a journal's pipe that stopped draining must not hold the end."""
+    def _say_both(self, said: str) -> None:
+        """`said` in the journal and on stderr, each on its own writer, whether or not the other
+        can be written, both waited for together up to `LINE_S` (`_Lines`): a pipe that stopped
+        draining holds neither the other nor the end."""
 
-        def say() -> None:
+        def journal() -> None:
             with contextlib.suppress(Exception):  # a journal that has gone: stderr has the line
                 self.log(said)
+
+        def stderr() -> None:
             with contextlib.suppress(Exception):  # a stderr that has gone: the journal has it
                 sys.stderr.write(said + "\n")
                 sys.stderr.flush()
 
-        return say
+        writes = [self._journal.put(journal), self._stderr.put(stderr)]
+        end = time.monotonic() + LINE_S
+        for done in writes:
+            if done is not None:
+                done.wait(max(0.0, end - time.monotonic()))
 
     def _stop_said(self, agent: Any) -> str:
         """What the run's own record says the body was sent since the service's stop came, the
@@ -1345,7 +1471,8 @@ def _end_process(code: int) -> None:
     on a thread pool's worker, which nothing in Python ends and the interpreter would wait for at
     its exit. What systemd's kill at the unit's stop timeout would do a moment later, done on
     every path, a terminal's too; everything open for writing on disk flushed first, and the
-    journal's streams, each pass bounded (`FLUSH_S`), so `os._exit` comes whatever they meet."""
+    journal's streams, the walk and each flush bounded (`WALK_S`, `FLUSH_S`), so `os._exit`
+    comes whatever they meet. A walk made on the way here a moment ago is used again."""
     _flush_everything()
     _flush_within([stream for stream in (sys.stdout, sys.stderr) if stream is not None], FLUSH_S)
     os._exit(code)
@@ -1387,7 +1514,7 @@ def _flush_within(files: list[Any], within: float) -> list[str]:
         def flush() -> None:
             try:
                 found.flush()
-            except (OSError, ValueError) as e:  # a full disk, a disk gone, a file closed: below
+            except Exception as e:  # a full disk, a disk gone, a file closed, any other: below
                 failed[id(found)] = e
 
         return flush
@@ -1424,53 +1551,106 @@ def _named(found: Any) -> str:
         return "a file with no name"
 
 
-def _flush_everything() -> list[str]:
-    """Every file this process has open for writing on disk, a run's record above all, flushed,
-    as an ordinary exit's finalizers would: `os._exit` drops every buffer, and a record writes a
-    stop's row without a flush (`Transcript.write`). Only files on disk: a pipe or a socket, a
-    terminal that stopped reading, could hold the flush. Bounded (`_flush_within`): what did
-    not flush comes back, by name."""
+#: The last walk for the files open for writing: when it was made, what it found, and whether
+#: it was done in its time. `_end_process` uses one made a moment before on the way to it.
+_LAST_WALK: tuple[float, list[Any], bool] | None = None
+
+
+def _find_files(within: float) -> tuple[list[Any], bool]:
+    """Every file this process has open for writing on disk, found by a walk over the
+    collector's objects on a daemon thread of its own, waited for up to `within` seconds: what
+    it found by then, and whether it was done. On a heap of millions the walk takes seconds, and
+    what it found by the bound is flushed all the same. Only files on disk: a pipe or a socket, a
+    terminal that stopped reading, could hold a flush."""
+    global _LAST_WALK
     import gc
     import io
     import stat
 
-    files = []
-    for found in gc.get_objects():
-        if not isinstance(found, io.TextIOWrapper | io.BufferedWriter | io.BufferedRandom):
-            continue
-        try:
-            # none of these takes the file's lock, which a stuck write may hold: only a flush does
-            if found.closed or not found.writable():
+    found: list[Any] = []
+
+    def walk() -> None:
+        for each in gc.get_objects():
+            if not isinstance(each, io.TextIOWrapper | io.BufferedWriter | io.BufferedRandom):
                 continue
-            if not stat.S_ISREG(os.fstat(found.fileno()).st_mode):
+            try:
+                # none of these takes the file's lock, which a stuck write may hold: a flush does
+                if each.closed or not each.writable():
+                    continue
+                if not stat.S_ISREG(os.fstat(each.fileno()).st_mode):
+                    continue
+            except (OSError, ValueError):  # gone, or not a file at all: nothing of it to keep
                 continue
-        except (OSError, ValueError):  # gone, or not a file at all: nothing of it to keep
-            continue
-        files.append(found)
-    return _flush_within(files, FLUSH_S)
+            found.append(each)
+
+    walker = _within([walk], within)[0]
+    done = walker is not None and not walker.is_alive()
+    files = list(found)  # one copy, whatever the walk still adds
+    _LAST_WALK = (time.monotonic(), files, done)
+    return files, done
 
 
-def _pool_workers() -> list[threading.Thread]:
+def _flush_everything(*, fresh: bool = False) -> list[str]:
+    """Every file this process has open for writing on disk, a run's record above all, flushed,
+    as an ordinary exit's finalizers would: `os._exit` drops every buffer, and a record writes a
+    stop's row without a flush (`Transcript.write`). The walk that finds them and the flush are
+    each bounded (`_find_files`, `_flush_within`): what did not flush comes back, by name, and
+    the files the walk had not reached, as one. Unless `fresh`, a walk made within the exit's
+    margin before is used again, and only flushed again."""
+    last = _LAST_WALK
+    if not fresh and last is not None and time.monotonic() - last[0] < EXIT_MARGIN_S:
+        files, done = last[1], last[2]
+    else:
+        files, done = _find_files(WALK_S)
+    left = _flush_within(files, FLUSH_S)
+    if not done:
+        left.append(f"any file a walk over the collector's objects had not reached in {WALK_S:g} s")
+    return left
+
+
+#: How many times a look reads a table another thread may be adding to before it gives up and
+#: judges as though a call were running.
+READ_TRIES = 3
+
+
+def _pool_workers() -> list[threading.Thread] | None:
     """Every thread-pool worker in the process, the ones the interpreter joins at its exit
-    (`concurrent.futures.thread._python_exit`)."""
+    (`concurrent.futures.thread._python_exit`), or None where the table could not be read. Its
+    weak references are copied in one call, which no other thread can interrupt: a pool that
+    starts a worker meanwhile cannot change it under the copy."""
     from concurrent.futures import thread as futures_thread
 
-    return list(getattr(futures_thread, "_threads_queues", {}))
+    table = getattr(futures_thread, "_threads_queues", None)
+    refs = getattr(table, "data", None)
+    if table is None:
+        return []
+    if refs is None:
+        return None
+    for _ in range(READ_TRIES):
+        try:
+            copied = list(refs)
+        except RuntimeError:  # changed as it was copied: read again
+            continue
+        return [worker for ref in copied if (worker := ref()) is not None]
+    return None
 
 
 def _stray_calls(before: set[int]) -> list[str]:
     """The names of the thread-pool workers running a call now that the service does not count
     (`CallPool`) and that were made since it started: zeroconf's own executor, an SDK's. Read off
-    each worker's innermost frame: an idle worker waits in the pool's own `_worker`."""
+    each worker's innermost frame: an idle worker waits in the pool's own `_worker`. Where the
+    tables cannot be read, the look says so as a call that may be running."""
     from concurrent.futures import thread as futures_thread
 
     from roboglot.onboard.brain import counted_workers
 
     idle = futures_thread._worker.__code__
     frames = sys._current_frames()
-    counted = counted_workers()
+    workers, counted = _pool_workers(), counted_workers()
+    if workers is None or counted is None:
+        return ["the table of thread-pool workers, which could not be read"]
     strays = []
-    for worker in _pool_workers():
+    for worker in workers:
         if worker.ident in before or worker in counted or not worker.is_alive():
             continue
         frame = frames.get(worker.ident or 0)

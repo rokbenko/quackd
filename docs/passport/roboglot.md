@@ -303,18 +303,25 @@ going, the journal and stderr get one line that says what it is and, of a run th
 ended, what was done and what was not, the stop the body was sent since the service's stop
 included; and the service ends one of three ways, in a terminal as under systemd:
 
-- a call is still running half a second after that time, one the run, or one before it, handed
-  to a thread of its own, one on the radio's own threads, a radio's that talk turned off
-  included, or one on a thread pool the service does not count, zeroconf's or an SDK's: nothing
-  ends such a call, and the process would wait for it at its exit, so every file the process
-  has open for writing on disk is flushed, the run's record first, each wait for a flush lasting
-  a fifth of a second at most, and the process ends with exit code 70 whatever the flushes met;
-  the line ends with `not flushed:` and each file that did not flush in that time, and why;
+- a call is still running two fifths of a second after that time, one the run, or one before
+  it, handed to a thread of its own, one on the radio's own threads, a radio's that talk turned
+  off included, or one on a thread pool the service does not count, zeroconf's or an SDK's:
+  nothing ends such a call, and the process would wait for it at its exit, so the run's record
+  is flushed, the line is said, and every other file the process has open for writing on disk
+  is found and flushed, each wait bounded, and the process ends with exit code 70 whatever they
+  met; a record left unflushed is named at the line's end, after `not flushed:`, and a second
+  line, `the service ends its process without having flushed:`, names each other file left,
+  and why;
 - the run's own thread is still going, which holds nothing at exit, and the run has not ended,
   or has returned with no end in its record: the run's record is flushed, and the process ends
   by the ordinary road with exit code 70;
 - the run had ended, its record's end written, and was only still writing its summary or
   memory, or telling its terminal how: the process ends by the ordinary road with exit code 0.
+
+Every line on the way from the stop to the end waits a tenth of a second at most, and once one
+has not been written, a journal that stopped draining say, none after it is waited for; the
+process is then ended with the code the close chose, since its ordinary exit would wait on that
+journal too. A stop tells the run and ends the service's looks before it writes anything.
 
 After exit code 70 systemd shows the unit failed and, after a stop it was asked for, does not
 start it again. Where the line says `not done: the run's end record`, the run's record has no

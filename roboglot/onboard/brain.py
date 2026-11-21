@@ -94,7 +94,7 @@ class CallPool(concurrent.futures.ThreadPoolExecutor):
         self.who = who
         self._busy = 0
         self._calls = threading.Condition()
-        _COUNTED.add(self)
+        _COUNTED.add(weakref.ref(self, _COUNTED.discard))
 
     @property
     def busy(self) -> int:
@@ -124,13 +124,26 @@ class CallPool(concurrent.futures.ThreadPoolExecutor):
 
 
 #: Every `CallPool` in the process, whoever made it, so a close can tell the pools that count
-#: their calls from those nobody counts (`counted_workers`).
-_COUNTED: weakref.WeakSet[CallPool] = weakref.WeakSet()
+#: their calls from those nobody counts (`counted_workers`): weak references, each taken out of
+#: the set once its pool is gone.
+_COUNTED: set[weakref.ref[CallPool]] = set()
 
 
-def counted_workers() -> set[threading.Thread]:
-    """The worker threads of every `CallPool` in the process."""
-    return {worker for pool in list(_COUNTED) for worker in list(pool._threads)}
+def counted_workers() -> set[threading.Thread] | None:
+    """The worker threads of every `CallPool` in the process, or None where they could not be
+    read. Each set is copied in one call, which no other thread can interrupt, so a pool that
+    starts a worker meanwhile cannot change it under the copy; read again if one does."""
+    for _ in range(COUNTED_READS):
+        try:
+            pools = [pool for ref in list(_COUNTED) if (pool := ref()) is not None]
+            return {worker for pool in pools for worker in list(pool._threads)}
+        except RuntimeError:  # changed as it was copied: read again
+            continue
+    return None
+
+
+#: How many times `counted_workers` reads the pools' sets before it gives up.
+COUNTED_READS = 3
 
 
 @dataclass
@@ -176,8 +189,13 @@ class RunSlot:
         self.running: Running | None = None
         self._met_at: dict[str, float] = {}
         self._meetings: deque[float] = deque()
-        #: why the slot takes no run any more, once the service has begun to close (`close`)
+        #: why the slot takes no run any more, once the service has begun to close (`halt`). Set
+        #: without the slot's lock, which a run being made holds for as long as its making takes
+        #: (a hung disk under its runs folder): a start that holds the lock reads it again once
+        #: its run is made (`_start`)
         self._closed: str | None = None
+        #: `halt`'s own, held for a few assignments and never across a wait or a write
+        self._halting = threading.Lock()
         #: a goal waiting for the meeting it took the slot from to end, while nothing else starts
         self._waiting: _Waiting | None = None
         #: the pools the runs handed calls to: the run in hand's, and an earlier run's while a
@@ -316,15 +334,45 @@ class RunSlot:
         return was, thread is None or not thread.is_alive()
 
     def close(self, why: str) -> None:
-        """The service has begun to close: the run in hand is stopped, and from now on no goal
-        and no meeting starts, whoever asks, `why` being the reason given. Set under the lock
-        every start takes, so a start either came first, and is the run stopped here, or is
-        refused. Once only: the service's stop and its close both close it."""
-        with self._lock:
+        """`halt`, and the rest of the telling done here and now: the run's question taken back,
+        and its line said."""
+        halted = self.halt(why)
+        if halted is not None:
+            line, take_back = halted
+            if take_back is not None:
+                take_back()
+            self._log(line)
+
+    def halt(self, why: str) -> tuple[str, Callable[[], None] | None] | None:
+        """The service has begun to close: from now on no goal and no meeting starts, whoever
+        asks, `why` being the reason given, and the run in hand is told at once: its stop named
+        and its abort posted to its own loop. Without the slot's lock, and with no write: a start
+        that holds the lock reads `_closed` again once its run is made, and either the start
+        sees it or this sees the run (`_start`). Once only: the service's stop and its close
+        both halt it. What is left of the telling, which writes, comes back for the caller to do
+        bounded: the line to say, and the taking back of a question the run waits on."""
+        with self._halting:
             if self._closed is not None:
-                return
+                return None
             self._closed = why
-            self.stop(why)
+        waiting = self._waiting
+        if waiting is not None and waiting.stopped is None:
+            waiting.stopped = why
+        running = self.running
+        if running is None or not _alive(running):
+            return None
+        front = running.front
+        self._abort(running, why)
+        if front is None:
+            return f"the {running.kind} is stopping: {why}", None
+
+        def take_back() -> None:
+            # a run waiting on its question holds its own loop, where the abort cannot land
+            # until it is answered: the question is taken back, as a page's Stop takes it
+            with contextlib.suppress(Exception):  # a terminal gone: no question waits on it
+                front.questions.close(why)
+
+        return f"the {running.kind} is stopping: {why}", take_back
 
     def state(self) -> dict[str, Any]:
         """What the slot holds, for `roboglot onboard status`."""
@@ -349,12 +397,19 @@ class RunSlot:
         except Exception as e:  # a run that cannot be built is said and the slot stays empty
             self._log(f"the {kind} could not start: {e}")
             return False
+        if self._closed is not None:  # halted while it was made: it does not start
+            self._log(f"the {kind} does not start: {self._closed}")
+            return False
         running = Running(kind, glot.name, self._clock(), set(peers), agent, front)
         thread = threading.Thread(
             target=self._run, args=(running,), name=f"onboard-{kind}", daemon=True
         )
         running.thread = thread
         self.running = running
+        if self._closed is not None:
+            # halted between the look above and this run's being the slot's, so the halt did
+            # not see it: it starts stopped, as a run stopped before its loop exists does (`_go`)
+            running.stop_wanted = running.stop_wanted or self._closed
         thread.start()
         return True
 
@@ -419,18 +474,24 @@ class RunSlot:
                 front.unbind()
 
     def _stop(self, running: Running, why: str) -> None:
-        # kept first: a run whose loop does not exist yet reads it as it starts (`_go`)
-        running.stop_wanted = running.stop_wanted or why
-        aio, agent = running.aio, running.agent
-        if aio is not None and agent is not None and not aio.is_closed():
-            with contextlib.suppress(RuntimeError):  # the loop closed as the stop was sent
-                aio.call_soon_threadsafe(_set_abort, agent, why)
+        self._abort(running, why)
         if running.front is not None:
             # a run waiting on its question holds its own loop, where the abort cannot land
             # until it is answered: the question is taken back, as a page's Stop takes it
             with contextlib.suppress(Exception):
                 running.front.questions.close(why)
         self._log(f"the {running.kind} is stopping: {why}")
+
+    @staticmethod
+    def _abort(running: Running, why: str) -> None:
+        """The run's stop named and its abort posted to its own loop, with no lock and no write
+        but the byte asyncio sends its own loop to wake it, which never waits."""
+        # kept first: a run whose loop does not exist yet reads it as it starts (`_go`)
+        running.stop_wanted = running.stop_wanted or why
+        aio, agent = running.aio, running.agent
+        if aio is not None and agent is not None and not aio.is_closed():
+            with contextlib.suppress(RuntimeError):  # the loop closed as the stop was sent
+                aio.call_soon_threadsafe(_set_abort, agent, why)
 
 
 def _set_abort(agent: Any, why: str) -> None:

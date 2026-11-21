@@ -69,6 +69,18 @@ def no_real_end_of_process(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(onboard_service, "_end_process", refused)
 
 
+@pytest.fixture(autouse=True)
+def bounds_for_a_slow_machine(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The bounds on the way to the service's end, a line's, a flush's, a walk's, are fractions
+    of a second for work of microseconds, and a test's whole heap is walked: each is made long
+    enough here for a slow machine to do that work well inside it, so no test hangs on the
+    machine's speed. A test about a bound that is met stands something in that never ends."""
+    from roboglot.onboard import service as onboard_service
+
+    for name in ("LINE_S", "FLUSH_S", "WALK_S"):
+        monkeypatch.setattr(onboard_service, name, DEADLINE_S / 6)
+
+
 class NoQuestions:
     def text(self, question: str, default: str | None = None) -> str:
         return default or ""
@@ -794,9 +806,10 @@ def test_the_end_comes_whatever_a_flush_meets_and_says_which_file_it_left(tmp_pa
 
 
 def test_the_close_names_in_its_line_a_file_its_flush_left(tmp_path: Path) -> None:
-    """The close's line on the way to `os._exit` said nothing of what its flush could not do. It
-    is said after the flushes now, and names each file left with why. A meeting's call holds the
-    process here, and a file's write is stuck holding its lock until the test ends."""
+    """The close's line on the way to `os._exit` said nothing of what its flush could not do.
+    The last line comes before any walk now, and a line after it names each file the walk and
+    the flush left, with why. A meeting's call holds the process here, and a file's write is
+    stuck holding its lock until the test ends."""
     import io
 
     from roboglot.onboard import service as onboard_service
@@ -832,16 +845,85 @@ def test_the_close_names_in_its_line_a_file_its_flush_left(tmp_path: Path) -> No
         now[0] = onboard_service.CLOSE_S
         service.close()
         assert ended == [onboard_service.LEFT_EXIT], lines
-        assert lines[-1].startswith(
+        assert lines[-2] == (
             "a call on the radio's meetings is still running at the end of the budget: the "
-            "service ends its process now with exit code 70; not flushed: "
+            "service ends its process now with exit code 70"
         ), lines
+        assert lines[-1].startswith("the service ends its process without having flushed: ")
         assert f"{tmp_path / 'frame.bin'} (its flush did not end in " in lines[-1], lines
     finally:
         never.set()
         writer.join(DEADLINE_S)
         frame.close()
         real.close()
+
+
+def test_the_last_line_comes_before_any_walk_and_the_walk_is_bounded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The way to `os._exit` walked the collector's objects for the files open for writing, which
+    on a heap of millions takes seconds, unbounded, and said its last line only after: past
+    systemd's kill there was no line and no end. The line comes first now, the walk is waited
+    for a bound, what it had not reached is said, and the end comes. The collector's walk is a
+    stand-in here that goes on until the test ends; a run's call holds the process."""
+    import gc
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    real_walk = gc.get_objects
+    walking, let_walk = threading.Event(), threading.Event()
+    said_before: list[bool] = []
+    now, lines, ended, never = [0.0], [], [], threading.Event()
+
+    def long_walk(*args: Any, **kwargs: Any) -> Any:
+        said_before.append(any("still running at the end of the budget" in line for line in lines))
+        walking.set()
+        let_walk.wait(2 * DEADLINE_S)  # a heap of millions of objects
+        return real_walk(*args, **kwargs)
+
+    monkeypatch.setattr(onboard_service, "WALK_S", 1.0)  # a bound met: the walk never ends
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    closer = threading.Thread(target=service.close, name="close", daemon=True)
+    try:
+        assert service.radio_side is not None
+        service.radio_side.pools()[1].submit(never.wait, 2 * DEADLINE_S)
+        service.stop()
+        now[0] = onboard_service.CLOSE_S
+        monkeypatch.setattr(gc, "get_objects", long_walk)
+        closer.start()
+        closer.join(DEADLINE_S)
+        assert walking.is_set() and not closer.is_alive(), "the close waited for the walk"
+        assert said_before[:1] == [True], "the walk came before the last line"
+        assert ended == [onboard_service.LEFT_EXIT], lines
+        assert lines[-2:] == [
+            "a call on the radio's meetings is still running at the end of the budget: the "
+            "service ends its process now with exit code 70",
+            "the service ends its process without having flushed: any file a walk over the "
+            "collector's objects had not reached in 1 s",
+        ], lines
+    finally:
+        let_walk.set()
+        never.set()
+        closer.join(DEADLINE_S)
+
+
+def test_a_flush_that_raises_anything_names_its_file_as_not_flushed() -> None:
+    """A flush on its own thread that raised anything but an `OSError` or a `ValueError` ended
+    that thread, and its file was counted as flushed. Whatever it raises, the file is named now,
+    with what it raised."""
+    from roboglot.onboard import service as onboard_service
+
+    class Odd:
+        name = "a record on an odd file system"
+        closed = False
+
+        def flush(self) -> None:
+            raise RuntimeError("an error nobody expected")
+
+    assert onboard_service._flush_within([Odd()], DEADLINE_S) == [
+        "a record on an odd file system (an error nobody expected)"
+    ]
 
 
 def closing_service(
@@ -1296,6 +1378,41 @@ def test_a_call_on_a_thread_pool_nobody_counts_is_named_and_ends_the_process(
         pool.shutdown(wait=True)
 
 
+def test_a_look_at_the_pools_nobody_counts_never_raises_and_judges_for_safety(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The look at the pools nobody counts iterated the interpreter's table of pool workers,
+    which a pool starting a worker on another thread changes: `RuntimeError: dictionary changed
+    size during iteration` came out of the close and skipped its end. The table is copied in one
+    call now, read again if it changes, and where it cannot be read the look says so, as a call
+    that may be running. The table here changes under every read."""
+    import concurrent.futures.thread as futures_thread
+    import weakref
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    class Changing(dict):  # type: ignore[type-arg]
+        def __iter__(self) -> Any:
+            raise RuntimeError("dictionary changed size during iteration")
+
+    table: Any = weakref.WeakKeyDictionary()
+    table.data = Changing()
+    now, lines, ended = [0.0], [], []
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    service.stop()
+    now[0] = onboard_service.CLOSE_S
+    with monkeypatch.context() as patched:
+        patched.setattr(futures_thread, "_threads_queues", table)
+        service.close()
+    assert ended == [onboard_service.LEFT_EXIT], lines
+    assert lines[-1] == (
+        "a call on a thread pool the service does not count (the table of thread-pool workers, "
+        "which could not be read) is still running at the end of the budget: the service ends "
+        "its process now with exit code 70"
+    ), lines
+
+
 def test_a_call_left_on_a_radio_side_talk_turned_off_is_still_looked_at(tmp_path: Path) -> None:
     """Turning talk off closes its radio side, but a call already running on that side's pools
     outlives the close, and the service's close looked only at the side in hand: the call held
@@ -1358,10 +1475,10 @@ def test_a_stop_ends_the_ticks_whatever_telling_the_run_does_and_says_what_faile
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """The stop's own thread told the run and only then ended the ticks, with nothing between:
-    a telling that raised, the journal's `print` on a stdout whose pipe had gone, ended the
-    thread, the ticks went on, and the stop never reached the close. The ticks end in a `finally`
-    now, and what failed is said in the journal, or on stderr where the journal cannot take it.
-    The journal here raises on the run's stopping line, then on every line."""
+    a telling that raised ended the thread, the ticks went on, and the stop never reached the
+    close. The ticks end in a `finally` now, and what failed is said in the journal, or on stderr
+    where the journal cannot take it. The halt here raises, as a bug in it would, and then the
+    journal raises on every line, as a stdout whose pipe has gone does."""
     from roboglot.onboard.radio_side import RadioSide
     from roboglot.radio import NoRadio
     from tests.test_onboard_brain import Run
@@ -1370,9 +1487,12 @@ def test_a_stop_ends_the_ticks_whatever_telling_the_run_does_and_says_what_faile
     gone = [False]
 
     def journal(line: str) -> None:
-        if gone[0] or "is stopping" in line:
+        if gone[0]:
             raise BrokenPipeError(32, "Broken pipe")
         lines.append(line)
+
+    def broken(why: str) -> Any:
+        raise RuntimeError("a bug in the telling")
 
     service = Service(
         robot(tmp_path, HOUSEHOLD),
@@ -1385,13 +1505,16 @@ def test_a_stop_ends_the_ticks_whatever_telling_the_run_does_and_says_what_faile
     service.start()
     try:
         assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        real_halt = service.slot.halt
+        service.slot.halt = broken  # type: ignore[method-assign]
         stopper = service._stopper
         assert stopper is not None
         service.stop()
         stopper.join(DEADLINE_S)
         assert not stopper.is_alive() and service._stop.is_set(), "the ticks were never ended"
-        said = "the stop could not tell the run in hand: [Errno 32] Broken pipe"
+        said = "the stop could not tell the run in hand: a bug in the telling"
         assert said in lines, lines
+        service.slot.halt = real_halt  # type: ignore[method-assign]
         gone[0] = True  # and where the journal cannot take a line at all, stderr has it
         service._say_anywhere(said)
         assert said in capsys.readouterr().err
@@ -1399,6 +1522,208 @@ def test_a_stop_ends_the_ticks_whatever_telling_the_run_does_and_says_what_faile
         gone[0] = False
         service._stop.set()
         service.close()
+
+
+class Jammed:
+    """The service's journal once its pipe has stopped draining: from `jam()` on every line
+    waits, and stays unwritten, until the test lets them go (`release`)."""
+
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+        self.held: list[str] = []
+        self.jammed = False
+        self.waiting, self.released = threading.Event(), threading.Event()
+
+    def jam(self) -> None:
+        self.jammed = True
+
+    def release(self) -> None:
+        self.jammed = False
+        self.released.set()
+
+    def __call__(self, line: str) -> None:
+        if self.jammed:
+            self.held.append(line)
+            self.waiting.set()
+            self.released.wait(2 * DEADLINE_S)
+        self.lines.append(line)
+
+
+def test_a_stop_tells_the_run_and_ends_the_ticks_before_any_line_and_any_lock(
+    tmp_path: Path,
+) -> None:
+    """The stop's own thread told the run through the slot's close, which took the slot's lock
+    and wrote the run's stopping line to the journal, and set the ticks' event only after: a
+    journal that stopped draining held the line and the event for good, and a run being made on
+    a disk that hung, which holds the slot's lock, held the stop. The run is told and the ticks
+    end first now, with no lock and no write, and the lines come after, bounded. The journal
+    here is jammed from the stop on, and another thread holds the slot's lock throughout."""
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    journal, now, ended = Jammed(), [0.0], []
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: _no_radio_side(),
+        log=journal,
+        clock=lambda: now[0],
+        end_process=ended.append,
+    )
+    service._make_loop = lambda glot, kind, front: Run(glot, kind)  # type: ignore[method-assign]
+    service.start()
+    held, let_go = threading.Event(), threading.Event()
+
+    def hold_the_slot() -> None:
+        assert service.slot is not None
+        with service.slot._lock:
+            held.set()
+            let_go.wait(2 * DEADLINE_S)
+
+    holder = threading.Thread(target=hold_the_slot, daemon=True)
+    try:
+        assert service.slot is not None and service.slot.goal("Wait by the door.") is None
+        running = service.slot.running
+        assert running is not None
+        holder.start()
+        assert held.wait(DEADLINE_S)
+        journal.jam()
+        service.stop()
+        # what takes microseconds, with no write before it, is not left waiting on a line's bound
+        assert service._stop.wait(onboard_service.LINE_S / 2), "the ticks waited on a line"
+        assert running.stop_wanted == onboard_service.STOPPING, "the run was never told"
+    finally:
+        let_go.set()
+        journal.release()
+        service._stop.set()
+        service.close()
+
+
+def _no_radio_side() -> Any:
+    from roboglot.onboard.radio_side import RadioSide
+    from roboglot.radio import NoRadio
+
+    return RadioSide(NoRadio(), lan=None, server_host="127.0.0.1", record_host="")
+
+
+def test_a_goal_made_while_the_service_stops_does_not_start(tmp_path: Path) -> None:
+    """The stop no longer waits for the slot's lock, which a goal being made holds, so the goal
+    can be made after the slot was halted: it reads the halt again once it is made, and does not
+    start. The goal's making here waits until the stop has ended the ticks."""
+    from tests.test_onboard_brain import Run
+
+    lines, now, ended = [], [0.0], []
+    making, made = threading.Event(), threading.Event()
+
+    def make(glot: Any, kind: str, front: Any) -> Run:
+        making.set()
+        made.wait(DEADLINE_S)  # a disk that hung under the runs folder, until the stop is in
+        return Run(glot, kind)
+
+    service = closing_service(tmp_path, now, lines, ended, make)
+    answers: list[str | None] = []
+    asker = threading.Thread(
+        target=lambda: answers.append(service.slot.goal("Wait.") if service.slot else None),
+        daemon=True,
+    )
+    try:
+        asker.start()
+        assert making.wait(DEADLINE_S)
+        service.stop()
+        assert service._stop.wait(DEADLINE_S)
+        made.set()
+        asker.join(DEADLINE_S)
+        assert answers == ["the goal did not start"], answers
+        assert "the goal does not start: the service is stopping" in lines, lines
+        assert service.slot is not None and service.slot.running is None
+    finally:
+        made.set()
+        service.close()
+
+
+@pytest.mark.parametrize("left", ["nothing", "a run's thread"])
+def test_the_close_ends_while_the_journal_has_stopped_draining(tmp_path: Path, left: str) -> None:
+    """The close wrote to the journal on the main thread, unbounded: what it left unfinished,
+    and on the ordinary road its last line. A journal that stopped draining held the close, and
+    neither end came. Each line is bounded now, and once one has not been written none after it
+    is waited for; the process is then ended with the code the close chose, since the
+    interpreter's exit would wait on the stuck stream and stop the process with an error of its
+    own. The journal here is jammed as the close begins, the budget spent; the run, where there
+    is one, is stuck in an await, holding nothing."""
+    import asyncio
+
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    class Stuck(Run):
+        async def run(self) -> Any:
+            await self.executor.abort.wait()
+            await asyncio.Event().wait()
+
+    journal, now, ended = Jammed(), [0.0], []
+    service = Service(
+        robot(tmp_path, HOUSEHOLD),
+        facts=sim_facts(),
+        radio_side=lambda: _no_radio_side(),
+        log=journal,
+        clock=lambda: now[0],
+        end_process=ended.append,
+    )
+    service._make_loop = lambda glot, kind, front: Stuck(glot, kind)  # type: ignore[method-assign]
+    service.start()
+    closer = threading.Thread(target=service.close, name="close", daemon=True)
+    try:
+        assert service.slot is not None
+        if left == "a run's thread":
+            assert service.slot.goal("Wait by the door.") is None
+        service.stop()
+        assert service._stop.wait(DEADLINE_S)
+        journal.jam()
+        now[0] = onboard_service.CLOSE_S
+        closer.start()
+        closer.join(DEADLINE_S)
+        assert not closer.is_alive(), f"the close waits on the journal: {journal.held[-1:]}"
+        code = onboard_service.LEFT_EXIT if left == "a run's thread" else 0
+        assert ended == [code], (ended, journal.held)
+        assert service._journal.stuck
+    finally:
+        journal.release()
+        closer.join(DEADLINE_S)
+
+
+def test_the_close_does_not_wait_for_talks_lock_held_by_a_reload_on_a_disk_that_hung(
+    tmp_path: Path,
+) -> None:
+    """A reload reads robot.yaml and the passport under talk's lock, and the close took that
+    lock to mark the service shutting: a disk that hung under the robot's folder held the close
+    at its start. The close waits a line's bound for the lock now and marks it without. Another
+    thread holds talk's lock here throughout."""
+    from roboglot.onboard import service as onboard_service
+    from tests.test_onboard_brain import Run
+
+    lines, now, ended = [], [0.0], []
+    service = closing_service(tmp_path, now, lines, ended, lambda g, k, f: Run(g, k))
+    held, let_go = threading.Event(), threading.Event()
+
+    def hold_talk() -> None:
+        with service._talk:
+            held.set()
+            let_go.wait(2 * DEADLINE_S)
+
+    holder = threading.Thread(target=hold_talk, daemon=True)
+    closer = threading.Thread(target=service.close, name="close", daemon=True)
+    try:
+        holder.start()
+        assert held.wait(DEADLINE_S)
+        service.stop()
+        now[0] = onboard_service.CLOSE_S
+        closer.start()
+        closer.join(DEADLINE_S)
+        assert not closer.is_alive(), "the close waited for talk's lock"
+        assert service._shutting
+    finally:
+        let_go.set()
+        closer.join(DEADLINE_S)
 
 
 def test_every_test_file_that_builds_a_service_keeps_the_real_end_of_the_process_away() -> None:
