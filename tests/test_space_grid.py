@@ -4,11 +4,13 @@ coarser views, the walls a body has to keep clear of, and the walk through it.""
 from __future__ import annotations
 
 import math
+import sys
+import threading
 
 import numpy as np
 import pytest
 
-from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid, Plan
+from roboglot.space.grid import FREE, OCCUPIED, UNKNOWN, OccupancyGrid, Plan, PlanStopped
 from roboglot.space.pose import Pose2D
 
 ALPHABET = {"?": UNKNOWN, ".": FREE, "#": OCCUPIED}
@@ -246,6 +248,47 @@ def test_cells_a_caller_has_its_own_reason_to_avoid_are_walked_round() -> None:
     around = g.plan(start, goal, radius_m=0.0, extra_blocked=[middle])
     assert around is not None and len(around.waypoints) > 1
     assert around.length_m > straight.length_m
+
+
+class _Looks(threading.Event):
+    """A stop that records which search looked at it, at every look, and reads as set from the
+    first look `set_in` makes: what a walk's stop does to a plan in a thread, set while that
+    search runs, with no clock involved."""
+
+    def __init__(self, set_in: str | None = None) -> None:
+        super().__init__()
+        self.set_in = set_in
+        self.searches: list[str] = []
+
+    def is_set(self) -> bool:
+        # the caller is `_check`; the search that called it is one frame further out
+        self.searches.append(sys._getframe(2).f_code.co_name)
+        return self.searches[-1] == self.set_in
+
+
+SEARCHES = ("_escape", "_astar", "_line_of_sight")
+
+
+@pytest.mark.parametrize("search", SEARCHES)
+def test_a_plan_whose_stop_is_set_ends_at_the_next_step_of_each_search(search: str) -> None:
+    """A walk ended while its plan ran in a thread left the plan running to its end, seconds on
+    a large map, holding a thread nobody would read: twelve such walks held every worker the
+    board's detector and camera share. Each of the plan's searches looks at its stop at every
+    step, and the plan gives up at the first look that finds it set, before another step: here
+    in the way out of a wall's band the walk starts in, the search, and the corners after it."""
+    cells = np.full((60, 60), FREE, dtype=np.uint8)
+    cells[30, 5:55] = OCCUPIED  # a wall the search goes round, and the start stands beside
+    g = OccupancyGrid(0.05, (0.0, 0.0), cells)
+    start, goal = centre(g, 30, 60 - 1 - 31), centre(g, 30, 50)
+    unset = _Looks()
+    assert g.plan(start, goal, radius_m=0.05, stop=unset) is not None
+    assert set(SEARCHES) <= set(unset.searches), unset.searches[:5]
+    stop = _Looks(search)
+    with pytest.raises(PlanStopped):
+        g.plan(start, goal, radius_m=0.05, stop=stop)
+    assert stop.searches[-1] == search and stop.searches.count(search) == 1, (
+        "it took another step after its stop was set"
+    )
 
 
 def test_the_map_reads_top_line_highest_with_the_robot_an_arrow_and_places_lettered() -> None:

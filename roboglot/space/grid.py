@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import heapq
 import math
+import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
@@ -35,6 +36,17 @@ _STEPS: tuple[tuple[int, int, float], ...] = tuple(
 
 Cell = tuple[int, int]
 """(column, row): column along x, row along y, row 0 the lowest y."""
+
+
+class PlanStopped(Exception):
+    """A plan given up because its `stop` was set: the walk it was for has ended."""
+
+
+def _check(stop: threading.Event | None) -> None:
+    """Raise `PlanStopped` once `stop` is set. Read at every step of a search, which is a few
+    neighbours of one cell, so a plan whose walk has ended stops within one step."""
+    if stop is not None and stop.is_set():
+        raise PlanStopped
 
 
 @dataclass(frozen=True)
@@ -195,6 +207,7 @@ class OccupancyGrid:
         radius_m: float,
         unknown_blocks: bool = False,
         extra_blocked: Iterable[Cell] = (),
+        stop: threading.Event | None = None,
     ) -> Plan | None:
         """The walk from `start` to `goal` for a body of `radius_m`, or None when there is none.
 
@@ -210,7 +223,10 @@ class OccupancyGrid:
         So a walk may leave the band from the start, and enter it to reach the goal, coming no
         nearer to anything solid than each stands (`_escape`), and nothing solid is ever
         walkable.
-        `extra_blocked` are cells a caller has its own reason to avoid, in this grid's cells."""
+        `extra_blocked` are cells a caller has its own reason to avoid, in this grid's cells.
+        `stop`, once set, ends the plan with `PlanStopped` within one step of its searches: a
+        walk that has ended while its plan ran in a thread sets it, so the thread is not left
+        planning a way nobody will walk."""
         g = self.padded_to(start, goal, margin_m=radius_m + self.res_m)
         if g is not self:
             shift = (
@@ -234,16 +250,16 @@ class OccupancyGrid:
             return None
         passable = ~blocked
         for end in (s, t):
-            passable |= _escape(end, band, solid, math.ceil(radius_m / g.res_m) + 1)
+            passable |= _escape(end, band, solid, math.ceil(radius_m / g.res_m) + 1, stop)
         if not passable[t[1], t[0]]:
             return None
         # a step is on unseen floor when any of the floor the body covers there is
         covered = _grown(unseen, math.ceil(radius_m / g.res_m))
         criteria = (covered, band & passable)
-        cells = _astar(passable, criteria, s, t)
+        cells = _astar(passable, criteria, s, t, stop)
         if cells is None:
             return None
-        return g._as_plan(cells, start, goal, passable, unseen, criteria)
+        return g._as_plan(cells, start, goal, passable, unseen, criteria, stop)
 
     def _as_plan(
         self,
@@ -253,8 +269,9 @@ class OccupancyGrid:
         passable: npt.NDArray[np.bool_],
         unseen: npt.NDArray[np.bool_],
         criteria: Sequence[npt.NDArray[np.bool_]],
+        stop: threading.Event | None = None,
     ) -> Plan:
-        corners = _line_of_sight(cells, passable, criteria)
+        corners = _line_of_sight(cells, passable, criteria, stop)
         points = [self.center_of(c) for c in corners[1:-1]] + [goal]
         length = 0.0
         last = start
@@ -328,7 +345,11 @@ def _grown(mask: npt.NDArray[np.bool_], r: int) -> npt.NDArray[np.bool_]:
 
 
 def _escape(
-    cell: Cell, band: npt.NDArray[np.bool_], solid: npt.NDArray[np.bool_], reach: int
+    cell: Cell,
+    band: npt.NDArray[np.bool_],
+    solid: npt.NDArray[np.bool_],
+    reach: int,
+    stop: threading.Event | None = None,
 ) -> npt.NDArray[np.bool_]:
     """The cells of `band` a walk reaches from `cell` without coming any nearer to anything solid
     than `cell` stands, or nothing when `cell` stands outside the band: the way out of the band
@@ -366,6 +387,7 @@ def _escape(
     stack = [cell]
     out[row, col] = True
     while stack:
+        _check(stop)
         c, r = stack.pop()
         for dc, dr, _step in _STEPS:
             nc, nr = c + dc, r + dr
@@ -382,6 +404,7 @@ def _astar(
     criteria: Sequence[npt.NDArray[np.bool_]],
     start: Cell,
     goal: Cell,
+    stop: threading.Event | None = None,
 ) -> list[Cell] | None:
     """Cells from `start` to `goal`, both included, on a cost compared in order: the cells of
     each of `criteria` entered, then the length."""
@@ -399,6 +422,7 @@ def _astar(
     ]
     order = 0
     while frontier:
+        _check(stop)
         counts, _, _, cell, length = heapq.heappop(frontier)
         cost = best[cell]
         if (counts, length) != cost:
@@ -452,6 +476,7 @@ def _line_of_sight(
     cells: list[Cell],
     passable: npt.NDArray[np.bool_],
     criteria: Sequence[npt.NDArray[np.bool_]],
+    stop: threading.Event | None = None,
 ) -> list[Cell]:
     """The path's corners: from each kept cell, the farthest later cell reachable in a straight
     line over walkable cells entering no more cells of each of `criteria` than the path it
@@ -467,6 +492,7 @@ def _line_of_sight(
     while i < len(cells) - 1:
         j = len(cells) - 1
         while j > i + 1:
+            _check(stop)
             line = _crossed(cells[i], cells[j])
             if all(passable[r, c] for c, r in line) and all(
                 sum(int(mask[r, c]) for c, r in line[1:]) <= counted[j] - counted[i]

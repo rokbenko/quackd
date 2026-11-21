@@ -768,8 +768,11 @@ that ended on `refused` names the questions declined, as `refused`. One that end
 names the exception's type, and its HTTP status where it carries one, as `error`, and never its
 message, because an SDK puts the server's reply there and a reply can quote the request. The only
 words kept are Roboglot's own: `no answer within 1.0 s` on a turn the stepper's own second ended,
-and on no other, and what Roboglot says about a reply it could not read, which names the type of
-what came back and nothing it said, as `UnreadableReply`. One that ended on `interrupted` is the
+and on no other, what Roboglot says about a reply it could not read, which names the type of
+what came back and nothing it said, as `UnreadableReply`, and, for the decision LLM in this
+process, `Busy: the load of the decision LLM's weights was still running` or `Busy: a forward
+pass an earlier turn started was still running` on a turn asked while work an earlier turn
+started went on past its second ([laya](laya.md)). One that ended on `interrupted` is the
 request a second Ctrl-C or a team's cancel cut off, named the same way, and the run ended with it.
 
 On a run that shows the camera (`--decision-frames`), every `decision` also carries `frame`, null
