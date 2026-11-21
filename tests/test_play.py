@@ -33,6 +33,7 @@ from roboglot.transport.mock import MockTransport
 from roboglot.verdict import MOVES_THE_BODY
 from roboglot_lerobot import LeRobotAdapter
 from roboglot_lerobot.mock import REST, LeRobotMock
+from tests.conftest import plain_text
 
 from .conftest import REPO, TASKS, help_text
 
@@ -106,10 +107,6 @@ def _goal(spec: RobotSpec, goal: str = "You are a T-rex. Show me.") -> GlotFile:
     return glot_from_goal(
         goal, sorted(v.name for v in registry.verbs() if v.safety_class == "safe")
     )
-
-
-def _flat(text: str) -> str:
-    return " ".join(re.sub(r"\x1b\[[0-9;]*m", "", text).split())
 
 
 def _start(path: Path) -> dict[str, Any]:
@@ -576,7 +573,7 @@ def test_a_played_goal_run_says_so_and_records_it(tmp_path: Path) -> None:
             str(runs),
         ],
     )
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert "play on, from --play" in out, result.output
     start = _start(next(runs.glob("*/transcript.jsonl")))
     assert start["play"] == {"on": True, "from": "--play"}
@@ -593,7 +590,7 @@ def test_play_reaches_every_pilot_a_team_builds(tmp_path: Path) -> None:
     argv = ["run", "team-hello", "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--llm", "fake", "--play", "--runs-dir", str(runs)])
     assert result.exit_code in (0, 1), result.output
-    assert "play on, from --play" in _flat(result.output), "the header row"
+    assert "play on, from --play" in plain_text(result.output), "the header row"
     starts = [_start(p) for p in sorted(runs.rglob("transcript.jsonl"))]
     assert starts, f"no pilot ran: {result.output}"
     for start in starts:
@@ -612,7 +609,7 @@ def test_a_run_that_does_not_play_has_no_play_row(tmp_path: Path) -> None:
     # its own five steps, which the scripted pilot finishes in: a run that started and succeeded
     argv = ["run", "hello-world", "--robot", "microduck:mock", "--llm", "fake", "--no-memory"]
     result = runner.invoke(cli.app, [*argv, "--runs-dir", str(runs)])
-    out = _flat(result.output)
+    out = plain_text(result.output)
     assert result.exit_code == 0, result.output
     assert "provider fake" in out, "the header was printed"
     assert " play " not in f" {out} ", result.output

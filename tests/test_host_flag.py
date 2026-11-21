@@ -34,6 +34,7 @@ from roboglot.mcp_server import team_from_flags
 from roboglot.registry import Registry, RobotEntry, StoredTeam
 from tests.conftest import help_text
 from tests.fake_jetson_hostd import FakeHostd
+from tests.support import one_line
 
 runner = CliRunner()
 
@@ -236,10 +237,6 @@ def nothing_connects(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     return built
 
 
-def _flat(result: Any) -> str:
-    return " ".join(result.output.split())
-
-
 @pytest.mark.parametrize(
     "team",
     [
@@ -258,7 +255,7 @@ def test_a_host_on_the_line_is_refused_for_a_team_before_anything_connects(
     result = _run(tmp_path, *team, "--host", "jetson.local")
     assert result.exit_code == 1, result.output
     assert "--host names one machine's camera and detector, and this run drives several robots" in (
-        _flat(result)
+        one_line(result.output)
     )
     assert nothing_connects == []
     assert not (tmp_path / "runs").exists(), "the refusal came after the run directory"
@@ -275,7 +272,7 @@ def test_a_host_stored_with_a_team_member_is_refused_by_that_members_name(
     registry.add_team(StoredTeam(name="pair", members=["duck", "jet"]))
     result = _run(tmp_path, "team-hello", "--team", "pair")
     assert result.exit_code == 1, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert "jet has a host in robots.json" in flat, flat
     assert "roboglot robot edit jet --clear host" in flat
     assert nothing_connects == []
@@ -296,7 +293,7 @@ def test_a_host_that_is_not_one_is_refused_before_anything_connects(
 ) -> None:
     result = _run(tmp_path, "hello-world", "--robot", "microduck:mock", "--host", "a@jetson")
     assert result.exit_code == 1, result.output
-    flat = _flat(result)
+    flat = one_line(result.output)
     assert "--host names a machine and never carries a token" in flat, flat
     assert "a@jetson" not in flat, "a refusal that could be looking at a secret quotes nothing"
     assert nothing_connects == []
@@ -310,7 +307,7 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
     and refuses the token as it refuses --host."""
     alone = _run(tmp_path, "hello-world", "--robot", "microduck:mock", "--host-token", "abc123")
     assert alone.exit_code == 1, alone.output
-    assert "--host-token needs a board" in _flat(alone), alone.output
+    assert "--host-token needs a board" in one_line(alone.output), alone.output
     team = _run(
         tmp_path,
         "hello-world",
@@ -320,7 +317,9 @@ def test_a_typed_host_token_with_no_board_is_refused_before_anything_connects(
         "abc123",
     )
     assert team.exit_code == 1, team.output
-    assert "--host-token is one board's token, and this run drives several robots" in _flat(team)
+    assert "--host-token is one board's token, and this run drives several robots" in one_line(
+        team.output
+    )
     for result in (alone, team):
         assert "abc123" not in result.output
     assert nothing_connects == []
@@ -354,7 +353,7 @@ def test_a_stored_token_the_board_refuses_is_answered_with_robot_edit_and_doctor
         stored = _run(tmp_path, "hello-world", "--robot", "jet")
         tunnel = _run(tmp_path, "hello-world", "--robot", "jet", "--host", address)
     assert stored.exit_code == 1, stored.output
-    flat = _flat(stored)
+    flat = one_line(stored.output)
     assert f"the host {address} from robot jet (robots.json) answered with HTTP 401" in flat, flat
     assert (
         "roboglot robot edit jet --host-token TOKEN stores the one the daemon was started" in flat
@@ -362,7 +361,7 @@ def test_a_stored_token_the_board_refuses_is_answered_with_robot_edit_and_doctor
     assert f"set {TOKEN_ENV}" not in flat and "did not answer" not in flat
     assert "roboglot doctor --robot jet shows what the board says" in flat
     assert tunnel.exit_code == 1, tunnel.output
-    assert f"roboglot doctor --robot jet --host {address} shows" in _flat(tunnel)
+    assert f"roboglot doctor --robot jet --host {address} shows" in one_line(tunnel.output)
     for result in (stored, tunnel):
         assert "old-token" not in result.output and "new-token" not in result.output
     assert nothing_connects == []
@@ -394,7 +393,7 @@ def test_a_hand_edited_bad_host_stops_only_the_robot_it_belongs_to(
     _hand_edited(tmp_path)
     refused = _run(tmp_path, "hello-world", "--robot", "jet")
     assert refused.exit_code == 1, refused.output
-    flat = _flat(refused)
+    flat = one_line(refused.output)
     assert "robot jet (robots.json): the port in --host must be a whole number" in flat, flat
     assert nothing_connects == []
 
@@ -629,7 +628,7 @@ def test_serve_mcp_takes_the_flag_on_its_command_line(tmp_path: Path) -> None:
         ["serve-mcp", "--robots", "a=microduck:mock,b=microduck:mock", "--host", "jetson.local"],
     )
     assert result.exit_code == 1
-    assert "this server serves several robots" in _flat(result)
+    assert "this server serves several robots" in one_line(result.output)
 
 
 # ── where the flag is offered ───────────────────────────────────────────────────────────
