@@ -54,6 +54,7 @@ class MqttClient(Protocol):
     """The slice of `paho.mqtt.client.Client` the bus uses; the tests hand in a fake."""
 
     on_message: Any
+    on_connect: Any
 
     def connect(self, host: str, port: int = 1883, keepalive: int = 60) -> Any: ...
 
@@ -102,6 +103,8 @@ class MqttBus:
         self.dropped = 0
         self.rejected = 0
         self.started = False
+        self.connects = 0
+        """Connections the broker accepted, the first one included."""
         self._loop: asyncio.AbstractEventLoop | None = None
         self._client: MqttClient = (
             client
@@ -109,6 +112,7 @@ class MqttBus:
             else make_paho_client(f"roboglot-{team_id}-{uuid.uuid4().hex[:8]}")
         )
         self._client.on_message = self._on_message
+        self._client.on_connect = self._on_connect
 
     # ── lifecycle (outside the Bus protocol) ────────────────────────────────────────
 
@@ -120,9 +124,29 @@ class MqttBus:
         except RuntimeError:
             self._loop = None
         self._client.connect(self._host, self._port, 60)
+        # and again at every connect the broker accepts (`_on_connect`)
         self._client.subscribe(self.topic_ctl, qos=QOS_CTL)
         self._client.loop_start()
         self.started = True
+
+    def _on_connect(
+        self, _client: Any, _userdata: Any, _flags: Any, reason_code: Any, _properties: Any = None
+    ) -> None:
+        """paho's network thread, at every connect. paho connects again by itself after a broker
+        restart or a network drop past the keepalive, but on a clean session the broker keeps no
+        subscription and paho renews none: subscribed once, a bus went on publishing and never
+        heard another message, with nothing said. So it subscribes here each time, and says so
+        when this is not its first connection."""
+        if getattr(reason_code, "is_failure", False):
+            self._log(f"mqtt: the broker at {self._host}:{self._port} refused: {reason_code}")
+            return
+        self._client.subscribe(self.topic_ctl, qos=QOS_CTL)
+        self.connects += 1
+        if self.connects > 1:
+            self._log(
+                f"mqtt: reconnected to {self._host}:{self._port} and subscribed to "
+                f"{self.topic_ctl} again"
+            )
 
     def close(self) -> None:
         if self.started:

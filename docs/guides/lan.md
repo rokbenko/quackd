@@ -108,6 +108,14 @@ result = await run_pilot_team(
 )
 ```
 
+That call hands the team nobody to ask. A member whose body cannot see a fall, on a task that
+can make it walk, is then taken as watched by nobody, and the team ends before any body moves,
+every member `aborted`, whatever `yes` says: `yes` is the team's standing answer to its confirm
+gates and its pilots' doubts, and never to that question. `acknowledge=` is who answers it, a
+function of the member's name and the warning that says whether somebody is watching that
+member. `roboglot run` hands in its terminal's question, or under `--yes` an answer of yes for
+every member. A solo `AgentLoop` given no `acknowledge` walks after a note instead.
+
 The runner starts the bus inside its event loop and closes it at the end of the run. There is
 still no `--bus` flag on purpose. A pilot team has no shared clock to distribute, so nothing
 stands in its way except that nobody has run one across two machines, and a flag would imply
