@@ -19,19 +19,34 @@ from typing import Any
 
 import pytest
 
-from roboglot.passport import PassportError, SigningKey, document, strict
+from roboglot import passport_talk
+from roboglot.passport import PassportError, SigningKey, document, jws, strict
 from roboglot.passport.document import MAX_VALIDITY_S
-from roboglot.passport.serve import INBOX_PATH, PassportServer, Served
+from roboglot.passport.serve import CONNECTIONS, INBOX_PATH, PassportServer, Served
 from roboglot.passport.talk import (
     MAX_HELLO_BYTES,
+    MAX_MESSAGE_BYTES,
+    MAX_SESSIONS,
+    REMEMBERED,
     Endpoint,
     envelope,
+    media_type,
+    new_token,
     open_session,
     read_message,
     seal,
 )
-from roboglot.passport_talk import HEADING, Heard, Send, Talker
+from roboglot.passport_talk import (
+    HEADING,
+    INBOX_ADDRESSES,
+    INBOX_RATE,
+    INBOX_RATE_S,
+    Heard,
+    Send,
+    Talker,
+)
 from roboglot.passport_trust import Judgement, Pin, judge
+from roboglot.radio.links import LinkPolicy
 from tests.passport_helpers import INTRUDER, OWNER, OWNER_B, RUNTIME, A, B, passport
 
 DUCK, CART = A, B
@@ -350,6 +365,121 @@ def test_a_robot_told_its_session_is_gone_ends_its_side_and_can_meet_again(words
     assert cart.meet(Link.ROUTE) == DUCK.did, "and a new hello starts another"
 
 
+def test_an_answer_to_an_ask_counts_only_from_the_peer_under_the_sessions_nonces() -> None:
+    """The answer that rode back on an ask's response was taken after a look at its type and
+    `re` alone, though the robot had just refused it as outside the session (spec 6.3), so an
+    answer signed by any key, or by the peer under no nonces, was returned as the peer's."""
+    link = Link()
+    _duck, _duck_heard = on_link(link, DUCK, OWNER, "duck-01")
+    cart, _cart_heard = on_link(link, CART, OWNER_B, "cart-01")
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    # the duck's own answer, from its session, counts as it always did
+    assert cart.ask(DUCK.did, "identify") == (
+        "no",
+        "this robot is running nothing that could grant a courtesy",
+    )
+    session = cart.endpoint.session_with(DUCK.did)
+    assert session is not None
+    real = cart._send
+    forgeries: list[tuple[SigningKey, tuple[str, str] | None]] = [
+        (INTRUDER, None),  # any key at all
+        (DUCK, None),  # the peer's key, under no session
+        (INTRUDER, session.nonces),  # the session's nonces, under another key
+    ]
+    for signer, nonces in forgeries:
+
+        def forged(
+            route: str,
+            wire: str,
+            signer: SigningKey = signer,
+            nonces: tuple[str, str] | None = nonces,
+        ) -> tuple[int, str | None]:
+            asked = read_message(wire)
+            real(route, wire)  # the duck has it, and its own answer is lost on the way
+            body = {"result": "ok", "reason": "go ahead"}
+            doc = envelope("answer", signer.did, body, to=CART.did, re=asked.msg, nonces=nonces)
+            return 200, seal(doc, signer)
+
+        cart._send = forged
+        with pytest.raises(PassportError, match=r"is not .*'s in this session"):
+            cart.ask(DUCK.did, "pause", {"seconds": 3})
+        assert cart._answers == {} and cart._asking == set()
+    # nor does an answer that comes to the inbox from a robot met in another session
+    other = Link()
+    other.ROUTE = "ble://link-2"
+    van, _van_heard = on_link(other, INTRUDER, OWNER_B, "van-07")
+    other.ends[CART.did] = cart
+    assert van.meet(other.ROUTE) == CART.did
+
+    def answered_elsewhere(route: str, wire: str) -> tuple[int, str | None]:
+        van_says = van.endpoint.answer(CART.did, read_message(wire).msg, "ok", "go ahead")
+        cart.inbox(van_says, other.ROUTE)
+        return 204, None  # the duck took the ask and will answer later
+
+    cart._send = answered_elsewhere
+    assert cart.ask(DUCK.did, "pause", {"seconds": 3}, timeout=0) == (
+        "later",
+        "no answer came in time",
+    )
+
+
+def _crossed() -> tuple[Talker, Talker]:
+    """A duck and a cart that dialled each other at once over one link, on a clock that does
+    not move, so each holds two sessions with the other: the cart's third hello is held until
+    the duck has dialled the cart, as crossing hellos on a radio go."""
+    link = Link()
+    duck, _ = on_link(link, DUCK, OWNER, "duck-01", clock=lambda: 1000.0)
+    cart, _ = on_link(link, CART, OWNER_B, "cart-01", clock=lambda: 1000.0)
+    real = cart._send
+    crossed = [False]
+
+    def crossing(route: str, wire: str) -> tuple[int, str | None]:
+        message = read_message(wire)
+        if message.type == "hello" and message.re is not None and not crossed[0]:
+            crossed[0] = True
+            assert duck.meet(Link.ROUTE) == CART.did  # the duck dials the cart meanwhile
+        return real(route, wire)
+
+    cart._send = crossing
+    assert cart.meet(Link.ROUTE) == DUCK.did
+    cart._send = real
+    assert len(cart.endpoint.sessions) == 2 and len(duck.endpoint.sessions) == 2
+    assert list(cart.endpoint.sessions) != list(duck.endpoint.sessions)
+    return duck, cart
+
+
+NO_COURTESY = ("no", "this robot is running nothing that could grant a courtesy")
+
+
+def test_the_robot_askeds_own_answer_counts_when_the_two_hold_two_sessions() -> None:
+    """Two robots that dial each other at once hold two sessions, and the endpoint answered in
+    the one whose clock read latest, the first in its table on a tie: on a clock that does not
+    move between messages (Windows' 15.6 ms tick, or this test's) not the one the ask came in,
+    so the duck's own answer went under the other session's nonces and the cart refused it.
+    Sessions are ordered by a count of their uses now."""
+    _duck, cart = _crossed()
+    assert cart.ask(DUCK.did, "identify") == NO_COURTESY
+
+
+def test_an_ask_counts_its_answer_when_a_word_comes_in_the_other_session_meanwhile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`Talker.ask` looked its session up, then the endpoint built the ask in the session used
+    last, which a word from the duck in the other session, between the two, made another one:
+    the ask was recorded under one session and answered in the other, and its answer refused.
+    The ask takes its session from the ask it built now. The word comes from a wrapper round
+    `Endpoint.ask`, which stands in for the inbox's thread at that moment."""
+    duck, cart = _crossed()
+    real = cart.endpoint.ask
+
+    def a_word_meanwhile(peer: str, skill: str, args: Any = None, why: Any = None) -> Any:
+        duck.say(CART.did, "a word from the duck")
+        return real(peer, skill, args, why)
+
+    monkeypatch.setattr(cart.endpoint, "ask", a_word_meanwhile)
+    assert cart.ask(DUCK.did, "identify") == NO_COURTESY
+
+
 def test_a_link_that_closes_ends_the_sessions_it_carried_at_both_ends() -> None:
     """They read as met while every word failed, with neither robot dialling until they idled."""
     link = Link()
@@ -421,6 +551,389 @@ def test_the_inbox_takes_a_hello_for_this_robot_or_anyone_and_refuses_the_rest()
     assert status == 400 and reason is not None and b"unsigned" in reason
     garbage = duck.inbox_http(b"{", "application/json", "127.0.0.1")
     assert garbage[0] == 400 and garbage[1] is not None and b"6.1" in garbage[1]
+
+
+def test_an_address_past_the_inbox_budget_is_answered_429_before_anything_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The HTTP inbox read every post in full, its keys and its signature, before it asked
+    whether the radio heard the sender, and counted nothing per address, so one signed hello
+    posted in a loop cost the robot a full check each time. Reads are counted through the
+    inbox's `read_message`, and the budget runs on a clock the test moves. Words in a session
+    spend none of it: `test_what_reaches_a_pilot_is_held_to_its_budget_oldest_words_first`
+    says thirty in a row from one address."""
+    read = [0]
+    real = passport_talk.read_message
+
+    def counted(raw: bytes) -> Any:
+        read[0] += 1
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", counted)
+    now = [1000.0]
+    duck = alone(clock=lambda: now[0], heard=lambda _beacon, _origin: False)
+    visitor = Endpoint(
+        CART.did, passport(CART, OWNER_B, "cart-01"), CART, runtime={"beacon": CART_BEACON}
+    )
+    hello = visitor.hello().encode()  # signed once, posted again and again
+
+    def post(address: str) -> int:
+        return duck.inbox_http(hello, "application/jose", address)[0]
+
+    statuses = [post("10.0.0.9") for _ in range(2 * INBOX_RATE + 1)]
+    assert statuses == [403] * INBOX_RATE + [429] * (INBOX_RATE + 1)
+    assert read[0] == 1, "read once, and each copy known for one before any key is checked"
+    assert post("10.0.0.10") == 403, "another address has a budget of its own"
+    now[0] += 2 * INBOX_RATE_S  # the window has moved on: the address is answered again
+    assert post("10.0.0.9") == 403
+    # the Bluetooth link's own figures, not new ones
+    link = LinkPolicy()
+    assert (link.rate, link.rate_s) == (INBOX_RATE, INBOX_RATE_S)
+
+
+def test_senders_past_the_table_of_addresses_share_one_budget() -> None:
+    """The table that counts each address forgot the one that posted least lately once it was
+    full, so a sender that moved through more addresses than it holds, which IPv6 makes easy,
+    came back each time with a budget never spent. Every sender that does not fit is held to one
+    budget now, shared, and an address in the table keeps its own. The duck's radio heard
+    nobody, so every hello it reads it refuses."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    hello = _visitor().hello().encode()
+
+    def post(address: str) -> int:
+        return duck.inbox_http(hello, "application/jose", address)[0]
+
+    held = [f"10.1.{i // 256}.{i % 256}" for i in range(INBOX_ADDRESSES)]
+    assert {post(address) for address in held} == {403}  # the table is full
+    crowd = [post(f"10.2.0.{i}") for i in range(2 * INBOX_RATE + 1)]
+    assert crowd == [403] * INBOX_RATE + [429] * (INBOX_RATE + 1)
+    assert post(held[0]) == 403, "an address in the table has a budget of its own"
+
+
+def _counted(monkeypatch: pytest.MonkeyPatch, module: Any, name: str) -> list[int]:
+    """Calls to `module.name` counted, the call itself unchanged."""
+    count = [0]
+    real = getattr(module, name)
+
+    def counted(*args: Any, **kwargs: Any) -> Any:
+        count[0] += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(module, name, counted)
+    return count
+
+
+def _poster(talker: Talker, address: str) -> Callable[[str], tuple[int, str | None]]:
+    """A post to `talker`'s HTTP inbox from `address`, through the hook the server calls."""
+
+    def post(wire: str) -> tuple[int, str | None]:
+        status, reply, _kind = talker.inbox_http(wire.encode(), media_type(wire), address)
+        return status, reply.decode() if reply else None
+
+    return post
+
+
+def _visitor(key: SigningKey = CART, name: str = "cart-01") -> Endpoint:
+    return Endpoint(key.did, passport(key, OWNER_B, name), key, runtime={"beacon": CART_BEACON})
+
+
+@pytest.mark.parametrize(
+    "kind", ["a type the robot ignores", "an answer outside a session", "a replayed say"]
+)
+def test_one_signed_message_the_robot_does_not_take_posted_in_a_loop_draws_429(
+    kind: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A post's budget came back whenever it was answered below 400, and the robot answers 204
+    to a message of a type it ignores, to an answer outside a session and to a repeat, though it
+    takes none of them into a session: one such message, signed once and posted in a loop, was
+    checked in full every time and never drew 429. Signature checks are counted through
+    `jws.verify`, on a clock that never moves, so every post falls in one window."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    if kind == "a type the robot ignores":
+        wire = seal(envelope("zzz", CART.did, {}), CART)
+    elif kind == "an answer outside a session":
+        body = {"result": "ok"}
+        wire = seal(envelope("answer", CART.did, body, to=DUCK.did, re="x" * 22), CART)
+    else:  # a say the cart really sent in its session, as any host on the LAN can read it
+        cart = _visitor()
+        meet = _poster(duck, "10.0.0.7")
+        open_session(cart, DUCK.did, meet)
+        wire = cart.say(DUCK.did, "passing on your left")
+        assert meet(wire)[0] == 204
+    verified = _counted(monkeypatch, jws, "verify")
+    post = _poster(duck, "10.0.0.9")
+    statuses = [post(wire)[0] for _ in range(2 * INBOX_RATE + 1)]
+    assert statuses[INBOX_RATE:] == [429] * (INBOX_RATE + 1)
+    # read in full once, the say when the cart sent it, and every copy known for one before any
+    # key in it is checked
+    assert verified[0] == (0 if kind == "a replayed say" else 1)
+
+
+def test_messages_the_robot_does_not_take_under_fresh_keys_are_held_to_the_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The key memo cannot help with a key made for one post, and a message of a type the robot
+    ignores spent nothing, so each was checked on the curve. Counted through `keys.holdable`."""
+    from roboglot.passport import keys
+
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    signers = [SigningKey.generate() for _ in range(2 * INBOX_RATE + 1)]
+    wires = [seal(envelope("zzz", k.did, {}), k) for k in signers]
+    checked = _counted(monkeypatch, keys, "holdable")
+    post = _poster(duck, "10.0.0.9")
+    statuses = [post(w)[0] for w in wires]
+    assert statuses == [204] * INBOX_RATE + [429] * (INBOX_RATE + 1)
+    assert checked[0] == INBOX_RATE
+
+
+def test_a_robot_in_session_is_answered_whatever_other_addresses_post(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A full table of addresses made room only by forgetting those with nothing refused, which
+    a robot whose words are all taken always is, and every address left over shared one budget:
+    junk from the table's worth of addresses and one budget's more turned away the next word of a
+    robot met and talking from an address of its own. An address with a live session is counted
+    by itself now, whatever others send. The junk is refused at the first check, no key read."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.200")
+    cart = _visitor()
+    post = _poster(duck, "10.0.0.200")
+    open_session(cart, DUCK.did, post)
+    assert post(cart.say(DUCK.did, "one"))[0] == 204
+    verified = _counted(monkeypatch, jws, "verify")
+    junk = [
+        duck.inbox_http(b"junk", "application/jose", f"10.9.{i // 256}.{i % 256}")[0]
+        for i in range(INBOX_ADDRESSES)
+    ]
+    junk += [duck.inbox_http(b"junk", "application/jose", "10.8.0.1")[0] for _ in range(INBOX_RATE)]
+    assert set(junk) == {400} and verified[0] == 0
+    assert duck.inbox_http(b"junk", "application/jose", "10.8.0.2")[0] == 429, "the rest share one"
+    assert post(cart.say(DUCK.did, "two")) == (204, None), "a robot in session is answered"
+
+
+def test_words_from_robots_on_one_address_in_flight_together_are_all_taken(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every robot on the sim board posts from 127.0.0.1, and a post was counted from the start of
+    its key work, so a budget's worth of words in flight together turned away the next robot's
+    word, though every one of them was taken. Only what is refused is counted now. The other
+    robots' words arrive one inside the read of the one before, so all of them are in flight at
+    once, in order, with no thread and no clock."""
+    duck = alone(clock=lambda: 1000.0)
+    post = _poster(duck, "127.0.0.1")
+    robots = []
+    for i in range(INBOX_RATE + 1):
+        key = SigningKey.generate()
+        robot = Endpoint(key.did, passport(key, OWNER_B, f"sim-{i:02d}"), key)
+        open_session(robot, DUCK.did, post)
+        robots.append(robot)
+    says = [r.say(DUCK.did, "here") for r in robots]
+    during: list[tuple[int, str | None]] = []
+    real = passport_talk.read_message
+    coming = iter(says[1:])
+
+    def read(raw: bytes) -> Any:
+        following = next(coming, None)
+        if following is not None:
+            during.insert(0, post(following))  # answered before the one it came in the read of
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", read)
+    assert post(says[0]) == (204, None)
+    assert during == [(204, None)] * INBOX_RATE
+
+
+def _outside(key: SigningKey = CART) -> str:
+    """A signed answer to nothing: the robot notes it (204) and takes it into no session."""
+    return seal(envelope("answer", key.did, {"result": "ok"}, to=DUCK.did, re=new_token()), key)
+
+
+def _fill_with_junk(duck: Talker, count: int) -> None:
+    """`count` addresses with one post each refused at the first check, no key read."""
+    for i in range(count):
+        duck.inbox_http(b"junk", "application/jose", f"10.9.{i // 256}.{i % 256}")
+
+
+def test_waves_of_posts_in_flight_are_counted_in_the_window_they_came_in_by(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A post was counted once it was read, in the window it was let in by, and a full table
+    made room by dropping every window with nothing counted, a window whose posts were all
+    still being read among them: waves of posts read together from a few addresses, each wave
+    ended by one post from a new address, were read far past any budget and counted nowhere. A
+    window with a post being read is never dropped now. Each wave is nested in `read_message`,
+    which stands in for posts whose bodies end together; the clock does not move."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    _fill_with_junk(duck, INBOX_ADDRESSES - (CONNECTIONS - 1))
+    real = passport_talk.read_message
+    signed = [0]
+    wave: list[bytes] = []
+    depth = [0]
+
+    def in_flight(raw: bytes) -> Any:
+        signed[0] += raw != b"junk"
+        depth[0] += 1
+        if depth[0] < len(wave):
+            duck.inbox_http(wave[depth[0]], "application/jose", f"10.7.0.{depth[0]}")
+        elif depth[0] == len(wave):  # the wave ends with one post from an address not yet seen
+            duck.inbox_http(b"junk", "application/jose", f"10.7.1.{signed[0] % 250}")
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", in_flight)
+    for _ in range(INBOX_RATE + 1):
+        wave[:] = [_outside().encode() for _ in range(CONNECTIONS - 1)]
+        depth[0] = 0
+        duck.inbox_http(wave[0], "application/jose", "10.7.0.0")
+    held = {f"10.7.0.{i}": len(duck._posts[f"10.7.0.{i}"]) for i in range(CONNECTIONS - 1)}
+    assert set(held.values()) == {INBOX_RATE}, "every post read and not taken is counted"
+    assert signed[0] == INBOX_RATE * (CONNECTIONS - 1), "and past the budget nothing is read"
+
+
+def test_a_copy_raced_in_from_elsewhere_is_charged_to_its_sender_and_not_to_a_robot_in_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copy that came in from another address while the original was still being read was
+    read too, reached the endpoint first and was taken, so the original from the robot in
+    session was "a repeat" and counted against it, and a budget of those turned the robot away.
+    A message is marked as seen when it arrives now, so the copy is answered 503 and counted
+    against the address it came from. The copy is posted from inside the original's read, which
+    stands in for that race; no clock moves."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    cart = _visitor()
+    post = _poster(duck, "10.0.0.7")
+    open_session(cart, DUCK.did, post)
+    real = passport_talk.read_message
+    racing = [False]
+    copies: list[int] = []
+
+    def raced(raw: bytes) -> Any:
+        if racing[0]:
+            racing[0] = False
+            copies.append(duck.inbox_http(raw, "application/jose", "10.6.6.6")[0])
+        return real(raw)
+
+    monkeypatch.setattr(passport_talk, "read_message", raced)
+    for i in range(INBOX_RATE):
+        racing[0] = True
+        assert post(cart.say(DUCK.did, f"word {i}")) == (204, None)
+    assert copies == [503] * INBOX_RATE
+    assert post(cart.say(DUCK.did, "one more")) == (204, None), "the robot in session is answered"
+    assert len(duck._posts["10.6.6.6"]) == INBOX_RATE and "10.6.6.6" not in duck._origins
+
+
+def test_a_copy_with_whitespace_around_it_is_known_before_any_key_check(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A copy was known by a digest of its bytes, and the signature check strips whitespace
+    around a message, so the same message with a space in front was a new digest and checked
+    on its key and signature again. A message is known by what its signature covers now."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    wire = _outside().encode()
+    post = _poster(duck, "10.0.0.9")
+    assert post(wire.decode())[0] == 204
+    verified = _counted(monkeypatch, jws, "verify")
+    for spaced in (b" " + wire, wire + b"\n", b"\t" + wire + b"\r\n"):
+        assert duck.inbox_http(spaced, "application/jose", "10.0.0.9")[0] == 204
+    assert verified[0] == 0
+
+
+def test_a_copy_padded_past_the_size_of_its_type_is_answered_as_its_full_read() -> None:
+    """Whitespace around a copy keeps what it is, but it counts toward the 4,096 bytes any
+    message but a hello may be, so a padded copy of a word seen was "a repeat, dropped" where
+    its own bytes are refused 413, and one that had to be read again raised out of the inbox,
+    and the server closed the connection with no answer. Each is answered as its full read now.
+    The second word came before its session was open on the duck, so the duck has not seen it."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    post = _poster(duck, "10.0.0.7")
+    cart = _visitor()
+    status, answer = post(cart.hello(DUCK.did))
+    assert status == 200 and answer is not None
+    third = cart.receive(read_message(answer))
+    assert third.wire is not None
+    early = cart.say(DUCK.did, "early")
+    assert post(early)[0] == 403  # its session is not open on the duck yet
+    assert post(third.wire)[0] == 204
+    seen = cart.say(DUCK.did, "seen")
+    assert post(seen) == (204, None)
+    too_large = (413, f"6.1: {MAX_MESSAGE_BYTES + 1} bytes, over the {MAX_MESSAGE_BYTES} any "
+                 "message but a hello may be\n")  # fmt: skip
+    for word in (seen, early):
+        padded = b" " * (MAX_MESSAGE_BYTES + 1 - len(word)) + word.encode()
+        status, reply, _kind = duck.inbox_http(padded, "application/jose", "10.0.0.7")
+        assert (status, reply.decode() if reply else None) == too_large
+
+
+def test_a_copy_read_in_the_last_10_s_is_known_however_many_messages_came_since(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy memory kept the last 1,024 messages read, and anybody could make the robot read
+    that many inside 10 s from enough addresses, so a copy read inside the window was checked
+    again. It holds as many as the budget can let through in the window now (`COPIES`)."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, _origin: False)
+    mine = _outside()
+    post = _poster(duck, "10.0.0.7")
+    assert post(mine)[0] == 204
+    for i in range(REMEMBERED // INBOX_RATE + 1):
+        flood = _poster(duck, f"10.5.{i}.1")
+        assert {flood(_outside(INTRUDER))[0] for _ in range(INBOX_RATE)} == {204}
+    verified = _counted(monkeypatch, jws, "verify")
+    assert post(mine)[0] == 204
+    assert verified[0] == 0, "a copy read inside 10 s was checked again"
+    each = INBOX_RATE + CONNECTIONS - 1
+    copies = passport_talk.COPIES
+    assert copies == (INBOX_ADDRESSES + MAX_SESSIONS + 1) * each
+
+
+def test_the_copy_memory_keeps_a_few_hundred_bytes_of_a_message_however_large_it_was(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The copy memory kept the whole parsed message, a hello's passport of up to 16 KB among
+    it, so at its cap it could hold some 150 MB of hellos. It keeps what answering a copy needs
+    now: the envelope the endpoint knows a repeat by, a hello's beacon id and whether it was
+    addressed here, `KEPT_BYTES` at most. A copy is answered as before: one of a hello the radio
+    has not heard is refused unread, one of a word in a session is dropped as a repeat unread,
+    and one the endpoint would have to read again is read again."""
+    duck = alone(clock=lambda: 1000.0, heard=lambda _beacon, origin: origin == "http://10.0.0.7")
+    big = Endpoint(
+        CART.did,
+        passport(CART, OWNER_B, "cart-01", padding="x" * (document.MAX_BYTES // 2)),
+        CART,
+        runtime={"beacon": CART_BEACON},
+    )
+    hello = big.hello()
+    assert len(hello) > MAX_HELLO_BYTES // 2
+    far = _poster(duck, "10.0.0.9")
+    assert far(hello)[0] == 403  # the radio heard nobody at this address
+    cart = _visitor()
+    near = _poster(duck, "10.0.0.7")
+    open_session(cart, DUCK.did, near)
+    say = cart.say(DUCK.did, "passing on your left")
+    assert near(say) == (204, None)
+    kept = [e.kept for e in [*duck._copies.values(), *duck._taken_lately.values()]]
+    assert len(kept) == 4  # the far hello, the cart's first and third, and its say
+    assert all(k is not None and len(k) <= passport_talk.KEPT_BYTES for k in kept)
+    read = _counted(monkeypatch, passport_talk, "read_message")
+    assert far(hello)[0] == 403 and near(say) == (204, None)
+    assert read[0] == 0, "both copies answered from what was kept"
+    # the hello the radio has heard since is read again, as the endpoint has never seen it
+    assert near(hello)[0] == 200 and read[0] == 1
+
+
+def test_a_post_answered_429_looks_at_no_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Before it looked at an address's window, the inbox walked every live session, checking
+    each one's passport dates, so a post it then refused unread cost as many date checks as
+    talk held sessions. The window comes first now. Counted through `talk.valid_at`."""
+    from roboglot.passport import talk as talk_module
+
+    duck = alone(clock=lambda: 1000.0, heard=None)
+    meet = _poster(duck, "127.0.0.1")
+    for i in range(MAX_SESSIONS):
+        key = SigningKey.generate()
+        open_session(Endpoint(key.did, passport(key, OWNER_B, f"r-{i:02d}"), key), DUCK.did, meet)
+    spent = _poster(duck, "10.9.9.9")
+    assert {spent("junk")[0] for _ in range(INBOX_RATE)} == {400}
+    checked = _counted(monkeypatch, talk_module, "valid_at")
+    assert spent("junk")[0] == 429
+    assert checked[0] == 0
 
 
 @pytest.mark.parametrize("version", ["0.1", "7.0"])

@@ -316,6 +316,31 @@ def test_a_key_nobody_could_hold_is_refused(public_hex: str) -> None:
     assert caught.value.rule == "rule 7"
 
 
+def test_a_key_is_checked_on_the_curve_once_however_often_it_is_named(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every message a peer sends names its key again, and the curve check is pure-Python
+    big-integer arithmetic, the costly part of reading a message: one signed message posted
+    over and over paid it every time. The check is counted through `keys.holdable`."""
+    from roboglot.passport import SigningKey, keys
+    from roboglot.passport.talk import MAX_PENDING, MAX_SESSIONS
+
+    checked: list[bytes] = []
+    real = keys.holdable
+
+    def counted(public: bytes) -> bool:
+        checked.append(public)
+        return real(public)
+
+    monkeypatch.setattr(keys, "holdable", counted)
+    fresh = SigningKey.generate()
+    for _ in range(3):
+        assert len(public_from_did(fresh.did)) == 32
+    assert len(checked) == 1
+    # a robot and its owner for every session and half-finished hello talk holds at once
+    assert keys.HOLDABLE_REMEMBERED == 2 * (MAX_SESSIONS + MAX_PENDING)
+
+
 def test_a_signature_has_one_spelling() -> None:
     """The last of a signature's 86 characters carries two bits of it and four spare ones, which
     a decoder that ignored them would let anybody flip into fifteen more spellings."""
