@@ -61,11 +61,13 @@ the robot's DNS-SD record names, and reads the reply in the response:
 | `413` | too large |
 | `429` | a budget is spent |
 
-Roboglot's inbox answers `429` to an address whose posts it refused 20 times in the last 10
-seconds, the figures of a Bluetooth link's budget, and reads nothing more that address sends until
-the window moves on. A post counts while it is being read too, and is given back once it is taken,
-so words in a session spend none of it. Past the 128 addresses it counts one by one, every other
-address shares one budget of the same figures.
+Roboglot's inbox counts every post it does not take into a session, whatever it answers it: a
+refusal, a type it ignores, an answer to nothing it asked, a copy of a message it read in the last
+10 seconds, which it knows for one before checking any key in it. An address with 20 such posts in
+10 seconds, the figures of a Bluetooth link's budget, is answered `429`, and nothing more it sends
+is read until the window moves on. A post the robot takes counts nothing. An address the robot
+holds a session with has a budget of its own; addresses with none have one each up to 128 of them,
+and share one past that.
 
 **A Bluetooth link.** The same message goes as one request over the link, in frames, and the reply
 comes back over the link with the same status. Either robot can send, whichever dialled.

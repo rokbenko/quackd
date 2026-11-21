@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import socket
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -208,6 +209,32 @@ def test_a_content_length_of_a_digit_outside_ascii_is_a_refusal_and_not_a_traceb
     assert "Content-Length that is not a number" in " ".join(met.output.split())
 
 
+#: ASCII digits all, one more than `int()` converts (CPython's limit since 3.11), worth 1
+TOO_MANY_DIGITS = b"0" * sys.get_int_max_str_digits() + b"1"
+
+
+def test_a_content_length_of_more_digits_than_int_reads_is_a_refusal_and_not_a_traceback() -> None:
+    """ASCII digits passed the check, and past `sys.get_int_max_str_digits()` of them `int()`
+    raises `ValueError`, no `PassportError`: `roboglot passport check` printed a traceback for a
+    host that sent such a length. One with more digits than the whole answer has is refused
+    unread: more than was sent, or a number padded with zeros."""
+    for said, why in (
+        (TOO_MANY_DIGITS, "Content-Length padded with zeros"),
+        (b"9" * len(TOO_MANY_DIGITS), "closed before it sent all it said it would"),
+    ):
+        answer = b"HTTP/1.0 200 OK\r\nContent-Length: " + said + b"\r\n\r\nx"
+        assert len(answer) < fetch.HEADER_BYTES
+        with pytest.raises(PassportError, match=why):
+            fetch._parse(answer, "http://127.0.0.1/")
+        with host(lambda conn, answer=answer: conn.sendall(answer)) as url:
+            met = runner.invoke(app, ["passport", "check", url])
+        assert met.exit_code == 1
+        assert met.exception is None or isinstance(met.exception, SystemExit), met.exception
+    # a zero in front of a length that still fits is read as before
+    padded = b"HTTP/1.0 200 OK\r\nContent-Length: 01\r\n\r\nx"
+    assert fetch._parse(padded, "http://127.0.0.1/")[3] == b"x"
+
+
 def test_a_body_in_chunks_is_read_whole() -> None:
     def chunked(conn: socket.socket) -> None:
         size = f"{len(PASSPORT):x}".encode()
@@ -294,6 +321,21 @@ def test_a_post_whose_length_is_a_digit_outside_ascii_is_answered_400(
     head = f"POST {INBOX_PATH} HTTP/1.0\r\nContent-Type: application/json\r\n".encode()
     answer = _exchange(with_inbox.port, head + b"Content-Length: \xb2\r\n\r\n{}")
     assert answer.startswith(b"HTTP/1.0 400") and b"not a length" in answer
+
+
+def test_a_post_whose_length_has_more_digits_than_any_the_inbox_takes_is_answered_400(
+    with_inbox: PassportServer,
+) -> None:
+    """Past `sys.get_int_max_str_digits()` ASCII digits `int()` raised in the handler, and the
+    client got a closed connection. A length with more digits than the inbox's limit has is
+    answered before it is converted: 400 for a number padded with zeros, 413 for one too large,
+    as a length `int()` reads is."""
+    head = f"POST {INBOX_PATH} HTTP/1.0\r\nContent-Type: application/json\r\n".encode()
+    answer = _exchange(with_inbox.port, head + b"Content-Length: " + TOO_MANY_DIGITS + b"\r\n\r\n")
+    assert answer.startswith(b"HTTP/1.0 400") and b"not a length" in answer
+    nines = b"9" * len(TOO_MANY_DIGITS)
+    answer = _exchange(with_inbox.port, head + b"Content-Length: " + nines + b"\r\n\r\n")
+    assert answer.startswith(b"HTTP/1.0 413")
 
 
 def test_the_server_names_itself_and_not_the_python_under_it(with_inbox: PassportServer) -> None:

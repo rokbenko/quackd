@@ -77,10 +77,11 @@ and `roboglot passport check HOST:PORT` reads the passport it finds.
 
 A record that cannot be registered, as when another host on the network already announces the
 same name, is not announced, and the zeroconf instance opened for it is closed again, by
-`roboglot announce` and by a robot's service alike. The service goes on without a LAN record and
-tries again at each beacon rotation, so a robot whose name is taken does not pile up sockets and
-threads while it waits. An unspecified or a multicast address in another robot's record, where no
-robot can be, is dropped from it, and a record left with no address is no robot found.
+`roboglot announce` and by a robot's service alike, as it is when withdrawing a record fails. The
+service goes on without a LAN record and tries again at each beacon rotation, so a robot whose
+name is taken does not pile up sockets and threads while it waits. An unspecified or a multicast
+address in another robot's record, where no robot can be, is dropped from it, written as IPv4 or
+as an IPv4 address in IPv6, and a record left with no address is no robot found.
 
 **Status.** The `v=2` record is tested on fakes in the suite, and robots on the `sim` board find
 each other through a simulated network on one machine. It has not run between two machines.

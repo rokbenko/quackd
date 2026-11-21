@@ -95,9 +95,14 @@ class Announcement:
     owns_zc: bool
 
     def close(self) -> None:
-        self.zc.unregister_service(self.info)
-        if self.owns_zc:
-            self.zc.close()
+        """Withdraw the record, and close the registrar when the announcing call made it, even
+        when withdrawing fails: python-zeroconf's raises when its loop is blocked or it is
+        shutting down, and an instance left open keeps its sockets and threads."""
+        try:
+            self.zc.unregister_service(self.info)
+        finally:
+            if self.owns_zc:
+                self.zc.close()
 
 
 def announce(

@@ -173,13 +173,17 @@ def test_record_from_info_needs_the_version_two_fields() -> None:
     assert record_from_info(old) is None
 
 
-@pytest.mark.parametrize("nowhere", ["0.0.0.0", "::", "224.0.0.251", "ff02::fb"])
+@pytest.mark.parametrize(
+    "nowhere",
+    ["0.0.0.0", "::", "224.0.0.251", "ff02::fb", "::ffff:0.0.0.0", "::ffff:224.0.0.251"],
+)
 def test_a_record_naming_only_an_address_no_robot_can_be_at_is_no_robot_found(
     nowhere: str,
 ) -> None:
     """An unspecified or a multicast address is no robot's, and a record naming one aimed the
     signed hello wherever such a post goes. A record that names a real address beside one is
-    read at the real one."""
+    read at the real one. An IPv4 address written as IPv6 is the address it maps, which
+    Python 3.11's `ipaddress` does not look through by itself."""
 
     def record(*addresses: str) -> Any:
         return passport_record(

@@ -157,6 +157,28 @@ def test_an_announce_that_cannot_register_closes_the_zeroconf_it_made(
     assert len(made) == 1 and made[0].closed
 
 
+def test_withdrawing_a_record_closes_the_zeroconf_it_made_when_unregistering_fails() -> None:
+    """`Announcement.close` closed an instance it owns only once `unregister_service` returned,
+    and python-zeroconf's raises when its loop is blocked or it is shutting down, so a robot's
+    service, which withdraws its record before each rotation, kept one more instance each time.
+    The error still comes out; the instance is closed either way. One the caller passed in is
+    the caller's to close."""
+
+    class Stuck(FakeZeroconf):
+        def unregister_service(self, info: ServiceRecord) -> None:
+            raise RuntimeError("its loop is blocked")
+
+    for owns in (True, False):
+        zc = Stuck()
+        ann = announce(
+            DUCK, adapter="microduck", zc=zc, info_factory=lambda r: r, addresses=["10.0.0.7"]
+        )
+        ann.owns_zc = owns
+        with pytest.raises(RuntimeError, match="blocked"):
+            ann.close()
+        assert zc.closed is owns
+
+
 def test_discover_reads_back_what_was_announced_sorted_by_name() -> None:
     zc = FakeZeroconf()
     announce(HEAD, adapter="head", zc=zc, info_factory=lambda r: r, addresses=["10.0.0.2"])

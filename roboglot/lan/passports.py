@@ -226,7 +226,11 @@ def _nowhere(address: str) -> bool:
         ip = ipaddress.ip_address(address.split("%", 1)[0])
     except ValueError:
         return False
-    return ip.is_unspecified or ip.is_multicast
+    # an IPv4 address written as IPv6 is the address it maps, which Python 3.11's `ipaddress`
+    # does not look through by itself
+    mapped = ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) else None
+    judged = mapped if mapped is not None else ip
+    return judged.is_unspecified or judged.is_multicast
 
 
 __all__ = [
