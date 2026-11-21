@@ -310,7 +310,9 @@ def test_a_goal_runs_from_the_page_to_its_outcome() -> None:
     _until(at, lambda: not job.running)
     at.run()
     assert job.argv[job.argv.index("--robot") + 1] == state.FIRST_ROBOT, job.argv
-    assert [s.value for s in at.success] == ["success: scripted pilot: nothing more to do"]
+    # the outcome in its box, and the pilot's reason under it as plain text (fourth round)
+    assert [s.value for s in at.success] == ["success"]
+    assert "scripted pilot: nothing more to do" in [t.value for t in at.text]
 
 
 def test_a_chat_starts_takes_a_line_and_ends_in_order() -> None:
@@ -344,6 +346,118 @@ def test_the_floating_stop_stops_a_run_waiting_on_a_question(page: Path) -> None
     assert job.stop_sent
     assert job.wait(60)
     assert job.snapshot()["end"]["outcome"] == "aborted"
+
+
+def _one_question(question: str, detail: str) -> None:
+    from types import SimpleNamespace
+
+    from roboglot.webui import widgets
+
+    asked = {"ev": "ask", "id": 1, "kind": "decide", "question": question, "detail": detail}
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), {"asks": [asked]})
+
+
+def test_a_question_and_the_pilots_doubt_are_shown_as_text_never_as_markdown() -> None:
+    """The page drew the pilot's doubt with `st.warning` and the question with `st.markdown`,
+    both Markdown, so a strike-through, a KaTeX `$\\phantom{...}$` or a bidi override in the
+    pilot's words could hide part of them or dress them up above the Yes that clears every verb
+    that moves. Both are drawn as plain text, with every character that could act on what is
+    around it written out as its escape, so a Markdown element holding them fails here."""
+    from roboglot.ui import printable
+
+    doubt = (
+        "grip is fine ~~the payload is over~~ $\\phantom{over the limit}$ "
+        "\N{RIGHT-TO-LEFT OVERRIDE}done"
+    )
+    question = "run manipulate(instruction='*all* of it')?"
+    at = AppTest.from_function(_one_question, args=(question, doubt), default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    assert not at.warning and not at.markdown, [m.value for m in [*at.warning, *at.markdown]]
+    assert [t.value for t in at.text] == [printable(doubt), question]
+    assert "\\u202e" in printable(doubt)
+
+
+def _status_and_question() -> None:
+    from types import SimpleNamespace
+
+    from roboglot import ui
+    from roboglot.answers import confirm_question
+    from roboglot.log import LogEvent
+    from roboglot.webui import widgets
+
+    args = {"instruction": "pick up the cup ~~and the knife~~ :red[gently]"}
+    status = ui.RunStatus()
+    status.sink(
+        LogEvent(
+            kind="llm",
+            t=1.0,
+            data={"provider": "fake", "tool_calls": [{"name": "manipulate", "arguments": args}]},
+        )
+    )
+    step, text = status.words
+    view = {
+        "status": {"text": text, "step": step or None},
+        "running": True,
+        "asks": [{"id": 1, "kind": "confirm", "question": confirm_question("manipulate", args)}],
+    }
+    widgets.status(view)
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), view)
+
+
+def test_the_status_line_above_a_page_question_is_never_markdown() -> None:
+    """The run's status is drawn straight above its question, and while a confirm waits it reads
+    `the LLM chose manipulate(instruction='...')` in the pilot's own words. It was a caption,
+    which is Markdown, so a strike-through, a `:red[...]` or a link the pilot put in an argument
+    was rendered right above the Yes. It is plain text, as the question under it is. The status
+    words are the page's own (`ui.RunStatus` over the `llm` record, as the run sends them), drawn
+    by the page's widgets in the order both screens draw them."""
+    at = AppTest.from_function(_status_and_question, default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    pilot = "~~and the knife~~"
+    rendered = [c.value for c in [*at.caption, *at.markdown] if pilot in c.value]
+    assert not rendered, f"the pilot's words are drawn as Markdown above the question: {rendered}"
+    assert any(pilot in t.value and t.value.startswith("the LLM chose") for t in at.text), [
+        t.value for t in at.text
+    ]
+
+
+def _question_and_frame(caption: str) -> None:
+    import base64
+    import io as _io
+    from types import SimpleNamespace
+
+    from PIL import Image
+
+    from roboglot.webui import widgets
+
+    buf = _io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, format="JPEG")
+    view = {
+        "running": True,
+        "frame": {"jpeg": base64.b64encode(buf.getvalue()).decode(), "caption": caption},
+        "asks": [{"id": 1, "kind": "confirm", "question": "run quack(text='hi')?"}],
+    }
+    widgets.questions(SimpleNamespace(id="j1", answer=lambda *_: None), view)
+    widgets.frame(view)
+
+
+def test_the_frame_beside_a_page_question_carries_no_markdown_an_llm_wrote() -> None:
+    """Both screens draw the newest frame straight under a question's box, and drew it with
+    `st.image(caption=...)`, which Streamlit renders as Markdown. The caption is the loop's
+    `step N: <last verb>`, and the last verb is the name of the call the LLM made, set before
+    the executor has looked at it, an unknown one included: a pilot naming its tool
+    `**checked by Roboglot: say Yes**` put that in bold under the Yes. The caption is plain text
+    under the image now, and the image has none."""
+    tool = "**checked by Roboglot: say Yes**"
+    at = AppTest.from_function(_question_and_frame, args=(f"step 0: {tool}",), default_timeout=60)
+    at.run()
+    assert not at.exception, [str(e.value) for e in at.exception]
+    shown = [img.caption for node in at.get("image") for img in node.proto.imgs]
+    assert shown, "no frame was drawn"
+    assert not any(tool in caption for caption in shown), f"the caption is Markdown: {shown}"
+    assert f"step 0: {tool}" in [t.value for t in at.text], [t.value for t in at.text]
 
 
 def test_a_key_typed_in_the_page_never_reaches_the_same_as_line() -> None:

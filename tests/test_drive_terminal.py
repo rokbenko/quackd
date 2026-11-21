@@ -164,6 +164,42 @@ async def test_a_question_about_the_line_just_typed_is_shown_before_a_goals() ->
     assert asker.pending is None and not asker.answers("y")
 
 
+async def test_a_goals_doubt_reaches_the_keyboard_and_the_page_with_no_escape_in_it() -> None:
+    """A goal's doubt is the pilot's own reason, joined into the ask line above `[y/N]` and
+    printed with nothing taken out, so `ESC[1A ESC[2K` in it moved the cursor and erased lines
+    of the session before a yes that lets the goal move the robot. The ask line at the
+    keyboard, and the line said for a question put to the page, write it out as escapes; a
+    doubt with no control character reads as it did."""
+    from types import SimpleNamespace
+
+    from roboglot.drive.terminal import PageAsker
+
+    steered = "grip is fine\x1b[1A\x1b[2KRoboglot: all limits met"
+    written = "grip is fine\\x1b[1A\\x1b[2KRoboglot: all limits met"
+    said: list[str] = []
+    asker = Asker(said.append)
+    doubt = asyncio.ensure_future(
+        asker("Go ahead anyway?", detail=steered, kind="decide", behind=True, label="goal 1")
+    )
+    await asyncio.sleep(0)
+    assert said == [f"ask      goal 1: {written} Go ahead anyway? [y/N]"]
+    assert asker.answers("n") and await asyncio.wait_for(doubt, 2) is False
+
+    put: list[tuple[str, str, str | None]] = []
+
+    async def ask_async(kind: str, question: str, detail: str | None = None) -> bool:
+        put.append((kind, question, detail))
+        return True
+
+    front = SimpleNamespace(questions=SimpleNamespace(ask_async=ask_async))
+    page = PageAsker(front, said.append)  # type: ignore[arg-type]
+    assert await page("Go ahead anyway?", detail=steered, kind="decide", label="goal 1") is True
+    assert said[-1] == f"ask      goal 1: {written} Go ahead anyway? [answered in the page]"
+    assert put == [("decide", "goal 1: Go ahead anyway?", steered)], "the page shows it as text"
+    assert await page("Go ahead anyway?", detail="The ball is out of frame.") is True
+    assert said[-1] == "ask      The ball is out of frame. Go ahead anyway? [answered in the page]"
+
+
 async def _at_keyboard(drive: Any, said: list[str], typed: Any) -> asyncio.Future[None]:
     """The keyboard front end on `typed`, its asker the session's, as `run_drive` wires them."""
     from prompt_toolkit.output import DummyOutput

@@ -50,7 +50,7 @@ if TYPE_CHECKING:  # every heavy module is imported inside the command that need
     from roboglot.adapters.base import RestResult
     from roboglot.adapters.factory import RobotSpec
     from roboglot.front import Front
-    from roboglot.safety import KillSwitch
+    from roboglot.safety import Deliberate, KillSwitch
 
 app = typer.Typer(
     name="roboglot",
@@ -938,9 +938,17 @@ def _ok_line(message: str) -> Any:
 
 
 def _warn_line(message: str) -> Any:
-    """Something the run carried on without. `_fail` is for what it cannot carry on without."""
+    """Something the run carried on without. `_fail` is for what it cannot carry on without.
+
+    Folded as `_fail`'s line is (`ui.fail_line`): an exception's words are a robot's or a
+    server's as often as Roboglot's, so its rows after the first start under the message."""
     return ui.Deferred(
-        lambda g: Text.assemble((f"{g.warn} ", ui.STYLES["warn"]), (message, ui.STYLES["warn"]))
+        lambda g: ui.Hanging(
+            Text.assemble(
+                (f"{g.warn} ", ui.STYLES["warn"]), (ui.one_space(message), ui.STYLES["warn"])
+            ),
+            " " * (len(g.warn) + 1),
+        )
     )
 
 
@@ -1449,8 +1457,10 @@ class _TerminalHandOff:
         self.switch = switch
 
     def say(self, text: str) -> None:
+        """A line beside the wait for Enter, folded with its rows after the first indented
+        (`ui.Hanging`): a gripper's or a robot's reason is quoted in some of them."""
         with ui.pause_status():
-            ui.err_console.print(Text(text, style=ui.STYLES["warn"]))
+            ui.err_console.print(ui.Hanging(Text(text, style=ui.STYLES["warn"]), ui.CONTINUED))
 
     async def wait(
         self,
@@ -1458,7 +1468,7 @@ class _TerminalHandOff:
         *,
         timeout_s: float | None = None,
         until_abort: bool = True,
-        deliberate: bool = False,
+        deliberate: Deliberate = False,
     ) -> bool:
         if self.switch is None:  # `bind` runs before the loop does, so this is a bug if hit
             raise RuntimeError("the hand-off has no kill switch to read Enter from")
@@ -1594,7 +1604,7 @@ the loop they will be asked from exists, and the switch is built from that loop'
 event. `_ask` is the only reader."""
 
 
-def _ask(question: str) -> bool:
+def _ask(question: str) -> bool | Awaitable[bool]:
     """A yes or no question, read off the terminal without racing the run for the keystroke.
 
     `typer.confirm` calls `input()`, and the kill switch's key thread is reading the same
@@ -1606,22 +1616,64 @@ def _ask(question: str) -> bool:
     Both branches tell the saved terminal what was typed, because neither of them printed it:
     the question goes out raw and the answer is echoed straight to the terminal, so a tee on
     Roboglot's own output sees the asking and not the answering. A run with `--yes` never
-    reaches here, which is why a recorded question always means a person was really asked."""
+    reaches here, which is why a recorded question always means a person was really asked.
+
+    With stdin a pipe or a file the answer comes later, from a coroutine (`_asked_on_a_stream`),
+    so the run's loop goes on while the question waits: its heartbeat beats, and its abort
+    takes the question back (`roboglot.answers.answered`).
+
+    The question is written folded (`_folded`), and the saved terminal is told it on one line."""
     if _FRONT is not None:
         # every question a run driven from the page puts goes to the page, and a prompt here
         # would read the page's own lines off stdin (`roboglot.front`)
         raise RuntimeError("a run driven from the page puts no question to a terminal")
     switch = _SWITCH
     if switch is None:
-        agreed = typer.confirm(question, default=False)
+        agreed = typer.confirm(_folded(question, ui.console), default=False)
         ui.note(f"{question} [y/N]: {'y' if agreed else 'n'}")
         return agreed
-    answer = switch.ask(f"{question} [y/N]: ")
+    # read through `ask` as before by anything that cannot say it reads a stream
+    reads_a_stream = getattr(switch, "reads_a_stream", None)
+    if reads_a_stream is not None and reads_a_stream():
+        return _asked_on_a_stream(switch, question)
+    answer = switch.ask(f"{_folded(question)} [y/N]: ")
     ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
     return answer.strip().lower() in ("y", "yes")
 
 
-def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
+_YN = " [y/N]:"
+
+
+def _folded(question: str, target: Any = None) -> str:
+    """`question` as the terminal is handed it: folded at the width of `target`, the console of
+    the stream it is written to (`ui.err_console` unless said), every row after the first behind
+    Roboglot's continuation mark (`Glyphs.carry`), and room kept on its last row for the `[y/N]`
+    the asker adds.
+
+    The confirm gate's question holds the pilot's arguments whole, and it is written raw, so Rich
+    never folded it: the terminal did, at the first column, where Roboglot's own rows begin, and
+    a long argument could begin one there in Roboglot's voice. Its spaces are kept as they are,
+    since a person says yes to exactly what runs, so an argument padded with them could still
+    set a row two columns in that read as a question for another call, `run quack(text='a
+    tune')? [y/N]:`. Behind the mark no row can begin where a question begins. A question on one
+    row is asked as it always was."""
+    console = target if target is not None else ui.err_console
+    mark = f"{ui.glyphs_for(console).carry} "
+    said = ui.hang(f"{question}{_YN}", console, indent=mark)
+    return said.removesuffix(_YN) if said.endswith(_YN) else question
+
+
+async def _asked_on_a_stream(switch: KillSwitch, question: str) -> bool:
+    """`_ask`'s question on a stdin that is no terminal, read as `input()` read it, a line for
+    the question (`KillSwitch.ask_async`), with the status line kept out of its way for as long
+    as it waits, and the answer told to the saved terminal as the other branches tell it."""
+    with ui.pause_status():
+        answer = await switch.ask_async(f"{_folded(question, ui.console)} [y/N]: ")
+    ui.note(f"{question} [y/N]: {answer.strip() or switch.unanswered or '(Enter)'}")
+    return answer.strip().lower() in ("y", "yes")
+
+
+def _confirm_prompt(name: str, params: dict[str, Any]) -> bool | Awaitable[bool]:
     # under a running status line the question is invisible: a live region redirects stdout
     # and a prompt writes without a newline, so it stays buffered until it is too late.
     # `confirm_question` and not the raw dict, because the executor writes the same sentence into
@@ -1632,25 +1684,41 @@ def _confirm_prompt(name: str, params: dict[str, Any]) -> bool:
         return _ask(confirm_question(name, params))
 
 
-def _decide_prompt(why: str) -> bool:
-    """Asked when the pilot says it is not sure this body can do the task at all."""
+def _reason(why: str) -> Any:
+    """The words a question is asked about, as the terminal shows them just above it.
+
+    Through `ui.printable`: Rich strips only a few control characters, and an escape sequence
+    left in would let the pilot erase the lines above the question and write its own in their
+    place. Folded at the console's width with every row after the first indented (`ui.Hanging`),
+    and a run of spaces drawn as one (`ui.one_space`): left to Rich's plain wrap, a reason padded
+    out to the width began a row of its own choosing, `Go ahead anyway? [y/N]: y`, at the first
+    column, where the question itself begins."""
+    shown = Text(ui.one_space(ui.printable(why)), style=ui.STYLES["warn"])
+    return ui.Hanging(shown, ui.CONTINUED)
+
+
+def _decide_prompt(why: str) -> bool | Awaitable[bool]:
+    """Asked when the pilot says it is not sure this body can do the task at all. `why` carries
+    the pilot's own reason and estimates (`_reason`)."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(GO_AHEAD)
 
 
-def _acknowledge_prompt(why: str) -> bool:
-    """Asked once, before anything moves, when the human is the only safety left."""
+def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
+    """Asked once, before anything moves, when the human is the only safety left. Printed as
+    `_decide_prompt` prints it, whoever wrote `why`."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(WATCHING)
 
 
-def _judge_prompt(why: str) -> bool:
+def _judge_prompt(why: str) -> bool | Awaitable[bool]:
     """Asked once, after the last segment of a `--controller vla` run: its pilot cannot tell
-    whether the task was done, so the person who watched the arm says."""
+    whether the task was done, so the person who watched the arm says. `why` quotes the task
+    file's instructions and its words for done (`_reason`)."""
     with ui.pause_status():
-        ui.err_console.print(Text(why, style=ui.STYLES["warn"]))
+        ui.err_console.print(_reason(why))
         return _ask(DID_IT)
 
 
@@ -1658,6 +1726,19 @@ def _someone_to_ask() -> bool:
     """A person to put a run's questions to: at the page the run is driven from, or at a
     terminal."""
     return _FRONT is not None or _can_prompt()
+
+
+def _q_stops() -> bool:
+    """Whether `q` stops a run here: the kill switch reads keys only off a console in the
+    foreground, which is a person at a terminal (`_can_prompt`). Off NUL on Windows a key thread
+    starts and finds the input already ended, so no `q` is read there either."""
+    return _can_prompt()
+
+
+def _stop_keys() -> str:
+    """What stops a run here, in the hint under its panel: `Ctrl-C or q` at a terminal, as it
+    always read, and `Ctrl-C` alone with stdin a pipe or a file, where no key is read."""
+    return "Ctrl-C or q" if _q_stops() else "Ctrl-C"
 
 
 def _front_refusal(
@@ -2682,9 +2763,9 @@ def _run_impl(
             ),
             hint="Stop in the page stops the robot."
             if front is not None
-            else "Ctrl-C or q stops the robot. Pressing again still ends the run properly."
+            else f"{_stop_keys()} stops the robot. Pressing again still ends the run properly."
             if by_hand
-            else "Ctrl-C or q stops the robot. Ctrl-C twice quits at once.",
+            else f"{_stop_keys()} stops the robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -2942,7 +3023,7 @@ def _run_pilots_impl(
                     *resolve_play(glot.frontmatter.play, play), file_play=glot.frontmatter.play
                 ),
             ),
-            hint="Ctrl-C or q stops every robot. Ctrl-C twice quits at once.",
+            hint=f"{_stop_keys()} stops every robot. Ctrl-C twice quits at once.",
         )
     )
 
@@ -3916,6 +3997,19 @@ _LOG_RUN = typer.Argument(
     None, help="A run directory, a transcript file, a name or a prefix. Default: the newest."
 )
 
+_DRIVE_LABEL = 9
+"""The columns in front of the words on a line of drive's, its label padded to eight and a
+space (`roboglot.drive.terminal.told`), under which a line's folded rows start."""
+
+
+def _drive_line(line: str) -> Any:
+    """A line of drive's as the terminal shows it: a label and the words, which quote what the
+    person typed, the pilot and the robot, so the line is folded under the words (`ui.Hanging`),
+    never left to the terminal, which folds it at the first column, where a label begins; and a
+    run of spaces among the words is drawn as one."""
+    label, words = line[:_DRIVE_LABEL], line[_DRIVE_LABEL:]
+    return ui.Hanging(Text(label + ui.one_space(words)), " " * _DRIVE_LABEL)
+
 
 @app.command("drive", rich_help_panel="Run a task")
 def drive_cmd(
@@ -4156,8 +4250,10 @@ def _drive_command(
 
     front = _FRONT
 
-    def say(line: str) -> None:
-        ui.console.print(line, soft_wrap=True, highlight=False, markup=False)
+    def say(line: str, *, whole: bool = False) -> None:
+        # `whole` for a line of Roboglot's own that a person copies, the session's folder
+        shown = line if whole else _drive_line(line)
+        ui.console.print(shown, soft_wrap=True, highlight=False, markup=False)
         if front is not None:
             front.say(line)
 
@@ -4255,7 +4351,7 @@ def _drive_command(
             _fail(e.code)
             return
         raise
-    say(f"{'record':<8} {run_dir}")
+    say(f"{'record':<8} {run_dir}", whole=True)
 
 
 @app.command("log", rich_help_panel="Run a task")
@@ -8156,7 +8252,10 @@ class _Prompts:
     def text(self, question: str, default: str | None = None) -> str:
         if self._yes:
             return default or ""
-        return str(typer.prompt(question, default=default or "", show_default=bool(default)))
+        # a default can be a board's or an earlier robot.yaml's words: shown written out, in
+        # the brackets click draws, and handed back as it is when Enter takes it
+        shown = ui.printable(question) + (f" [{ui.printable(default)}]" if default else "")
+        return str(typer.prompt(shown, default=default or "", show_default=False))
 
     def secret(self, question: str, *, twice: bool = False) -> str:
         if self._yes or not sys.stdin.isatty():
@@ -8169,7 +8268,7 @@ class _Prompts:
     def yes(self, question: str, default: bool = False) -> bool:
         if self._yes:
             return True
-        return bool(typer.confirm(question, default=default))
+        return bool(typer.confirm(ui.printable(question), default=default))
 
 
 def _onboard_home(directory: str | None) -> Any:
@@ -8757,7 +8856,11 @@ def onboard_goal(
 
 
 def _follow_goal(conn: Any, *, yes: bool) -> int:
-    """The goal's lines, as they come, with its questions answered here, until it ends."""
+    """The goal's lines, as they come, with its questions answered here, until it ends.
+
+    Everything printed from the service goes through `ui.printable`: a status names the call the
+    LLM chose in its own words, on the line before the question it is about, and a reason or a
+    path may carry a robot's or a server's."""
     stops = 0
     while True:
         try:
@@ -8773,22 +8876,29 @@ def _follow_goal(conn: Any, *, yes: bool) -> int:
         ev = line.get("ev")
         if ev == "end":
             outcome = str(line.get("outcome", ""))
-            said = f"{outcome}: {line.get('reason', '')}".strip(": ")
+            said = ui.printable(f"{outcome}: {line.get('reason', '')}".strip(": "))
             ui.console.print(_ok_line(said) if outcome == "success" else _warn_line(said))
             return int(line.get("exit_code", 0 if outcome == "success" else 1))
         if ev == "refused":
-            ui.err_console.print(_warn_line(str(line.get("reason"))))
+            ui.err_console.print(_warn_line(ui.printable(str(line.get("reason")))))
             return 1
         if ev == "ask":
-            question = str(line.get("question"))
+            question = ui.printable(str(line.get("question")))
+            if not yes and line.get("detail"):
+                # the pilot's doubt or the warning above the question, which the record says
+                # the person read: in the pilot's words, so through `ui.printable`
+                detail = ui.printable(str(line["detail"]))
+                ui.err_console.print(Text(detail, style=ui.STYLES["warn"]))
             answer = True if yes else typer.confirm(question, default=False)
             conn.send({"op": "answer", "id": line.get("id"), "yes": answer})
         elif ev == "status" and line.get("text"):
-            ui.err_console.print(Text(str(line["text"]), style=ui.STYLES["muted"]))
+            said = ui.printable(str(line["text"]))
+            ui.err_console.print(Text(said, style=ui.STYLES["muted"]))
         elif ev in ("notice", "say") and line.get("text"):
             ui.console.print(Text(ui.printable(str(line["text"]))))
         elif ev == "run_dir":
-            ui.err_console.print(Text(f"record: {line.get('path')}", style=ui.STYLES["muted"]))
+            path = ui.printable(str(line.get("path")))
+            ui.err_console.print(Text(f"record: {path}", style=ui.STYLES["muted"]))
 
 
 @onboard_app.command("uninstall")

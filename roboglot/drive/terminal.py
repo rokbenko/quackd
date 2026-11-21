@@ -100,6 +100,18 @@ async def drive_from_pipe(
             return
 
 
+def _ask_line(label: str | None, detail: str | None, question: str) -> str:
+    """The words of an `ask` line: whose question it is, the detail, the question.
+
+    The detail is a goal's doubt in the pilot's own words, so it goes through `printable`:
+    printed raw, an escape sequence in it could erase lines of the session above the question
+    and write others in Roboglot's voice."""
+    from roboglot.ui import printable
+
+    said = printable(detail) if detail else ""
+    return " ".join(part for part in (f"{label}:" if label else "", said, question) if part)
+
+
 class Asker:
     """A yes-or-no question put to the person at the keyboard: `y` or `yes` typed next is yes,
     and `n` or `no` is no. Any other line is not an answer. An empty Enter or `stop` brakes as it
@@ -137,7 +149,7 @@ class Asker:
         behind: bool = False,
         label: str | None = None,
     ) -> bool:
-        shown = " ".join(part for part in (f"{label}:" if label else "", detail, question) if part)
+        shown = _ask_line(label, detail, question)
         future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
         if behind:
             self.waiting.append((shown, future))
@@ -257,7 +269,7 @@ class PageAsker:
         label: str | None = None,
     ) -> bool:
         asked = f"{label}: {question}" if label else question
-        shown = " ".join(part for part in (f"{label}:" if label else "", detail, question) if part)
+        shown = _ask_line(label, detail, question)
         self.say(f"{'ask':<8} {shown} [answered in the page]")
         return await self.front.questions.ask_async(kind, asked, detail)
 

@@ -258,8 +258,11 @@ Share and then Add to Home Screen; in Chrome on Android, the menu and then Add t
 
 **On a small screen** the sidebar folds away, and while anything runs a large Stop button floats
 at the bottom right of every screen, on every open tab and phone, within a second of the run
-starting from any of them. The question a run puts has two large buttons. In a chat, sending
-`stop` brakes as the button does.
+starting from any of them. The question a run puts has two large buttons, under the question
+and the pilot's doubt. They, the status line above them, the run's steps and the frame's
+caption beside them, a chat's earlier lines and the reason a run ended on are shown as plain
+text, never as Markdown, and so is what a saved run or a robot's check shows. In a chat, sending `stop`
+brakes as the button does, and a line holds at most 5459 characters.
 
 **Locking the phone** leaves the run going, under its own limits on steps and minutes. Unlock it
 and the page finds the run again, its questions and its Stop with it.

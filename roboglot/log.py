@@ -395,27 +395,40 @@ def _flatten(line: LogLine) -> Line:
     return (_label(line.label) + (_indent(line.body) if line.multiline else line.body), line.style)
 
 
-def fmt_value(value: Any) -> str:
+def fmt_value(value: Any, *, whole: bool = False) -> str:
+    """`value` as a step line shows it: a long string or repr cut, a float to three figures.
+
+    `whole` is for a question a person answers before the value runs (`confirm_question`):
+    nothing is cut, since the pilot chooses the key order and could put what it wants unread
+    last, and a float that three figures would round is written as `repr`, the form that
+    reads back as the number that runs. A value the short form already showed whole is
+    written exactly as it was, so `duration_s=5` stays `duration_s=5`."""
     if value is None:
         return "null"
     if isinstance(value, bool):
         return "true" if value else "false"
     if isinstance(value, float):
-        return f"{value:.3g}"
+        short = f"{value:.3g}"
+        return short if not whole or float(short) == value else repr(value)
     if isinstance(value, str):
-        return repr(value) if len(value) <= 60 else repr(value[:57] + "...")
+        return repr(value) if whole or len(value) <= 60 else repr(value[:57] + "...")
     text = repr(value)
-    return text if len(text) <= 120 else text[:117] + "..."
+    return text if whole or len(text) <= 120 else text[:117] + "..."
 
 
-def fmt_params(params: Mapping[str, Any] | None, *, drop_none: bool = False) -> str:
+def fmt_params(
+    params: Mapping[str, Any] | None, *, drop_none: bool = False, whole: bool = False
+) -> str:
     """`drop_none` is for intent bursts, where a twist's `vy=null` on every one of two
     hundred lines is noise. Everywhere else a parameter the LLM left unset is part of what
-    it chose, and `--dry-run` promises to show every one of them."""
+    it chose, and `--dry-run` promises to show every one of them. `whole` is `fmt_value`'s,
+    for a question a person answers."""
     if not params:
         return ""
     return ", ".join(
-        f"{k}={fmt_value(v)}" for k, v in params.items() if not (drop_none and v is None)
+        f"{k}={fmt_value(v, whole=whole)}"
+        for k, v in params.items()
+        if not (drop_none and v is None)
     )
 
 
@@ -1344,12 +1357,19 @@ class ConsoleLog(LineLog):
     def _plain(self, text: str) -> str:
         """Spelled for the stream in hand. On a codepage that has no degree sign or arrow
         those characters are lost either way, so an ASCII stand-in is strictly better than
-        the question mark they would otherwise arrive as."""
-        return self._ui.degrade(text, self._glyphs)
+        the question mark they would otherwise arrive as.
+
+        One line of a step, which is as often an LLM's, a robot's or a server's words as
+        Roboglot's (a reply and its thinking, a verb's result, a refusal, a detection, an error),
+        so every character a terminal could act on is written out as its escape first
+        (`ui.printable`): Rich takes out only a few, and the `llm<` line sits just above the
+        questions a run puts. A line with no such character is drawn as it always was. A step's
+        line also has each run of spaces inside it drawn as one (`ui.one_space`, in `_show`)."""
+        return self._ui.degrade(self._ui.printable(text), self._glyphs)
 
     def _write_line(self, text: Any) -> None:
         # never markup: an LLM that thinks about `[/think]` must not raise a format error,
-        # and soft_wrap so a long observation is never cropped
+        # and soft_wrap so nothing is cropped: a step line arrives folded already (`_show`)
         self.console.print(text, markup=False, highlight=False, soft_wrap=True)
 
     def _rule(self, title: str = "") -> None:
@@ -1381,6 +1401,13 @@ class ConsoleLog(LineLog):
         label = self.LABELS.get(line.label, line.label)
         glyph = self._glyphs.mark(line.mark)
         head = f"{glyph:<{_GUTTER - 1}} {label:<{_LABEL}}"
+        # Every row after a line's first starts under the words, behind the label column, and
+        # a member's name in front where there is one: folded here at the console's width, and
+        # never left to the terminal, whose fold begins at the first column, where Roboglot's own
+        # rows begin. A reply padded out to the width put a row of its choosing there.
+        under = Text()
+        under.append(self.prefix, style=self.prefix_style or None)
+        under.append(" " * len(head))
         for i, raw in enumerate(body.splitlines() or [""]):
             text = Text(overflow="fold")
             if self.prefix:
@@ -1390,8 +1417,8 @@ class ConsoleLog(LineLog):
                 text.append(f"{label:<{_LABEL}}", style=self._ui.STYLES["muted"])
             else:
                 text.append(" " * len(head))
-            text.append(self._plain(raw), style=line.style or None)
-            self._write_line(text)
+            text.append(self._ui.one_space(self._plain(raw)), style=line.style or None)
+            self._write_line(self._ui.Hanging(text, under))
 
     def _block(self, body: str) -> None:
         """The system prompt: forty to seventy lines of somebody else's words, indented under
@@ -1403,7 +1430,11 @@ class ConsoleLog(LineLog):
             # redirected log turns out to be
             shown = self._plain(raw.rstrip())
             body_line = pad_text + shown if shown else ""
-            self._write_line(Text(body_line, style=self._ui.STYLES["muted"]))
+            # a memory note and a task file's body are in it, so a long line folds under the
+            # block's own indent as a step line does, its spaces as they were written
+            self._write_line(
+                self._ui.Hanging(Text(body_line, style=self._ui.STYLES["muted"]), pad_text)
+            )
         self._rule()
 
     def _run_panel(self, event: LogEvent) -> None:
