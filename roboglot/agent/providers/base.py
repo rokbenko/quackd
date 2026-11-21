@@ -48,14 +48,17 @@ def tool_arguments(raw: Any) -> dict[str, Any]:
     and a list here used to fail `ToolCall` itself: the run ended on a validation error over one
     odd call, where text that is not JSON at all was already answered and tried again. A blank or
     a `null` goes the same way, and only a vendor's own None is a call with none: a turn cut off
-    before its arguments is no call with its defaults, on nothing the LLM said."""
+    before its arguments is no call with its defaults, on nothing the LLM said. So does a string
+    the decoder raises on past `JSONDecodeError`, `ValueError` for an integer longer than the
+    interpreter converts and `RecursionError` for nesting deeper than it follows, which ended the
+    run on one odd call."""
     if raw is None:
         return {}
     value = raw
     if isinstance(raw, str):
         try:
             value = json.loads(raw)
-        except json.JSONDecodeError:
+        except (ValueError, RecursionError):
             return {"_unparsed": raw}
     return dict(value) if isinstance(value, Mapping) else {"_unparsed": raw}
 
@@ -254,6 +257,21 @@ class ProviderTurn(BaseModel):
     text: str | None = None
     usage: Usage = Field(default_factory=Usage)
     stop_reason: str | None = None
+    cut_off: bool = Field(
+        default=False,
+        description="The vendor says the output limit ended this answer: Anthropic's "
+        "`max_tokens`, Gemini's `MAX_TOKENS`, Chat Completions' `length`, a Responses answer "
+        "`incomplete` for `max_output_tokens`. A call in it is not a choice the LLM finished, "
+        "since an object with fields missing passes every check and the verb's defaults fill the "
+        "rest, so the loop keeps it for the record, runs none of it and asks again.",
+    )
+    not_a_call: str | None = Field(
+        default=None,
+        description="What a provider that reads calls out of text says of an answer whose text "
+        "was read and was no call, in the words the LLM is told in front of the loop's re-prompt "
+        "and the record gives as the reason (`local.NOT_A_BARE_CALL`). None for every other "
+        "answer.",
+    )
     refused: bool = Field(
         default=False,
         description="The LLM said no through the API's own refusal channel: a refusal part, "
