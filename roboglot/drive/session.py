@@ -566,6 +566,13 @@ class DriveSession:
             self._stop_goal(why)
         await self.drain()
 
+    @property
+    def closing(self) -> bool:
+        """Whether the session has begun to close (`close`), as the keyboard and the page close it
+        once their prompt has closed: a press from then on is a press during the session's close,
+        as it is on a pipe, whose session `run_drive` closes itself."""
+        return self._closed
+
     # ── routing ──
 
     def _route(self, cmd: Command, routed: Routed) -> None:

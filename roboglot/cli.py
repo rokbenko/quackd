@@ -364,6 +364,11 @@ def _verbose_line(msg: str) -> None:
 EXIT_INFEASIBLE = 3
 """`roboglot run` when the pilot judged the task beyond this body and nothing moved."""
 
+EXIT_RECORD_INCOMPLETE = 4
+"""`roboglot run` when the run succeeded and its record refused a write on the way out, so the
+transcript or `summary.json` does not hold all of it (`RunResult.record_incomplete`). A run that
+did not succeed exits 1, or 3, as it would have."""
+
 
 def _print_outcome(
     outcome: str,
@@ -2854,6 +2859,9 @@ def _run_impl(
         front.finished(
             result.outcome, result.reason, run_dir=result.run_dir, summary=result.summary
         )
+        if result.record_incomplete is not None:
+            # the page is told what stderr was, once: the record it would show is incomplete
+            front.record("note", {"text": result.record_incomplete})
     _print_outcome(
         result.outcome,
         result.reason,
@@ -2880,6 +2888,11 @@ def _run_impl(
         raise typer.Exit(code=EXIT_INFEASIBLE)
     if result.outcome != "success":
         raise typer.Exit(code=1)
+    if result.record_incomplete is not None:
+        # the run did what it was asked and its record did not keep all of it, which a script
+        # must be able to tell from both a clean success and a failure (the loop said it on
+        # stderr already, once)
+        raise typer.Exit(code=EXIT_RECORD_INCOMPLETE)
 
 
 def _member_views(

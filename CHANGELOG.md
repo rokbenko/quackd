@@ -172,6 +172,43 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   decision LLM request and a verb, until its streak hands the turn back (eight in a row, or half
   of `max_steps`, whichever is less) or the steps or minutes run out, and the run then ends on
   `max_llm_calls`, where the first of those verbs used to be refused.
+- **A call from an answer the output limit cut off is never run.** Nothing read why an answer
+  ended before its call ran, so a call the limit cut off ran as a finished choice: Anthropic's
+  and Gemini's arguments arrive as an object, fields missing or not, and the verb's defaults
+  filled the rest, so a `walk` with nothing written in it walked at the default speed, and a
+  `declare_success` with no reason ended the run a success. Now an answer the vendor says the
+  output limit ended (`max_tokens`, `MAX_TOKENS`, `length`, or a Responses answer `incomplete`
+  for `max_output_tokens`), or that Anthropic says filled the context window
+  (`model_context_window_exceeded`), runs nothing. Its `llm` record shows it as it came, and the
+  pilot is asked again with `Your last answer was cut off at the output limit, so no call in it
+  was run.` in front of the usual re-prompt, which the `enforce` record keeps as its `reason`.
+  The call counts against `max_llm_calls` like any other, and a pilot cut off twice in a row ends
+  on `the LLM produced no tool call twice in a row`, as one that answers with no call does. On
+  the OpenAI APIs a call whose argument string the limit cut short was already refused at the
+  params gate, and a whole one in a cut answer ran; both are asked again now, and a local LLM's
+  text cut off this way is not read for a call.
+- **A local LLM's text is a call only when it is nothing but the call.** The text fallback took
+  the first JSON object anywhere in an answer that named an offered tool, so a call the LLM
+  quoted in order to decline it, or the first of several it listed as options, ran as its
+  choice. Now text counts as a call only when the answer is nothing but the call, after an
+  optional thinking block at its start: one JSON object, or one inside one code fence of three
+  or more backticks or tildes whatever its opening line names (`json`, `JSON`, `js`, `{.json}`
+  or nothing), or one inside one `<tool_call>...</tool_call>` block, the wrapper Hermes and Qwen
+  chat templates write; a fence or a block the server left open at the very end of the answer
+  counts as closed there. The thinking block is `<think>...</think>`, or everything up to a first
+  `</think>` where the chat template wrote the opening tag itself, which is read for only once
+  the whole answer has been read as a call and was none, so a call whose own string holds the tag
+  is still a call. Whitespace, a byte order mark and zero-width characters round the call are
+  ignored. A call with any other text round it, a thought after it or a
+  second thought before it, two calls, two `<tool_call>` blocks, or text after the thinking
+  longer than any call needs (16 KiB), runs nothing. An object with no `arguments`, which ran
+  the verb with its defaults, is no call for a verb that takes parameters; one that takes none
+  is called with none, as before. Anything that is no call runs nothing, and the LLM is asked
+  again with `Your last answer was not a call. Text is a call only when it is exactly one JSON
+  object and nothing else, in this shape: {"name": "<verb>", "arguments": {<parameters>}}.` in
+  front of the usual re-prompt, or, for one object naming a tool it was not given, `Your last
+  answer called "fly", which is not one of your tools, so nothing was run.`, and the `enforce`
+  record keeps those words as its `reason`. A native tool call is read as before.
 - **No robot is the default any more, and every adapter's first backend is its mock.** A command
   that names no robot, on a machine with several adapters installed, refuses and lists them, where
   with the Microduck among them it used to take `microduck:sim2d`, the 2D simulator, which is gone
@@ -639,6 +676,70 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   back the same way ended its call denied, `nobody answered whether to run ...`, and it ends as
   the abort ends any call now, `run aborted` at the `abort` gate, with the run on that reason
   too.
+- **One odd answer from a local LLM no longer holds the run or ends it.** The text fallback
+  decoded from every `{` in an answer and checked each object against all those before it, and
+  found inline thinking with a pattern that read to the end of the answer from every `<think>`,
+  so a repetition loop's thousands of objects, or thousands of openings never closed, held the
+  event loop for seconds, the heartbeat and the kill switch with it. And it caught only one of
+  the three errors Python's decoder raises, so an integer of more than 4300 digits, or nesting
+  deeper than the interpreter follows, left the provider raw and ended the run in an error. Now
+  the thinking is found with plain searches, each reading the answer once, an answer is decoded
+  twice at most, as a whole and past a thinking block, never more than 16 KiB at a time, and
+  text the decoder
+  raises on is no call: the LLM is asked again. A native call whose argument string the decoder
+  raises on, which ended the run the same way, is refused at the params gate as an argument
+  string that is not JSON is, and the pilot is told.
+- **A stop ends a turn that is waiting on the robot.** A turn read the body's state, its camera
+  and a board's detector with nothing to end the wait, unlike the LLM's calls, and so did the
+  run's one read of the body before its first turn, and every stop but a second Ctrl-C only sets
+  the abort: the first Ctrl-C, the page's Stop, a failed heartbeat, a drive session's newer
+  command, the onboard service's stop and a team's. So a run waiting on a camera or a link that
+  never answered stayed waiting, and a team or an onboard goal has no second press. The reads
+  are raced against the stop now, as the LLM's calls are: the run ends `aborted` on the stop's
+  own reason, and the teardown stops and closes the robot; a read that takes the first cancel
+  and waits on is told again, each time waited for no longer than a stopped fold is, and then
+  left, so the turn ends on the stop whatever the read does. A run stopped while its read before
+  the first turn is out ends as one stopped before it began, put down and closed; a stop already
+  set when that read begins leaves it to answer, as before. Where a state read was cut off, by
+  the stop or by a cancel, it is not asked again before the close, and `final_state` in
+  `summary.json` is empty.
+- **A record that cannot be written no longer leaves an arm up and energised.** The rest move at
+  the end of a run said `moving to the rest pose` before it moved, so once the transcript could
+  not be written, on a full disk say, that note raised, the fold was skipped with nothing said,
+  and the close kept torque on an arm away from its rest pose. The note saying so raised out of
+  the teardown in turn, which skipped `run_end`, `summary.json` and the transcript's close, and
+  the error that left the run was a note's rather than the run's own. A run that failed before
+  its first step was parked the same way, and its arm left up the same way. Now a write that
+  fails on the way out, or in the park of a run that never began, stops nothing: the stop, the
+  fold, the gripper the hand-back opened and the close go out as on a disk that works, `run_end`,
+  the summary and the transcript's close are each tried, and the lines still reach the console.
+  The teardown's stop row, which the record refused out of reach of that rule, is shown on the
+  console all the same, and a stop that did not land is said on stderr, `a stop did not land,
+  and the record could not say so: ...`. The run ends on its own outcome, or with its own error,
+  and as it ends says once on stderr `the run's record is incomplete: 2 writes were refused, the
+  first: ...`; a stderr on the same full disk that cannot take it stops nothing either, and is
+  noted on the run's own error where there is one. `roboglot run` prints its verdict as always,
+  tells the page over `--front` the same line, and exits 4 for a run that otherwise succeeded. A
+  gripper send that cannot be recorded is still not sent. On a disk that works nothing changes.
+- **A long run no longer holds every picture it was shown.** Each turn's camera pictures stayed
+  in the run's history to its end, though only the last `keep_images_for_last_n` exchanges'
+  (two unless set otherwise, and up to seven more for a pilot whose old pictures are trimmed in
+  steps) are ever sent again, so a long run on two cameras held every frame in memory. A picture
+  that has left that window keeps its camera's name and none of its bytes now; what each request
+  carries is unchanged.
+- **A label or a verb's summary can no longer add lines to what the pilot reads.** The pilot
+  reads its observation line by line, and a detection's label and a verb's summary went into it
+  with their line breaks: a board names a detection with any string, and adapters put a bridge's
+  or a robot's own error text in a summary. Either could add a line that read as Roboglot's own,
+  `Messages from your team` or a `last verb` line saying a person said go. Each goes in on one
+  line now, its line breaks made spaces, as a team message already is, and the same holds for the
+  summaries in the stepper's lines. An ordinary one-line label or summary reads as it did.
+- **A remembered note's tags are bounded.** A note's text is cut to 200 characters, but its
+  tags were cut nowhere, by number or by length, and a refreshed note kept every old tag and
+  every new one, so one call could grow the memory file, which every run reads whole, by as much
+  as an answer holds. A note keeps at most 8 tags of at most 32 characters each now, cut as the
+  text is, the first in sort order where there are more, and a refresh keeps the note's own tags
+  before any new one. A note with a handful of short tags is stored as it was.
 - **A local YOLO no longer holds up the run while it looks.** `--detector yolo` ran each forward
   pass on the event loop, so while a frame was in the network `go_to` could neither re-send its
   twist nor zero it once its deadman window had passed, and the body kept walking on its last
@@ -1017,6 +1118,50 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
 - **The AlohaMini host wrapper and the Jetson daemon start under `python -OO`.** Each built its
   `--help` from its module docstring, which `-OO` strips, and died before it had parsed a flag.
   The description is spelled out now, and reads as it did.
+- **A Ctrl-C during the fold `roboglot drive` opens with stops that fold for good.** The press
+  stopped the fold, and the session's close then sent a stop and started the same fold again, so
+  the arm the person had just stopped went on to its rest pose with nothing said, and the close's
+  line spoke of that second fold rather than the one that was stopped. The arm is now held where
+  the press stopped it, the session says the fold was stopped, nothing folds the arm again, and
+  the close's line names the fold that was stopped. A press the fold does not hear, as Python
+  3.11's `asyncio.wait_for` can lose one, opened the session as if nobody had pressed: it ends the
+  session there now, and says the fold went on to its end. A press on the close the session makes
+  after an opening fold that missed, by stalling or by a rest move that raised, was said to have
+  stopped a fold, and the refusal the session was making was lost: both are said now, the refusal
+  and that the press came on that close.
+- **A Ctrl-C while `roboglot drive` closes no longer skips the rest of the close.** Once the
+  prompt had closed, a press during the closing stop or fold went past every step after it: the
+  transport was never closed, the arm was left energised partway through its fold with nothing
+  said of its torque, and the session wrote neither its `run_end` nor its `summary.json`. A press
+  during the fold now stops it, holds the arm with a stop and says so, and one before the fold
+  keeps it from starting and says the arm was not folded, at the keyboard and on the page as from
+  a pipe. A press on the transport's own close no longer cuts it short: the close goes on to its
+  end, and the session says the press came, or, where the close was cut short anyway, raised, or
+  is still going as long after the press as the body says its close can take, that Roboglot
+  cannot tell what it did. The arm counts that from each of its cameras, its read and its
+  disconnect. A later press while the stop that holds the arm is on its way
+  no longer loses what became of that stop. The record ends as any session's does.
+- **The page's Stop stops an arm's fold in a `roboglot drive` session.** The page's front end
+  reads its Stops only while the session runs, so a Stop while the robot connected, or once the
+  chat had quit, stopped nothing, and the arm went on to its pose. A Stop then is a press now, as a
+  Ctrl-C is: it stops the fold and holds the arm. A session the Stop ended as it connected is
+  refused in the page's words, as one it stopped before the connect is.
+- **Each step of a `roboglot drive` session's end is taken whatever the one before did.** A
+  `summary.json` that could not be written, on a full disk or with the run folder gone, skipped
+  the `run_end` record, the record's close and the page's word that the session had finished, and
+  its `OSError` took the place of the error the session was ending on. Each step is tried now, one
+  that fails is said on stderr, and the session's own error is the one that leaves.
+- **A piped `roboglot drive` ends its process after a Ctrl-C.** Each line was read in asyncio's
+  default executor, which `asyncio.run` waits for as it closes, so once the session and the robot
+  had closed in order the process stayed until another line or the end of input came, which from
+  a producer that keeps its end open never did. Each line is read on a thread of its own now, which
+  the process does not wait for.
+- **`roboglot drive`'s exact lane leaves out a verb whose calls could be said in too many ways.**
+  Every order of a call's values was a line of its own, so each parameter of a single value
+  multiplied a verb's lines by their count, built on the event loop after the robot had connected:
+  ten such parameters were 3,628,800 lines. A verb whose calls would be more than 72 lines gets
+  none now, a line naming it goes on to the fast lane or the pilot, and the session names it once
+  as it opens. Every verb Roboglot ships reads as it did.
 - **The scripted pilot's square is judged where its fourth corner ends.** A corner that ended
   went straight on to the next leg before the walker looked at the shape, so a square was judged
   from the end of a fifth leg, a whole side from where it began, and passed or failed by a few

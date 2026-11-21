@@ -1040,6 +1040,22 @@ because the line carries both halves of what `uncertain` is for, as every surfac
 of the verdict must (`tests/test_verdict.py`)."""
 
 
+def one_line(text: str) -> str:
+    """`text` with every line break, and the space around it, made one space, and `text` itself
+    where it has none, so an ordinary one-line label or summary reads exactly as it did.
+
+    The observation is read line by line, and a detection's label and a verb's summary carry text
+    from outside it: a board names a detection with any string, and adapters put a bridge's or a
+    robot's own error text in a summary. With its line breaks kept, either could add a line that
+    reads as Roboglot's own, `Messages from your team` or a `last verb` line saying a person said
+    go, as a team message, which is whitespace-collapsed when it is sent, cannot. Every break
+    `str.splitlines` knows counts, the Unicode line and paragraph separators among them."""
+    lines = text.splitlines()
+    if lines == [text]:
+        return text
+    return " ".join(part.strip() for part in lines if part.strip())
+
+
 def build_observation_text(
     *,
     step: int,
@@ -1062,7 +1078,7 @@ def build_observation_text(
     lines = [
         f"[{head} · {budget_status.removeprefix(f'{head}, ')}]",
         f"state: {state.summary()}",
-        f"camera: {summarize_detections(detections)}",
+        f"camera: {one_line(summarize_detections(detections))}",
     ]
     if cameras and len(cameras) > 1:
         # only with more than one, and only as a pointer: the pictures are labelled where
@@ -1075,7 +1091,8 @@ def build_observation_text(
         lines.append(places)
     if last_verb is not None and last_result is not None:
         lines.append(
-            f"last verb `{last_verb}`: {'ok' if last_result.ok else 'FAILED'} — {last_result.summary}"
+            f"last verb `{last_verb}`: {'ok' if last_result.ok else 'FAILED'} — "
+            f"{one_line(last_result.summary)}"
         )
     if inbox:
         lines.append("Messages from your team (newest last):")
@@ -1091,7 +1108,8 @@ def build_observation_text(
         # who chose them: a pilot that thinks it closed the gripper itself will not think
         # to check.
         lines.append("While you were not asked, the stepper chose these (newest last):")
-        lines.extend(f"- {line}" for line in stepped)
+        # each carries the summary of a verb the stepper ran, put on one line as the last verb's is
+        lines.extend(f"- {one_line(line)}" for line in stepped)
     lines.append("Choose exactly one tool.")
     return "\n".join(lines)
 

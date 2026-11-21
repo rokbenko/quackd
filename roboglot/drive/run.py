@@ -11,15 +11,19 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
+import logging
+import math
 import re
 import sys
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TextIO
+from typing import TYPE_CHECKING, Any, TextIO, TypeVar
 
 from roboglot import __version__
+from roboglot.drive import lanes
 from roboglot.drive.lanes import BRAKE_WORDS
 from roboglot.drive.session import Answered, DriveSession, GoalSettings
 from roboglot.glotfile.parser import glot_from_goal
@@ -27,7 +31,18 @@ from roboglot.glotfile.schema import POLICY_TOTAL_MAX_S, POLICY_VERB, Budgets, G
 from roboglot.verbs.watch import WATCH
 
 if TYPE_CHECKING:
+    from roboglot.adapters.base import RestResult
     from roboglot.front import Front
+    from roboglot.mcp_server import RobotSession
+
+T = TypeVar("T")
+
+logger = logging.getLogger("roboglot.drive")
+
+PRESSES = (asyncio.CancelledError, KeyboardInterrupt)
+"""What a Ctrl-C is to a session outside its prompt, which is while it connects and once the
+prompt has closed: drive installs no kill switch, so asyncio's own handler cancels the main task at
+the first press and raises an interrupt at a later one."""
 
 GOAL_VERBS_SAFE = "safe"
 """A goal gets the body's safe verbs, as `roboglot run --goal` gives one."""
@@ -89,6 +104,10 @@ _HALTED = {
     "quit": "the session ended before the robot connected",
     "end": "the page went away before the robot connected",
 }
+
+PAGE_STOP_WHILE_CONNECTING = "the page's Stop came while the robot connected"
+"""Why a session the page's Stop ended during its connect ended, the fold an arm opens with
+among it, as `_HALTED`'s Stop says it of one that came before."""
 
 
 class DriveError(Exception):
@@ -171,6 +190,298 @@ def _served(transport: Any) -> dict[str, Any] | None:
     return dict(said) if isinstance(said, Mapping) else None
 
 
+def _folds(robot: RobotSession) -> bool:
+    """Whether the session folds this body as it connects: what `RobotSession.connect` asks
+    before its rest move, an arm with a rest pose on a session that sends things."""
+    return not robot.executor.dry_run and getattr(robot.transport, "rest_pose", None) is not None
+
+
+def _cancels() -> int:
+    """How many times the task running the session has been asked to stop so far."""
+    task = asyncio.current_task()
+    return task.cancelling() if task is not None else 0
+
+
+CLOSE_AFTER_A_PRESS_S = 30.0
+"""How long the close of a body that does not say how long its close can take is waited for once
+a press has landed on it (`_close_bound_s`). Such a body closes a socket or a link, which ends at
+once; the arm, whose close releases its cameras one after another and then reads and lets go of
+the arm, says its own figure."""
+
+
+def _close_bound_s(transport: Any) -> float:
+    """How long the robot's close is waited for once a press has landed on it. The close is what
+    lets go of an arm's torque or keeps it, so a press does not cut it short; it is waited for as
+    long as the body says its close can take (`close_bound_s`, the arm's counted from its cameras,
+    its read and its disconnect, where one fixed figure counted a single camera), or
+    `CLOSE_AFTER_A_PRESS_S` for a body that does not say. Counted from the press, which comes after
+    the close began, so the close has less than that left by then. A close still going after it is
+    said, and waited for no longer: as the session raises, `asyncio.run` cancels it with every
+    other task. A figure that cannot be read is no figure: it is read before the close begins,
+    outside every guard the close's own steps have, so what it raises must not skip the close."""
+    said: object = None
+    with contextlib.suppress(Exception):
+        said = getattr(transport, "close_bound_s", None)
+    if isinstance(said, int | float) and not isinstance(said, bool) and 0 <= said < math.inf:
+        return float(said)
+    return CLOSE_AFTER_A_PRESS_S
+
+
+CLOSED_THROUGH_A_PRESS = (
+    "the press came as the robot's transport was closing, and the close went on to its end, since "
+    "it is what lets go of torque or keeps it"
+)
+"""Said, and recorded, when a press landed on the close and the close then ended."""
+
+CLOSE_NOT_ENDED = (
+    "the robot's transport had not finished closing {seconds:g} s after the press, so Roboglot "
+    "cannot tell what the close did: keep clear of the robot, and cut its power"
+)
+"""Said, and recorded, when a close a press landed on was still going as long after the press as
+the close can take (`_close_bound_s`)."""
+
+CLOSE_CUT_SHORT = (
+    "the robot's transport did not finish closing ({why}), so Roboglot cannot tell what the close "
+    "did: keep clear of the robot, and cut its power"
+)
+"""Said, and recorded, when a close a press landed on was cancelled or raised before it returned:
+`why` is which."""
+
+FOLD_DID_NOT_STOP = (
+    "the fold the session opened with did not stop for the press and went on to its end, so the "
+    "session ends here, and nothing folds the arm again"
+)
+"""Said when a press during the connect was taken by it and not passed on, a fold that lost the
+cancel (Python 3.11's `asyncio.wait_for`, as `FOLD_WENT_ON` says) having gone on to its pose."""
+
+CONNECTS_CLOSE_PRESSED = (
+    "the press came as the session was closing the arm after that, and the close is made again here"
+)
+"""Said after the connect's own refusal, when the opening fold missed and a press then landed on
+the close the connect makes before it refuses the session."""
+
+_CLOSES_LEFT: set[asyncio.Future[Any]] = set()
+"""A close still going past `_close_bound_s`, held until it ends or the loop's close cancels it."""
+
+
+def _close_left_ended(closing: asyncio.Future[Any]) -> None:
+    """A robot's close that has ended: let go of, and what it raised read and logged, as
+    `RobotSession.close` goes on past a close that raises."""
+    _CLOSES_LEFT.discard(closing)
+    if not closing.cancelled() and (error := closing.exception()) is not None:
+        logger.debug("the transport's close failed: %s: %s", type(error).__name__, error)
+
+
+async def _to_its_end(
+    step: Awaitable[T], *, bound_s: float | None = None
+) -> tuple[asyncio.Future[T], BaseException | None]:
+    """`step` in a task of its own, waited for to its end through any press, and the first press
+    that came meanwhile, or None. Where `bound_s` is given, it is waited for that long once a press
+    has come, and handed back still running past it.
+
+    For what a press must not cut short, each bounded on its own as well: the stop after a press
+    (`Executor.last_stop`) and the robot's close, which decides whether torque is let go of. A
+    press cut each short where it landed: the stop's own line was lost, and the close left the arm
+    connected and energised while the record said the session had ended, which a run's teardown
+    waits through a press for (`AgentLoop._unbroken`)."""
+    running = asyncio.ensure_future(step)
+    press: BaseException | None = None
+    until: float | None = None
+    while not running.done():
+        left = None if until is None else until - time.monotonic()
+        if left is not None and left <= 0:
+            break
+        try:
+            await asyncio.wait({running}, timeout=left)
+        except PRESSES as e:
+            press = press or e
+            if until is None and bound_s is not None:
+                until = time.monotonic() + bound_s
+    return running, press
+
+
+class _FoldSeen:
+    """What became of the fold `RobotSession.connect` makes, watched from outside it."""
+
+    def __init__(self) -> None:
+        self.watched = False
+        """Whether the body's rest move could be watched at all."""
+        self.began = False
+        self.ended: RestResult | None = None
+        """What the fold ended with, where it ended rather than raised."""
+
+
+_NOT_ITS_OWN = object()
+
+
+@contextlib.contextmanager
+def _watching_the_fold(transport: Any) -> Iterator[_FoldSeen]:
+    """The body's rest move watched while the session connects, so a press that ends the connect
+    is told apart by where it landed: during the fold, on the close the connect makes after a fold
+    that missed, or before any fold began. Read off the manifest alone, a press on that close was
+    said to have stopped a fold that had ended by missing, and the connect's refusal was lost.
+
+    The move is wrapped on this transport for the connect alone, and whatever it had of its own
+    under that name is put back after. A body whose move cannot be wrapped is not watched, and is
+    read as it was before (`_FoldSeen.watched`)."""
+    from roboglot.adapters.base import RestResult
+
+    seen = _FoldSeen()
+    move: Any = getattr(transport, "go_to_rest", None)
+    own: Any = getattr(transport, "__dict__", None)
+    before = own.get("go_to_rest", _NOT_ITS_OWN) if isinstance(own, dict) else _NOT_ITS_OWN
+
+    async def watched() -> Any:
+        seen.began = True
+        try:
+            result = await move()
+        except Exception as e:
+            # a move that raised ended as `go_to_rest_if_any` ends it, a fold refused with the
+            # error, and was read as one a press stopped where it had ended by raising
+            seen.ended = RestResult("refused", f"{type(e).__name__}: {e}")
+            raise
+        seen.ended = result if isinstance(result, RestResult) else None
+        return result
+
+    if callable(move) and isinstance(own, dict):
+        try:
+            transport.go_to_rest = watched
+            seen.watched = True
+        except Exception as e:  # a body that will not take it is read as before
+            logger.debug("the opening fold is not watched: %s: %s", type(e).__name__, e)
+    try:
+        yield seen
+    finally:
+        if seen.watched:
+            if before is _NOT_ITS_OWN:
+                own.pop("go_to_rest", None)
+            else:
+                own["go_to_rest"] = before
+
+
+async def _no_press() -> None:
+    """The watch the closing fold is raced against (`fold_unless_stopped`), which never ends: once
+    the prompt has closed, a press reaches the fold as a cancel of the task running the session,
+    and `fold_unless_stopped` answers that by telling the fold to stop twice and marking one that
+    went on (`fold_went_on`)."""
+    await asyncio.Event().wait()
+
+
+async def _close_robot(
+    robot: RobotSession,
+    *,
+    tell: Callable[[str], None],
+    opening_fold_stopped: str | None,
+    pressed: BaseException | None,
+    cancels: int,
+) -> BaseException | None:
+    """The robot's close, in `RobotSession.close`'s order: closed to its peers, the heartbeat
+    stopped, a stop, a pause waited out, the fold, and the transport closed with the note its close
+    leaves. Returns the press that came during it, or the one handed in as `pressed`.
+
+    Done here rather than by `RobotSession.close`, which lets a press through any step it lands
+    on: a Ctrl-C in a session is a cancel of the task closing it, nothing else catches it, and the
+    transport was never closed, with the arm energised partway through its fold and the session
+    left without its `run_end`. So each step here is taken whatever a press did to the one before,
+    and a press means what it means while a run tears down: one during the fold stops it where it
+    is, a stop holds the arm there, and the person is told (`FOLD_STOPPED`, or `FOLD_WENT_ON` for a
+    fold that had not ended when told to twice); one before the fold keeps it from starting, and
+    the person is told the arm was not folded. `opening_fold_stopped` is what is said of the fold
+    the session opened with where a press ended the connect after it began, and then nothing folds
+    the arm again: a second fold went on to the pose the person had just stopped it short of, and
+    its result took the place of the stopped one in the close's line. A press made before the
+    body began its fold asked for the session's end, fold and all, as a run's does. `cancels` is
+    how many cancels the task had been asked for as
+    the close began, so one that a step took and did not pass on still counts as a press. A
+    session nobody pressed in closes as `RobotSession.close` closes it, step for step."""
+    from roboglot.adapters.base import go_to_rest_if_any
+    from roboglot.agent.loop import AgentLoop
+    from roboglot.mcp_server import logger as session_logger
+    from roboglot.release import FOLD_STOPPED, FOLD_WENT_ON, fold_unless_stopped, fold_went_on
+
+    executor = robot.executor
+
+    async def step(what: str, call: Awaitable[Any]) -> None:
+        nonlocal pressed
+        try:
+            await call
+        except PRESSES as e:
+            pressed = pressed or e
+        except Exception as e:
+            # as `RobotSession.close` goes on past each, and kept below INFO, where a session
+            # nobody pressed in logged nothing of it
+            logger.debug("%s: %s failed: %s: %s", robot.name, what, type(e).__name__, e)
+
+    def stopped() -> bool:
+        return pressed is not None or _cancels() > cancels
+
+    executor.open_to_peers = False
+    await step("the heartbeat's stop", robot.heartbeat.stop())
+    said = opening_fold_stopped
+    if opening_fold_stopped is None and not stopped():
+        await step("the stop", robot.transport.stop())
+    if opening_fold_stopped is None and not executor.dry_run:
+        # a pause granted to a robot met is waited out first, since the rest move is not gated
+        held = executor.paused_until - time.monotonic()
+        while held > 0 and not stopped():  # until it is over: asyncio may wake a tick early
+            await step("the wait for a pause", asyncio.sleep(held))
+            held = executor.paused_until - time.monotonic()
+        if stopped():
+            said = AgentLoop.HELD_BACK if _folds(robot) else None
+        else:
+            try:
+                await fold_unless_stopped(lambda: go_to_rest_if_any(robot.transport), _no_press)
+            except PRESSES as e:
+                pressed = pressed or e
+                if _folds(robot):
+                    said = FOLD_WENT_ON if fold_went_on(e) else FOLD_STOPPED
+            except Exception as e:  # `go_to_rest_if_any` raises none, and this says so if it did
+                logger.debug("%s: the fold failed: %s: %s", robot.name, type(e).__name__, e)
+    if opening_fold_stopped is not None or stopped():
+        # the stop a press is answered with, after the cancel, as a run's teardown sends it
+        # (`AgentLoop._stop_after_a_press`), bounded as an owed stop is, and waited for through a
+        # later press, which cut its wait short and lost what became of it
+        holding, later = await _to_its_end(executor.last_stop())
+        pressed = pressed or later
+        try:
+            unanswered = holding.result()
+        except Exception as e:
+            unanswered = f"{type(e).__name__}: {e}"
+        if unanswered is not None:
+            tell(
+                f"the stop after the press: {unanswered}, so Roboglot cannot tell whether the arm "
+                "is holding where it stopped"
+            )
+        if said is not None:
+            tell(said)
+    # to its end through a press, which used to cut it short where it landed: the arm stayed
+    # connected and energised, and the close's line, which `FOLD_STOPPED` promises, never came
+    bound = _close_bound_s(robot.transport)
+    closing, during = await _to_its_end(robot.transport.close(), bound_s=bound)
+    if during is not None:
+        pressed = pressed or during
+        # only a close that returned went on to its end: one asyncio cancelled, as its runner
+        # cancels every task after a second Ctrl-C, or one that raised is done as well, and was
+        # said to have ended over an arm still connected and energised
+        if not closing.done():
+            tell(CLOSE_NOT_ENDED.format(seconds=bound))
+        elif closing.cancelled():
+            tell(CLOSE_CUT_SHORT.format(why="it was cancelled"))
+        elif (error := closing.exception()) is not None:
+            tell(CLOSE_CUT_SHORT.format(why=f"{type(error).__name__}: {error}"))
+        else:
+            tell(CLOSED_THROUGH_A_PRESS)
+    if not closing.done():
+        _CLOSES_LEFT.add(closing)
+        closing.add_done_callback(_close_left_ended)
+    else:
+        _close_left_ended(closing)
+    if note := getattr(robot.transport, "close_note", None):
+        # the note `RobotSession.close` logs, on its logger, so a session reads as it always has
+        session_logger.warning("%s: %s", robot.name, note)
+    return pressed
+
+
 async def run_drive(
     args: DriveArgs,
     *,
@@ -207,14 +518,30 @@ async def run_drive(
     from roboglot.verbs.registry import default_registry
 
     ops: asyncio.Queue[Mapping[str, Any]] = asyncio.Queue()
+    sessions: list[DriveSession] = []
+    main = asyncio.current_task()
+    # true while the robot connects, which folds an arm, and from the moment the session closes;
+    # and how many of the page's Stops were taken as presses then (`arrived`)
+    folding = [False]
+    page_presses = [0]
     if front is not None:
         # from the first moment, so a line or a Stop the page sends while the robot is still
         # connecting waits for the session rather than being lost
         loop = asyncio.get_running_loop()
 
+        def arrived(op: Mapping[str, Any]) -> None:
+            ops.put_nowait(op)
+            # The page's front end reads `ops` alone, and it has not begun while the robot
+            # connects and has returned once the session closes, so a Stop then stopped nothing,
+            # an arm's fold among it. It is a press there, as a Ctrl-C is.
+            closing = folding[0] or (bool(sessions) and sessions[0].closing)
+            if op.get("op") == "stop" and closing and main is not None and not main.done():
+                page_presses[0] += 1
+                main.cancel()
+
         def take(op: Mapping[str, Any]) -> None:
             with contextlib.suppress(RuntimeError):  # the loop has closed: the session is over
-                loop.call_soon_threadsafe(ops.put_nowait, op)
+                loop.call_soon_threadsafe(arrived, op)
 
         front.attach_drive(take)
 
@@ -341,7 +668,6 @@ async def run_drive(
     transcript = Transcript(run_dir)
     if front is not None:
         front.run_dir(run_dir)
-    sessions: list[DriveSession] = []
 
     def record(kind: str, **data: Any) -> None:
         """The session's own records, written beside the event log rather than through it, and
@@ -387,13 +713,50 @@ async def run_drive(
         robot.adopt(adopted)
     started = time.perf_counter()
     outcome, reason = "success", "the session ended"
+    # what is said of the fold the session opened with, where a press ended the connect after it
+    # began; then nothing folds the arm again
+    opening_fold_stopped: str | None = None
+    opening_refused: str | None = None
+    closed_on: BaseException | None = None
+    connecting = False
     try:
         halted = front.halted() if front is not None else None
         if halted is not None:
             # nothing connects. A quit or the page's input ending ends a connected session as
             # asked, and so ends this one; a Stop pressed while it was set up is a run stopped
             raise Halted(_HALTED[halted], as_asked=halted != "stop")
-        await robot.connect()
+        from roboglot.release import FOLD_STOPPED
+
+        presses = _cancels()
+        folding[0] = connecting = True
+        with _watching_the_fold(adapter) as fold:
+            try:
+                await robot.connect()
+            except PRESSES:
+                if not fold.watched:
+                    # Read as it was: once the body has described itself (`manifest`), the only
+                    # thing `connect` waits on before the heartbeat starts is the fold
+                    if robot.manifest is not None and _folds(robot):
+                        opening_fold_stopped = FOLD_STOPPED
+                elif fold.began and fold.ended is None:
+                    opening_fold_stopped = FOLD_STOPPED
+                elif fold.ended is not None and not fold.ended.reached:
+                    # the fold had ended by missing, and the press landed on the close the
+                    # connect makes before it refuses the session: the refusal, in the connect's
+                    # own words, and then what the press did to that close
+                    opening_refused = (
+                        f"{robot.name}: the arm did not reach its rest pose: {fold.ended.reason}"
+                    )
+                    opening_fold_stopped = CONNECTS_CLOSE_PRESSED
+                raise
+        if _cancels() > presses:
+            # a press the connect took and did not pass on: a fold that lost the cancel went on
+            # to its pose, and the session opened as if nobody had pressed. It ends here, as one
+            # a press stopped the fold of ends
+            if fold.began or (not fold.watched and _folds(robot)):
+                opening_fold_stopped = FOLD_DID_NOT_STOP
+            raise asyncio.CancelledError
+        folding[0] = False
         if args.fov_deg:
             _given_lens(robot, float(args.fov_deg))
         registry = executor.registry
@@ -490,6 +853,9 @@ async def run_drive(
         )
         sessions.append(drive)
         await drive.prepare()
+        for verb, ways in drive.exact.untaken.items():
+            said = lanes.UNTAKEN.format(verb=verb, ways=ways, most=lanes.MAX_KEYS_PER_VERB)
+            say(f"{'note':<8} {said}")
         if frames and chooser_llm is not None:
             say(f"{'note':<8} {frames_notice(decision, chooser_llm.url, watch=watch)}")
         if decision == "on":
@@ -535,21 +901,70 @@ async def run_drive(
         outcome, reason = "error", f"{type(e).__name__}: {e}"
         raise
     except BaseException as e:
-        outcome, reason = "aborted", f"interrupted: {type(e).__name__}"
-        raise
+        # every cancel the task was asked for was the page's Stop (`arrived`): no Ctrl-C was
+        # made, which asyncio would end the process on, so the session ends as the page's Stop
+        # ends it before the robot connects
+        the_pages = isinstance(e, asyncio.CancelledError) and 0 < _cancels() == page_presses[0]
+        if isinstance(e, PRESSES) and sessions and sessions[0].closing:
+            # the keyboard or the page had closed its prompt and begun to close the commands, as
+            # `quit`, the end of its input or a second Ctrl-C has it do: the session had ended as
+            # asked, and this is a press during its close, as the same press is on a pipe
+            closed_on = e
+            if not the_pages:
+                raise
+        elif the_pages:
+            outcome, reason = "aborted", PAGE_STOP_WHILE_CONNECTING
+            raise DriveError(reason) from None
+        else:
+            outcome, reason = "aborted", f"interrupted: {type(e).__name__}"
+            raise
     finally:
+        # what the session was ending on, if anything, which is what leaves it whatever the
+        # close meets; and the cancels asked for so far, the press that ended it among them
+        ending = sys.exc_info()[1]
+        cancels = _cancels()
+        pressed: BaseException | None = closed_on
+        # the page's Stop is a press in the close only where the robot began to connect: one sent
+        # before it has refused the session already, and taken again here it said an arm nothing
+        # had connected to was holding where it stopped
+        folding[0] = connecting
+
+        def tell(text: str) -> None:
+            """A line for the person who pressed, which the record keeps as a run's keeps it."""
+            try:
+                say(f"{'brake':<8} {text}")
+            except Exception as e:
+                logger.warning("%s (not said: %s: %s)", text, type(e).__name__, e)
+            try:
+                event_log.emit("note", text=text)
+            except Exception as e:
+                logger.warning("%s (not recorded: %s: %s)", text, type(e).__name__, e)
+
         # every way out, an error and an interrupt among them, ends what is still moving the
         # body before the body is folded and let go of
         if sessions:
-            with contextlib.suppress(Exception):
+            try:
                 await sessions[0].close()
-        with contextlib.suppress(Exception):
-            await robot.close()
+            except PRESSES as e:
+                pressed = pressed or e
+            except Exception as e:  # kept below INFO, as `_close_robot`'s own steps are
+                logger.debug("the session's close failed: %s: %s", type(e).__name__, e)
+        if opening_refused is not None:
+            tell(opening_refused)
+        pressed = await _close_robot(
+            robot,
+            tell=tell,
+            opening_fold_stopped=opening_fold_stopped,
+            pressed=pressed,
+            cancels=cancels,
+        )
         if note := getattr(adapter, "close_note", None):
-            # the close's own line, which `RobotSession.close` gives the logger alone, a bare
-            # line on stderr: in the record too, which `roboglot log` replays and the page shows
-            with contextlib.suppress(Exception):
+            # the close's own line, which `_close_robot` gives the logger alone, a bare line on
+            # stderr: in the record too, which `roboglot log` replays and the page shows
+            try:
                 event_log.emit("note", text=str(note))
+            except Exception as e:
+                logger.warning("%s (not recorded: %s: %s)", note, type(e).__name__, e)
         spent = sessions[0].usage if sessions else None
         summary = {
             "glot": "drive",
@@ -568,9 +983,34 @@ async def run_drive(
             "started_at": transcript.started_at_iso,
             "drive": sessions[0].stats.block() if sessions else {},
         }
-        transcript.write_summary(summary)
-        record("run_end", **summary)
-        transcript.close()
+        failed: list[Exception] = []
+
+        def end(failure: str, step: Callable[[], Any]) -> None:
+            """One step of the session's end, taken whatever the one before it did. A full disk
+            or a run folder gone used to skip every step after the one it failed, and its
+            `OSError` took the place of whatever the session was ending on. Said on stderr, since
+            the record may be what failed."""
+            try:
+                step()
+            except Exception as e:
+                failed.append(e)
+                logger.warning("%s: %s: %s", failure, type(e).__name__, e)
+
+        end("the session's summary.json was not written", lambda: transcript.write_summary(summary))
+        end("the session's run_end was not recorded", lambda: record("run_end", **summary))
+        end("the session's record was not closed", transcript.close)
         if front is not None:
-            front.finished(outcome, reason, run_dir=run_dir, summary=summary)
+            end(
+                "the page was not told the session finished",
+                functools.partial(
+                    front.finished, outcome, reason, run_dir=run_dir, summary=summary
+                ),
+            )
+        the_pages = 0 < _cancels() == page_presses[0] and not isinstance(pressed, KeyboardInterrupt)
+        if ending is None and not the_pages and (pressed is not None or _cancels() > cancels):
+            # a press during the close, which the close carried on through, goes on up once the
+            # session has ended in order, as the Ctrl-C it was; the page's Stop raises nothing
+            raise pressed if pressed is not None else asyncio.CancelledError()
+        if ending is None and failed:
+            raise failed[0]
     return run_dir

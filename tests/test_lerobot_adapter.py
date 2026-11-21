@@ -3422,6 +3422,32 @@ async def test_a_slow_camera_release_never_costs_the_arm_its_disconnect() -> Non
     assert transport._wedged is None and transport.stop_error is None
 
 
+async def test_the_arm_says_how_long_its_close_can_take_counting_every_camera() -> None:
+    """`roboglot drive` waits on the arm's close through a Ctrl-C for as long as the close can
+    take, and waited a figure that counted one camera, where the close releases its cameras one
+    after another, each under its own bound: an arm with two could still be releasing them when
+    the wait ran out, and its disconnect was then cancelled. The arm says the whole of it, from
+    what its close is made of: each camera, the read of where the arm is, and the disconnect."""
+    from roboglot_lerobot.real import DISCONNECT_S
+
+    two = LeRobotReal(
+        "COM5",
+        robot=FakeArm(camera=False),
+        cameras=parse_camera_urls(("opencv://1?name=top", "opencv://2?name=side")),
+        camera_objects={"top": FakeCamera(), "side": FakeCamera()},
+    )
+    none = LeRobotReal("COM5", robot=FakeArm(camera=False))
+    adapters = (LeRobotAdapter(two), LeRobotAdapter(none))
+    for adapter in adapters:
+        await adapter.connect()
+    with_two, with_none = (adapter.close_bound_s for adapter in adapters)
+    assert with_two is not None and with_none is not None
+    assert with_two - with_none == 2 * two.camera_close_s, "a camera was not counted"
+    assert with_none == none.timeout_s + DISCONNECT_S
+    for adapter in adapters:
+        await adapter.close()
+
+
 async def test_a_camera_that_hangs_on_open_says_so_and_leaves_the_arm_alone() -> None:
     arm = FakeArm()
     transport = LeRobotReal(

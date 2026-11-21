@@ -19,7 +19,7 @@ from typer.testing import CliRunner
 from roboglot import __version__
 from roboglot import cli as cli_mod
 from roboglot.agent.providers.factory import CLOUD_NAMES, default_llm_for, llm_ids
-from roboglot.cli import EXIT_INFEASIBLE, app
+from roboglot.cli import EXIT_INFEASIBLE, EXIT_RECORD_INCOMPLETE, app
 from roboglot.release import CLOSING_THE_GRIPPER
 from roboglot.safety import AfterTheClose
 from roboglot_lerobot.verbs import GRIPPER_CLOSED, GRIPPER_OPEN
@@ -1621,6 +1621,29 @@ def test_an_infeasible_run_exits_3_and_says_what_could(
     # and a body Roboglot only describes is named apart, as one it drives no part of
     assert "the most is" not in out
     assert "franka-research-3 could" in out
+
+
+def test_a_run_whose_record_refused_a_write_ends_on_its_outcome_and_exits_4(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A run whose record refused a write on the way out raised that write at its very end, and
+    the CLI has no handler for it: no verdict, a traceback, exit 1, so a run that did its job read
+    as a crash. It ends on its own outcome now, says once on stderr that its record is incomplete
+    and how many writes it refused, and exits 4, which a script can tell from both a success and
+    a failure. The page over `--front` is `test_front_run`'s."""
+    from roboglot.agent.transcript import Transcript
+
+    def refused(self: Any, summary: Any) -> Any:
+        raise OSError(28, "No space left on device", "summary.json")
+
+    monkeypatch.setattr(Transcript, "write_summary", refused)
+    args = ["run", "hello-world", "--llm", "fake", "--robot", "microduck:mock"]
+    result = runner.invoke(app, [*args, "--runs-dir", str(tmp_path)])
+    assert result.exit_code == EXIT_RECORD_INCOMPLETE == 4, result.output
+    assert "Traceback" not in result.output
+    out = " ".join(result.output.split())
+    said = "the run's record is incomplete: 1 write was refused, the first: OSError:"
+    assert "SUCCESS" in out and out.count(said) == 1, out
 
 
 # ── .env ────────────────────────────────────────────────────────────────────────────────

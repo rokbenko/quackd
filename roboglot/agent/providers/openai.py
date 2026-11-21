@@ -344,7 +344,8 @@ def parse_responses(response: Any) -> ProviderTurn:
     # it, calls or no calls, and only a plain "completed", or no status at all, becomes
     # `refusal`, as only a plain "stop", or no reason at all, does there.
     status = getattr(response, "status", None)
-    if getattr(getattr(response, "incomplete_details", None), "reason", None) == "content_filter":
+    incomplete = getattr(getattr(response, "incomplete_details", None), "reason", None)
+    if incomplete == "content_filter":
         status = "content_filter"
     stop_reason: str | None
     if status == "content_filter":
@@ -366,6 +367,7 @@ def parse_responses(response: Any) -> ProviderTurn:
             cache_write_tokens=int(getattr(input_details, "cache_write_tokens", 0) or 0),
         ),
         stop_reason=stop_reason,
+        cut_off=status == "incomplete" and incomplete == "max_output_tokens",
         refused=refused,
         raw=None,
         thinking="\n".join(thoughts) or None,
@@ -449,6 +451,7 @@ def parse_response(response: Any) -> ProviderTurn:
         text="\n".join(p for p in parts if p) or None,
         usage=read_usage(usage),
         stop_reason="refusal" if said and not tool_calls and finish in (None, "stop") else finish,
+        cut_off=finish == "length",
         refused=bool(said),
         raw=None,
         thinking=reasoning.strip() if reasoning else chunk_thoughts,
@@ -959,6 +962,13 @@ class OpenAIProvider:
         # its stop reason, and nor is one a filter cut short: a call quoted in a refusal, or
         # written before a filter cut the answer off, is not one to run. A native call in a
         # filtered answer still runs, as it always has: it is the API's own, and its gates hold.
-        if not turn.tool_calls and not turn.refused and turn.stop_reason != "content_filter":
+        # An answer the output limit cut off is not read either: no call from it runs, and the
+        # loop asks again (`ProviderTurn.cut_off`).
+        if (
+            not turn.tool_calls
+            and not turn.refused
+            and turn.stop_reason != "content_filter"
+            and not turn.cut_off
+        ):
             turn = self._fallback(turn, tools)
         return turn
