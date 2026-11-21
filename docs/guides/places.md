@@ -90,7 +90,10 @@ $ roboglot places rm sofa --robot rosbridge:mock
 `~`. It reads the file and nothing else, so it cannot say which places can be walked to now:
 `roboglot map` connects and says. Its frame column is what each place belongs to. The `map` after
 it made a connection of its own, so the mock's odometry had begun again, and `sofa` is orphaned:
-kept and listed, with why, and never walked to. A frame whose map was wiped says so too.
+kept and listed, with why, and never walked to. A frame whose map was wiped says so too. A note
+is one line of words: `places add --note` refuses one with a line break or another control
+character in it, as the `mark_place` verb does, and `places list` writes out any control
+character in a note already in the file, so a note cannot act on the terminal.
 `--cells` sets how many columns a map is drawn in, 10 to 80, where the robot keeps one, and
 `--watch` draws it all again every second until Ctrl+C. On a real Microduck, `--map-address` says
 where its `mapd` answers, as it does on `run`.

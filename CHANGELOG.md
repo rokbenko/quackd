@@ -1154,6 +1154,57 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   waited for the link's send buffer to drain before its timeout began, so on a link whose peer
   had gone silently the heartbeat and the stop waited until TCP gave up, which is minutes. The
   write, the drain and the answer share the one timeout now.
+- **A board's snapshot, or a `--camera-url` frame, that claims to be enormous is refused before
+  it is decoded.** Neither had a bound but Pillow's, which only warns until twice its limit, so a
+  JPEG of a few hundred bytes whose header claimed 12000 by 12000 pixels was decoded in full, and
+  the colour detector then ran over it on the event loop. A frame whose header claims more than
+  33,177,600 pixels, an 8K UHD frame, the largest a robot's camera sends, is refused, and the
+  camera's error names the size it claimed. Decoding a frame at the bound raised peak memory by
+  254 MiB, measured on Windows with Pillow 13.0.0. A frame within the bound decodes as it did.
+- **A board's `/detect` reply is read for its 300 most confident boxes at most.** Any number up
+  to the 16 MB reply cap was kept, and every box of a class Roboglot names became a clause of
+  each observation's camera line and an entry in the record. Past 300, the most a YOLO
+  prediction returns by default, the least confident are left out and the camera line says how
+  many, as in `3 less confident boxes left out`. A reply within the bound reads as it did.
+- **A look left over from a cancelled verb no longer decides how the next frame reads.** The
+  board's detector kept one `error` that each detection wrote as it ended, and a detection
+  cannot be stopped once it is out, so one from a `go_to` that had ended could finish after the
+  next verb's own frame: a frame the board failed then read as an empty view, and `search_scan`
+  turned on with nothing looked at, or a clean frame read as the board failing. Each frame's
+  outcome now comes back with its detections, and only the verb that waited for the frame
+  takes it.
+- **Two writers of one places file no longer break each other's write.** Every write used one
+  temporary name, so a run and `serve-mcp` on one robot could truncate each other's file before
+  it was renamed: a mark could be lost, and the other write raised, out of an observation too.
+  Each write has a temporary file of its own now, and the later of two writes leaves a whole file.
+- **A places write that Windows refuses no longer comes out of the run.** Windows refuses to
+  replace a file another program holds open, and another process on the robot reads the places
+  file, so a run's observation could end with `PermissionError` when the robot was first seen in
+  a map the file did not know, and so could `mark_place` and `forget_place`. Such a write is
+  tried twice more, a hundredth of a second apart. One still refused is said once in the log on
+  an observation, which goes on with what it read, and the next write carries the change;
+  `mark_place` and `forget_place` fail saying the places file is held open by another program,
+  and nothing is kept or forgotten.
+- **The places file no longer grows by a line a run.** Every observation kept a record of the
+  frame the robot was in, an odometry frame is new on every connection, and none was ever
+  dropped, so the file grew whether or not a place was marked, and each observation read the
+  whole of it once more for every place. A frame is kept now while a place was marked in it, or
+  while it is a map or was wiped, the rest are dropped when the file is next written, and one
+  look at the places reads the file once. Every place, and every frame a place needs, reads as it
+  did.
+- **A place's note is one line, and `places list` cannot be made to act on the terminal by one.**
+  A note was bounded by its length alone, so a pilot could keep an escape sequence in the
+  robot's places file for `roboglot places list` to print in a later session. `mark_place` and
+  `places add --note` refuse a note with a line break or another control character in it, as
+  `watch` refuses such a target, and a note already in the file is listed with its control
+  characters written out, as all text the terminal prints now is. A note of words is kept and
+  listed as it was.
+- **Planning a walk to a place no longer holds up the event loop.** The search for floor the body
+  fits on and the plan ran on the loop's own thread, in pure Python over a map as large as the
+  map service sends, and a few hundred cells a side held the heartbeat, the kill switch's
+  callbacks and MCP for seconds. They run on a planner thread of their own now, never on the
+  workers the board's detector and camera share, and a stop that comes while the plan is out ends
+  the walk at once, with the body stopped, and the plan at the next step of its search.
 - **The Jetson daemon's `/healthz` says when a detection is stuck.** The model runs one call at
   a time with no deadline, and health read only the last call that had finished, so a call that
   never returned left `/healthz` saying ok while every `/detect` behind it was refused as busy.

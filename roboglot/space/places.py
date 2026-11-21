@@ -3,8 +3,9 @@
 A place is a pose the robot stood at, under a name, in the frame it was read in. It lives in
 `<memory dir>/<robot slug>.places.jsonl`, next to the memory file and keyed the same way. A slug
 never contains a dot, so the two files can never be each other. Like memory, every write goes to a
-temporary file and is renamed over the old one, and nothing is locked: two processes marking at
-the same instant is a race the later rename wins.
+temporary file, one of its own, and is renamed over the old one, and nothing is locked: two
+processes marking at the same instant is a race the later rename wins, and the file it leaves is
+whole.
 
 A place is usable while the robot is in the frame it was marked in and knows where it is. Marked
 in another frame, it is orphaned: kept and listed, so a person can see what was lost, and never
@@ -13,10 +14,14 @@ walked to. Poses are never converted from one frame into another.
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import logging
 import math
+import os
 import re
 import time
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -25,8 +30,25 @@ from roboglot.memory import memory_dir, robot_slug
 from roboglot.space.pose import Fix, FrameRef, LocalizationKind, wrap_angle
 from roboglot.space.source import SpatialSource
 
+logger = logging.getLogger("roboglot.places")
+
 PLACE_NAME_MAX = 32
 MAX_PLACES = 100
+
+WRITE_TRIES = 3
+WRITE_RETRY_S = 0.01
+"""How a write whose rename Windows refuses, while another program holds the file open, is tried
+again: three tries, a hundredth of a second apart. A reader holds the file only while it reads a
+few kilobytes (a hundred places and their frames at most), which takes well under a millisecond,
+so a reader that was mid-read has long finished by the second try. The waits are on the thread
+that writes, the event loop's on an observation, and their 20 ms together are a fifth of the
+tenth of a second at which a walking body's twist is re-sent."""
+
+
+class PlacesFileBusy(ValueError):
+    """A write the places file would not take within `WRITE_TRIES`: another program holds it
+    open. A ValueError, which the place verbs already turn into a failed result that says why."""
+
 
 _NAME = re.compile(r"\w[\w '\-]*")
 
@@ -168,6 +190,8 @@ class PlaceStore:
         self.path = memory_dir(base_dir) / f"{robot_slug(robot_key)}.places.jsonl"
         self.persist = persist
         self._held: list[Record] = []
+        # whether a write the file would not take has been said, since the last one it took
+        self._unwritten_said = False
 
     # ── storage ─────────────────────────────────────────────────────────────────────
 
@@ -194,16 +218,58 @@ class PlaceStore:
         return out
 
     def _write(self, records: list[Record]) -> None:
+        records = _needed(records)
         if not self.persist:
             self._held = list(records)
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".jsonl.tmp")
-        tmp.write_text(
-            "".join(json.dumps(r.to_json(), ensure_ascii=False) + "\n" for r in records),
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        # A temporary file of this write's own, beside the file so the rename stays on one
+        # filesystem. One name shared by every writer let a second writer truncate the first's
+        # before it was renamed, so the first could put a half-written file in place and the
+        # second found nothing to rename and raised. Now the later rename wins and each file it
+        # puts in place is whole. Created exclusively, at the mode `write_text` gave it.
+        tmp = self.path.with_name(f"{self.path.name}.{uuid.uuid4().hex}.tmp")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o666)
+        try:
+            # text mode, as `write_text` wrote it, so the file reads byte for byte as it did
+            with os.fdopen(fd, "w", encoding="utf-8") as out:
+                out.write(
+                    "".join(json.dumps(r.to_json(), ensure_ascii=False) + "\n" for r in records)
+                )
+            self._replace(tmp)
+        except BaseException:
+            # a write that failed leaves no file of its own behind, and the error is the caller's
+            tmp.unlink(missing_ok=True)
+            raise
+        self._unwritten_said = False
+
+    def _replace(self, tmp: Path) -> None:
+        """Rename `tmp` over the file, tried `WRITE_TRIES` times while Windows refuses it, then a
+        `PlacesFileBusy`. Windows refuses a rename over a file another program holds open, and
+        another process on the robot reads this one: a run, `serve-mcp`, `places list`."""
+        for tried in range(1, WRITE_TRIES + 1):
+            try:
+                os.replace(tmp, self.path)
+                return
+            except PermissionError as e:
+                if tried == WRITE_TRIES:
+                    raise PlacesFileBusy(
+                        f"the places file {self.path.name} is held open by another program, so "
+                        "this change was not kept: ask again in a moment"
+                    ) from e
+                time.sleep(WRITE_RETRY_S)
+
+    def _write_or_say(self, records: list[Record]) -> None:
+        """`_write`, for bookkeeping no caller asked for (a frame noted, a map marked wiped): a
+        write the file will not take is said once, until a write is made again, and the caller
+        goes on with what it read. The next write that is made carries the change, since the
+        file it is made from is read again then."""
+        try:
+            self._write(records)
+        except PlacesFileBusy as e:
+            if not self._unwritten_said:
+                logger.warning("%s; the robot's places are read as they stand", e)
+                self._unwritten_said = True
 
     def held_copy(self) -> PlaceStore:
         """These places as they stand, in a store of their own that writes nothing: what a drive
@@ -236,9 +302,11 @@ class PlaceStore:
 
     # ── writing ─────────────────────────────────────────────────────────────────────
 
-    def mark(self, place: Place) -> Place | None:
+    def mark(self, place: Place, *, frame: FrameRecord | None = None) -> Place | None:
         """Keep `place`, replacing one of the same name in any case, and return the one it
-        replaced, or None. Refuses a hundred and first place."""
+        replaced, or None. Refuses a hundred and first place. `frame`, when given, is the record
+        of the frame the place was marked in, kept in the same write and before the place, as a
+        frame is noted before a place is marked in it."""
         place.name = clean_name(place.name)
         records = self._records()
         old = next(
@@ -251,6 +319,8 @@ class PlaceStore:
                 f"this robot keeps {MAX_PLACES} places at most: forget one first "
                 "(roboglot places rm, or forget_place)"
             )
+        if frame is not None:
+            kept = _noted(kept, frame)
         kept.append(place)
         self._write(kept)
         return old
@@ -269,12 +339,9 @@ class PlaceStore:
         return old
 
     def note_frame(self, record: FrameRecord) -> None:
-        """Remember a frame, replacing what was known of it under the same id."""
-        records = [
-            r for r in self._records() if not (isinstance(r, FrameRecord) and r.id == record.id)
-        ]
-        records.append(record)
-        self._write(records)
+        """Remember a frame, replacing what was known of it under the same id. Kept only while
+        the file needs it (`frame_needed`)."""
+        self._write(_noted(self._records(), record))
 
     def mark_wiped(self, frame_id: str) -> None:
         """Say the map a frame was is gone, so its places are orphaned for that reason."""
@@ -282,6 +349,38 @@ class PlaceStore:
         if record is not None and not record.wiped:
             record.wiped = True
             self.note_frame(record)
+
+
+def frame_needed(frame_id: str, *, persistent: bool, wiped: bool, records: list[Record]) -> bool:
+    """Whether the places file keeps the record of a frame: while a place was marked in it, so a
+    later session can say what became of the place, or while it is a map that outlives a
+    connection, so the map can be known again by its fingerprint, or while it was wiped.
+
+    Every other frame is dropped when the file is written. An odometry frame is new on every
+    connection and every pick-up or fall, and each one was kept, so the file grew by a line a run
+    whether or not a place was marked in it, and every look read the longer file."""
+    return persistent or wiped or any(isinstance(r, Place) and r.frame == frame_id for r in records)
+
+
+def _needed(records: list[Record]) -> list[Record]:
+    """`records` without the frames no place, map or wipe needs (`frame_needed`)."""
+    return [
+        r
+        for r in records
+        if not isinstance(r, FrameRecord)
+        or frame_needed(r.id, persistent=r.persistent, wiped=r.wiped, records=records)
+    ]
+
+
+def _noted(records: list[Record], record: FrameRecord) -> list[Record]:
+    """`records` with `record` as the newest of its frames, in place of what was known of it."""
+    kept = [r for r in records if not (isinstance(r, FrameRecord) and r.id == record.id)]
+    kept.append(record)
+    return kept
+
+
+def _frame_in(records: list[Record], frame_id: str) -> FrameRecord | None:
+    return next((r for r in records if isinstance(r, FrameRecord) and r.id == frame_id), None)
 
 
 @dataclass(frozen=True)
@@ -309,18 +408,30 @@ class PlaceBook:
         """The frame the robot is in now, as places are compared in, and remembered in the store
         the first time it is seen, so a later session can say what became of its places, and
         with the source's fingerprint of its map once there is one, so a later session can know
-        the map again."""
+        the map again. A frame the file does not need yet (`frame_needed`), an odometry frame no
+        place was marked in, is not written: a mark keeps it with its place."""
+        return self._frame(self.store._records())[0]
+
+    def _frame(
+        self, records: list[Record]
+    ) -> tuple[FrameRef | None, list[Record], FrameRecord | None]:
+        """`frame` on the records read once: the frame, the records as they stand after it, and
+        the record of the frame when the file does not need it yet, for a mark to keep. One
+        write at most, and only when something changed."""
+        changed = False
         # a map the source saw replaced or wiped: its places are orphaned for that reason
         for gone in self.source.retired_frames:
-            self.store.mark_wiped(gone)
-        frame = self.source.resolve_frame(self.store.frames())
-        if frame is None:
-            return None
-        known = self.store.frame_record(frame.id)
-        prints = tuple(self.source.fingerprint)
-        if known is None or (prints and not known.fingerprint):
-            self.store.note_frame(
-                FrameRecord(
+            known = _frame_in(records, gone)
+            if known is not None and not known.wiped:
+                records = _noted(records, dataclasses.replace(known, wiped=True))
+                changed = True
+        frame = self.source.resolve_frame([r for r in records if isinstance(r, FrameRecord)])
+        unkept: FrameRecord | None = None
+        if frame is not None:
+            known = _frame_in(records, frame.id)
+            prints = tuple(self.source.fingerprint)
+            if known is None or (prints and not known.fingerprint):
+                record = FrameRecord(
                     id=frame.id,
                     kind=frame.kind,
                     persistent=frame.persistent,
@@ -328,15 +439,34 @@ class PlaceBook:
                     fingerprint=prints,
                     wiped=known.wiped if known is not None else False,
                 )
-            )
-        return frame
+                needed = frame_needed(
+                    frame.id, persistent=record.persistent, wiped=record.wiped, records=records
+                )
+                if needed:
+                    records = _noted(records, record)
+                    changed = True
+                else:
+                    unkept = record
+        if changed:
+            # on every observation's path: a write the file will not take now raises nothing
+            self.store._write_or_say(records)
+        return frame, records, unkept
 
     def view(
-        self, place: Place, fix: Fix | None = None, frame: FrameRef | None = None
+        self,
+        place: Place,
+        fix: Fix | None = None,
+        frame: FrameRef | None = None,
+        *,
+        records: list[Record] | None = None,
     ) -> PlaceView:
-        frame = self.frame() if frame is None else frame
+        """`place` as the robot stands now. `records` are the file as `views` read it once, with
+        `frame` as it found it; without them the file is read here."""
+        if records is None:
+            found, records, _ = self._frame(self.store._records())
+            frame = found if frame is None else frame
         fix = self.source.fix() if fix is None else fix
-        record = self.store.frame_record(place.frame)
+        record = _frame_in(records, place.frame)
         if record is not None and record.wiped:
             # a wiped map never comes back, so its places are orphaned whatever map the robot is
             # in now, and before it is in any: right after a wipe, mapd names no map yet
@@ -346,7 +476,7 @@ class PlaceBook:
                 place, "lost", "the robot's map is not known yet, so nothing is known of it"
             )
         if place.frame != frame.id:
-            return PlaceView(place, "orphaned", self._why_orphaned(place, frame))
+            return PlaceView(place, "orphaned", self._why_orphaned(place, frame, record))
         if not fix.localized or fix.pose is None:
             return PlaceView(
                 place, "lost", f"the robot does not know where it is ({fix.lost or 'no reading'})"
@@ -363,10 +493,12 @@ class PlaceBook:
         """Every place: the usable ones nearest first, then those waiting for the robot to know
         where it is, then the orphaned, each group by name."""
         # the frame before the reading: a source that names its frame when first asked puts it
-        # on its readings from then
-        frame = self.frame()
+        # on its readings from then. The file is read once, here, for every place: it was read
+        # again for each one, on the event loop, every observation
+        frame, records, _ = self._frame(self.store._records())
         fix = self.source.fix()
-        out = [self.view(p, fix, frame) for p in self.store.places()]
+        places = [r for r in records if isinstance(r, Place)]
+        out = [self.view(p, fix, frame, records=records) for p in places]
         rank = {"here": 0, "lost": 1, "orphaned": 2}
         return sorted(
             out,
@@ -388,7 +520,7 @@ class PlaceBook:
         the robot does not know where it is. `turned` is how far from the way its body faces the
         place faces, for a robot that saw something through a head it had turned: Roboglot's own
         angle, never a pilot's."""
-        frame = self.frame()
+        frame, _, unkept = self._frame(self.store._records())
         fix = self.source.fix()
         if frame is None and fix.lost is None:
             raise ValueError(
@@ -411,7 +543,8 @@ class PlaceBook:
             note=" ".join(note.split())[:200] if note else None,
             walked_m=fix.walked_m if fix.kind == "odometry" else None,
         )
-        old = self.store.mark(place)
+        # the frame's record, when the file did not need it before this place: kept with it
+        old = self.store.mark(place, frame=unkept)
         return place, old
 
     def where_words(self, where: dict[str, Any]) -> str | None:
@@ -434,8 +567,10 @@ class PlaceBook:
             parts.append(f"{fix.pose.distance_to(x, y):.1f} m from here")
         return ", ".join(parts) or None
 
-    def _why_orphaned(self, place: Place, frame: FrameRef | None) -> str:
-        record = self.store.frame_record(place.frame)
+    def _why_orphaned(
+        self, place: Place, frame: FrameRef | None, record: FrameRecord | None
+    ) -> str:
+        """Why `place` is orphaned, `record` being what the file keeps of its frame."""
         if record is not None and record.wiped:
             return "its map was wiped"
         if frame is None:
