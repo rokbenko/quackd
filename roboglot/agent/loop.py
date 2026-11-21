@@ -479,6 +479,12 @@ class RunConfig:
     link: TeamLinkLike | None = None
     """This pilot's end of a team bus. None is a solo run: no `tell` tool, no team section
     in the prompt, and no inbox in any observation."""
+    wait_for_team: Callable[[asyncio.Event], Awaitable[None]] | None = None
+    """Awaited once, with this run's abort, just after the place where `acknowledge` is asked,
+    whether or not it was. A team holds each member there until every member whose body cannot
+    see a fall has been answered yes, so that no body moves while a question about one is up
+    (`roboglot.team.pilots`), and a member the team stopped meanwhile ends there, before anything
+    moved. None is every run on its own, which waits for nobody."""
     nearby: NearbyLike | None = None
     """The robots this pilot met over Robot Passport, and the end of talk it speaks through
     (`roboglot run --talk`). None is every run without it: no `Robots nearby` block in any
@@ -3096,6 +3102,11 @@ class AgentLoop:
                         raise Aborted(
                             "nobody confirmed they were watching a robot that cannot see a fall"
                         )
+            if cfg.wait_for_team is not None:
+                # nothing has moved yet, and a member stopped while it waited ends on the stop
+                await cfg.wait_for_team(self.executor.abort)
+                if self.executor.abort.is_set():
+                    raise Aborted(self._abort_reason())
             # The task file's word on the body's learned policy, made into the verb itself: its
             # listed instructions the only ones `manipulate` takes, its segment the one the
             # verb runs and its timeout covers. Here, between the allowlist becoming final and

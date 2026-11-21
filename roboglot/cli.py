@@ -1410,6 +1410,14 @@ _yes_to_go.answers_as = "--yes"  # type: ignore[attr-defined]
 """What the record names as having said go (`roboglot.log.who_answered`), and never a person."""
 
 
+def _yes_watching(_member: str, _why: str) -> bool:
+    """The `--yes` you typed, as a team's answer about each member whose body cannot see a fall:
+    you are watching, as `--yes` says on a solo run, asked of nobody and so in no `prompt` row.
+    The team's own `yes`, its standing answer to its confirm gates, answers nothing about a fall
+    (`roboglot.team.pilots.run_pilot_team`)."""
+    return True
+
+
 class _TerminalHandOff:
     """The person at the robot, as a terminal.
 
@@ -1713,6 +1721,40 @@ def _acknowledge_prompt(why: str) -> bool | Awaitable[bool]:
         return _ask(WATCHING)
 
 
+def _member_acknowledge_prompt(member: str, why: str) -> bool | Awaitable[bool]:
+    """`_acknowledge_prompt` about one member of a team, with its name on the warning and in the
+    question, since every member shares this terminal. A team puts these one at a time, before
+    any body moves (`roboglot.team.pilots`)."""
+    with ui.pause_status():
+        ui.err_console.print(_reason(f"{member}: {why}"))
+        asked = _ask(f"Are you watching {ui.printable(member)} right now?")
+    # at a terminal the question holds the loop until it is answered, and on a stream it waits
+    # beside the team, whose stop can take it back
+    return asked if isinstance(asked, bool) else _said_when_taken_back(member, asked)
+
+
+TAKEN_BACK = "{member}: that question was taken back: the team stopped before you answered"
+"""Said under a team's question that its stop took back, with the member it was about."""
+
+
+async def _said_when_taken_back(member: str, asked: Awaitable[bool]) -> bool:
+    """A team's question on a stdin that is no terminal, which waits while the team goes on and
+    which the team's stop takes back. It was left open on the screen, and whatever came next,
+    the verdict, was printed on the end of its line. The line is ended now, and a line under it
+    says the question was taken back."""
+    import asyncio
+
+    try:
+        return await asked
+    except asyncio.CancelledError:
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        ui.err_console.print(
+            Text(TAKEN_BACK.format(member=ui.printable(member)), style=ui.STYLES["muted"])
+        )
+        raise
+
+
 def _judge_prompt(why: str) -> bool | Awaitable[bool]:
     """Asked once, after the last segment of a `--controller vla` run: its pilot cannot tell
     whether the task was done, so the person who watched the arm says. `why` quotes the task
@@ -1796,11 +1838,12 @@ def _a_person_is_there() -> bool:
 _confirm_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _decide_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _acknowledge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
+_member_acknowledge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
 _judge_prompt.asks_a_person = _a_person_is_there  # type: ignore[attr-defined]
-"""These four are the ones that reach a terminal, and `allow_all`, `deny_all`, `_yes_to_go`
+"""These five are the ones that reach a terminal, and `allow_all`, `deny_all`, `_yes_to_go`
 and the team's standing answers are not. The mark is `_can_prompt` rather than `True` because
 reaching a terminal is a thing to check at the moment of asking and not a property of the
-function: these same four run under `yes | roboglot run` and under `roboglot run < answers.txt`,
+function: these same five run under `yes | roboglot run` and under `roboglot run < answers.txt`,
 where `input()` reads the pipe and returns a yes nobody said. The gate still opens, because
 that is what the pipe asked for and it is what Roboglot has always done; what must not happen is
 the record then testifying that a person cleared it. A judgement from a pipe is not even
@@ -2396,6 +2439,17 @@ def _run_impl(
                 soft_wrap=True,
             )
         if roster is None and section is not None:
+            bare = next((s for s in specs if s.name is None), None)
+            if robot is not None and not robots and bare is not None:
+                # A body and no member: the run went on with the task's own robots and never
+                # said the flag had been passed over, as a misnamed member was passed over.
+                _fail(
+                    f"--robot {bare.key} names no member of this team, whose members are "
+                    f"{', '.join(section.member_names)}",
+                    hint=f"give it to a member by name: --robots "
+                    f"{section.member_names[0]}={bare.key}",
+                )
+                return
             # `team.members` plus `robots:` or `--robots` names the bodies without a
             # registry; a stored team names them with one
             try:
@@ -3032,9 +3086,13 @@ def _run_pilots_impl(
         ui.err_console.print(Text(msg, style=ui.STYLES["warn"]))
 
     async def main() -> Any:
+        global _SWITCH
         master = asyncio.Event()
         ks = KillSwitch(master, log=killed)
         ks.install()
+        # a member's question about a body that cannot see a fall is read through the switch's
+        # own reader, as a solo run's is, and not raced for the keystroke (`_ask`)
+        _SWITCH = ks
         try:
             return await run_pilot_team(
                 glot,
@@ -3058,8 +3116,10 @@ def _run_pilots_impl(
                 # the roster, and for none when the team is refused first
                 before_connect=_deprecated_backends,
                 play=play,
+                acknowledge=_yes_watching if yes else _member_acknowledge_prompt,
             )
         finally:
+            _SWITCH = None
             ks.uninstall(nothing_left_to_stop=True)
 
     try:

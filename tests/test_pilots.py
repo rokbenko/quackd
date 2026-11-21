@@ -16,8 +16,10 @@ import pytest
 from roboglot.adapters.factory import RobotSpec, describe
 from roboglot.agent.providers.base import Exchange, ProviderTurn, ToolCall, Usage
 from roboglot.agent.providers.fake import FakeProvider
+from roboglot.agent.transcript import Transcript
 from roboglot.glotfile.parser import load_glot, parse_glot_text
 from roboglot.memory import RobotMemory
+from roboglot.team import pilots
 from roboglot.team.pilots import (
     MAX_MEMBERS,
     SpecEntry,
@@ -27,8 +29,12 @@ from roboglot.team.pilots import (
     trim_contract,
     union_problems,
 )
+from roboglot.transport.base import RobotState
 from roboglot_lerobot.mock import REST
 from roboglot_lerobot.verbs import at_rest, rest_goal
+from roboglot_open_duck import OpenDuckAdapter
+from roboglot_open_duck.mock import OpenDuckMock
+from tests.support import until_async
 
 MIXED = {
     "duck": RobotSpec("microduck", "mock", "duck"),
@@ -212,6 +218,23 @@ def test_the_reason_names_every_member_that_did_not_succeed_worst_first() -> Non
     )
     assert reason == "c aborted: stopped; a failure: no ball"
     assert not reason.startswith("b "), "a member that succeeded is not in the reason"
+
+
+def test_the_member_that_stopped_the_team_is_named_before_the_members_it_stopped() -> None:
+    """A person's no ends that member `aborted`, as every stop it causes ends the others, so the
+    reason named them in the roster's order and could open on a member that was only stopped. The
+    member whose own end stopped the team comes first of those that ended alike; worse ones still
+    come before it."""
+    stopped = "stopped by the team: duck ended aborted: nobody watched"
+    _, reason = aggregate_outcome(
+        {"buddy": ("aborted", stopped), "duck": ("aborted", "nobody watched")}, first="duck"
+    )
+    assert reason == f"duck aborted: nobody watched; buddy aborted: {stopped}", reason
+    _, reason = aggregate_outcome(
+        {"arm": ("error", "boom"), "buddy": ("aborted", stopped), "duck": ("aborted", "no")},
+        first="duck",
+    )
+    assert reason == f"arm error: boom; duck aborted: no; buddy aborted: {stopped}", reason
 
 
 def test_success_names_everyone() -> None:
@@ -457,6 +480,262 @@ async def test_the_kill_switch_reaches_every_member(tmp_path: Path) -> None:
     assert all(r["steps"] == 0 for r in result.per_member.values()), "nothing moved"
 
 
+# ── a body that cannot see a fall ───────────────────────────────────────────────────────
+
+BLIND_TASK = (
+    "---\nglot: 0\nname: blind\ndescription: d\nverbs:\n"
+    "  allow: [move, report_state, stop]\nsuccess: [x]\n---\n# Task\nx\n"
+)
+"""A task that can make a body walk, which is the whole of what turns the warning on."""
+
+WALK = {"vx": 0.1, "wz": 0.0, "duration_s": 0.5}
+
+NOBODY_WATCHED = "nobody confirmed they were watching a robot that cannot see a fall"
+"""The reason a solo run ends on when nobody said they watch (`AgentLoop.run`)."""
+
+
+class _FallBlindDuck(OpenDuckMock):
+    """The Open Duck as its bridge backend reports itself, as tests/test_loop.py's stand-in:
+    `fall_detection` a constant False, and no `stand_up` in its manifest."""
+
+    async def get_state(self) -> RobotState:
+        state = await super().get_state()
+        return state.model_copy(update={"extras": {**state.extras, "fall_detection": False}})
+
+
+def _walker() -> FakeProvider:
+    """A pilot that says the task suits it, walks twice and declares."""
+    return FakeProvider(
+        script=[
+            ToolCall(name="assess_task", arguments={"verdict": "feasible", "reason": "flat"}),
+            ToolCall(name="move", arguments=dict(WALK)),
+            ToolCall(name="move", arguments=dict(WALK)),
+            ToolCall(name="declare_success", arguments={"reason": "walked"}),
+        ]
+    )
+
+
+class _Person:
+    """Somebody answering the team's questions, an answer a question in turn, who notes whom they
+    were asked about and how many questions were up at once. They answer from a coroutine, as a
+    person on a pipe does, so the event loop goes on while a question is up and a body nothing
+    holds moves meanwhile. `before(member)` is awaited first; an answer that is an exception is
+    raised, as a prompt nobody answered raises."""
+
+    asks_a_person = True
+
+    def __init__(self, *answers: bool | BaseException, before: Any = None) -> None:
+        self.answers = list(answers)
+        self.before = before
+        self.asked: list[str] = []
+        self.most = 0
+        self._up = 0
+
+    async def __call__(self, member: str, why: str) -> bool:
+        self._up += 1
+        self.most = max(self.most, self._up)
+        self.asked.append(member)
+        try:
+            if self.before is not None:
+                await self.before(member)
+            answer = self.answers.pop(0)
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        finally:
+            self._up -= 1
+
+
+class _BlindTeam:
+    """Two Open Ducks that cannot see a fall, `d1` and `d2`, and `buddy`, a Microduck, which can,
+    each with a pilot that walks. What every member's view saw, and which members have reached the
+    team's start and wait there (`_Together.hold`, spied on)."""
+
+    def __init__(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from roboglot.adapters import factory
+
+        real = factory.make_adapter
+        self.ducks = {name: _FallBlindDuck() for name in ("d1", "d2")}
+        self.events: list[tuple[str, str]] = []
+        self.held: set[str] = set()
+
+        def build(spec: Any, **kwargs: Any) -> Any:
+            if spec.name in self.ducks:
+                return OpenDuckAdapter(self.ducks[spec.name])
+            return real(spec, **kwargs)
+
+        hold = pilots._Together.hold
+
+        async def spied(together: Any, name: str, abort: asyncio.Event) -> None:
+            self.held.add(name)
+            await hold(together, name, abort)
+
+        monkeypatch.setattr("roboglot.team.pilots.make_adapter", build)
+        monkeypatch.setattr(pilots._Together, "hold", spied)
+
+    def moved(self) -> list[str]:
+        """Every member whose body has moved or that has started a verb."""
+        walked = [name for name, duck in self.ducks.items() if (duck.x, duck.y) != (0.0, 0.0)]
+        return walked + [name for name, kind in self.events if kind == "verb_start"]
+
+    def view(self, name: str) -> Any:
+        return lambda event: self.events.append((name, str(event.kind)))
+
+    async def run(
+        self, tmp_path: Path, order: tuple[str, ...] = ("d1", "d2", "buddy"), **kw: Any
+    ) -> Any:
+        """The team's run, its roster in `order`."""
+        roster = _roster(
+            {
+                name: RobotSpec("microduck" if name == "buddy" else "open_duck", "mock", name)
+                for name in order
+            }
+        )
+        return await asyncio.wait_for(
+            run_pilot_team(
+                parse_glot_text(BLIND_TASK),
+                roster,
+                providers={name: _walker() for name in roster},
+                runs_dir=tmp_path,
+                view=self.view,
+                **kw,
+            ),
+            timeout=120,
+        )
+
+
+def _rows(result: Any, member: str) -> list[dict[str, Any]]:
+    return Transcript.read(result.run_dir / "robots" / member / "transcript.jsonl")
+
+
+def _asked(rows: list[dict[str, Any]]) -> list[tuple[str, bool]]:
+    return [(row["what"], row["answer"]) for row in rows if row["kind"] == "prompt"]
+
+
+async def test_no_body_moves_until_every_member_that_cannot_see_a_fall_has_said_yes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A team handed every member `acknowledge=None`, so a duck that cannot see a fall walked after
+    a note where a solo run asks first; and asked at each member's own start, the question was up
+    while the other members moved, so the `q` meant to stop them went into its answer. Now each
+    such duck is asked, one at a time, and no body moves, the one that can see a fall included,
+    until the last of them has said yes. Before each answer the person waits until the members
+    already answered and the Microduck are waiting at the team's start, or one of them has moved,
+    and notes what had moved by then."""
+    team = _BlindTeam(monkeypatch)
+    seen: dict[str, list[str]] = {}
+    answered: list[str] = []
+
+    async def before(member: str) -> None:
+        others = {"buddy", *answered}
+        await until_async(
+            lambda: others <= team.held or team.moved(), what=f"{others} at the team's start"
+        )
+        seen[member] = team.moved()
+        answered.append(member)
+
+    person = _Person(True, True, before=before)
+    result = await team.run(tmp_path, acknowledge=person)
+    assert seen == {"d1": [], "d2": []}, f"what had moved while each question was up: {seen}"
+    assert sorted(person.asked) == ["d1", "d2"] and person.most == 1, (person.asked, person.most)
+    assert result.outcome == "success", result.reason
+    assert all(team.ducks[name].x != 0.0 for name in ("d1", "d2")), "and then both walked"
+    for name in ("d1", "d2"):
+        assert _asked(_rows(result, name)) == [("acknowledge", True)], name
+    assert _asked(_rows(result, "buddy")) == []
+
+
+@pytest.mark.parametrize(
+    ("answer", "why"),
+    [(False, NOBODY_WATCHED), (EOFError(), f"{NOBODY_WATCHED}: the question went unanswered")],
+    ids=["no", "unanswered"],
+)
+async def test_a_no_ends_the_team_before_any_body_moved_and_every_record_says_why(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, answer: bool | BaseException, why: str
+) -> None:
+    """A no to the first question, or a question nobody answered, ends the team before any body
+    moved: no other question is put, the member asked ends as a solo run on its body ends, and
+    every other member ends on the stop that names it. The team records the member's `aborted`,
+    as its own record says, where it wrote `error` for any member that raised."""
+    team = _BlindTeam(monkeypatch)
+
+    async def before(_member: str) -> None:
+        await until_async(
+            lambda: "buddy" in team.held or team.moved(), what="the buddy at the team's start"
+        )
+
+    person = _Person(answer, before=before)
+    result = await team.run(tmp_path, acknowledge=person)
+    assert team.moved() == [] and len(person.asked) == 1, (team.moved(), person.asked)
+    (asked,) = person.asked
+    own = _rows(result, asked)[-1]
+    assert own["kind"] == "run_end" and own["outcome"] == "aborted", own
+    assert own["reason"].startswith(why), own["reason"]
+    assert _asked(_rows(result, asked)) == ([("acknowledge", False)] if answer is False else [])
+    for name in result.per_member:
+        end = _rows(result, name)[-1]
+        assert end["kind"] == "run_end" and end["outcome"] == "aborted", (name, end)
+        assert result.per_member[name]["outcome"] == "aborted", (name, result.per_member)
+        if name != asked:
+            assert _asked(_rows(result, name)) == [], name
+            assert end["reason"] == f"stopped by the team: {asked} ended aborted: {own['reason']}"
+    assert result.per_member[asked]["reason"] == own["reason"]
+    assert result.outcome == "aborted", result.reason
+
+
+async def test_a_no_names_the_member_that_said_it_first_in_the_teams_reason(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the Microduck listed first, the team's reason after a no opened on its `stopped by
+    the team`, and the member whose no it was came after the members it had stopped, because all
+    of them end `aborted` and the roster broke the tie. It opens on the member that said no now,
+    whatever the roster's order (the refuter's test, on the team that waits)."""
+    team = _BlindTeam(monkeypatch)
+    person = _Person(False)
+    result = await team.run(tmp_path, order=("buddy", "d2", "d1"), acknowledge=person)
+    (asked,) = person.asked
+    assert result.reason.startswith(f"{asked} aborted: {NOBODY_WATCHED}"), result.reason
+
+
+async def test_a_stop_while_a_question_is_up_ends_the_team_before_any_body_moved(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The kill switch pressed while the first question waits for its answer takes it back and
+    ends every member on the switch, before any body moved, with no question answered and none
+    recorded."""
+    team = _BlindTeam(monkeypatch)
+    master = asyncio.Event()
+
+    async def press(_member: str) -> None:
+        master.set()
+        await asyncio.Event().wait()  # the person never answers: the press takes it back
+
+    result = await team.run(tmp_path, acknowledge=_Person(True, before=press), abort=master)
+    assert team.moved() == []
+    assert result.outcome == "aborted" and "kill switch" in result.reason, result.reason
+    for name in result.per_member:
+        assert result.per_member[name]["outcome"] == "aborted", result.per_member
+        assert _asked(_rows(result, name)) == [], name
+
+
+@pytest.mark.parametrize("yes", [False, True], ids=["neither", "yes"])
+async def test_with_nobody_to_ask_the_team_ends_before_any_body_moved_whatever_yes_says(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, yes: bool
+) -> None:
+    """A caller that hands the team nobody to ask (`acknowledge`) has said nobody watches, and a
+    member whose body cannot see a fall ends the team before anything moved, with no question
+    recorded, as a solo run that nobody answers ends. `yes` is the team's standing answer to its
+    confirm gates and its pilots' doubts, and it answered this question too: `roboglot run --yes`
+    hands in an answer of its own (`tests/test_cli_pilots.py`)."""
+    team = _BlindTeam(monkeypatch)
+    result = await team.run(tmp_path, yes=yes)
+    assert team.moved() == [], team.moved()
+    assert result.outcome == "aborted", result.reason
+    assert NOBODY_WATCHED in result.reason, result.reason
+    for name in result.per_member:
+        assert _asked(_rows(result, name)) == [], name
+
+
 # ── the flags ───────────────────────────────────────────────────────────────────────────
 
 
@@ -597,6 +876,68 @@ async def test_a_cancelled_team_records_every_member_rather_than_crashing(
     assert summary["outcome"] == "aborted"
     assert set(summary["per_member"]) == set(roster)
     assert all(m["outcome"] == "aborted" for m in summary["per_member"].values())
+
+
+@pytest.mark.parametrize("fails", ["the bus's start", "the links", "a member's loop"])
+async def test_a_team_that_fails_to_start_leaves_nothing_open(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fails: str
+) -> None:
+    """`team.jsonl` was opened and the bus started before the `try` whose `finally` closes both,
+    so a team that raised in between, a broker that refused it or a member that could not be
+    built, left the file open, every member's transcript built so far with it, and an MQTT
+    bus's network thread running for the rest of the process. All of it is closed now, and the
+    failure reaches the caller as it was raised."""
+    from roboglot.team.bus import InProcessBus
+
+    teams: list[Any] = []
+    loops: list[Any] = []
+    buses: list[Any] = []
+
+    class Kept(pilots.TeamTranscript):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            super().__init__(*args, **kwargs)
+            teams.append(self)
+
+    class Started(InProcessBus):
+        closed = False
+
+        def start(self) -> None:
+            if fails == "the bus's start":
+                raise ConnectionRefusedError("the broker refused")
+
+        def close(self) -> None:
+            self.closed = True
+
+    def factory(tap: Any) -> Started:
+        buses.append(Started(tap=tap))
+        return buses[-1]
+
+    def no_links(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("no links")
+
+    real = pilots.AgentLoop
+
+    def one_loop(cfg: Any) -> Any:
+        if loops:
+            raise RuntimeError("the second member could not be built")
+        loops.append(real(cfg))
+        return loops[-1]
+
+    monkeypatch.setattr(pilots, "TeamTranscript", Kept)
+    if fails == "the links":
+        monkeypatch.setattr(pilots, "make_links", no_links)
+    if fails == "a member's loop":
+        monkeypatch.setattr(pilots, "AgentLoop", one_loop)
+    with pytest.raises((ConnectionRefusedError, RuntimeError)) as raised:
+        await _run(tmp_path, bus_factory=factory)
+    assert str(raised.value) in (
+        "the broker refused",
+        "no links",
+        "the second member could not be built",
+    )
+    assert [team._fh.closed for team in teams] == [True], "team.jsonl was left open"
+    assert [bus.closed for bus in buses] == [True], "the bus was left running"
+    assert all(loop.transcript._fh.closed for loop in loops), "a member's transcript was left open"
 
 
 # ── the rest pose ───────────────────────────────────────────────────────────────────────

@@ -214,6 +214,26 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   `robot_load_glotfile`. A group of robots is a team: `roboglot team` names one, `--team` runs one,
   a `team:` block shares a task out, `~/.roboglot/teams.json` keeps them, and a team run keeps each
   robot's record under `robots/` ([ADR-0080](docs/adr/0080-roboglot-is-the-communication-layer-between-people-and-robots.md)).
+- **A team asks about each member whose body cannot see its own fall, and no body moves until
+  every one of them has been answered yes.** A team gave its members nobody to ask, so an Open
+  Duck on its bridge, on a task that can make it walk, walked after a note in its transcript where
+  a solo run on it asks first. Each such member is asked about now, as a solo run is, with its name
+  on the warning and in the question, `Are you watching duck right now? [y/N]:`, one question at a
+  time. Every member waits before it moves until each member whose part can make it walk has read
+  its body and been answered, so nothing moves while a question is up: `q` goes into its answer,
+  as at any question, and with its Enter is a no, and Ctrl-C ends the team. A no, or a question
+  nobody answered, ends the team before any body moved: no other question is put, the member
+  asked ends `aborted` with the answer in its transcript, and the others end on `stopped by the
+  team: duck ended aborted: nobody confirmed they were watching a robot that cannot see a fall`.
+  A question the team's stop takes back while it waits on a pipe ends its line and says so
+  before the verdict. A team none of whose members can be made to walk runs as before.
+- **`--yes` answers a team's questions about a fall as it answers a solo run's, and the team's
+  own `yes` does not.** The `--yes` you type answers every such member's question at once: nobody
+  is asked, and each member's transcript keeps the warning. `run_pilot_team`, called from Python,
+  takes the asker as `acknowledge=`, and its `yes`, the standing answer to its confirm gates and
+  its pilots' doubts, answers nothing about a fall: a call that hands in neither, as the example
+  in `docs/guides/lan.md` does, ends the team before any body moves when a member cannot see a
+  fall, where a solo `AgentLoop` given no `acknowledge` walks after a note.
 - **`roboglot list-models --kind policy` lists the policy types again, and `--kind all` lists all three
   kinds.** These are the rows and the `--json` that `roboglot policy list` prints, and it still prints
   them. From 0.32.0 to 0.34.0 `--kind all` gave the pilots and the decision LLMs, and the policy types
@@ -575,6 +595,29 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   between arriving and announcing it from half a metre away. The summary ends with the same
   words now and the data carries `calibrated: false`. An arrival through a measured lens reads as
   it did.
+- **A robot given for no member of a team is refused.** An entry in a team task's `robots:`, a
+  name in `--robots` or a registered robot named with `--robot` that matched no member was
+  passed over, and the member it was meant for took whatever this machine had, on a machine with
+  one adapter its mock. So was a `--robot lerobot:mock` on a team task, which names a body and no
+  member: the team ran on the task's own robots without a word. Each is refused now before
+  anything connects, naming what was given and the team's members,
+  `--robot lerobot:mock names no member of this team, whose members are duck, arm`, and the bare
+  one with the way to give it to a member, `--robots duck=lerobot:mock`.
+- **A team's reason names first the member whose own end stopped the team.** Members that ended
+  alike were named in the roster's order, so the reason could open on a member that was only
+  stopped and name the one that stopped it later. Of members that ended alike, the one whose own
+  end stopped the team now comes first.
+- **A team that fails before its members start closes what it had opened.** `team.jsonl` was
+  opened, and the bus started, before the part of the run that closes them, so a team that
+  raised in between, a broker that refused the bus or a member that could not be built, left
+  that file open, with every member's transcript built so far, and an MQTT bus's network thread
+  running for the rest of the process. They are closed now, and the failure still reaches the
+  caller as it was raised, with a note naming anything that could not be closed.
+- **The MQTT team bus hears its team again after the broker comes back.** It subscribed once,
+  before its network thread started, and a reconnect on a clean session carries no
+  subscription over, so after a broker restart, or a network drop past the keepalive, a node
+  went on publishing and never heard another message, with nothing said. It subscribes at every
+  connect now, and its log says `mqtt: reconnected to` the broker each time it does.
 - **A manifest whose limits are not finite, or are negative, is refused.** `limits` took any
   number, and the verbs clamp to them as they stand: a negative `max_vx` turned a `move` asked to
   stand still into the full speed forward, a negative `max_wz` turned the body the other way, and

@@ -84,6 +84,38 @@ arm      tools   report_state, observe, stop, move_joints, assess_task, declare_
 What the task *requires* is checked against the union of every body before anything connects,
 so a task nobody in the team can do is refused with nothing written to disk.
 
+**A body that cannot see its own fall is asked about before any body moves.** Where a member's
+part of the task can make it walk and its body cannot see a fall, the Open Duck on its bridge
+among them, the team asks you once about that member, as `roboglot run` asks on a solo run, with
+its name on the warning and in the question:
+
+```
+duck: nothing on this robot detects a fall, and it has no way to get up.
+  Roboglot will not know it is down, no verb will refuse because it is, and
+  this task can make it walk. Keep it on a stand with a hand near the power
+  switch, and watch it.
+Are you watching duck right now? [y/N]:
+```
+
+The questions come one at a time, and no member moves, the ones that can see a fall included,
+until each such member has been answered yes. Every member waits for each member whose part can
+make it walk to connect and read its body first, since only that reading says whether it can see
+a fall. A no, or a question nobody answered, ends the team before any body moved: no other
+question is put, the member asked ends `aborted` with your answer in its transcript, as a solo run
+on its body does, and every other member ends on `stopped by the team: duck ended aborted: nobody
+confirmed they were watching a robot that cannot see a fall`. While a question is up, `q` goes
+into its answer as at any question, and with its Enter it is a no; Ctrl-C ends the team. A
+question the team's stop takes back, with stdin a pipe, says
+`duck: that question was taken back: the team stopped before you answered`. `--yes` answers every
+member's question at once, as it answers a solo run's: nobody is asked, and each such member's
+transcript keeps the warning.
+
+A robot given for a name that is no member is refused before anything connects, whether it was
+given in the task file's `robots:`, in `--robots` or as a registered robot with `--robot`. So is
+a `--robot` that names a body and no member, which the run used to pass over for the task's own
+robots: `--robot lerobot:mock names no member of this team, whose members are duck, arm`, and the
+line under it says how to give it to one, `--robots duck=lerobot:mock`.
+
 ## Talking
 
 `tell` is a tool beside `assess_task`, `declare_success` and `remember`. It moves nothing and
@@ -155,6 +187,9 @@ Otherwise the worst outcome wins, in the order `error`, `aborted`, `infeasible`,
 `failure`, and the reason names every member that did not succeed, worst first. `error` beats
 `aborted` because of what that pair usually means together: one member raised and the rest
 were stopped **because it did**, so the error is the cause and the aborts are its consequence.
+Of members that ended alike, the one whose own end stopped the team comes first: after a no to
+the question above every member is `aborted`, and the reason opens on the member you said no
+about, whatever the roster's order.
 
 Ctrl-C or `q` stops every body through one kill switch fanned out to every executor. A pilot
 mid-verb is cancelled and sent a stop; a pilot waiting on its LLM notices at its next turn,

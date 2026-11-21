@@ -290,7 +290,8 @@ are its own.
   runs in drive, nested or not.
 - **A body that cannot see a fall is driven only with somebody watching it.** Before the first
   thing that moves such a body, drive asks whether the person is watching, as `roboglot run`
-  asks. `--yes` says they are, and a pipe without it is refused.
+  asks, and as a team asks about each such member before any of its bodies moves
+  ([guides/team.md](../guides/team.md)). `--yes` says they are, and a pipe without it is refused.
 - **A session is held to a contract**, a `--glotfile`'s or one of its own: every verb that is
   not dangerous, the battery rule, and the schema's ceilings for its budgets. A goal runs inside
   it: the body's safe verbs behind the session's confirm gates, no more budget than the session
