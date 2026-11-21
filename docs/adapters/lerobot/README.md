@@ -1218,7 +1218,16 @@ verb that sends a goal meanwhile is refused, as on the arm.
   played, or a policy that says it is done, end it, and so does the arm no longer moving under
   it: every joint within 0.5 degrees of where it was for 1 s of goals. That stall holds the
   arm where it stopped, because what stopped it may be in its way, and the policy's last goal
-  would leave the servo pushing on.
+  would leave the servo pushing on. A `pick` ends on a stall only pressed against something: for
+  1 s of goals over at least 2 of its policy's ticks, every joint within 0.5 degrees of where it
+  was while a body joint's goal stays more than 5 degrees from where it reads, a servo pushing
+  and getting nowhere. Five is the arm's own tolerance for a loaded joint settling short of its
+  goal, so a hold that sags that much is not a press. It ends then as a pick that held nothing. A
+  policy that holds the arm where it reads, for as long as it likes, is no stall, and at the
+  band's lowest rate, 1 Hz, where
+  1 s is one tick, a pick runs to its time. A grasp is not cut short by it: the jaws closing are
+  the arm moving, the gripper's goal never counts as pressing, and jaws settled on something end
+  the pick as holding before any stall is judged.
   The verb then holds it again, as it does after every ending that held, since a bus can lose
   a hold's packet, and a stall whose last hold did not reach the arm is a failure that says
   so. Otherwise those three are a segment that ran, and the verb is ok on them and on nothing

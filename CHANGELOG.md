@@ -477,6 +477,18 @@ mean while Roboglot is 0.x, and which headings make which, is in [RELEASING.md](
   later connect in the same process, the MCP server's or the onboard service's, called connect on
   it again. It is no longer the arm's once abandoned, it is let go of on a worker once its connect
   comes back, and a later connect builds a camera of its own.
+- **A `pick` pressed against something it cannot move ends on a stall.** Only `manipulate`'s
+  segment ended when the arm stopped moving under a policy still sending, so a `pick` whose policy
+  drove the arm into the desk went on sending goals a step past the reading, into joints with no
+  torque cap, until its own time was up. It ends now, with the arm held, as a pick that held
+  nothing, when for 1 s of goals over at least 2 of the policy's ticks every joint stays within
+  0.5 degrees of where it was while a body joint's goal stays more than 5 degrees from where it
+  reads, the arm's own tolerance for a loaded joint settling short: a servo pushing and getting
+  nowhere. A policy that holds the arm where it reads, or a joint that sags short of the goal it
+  is held at by less than that, is no stall, however long it holds, and at the band's lowest
+  rate, 1 Hz, where 1 s is one tick, a
+  pick runs to its time as before. A grasp ends as holding, as it did: the jaws closing are the
+  arm moving, and the gripper's goal never counts as pressing.
 - **`roboglot log` says how each member of a team ended.** Given a team run's `team.jsonl`, it
   printed `None` where each member's outcome belongs, as in `None after 0 steps`, because it read
   the outcome from a field named `status`, which the team runner never wrote. It reads the outcome

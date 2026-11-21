@@ -172,7 +172,9 @@ class SegmentEnd:
     `holding` is the gripper closed and settled on something, which is what `pick` is for.
     `finished` is the policy saying it was done and the grasp not settling on anything in the
     settle after. `time` is the segment's time run out, `chunks` its chunks played or a policy
-    that said it was done, and `stall` the arm no longer moving under `manipulate`'s policy.
+    that said it was done, and `stall` the arm no longer moving under `manipulate`'s policy, or
+    under `pick`'s pressed against something, at a rate where that can be told from one tick
+    (`Segment.stalls_at`).
     `guard` is the loop ending the segment itself on a reading or an action it would not send,
     with the arm held where it is: `reason` says which. `starved` is a policy that gave nothing
     to send for too long, with the arm held too. `error` is the policy raising. `refused` is the

@@ -3096,9 +3096,9 @@ class LeRobotReal:
     async def _run_policy(self, segment: Segment, ready: asyncio.Future[None]) -> SegmentEnd:
         """One policy segment, `pick`'s or `manipulate`'s, in the policy task: its start here,
         and its ticks in the policy loop (`PolicyLoop.run`), until something is held, the
-        policy is done, its time or its chunks run out, the arm stops moving under
-        `manipulate`, the policy starves, a guard ends it or something else cancels it. Roboglot
-        only says which verb, and holds the arm to its rules.
+        policy is done, its time or its chunks run out, the arm stops moving under a segment
+        that stalls (`Segment.stalls_at`), the policy starves, a guard ends it or something else
+        cancels it. Roboglot only says which verb, and holds the arm to its rules.
 
         It starts with a reading of its own, registers and all, which the `do` waits on: one
         that rules the segment out ends it `refused` before the policy is reset or asked for
