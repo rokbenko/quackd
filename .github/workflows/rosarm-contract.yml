@@ -61,7 +61,7 @@ jobs:
 
       # The uv the container runs is this one, the runner's, mounted read only: the script fetches
       # uv's installer only for a person running it by hand, and refuses to in CI.
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           # the release tests/rosarm_contract/run.sh pins, as in every workflow here
           version: "0.12.21"
