@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and platform_python_implementation == 'PyPy' and sys_platform == 'win32'",
@@ -2180,7 +2180,7 @@ wheels = [
 
 [[package]]
 name = "laya"
-version = "0.4.35"
+version = "0.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -2191,9 +2191,9 @@ dependencies = [
     { name = "transformers" },
     { name = "vegaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/e4/e3/83e5bc5a35079b002bc55fbede2aacc40611a9eee6ddf4572115b2e60262/laya-0.4.35.tar.gz", hash = "sha256:4402c1888158d838822a834fa43c2625346ac8c9faf9f47cbb5b894936675453", size = 1482949, upload-time = "2026-11-16T12:50:12.416Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/86/599c257527faeb69790a0274ba4f02de1316bc3f176634b7fc3918fd2cf1/laya-0.5.0.tar.gz", hash = "sha256:7451b30a1f8a6e062c47ee8a3da0b0b0f8685bfc11134d87df6f9f791f3222b9", size = 1491494, upload-time = "2026-11-19T17:30:44.011Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/76/b9/909c9be2d6c3866f649c9f8d1b3046f40ef5fbbb5c88c6368e8c73883bd1/laya-0.4.35-py3-none-any.whl", hash = "sha256:2bb201032a83aee0aee07fa0dd76904753de1f35fec26c7e78640229dd5eb791", size = 505341, upload-time = "2026-11-16T12:50:10.301Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/8a/4cbab1c0ea4131df323f92a5cd40d472a6724b6e26c9168d6d0aa240d998/laya-0.5.0-py3-none-any.whl", hash = "sha256:b961fc51af87d54c7e2996858237b1bb00237c7609bbb2d4e3e4b929d16ab4a7", size = 509259, upload-time = "2026-11-19T17:30:41.187Z" },
 ]
 
 [[package]]
@@ -3093,7 +3093,7 @@ wheels = [
 
 [[package]]
 name = "openai"
-version = "3.51.0"
+version = "3.57.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -3103,9 +3103,9 @@ dependencies = [
     { name = "sniffio" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/db/fa/30f098b042a354f685def1d0fe4c817fc4a534233f497fcf5fc29467c58d/openai-3.51.0.tar.gz", hash = "sha256:1cc9b80eb0f1dc15fa45fbc122ba2c99b7e5302548060c01db5719fa6181a6a9", size = 2415149, upload-time = "2026-11-13T21:13:39.771Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/90/b2/97780581dab39384d1de4bc15f1f6cbaff26ce965a46c23a10bd948b71a8/openai-3.57.0.tar.gz", hash = "sha256:5a0a89d6a542efc85e2a8cec701ca9265b795d578c777828e10fafdf80e333b6", size = 2425150, upload-time = "2026-11-20T01:28:43.575Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/52/f9/d3d9ef409ee4e90de64c9b12f15879f56fc845c2eb9cfe6f314b402de7f1/openai-3.51.0-py3-none-any.whl", hash = "sha256:802b7e8c6ff8cf4d59a2a163126c10ce472adf0409ac41fdaadd47c9b4ed091a", size = 2446085, upload-time = "2026-11-13T21:13:37.969Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/40/0475208a470f90a1d3e94b41382678b44f311c2ea2a317228531e2193567/openai-3.57.0-py3-none-any.whl", hash = "sha256:f97bc74024c06ced8428b56c4a3594066709d3082779bf9d0b4b6092fbf587a8", size = 2451809, upload-time = "2026-11-20T01:28:41.48Z" },
 ]
 
 [[package]]
@@ -5689,7 +5689,7 @@ wheels = [
 
 [[package]]
 name = "vegaml"
-version = "0.16.3"
+version = "0.20.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
@@ -5699,9 +5699,9 @@ dependencies = [
     { name = "torch" },
     { name = "transformers" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/0c/f17c54943b8544c09417f6842fcd2867db1dd58948d7f285fb5df6b04411/vegaml-0.16.3.tar.gz", hash = "sha256:369066b699bce438d6420f322f8e8406925add283d4de1753421c2fda691c3d7", size = 234236, upload-time = "2026-11-15T18:02:43.817Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/96/6d/94019e4b6bdfec713e1009405355a73156b17d0de1e25b649057a79780f0/vegaml-0.20.1.tar.gz", hash = "sha256:96a0015b3b9851d5d614620709c8bd18804093884a5a43b48c7935740165293e", size = 248738, upload-time = "2026-11-26T09:33:14.817Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8d/6f/c80a524643523280a24c9fe8e14c4188c8bb086cd867ec1fda032b46352b/vegaml-0.16.3-py3-none-any.whl", hash = "sha256:0c7f8743fbe96ef56178664a425c8b239e8acb72226874a8b7a3cc594b909836", size = 150931, upload-time = "2026-11-15T18:02:42.107Z" },
+    { url = "https://files.pythonhosted.org/packages/93/72/a3989264324dcaaf786540d0931cddc6cc8a1d1dc205426f3c1c01e0a8ff/vegaml-0.20.1-py3-none-any.whl", hash = "sha256:fb194a5cb9e2d82ed0a4f7cc76f787759ca3bc64206a6578e712bd6d0eb33af8", size = 156826, upload-time = "2026-11-26T09:33:13.191Z" },
 ]
 
 [[package]]
